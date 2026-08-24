@@ -61,3 +61,4 @@ mock_finance_agent = "plugins/mock-finance-agent/src/mock_finance_agent"
 
 [tool.setuptools.package-data]
 harness_contracts = ["py.typed"]
+harness_spi = ["py.typed"]
