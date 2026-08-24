@@ -58,3 +58,6 @@ harness_trace = "harness-trace/src/harness_trace"
 calculator_tool = "plugins/calculator-tool/src/calculator_tool"
 echo_agent = "plugins/echo-agent/src/echo_agent"
 mock_finance_agent = "plugins/mock-finance-agent/src/mock_finance_agent"
+
+[tool.setuptools.package-data]
+harness_contracts = ["py.typed"]
