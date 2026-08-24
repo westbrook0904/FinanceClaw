@@ -6,8 +6,10 @@
       <sourceFolder url="file://$MODULE_DIR$/harness-contracts/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/harness-contracts/tests" isTestSource="true" />
       <sourceFolder url="file://$MODULE_DIR$/harness-plugin-local/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/harness-plugin-local/tests" isTestSource="true" />
       <sourceFolder url="file://$MODULE_DIR$/harness-policy/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/harness-registry/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/harness-registry/tests" isTestSource="true" />
       <sourceFolder url="file://$MODULE_DIR$/harness-runtime/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/harness-spi/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/harness-spi/tests" isTestSource="true" />
