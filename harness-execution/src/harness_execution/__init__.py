@@ -1,5 +1,6 @@
 """ExecutionPlan 的可靠执行边界。"""
 
+from .cancellation import CancellationSignal
 from .engine import ExecutionEngine
 from .resolution import (
     BindingResolutionError,
@@ -13,6 +14,7 @@ from .scheduler import BasicScheduler, SchedulerOutcome
 __all__ = [
     "BasicScheduler",
     "BindingResolutionError",
+    "CancellationSignal",
     "ConditionEvaluator",
     "ExecutionEngine",
     "InputResolver",

@@ -9,22 +9,25 @@
 * 通过 ``CapabilityInvoker`` 执行节点，禁止直接访问 Registry/Provider；
 * 处理 Join、fail-fast、continue-on-failure 和最终输出组合。
 
-当前实现是阶段二 Basic Scheduler，不负责 Retry、持久化 Checkpoint、跨进程 Resume
-或外部取消入口。这些可靠性能力会在后续里程碑复用这里的状态迁移边界继续扩展。
+当前实现还在同一个节点 Deadline 内提供确定性 Retry，并通过进程内取消信号停止
+新调度、取消运行中 Task。持久化 Checkpoint 和跨进程 Resume 仍属于后续里程碑。
 """
 
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from harness_contracts import (
+    CapabilityDescriptor,
     CapabilityError,
     Continuation,
     EdgeTrigger,
     ExecutionPlan,
     FailurePolicy,
+    IdempotencyType,
     InvocationContext,
     NodeExecutionState,
     NodeExecutionStatus,
@@ -39,10 +42,13 @@ from harness_contracts import (
     ResultIssue,
     ResultOutput,
     ResultStatus,
+    SideEffectType,
 )
+from harness_registry import CapabilityCatalog, RegistryCapabilityCatalog
 from harness_runtime import CapabilityInvoker, InvocationLifecycle
 from harness_trace import Span, SpanType, Tracer
 
+from .cancellation import CancellationSignal
 from .resolution import (
     BindingResolutionError,
     ConditionEvaluator,
@@ -88,8 +94,10 @@ class BasicScheduler:
         tracer: Tracer,
         lifecycle: InvocationLifecycle,
         *,
+        capability_catalog: CapabilityCatalog | None = None,
         input_resolver: InputResolver | None = None,
         condition_evaluator: ConditionEvaluator | None = None,
+        clock: Callable[[], datetime] | None = None,
     ) -> None:
         """注入 Scheduler 所需的受控执行组件。
 
@@ -106,11 +114,16 @@ class BasicScheduler:
             raise TypeError("lifecycle must be InvocationLifecycle")
         if invoker.tracer is not tracer or invoker.lifecycle is not lifecycle:
             raise ValueError("scheduler, invoker, and lifecycle must share one tracer")
+        effective_catalog = capability_catalog or RegistryCapabilityCatalog(invoker.registry)
+        if not isinstance(effective_catalog, CapabilityCatalog):
+            raise TypeError("capability_catalog must implement CapabilityCatalog")
         self._invoker = invoker
         self._tracer = tracer
         self._lifecycle = lifecycle
+        self._capability_catalog = effective_catalog
         self._input_resolver = input_resolver or InputResolver()
         self._condition_evaluator = condition_evaluator or ConditionEvaluator()
+        self._clock = clock or (lambda: datetime.now(UTC))
 
     async def run(
         self,
@@ -120,6 +133,7 @@ class BasicScheduler:
         *,
         parent: Span | None,
         trace_enabled: bool,
+        cancellation: CancellationSignal | None = None,
     ) -> SchedulerOutcome:
         """推进 DAG 至最终或 WAITING 状态。
 
@@ -134,6 +148,10 @@ class BasicScheduler:
         调用方取消当前协程时保留 ``asyncio.CancelledError``，同时先把 Scheduler
         已知的运行中和未启动节点收敛到 CANCELLED，避免留下悬空 Task。
         """
+
+        signal = cancellation or CancellationSignal(clock=self._clock)
+        if not isinstance(signal, CancellationSignal):
+            raise TypeError("cancellation must be CancellationSignal")
 
         # PlanExecutionState 与不可变 ExecutionPlan 分离。Plan 描述“要做什么”，
         # State 描述“已经执行到哪里”，从而为后续 checkpoint/resume 奠定边界。
@@ -154,12 +172,18 @@ class BasicScheduler:
         # 这里读取显式上游结果，不共享 Capability 内部的可变对象。
         results: dict[str, ResultEnvelope] = {}
         # Task -> node_id 映射同时充当当前并发占用集合。
-        running: dict[asyncio.Task[tuple[str, ResultEnvelope]], str] = {}
+        running: dict[asyncio.Task[tuple[str, ResultEnvelope, int]], str] = {}
         # 第一个触发 FAIL_PLAN 的结果作为稳定的 Plan 主错误。
         abort_result: ResultEnvelope | None = None
+        cancellation_waiter = asyncio.create_task(signal.wait())
 
         try:
             while True:
+                # 主动取消优先于任何新状态推进：收到信号后不再启动 READY 节点。
+                if signal.cancelled:
+                    await self._cancel_running(running, state)
+                    self._cancel_unstarted(state)
+                    break
                 # 一次调用可能连续传播多层 SKIPPED，因此 _advance_pending 内部会
                 # 迭代到局部不动点，再把所有新 READY 节点交回主循环。
                 self._advance_pending(state, incoming, results)
@@ -188,6 +212,7 @@ class BasicScheduler:
                             results,
                             parent=parent,
                             trace_enabled=trace_enabled,
+                            cancellation=signal,
                         )
                     )
                     running[task] = node_id
@@ -205,15 +230,20 @@ class BasicScheduler:
                 # FIRST_COMPLETED 让 Scheduler 及时释放并发额度并解锁下游节点，
                 # 无需等待当前批次所有并行节点全部结束。
                 done, _ = await asyncio.wait(
-                    running,
+                    (*running, cancellation_waiter),
                     return_when=asyncio.FIRST_COMPLETED,
                 )
+                if cancellation_waiter in done:
+                    await self._cancel_running(running, state)
+                    self._cancel_unstarted(state)
+                    break
                 # asyncio.wait 返回 set；排序后再应用结果，确保主错误和 State
                 # 更新顺序不依赖哈希或事件循环内部顺序。
                 completed = sorted(done, key=lambda task: node_order[running[task]])
                 for task in completed:
                     node_id = running.pop(task)
-                    _, result = await task
+                    _, result, attempts = await task
+                    state.nodes[node_id].attempt = attempts
                     results[node_id] = result
                     should_abort = self._apply_node_result(
                         state,
@@ -243,9 +273,13 @@ class BasicScheduler:
             await self._cancel_running(running, state)
             self._cancel_unstarted(state)
             raise
+        finally:
+            if not cancellation_waiter.done():
+                cancellation_waiter.cancel()
+            await asyncio.gather(cancellation_waiter, return_exceptions=True)
 
         # 调度停止后统一组合最终 ResultEnvelope，再由该结果驱动 Plan 状态收尾。
-        result = self._compose_result(plan, state, results, abort_result)
+        result = self._compose_result(plan, state, results, abort_result, signal)
         self._finish_state(state, result)
         return SchedulerOutcome(result=result, state=state)
 
@@ -334,7 +368,8 @@ class BasicScheduler:
         *,
         parent: Span | None,
         trace_enabled: bool,
-    ) -> tuple[str, ResultEnvelope]:
+        cancellation: CancellationSignal,
+    ) -> tuple[str, ResultEnvelope, int]:
         """执行单个 READY 节点，并返回尚未写入 Plan State 的统一结果。
 
         本方法运行在独立 asyncio Task 中。它负责 PLAN_NODE Span、输入解析和
@@ -369,8 +404,9 @@ class BasicScheduler:
                 )
             )
             self._lifecycle.finish_from_result(node_span, result)
-            return node.node_id, result
+            return node.node_id, result, 1
 
+        attempts = 1
         try:
             # 所有跨节点数据都在调用前解析成新的 RequestInput。Invoker 不需要理解
             # Plan Binding，也不会获得其他节点的状态对象。
@@ -379,16 +415,56 @@ class BasicScheduler:
                 node.input_mapping,
                 results,
             )
-            # Scheduler 禁止 registry.resolve 后裸调 Provider；统一边界确保每个节点
-            # 都经过 PRE_EXECUTE Policy、Trace、timeout 和错误归一化。
-            result = await self._invoker.invoke(
-                node.capability or "",
-                node_input,
-                context,
-                timeout_ms=node.timeout_ms,
-                parent=node_span,
-                trace_enabled=trace_enabled,
+            # Deadline 在首次尝试前只计算一次；后续重试共享同一个绝对时间点，不能
+            # 因每次调用重新获得完整 timeout_ms 而突破 Request/Plan/Node 预算。
+            deadline_at = self._effective_deadline(plan, node, context)
+            descriptor = self._capability_catalog.get(node.capability or "")
+            execution_context = context.model_copy(
+                update={
+                    "deadline_at": deadline_at,
+                    "cancellation": cancellation.snapshot(),
+                    "attributes": {
+                        **context.attributes,
+                        "plan_id": plan.plan_id,
+                        "node_id": node.node_id,
+                        **(
+                            {"idempotency_key": node.idempotency_key}
+                            if node.idempotency_key is not None
+                            else {}
+                        ),
+                    },
+                }
             )
+            result = ResultEnvelope.cancelled()
+            for attempt in range(1, node.retry_policy.max_attempts + 1):
+                attempts = attempt
+                # Scheduler 禁止裸调 Provider；每一次尝试都重新经过 Invoker，因此
+                # PRE_EXECUTE Policy、Registry 解析和调用 Trace 不会被重试绕过。
+                result = await self._invoker.invoke(
+                    node.capability or "",
+                    node_input,
+                    execution_context.model_copy(update={"cancellation": cancellation.snapshot()}),
+                    deadline_at=deadline_at,
+                    parent=node_span,
+                    trace_enabled=trace_enabled,
+                )
+                if not self._should_retry(node, descriptor, result, attempt, deadline_at):
+                    break
+                backoff_seconds = self._backoff_seconds(node, attempt)
+                if not self._deadline_allows(deadline_at, backoff_seconds):
+                    break
+                if node_span is not None:
+                    self._tracer.add_event(
+                        node_span,
+                        "node.retrying",
+                        attributes={
+                            "attempt": attempt,
+                            "next_attempt": attempt + 1,
+                            "backoff_ms": int(backoff_seconds * 1000),
+                        },
+                    )
+                if backoff_seconds:
+                    await asyncio.sleep(backoff_seconds)
         except asyncio.CancelledError:
             # 内部 fail-fast 或外部取消都必须以 CANCELLED 结束 PLAN_NODE Span。
             self._lifecycle.finish_cancelled(node_span)
@@ -415,7 +491,66 @@ class BasicScheduler:
             result = ResultEnvelope.failure(error.to_detail())
 
         self._lifecycle.finish_from_result(node_span, result)
-        return node.node_id, result
+        return node.node_id, result, attempts
+
+    def _effective_deadline(
+        self,
+        plan: ExecutionPlan,
+        node: PlanNode,
+        context: InvocationContext,
+    ) -> datetime | None:
+        """合并 Request、Plan 与 Node 三层预算为最早的绝对截止时间。"""
+
+        candidates = [item for item in (context.deadline_at, plan.budget.deadline_at) if item]
+        if node.timeout_ms is not None:
+            candidates.append(self._now() + timedelta(milliseconds=node.timeout_ms))
+        return min(candidates) if candidates else None
+
+    def _should_retry(
+        self,
+        node: PlanNode,
+        descriptor: CapabilityDescriptor | None,
+        result: ResultEnvelope,
+        attempt: int,
+        deadline_at: datetime | None,
+    ) -> bool:
+        """仅在错误可重试、操作幂等安全且仍有预算时允许下一次尝试。"""
+
+        if attempt >= node.retry_policy.max_attempts:
+            return False
+        if result.status is not ResultStatus.FAILED or result.error is None:
+            return False
+        if not result.error.retryable or not self._deadline_allows(deadline_at, 0):
+            return False
+        if descriptor is None:
+            return False
+        profile = descriptor.execution_profile
+        if profile.side_effect in {SideEffectType.NONE, SideEffectType.READ}:
+            return True
+        if profile.side_effect is not SideEffectType.WRITE:
+            return False
+        return (
+            profile.idempotency in {IdempotencyType.OPTIONAL, IdempotencyType.REQUIRED}
+            and node.idempotency_key is not None
+        )
+
+    @staticmethod
+    def _backoff_seconds(node: PlanNode, attempt: int) -> float:
+        policy = node.retry_policy
+        milliseconds = min(
+            policy.max_backoff_ms,
+            policy.initial_backoff_ms * policy.multiplier ** (attempt - 1),
+        )
+        return milliseconds / 1000
+
+    def _deadline_allows(self, deadline_at: datetime | None, delay_seconds: float) -> bool:
+        return deadline_at is None or (deadline_at - self._now()).total_seconds() > delay_seconds
+
+    def _now(self) -> datetime:
+        value = self._clock()
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("clock must return a timezone-aware datetime")
+        return value
 
     def _apply_node_result(
         self,
@@ -466,7 +601,7 @@ class BasicScheduler:
 
     async def _cancel_running(
         self,
-        running: dict[asyncio.Task[tuple[str, ResultEnvelope]], str],
+        running: dict[asyncio.Task[tuple[str, ResultEnvelope, int]], str],
         state: PlanExecutionState,
     ) -> None:
         """取消当前运行 Task，等待清理完成，并同步节点状态。"""
@@ -501,6 +636,7 @@ class BasicScheduler:
         state: PlanExecutionState,
         results: dict[str, ResultEnvelope],
         abort_result: ResultEnvelope | None,
+        cancellation: CancellationSignal,
     ) -> ResultEnvelope:
         """根据 Plan State 和 outputs mapping 组合最终 ResultEnvelope。
 
@@ -510,6 +646,18 @@ class BasicScheduler:
         """
 
         metadata = {"plan_id": plan.plan_id, "plan_revision": plan.revision}
+        if cancellation.cancelled:
+            return ResultEnvelope.cancelled(
+                metadata={
+                    **metadata,
+                    **({"reason": cancellation.reason} if cancellation.reason else {}),
+                    **(
+                        {"requested_at": cancellation.requested_at.isoformat()}
+                        if cancellation.requested_at
+                        else {}
+                    ),
+                }
+            )
         # fail-fast 保留原始失败/拒绝/取消类别，不把 DENIED 错误降级成 FAILED。
         if abort_result is not None:
             if abort_result.status is ResultStatus.DENIED:

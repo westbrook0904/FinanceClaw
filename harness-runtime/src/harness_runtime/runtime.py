@@ -119,6 +119,7 @@ class HarnessRuntime:
                 context,
                 plugin_id=target.plugin,
                 timeout_ms=request.options.timeout_ms,
+                deadline_at=context.deadline_at,
                 parent=runtime_span,
                 trace_enabled=trace_enabled,
             )

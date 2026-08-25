@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 
 from harness_contracts import (
     CapabilityError,
@@ -81,6 +82,7 @@ class CapabilityInvoker:
         *,
         plugin_id: str | None = None,
         timeout_ms: int | None = None,
+        deadline_at: datetime | None = None,
         parent: InvocationParent = None,
         trace_enabled: bool = True,
     ) -> ResultEnvelope:
@@ -92,6 +94,7 @@ class CapabilityInvoker:
             context,
             plugin_id=plugin_id,
             timeout_ms=timeout_ms,
+            deadline_at=deadline_at,
             parent=parent,
         )
         trace = _TraceAnchor(parent if parent is not None else context.trace_context)
@@ -122,6 +125,7 @@ class CapabilityInvoker:
                     context,
                     resolved,
                     timeout_ms=timeout_ms,
+                    deadline_at=deadline_at,
                     trace=trace,
                     trace_enabled=trace_enabled,
                 )
@@ -150,6 +154,7 @@ class CapabilityInvoker:
         *,
         plugin_id: str | None,
         timeout_ms: int | None,
+        deadline_at: datetime | None,
         parent: InvocationParent,
     ) -> None:
         if not isinstance(capability_id, str) or not capability_id.strip():
@@ -164,6 +169,12 @@ class CapabilityInvoker:
             not isinstance(timeout_ms, int) or isinstance(timeout_ms, bool) or timeout_ms <= 0
         ):
             raise TypeError("timeout_ms must be a positive integer when provided")
+        if deadline_at is not None and (
+            not isinstance(deadline_at, datetime)
+            or deadline_at.tzinfo is None
+            or deadline_at.utcoffset() is None
+        ):
+            raise TypeError("deadline_at must be a timezone-aware datetime when provided")
         if parent is not None and not isinstance(parent, Span | TraceContext):
             raise TypeError("parent must be Span, TraceContext, or None")
 
@@ -274,6 +285,7 @@ class CapabilityInvoker:
         resolved: ResolvedCapability,
         *,
         timeout_ms: int | None,
+        deadline_at: datetime | None,
         trace: _TraceAnchor,
         trace_enabled: bool,
     ) -> ResultEnvelope:
@@ -334,6 +346,7 @@ class CapabilityInvoker:
                 resolved,
                 provider,
                 timeout_ms=timeout_ms,
+                deadline_at=deadline_at,
             )
         except asyncio.CancelledError:
             self._lifecycle.finish_cancelled(leaf_span)
@@ -377,6 +390,7 @@ class CapabilityInvoker:
         provider: AgentSPI | ToolSPI,
         *,
         timeout_ms: int | None,
+        deadline_at: datetime | None,
     ) -> ResultEnvelope:
         async def execute() -> ResultEnvelope:
             if isinstance(provider, AgentSPI):
@@ -390,15 +404,38 @@ class CapabilityInvoker:
                 )
             return await provider.execute(ToolRequest(arguments=payload), context)
 
-        if timeout_ms is None:
+        effective_deadline = deadline_at
+        if timeout_ms is not None:
+            timeout_deadline = datetime.now(UTC) + timedelta(milliseconds=timeout_ms)
+            effective_deadline = (
+                timeout_deadline
+                if effective_deadline is None
+                else min(effective_deadline, timeout_deadline)
+            )
+        if effective_deadline is None:
             return await execute()
+        remaining_seconds = (effective_deadline - datetime.now(UTC)).total_seconds()
+        if remaining_seconds <= 0:
+            raise HarnessTimeoutError(
+                "capability deadline exceeded",
+                details={
+                    "capability_id": resolved.descriptor.id,
+                    "deadline_at": effective_deadline.isoformat(),
+                },
+            )
         try:
-            async with asyncio.timeout(timeout_ms / 1000):
+            async with asyncio.timeout(remaining_seconds):
                 return await execute()
         except TimeoutError as exc:
             raise HarnessTimeoutError(
                 "capability execution timed out",
-                details={"capability_id": resolved.descriptor.id, "timeout_ms": timeout_ms},
+                details=_compact_attributes(
+                    {
+                        "capability_id": resolved.descriptor.id,
+                        "timeout_ms": timeout_ms,
+                        "deadline_at": effective_deadline.isoformat(),
+                    }
+                ),
             ) from exc
 
     def _validate_provider_type(

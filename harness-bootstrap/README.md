@@ -23,6 +23,8 @@ HarnessApplication
 - `build_harness(...) -> HarnessApplication`
 - `HarnessApplication.start()`：发现、初始化并注册插件。
 - `HarnessApplication.invoke(request)`：仅在 STARTED 状态调用 Runtime。
+- `HarnessApplication.execute_plan(request, plan)`：验证并执行 Plan。
+- `HarnessApplication.cancel_plan(plan_id, reason)`：取消当前进程内的活动 Plan。
 - `HarnessApplication.shutdown()`：注销 Capability 并关闭全部插件。
 - `HarnessComponents`：组装完成后的只读组件快照。
 - `BootstrapState`：CREATED、STARTED、STOPPED。

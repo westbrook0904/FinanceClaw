@@ -111,7 +111,12 @@ def build_harness(
         effective_tracer,
         lifecycle=lifecycle,
     )
-    scheduler = BasicScheduler(invoker, effective_tracer, lifecycle)
+    scheduler = BasicScheduler(
+        invoker,
+        effective_tracer,
+        lifecycle,
+        capability_catalog=effective_catalog,
+    )
     execution_engine = ExecutionEngine(
         effective_plan_validator,
         scheduler,

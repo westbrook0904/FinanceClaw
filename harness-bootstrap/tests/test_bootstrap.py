@@ -260,6 +260,16 @@ class BootstrapLifecycleTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(BootstrapStateError):
             await app.invoke(make_request())
 
+    async def test_cancel_plan_requires_started_application_and_delegates(self) -> None:
+        app = build_harness(entry_point_group=None)
+
+        with self.assertRaises(BootstrapStateError):
+            await app.cancel_plan("missing")
+
+        await app.start()
+        self.assertIs(await app.cancel_plan("missing"), False)
+        await app.shutdown()
+
     async def test_stopped_application_cannot_restart(self) -> None:
         app = build_harness(entry_point_group=None)
         await app.start()

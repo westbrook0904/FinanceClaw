@@ -8,12 +8,14 @@ import unittest
 from harness_contracts import (
     CapabilityDescriptor,
     CapabilityError,
+    CapabilityExecutionProfile,
     CapabilityType,
     ConditionExpr,
     ConditionOperator,
     ExecutionPlan,
     FailurePolicy,
     InvocationContext,
+    IdempotencyType,
     LiteralBinding,
     NodeExecutionStatus,
     NodeOutputBinding,
@@ -23,13 +25,16 @@ from harness_contracts import (
     Request,
     RequestBinding,
     RequestInput,
+    RetryPolicy,
     ResultEnvelope,
     ResultOutput,
     ResultStatus,
+    SideEffectType,
     ValueReference,
 )
 from harness_execution import (
     BasicScheduler,
+    CancellationSignal,
     ConditionEvaluator,
     ExecutionEngine,
     resolve_json_pointer,
@@ -97,6 +102,57 @@ class ControlledTool(ToolSPI):
         finally:
             if self._tracker is not None:
                 self._tracker.current -= 1
+
+
+class ReliabilityTool(ToolSPI):
+    """可控制瞬态失败和阻塞行为的可靠性测试 Tool。"""
+
+    def __init__(
+        self,
+        capability_id: str,
+        *,
+        failures_before_success: int = 0,
+        profile: CapabilityExecutionProfile | None = None,
+        delay: float = 0,
+        started: asyncio.Event | None = None,
+    ) -> None:
+        self._descriptor = CapabilityDescriptor(
+            id=capability_id,
+            name=capability_id,
+            type=CapabilityType.TOOL,
+            version="1.0.0",
+            execution_profile=profile or CapabilityExecutionProfile(),
+        )
+        self.failures_before_success = failures_before_success
+        self.delay = delay
+        self.started = started
+        self.calls = 0
+        self.cancelled = False
+        self.contexts: list[InvocationContext] = []
+
+    def descriptor(self) -> CapabilityDescriptor:
+        return self._descriptor
+
+    async def execute(
+        self,
+        request: ToolRequest,
+        context: InvocationContext,
+    ) -> ResultEnvelope:
+        self.calls += 1
+        self.contexts.append(context)
+        if self.started is not None:
+            self.started.set()
+        try:
+            if self.delay:
+                await asyncio.sleep(self.delay)
+        except asyncio.CancelledError:
+            self.cancelled = True
+            raise
+        if self.calls <= self.failures_before_success:
+            return ResultEnvelope.failure(
+                CapabilityError("transient failure", retryable=True).to_detail()
+            )
+        return ResultEnvelope.success(ResultOutput(type="json", data={"calls": self.calls}))
 
 
 def make_engine(*providers: ToolSPI) -> tuple[ExecutionEngine, InMemoryTracer]:
@@ -424,6 +480,224 @@ class ExecutionEngineTests(unittest.IsolatedAsyncioTestCase):
         state = engine.state("fail-fast")
         self.assertEqual(state.nodes["bad"].status, NodeExecutionStatus.FAILED)
         self.assertEqual(state.nodes["never"].status, NodeExecutionStatus.CANCELLED)
+
+    async def test_retryable_read_failure_retries_and_records_attempt_count(self) -> None:
+        tool = ReliabilityTool(
+            "retry.read/v1",
+            failures_before_success=1,
+            profile=CapabilityExecutionProfile(side_effect=SideEffectType.READ),
+        )
+        engine, tracer = make_engine(tool)
+        plan = ExecutionPlan(
+            plan_id="retry-read",
+            nodes=(
+                PlanNode(
+                    node_id="work",
+                    capability="retry.read/v1",
+                    retry_policy=RetryPolicy(
+                        max_attempts=3,
+                        initial_backoff_ms=0,
+                        max_backoff_ms=0,
+                    ),
+                ),
+            ),
+        )
+
+        result = await engine.execute(make_request(), plan)
+
+        self.assertEqual(result.status, ResultStatus.SUCCESS)
+        self.assertEqual(tool.calls, 2)
+        self.assertEqual(engine.state("retry-read").nodes["work"].attempt, 2)
+        events = tracer.events(trace_id=result.trace_id)
+        self.assertEqual([event.name for event in events].count("node.retrying"), 1)
+
+    async def test_retry_exhaustion_preserves_last_failure(self) -> None:
+        tool = ReliabilityTool(
+            "retry.exhausted/v1",
+            failures_before_success=10,
+            profile=CapabilityExecutionProfile(side_effect=SideEffectType.READ),
+        )
+        engine, _ = make_engine(tool)
+        plan = ExecutionPlan(
+            plan_id="retry-exhausted",
+            nodes=(
+                PlanNode(
+                    node_id="work",
+                    capability="retry.exhausted/v1",
+                    retry_policy=RetryPolicy(
+                        max_attempts=3,
+                        initial_backoff_ms=0,
+                        max_backoff_ms=0,
+                    ),
+                ),
+            ),
+        )
+
+        result = await engine.execute(make_request(), plan)
+
+        self.assertEqual(result.status, ResultStatus.FAILED)
+        self.assertEqual(result.error.message, "transient failure")
+        self.assertEqual(tool.calls, 3)
+        self.assertEqual(engine.state("retry-exhausted").nodes["work"].attempt, 3)
+
+    async def test_write_retry_requires_supported_idempotency_and_key(self) -> None:
+        unsafe = ReliabilityTool(
+            "retry.unsafe-write/v1",
+            failures_before_success=1,
+            profile=CapabilityExecutionProfile(
+                side_effect=SideEffectType.WRITE,
+                idempotency=IdempotencyType.NONE,
+            ),
+        )
+        safe = ReliabilityTool(
+            "retry.safe-write/v1",
+            failures_before_success=1,
+            profile=CapabilityExecutionProfile(
+                side_effect=SideEffectType.WRITE,
+                idempotency=IdempotencyType.REQUIRED,
+            ),
+        )
+        retry = RetryPolicy(max_attempts=2, initial_backoff_ms=0, max_backoff_ms=0)
+        unsafe_engine, _ = make_engine(unsafe)
+        safe_engine, _ = make_engine(safe)
+
+        unsafe_result = await unsafe_engine.execute(
+            make_request(),
+            ExecutionPlan(
+                plan_id="unsafe-write",
+                nodes=(
+                    PlanNode(
+                        node_id="work",
+                        capability="retry.unsafe-write/v1",
+                        retry_policy=retry,
+                    ),
+                ),
+            ),
+        )
+        safe_result = await safe_engine.execute(
+            make_request(),
+            ExecutionPlan(
+                plan_id="safe-write",
+                nodes=(
+                    PlanNode(
+                        node_id="work",
+                        capability="retry.safe-write/v1",
+                        retry_policy=retry,
+                        idempotency_key="payment-42",
+                    ),
+                ),
+            ),
+        )
+
+        self.assertEqual(unsafe_result.status, ResultStatus.FAILED)
+        self.assertEqual(unsafe.calls, 1)
+        self.assertEqual(safe_result.status, ResultStatus.SUCCESS)
+        self.assertEqual(safe.calls, 2)
+        self.assertEqual(safe.contexts[0].attributes["idempotency_key"], "payment-42")
+
+    async def test_node_timeout_is_one_absolute_deadline_across_retries(self) -> None:
+        tool = ReliabilityTool(
+            "retry.timeout/v1",
+            delay=0.1,
+            profile=CapabilityExecutionProfile(side_effect=SideEffectType.READ),
+        )
+        engine, _ = make_engine(tool)
+        plan = ExecutionPlan(
+            plan_id="deadline",
+            nodes=(
+                PlanNode(
+                    node_id="work",
+                    capability="retry.timeout/v1",
+                    timeout_ms=20,
+                    retry_policy=RetryPolicy(
+                        max_attempts=3,
+                        initial_backoff_ms=0,
+                        max_backoff_ms=0,
+                    ),
+                ),
+            ),
+        )
+
+        result = await engine.execute(make_request(), plan)
+
+        self.assertEqual(result.status, ResultStatus.FAILED)
+        self.assertEqual(result.error.code, "HARNESS.TIMEOUT")
+        self.assertEqual(tool.calls, 1)
+        self.assertIsNotNone(tool.contexts[0].deadline_at)
+
+    async def test_explicit_cancel_stops_running_and_unstarted_nodes(self) -> None:
+        started = asyncio.Event()
+        tool = ReliabilityTool("cancel.work/v1", delay=10, started=started)
+        engine, _ = make_engine(tool)
+        plan = ExecutionPlan(
+            plan_id="cancel-plan",
+            budget=PlanBudget(max_concurrency=1),
+            nodes=(
+                PlanNode(node_id="running", capability="cancel.work/v1"),
+                PlanNode(node_id="pending", capability="cancel.work/v1"),
+            ),
+        )
+        execution = asyncio.create_task(engine.execute(make_request(), plan))
+        await asyncio.wait_for(started.wait(), timeout=1)
+
+        cancelled = await engine.cancel("cancel-plan", "user requested")
+        result = await asyncio.wait_for(execution, timeout=1)
+
+        self.assertIs(cancelled, True)
+        self.assertEqual(result.status, ResultStatus.CANCELLED)
+        self.assertEqual(result.metadata["reason"], "user requested")
+        self.assertTrue(tool.cancelled)
+        state = engine.state("cancel-plan")
+        self.assertEqual(state.nodes["running"].status, NodeExecutionStatus.CANCELLED)
+        self.assertEqual(state.nodes["pending"].status, NodeExecutionStatus.CANCELLED)
+        self.assertIs(await engine.cancel("unknown-plan"), False)
+
+    async def test_cancel_before_scheduler_run_prevents_provider_call(self) -> None:
+        tool = ReliabilityTool("cancel.before-run/v1")
+        engine, _ = make_engine(tool)
+        request = make_request()
+        plan = ExecutionPlan(
+            plan_id="cancel-before-run",
+            nodes=(PlanNode(node_id="work", capability="cancel.before-run/v1"),),
+        )
+        signal = CancellationSignal()
+        self.assertTrue(signal.request("cancelled before scheduling"))
+
+        outcome = await engine.scheduler.run(
+            request,
+            plan,
+            InvocationContext(request=request),
+            parent=None,
+            trace_enabled=False,
+            cancellation=signal,
+        )
+
+        self.assertEqual(outcome.result.status, ResultStatus.CANCELLED)
+        self.assertEqual(outcome.state.nodes["work"].status, NodeExecutionStatus.CANCELLED)
+        self.assertEqual(tool.calls, 0)
+        self.assertFalse(signal.request("duplicate request"))
+
+    async def test_client_task_cancellation_still_propagates(self) -> None:
+        started = asyncio.Event()
+        tool = ReliabilityTool("cancel.client/v1", delay=10, started=started)
+        engine, _ = make_engine(tool)
+        execution = asyncio.create_task(
+            engine.execute(
+                make_request(),
+                ExecutionPlan(
+                    plan_id="client-cancel",
+                    nodes=(PlanNode(node_id="work", capability="cancel.client/v1"),),
+                ),
+            )
+        )
+        await asyncio.wait_for(started.wait(), timeout=1)
+
+        execution.cancel()
+
+        with self.assertRaises(asyncio.CancelledError):
+            await execution
+        self.assertTrue(tool.cancelled)
+        self.assertIs(await engine.cancel("client-cancel"), False)
 
 
 if __name__ == "__main__":

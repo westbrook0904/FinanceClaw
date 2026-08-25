@@ -16,6 +16,7 @@ from harness_planning import PlanValidationError, PlanValidator
 from harness_runtime import CapabilityInvoker, InvocationLifecycle
 from harness_trace import SpanType, Tracer
 
+from .cancellation import CancellationSignal
 from .scheduler import BasicScheduler
 
 
@@ -48,6 +49,10 @@ class ExecutionEngine:
         self._tracer = tracer
         self._lifecycle = lifecycle
         self._states: dict[str, PlanExecutionState] = {}
+        # active 只保存当前进程内正在推进的 Plan。Signal 与序列化 State 分离，
+        # 后续多进程取消需要由 StateStore/消息机制替换这一索引。
+        self._active: dict[str, CancellationSignal] = {}
+        self._active_lock = asyncio.Lock()
 
     @property
     def validator(self) -> PlanValidator:
@@ -91,7 +96,18 @@ class ExecutionEngine:
         if plan_span is not None:
             context = self._lifecycle.with_trace_context(context, plan_span)
 
+        signal = CancellationSignal()
+        registered = False
         try:
+            async with self._active_lock:
+                if plan.plan_id in self._active:
+                    raise RequestError(
+                        "execution plan is already running",
+                        code="HARNESS.PLAN.ALREADY_RUNNING",
+                        details={"plan_id": plan.plan_id},
+                    )
+                self._active[plan.plan_id] = signal
+                registered = True
             self._validator.validate(plan)
             outcome = await self._scheduler.run(
                 request,
@@ -99,6 +115,7 @@ class ExecutionEngine:
                 context,
                 parent=plan_span,
                 trace_enabled=trace_enabled,
+                cancellation=signal,
             )
             self._states[plan.plan_id] = self._snapshot(outcome.state)
             result = outcome.result
@@ -117,6 +134,8 @@ class ExecutionEngine:
                 },
             )
             result = ResultEnvelope.failure(error.to_detail())
+        except RequestError as exc:
+            result = ResultEnvelope.failure(exc.to_detail())
         except Exception as exc:
             error = CapabilityError(
                 "execution engine failed",
@@ -124,12 +143,30 @@ class ExecutionEngine:
                 details={"plan_id": plan.plan_id, "cause_type": type(exc).__name__},
             )
             result = ResultEnvelope.failure(error.to_detail())
+        finally:
+            if registered:
+                async with self._active_lock:
+                    if self._active.get(plan.plan_id) is signal:
+                        del self._active[plan.plan_id]
 
         result = self._lifecycle.normalize_trace_id(result, request_span)
         self._lifecycle.finish_from_result(plan_span, result)
         self._lifecycle.finish_from_result(runtime_span, result)
         self._lifecycle.finish_from_result(request_span, result)
         return result
+
+    async def cancel(self, plan_id: str, reason: str | None = None) -> bool:
+        """请求取消当前进程内正在执行的 Plan。
+
+        返回值表示是否找到了活动 Plan 并首次写入取消信号；未知、已完成或已经请求
+        取消的 Plan 返回 ``False``。
+        """
+
+        if not isinstance(plan_id, str) or not plan_id.strip():
+            raise TypeError("plan_id must be a non-empty string")
+        async with self._active_lock:
+            signal = self._active.get(plan_id)
+            return signal.request(reason) if signal is not None else False
 
     def state(self, plan_id: str) -> PlanExecutionState | None:
         """返回 Basic Scheduler 的内存状态快照；后续由 StateStore 替代。"""

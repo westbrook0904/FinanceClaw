@@ -4,7 +4,8 @@
 和后续 ExecutionEngine 共同使用的 `CapabilityInvoker` 受控调用边界。
 
 `CapabilityInvoker` 统一执行 Registry resolve、PRE_EXECUTE Policy、Capability Trace、
-Agent/Tool 调用、timeout、asyncio cancellation、错误和 ResultEnvelope 归一化。调用方
+Agent/Tool 调用、绝对 deadline/timeout、asyncio cancellation、错误和 ResultEnvelope
+归一化。调用方
 不得绕过它直接从 Registry 取得 Provider 后执行。
 
 `harness-runtime` 是阶段一核心模块之间的薄协调层，负责一次 Request 的完整 Invocation 生命周期，不包含插件发现、业务路由或具体业务逻辑。
@@ -53,7 +54,8 @@ Policy 位于 Registry 之后，因为阶段一 PolicyContext 需要已解析的
 
 ## 超时、取消和错误
 
-- `RequestOptions.timeout_ms` 通过 `asyncio.timeout()` 应用于实际 Provider 调用。
+- 相对 `timeout_ms` 和绝对 `deadline_at` 取最早值，通过 `asyncio.timeout()` 应用于
+  实际 Provider 调用。
 - 调用方取消 task 时，Runtime 关闭开放 Span 并继续传播 `CancelledError`。
 - Request、Registry、Policy、Capability 和 Timeout 异常统一转换为 `ResultEnvelope.failure()`。
 - Policy 拒绝转换为 `ResultEnvelope.denied()`，不会调用 Provider。
@@ -73,5 +75,5 @@ Policy 位于 Registry 之后，因为阶段一 PolicyContext 需要已解析的
 
 ## 当前非目标
 
-本模块暂不实现 Planner、DAG Scheduler、Retry、Checkpoint/Resume、远程 Provider
+本模块暂不实现 Planner、DAG Scheduler、Checkpoint/Resume、远程 Provider
 或数据持久化；这些能力按第二阶段后续里程碑独立实现。
