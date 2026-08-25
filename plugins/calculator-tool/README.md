@@ -1,5 +1,16 @@
 # calculator-tool
 
-最小确定性 Tool 示例插件。用于验证 Tool SPI 和插件可插拔性；删除或重新加入本插件时，Harness Core 不应发生代码修改。
+阶段一确定性 Tool 插件，实现 `math.calculate/v1`。
 
-允许依赖：`harness-contracts`、`harness-spi`。
+输入 `RequestInput.content` 必须是 JSON object：
+
+```json
+{
+  "operation": "add",
+  "left": 1,
+  "right": 2
+}
+```
+
+支持 `add`、`subtract`、`multiply`、`divide`。无效参数和除零使用
+`PLUGIN.CALCULATOR.*` 错误码，由 Runtime 统一归一化为 `ResultEnvelope`。

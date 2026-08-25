@@ -1,5 +1,7 @@
 # mock-finance-agent
 
-财经域的模拟 Agent 插件位置。它用于证明业务能力可以通过 SPI 接入且不污染 Harness Core；阶段一结构初始化不实现真实金融查询。
+用于验证业务插件边界的模拟财经 Agent，实现 `finance.mock-query/v1`。
 
-允许依赖：`harness-contracts`、`harness-spi`。
+该插件只返回确定性的 mock 结果，不访问真实行情、数据库、LLM 或其他数据源，也不做真实
+金融分析。它存在的主要目的，是证明即使加入财经领域 Capability，Harness Core 也不需要
+引入任何财经类型或业务依赖。
