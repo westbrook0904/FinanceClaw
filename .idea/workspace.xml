@@ -4,8 +4,11 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="0d67a81b-cd68-49de-9544-1b30058fe17e" name="Changes" comment="init harness-plugin modules">
-      <change beforePath="$PROJECT_DIR$/pyproject.toml" beforeDir="false" afterPath="$PROJECT_DIR$/pyproject.toml" afterDir="false" />
+    <list default="true" id="0d67a81b-cd68-49de-9544-1b30058fe17e" name="Changes" comment="Phase One Description">
+      <change afterPath="$PROJECT_DIR$/.design/FinanceClaw-第二阶段说明书.md" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.design/Fo-Finance-Agent 系统架构图.png" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.design/系统架构图.png" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -184,7 +187,7 @@
       <updated>1787569286380</updated>
       <workItem from="1787569287520" duration="1000" />
       <workItem from="1787571075492" duration="31000" />
-      <workItem from="1787572776988" duration="16229000" />
+      <workItem from="1787572776988" duration="18827000" />
     </task>
     <task id="LOCAL-00001" summary="init project">
       <option name="closed" value="true" />
@@ -266,7 +269,23 @@
       <option name="project" value="LOCAL" />
       <updated>1787656875426</updated>
     </task>
-    <option name="localTasksCounter" value="11" />
+    <task id="LOCAL-00011" summary="fix test">
+      <option name="closed" value="true" />
+      <created>1787657345025</created>
+      <option name="number" value="00011" />
+      <option name="presentableId" value="LOCAL-00011" />
+      <option name="project" value="LOCAL" />
+      <updated>1787657345025</updated>
+    </task>
+    <task id="LOCAL-00012" summary="Phase One Description">
+      <option name="closed" value="true" />
+      <created>1787657792297</created>
+      <option name="number" value="00012" />
+      <option name="presentableId" value="LOCAL-00012" />
+      <option name="project" value="LOCAL" />
+      <updated>1787657792297</updated>
+    </task>
+    <option name="localTasksCounter" value="13" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -306,7 +325,9 @@
     <MESSAGE value="init harness-runtime modules" />
     <MESSAGE value="init harness-bootstrap modules" />
     <MESSAGE value="init harness-plugin modules" />
-    <option name="LAST_COMMIT_MESSAGE" value="init harness-plugin modules" />
+    <MESSAGE value="fix test" />
+    <MESSAGE value="Phase One Description" />
+    <option name="LAST_COMMIT_MESSAGE" value="Phase One Description" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
