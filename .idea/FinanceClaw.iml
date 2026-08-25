@@ -8,11 +8,14 @@
       <sourceFolder url="file://$MODULE_DIR$/harness-plugin-local/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/harness-plugin-local/tests" isTestSource="true" />
       <sourceFolder url="file://$MODULE_DIR$/harness-policy/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/harness-policy/tests" isTestSource="true" />
       <sourceFolder url="file://$MODULE_DIR$/harness-registry/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/harness-registry/tests" isTestSource="true" />
       <sourceFolder url="file://$MODULE_DIR$/harness-runtime/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/harness-spi/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/harness-spi/tests" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/harness-trace/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/harness-trace/tests" isTestSource="true" />
       <excludeFolder url="file://$MODULE_DIR$/.venv" />
     </content>
     <orderEntry type="jdk" jdkName="Python 3.14 (FinanceClaw)" jdkType="Python SDK" />
