@@ -13,6 +13,11 @@ dependencies = [
     "uvicorn>=0.52,<1",
 ]
 
+[project.entry-points."financeclaw.plugins"]
+calculator-tool = "calculator_tool:CalculatorToolPlugin"
+echo-agent = "echo_agent:EchoAgentPlugin"
+mock-finance-agent = "mock_finance_agent:MockFinanceAgentPlugin"
+
 [project.optional-dependencies]
 dev = [
     "pytest>=9,<10",
@@ -64,3 +69,10 @@ harness_contracts = ["py.typed"]
 harness_spi = ["py.typed"]
 harness_registry = ["py.typed"]
 harness_plugin_local = ["py.typed"]
+harness_policy = ["py.typed"]
+harness_trace = ["py.typed"]
+harness_runtime = ["py.typed"]
+harness_bootstrap = ["py.typed"]
+calculator_tool = ["py.typed"]
+echo_agent = ["py.typed"]
+mock_finance_agent = ["py.typed"]
