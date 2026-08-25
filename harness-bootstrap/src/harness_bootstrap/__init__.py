@@ -1,5 +1,20 @@
-"""FinanceClaw 的依赖组装与启动入口。
+"""FinanceClaw 的依赖组装与应用生命周期入口。
 
-所有具体实现应在这个 Composition Root 中连接，避免核心模块反向依赖应用层。
+本包是阶段一唯一的 Composition Root：负责连接具体基础设施实现，但不包含业务逻辑。
 """
 
+from .application import (
+    BootstrapState,
+    BootstrapStateError,
+    HarnessApplication,
+    HarnessComponents,
+)
+from .factory import build_harness
+
+__all__ = [
+    "BootstrapState",
+    "BootstrapStateError",
+    "HarnessApplication",
+    "HarnessComponents",
+    "build_harness",
+]
