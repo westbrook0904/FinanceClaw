@@ -8,6 +8,7 @@
 |---|---|
 | 请求 | `Request`、`RequestInput`、`RequestTarget`、`RequestOptions` |
 | 计划 | `ExecutionPlan`、`PlanNode`、`PlanEdge`、Binding、Condition、Budget、Retry / Failure Policy |
+| 持久化 | `PlanExecutionRecord`，包含 Plan、可恢复 Context 和 Plan/Node State 快照 |
 | 上下文 | `InvocationContext`、`IdentityContext`、`TenantContext`、`TraceContext`、`CancellationContext` |
 | 执行状态 | Direct Invocation、Plan 与 Node 的状态模型及状态枚举 |
 | 能力 | `CapabilityDescriptor`、`CapabilityType`、`CapabilityExecutionProfile` |

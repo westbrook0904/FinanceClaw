@@ -33,6 +33,7 @@ from harness_contracts import (
     PlanBudget,
     PlanEdge,
     PlanExecutionState,
+    PlanExecutionRecord,
     PlanExecutionStatus,
     PlanNode,
     PlanNodeKind,
@@ -307,7 +308,35 @@ class ApprovalAndStateContractTests(unittest.TestCase):
         self.assertEqual(restored.nodes["n1"].status, NodeExecutionStatus.RUNNING)
         self.assertEqual(restored.state_version, 2)
 
+    def test_plan_execution_record_round_trips_and_checks_identity(self) -> None:
+        request = Request(input=RequestInput(type="json", content={}))
+        plan = ExecutionPlan(
+            plan_id="record-plan",
+            nodes=(PlanNode(node_id="n1", capability="record.work/v1"),),
+        )
+        state = PlanExecutionState(
+            plan_id=plan.plan_id,
+            plan_revision=plan.revision,
+            nodes={"n1": NodeExecutionState(node_id="n1")},
+        )
+        record = PlanExecutionRecord(
+            plan_id=plan.plan_id,
+            plan=plan,
+            context=InvocationContext(request=request),
+            state=state,
+        )
 
+        restored = PlanExecutionRecord.model_validate_json(record.model_dump_json())
+
+        self.assertEqual(restored, record)
+        self.assertEqual(restored.state_version, state.state_version)
+        with self.assertRaises(ValidationError):
+            PlanExecutionRecord(
+                plan_id="different-plan",
+                plan=plan,
+                context=InvocationContext(request=request),
+                state=state,
+            )
 class ResultAndErrorContractTests(unittest.TestCase):
     def test_success_factory_builds_valid_envelope(self) -> None:
         result = ResultEnvelope.success(

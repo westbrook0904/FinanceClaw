@@ -22,6 +22,7 @@ from harness_runtime import (
     InvocationLifecycle,
 )
 from harness_spi import PluginSPI
+from harness_state import InMemoryStateStore, StateStore
 from harness_trace import InMemoryTracer, Tracer
 
 from .application import HarnessApplication, HarnessComponents
@@ -37,15 +38,16 @@ def build_harness(
     context_factory: InvocationContextFactory | None = None,
     capability_catalog: CapabilityCatalog | None = None,
     plan_validator: PlanValidator | None = None,
+    state_store: StateStore | None = None,
     plugin_provider: LocalPluginProvider | None = None,
     entry_point_group: str | None = "financeclaw.plugins",
 ) -> HarnessApplication:
     """组装 Harness，但不自动执行插件发现或初始化。
 
     默认实现使用内存 Registry、显式 ``AllowAllPolicy``、``InMemoryTracer``、
-    ``DefaultInvocationContextFactory``、只读 CapabilityCatalog、PlanValidator 与
-    ``LocalPluginProvider``。调用方可以从 Composition Root 替换这些实现，而无需
-    修改 Runtime 或业务插件。
+    ``DefaultInvocationContextFactory``、只读 CapabilityCatalog、PlanValidator、
+    ``InMemoryStateStore`` 与 ``LocalPluginProvider``。调用方可以从 Composition
+    Root 替换这些实现，而无需修改 Runtime 或业务插件。
     """
 
     explicit_plugins = tuple(plugins)
@@ -59,6 +61,8 @@ def build_harness(
         raise TypeError("capability_catalog must implement CapabilityCatalog")
     if plan_validator is not None and not isinstance(plan_validator, PlanValidator):
         raise TypeError("plan_validator must be PlanValidator")
+    if state_store is not None and not isinstance(state_store, StateStore):
+        raise TypeError("state_store must implement StateStore")
     if (
         capability_catalog is not None
         and plan_validator is not None
@@ -92,6 +96,7 @@ def build_harness(
     effective_plan_validator = (
         plan_validator if plan_validator is not None else PlanValidator(effective_catalog)
     )
+    effective_state_store = state_store or InMemoryStateStore()
     effective_provider = (
         plugin_provider
         if plugin_provider is not None
@@ -123,6 +128,7 @@ def build_harness(
         invoker,
         effective_tracer,
         lifecycle,
+        state_store=effective_state_store,
     )
     runtime = HarnessRuntime(
         effective_registry,
@@ -146,5 +152,6 @@ def build_harness(
             runtime=runtime,
             scheduler=scheduler,
             execution_engine=execution_engine,
+            state_store=effective_state_store,
         )
     )

@@ -32,6 +32,7 @@ from harness_planning import PlanValidator
 from harness_registry import InMemoryCapabilityRegistry, RegistryCapabilityCatalog
 from harness_runtime import CapabilityInvoker, DefaultInvocationContextFactory
 from harness_spi import PluginManifest, PluginSPI, ToolRequest, ToolSPI
+from harness_state import InMemoryStateStore
 from harness_trace import InMemoryTracer
 
 
@@ -120,6 +121,8 @@ class BootstrapFactoryTests(unittest.TestCase):
         self.assertIs(app.runtime.lifecycle, app.components.lifecycle)
         self.assertIs(app.execution_engine.validator, app.plan_validator)
         self.assertIs(app.execution_engine.scheduler, app.components.scheduler)
+        self.assertIsInstance(app.state_store, InMemoryStateStore)
+        self.assertIs(app.execution_engine.state_store, app.state_store)
         self.assertEqual(len(app.policy_engine.policies), 1)
         self.assertIsInstance(app.policy_engine.policies[0], AllowAllPolicy)
         self.assertEqual(app.registry.list(), ())
@@ -132,6 +135,7 @@ class BootstrapFactoryTests(unittest.TestCase):
         context_factory = DefaultInvocationContextFactory()
         capability_catalog = RegistryCapabilityCatalog(registry)
         plan_validator = PlanValidator(capability_catalog)
+        state_store = InMemoryStateStore()
 
         app = build_harness(
             registry=registry,
@@ -140,6 +144,7 @@ class BootstrapFactoryTests(unittest.TestCase):
             context_factory=context_factory,
             capability_catalog=capability_catalog,
             plan_validator=plan_validator,
+            state_store=state_store,
             entry_point_group=None,
         )
 
@@ -149,6 +154,7 @@ class BootstrapFactoryTests(unittest.TestCase):
         self.assertIs(app.components.context_factory, context_factory)
         self.assertIs(app.capability_catalog, capability_catalog)
         self.assertIs(app.plan_validator, plan_validator)
+        self.assertIs(app.state_store, state_store)
 
     def test_rejects_ambiguous_policy_configuration(self) -> None:
         with self.assertRaises(ValueError):

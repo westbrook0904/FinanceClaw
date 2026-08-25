@@ -9,5 +9,6 @@ fail-fast、continue-on-failure、Plan 级并发限制、Retry、Deadline 与 Ca
 仍有剩余时发生；所有尝试共享 Request、Plan 和 Node 合并后的绝对 Deadline。
 
 `ExecutionEngine.cancel(plan_id, reason)` 使用进程内 `CancellationSignal` 停止新节点、
-取消运行中 Task，并把剩余节点与 Plan 收敛到 `CANCELLED`。当前状态仍暂存在
-ExecutionEngine 内存中；Checkpoint/StateStore 和外部 Resume 按后续里程碑实现。
+取消运行中 Task，并把剩余节点与 Plan 收敛到 `CANCELLED`。ExecutionEngine 通过
+`StateStore` 在 Plan 创建、节点调用前、节点终态、取消和 Plan 终态等稳定边界保存
+完整 JSON Snapshot；跨进程 Resume 按下一里程碑实现。

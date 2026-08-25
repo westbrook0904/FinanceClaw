@@ -16,7 +16,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
@@ -67,6 +67,13 @@ _TERMINAL_NODE_STATUSES = {
     NodeExecutionStatus.SKIPPED,
     NodeExecutionStatus.CANCELLED,
 }
+
+type CheckpointCallback = Callable[[PlanExecutionState], Awaitable[None]]
+type AttemptCheckpointCallback = Callable[[int], Awaitable[None]]
+
+
+class CheckpointError(RuntimeError):
+    """稳定状态边界无法持久化，必须终止当前调度推进。"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -134,6 +141,7 @@ class BasicScheduler:
         parent: Span | None,
         trace_enabled: bool,
         cancellation: CancellationSignal | None = None,
+        checkpoint: CheckpointCallback | None = None,
     ) -> SchedulerOutcome:
         """推进 DAG 至最终或 WAITING 状态。
 
@@ -152,15 +160,23 @@ class BasicScheduler:
         signal = cancellation or CancellationSignal(clock=self._clock)
         if not isinstance(signal, CancellationSignal):
             raise TypeError("cancellation must be CancellationSignal")
+        if checkpoint is not None and not callable(checkpoint):
+            raise TypeError("checkpoint must be an async callable when provided")
 
         # PlanExecutionState 与不可变 ExecutionPlan 分离。Plan 描述“要做什么”，
         # State 描述“已经执行到哪里”，从而为后续 checkpoint/resume 奠定边界。
         state = PlanExecutionState(
             plan_id=plan.plan_id,
             plan_revision=plan.revision,
-            status=PlanExecutionStatus.RUNNING,
+            status=PlanExecutionStatus.CREATED,
             nodes={node.node_id: NodeExecutionState(node_id=node.node_id) for node in plan.nodes},
         )
+        # 首个快照保留 CREATED 状态，使数据库中即便只落下这一条记录也能明确知道
+        # Plan 尚未开始调度；随后再进入 RUNNING 并保存第二个稳定边界。
+        await self._checkpoint(checkpoint, state)
+        state.status = PlanExecutionStatus.RUNNING
+        self._touch(state)
+        await self._checkpoint(checkpoint, state)
         # 以下索引都只从已验证 Plan 构造。node_order 用于消除 set/Task 完成顺序
         # 带来的不确定性；incoming 用于高效判断 Root、Join 和分支激活。
         nodes = {node.node_id: node for node in plan.nodes}
@@ -183,6 +199,7 @@ class BasicScheduler:
                 if signal.cancelled:
                     await self._cancel_running(running, state)
                     self._cancel_unstarted(state)
+                    await self._checkpoint(checkpoint, state)
                     break
                 # 一次调用可能连续传播多层 SKIPPED，因此 _advance_pending 内部会
                 # 迭代到局部不动点，再把所有新 READY 节点交回主循环。
@@ -203,6 +220,22 @@ class BasicScheduler:
                     node_state.status = NodeExecutionStatus.RUNNING
                     node_state.attempt = 1
                     node_state.started_at = datetime.now(UTC)
+                    self._touch(state)
+                    # RUNNING 必须先 checkpoint，再启动实际 Provider Task。进程若在
+                    # 调用期间退出，恢复方才能识别这是一次中断中的尝试。
+                    await self._checkpoint(checkpoint, state)
+
+                    async def checkpoint_attempt(
+                        attempt: int,
+                        *,
+                        current_node_id: str = node_id,
+                    ) -> None:
+                        """在 Retry 真正调用 Provider 前保存新的 attempt。"""
+
+                        state.nodes[current_node_id].attempt = attempt
+                        self._touch(state)
+                        await self._checkpoint(checkpoint, state)
+
                     task = asyncio.create_task(
                         self._execute_node(
                             request,
@@ -213,6 +246,7 @@ class BasicScheduler:
                             parent=parent,
                             trace_enabled=trace_enabled,
                             cancellation=signal,
+                            checkpoint_attempt=checkpoint_attempt,
                         )
                     )
                     running[task] = node_id
@@ -236,6 +270,7 @@ class BasicScheduler:
                 if cancellation_waiter in done:
                     await self._cancel_running(running, state)
                     self._cancel_unstarted(state)
+                    await self._checkpoint(checkpoint, state)
                     break
                 # asyncio.wait 返回 set；排序后再应用结果，确保主错误和 State
                 # 更新顺序不依赖哈希或事件循环内部顺序。
@@ -250,6 +285,9 @@ class BasicScheduler:
                         nodes[node_id],
                         result,
                     )
+                    # 节点 ResultEnvelope 与终态同步原子落盘，后继节点只有在这个
+                    # checkpoint 成功后才会于下一轮获得调度机会。
+                    await self._checkpoint(checkpoint, state)
                     if should_abort and abort_result is None:
                         abort_result = result
 
@@ -258,6 +296,7 @@ class BasicScheduler:
                 if abort_result is not None:
                     await self._cancel_running(running, state)
                     self._cancel_unstarted(state)
+                    await self._checkpoint(checkpoint, state)
                     break
         except asyncio.CancelledError:
             # 外部 task cancellation 是控制流，不转换成普通 FAILED 结果。
@@ -266,6 +305,13 @@ class BasicScheduler:
             state.status = PlanExecutionStatus.CANCELLED
             state.updated_at = datetime.now(UTC)
             state.completed_at = state.updated_at
+            state.state_version += 1
+            # 外部 Task cancellation 必须继续传播；checkpoint 失败不能把控制流
+            # 替换成普通存储异常，因此这里只做 best-effort 持久化。
+            try:
+                await self._checkpoint(checkpoint, state)
+            except Exception:
+                pass
             raise
         except Exception:
             # 即便 Scheduler 自身出现未预期异常，也必须清理子 Task 后再向 Engine
@@ -281,7 +327,23 @@ class BasicScheduler:
         # 调度停止后统一组合最终 ResultEnvelope，再由该结果驱动 Plan 状态收尾。
         result = self._compose_result(plan, state, results, abort_result, signal)
         self._finish_state(state, result)
+        await self._checkpoint(checkpoint, state)
         return SchedulerOutcome(result=result, state=state)
+
+    @staticmethod
+    async def _checkpoint(
+        callback: CheckpointCallback | None,
+        state: PlanExecutionState,
+    ) -> None:
+        """在稳定状态迁移边界保存快照；未配置 Store 时保持零开销语义。"""
+
+        if callback is not None:
+            try:
+                await callback(state)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                raise CheckpointError("plan checkpoint failed") from exc
 
     def _advance_pending(
         self,
@@ -369,12 +431,13 @@ class BasicScheduler:
         parent: Span | None,
         trace_enabled: bool,
         cancellation: CancellationSignal,
+        checkpoint_attempt: AttemptCheckpointCallback | None = None,
     ) -> tuple[str, ResultEnvelope, int]:
         """执行单个 READY 节点，并返回尚未写入 Plan State 的统一结果。
 
         本方法运行在独立 asyncio Task 中。它负责 PLAN_NODE Span、输入解析和
-        CapabilityInvoker 调用；共享 PlanExecutionState 仍由主调度协程串行更新，
-        从而避免多个节点 Task 同时修改状态对象。
+        CapabilityInvoker 调用；绝大多数 PlanExecutionState 迁移仍由主调度协程
+        串行更新。Retry 只通过受控 callback 更新 attempt 并串行 checkpoint。
         """
 
         # PLAN_NODE 是 Registry/Policy/Capability Span 的父级，能在同一 Plan Trace
@@ -438,6 +501,8 @@ class BasicScheduler:
             result = ResultEnvelope.cancelled()
             for attempt in range(1, node.retry_policy.max_attempts + 1):
                 attempts = attempt
+                if attempt > 1 and checkpoint_attempt is not None:
+                    await checkpoint_attempt(attempt)
                 # Scheduler 禁止裸调 Provider；每一次尝试都重新经过 Invoker，因此
                 # PRE_EXECUTE Policy、Registry 解析和调用 Trace 不会被重试绕过。
                 result = await self._invoker.invoke(
@@ -468,6 +533,10 @@ class BasicScheduler:
         except asyncio.CancelledError:
             # 内部 fail-fast 或外部取消都必须以 CANCELLED 结束 PLAN_NODE Span。
             self._lifecycle.finish_cancelled(node_span)
+            raise
+        except CheckpointError as exc:
+            # Checkpoint 是执行基础设施边界，不能伪装成普通 Capability failure。
+            self._lifecycle.finish_error(node_span, exc)
             raise
         except BindingResolutionError as exc:
             # Binding 属于 Plan 输入问题，归类为 REQUEST，而不是 Provider 执行失败。

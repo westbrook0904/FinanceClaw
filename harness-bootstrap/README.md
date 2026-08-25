@@ -10,6 +10,7 @@ build_harness()
 ├── PolicyEngine(AllowAllPolicy)
 ├── InMemoryTracer
 ├── DefaultInvocationContextFactory
+├── InMemoryStateStore
 ├── LocalPluginProvider / LocalPluginLoader
 └── HarnessRuntime
     ↓
@@ -25,6 +26,7 @@ HarnessApplication
 - `HarnessApplication.invoke(request)`：仅在 STARTED 状态调用 Runtime。
 - `HarnessApplication.execute_plan(request, plan)`：验证并执行 Plan。
 - `HarnessApplication.cancel_plan(plan_id, reason)`：取消当前进程内的活动 Plan。
+- `HarnessApplication.state_store`：当前组装使用的状态快照存储。
 - `HarnessApplication.shutdown()`：注销 Capability 并关闭全部插件。
 - `HarnessComponents`：组装完成后的只读组件快照。
 - `BootstrapState`：CREATED、STARTED、STOPPED。
@@ -35,6 +37,15 @@ HarnessApplication
 ```python
 async with build_harness() as app:
     result = await app.invoke(request)
+```
+
+需要持久化时显式注入 SQLite；默认内存实现不会创建文件：
+
+```python
+from harness_bootstrap import build_harness
+from harness_state import SQLiteStateStore
+
+app = build_harness(state_store=SQLiteStateStore("financeclaw-state.db"))
 ```
 
 ## 生命周期

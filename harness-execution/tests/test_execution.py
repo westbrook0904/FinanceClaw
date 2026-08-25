@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import tempfile
 import unittest
+from pathlib import Path
 
 from harness_contracts import (
     CapabilityDescriptor,
@@ -44,6 +46,7 @@ from harness_policy import AllowAllPolicy, PolicyEngine
 from harness_registry import InMemoryCapabilityRegistry, RegistryCapabilityCatalog
 from harness_runtime import CapabilityInvoker, DefaultInvocationContextFactory, InvocationLifecycle
 from harness_spi import ToolRequest, ToolSPI
+from harness_state import SQLiteStateStore, StateStore
 from harness_trace import InMemoryTracer, SpanType
 
 
@@ -155,7 +158,10 @@ class ReliabilityTool(ToolSPI):
         return ResultEnvelope.success(ResultOutput(type="json", data={"calls": self.calls}))
 
 
-def make_engine(*providers: ToolSPI) -> tuple[ExecutionEngine, InMemoryTracer]:
+def make_engine(
+    *providers: ToolSPI,
+    state_store: StateStore | None = None,
+) -> tuple[ExecutionEngine, InMemoryTracer]:
     registry = InMemoryCapabilityRegistry()
     for provider in providers:
         registry.register(provider, plugin_id="execution-tests")
@@ -173,7 +179,17 @@ def make_engine(*providers: ToolSPI) -> tuple[ExecutionEngine, InMemoryTracer]:
     )
     validator = PlanValidator(RegistryCapabilityCatalog(registry))
     scheduler = BasicScheduler(invoker, tracer, lifecycle)
-    return ExecutionEngine(validator, scheduler, invoker, tracer, lifecycle), tracer
+    return (
+        ExecutionEngine(
+            validator,
+            scheduler,
+            invoker,
+            tracer,
+            lifecycle,
+            state_store=state_store,
+        ),
+        tracer,
+    )
 
 
 def make_request() -> Request:
@@ -271,6 +287,40 @@ class ResolutionTests(unittest.TestCase):
 
 
 class ExecutionEngineTests(unittest.IsolatedAsyncioTestCase):
+    async def test_sqlite_checkpoints_running_and_terminal_snapshots(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            started = asyncio.Event()
+            tool = ReliabilityTool(
+                "checkpoint.work/v1",
+                delay=0.05,
+                started=started,
+            )
+            database = Path(directory) / "execution.db"
+            store = SQLiteStateStore(database)
+            engine, _ = make_engine(tool, state_store=store)
+            request = make_request()
+            plan = ExecutionPlan(
+                plan_id="checkpoint-plan",
+                nodes=(PlanNode(node_id="work", capability="checkpoint.work/v1"),),
+            )
+
+            execution = asyncio.create_task(engine.execute(request, plan))
+            await asyncio.wait_for(started.wait(), timeout=1)
+            running = await SQLiteStateStore(database).load(plan.plan_id)
+
+            self.assertEqual(running.state.status.value, "running")
+            self.assertEqual(running.state.nodes["work"].status.value, "running")
+            self.assertEqual(running.context.request, request)
+
+            result = await execution
+            terminal = await SQLiteStateStore(database).load(plan.plan_id)
+
+            self.assertEqual(result.status, ResultStatus.SUCCESS)
+            self.assertEqual(terminal.plan, plan)
+            self.assertEqual(terminal.state.status.value, "succeeded")
+            self.assertEqual(terminal.state.nodes["work"].result.status, ResultStatus.SUCCESS)
+            self.assertGreater(terminal.state_version, running.state_version)
+
     async def test_serial_nodes_resolve_request_and_node_output_bindings(self) -> None:
         calls: list[str] = []
         first = ControlledTool("step.first/v1", calls)
@@ -650,6 +700,9 @@ class ExecutionEngineTests(unittest.IsolatedAsyncioTestCase):
         state = engine.state("cancel-plan")
         self.assertEqual(state.nodes["running"].status, NodeExecutionStatus.CANCELLED)
         self.assertEqual(state.nodes["pending"].status, NodeExecutionStatus.CANCELLED)
+        record = await engine.state_store.load("cancel-plan")
+        self.assertTrue(record.context.cancellation.cancelled)
+        self.assertEqual(record.context.cancellation.reason, "user requested")
         self.assertIs(await engine.cancel("unknown-plan"), False)
 
     async def test_cancel_before_scheduler_run_prevents_provider_call(self) -> None:

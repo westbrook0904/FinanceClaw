@@ -59,6 +59,7 @@ from .plan import (
     RetryPolicy,
     ValueReference,
 )
+from .persistence import PlanExecutionRecord
 from .request import Request, RequestInput, RequestOptions, RequestTarget
 from .result import Continuation, ResultEnvelope, ResultIssue, ResultOutput, ResultStatus
 
@@ -102,6 +103,7 @@ __all__ = [
     "PlanBudget",
     "PlanEdge",
     "PlanExecutionState",
+    "PlanExecutionRecord",
     "PlanExecutionStatus",
     "PlanNode",
     "PlanNodeKind",

@@ -7,6 +7,7 @@ import asyncio
 from harness_contracts import (
     CapabilityError,
     ExecutionPlan,
+    PlanExecutionRecord,
     PlanExecutionState,
     Request,
     RequestError,
@@ -14,6 +15,7 @@ from harness_contracts import (
 )
 from harness_planning import PlanValidationError, PlanValidator
 from harness_runtime import CapabilityInvoker, InvocationLifecycle
+from harness_state import InMemoryStateStore, StateStore
 from harness_trace import SpanType, Tracer
 
 from .cancellation import CancellationSignal
@@ -30,6 +32,7 @@ class ExecutionEngine:
         invoker: CapabilityInvoker,
         tracer: Tracer,
         lifecycle: InvocationLifecycle,
+        state_store: StateStore | None = None,
     ) -> None:
         if not isinstance(validator, PlanValidator):
             raise TypeError("validator must be PlanValidator")
@@ -43,11 +46,15 @@ class ExecutionEngine:
             raise TypeError("lifecycle must be InvocationLifecycle")
         if invoker.tracer is not tracer or invoker.lifecycle is not lifecycle:
             raise ValueError("engine components must share one tracer and lifecycle")
+        effective_state_store = state_store or InMemoryStateStore()
+        if not isinstance(effective_state_store, StateStore):
+            raise TypeError("state_store must implement StateStore")
         self._validator = validator
         self._scheduler = scheduler
         self._invoker = invoker
         self._tracer = tracer
         self._lifecycle = lifecycle
+        self._state_store = effective_state_store
         self._states: dict[str, PlanExecutionState] = {}
         # active 只保存当前进程内正在推进的 Plan。Signal 与序列化 State 分离，
         # 后续多进程取消需要由 StateStore/消息机制替换这一索引。
@@ -61,6 +68,10 @@ class ExecutionEngine:
     @property
     def scheduler(self) -> BasicScheduler:
         return self._scheduler
+
+    @property
+    def state_store(self) -> StateStore:
+        return self._state_store
 
     async def execute(self, request: Request, plan: ExecutionPlan) -> ResultEnvelope:
         """创建并推进一个 Plan，直到最终状态或明确 WAITING。"""
@@ -98,6 +109,30 @@ class ExecutionEngine:
 
         signal = CancellationSignal()
         registered = False
+        record_created = False
+        checkpoint_lock = asyncio.Lock()
+
+        async def checkpoint(state: PlanExecutionState) -> None:
+            """把 Scheduler 状态包装成可恢复记录并保存为完整快照。"""
+
+            nonlocal record_created
+            # Retry Task 可能与其他并行节点几乎同时到达 checkpoint；串行化快照和
+            # 写入可确保较旧 state_version 不会在较新版本之后覆盖数据库记录。
+            async with checkpoint_lock:
+                state_snapshot = self._snapshot(state)
+                self._states[plan.plan_id] = state_snapshot
+                record = PlanExecutionRecord(
+                    plan_id=plan.plan_id,
+                    plan=plan,
+                    context=context.model_copy(update={"cancellation": signal.snapshot()}),
+                    state=state_snapshot,
+                )
+                if record_created:
+                    await self._state_store.save(record)
+                else:
+                    await self._state_store.create(record)
+                    record_created = True
+
         try:
             async with self._active_lock:
                 if plan.plan_id in self._active:
@@ -116,6 +151,7 @@ class ExecutionEngine:
                 parent=plan_span,
                 trace_enabled=trace_enabled,
                 cancellation=signal,
+                checkpoint=checkpoint,
             )
             self._states[plan.plan_id] = self._snapshot(outcome.state)
             result = outcome.result
@@ -169,7 +205,7 @@ class ExecutionEngine:
             return signal.request(reason) if signal is not None else False
 
     def state(self, plan_id: str) -> PlanExecutionState | None:
-        """返回 Basic Scheduler 的内存状态快照；后续由 StateStore 替代。"""
+        """返回本进程最近 checkpoint 的缓存副本；持久记录由 StateStore 持有。"""
 
         state = self._states.get(plan_id)
         return self._snapshot(state) if state is not None else None

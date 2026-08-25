@@ -52,6 +52,7 @@ Trace finished
 | `harness-policy` | PRE_EXECUTE 策略链、拒绝短路和约束合并 |
 | `harness-trace` | Tracer SPI、内存 Trace 和 JSON Lines Console Trace |
 | `harness-runtime` | 单次 Invocation 的薄协调层、超时和错误归一化 |
+| `harness-state` | StateStore SPI、内存快照与 SQLite JSON Snapshot 持久化 |
 | `harness-bootstrap` | 默认依赖组装与应用启动/关闭生命周期 |
 | `plugins/*` | Echo Agent、Calculator Tool 和模拟财经 Agent |
 | `tests/*` | 契约、模块、插件和完整主链验证说明 |
@@ -100,7 +101,7 @@ asyncio.run(main())
 安装项目后可分别运行所有模块测试：
 
 ```bash
-for suite in harness-contracts harness-spi harness-registry harness-plugin-local harness-policy harness-trace harness-runtime harness-planning harness-execution harness-bootstrap plugins; do
+for suite in harness-contracts harness-spi harness-registry harness-plugin-local harness-policy harness-trace harness-runtime harness-planning harness-state harness-execution harness-bootstrap plugins; do
   .venv/bin/python -m unittest discover -s "$suite/tests" -v || exit 1
 done
 ```
@@ -115,4 +116,5 @@ done
 
 ## 阶段一非目标
 
-当前不实现 Planner、LLM Router、多 Agent 编排、Memory、RAG、Workflow、远程插件、MCP、HTTP Provider、数据库持久化、OpenTelemetry 后端或热升级。
+当前不实现 LLM Router、Memory、RAG、远程插件、MCP、HTTP Provider、生产级分布式
+数据库调度、OpenTelemetry 后端或热升级。

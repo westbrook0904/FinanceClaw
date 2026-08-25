@@ -18,6 +18,7 @@ from harness_runtime import (
     InvocationContextFactory,
     InvocationLifecycle,
 )
+from harness_state import StateStore
 from harness_trace import Tracer
 
 
@@ -49,6 +50,7 @@ class HarnessComponents:
     runtime: HarnessRuntime
     scheduler: BasicScheduler
     execution_engine: ExecutionEngine
+    state_store: StateStore
 
 
 class HarnessApplication:
@@ -84,6 +86,10 @@ class HarnessApplication:
     @property
     def scheduler(self) -> BasicScheduler:
         return self._components.scheduler
+
+    @property
+    def state_store(self) -> StateStore:
+        return self._components.state_store
 
     @property
     def registry(self) -> CapabilityRegistry:
