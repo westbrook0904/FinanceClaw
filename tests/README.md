@@ -14,6 +14,7 @@
 | Trace | `harness-trace/tests` | Span 生命周期、层级、续接和 Console 输出 |
 | Runtime | `harness-runtime/tests` | 完整 Invocation、超时、取消和错误归一化 |
 | Planning | `harness-planning/tests` | DAG、引用、条件、Binding 与可执行性校验 |
+| Execution | `harness-execution/tests` | 串行、并行、Join、分支、失败与并发限制 |
 | Bootstrap | `harness-bootstrap/tests` | 依赖组装、状态机和启动失败回滚 |
 | Plugins | `plugins/tests` | 三个插件行为、打包和 Bootstrap 集成 |
 
@@ -22,7 +23,7 @@
 安装项目后：
 
 ```bash
-for suite in harness-contracts harness-spi harness-registry harness-plugin-local harness-policy harness-trace harness-runtime harness-planning harness-bootstrap plugins; do
+for suite in harness-contracts harness-spi harness-registry harness-plugin-local harness-policy harness-trace harness-runtime harness-planning harness-execution harness-bootstrap plugins; do
   .venv/bin/python -m unittest discover -s "$suite/tests" -v || exit 1
 done
 ```

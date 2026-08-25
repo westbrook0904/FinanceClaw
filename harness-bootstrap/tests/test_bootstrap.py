@@ -13,7 +13,11 @@ from harness_bootstrap import (
 from harness_contracts import (
     CapabilityDescriptor,
     CapabilityType,
+    ExecutionPlan,
     InvocationContext,
+    LiteralBinding,
+    NodeOutputBinding,
+    PlanNode,
     PluginError,
     Request,
     RequestInput,
@@ -114,6 +118,8 @@ class BootstrapFactoryTests(unittest.TestCase):
         self.assertIs(app.plan_validator.catalog, app.capability_catalog)
         self.assertIs(app.runtime.invoker, app.invoker)
         self.assertIs(app.runtime.lifecycle, app.components.lifecycle)
+        self.assertIs(app.execution_engine.validator, app.plan_validator)
+        self.assertIs(app.execution_engine.scheduler, app.components.scheduler)
         self.assertEqual(len(app.policy_engine.policies), 1)
         self.assertIsInstance(app.policy_engine.policies[0], AllowAllPolicy)
         self.assertEqual(app.registry.list(), ())
@@ -175,6 +181,38 @@ class BootstrapFactoryTests(unittest.TestCase):
 
 
 class BootstrapLifecycleTests(unittest.IsolatedAsyncioTestCase):
+    async def test_execute_plan_uses_bootstrapped_engine_and_invoker(self) -> None:
+        tool = EchoTool()
+        app = build_harness(
+            plugins=(StubPlugin("echo-plugin", (tool,)),),
+            entry_point_group=None,
+        )
+        await app.start()
+        request = Request(input=RequestInput(type="json", content={}))
+        plan = ExecutionPlan(
+            plan_id="bootstrap-plan",
+            nodes=(
+                PlanNode(
+                    node_id="echo",
+                    capability="echo.tool/v1",
+                    input_mapping={"message": LiteralBinding(value="from plan")},
+                ),
+            ),
+            outputs={
+                "message": NodeOutputBinding(
+                    node_id="echo",
+                    pointer="/output/data/message",
+                )
+            },
+        )
+
+        result = await app.execute_plan(request, plan)
+
+        self.assertEqual(result.status, ResultStatus.SUCCESS)
+        self.assertEqual(result.output.data["message"], "from plan")
+        self.assertIsNotNone(app.execution_engine.state("bootstrap-plan"))
+        await app.shutdown()
+
     async def test_start_loads_plugin_and_runtime_can_invoke_it(self) -> None:
         tool = EchoTool()
         plugin = StubPlugin("echo-plugin", (tool,))

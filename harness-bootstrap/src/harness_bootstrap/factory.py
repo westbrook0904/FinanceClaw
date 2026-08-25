@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
+from harness_execution import BasicScheduler, ExecutionEngine
 from harness_plugin_local import LocalPluginLoader, LocalPluginProvider
 from harness_planning import PlanValidator
 from harness_policy import AllowAllPolicy, Policy, PolicyEngine
@@ -110,6 +111,14 @@ def build_harness(
         effective_tracer,
         lifecycle=lifecycle,
     )
+    scheduler = BasicScheduler(invoker, effective_tracer, lifecycle)
+    execution_engine = ExecutionEngine(
+        effective_plan_validator,
+        scheduler,
+        invoker,
+        effective_tracer,
+        lifecycle,
+    )
     runtime = HarnessRuntime(
         effective_registry,
         effective_policy_engine,
@@ -130,5 +139,7 @@ def build_harness(
             lifecycle=lifecycle,
             invoker=invoker,
             runtime=runtime,
+            scheduler=scheduler,
+            execution_engine=execution_engine,
         )
     )

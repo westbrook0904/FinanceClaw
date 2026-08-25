@@ -21,6 +21,9 @@ class SpanType(StrEnum):
     CAPABILITY = "capability"
     AGENT = "agent"
     TOOL = "tool"
+    PLAN = "plan"
+    PLAN_NODE = "plan_node"
+    SCHEDULER = "scheduler"
 
 
 class SpanStatus(StrEnum):

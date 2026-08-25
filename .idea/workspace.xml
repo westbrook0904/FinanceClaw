@@ -4,23 +4,22 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="0d67a81b-cd68-49de-9544-1b30058fe17e" name="Changes" comment="构造单能力点调用，区分runtime的direct调用和单能力调用">
-      <change afterPath="$PROJECT_DIR$/harness-planning/README.md" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/harness-planning/src/harness_planning/__init__.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/harness-planning/src/harness_planning/models.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/harness-planning/src/harness_planning/py.typed" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/harness-planning/src/harness_planning/validator.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/harness-planning/tests/test_validator.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/harness-registry/src/harness_registry/catalog.py" afterDir="false" />
+    <list default="true" id="0d67a81b-cd68-49de-9544-1b30058fe17e" name="Changes" comment="1、新增 [harness-planning](/Users/hebinghui/PycharmProjects/FinanceClaw/harness-planning/README.md) 模块。&#10;&#10;2、在 [validator.py](/Users/hebinghui/PycharmProjects/FinanceClaw/harness-planning/src/harness_planning/validator.py) 实现：&#10;- 空计划、重复节点和节点类型校验&#10;- Edge 起点/终点和自连接校验&#10;- Root 检查与 DAG 环检测&#10;- Input/Output Binding 引用及祖先可达性校验&#10;- JSON Pointer 顶层字段校验&#10;- Condition 结构、引用和数据可用性校验&#10;- Timeout、Retry、Deadline 和 FailurePolicy 校验&#10;- Approval/Capability 节点字段约束&#10;- 可选 Capability 可执行性校验&#10;&#10;3、新增结构化 PlanValidationIssue、PlanValidationCode 和聚合异常 PlanValidationError。&#10;&#10;4、新增只读 [CapabilityCatalog](/Users/hebinghui/PycharmProjects/FinanceClaw/harness-registry/src/harness_registry/catalog.py)，Planning 层无法取得 Provider 实例。&#10;&#10;5、Bootstrap 已组装并公开 capability_catalog 和 plan_validator。&#10;&#10;6、更新项目打包与测试文档。">
+      <change afterPath="$PROJECT_DIR$/harness-execution/README.md" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/harness-execution/src/harness_execution/__init__.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/harness-execution/src/harness_execution/engine.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/harness-execution/src/harness_execution/py.typed" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/harness-execution/src/harness_execution/resolution.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/harness-execution/src/harness_execution/scheduler.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/harness-execution/tests/test_execution.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/FinanceClaw.iml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/FinanceClaw.iml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/harness-bootstrap/src/harness_bootstrap/application.py" beforeDir="false" afterPath="$PROJECT_DIR$/harness-bootstrap/src/harness_bootstrap/application.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/harness-bootstrap/src/harness_bootstrap/factory.py" beforeDir="false" afterPath="$PROJECT_DIR$/harness-bootstrap/src/harness_bootstrap/factory.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/harness-bootstrap/tests/test_bootstrap.py" beforeDir="false" afterPath="$PROJECT_DIR$/harness-bootstrap/tests/test_bootstrap.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/harness-registry/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/harness-registry/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/harness-registry/src/harness_registry/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/harness-registry/src/harness_registry/__init__.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/harness-registry/tests/test_registry.py" beforeDir="false" afterPath="$PROJECT_DIR$/harness-registry/tests/test_registry.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/harness-trace/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/harness-trace/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/harness-trace/src/harness_trace/models.py" beforeDir="false" afterPath="$PROJECT_DIR$/harness-trace/src/harness_trace/models.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/pyproject.toml" beforeDir="false" afterPath="$PROJECT_DIR$/pyproject.toml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/tests/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/tests/README.md" afterDir="false" />
     </list>
@@ -201,7 +200,7 @@
       <updated>1787569286380</updated>
       <workItem from="1787569287520" duration="1000" />
       <workItem from="1787571075492" duration="31000" />
-      <workItem from="1787572776988" duration="23924000" />
+      <workItem from="1787572776988" duration="27356000" />
     </task>
     <task id="LOCAL-00001" summary="init project">
       <option name="closed" value="true" />
@@ -323,7 +322,15 @@
       <option name="project" value="LOCAL" />
       <updated>1787667278544</updated>
     </task>
-    <option name="localTasksCounter" value="16" />
+    <task id="LOCAL-00016" summary="1、新增 [harness-planning](/Users/hebinghui/PycharmProjects/FinanceClaw/harness-planning/README.md) 模块。&#10;&#10;2、在 [validator.py](/Users/hebinghui/PycharmProjects/FinanceClaw/harness-planning/src/harness_planning/validator.py) 实现：&#10;- 空计划、重复节点和节点类型校验&#10;- Edge 起点/终点和自连接校验&#10;- Root 检查与 DAG 环检测&#10;- Input/Output Binding 引用及祖先可达性校验&#10;- JSON Pointer 顶层字段校验&#10;- Condition 结构、引用和数据可用性校验&#10;- Timeout、Retry、Deadline 和 FailurePolicy 校验&#10;- Approval/Capability 节点字段约束&#10;- 可选 Capability 可执行性校验&#10;&#10;3、新增结构化 PlanValidationIssue、PlanValidationCode 和聚合异常 PlanValidationError。&#10;&#10;4、新增只读 [CapabilityCatalog](/Users/hebinghui/PycharmProjects/FinanceClaw/harness-registry/src/harness_registry/catalog.py)，Planning 层无法取得 Provider 实例。&#10;&#10;5、Bootstrap 已组装并公开 capability_catalog 和 plan_validator。&#10;&#10;6、更新项目打包与测试文档。">
+      <option name="closed" value="true" />
+      <created>1787668706883</created>
+      <option name="number" value="00016" />
+      <option name="presentableId" value="LOCAL-00016" />
+      <option name="project" value="LOCAL" />
+      <updated>1787668706883</updated>
+    </task>
+    <option name="localTasksCounter" value="17" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -368,7 +375,8 @@
     <MESSAGE value="put state-2 doc" />
     <MESSAGE value="define DAG" />
     <MESSAGE value="构造单能力点调用，区分runtime的direct调用和单能力调用" />
-    <option name="LAST_COMMIT_MESSAGE" value="构造单能力点调用，区分runtime的direct调用和单能力调用" />
+    <MESSAGE value="1、新增 [harness-planning](/Users/hebinghui/PycharmProjects/FinanceClaw/harness-planning/README.md) 模块。&#10;&#10;2、在 [validator.py](/Users/hebinghui/PycharmProjects/FinanceClaw/harness-planning/src/harness_planning/validator.py) 实现：&#10;- 空计划、重复节点和节点类型校验&#10;- Edge 起点/终点和自连接校验&#10;- Root 检查与 DAG 环检测&#10;- Input/Output Binding 引用及祖先可达性校验&#10;- JSON Pointer 顶层字段校验&#10;- Condition 结构、引用和数据可用性校验&#10;- Timeout、Retry、Deadline 和 FailurePolicy 校验&#10;- Approval/Capability 节点字段约束&#10;- 可选 Capability 可执行性校验&#10;&#10;3、新增结构化 PlanValidationIssue、PlanValidationCode 和聚合异常 PlanValidationError。&#10;&#10;4、新增只读 [CapabilityCatalog](/Users/hebinghui/PycharmProjects/FinanceClaw/harness-registry/src/harness_registry/catalog.py)，Planning 层无法取得 Provider 实例。&#10;&#10;5、Bootstrap 已组装并公开 capability_catalog 和 plan_validator。&#10;&#10;6、更新项目打包与测试文档。" />
+    <option name="LAST_COMMIT_MESSAGE" value="1、新增 [harness-planning](/Users/hebinghui/PycharmProjects/FinanceClaw/harness-planning/README.md) 模块。&#10;&#10;2、在 [validator.py](/Users/hebinghui/PycharmProjects/FinanceClaw/harness-planning/src/harness_planning/validator.py) 实现：&#10;- 空计划、重复节点和节点类型校验&#10;- Edge 起点/终点和自连接校验&#10;- Root 检查与 DAG 环检测&#10;- Input/Output Binding 引用及祖先可达性校验&#10;- JSON Pointer 顶层字段校验&#10;- Condition 结构、引用和数据可用性校验&#10;- Timeout、Retry、Deadline 和 FailurePolicy 校验&#10;- Approval/Capability 节点字段约束&#10;- 可选 Capability 可执行性校验&#10;&#10;3、新增结构化 PlanValidationIssue、PlanValidationCode 和聚合异常 PlanValidationError。&#10;&#10;4、新增只读 [CapabilityCatalog](/Users/hebinghui/PycharmProjects/FinanceClaw/harness-registry/src/harness_registry/catalog.py)，Planning 层无法取得 Provider 实例。&#10;&#10;5、Bootstrap 已组装并公开 capability_catalog 和 plan_validator。&#10;&#10;6、更新项目打包与测试文档。" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>

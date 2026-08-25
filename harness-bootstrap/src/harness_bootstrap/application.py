@@ -6,7 +6,8 @@ import asyncio
 from dataclasses import dataclass
 from enum import StrEnum
 
-from harness_contracts import Request, ResultEnvelope
+from harness_contracts import ExecutionPlan, Request, ResultEnvelope
+from harness_execution import BasicScheduler, ExecutionEngine
 from harness_plugin_local import LoadedPlugin, LocalPluginLoader
 from harness_planning import PlanValidator
 from harness_policy import PolicyEngine
@@ -46,6 +47,8 @@ class HarnessComponents:
     lifecycle: InvocationLifecycle
     invoker: CapabilityInvoker
     runtime: HarnessRuntime
+    scheduler: BasicScheduler
+    execution_engine: ExecutionEngine
 
 
 class HarnessApplication:
@@ -73,6 +76,14 @@ class HarnessApplication:
     @property
     def invoker(self) -> CapabilityInvoker:
         return self._components.invoker
+
+    @property
+    def execution_engine(self) -> ExecutionEngine:
+        return self._components.execution_engine
+
+    @property
+    def scheduler(self) -> BasicScheduler:
+        return self._components.scheduler
 
     @property
     def registry(self) -> CapabilityRegistry:
@@ -136,6 +147,17 @@ class HarnessApplication:
         if self._state is not BootstrapState.STARTED:
             raise BootstrapStateError("harness application must be started before invoke")
         return await self._components.runtime.invoke(request)
+
+    async def execute_plan(
+        self,
+        request: Request,
+        plan: ExecutionPlan,
+    ) -> ResultEnvelope:
+        """仅在应用启动后验证并推进一个 ExecutionPlan。"""
+
+        if self._state is not BootstrapState.STARTED:
+            raise BootstrapStateError("harness application must be started before execute_plan")
+        return await self._components.execution_engine.execute(request, plan)
 
     async def __aenter__(self) -> HarnessApplication:
         await self.start()

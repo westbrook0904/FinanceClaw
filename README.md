@@ -44,6 +44,7 @@ Trace finished
 | 模块 | 阶段一实现 |
 |---|---|
 | `harness-contracts` | Request、Context、Capability、Result 和 Error 稳定协议 |
+| `harness-execution` | Basic Scheduler、DAG 状态机、Binding/Condition 求值与 Plan 执行 |
 | `harness-spi` | 语义独立的 Agent、Tool、Plugin 扩展接口 |
 | `harness-registry` | 线程安全的内存能力注册、过滤和唯一解析 |
 | `harness-plugin-local` | 显式集合/entry point 发现、插件生命周期和失败回滚 |
@@ -99,7 +100,7 @@ asyncio.run(main())
 安装项目后可分别运行所有模块测试：
 
 ```bash
-for suite in harness-contracts harness-spi harness-registry harness-plugin-local harness-policy harness-trace harness-runtime harness-planning harness-bootstrap plugins; do
+for suite in harness-contracts harness-spi harness-registry harness-plugin-local harness-policy harness-trace harness-runtime harness-planning harness-execution harness-bootstrap plugins; do
   .venv/bin/python -m unittest discover -s "$suite/tests" -v || exit 1
 done
 ```

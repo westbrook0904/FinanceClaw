@@ -1,5 +1,8 @@
 # harness-trace
 
+第二阶段在第一阶段 Request/Runtime/Capability Span 基础上增加 `PLAN`、
+`PLAN_NODE` 和 `SCHEDULER` 类型，用于表达计划与节点的稳定执行层级。
+
 `harness-trace` 提供与观测厂商无关的 Trace、Span 和 Event 抽象。Runtime 面向本模块的 `Tracer` 编程，不直接依赖 OpenTelemetry SDK。
 
 ## 公共 API
