@@ -4,12 +4,25 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="0d67a81b-cd68-49de-9544-1b30058fe17e" name="Changes" comment="define DAG">
+    <list default="true" id="0d67a81b-cd68-49de-9544-1b30058fe17e" name="Changes" comment="构造单能力点调用，区分runtime的direct调用和单能力调用">
+      <change afterPath="$PROJECT_DIR$/harness-planning/README.md" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/harness-planning/src/harness_planning/__init__.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/harness-planning/src/harness_planning/models.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/harness-planning/src/harness_planning/py.typed" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/harness-planning/src/harness_planning/validator.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/harness-planning/tests/test_validator.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/harness-registry/src/harness_registry/catalog.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/FinanceClaw.iml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/FinanceClaw.iml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/harness-bootstrap/src/harness_bootstrap/application.py" beforeDir="false" afterPath="$PROJECT_DIR$/harness-bootstrap/src/harness_bootstrap/application.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/harness-bootstrap/src/harness_bootstrap/factory.py" beforeDir="false" afterPath="$PROJECT_DIR$/harness-bootstrap/src/harness_bootstrap/factory.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/harness-runtime/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/harness-runtime/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/harness-runtime/src/harness_runtime/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/harness-runtime/src/harness_runtime/__init__.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/harness-runtime/src/harness_runtime/runtime.py" beforeDir="false" afterPath="$PROJECT_DIR$/harness-runtime/src/harness_runtime/runtime.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/harness-bootstrap/tests/test_bootstrap.py" beforeDir="false" afterPath="$PROJECT_DIR$/harness-bootstrap/tests/test_bootstrap.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/harness-registry/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/harness-registry/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/harness-registry/src/harness_registry/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/harness-registry/src/harness_registry/__init__.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/harness-registry/tests/test_registry.py" beforeDir="false" afterPath="$PROJECT_DIR$/harness-registry/tests/test_registry.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/pyproject.toml" beforeDir="false" afterPath="$PROJECT_DIR$/pyproject.toml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tests/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/tests/README.md" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -188,7 +201,7 @@
       <updated>1787569286380</updated>
       <workItem from="1787569287520" duration="1000" />
       <workItem from="1787571075492" duration="31000" />
-      <workItem from="1787572776988" duration="21883000" />
+      <workItem from="1787572776988" duration="23924000" />
     </task>
     <task id="LOCAL-00001" summary="init project">
       <option name="closed" value="true" />
@@ -302,7 +315,15 @@
       <option name="project" value="LOCAL" />
       <updated>1787664345329</updated>
     </task>
-    <option name="localTasksCounter" value="15" />
+    <task id="LOCAL-00015" summary="构造单能力点调用，区分runtime的direct调用和单能力调用">
+      <option name="closed" value="true" />
+      <created>1787667278544</created>
+      <option name="number" value="00015" />
+      <option name="presentableId" value="LOCAL-00015" />
+      <option name="project" value="LOCAL" />
+      <updated>1787667278544</updated>
+    </task>
+    <option name="localTasksCounter" value="16" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -346,7 +367,8 @@
     <MESSAGE value="Phase One Description" />
     <MESSAGE value="put state-2 doc" />
     <MESSAGE value="define DAG" />
-    <option name="LAST_COMMIT_MESSAGE" value="define DAG" />
+    <MESSAGE value="构造单能力点调用，区分runtime的direct调用和单能力调用" />
+    <option name="LAST_COMMIT_MESSAGE" value="构造单能力点调用，区分runtime的direct调用和单能力调用" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>

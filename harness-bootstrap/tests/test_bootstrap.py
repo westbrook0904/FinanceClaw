@@ -22,8 +22,10 @@ from harness_contracts import (
     ResultOutput,
     ResultStatus,
 )
+from harness_plugin_local import LocalPluginProvider
 from harness_policy import AllowAllPolicy, Policy, PolicyContext, PolicyDecision, PolicyEngine
-from harness_registry import InMemoryCapabilityRegistry
+from harness_planning import PlanValidator
+from harness_registry import InMemoryCapabilityRegistry, RegistryCapabilityCatalog
 from harness_runtime import CapabilityInvoker, DefaultInvocationContextFactory
 from harness_spi import PluginManifest, PluginSPI, ToolRequest, ToolSPI
 from harness_trace import InMemoryTracer
@@ -107,6 +109,9 @@ class BootstrapFactoryTests(unittest.TestCase):
             DefaultInvocationContextFactory,
         )
         self.assertIsInstance(app.invoker, CapabilityInvoker)
+        self.assertIsInstance(app.capability_catalog, RegistryCapabilityCatalog)
+        self.assertIsInstance(app.plan_validator, PlanValidator)
+        self.assertIs(app.plan_validator.catalog, app.capability_catalog)
         self.assertIs(app.runtime.invoker, app.invoker)
         self.assertIs(app.runtime.lifecycle, app.components.lifecycle)
         self.assertEqual(len(app.policy_engine.policies), 1)
@@ -119,12 +124,16 @@ class BootstrapFactoryTests(unittest.TestCase):
         policy_engine = PolicyEngine((AllowAllPolicy(),))
         tracer = InMemoryTracer()
         context_factory = DefaultInvocationContextFactory()
+        capability_catalog = RegistryCapabilityCatalog(registry)
+        plan_validator = PlanValidator(capability_catalog)
 
         app = build_harness(
             registry=registry,
             policy_engine=policy_engine,
             tracer=tracer,
             context_factory=context_factory,
+            capability_catalog=capability_catalog,
+            plan_validator=plan_validator,
             entry_point_group=None,
         )
 
@@ -132,6 +141,8 @@ class BootstrapFactoryTests(unittest.TestCase):
         self.assertIs(app.policy_engine, policy_engine)
         self.assertIs(app.tracer, tracer)
         self.assertIs(app.components.context_factory, context_factory)
+        self.assertIs(app.capability_catalog, capability_catalog)
+        self.assertIs(app.plan_validator, plan_validator)
 
     def test_rejects_ambiguous_policy_configuration(self) -> None:
         with self.assertRaises(ValueError):
@@ -141,10 +152,19 @@ class BootstrapFactoryTests(unittest.TestCase):
                 entry_point_group=None,
             )
 
+    def test_rejects_mismatched_catalog_and_validator(self) -> None:
+        first = RegistryCapabilityCatalog(InMemoryCapabilityRegistry())
+        second = RegistryCapabilityCatalog(InMemoryCapabilityRegistry())
+
+        with self.assertRaises(ValueError):
+            build_harness(
+                capability_catalog=first,
+                plan_validator=PlanValidator(second),
+                entry_point_group=None,
+            )
+
     def test_rejects_plugins_with_custom_plugin_provider(self) -> None:
         plugin = StubPlugin("echo", (EchoTool(),))
-
-        from harness_plugin_local import LocalPluginProvider
 
         with self.assertRaises(ValueError):
             build_harness(

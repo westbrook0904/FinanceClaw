@@ -47,6 +47,7 @@ Trace finished
 | `harness-spi` | 语义独立的 Agent、Tool、Plugin 扩展接口 |
 | `harness-registry` | 线程安全的内存能力注册、过滤和唯一解析 |
 | `harness-plugin-local` | 显式集合/entry point 发现、插件生命周期和失败回滚 |
+| `harness-planning` | ExecutionPlan 结构、引用、DAG 与 Capability 可执行性校验 |
 | `harness-policy` | PRE_EXECUTE 策略链、拒绝短路和约束合并 |
 | `harness-trace` | Tracer SPI、内存 Trace 和 JSON Lines Console Trace |
 | `harness-runtime` | 单次 Invocation 的薄协调层、超时和错误归一化 |
@@ -98,7 +99,7 @@ asyncio.run(main())
 安装项目后可分别运行所有模块测试：
 
 ```bash
-for suite in harness-contracts harness-spi harness-registry harness-plugin-local harness-policy harness-trace harness-runtime harness-bootstrap plugins; do
+for suite in harness-contracts harness-spi harness-registry harness-plugin-local harness-policy harness-trace harness-runtime harness-planning harness-bootstrap plugins; do
   .venv/bin/python -m unittest discover -s "$suite/tests" -v || exit 1
 done
 ```

@@ -4,12 +4,15 @@
 也不向业务代码暴露通用 Service Locator。
 """
 
+from .catalog import CapabilityCatalog, RegistryCapabilityCatalog
 from .models import CapabilityQuery, ResolvedCapability
 from .registry import CapabilityRegistry, InMemoryCapabilityRegistry
 
 __all__ = [
+    "CapabilityCatalog",
     "CapabilityQuery",
     "CapabilityRegistry",
     "InMemoryCapabilityRegistry",
+    "RegistryCapabilityCatalog",
     "ResolvedCapability",
 ]

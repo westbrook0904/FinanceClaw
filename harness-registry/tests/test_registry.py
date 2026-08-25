@@ -11,7 +11,11 @@ from harness_contracts import (
     RegistryError,
     ResultEnvelope,
 )
-from harness_registry import CapabilityQuery, InMemoryCapabilityRegistry
+from harness_registry import (
+    CapabilityQuery,
+    InMemoryCapabilityRegistry,
+    RegistryCapabilityCatalog,
+)
 from harness_spi import ToolRequest, ToolSPI
 
 
@@ -102,6 +106,16 @@ class RegistryTests(unittest.TestCase):
 
         self.assertEqual(raised.exception.code, "HARNESS.REGISTRY.OWNER_MISMATCH")
         self.assertIsNotNone(self.registry.get("math.add/v1"))
+
+    def test_catalog_exposes_descriptors_without_provider_instances(self) -> None:
+        self.registry.register(self.add, plugin_id="calculator")
+        catalog = RegistryCapabilityCatalog(self.registry)
+
+        descriptor = catalog.get("math.add/v1")
+
+        self.assertIs(descriptor, self.add.descriptor())
+        self.assertEqual(catalog.list(), (self.add.descriptor(),))
+        self.assertFalse(hasattr(descriptor, "provider"))
 
 
 if __name__ == "__main__":

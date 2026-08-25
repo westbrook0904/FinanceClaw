@@ -8,6 +8,8 @@
 - `InMemoryCapabilityRegistry`：线程安全的阶段一内存实现。
 - `CapabilityQuery`：按 Capability ID、类型、标签、版本和 Plugin ID 过滤，条件采用 AND 语义。
 - `ResolvedCapability`：包含 Descriptor、所属 `plugin_id` 和实际 Provider。
+- `CapabilityCatalog`：只向 Planning 层暴露 Descriptor 的只读目录抽象。
+- `RegistryCapabilityCatalog`：Registry 到只读 Catalog 的实时投影视图，不暴露 Provider。
 
 ## 存储与查询语义
 

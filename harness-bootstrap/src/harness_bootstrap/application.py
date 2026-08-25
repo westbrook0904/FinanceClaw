@@ -1,4 +1,4 @@
-"""阶段一 Harness 应用生命周期。"""
+"""Harness 应用与本地插件生命周期。"""
 
 from __future__ import annotations
 
@@ -8,8 +8,9 @@ from enum import StrEnum
 
 from harness_contracts import Request, ResultEnvelope
 from harness_plugin_local import LoadedPlugin, LocalPluginLoader
+from harness_planning import PlanValidator
 from harness_policy import PolicyEngine
-from harness_registry import CapabilityRegistry
+from harness_registry import CapabilityCatalog, CapabilityRegistry
 from harness_runtime import (
     CapabilityInvoker,
     HarnessRuntime,
@@ -40,6 +41,8 @@ class HarnessComponents:
     tracer: Tracer
     plugin_loader: LocalPluginLoader
     context_factory: InvocationContextFactory
+    capability_catalog: CapabilityCatalog
+    plan_validator: PlanValidator
     lifecycle: InvocationLifecycle
     invoker: CapabilityInvoker
     runtime: HarnessRuntime
@@ -74,6 +77,14 @@ class HarnessApplication:
     @property
     def registry(self) -> CapabilityRegistry:
         return self._components.registry
+
+    @property
+    def capability_catalog(self) -> CapabilityCatalog:
+        return self._components.capability_catalog
+
+    @property
+    def plan_validator(self) -> PlanValidator:
+        return self._components.plan_validator
 
     @property
     def policy_engine(self) -> PolicyEngine:
