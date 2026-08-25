@@ -24,7 +24,7 @@ from harness_contracts import (
 )
 from harness_policy import AllowAllPolicy, Policy, PolicyContext, PolicyDecision, PolicyEngine
 from harness_registry import InMemoryCapabilityRegistry
-from harness_runtime import DefaultInvocationContextFactory
+from harness_runtime import CapabilityInvoker, DefaultInvocationContextFactory
 from harness_spi import PluginManifest, PluginSPI, ToolRequest, ToolSPI
 from harness_trace import InMemoryTracer
 
@@ -106,6 +106,9 @@ class BootstrapFactoryTests(unittest.TestCase):
             app.components.context_factory,
             DefaultInvocationContextFactory,
         )
+        self.assertIsInstance(app.invoker, CapabilityInvoker)
+        self.assertIs(app.runtime.invoker, app.invoker)
+        self.assertIs(app.runtime.lifecycle, app.components.lifecycle)
         self.assertEqual(len(app.policy_engine.policies), 1)
         self.assertIsInstance(app.policy_engine.policies[0], AllowAllPolicy)
         self.assertEqual(app.registry.list(), ())

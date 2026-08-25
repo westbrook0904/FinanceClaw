@@ -25,6 +25,7 @@ from harness_contracts import (
 from harness_policy import AllowAllPolicy, Policy, PolicyContext, PolicyDecision, PolicyEngine
 from harness_registry import InMemoryCapabilityRegistry
 from harness_runtime import (
+    CapabilityInvoker,
     DefaultInvocationContextFactory,
     HarnessRuntime,
     InvocationContextFactory,
@@ -241,7 +242,78 @@ class ContextFactoryTests(unittest.TestCase):
         )
 
 
+class CapabilityInvokerTests(unittest.IsolatedAsyncioTestCase):
+    async def test_invoker_executes_targetless_plan_context_through_controlled_boundary(
+        self,
+    ) -> None:
+        agent = RecordingAgent()
+        runtime, _, tracer = make_runtime(agent)
+        request = Request(
+            request_id="plan-request",
+            input=RequestInput(type="json", content={"text": "from plan"}),
+        )
+        context = DefaultInvocationContextFactory().create(request)
+
+        result = await runtime.invoker.invoke(
+            "echo.reply/v1",
+            request.input,
+            context,
+        )
+
+        self.assertIsInstance(runtime.invoker, CapabilityInvoker)
+        self.assertEqual(result.status, ResultStatus.SUCCESS)
+        self.assertEqual(result.output.data["text"], "from plan")
+        self.assertEqual(result.trace_id, "trace-1")
+        spans = tracer.spans(trace_id=result.trace_id)
+        self.assertEqual(
+            [span.type for span in spans],
+            [
+                SpanType.REGISTRY_RESOLVE,
+                SpanType.POLICY,
+                SpanType.CAPABILITY,
+                SpanType.AGENT,
+            ],
+        )
+        self.assertTrue(all(span.status is SpanStatus.OK for span in spans))
+
+    async def test_invoker_normalizes_registry_failure_without_runtime_wrapper(self) -> None:
+        agent = RecordingAgent()
+        runtime, registry, tracer = make_runtime(agent)
+        registry.unregister("echo.reply/v1", plugin_id="test-plugin")
+        request = Request(input=RequestInput(type="json", content={}))
+        context = DefaultInvocationContextFactory().create(request)
+
+        result = await runtime.invoker.invoke(
+            "echo.reply/v1",
+            request.input,
+            context,
+        )
+
+        self.assertEqual(result.status, ResultStatus.FAILED)
+        self.assertEqual(result.error.category, ErrorCategory.REGISTRY)
+        self.assertEqual(result.trace_id, "trace-1")
+        self.assertEqual(tracer.spans()[0].status, SpanStatus.ERROR)
+
+
 class RuntimeTests(unittest.IsolatedAsyncioTestCase):
+    async def test_direct_invoke_requires_target(self) -> None:
+        agent = RecordingAgent()
+        runtime, _, tracer = make_runtime(agent)
+        request = Request(input=RequestInput(type="json", content={}))
+
+        result = await runtime.invoke(request)
+
+        self.assertEqual(result.status, ResultStatus.FAILED)
+        self.assertEqual(result.error.code, "HARNESS.REQUEST.TARGET_REQUIRED")
+        self.assertEqual(agent.calls, 0)
+        self.assertEqual(
+            [span.type for span in tracer.spans()],
+            [SpanType.REQUEST, SpanType.RUNTIME],
+        )
+        self.assertTrue(
+            all(span.status is SpanStatus.ERROR for span in tracer.spans())
+        )
+
     async def test_agent_success_runs_full_phase_one_pipeline(self) -> None:
         agent = RecordingAgent()
         runtime, _, tracer = make_runtime(agent)

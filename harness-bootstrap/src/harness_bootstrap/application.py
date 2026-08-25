@@ -10,7 +10,12 @@ from harness_contracts import Request, ResultEnvelope
 from harness_plugin_local import LoadedPlugin, LocalPluginLoader
 from harness_policy import PolicyEngine
 from harness_registry import CapabilityRegistry
-from harness_runtime import HarnessRuntime, InvocationContextFactory
+from harness_runtime import (
+    CapabilityInvoker,
+    HarnessRuntime,
+    InvocationContextFactory,
+    InvocationLifecycle,
+)
 from harness_trace import Tracer
 
 
@@ -35,6 +40,8 @@ class HarnessComponents:
     tracer: Tracer
     plugin_loader: LocalPluginLoader
     context_factory: InvocationContextFactory
+    lifecycle: InvocationLifecycle
+    invoker: CapabilityInvoker
     runtime: HarnessRuntime
 
 
@@ -59,6 +66,10 @@ class HarnessApplication:
     @property
     def runtime(self) -> HarnessRuntime:
         return self._components.runtime
+
+    @property
+    def invoker(self) -> CapabilityInvoker:
+        return self._components.invoker
 
     @property
     def registry(self) -> CapabilityRegistry:

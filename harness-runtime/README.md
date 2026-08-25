@@ -1,10 +1,19 @@
 # harness-runtime
 
+`harness-runtime` 提供 Request 级 Direct Invocation 生命周期，以及供 Direct Runtime
+和后续 ExecutionEngine 共同使用的 `CapabilityInvoker` 受控调用边界。
+
+`CapabilityInvoker` 统一执行 Registry resolve、PRE_EXECUTE Policy、Capability Trace、
+Agent/Tool 调用、timeout、asyncio cancellation、错误和 ResultEnvelope 归一化。调用方
+不得绕过它直接从 Registry 取得 Provider 后执行。
+
 `harness-runtime` 是阶段一核心模块之间的薄协调层，负责一次 Request 的完整 Invocation 生命周期，不包含插件发现、业务路由或具体业务逻辑。
 
 ## 公共 API
 
 - `HarnessRuntime.invoke(Request) -> ResultEnvelope`
+- `CapabilityInvoker.invoke(capability_id, input, context, ...) -> ResultEnvelope`
+- `InvocationLifecycle`：共享 Context 创建、Trace 传播、结果与 Span 收尾语义。
 - `InvocationContextFactory.create(Request) -> InvocationContext`
 - `DefaultInvocationContextFactory`：构造最小可信 Context，并按 `timeout_ms` 计算 deadline。
 
@@ -62,6 +71,7 @@ Policy 位于 Registry 之后，因为阶段一 PolicyContext 需要已解析的
 .venv/bin/python -m unittest discover -s harness-runtime/tests -v
 ```
 
-## 阶段一非目标
+## 当前非目标
 
-不实现 Planner、LLM Router、多 Agent 编排、Memory、RAG、Workflow、PRE_ROUTE/POST_EXECUTE、远程 Provider 或数据持久化。
+本模块暂不实现 Planner、DAG Scheduler、Retry、Checkpoint/Resume、远程 Provider
+或数据持久化；这些能力按第二阶段后续里程碑独立实现。

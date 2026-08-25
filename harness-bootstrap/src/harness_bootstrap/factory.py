@@ -8,9 +8,11 @@ from harness_plugin_local import LocalPluginLoader, LocalPluginProvider
 from harness_policy import AllowAllPolicy, Policy, PolicyEngine
 from harness_registry import CapabilityRegistry, InMemoryCapabilityRegistry
 from harness_runtime import (
+    CapabilityInvoker,
     DefaultInvocationContextFactory,
     HarnessRuntime,
     InvocationContextFactory,
+    InvocationLifecycle,
 )
 from harness_spi import PluginSPI
 from harness_trace import InMemoryTracer, Tracer
@@ -65,11 +67,22 @@ def build_harness(
         )
     )
     plugin_loader = LocalPluginLoader(effective_registry, effective_provider)
+    lifecycle = InvocationLifecycle(
+        effective_tracer,
+        context_factory=effective_context_factory,
+    )
+    invoker = CapabilityInvoker(
+        effective_registry,
+        effective_policy_engine,
+        effective_tracer,
+        lifecycle=lifecycle,
+    )
     runtime = HarnessRuntime(
         effective_registry,
         effective_policy_engine,
         effective_tracer,
-        context_factory=effective_context_factory,
+        lifecycle=lifecycle,
+        invoker=invoker,
     )
 
     return HarnessApplication(
@@ -79,6 +92,8 @@ def build_harness(
             tracer=effective_tracer,
             plugin_loader=plugin_loader,
             context_factory=effective_context_factory,
+            lifecycle=lifecycle,
+            invoker=invoker,
             runtime=runtime,
         )
     )
