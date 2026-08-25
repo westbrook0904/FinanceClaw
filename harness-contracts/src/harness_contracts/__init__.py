@@ -3,8 +3,16 @@
 其他模块应从本包顶层导入稳定类型，不依赖内部文件布局。
 """
 
+from .approval import ApprovalDecision, ApprovalDecisionType, ApprovalRequest
 from .base import ContractModel, JsonPrimitive, JsonValue, MutableContractModel
-from .capability import CapabilityDescriptor, CapabilityType
+from .capability import (
+    CapabilityDescriptor,
+    CapabilityExecutionProfile,
+    CapabilityType,
+    EgressType,
+    IdempotencyType,
+    SideEffectType,
+)
 from .context import (
     CancellationContext,
     ExecutionState,
@@ -26,38 +34,93 @@ from .errors import (
     RegistryError,
     RequestError,
 )
+from .execution import (
+    NodeExecutionState,
+    NodeExecutionStatus,
+    PlanExecutionState,
+    PlanExecutionStatus,
+)
+from .plan import (
+    BindingKind,
+    ConditionExpr,
+    ConditionOperator,
+    EdgeTrigger,
+    ExecutionPlan,
+    FailurePolicy,
+    InputBinding,
+    LiteralBinding,
+    NodeOutputBinding,
+    OutputBinding,
+    PlanBudget,
+    PlanEdge,
+    PlanNode,
+    PlanNodeKind,
+    RequestBinding,
+    RetryPolicy,
+    ValueReference,
+)
 from .request import Request, RequestInput, RequestOptions, RequestTarget
-from .result import ResultEnvelope, ResultOutput, ResultStatus
+from .result import Continuation, ResultEnvelope, ResultIssue, ResultOutput, ResultStatus
 
 __all__ = [
+    "ApprovalDecision",
+    "ApprovalDecisionType",
+    "ApprovalRequest",
+    "BindingKind",
     "CancellationContext",
     "CapabilityDescriptor",
+    "CapabilityExecutionProfile",
     "CapabilityError",
     "CapabilityType",
+    "ConditionExpr",
+    "ConditionOperator",
+    "Continuation",
     "ContractModel",
+    "EdgeTrigger",
+    "EgressType",
     "ErrorCategory",
     "ErrorCode",
     "ErrorDetail",
     "ExecutionState",
     "ExecutionStatus",
+    "ExecutionPlan",
+    "FailurePolicy",
     "HarnessError",
     "HarnessTimeoutError",
     "IdentityContext",
+    "IdempotencyType",
+    "InputBinding",
     "InvocationContext",
     "JsonPrimitive",
     "JsonValue",
+    "LiteralBinding",
     "MutableContractModel",
+    "NodeExecutionState",
+    "NodeExecutionStatus",
+    "NodeOutputBinding",
+    "OutputBinding",
+    "PlanBudget",
+    "PlanEdge",
+    "PlanExecutionState",
+    "PlanExecutionStatus",
+    "PlanNode",
+    "PlanNodeKind",
     "PluginError",
     "PolicyError",
     "RegistryError",
     "Request",
+    "RequestBinding",
     "RequestError",
     "RequestInput",
     "RequestOptions",
     "RequestTarget",
     "ResultEnvelope",
+    "ResultIssue",
     "ResultOutput",
     "ResultStatus",
+    "RetryPolicy",
+    "SideEffectType",
     "TenantContext",
     "TraceContext",
+    "ValueReference",
 ]

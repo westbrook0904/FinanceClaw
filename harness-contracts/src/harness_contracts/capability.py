@@ -16,6 +16,32 @@ class CapabilityType(StrEnum):
     TOOL = "tool"
 
 
+class SideEffectType(StrEnum):
+    NONE = "none"
+    READ = "read"
+    WRITE = "write"
+
+
+class EgressType(StrEnum):
+    NONE = "none"
+    INTERNAL = "internal"
+    EXTERNAL = "external"
+
+
+class IdempotencyType(StrEnum):
+    NONE = "none"
+    OPTIONAL = "optional"
+    REQUIRED = "required"
+
+
+class CapabilityExecutionProfile(ContractModel):
+    """Scheduler 判断重试安全性所需的通用能力语义。"""
+
+    side_effect: SideEffectType = SideEffectType.NONE
+    egress: EgressType = EgressType.NONE
+    idempotency: IdempotencyType = IdempotencyType.NONE
+
+
 class CapabilityDescriptor(ContractModel):
     """Registry、Runtime 与 Plugin 共享的能力元数据。"""
 
@@ -25,5 +51,8 @@ class CapabilityDescriptor(ContractModel):
     version: NonEmptyString
     input_schema: FrozenJsonMapping = Field(default_factory=dict)
     output_schema: FrozenJsonMapping = Field(default_factory=dict)
+    execution_profile: CapabilityExecutionProfile = Field(
+        default_factory=CapabilityExecutionProfile
+    )
     tags: frozenset[str] = Field(default_factory=frozenset)
     metadata: FrozenJsonMapping = Field(default_factory=dict)

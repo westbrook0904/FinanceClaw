@@ -17,7 +17,7 @@ class RequestInput(ContractModel):
 
 
 class RequestTarget(ContractModel):
-    """阶段一的显式调用目标。
+    """Direct Invocation 的显式调用目标。
 
     `capability` 必填，因此 Runtime 暂时不需要 Planner 或 LLM Router。
     `plugin` 仅作为可选的 Provider 限定条件，能力名称仍是主要路由语义。
@@ -35,7 +35,7 @@ class RequestOptions(ContractModel):
 
 
 class Request(ContractModel):
-    """Harness 的标准请求入口。"""
+    """Harness 的标准请求入口；Plan 请求可以不指定直接调用目标。"""
 
     request_id: NonEmptyString = Field(default_factory=lambda: uuid4().hex)
     session_id: NonEmptyString | None = None
@@ -43,5 +43,5 @@ class Request(ContractModel):
     user_id: NonEmptyString | None = None
     input: RequestInput
     metadata: FrozenJsonMapping = Field(default_factory=dict)
-    target: RequestTarget
+    target: RequestTarget | None = None
     options: RequestOptions = Field(default_factory=RequestOptions)
