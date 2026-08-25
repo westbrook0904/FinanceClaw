@@ -12,6 +12,7 @@
       <sourceFolder url="file://$MODULE_DIR$/harness-registry/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/harness-registry/tests" isTestSource="true" />
       <sourceFolder url="file://$MODULE_DIR$/harness-runtime/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/harness-runtime/tests" isTestSource="true" />
       <sourceFolder url="file://$MODULE_DIR$/harness-spi/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/harness-spi/tests" isTestSource="true" />
       <sourceFolder url="file://$MODULE_DIR$/harness-trace/src" isTestSource="false" />
