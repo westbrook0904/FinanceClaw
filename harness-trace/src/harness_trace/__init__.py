@@ -1,5 +1,20 @@
 """Trace、Span 与 Event 的观测抽象。
 
-本包隔离具体追踪后端，使 Runtime 不需要直接依赖 OpenTelemetry 或其他厂商 SDK。
+Runtime 只依赖本包的 ``Tracer`` SPI，不直接依赖 OpenTelemetry 或其他厂商 SDK。
 """
 
+from .console import ConsoleTracer
+from .models import Span, SpanStatus, SpanType, TraceError, TraceEvent
+from .tracer import InMemoryTracer, TraceStateError, Tracer
+
+__all__ = [
+    "ConsoleTracer",
+    "InMemoryTracer",
+    "Span",
+    "SpanStatus",
+    "SpanType",
+    "TraceError",
+    "TraceEvent",
+    "TraceStateError",
+    "Tracer",
+]

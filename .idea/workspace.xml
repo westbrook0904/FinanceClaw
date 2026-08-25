@@ -4,12 +4,14 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="0d67a81b-cd68-49de-9544-1b30058fe17e" name="Changes" comment="init harness-spi modules">
-      <change beforePath="$PROJECT_DIR$/harness-plugin-local/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/harness-plugin-local/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/harness-plugin-local/src/harness_plugin_local/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/harness-plugin-local/src/harness_plugin_local/__init__.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/harness-registry/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/harness-registry/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/harness-registry/src/harness_registry/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/harness-registry/src/harness_registry/__init__.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/pyproject.toml" beforeDir="false" afterPath="$PROJECT_DIR$/pyproject.toml" afterDir="false" />
+    <list default="true" id="0d67a81b-cd68-49de-9544-1b30058fe17e" name="Changes" comment="init harness-registry and harness-plugin-local modules">
+      <change afterPath="$PROJECT_DIR$/harness-trace/src/harness_trace/console.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/harness-trace/src/harness_trace/models.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/harness-trace/src/harness_trace/py.typed" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/harness-trace/src/harness_trace/tracer.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/harness-trace/tests/test_trace.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/harness-trace/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/harness-trace/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/harness-trace/src/harness_trace/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/harness-trace/src/harness_trace/__init__.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -181,7 +183,7 @@
       <updated>1787569286380</updated>
       <workItem from="1787569287520" duration="1000" />
       <workItem from="1787571075492" duration="31000" />
-      <workItem from="1787572776988" duration="13782000" />
+      <workItem from="1787572776988" duration="15500000" />
     </task>
     <task id="LOCAL-00001" summary="init project">
       <option name="closed" value="true" />
@@ -215,7 +217,15 @@
       <option name="project" value="LOCAL" />
       <updated>1787586052276</updated>
     </task>
-    <option name="localTasksCounter" value="5" />
+    <task id="LOCAL-00005" summary="init harness-registry and harness-plugin-local modules">
+      <option name="closed" value="true" />
+      <created>1787588677349</created>
+      <option name="number" value="00005" />
+      <option name="presentableId" value="LOCAL-00005" />
+      <option name="project" value="LOCAL" />
+      <updated>1787588677349</updated>
+    </task>
+    <option name="localTasksCounter" value="6" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -249,7 +259,8 @@
     <MESSAGE value="init stage 1 project structure" />
     <MESSAGE value="init harness-contracts modules" />
     <MESSAGE value="init harness-spi modules" />
-    <option name="LAST_COMMIT_MESSAGE" value="init harness-spi modules" />
+    <MESSAGE value="init harness-registry and harness-plugin-local modules" />
+    <option name="LAST_COMMIT_MESSAGE" value="init harness-registry and harness-plugin-local modules" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
