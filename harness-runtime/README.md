@@ -1,20 +1,14 @@
 # harness-runtime
 
-`harness-runtime` 负责一次 Invocation 的执行生命周期，是阶段一各核心模块之间的薄协调层。
+`harness-runtime` 是阶段一核心模块之间的薄协调层，负责一次 Request 的完整 Invocation 生命周期，不包含插件发现、业务路由或具体业务逻辑。
 
-## 职责
+## 公共 API
 
-- 接收标准 `Request`
-- 通过 `InvocationContextFactory` 构造可信、只读的 `InvocationContext`
-- 建立阶段一 Trace 层级
-- 通过 `CapabilityRegistry.resolve()` 解析目标能力
-- 执行 `PRE_EXECUTE` Policy 链
-- 根据 Provider 类型分别调用 `AgentSPI.invoke()` 或 `ToolSPI.execute()`
-- 应用单次 Capability 调用超时
-- 把拒绝、失败和成功统一归一化成 `ResultEnvelope`
-- 在调用方取消 task 时关闭 Trace 并继续传播取消语义
+- `HarnessRuntime.invoke(Request) -> ResultEnvelope`
+- `InvocationContextFactory.create(Request) -> InvocationContext`
+- `DefaultInvocationContextFactory`：构造最小可信 Context，并按 `timeout_ms` 计算 deadline。
 
-阶段一实际执行顺序为：
+## 执行顺序
 
 ```text
 Request
@@ -23,64 +17,51 @@ ContextFactory.create
   ↓
 REQUEST / RUNTIME trace
   ↓
-Registry.resolve
+Registry.resolve(CapabilityQuery)
   ↓
-PRE_EXECUTE Policy
+PRE_EXECUTE PolicyEngine
   ↓
 CAPABILITY
-  └── AGENT / TOOL
+  └── AgentSPI.invoke / ToolSPI.execute
   ↓
 ResultEnvelope normalize
   ↓
-Trace finish
+finish Trace
 ```
 
-Policy 放在 Registry 之后是有意的：阶段一只实现 `PRE_EXECUTE`，而当前
-`PolicyContext` 需要已经解析出的 `CapabilityDescriptor`。阶段一不实现 `PRE_ROUTE`。
+Policy 位于 Registry 之后，因为阶段一 PolicyContext 需要已解析的 CapabilityDescriptor。RequestTarget 中可选的 `plugin` 会作为 Provider 来源限定条件参与 Registry 查询。
 
-## Context 边界
+## Agent 与 Tool 适配
 
-默认 `DefaultInvocationContextFactory` **不会**把 Request 中的 `user_id` 或
-`tenant_id` 直接当作可信 Identity/Tenant。认证和租户解析应在应用/Bootstrap 边界完成，
-通过自定义 `InvocationContextFactory` 注入 Runtime。
+- Agent 接收 `AgentRequest(input=request.input)`。
+- Tool 要求 `RequestInput.content` 是 JSON object，并转换为 `ToolRequest(arguments=content)`。
+- Provider SPI 类型必须与 Descriptor 的 `CapabilityType` 一致。
+- Provider 必须返回 `ResultEnvelope`，否则归一化为 Capability failure。
 
-如果 Request 设置了 `timeout_ms`，默认 Factory 同时计算 `deadline_at`；Runtime 在实际
-Agent/Tool 调用处执行对应的 asyncio timeout。
+## Context 与安全边界
 
-## Trace 层级
+默认 Factory 不把 Request 中的 `user_id`、`tenant_id` 直接提升为可信 IdentityContext/TenantContext。认证和租户解析应在应用边界完成，并通过自定义 `InvocationContextFactory` 注入。
 
-Runtime 产生：
+## 超时、取消和错误
 
-```text
-REQUEST
-└── RUNTIME
-    ├── REGISTRY_RESOLVE
-    ├── POLICY
-    └── CAPABILITY
-        └── AGENT / TOOL
+- `RequestOptions.timeout_ms` 通过 `asyncio.timeout()` 应用于实际 Provider 调用。
+- 调用方取消 task 时，Runtime 关闭开放 Span 并继续传播 `CancelledError`。
+- Request、Registry、Policy、Capability 和 Timeout 异常统一转换为 `ResultEnvelope.failure()`。
+- Policy 拒绝转换为 `ResultEnvelope.denied()`，不会调用 Provider。
+- Trace 开启时，最终结果统一携带 REQUEST trace ID。
+
+## 依赖边界
+
+允许依赖 Contracts、SPI、Registry、Policy 和 Trace。Runtime 不依赖具体插件，也不负责 Plugin 生命周期。
+
+## 测试
+
+项目安装后运行：
+
+```bash
+.venv/bin/python -m unittest discover -s harness-runtime/tests -v
 ```
-
-`request.options.trace = false` 时 Runtime 不产生 Span，也不会给结果强制注入 trace id。
-
-## 依赖
-
-允许依赖：
-
-- `harness-contracts`
-- `harness-spi`
-- `harness-registry`
-- `harness-policy`
-- `harness-trace`
-
-Runtime 不依赖具体 Plugin 实现，也不负责本地插件发现和生命周期。
 
 ## 阶段一非目标
 
-- Planner / LLM Router
-- 多 Agent 编排
-- Memory / RAG / Workflow
-- SQL、金融指标、Prompt、数据源等业务逻辑
-- PRE_ROUTE / POST_EXECUTE Policy
-- Remote Agent / MCP / HTTP Provider
-- OpenTelemetry 等具体 Trace 后端
-- 数据库持久化
+不实现 Planner、LLM Router、多 Agent 编排、Memory、RAG、Workflow、PRE_ROUTE/POST_EXECUTE、远程 Provider 或数据持久化。

@@ -1,32 +1,50 @@
 # harness-spi
 
-## 职责
+`harness-spi` 定义业务插件面向 Harness 实现的扩展点，只依赖 `harness-contracts`。
 
-定义插件扩展点：统一的 Capability 描述，以及语义独立的 Agent、Tool、Plugin 接口和生命周期。
+## 公共 API
+
+- `Capability`：只统一无副作用的 `descriptor()`。
+- `AgentSPI`：异步 `invoke(AgentRequest, InvocationContext)`。
+- `ToolSPI`：异步 `execute(ToolRequest, InvocationContext)`。
+- `PluginSPI`：提供 `manifest()`、`capabilities()`、`initialize()` 和 `shutdown()`。
+- `AgentRequest`：保留原始 `RequestInput`，可附加 Agent instructions。
+- `ToolRequest`：包含深度不可变的结构化 `arguments`。
+- `PluginManifest`：声明插件身份、实现版本、SDK 版本和 Capability ID。
+- `validate_manifest_capabilities()`：校验 Manifest 声明与 Provider Descriptor 完全一致。
+
+## Agent、Tool 与 Plugin
+
+Agent 和 Tool 共享 Descriptor、Context、Result 和 Error，但保留不同执行语义：
+
+```text
+AgentSPI.invoke()  → 自主任务处理
+ToolSPI.execute() → 明确、单步、确定性操作
+```
+
+Plugin 是发现、打包和生命周期单位，不是执行语义。一个 Plugin 可以只提供 Agent、只提供 Tool，也可以提供多个不同类型的 Provider；每个 Provider 仍有独立 Capability ID。
+
+这里刻意不存在万能的 `Plugin.execute()`。
+
+## 生命周期契约
+
+- `manifest()`、`capabilities()` 在插件存活期间应稳定且无副作用。
+- `initialize()`、`shutdown()` 由 Loader 调用，插件实现必须幂等。
+- Plugin Manifest 中的 Capability ID 不允许为空或重复。
+- Agent/Tool 最终都必须返回 `ResultEnvelope`。
 
 ## 依赖边界
 
-- 只允许依赖 `harness-contracts`。
-- Agent 与 Tool 可共享描述、结果和错误，但不强行共享完全相同的执行语义。
-- 不提供万能的 `Plugin.execute()` 接口。
+业务插件只能面向本模块和 `harness-contracts` 编程，不依赖 Runtime、Registry、Policy、Trace 或 Bootstrap。
+
+## 测试
+
+项目安装后运行：
+
+```bash
+.venv/bin/python -m unittest discover -s harness-spi/tests -v
+```
 
 ## 阶段一非目标
 
 不实现远程 Agent、MCP、HTTP Provider、流式调用或热升级。
-
-## 公共接口
-
-- `Capability`：只统一 `descriptor()`，不统一 Agent 与 Tool 的执行方法。
-- `AgentSPI`：异步 `invoke(AgentRequest, InvocationContext)`。
-- `ToolSPI`：异步 `execute(ToolRequest, InvocationContext)`。
-- `PluginSPI`：提供 `manifest()`、`capabilities()`、`initialize()` 和 `shutdown()`；不提供万能执行入口。
-- `PluginManifest`：声明插件身份、SDK 版本和 Capability ID；Loader 注册前应使用 `validate_manifest_capabilities()` 校验清单与 Provider 一致。
-
-`manifest()`、`capabilities()` 应稳定且无副作用；生命周期方法应由 Loader 顺序调用，插件实现应保证初始化和关闭幂等。
-
-## 运行测试
-
-```bash
-PYTHONPATH=harness-contracts/src:harness-spi/src \
-  .venv/bin/python -m unittest discover -s harness-spi/tests -v
-```
