@@ -35,3 +35,32 @@ fail-fast、continue-on-failure、Plan 级并发限制、Retry、Deadline 与 Ca
 
 跨进程恢复需要使用 SQLite 等持久化 `StateStore`；默认 `InMemoryStateStore` 只适合
 单进程测试和默认组装。
+
+## Human Approval
+
+显式 `PlanNodeKind.APPROVAL` 是 Execution Engine 的一等等待节点，不注册为
+Capability，也不会长期占用 asyncio Task。节点到达后：
+
+1. Scheduler 先把节点推进到 `WAITING`；
+2. `ApprovalCoordinator` 生成持久化 `ApprovalRequest` 并写入
+   `PlanExecutionState.pending_approvals`；
+3. 当前 API 返回 `ResultStatus.ACCEPTED`，Continuation 同时携带 `plan_id`、`node_id`
+   与稳定 `approval_id`；
+4. 外部调用 `ExecutionEngine.resolve_approval(plan_id, decision)`；
+5. `APPROVED` 映射为 Approval Node `SUCCEEDED`，`REJECTED` 映射为 `DENIED`；
+6. 决策后的快照先写回 StateStore，再复用 `resume(plan_id)` 继续 DAG。
+
+审批拒绝仍遵守 Node `failure_policy` 和普通 `EdgeTrigger.DENIED` 语义，因此可以选择
+fail-plan，也可以通过 `CONTINUE + DENIED edge` 进入补偿/拒绝分支。
+
+`ApprovalRequest` 不复制任意节点 metadata 或完整请求输入。显式 Approval Node 只读取
+以下专用安全摘要字段：
+
+- `metadata.approval_reason`
+- `metadata.approval_resource_category`
+- `metadata.approval_parameter_names`
+
+其他 metadata（包括 Secret、Token 或完整 Prompt）不会进入 ApprovalRequest。
+
+Policy 触发的 `REQUIRE_APPROVAL` 将在第二阶段第 10 步 Policy 完整化时接入；第 8 步
+先稳定共享的 ApprovalRequest / ApprovalDecision / WAITING / checkpoint / resume 基础链路。

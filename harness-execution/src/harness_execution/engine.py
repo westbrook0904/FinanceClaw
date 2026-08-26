@@ -6,6 +6,7 @@ import asyncio
 from datetime import UTC, datetime
 
 from harness_contracts import (
+    ApprovalDecision,
     CapabilityError,
     ExecutionPlan,
     HarnessTimeoutError,
@@ -23,6 +24,7 @@ from harness_runtime import CapabilityInvoker, InvocationLifecycle
 from harness_state import InMemoryStateStore, StateStore
 from harness_trace import SpanType, Tracer
 
+from .approval import ApprovalCoordinator
 from .cancellation import CancellationSignal
 from .recovery import ResumeCoordinator
 from .scheduler import BasicScheduler
@@ -71,6 +73,7 @@ class ExecutionEngine:
         self._lifecycle = lifecycle
         self._state_store = effective_state_store
         self._resume = ResumeCoordinator(scheduler)
+        self._approval = ApprovalCoordinator(scheduler)
         self._states: dict[str, PlanExecutionState] = {}
         # active 只保存当前进程内正在推进的 Plan。Signal 与序列化 State 分离，
         # 后续多进程取消需要由 StateStore/消息机制替换这一索引。
@@ -169,8 +172,22 @@ class ExecutionEngine:
                 cancellation=signal,
                 checkpoint=checkpoint,
             )
-            self._states[plan.plan_id] = self._snapshot(outcome.state)
-            result = outcome.result
+            state = self._snapshot(outcome.state)
+            materialized_approvals = self._approval.ensure_waiting_requests(plan, state)
+            if materialized_approvals:
+                await checkpoint(state)
+                if plan_span is not None:
+                    for approval in materialized_approvals:
+                        self._tracer.add_event(
+                            plan_span,
+                            "approval.requested",
+                            attributes={
+                                "approval_id": approval.approval_id,
+                                "node_id": approval.node_id,
+                            },
+                        )
+            self._states[plan.plan_id] = self._snapshot(state)
+            result = self._approval.refresh_accepted_result(outcome.result, state)
         except asyncio.CancelledError:
             self._lifecycle.finish_cancelled(plan_span)
             self._lifecycle.finish_cancelled(runtime_span)
@@ -231,6 +248,78 @@ class ExecutionEngine:
             )
             return ResultEnvelope.failure(error.to_detail())
         return await self._resume_record(record)
+
+    async def resolve_approval(
+        self,
+        plan_id: str,
+        decision: ApprovalDecision,
+    ) -> ResultEnvelope:
+        """持久化一个显式 ApprovalDecision，并继续推进同一个 Plan。
+
+        决策必须命中当前快照中的 pending ApprovalRequest。状态更新会先原子保存，
+        再复用 Resume 继续 DAG，因此审批完成不依赖原始 API Task 或进程存活。
+        """
+
+        if not isinstance(plan_id, str) or not plan_id.strip():
+            raise TypeError("plan_id must be a non-empty string")
+        if not isinstance(decision, ApprovalDecision):
+            raise TypeError("decision must be ApprovalDecision")
+
+        try:
+            record = await self._state_store.load(plan_id)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            error = RequestError(
+                "failed to load plan execution state for approval",
+                code="HARNESS.APPROVAL.STATE_LOAD_FAILED",
+                details={"plan_id": plan_id, "cause_type": type(exc).__name__},
+            )
+            return ResultEnvelope.failure(error.to_detail())
+        if record is None:
+            error = RequestError(
+                "plan execution state was not found",
+                code="HARNESS.PLAN.NOT_FOUND",
+                details={"plan_id": plan_id},
+            )
+            return ResultEnvelope.failure(error.to_detail())
+
+        try:
+            async with self._active_lock:
+                if plan_id in self._active:
+                    raise RequestError(
+                        "execution plan is already running",
+                        code="HARNESS.PLAN.ALREADY_RUNNING",
+                        details={"plan_id": plan_id},
+                    )
+            self._validator.validate(record.plan)
+            self._resume.validate(record.plan, record.state)
+            updated = self._approval.resolve(record, decision)
+            await self._state_store.save(updated)
+            self._states[plan_id] = self._snapshot(updated.state)
+        except asyncio.CancelledError:
+            raise
+        except PlanValidationError as exc:
+            error = RequestError(
+                "stored execution plan validation failed",
+                code="HARNESS.PLAN.INVALID",
+                details={
+                    "plan_id": plan_id,
+                    "issues": [issue.model_dump(mode="json") for issue in exc.issues],
+                },
+            )
+            return ResultEnvelope.failure(error.to_detail())
+        except RequestError as exc:
+            return ResultEnvelope.failure(exc.to_detail())
+        except Exception as exc:
+            error = CapabilityError(
+                "failed to persist approval decision",
+                code="HARNESS.APPROVAL.RESOLUTION_FAILED",
+                details={"plan_id": plan_id, "cause_type": type(exc).__name__},
+            )
+            return ResultEnvelope.failure(error.to_detail())
+
+        return await self._resume_record(updated)
 
     async def _resume_record(self, record: PlanExecutionRecord) -> ResultEnvelope:
         plan = record.plan
@@ -308,6 +397,20 @@ class ExecutionEngine:
 
             self._validator.validate(plan)
             self._resume.validate(plan, state)
+            materialized_approvals = self._approval.ensure_waiting_requests(plan, state)
+            if materialized_approvals:
+                await checkpoint(state)
+                if plan_span is not None:
+                    for approval in materialized_approvals:
+                        self._tracer.add_event(
+                            plan_span,
+                            "approval.requested",
+                            attributes={
+                                "approval_id": approval.approval_id,
+                                "node_id": approval.node_id,
+                                "recovered": True,
+                            },
+                        )
             stored_result = (
                 self._stored_terminal_result(state)
                 if state.status in _TERMINAL_PLAN_STATUSES
@@ -341,6 +444,7 @@ class ExecutionEngine:
                         node_state.result = None
                         node_state.waiting_reason = None
                         node_state.continuation = None
+                state.pending_approvals.clear()
                 state.status = PlanExecutionStatus.FAILED
                 state.updated_at = now
                 state.completed_at = now

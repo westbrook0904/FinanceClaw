@@ -26,6 +26,7 @@ HarnessApplication
 - `HarnessApplication.invoke(request)`：仅在 STARTED 状态调用 Runtime。
 - `HarnessApplication.execute_plan(request, plan)`：验证并执行 Plan。
 - `HarnessApplication.resume_plan(plan_id)`：从 StateStore 恢复并继续同一个 Plan。
+- `HarnessApplication.resolve_approval(plan_id, decision)`：持久化显式审批决定并继续 Plan。
 - `HarnessApplication.cancel_plan(plan_id, reason)`：取消当前进程内的活动 Plan。
 - `HarnessApplication.state_store`：当前组装使用的状态快照存储。
 - `HarnessApplication.shutdown()`：注销 Capability 并关闭全部插件。
@@ -67,7 +68,7 @@ STOPPED
 - 重复 `shutdown()` 幂等。
 - STOPPED 应用不能重新启动，应重新调用 `build_harness()`。
 - 启动批次失败由 LocalPluginLoader 回滚，应用保持 CREATED。
-- `invoke()`、`execute_plan()`、`resume_plan()` 与 `cancel_plan()` 在 CREATED/STOPPED
+- `invoke()`、`execute_plan()`、`resume_plan()`、`resolve_approval()` 与 `cancel_plan()` 在 CREATED/STOPPED
   状态抛出 `BootstrapStateError`。
 
 ## 插件发现
@@ -89,3 +90,17 @@ Bootstrap 可以依赖所有阶段一 Harness 基础设施，因为它是最外�
 ## 阶段一非目标
 
 不实现 Planner、Workflow、多 Agent DAG、业务路由、SQL/RAG/LLM、Remote Plugin、MCP 或数据库持久化。
+
+显式 Approval Node 返回 `ACCEPTED` 后，可使用 Continuation 中的 `approval_id` 提交决定：
+
+```python
+from harness_contracts import ApprovalDecision, ApprovalDecisionType
+
+waiting = await app.execute_plan(request, plan)
+decision = ApprovalDecision(
+    approval_id=waiting.continuation.approval_id,
+    decision=ApprovalDecisionType.APPROVED,
+    decided_by="reviewer-42",
+)
+result = await app.resolve_approval(plan.plan_id, decision)
+```

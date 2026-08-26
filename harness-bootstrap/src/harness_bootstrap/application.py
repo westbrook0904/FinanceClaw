@@ -6,7 +6,7 @@ import asyncio
 from dataclasses import dataclass
 from enum import StrEnum
 
-from harness_contracts import ExecutionPlan, Request, ResultEnvelope
+from harness_contracts import ApprovalDecision, ExecutionPlan, Request, ResultEnvelope
 from harness_execution import BasicScheduler, ExecutionEngine
 from harness_plugin_local import LoadedPlugin, LocalPluginLoader
 from harness_planning import PlanValidator
@@ -171,6 +171,19 @@ class HarnessApplication:
         if self._state is not BootstrapState.STARTED:
             raise BootstrapStateError("harness application must be started before resume_plan")
         return await self._components.execution_engine.resume(plan_id)
+
+    async def resolve_approval(
+        self,
+        plan_id: str,
+        decision: ApprovalDecision,
+    ) -> ResultEnvelope:
+        """持久化显式审批决定，并继续推进同一个 Plan。"""
+
+        if self._state is not BootstrapState.STARTED:
+            raise BootstrapStateError(
+                "harness application must be started before resolve_approval"
+            )
+        return await self._components.execution_engine.resolve_approval(plan_id, decision)
 
     async def cancel_plan(self, plan_id: str, reason: str | None = None) -> bool:
         """请求取消当前进程内由 ExecutionEngine 推进的活动 Plan。"""
