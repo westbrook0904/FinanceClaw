@@ -22,6 +22,24 @@ class CancellationSignal:
         self._requested_at: datetime | None = None
         self._clock = clock or (lambda: datetime.now(UTC))
 
+    @classmethod
+    def from_snapshot(
+        cls,
+        snapshot: CancellationContext,
+        *,
+        clock: Callable[[], datetime] | None = None,
+    ) -> CancellationSignal:
+        """从持久化取消快照恢复进程内 Signal，而不重置原始取消时间。"""
+
+        if not isinstance(snapshot, CancellationContext):
+            raise TypeError("snapshot must be CancellationContext")
+        signal = cls(clock=clock)
+        if snapshot.cancelled:
+            signal._reason = snapshot.reason
+            signal._requested_at = snapshot.requested_at
+            signal._event.set()
+        return signal
+
     @property
     def cancelled(self) -> bool:
         """取消是否已经被请求。"""

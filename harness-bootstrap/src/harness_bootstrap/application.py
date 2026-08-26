@@ -165,6 +165,13 @@ class HarnessApplication:
             raise BootstrapStateError("harness application must be started before execute_plan")
         return await self._components.execution_engine.execute(request, plan)
 
+    async def resume_plan(self, plan_id: str) -> ResultEnvelope:
+        """仅在应用启动后从 StateStore 恢复并继续同一个 plan_id。"""
+
+        if self._state is not BootstrapState.STARTED:
+            raise BootstrapStateError("harness application must be started before resume_plan")
+        return await self._components.execution_engine.resume(plan_id)
+
     async def cancel_plan(self, plan_id: str, reason: str | None = None) -> bool:
         """请求取消当前进程内由 ExecutionEngine 推进的活动 Plan。"""
 

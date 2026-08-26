@@ -25,6 +25,7 @@ HarnessApplication
 - `HarnessApplication.start()`：发现、初始化并注册插件。
 - `HarnessApplication.invoke(request)`：仅在 STARTED 状态调用 Runtime。
 - `HarnessApplication.execute_plan(request, plan)`：验证并执行 Plan。
+- `HarnessApplication.resume_plan(plan_id)`：从 StateStore 恢复并继续同一个 Plan。
 - `HarnessApplication.cancel_plan(plan_id, reason)`：取消当前进程内的活动 Plan。
 - `HarnessApplication.state_store`：当前组装使用的状态快照存储。
 - `HarnessApplication.shutdown()`：注销 Capability 并关闭全部插件。
@@ -39,13 +40,15 @@ async with build_harness() as app:
     result = await app.invoke(request)
 ```
 
-需要持久化时显式注入 SQLite；默认内存实现不会创建文件：
+需要持久化与跨进程 Resume 时显式注入 SQLite；默认内存实现不会创建文件：
 
 ```python
 from harness_bootstrap import build_harness
 from harness_state import SQLiteStateStore
 
 app = build_harness(state_store=SQLiteStateStore("financeclaw-state.db"))
+await app.start()
+result = await app.resume_plan("plan-123")
 ```
 
 ## 生命周期
@@ -64,7 +67,8 @@ STOPPED
 - 重复 `shutdown()` 幂等。
 - STOPPED 应用不能重新启动，应重新调用 `build_harness()`。
 - 启动批次失败由 LocalPluginLoader 回滚，应用保持 CREATED。
-- `invoke()` 在 CREATED/STOPPED 状态抛出 `BootstrapStateError`。
+- `invoke()`、`execute_plan()`、`resume_plan()` 与 `cancel_plan()` 在 CREATED/STOPPED
+  状态抛出 `BootstrapStateError`。
 
 ## 插件发现
 

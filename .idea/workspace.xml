@@ -4,29 +4,13 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="0d67a81b-cd68-49de-9544-1b30058fe17e" name="Changes" comment="1、Retry：根据 retryable、Capability 副作用、幂等配置和 idempotency_key 判断安全重试，并支持指数退避及 node.retrying Trace 事件。&#10;2、Deadline：合并 Request、Plan、Node 三层截止时间；所有重试共享同一个绝对 Deadline。&#10;3、Cancellation：新增进程内 CancellationSignal，停止新节点、取消运行任务，并将剩余节点和 Plan 标记为 CANCELLED。&#10;4、应用层新增取消接口">
-      <change afterPath="$PROJECT_DIR$/harness-contracts/src/harness_contracts/persistence.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/harness-state/README.md" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/harness-state/src/harness_state/__init__.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/harness-state/src/harness_state/errors.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/harness-state/src/harness_state/memory.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/harness-state/src/harness_state/py.typed" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/harness-state/src/harness_state/sqlite.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/harness-state/src/harness_state/store.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/harness-state/tests/test_state.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
+    <list default="true" id="0d67a81b-cd68-49de-9544-1b30058fe17e" name="Changes" comment="1、新增 ExecutionEngine.resume(plan_id) 和 HarnessApplication.resume_plan(plan_id)。&#10;2、从 StateStore 恢复 ExecutionPlan、InvocationContext 和 PlanExecutionState，已完成节点不重复执行。&#10;3、中断 RUNNING 节点按 Capability 副作用和 Idempotency 规则安全重放，非幂等 write 拒绝 Resume。&#10;4、Resume 不重置 Request / Plan / Node Deadline，并保留原 trusted context 与 trace。&#10;5、WAITING 状态保持 Continuation，为后续 Approval / Async Resume 复用统一恢复入口。&#10;6、新增 SQLite 重启恢复、幂等保护、Deadline 和异常状态测试。">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/harness-bootstrap/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/harness-bootstrap/README.md" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/harness-bootstrap/src/harness_bootstrap/application.py" beforeDir="false" afterPath="$PROJECT_DIR$/harness-bootstrap/src/harness_bootstrap/application.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/harness-bootstrap/src/harness_bootstrap/factory.py" beforeDir="false" afterPath="$PROJECT_DIR$/harness-bootstrap/src/harness_bootstrap/factory.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/harness-bootstrap/tests/test_bootstrap.py" beforeDir="false" afterPath="$PROJECT_DIR$/harness-bootstrap/tests/test_bootstrap.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/harness-contracts/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/harness-contracts/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/harness-contracts/src/harness_contracts/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/harness-contracts/src/harness_contracts/__init__.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/harness-contracts/tests/test_contracts.py" beforeDir="false" afterPath="$PROJECT_DIR$/harness-contracts/tests/test_contracts.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/harness-execution/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/harness-execution/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/harness-execution/src/harness_execution/cancellation.py" beforeDir="false" afterPath="$PROJECT_DIR$/harness-execution/src/harness_execution/cancellation.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/harness-execution/src/harness_execution/engine.py" beforeDir="false" afterPath="$PROJECT_DIR$/harness-execution/src/harness_execution/engine.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/harness-execution/src/harness_execution/scheduler.py" beforeDir="false" afterPath="$PROJECT_DIR$/harness-execution/src/harness_execution/scheduler.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/harness-execution/tests/test_execution.py" beforeDir="false" afterPath="$PROJECT_DIR$/harness-execution/tests/test_execution.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/pyproject.toml" beforeDir="false" afterPath="$PROJECT_DIR$/pyproject.toml" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -34,6 +18,11 @@
     <option name="LAST_RESOLUTION" value="IGNORE" />
   </component>
   <component name="Git.Settings">
+    <option name="RECENT_BRANCH_BY_REPOSITORY">
+      <map>
+        <entry key="$PROJECT_DIR$" value="main11" />
+      </map>
+    </option>
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
   </component>
   <component name="ProjectColorInfo">{
@@ -44,36 +33,36 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent"><![CDATA[{
-  "keyToString": {
-    "FastAPI.FinanceClaw.executor": "Run",
-    "ModuleVcsDetector.initialDetectionPerformed": "true",
-    "Python tests.Python tests for test_contracts.CapabilityContractTests.executor": "Run",
-    "Python tests.Python tests for test_contracts.RequestContractTests.executor": "Run",
-    "Python tests.Python tests for test_plugins.PluginPackagingTests.executor": "Run",
-    "Python tests.Python tests for test_registry.RegistryTests.executor": "Run",
-    "Python tests.Python tests for test_spi.SPITests.test_manifest_and_provider_descriptors_must_match.executor": "Debug",
-    "Python tests.Python tests in test_contracts.py.executor": "Run",
-    "Python tests.Python tests in tests (1).executor": "Run",
-    "Python tests.Python tests in tests (2).executor": "Run",
-    "Python tests.Python tests in tests (3).executor": "Run",
-    "Python tests.Python tests in tests (4).executor": "Run",
-    "Python tests.Python tests in tests (5).executor": "Run",
-    "Python tests.Python tests in tests.executor": "Run",
-    "RunOnceActivity.ShowReadmeOnStart": "true",
-    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
-    "RunOnceActivity.git.unshallow": "true",
-    "git-widget-placeholder": "main",
-    "last_opened_file_path": "/Users/hebinghui/PycharmProjects/FinanceClaw/.design",
-    "node.js.detected.package.eslint": "true",
-    "node.js.detected.package.tslint": "true",
-    "node.js.selected.package.eslint": "(autodetect)",
-    "node.js.selected.package.tslint": "(autodetect)",
-    "nodejs_package_manager_path": "npm",
-    "settings.editor.selected.configurable": "org.jetbrains.plugins.github.ui.GithubSettingsConfigurable",
-    "vue.rearranger.settings.migration": "true"
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;FastAPI.FinanceClaw.executor&quot;: &quot;Run&quot;,
+    &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
+    &quot;Python tests.Python tests for test_contracts.CapabilityContractTests.executor&quot;: &quot;Run&quot;,
+    &quot;Python tests.Python tests for test_contracts.RequestContractTests.executor&quot;: &quot;Run&quot;,
+    &quot;Python tests.Python tests for test_plugins.PluginPackagingTests.executor&quot;: &quot;Run&quot;,
+    &quot;Python tests.Python tests for test_registry.RegistryTests.executor&quot;: &quot;Run&quot;,
+    &quot;Python tests.Python tests for test_spi.SPITests.test_manifest_and_provider_descriptors_must_match.executor&quot;: &quot;Debug&quot;,
+    &quot;Python tests.Python tests in test_contracts.py.executor&quot;: &quot;Run&quot;,
+    &quot;Python tests.Python tests in tests (1).executor&quot;: &quot;Run&quot;,
+    &quot;Python tests.Python tests in tests (2).executor&quot;: &quot;Run&quot;,
+    &quot;Python tests.Python tests in tests (3).executor&quot;: &quot;Run&quot;,
+    &quot;Python tests.Python tests in tests (4).executor&quot;: &quot;Run&quot;,
+    &quot;Python tests.Python tests in tests (5).executor&quot;: &quot;Run&quot;,
+    &quot;Python tests.Python tests in tests.executor&quot;: &quot;Run&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;main&quot;,
+    &quot;last_opened_file_path&quot;: &quot;/Users/hebinghui/PycharmProjects/FinanceClaw/.design&quot;,
+    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
+    &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
+    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
+    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
+    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
+    &quot;settings.editor.selected.configurable&quot;: &quot;org.jetbrains.plugins.github.ui.GithubSettingsConfigurable&quot;,
+    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
   }
-}]]></component>
+}</component>
   <component name="RecentsManager">
     <key name="CopyFile.RECENT_KEYS">
       <recent name="$PROJECT_DIR$/.design" />
@@ -351,7 +340,39 @@
       <option name="project" value="LOCAL" />
       <updated>1787675886575</updated>
     </task>
-    <option name="localTasksCounter" value="19" />
+    <task id="LOCAL-00019" summary="1、新增 ExecutionEngine.resume(plan_id) 和 HarnessApplication.resume_plan(plan_id)。&#10;2、从 StateStore 恢复 ExecutionPlan、InvocationContext 和 PlanExecutionState，已完成节点不重复执行。&#10;3、中断 RUNNING 节点按 Capability 副作用和 Idempotency 规则安全重放，非幂等 write 拒绝 Resume。&#10;4、Resume 不重置 Request / Plan / Node Deadline，并保留原 trusted context 与 trace。&#10;5、WAITING 状态保持 Continuation，为后续 Approval / Async Resume 复用统一恢复入口。&#10;6、新增 SQLite 重启恢复、幂等保护、Deadline 和异常状态测试。">
+      <option name="closed" value="true" />
+      <created>1787756646897</created>
+      <option name="number" value="00019" />
+      <option name="presentableId" value="LOCAL-00019" />
+      <option name="project" value="LOCAL" />
+      <updated>1787756646897</updated>
+    </task>
+    <task id="LOCAL-00020" summary="1、新增 ExecutionEngine.resume(plan_id) 和 HarnessApplication.resume_plan(plan_id)。&#10;2、从 StateStore 恢复 ExecutionPlan、InvocationContext 和 PlanExecutionState，已完成节点不重复执行。&#10;3、中断 RUNNING 节点按 Capability 副作用和 Idempotency 规则安全重放，非幂等 write 拒绝 Resume。&#10;4、Resume 不重置 Request / Plan / Node Deadline，并保留原 trusted context 与 trace。&#10;5、WAITING 状态保持 Continuation，为后续 Approval / Async Resume 复用统一恢复入口。&#10;6、新增 SQLite 重启恢复、幂等保护、Deadline 和异常状态测试。">
+      <option name="closed" value="true" />
+      <created>1787756736230</created>
+      <option name="number" value="00020" />
+      <option name="presentableId" value="LOCAL-00020" />
+      <option name="project" value="LOCAL" />
+      <updated>1787756736230</updated>
+    </task>
+    <task id="LOCAL-00021" summary="1、新增 ExecutionEngine.resume(plan_id) 和 HarnessApplication.resume_plan(plan_id)。&#10;2、从 StateStore 恢复 ExecutionPlan、InvocationContext 和 PlanExecutionState，已完成节点不重复执行。&#10;3、中断 RUNNING 节点按 Capability 副作用和 Idempotency 规则安全重放，非幂等 write 拒绝 Resume。&#10;4、Resume 不重置 Request / Plan / Node Deadline，并保留原 trusted context 与 trace。&#10;5、WAITING 状态保持 Continuation，为后续 Approval / Async Resume 复用统一恢复入口。&#10;6、新增 SQLite 重启恢复、幂等保护、Deadline 和异常状态测试。">
+      <option name="closed" value="true" />
+      <created>1787756824080</created>
+      <option name="number" value="00021" />
+      <option name="presentableId" value="LOCAL-00021" />
+      <option name="project" value="LOCAL" />
+      <updated>1787756824080</updated>
+    </task>
+    <task id="LOCAL-00022" summary="1、新增 ExecutionEngine.resume(plan_id) 和 HarnessApplication.resume_plan(plan_id)。&#10;2、从 StateStore 恢复 ExecutionPlan、InvocationContext 和 PlanExecutionState，已完成节点不重复执行。&#10;3、中断 RUNNING 节点按 Capability 副作用和 Idempotency 规则安全重放，非幂等 write 拒绝 Resume。&#10;4、Resume 不重置 Request / Plan / Node Deadline，并保留原 trusted context 与 trace。&#10;5、WAITING 状态保持 Continuation，为后续 Approval / Async Resume 复用统一恢复入口。&#10;6、新增 SQLite 重启恢复、幂等保护、Deadline 和异常状态测试。">
+      <option name="closed" value="true" />
+      <created>1787756967828</created>
+      <option name="number" value="00022" />
+      <option name="presentableId" value="LOCAL-00022" />
+      <option name="project" value="LOCAL" />
+      <updated>1787756967828</updated>
+    </task>
+    <option name="localTasksCounter" value="23" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -399,7 +420,8 @@
     <MESSAGE value="1、新增 [harness-planning](/Users/hebinghui/PycharmProjects/FinanceClaw/harness-planning/README.md) 模块。&#10;&#10;2、在 [validator.py](/Users/hebinghui/PycharmProjects/FinanceClaw/harness-planning/src/harness_planning/validator.py) 实现：&#10;- 空计划、重复节点和节点类型校验&#10;- Edge 起点/终点和自连接校验&#10;- Root 检查与 DAG 环检测&#10;- Input/Output Binding 引用及祖先可达性校验&#10;- JSON Pointer 顶层字段校验&#10;- Condition 结构、引用和数据可用性校验&#10;- Timeout、Retry、Deadline 和 FailurePolicy 校验&#10;- Approval/Capability 节点字段约束&#10;- 可选 Capability 可执行性校验&#10;&#10;3、新增结构化 PlanValidationIssue、PlanValidationCode 和聚合异常 PlanValidationError。&#10;&#10;4、新增只读 [CapabilityCatalog](/Users/hebinghui/PycharmProjects/FinanceClaw/harness-registry/src/harness_registry/catalog.py)，Planning 层无法取得 Provider 实例。&#10;&#10;5、Bootstrap 已组装并公开 capability_catalog 和 plan_validator。&#10;&#10;6、更新项目打包与测试文档。" />
     <MESSAGE value="1、- 新增 [harness-execution](/Users/hebinghui/PycharmProjects/FinanceClaw/harness-execution/README.md) 模块。&#10;2、- [scheduler.py](/Users/hebinghui/PycharmProjects/FinanceClaw/harness-execution/src/harness_execution/scheduler.py) 支持：&#10;  - 串行与并行节点&#10;  - Plan 级 max_concurrency&#10;  - Join 等待所有前驱终态&#10;  - 条件分支和 SKIPPED&#10;  - Edge Trigger&#10;  - fail-fast&#10;  - continue-on-failure 和 PARTIAL&#10;  - Plan/Node 执行状态&#10;3、- [resolution.py](/Users/hebinghui/PycharmProjects/FinanceClaw/harness-execution/src/harness_execution/resolution.py) 实现结构化 Binding、JSON Pointer 和全部 Condition 运算符。&#10;4、- [engine.py](/Users/hebinghui/PycharmProjects/FinanceClaw/harness-execution/src/harness_execution/engine.py) 负责 PlanValidator、Request Context、Trace、Scheduler 和最终结果组合。&#10;- 所有 Capability 节点均通过 CapabilityInvoker，未绕过 Policy/Trace/Registry 边界。&#10;- 新增 PLAN、PLAN_NODE、SCHEDULER Trace 类型。&#10;- Bootstrap 已组装 ExecutionEngine，并提供：&#10;await app.execute_plan(request, plan)&#10;- 当前执行状态可通过 app.execution_engine.state(plan_id) 查询。" />
     <MESSAGE value="1、Retry：根据 retryable、Capability 副作用、幂等配置和 idempotency_key 判断安全重试，并支持指数退避及 node.retrying Trace 事件。&#10;2、Deadline：合并 Request、Plan、Node 三层截止时间；所有重试共享同一个绝对 Deadline。&#10;3、Cancellation：新增进程内 CancellationSignal，停止新节点、取消运行任务，并将剩余节点和 Plan 标记为 CANCELLED。&#10;4、应用层新增取消接口" />
-    <option name="LAST_COMMIT_MESSAGE" value="1、Retry：根据 retryable、Capability 副作用、幂等配置和 idempotency_key 判断安全重试，并支持指数退避及 node.retrying Trace 事件。&#10;2、Deadline：合并 Request、Plan、Node 三层截止时间；所有重试共享同一个绝对 Deadline。&#10;3、Cancellation：新增进程内 CancellationSignal，停止新节点、取消运行任务，并将剩余节点和 Plan 标记为 CANCELLED。&#10;4、应用层新增取消接口" />
+    <MESSAGE value="1、新增 ExecutionEngine.resume(plan_id) 和 HarnessApplication.resume_plan(plan_id)。&#10;2、从 StateStore 恢复 ExecutionPlan、InvocationContext 和 PlanExecutionState，已完成节点不重复执行。&#10;3、中断 RUNNING 节点按 Capability 副作用和 Idempotency 规则安全重放，非幂等 write 拒绝 Resume。&#10;4、Resume 不重置 Request / Plan / Node Deadline，并保留原 trusted context 与 trace。&#10;5、WAITING 状态保持 Continuation，为后续 Approval / Async Resume 复用统一恢复入口。&#10;6、新增 SQLite 重启恢复、幂等保护、Deadline 和异常状态测试。" />
+    <option name="LAST_COMMIT_MESSAGE" value="1、新增 ExecutionEngine.resume(plan_id) 和 HarnessApplication.resume_plan(plan_id)。&#10;2、从 StateStore 恢复 ExecutionPlan、InvocationContext 和 PlanExecutionState，已完成节点不重复执行。&#10;3、中断 RUNNING 节点按 Capability 副作用和 Idempotency 规则安全重放，非幂等 write 拒绝 Resume。&#10;4、Resume 不重置 Request / Plan / Node Deadline，并保留原 trusted context 与 trace。&#10;5、WAITING 状态保持 Continuation，为后续 Approval / Async Resume 复用统一恢复入口。&#10;6、新增 SQLite 重启恢复、幂等保护、Deadline 和异常状态测试。" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
