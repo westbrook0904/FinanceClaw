@@ -185,6 +185,24 @@ class HarnessApplication:
             )
         return await self._components.execution_engine.resolve_approval(plan_id, decision)
 
+    async def complete_async_node(
+        self,
+        plan_id: str,
+        node_id: str,
+        terminal_result: ResultEnvelope,
+    ) -> ResultEnvelope:
+        """提交异步 Capability 的终态结果，并继续推进同一个 Plan。"""
+
+        if self._state is not BootstrapState.STARTED:
+            raise BootstrapStateError(
+                "harness application must be started before complete_async_node"
+            )
+        return await self._components.execution_engine.complete_async_node(
+            plan_id,
+            node_id,
+            terminal_result,
+        )
+
     async def cancel_plan(self, plan_id: str, reason: str | None = None) -> bool:
         """请求取消当前进程内由 ExecutionEngine 推进的活动 Plan。"""
 

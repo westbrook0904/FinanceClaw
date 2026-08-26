@@ -27,6 +27,7 @@ HarnessApplication
 - `HarnessApplication.execute_plan(request, plan)`：验证并执行 Plan。
 - `HarnessApplication.resume_plan(plan_id)`：从 StateStore 恢复并继续同一个 Plan。
 - `HarnessApplication.resolve_approval(plan_id, decision)`：持久化显式审批决定并继续 Plan。
+- `HarnessApplication.complete_async_node(plan_id, node_id, terminal_result)`：提交异步节点终态并继续 Plan。
 - `HarnessApplication.cancel_plan(plan_id, reason)`：取消当前进程内的活动 Plan。
 - `HarnessApplication.state_store`：当前组装使用的状态快照存储。
 - `HarnessApplication.shutdown()`：注销 Capability 并关闭全部插件。
@@ -68,7 +69,8 @@ STOPPED
 - 重复 `shutdown()` 幂等。
 - STOPPED 应用不能重新启动，应重新调用 `build_harness()`。
 - 启动批次失败由 LocalPluginLoader 回滚，应用保持 CREATED。
-- `invoke()`、`execute_plan()`、`resume_plan()`、`resolve_approval()` 与 `cancel_plan()` 在 CREATED/STOPPED
+- `invoke()`、`execute_plan()`、`resume_plan()`、`resolve_approval()`、`complete_async_node()` 与
+`cancel_plan()` 在 CREATED/STOPPED
   状态抛出 `BootstrapStateError`。
 
 ## 插件发现
@@ -104,3 +106,19 @@ decision = ApprovalDecision(
 )
 result = await app.resolve_approval(plan.plan_id, decision)
 ```
+
+
+Capability 返回 `ACCEPTED + job_ref` 后，可通过明确的 completion ingress 提交终态：
+
+```python
+from harness_contracts import ResultEnvelope, ResultOutput
+
+waiting = await app.execute_plan(request, plan)
+result = await app.complete_async_node(
+    plan.plan_id,
+    waiting.continuation.node_id,
+    ResultEnvelope.success(ResultOutput(type="json", data={"value": 42})),
+)
+```
+
+`complete_async_node()` 会先持久化终态节点快照，再复用 `resume_plan` 的状态机继续 DAG。

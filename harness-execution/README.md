@@ -64,3 +64,27 @@ fail-plan，也可以通过 `CONTINUE + DENIED edge` 进入补偿/拒绝分支�
 
 Policy 触发的 `REQUIRE_APPROVAL` 将在第二阶段第 10 步 Policy 完整化时接入；第 8 步
 先稳定共享的 ApprovalRequest / ApprovalDecision / WAITING / checkpoint / resume 基础链路。
+
+## Async WAITING
+
+Capability Provider 可以返回 `ResultStatus.ACCEPTED + Continuation.job_ref`，把一次
+Provider 调用转换成可持久化的异步等待，而不是长期占用原始 API Task：
+
+1. Scheduler 把 Capability Node 推进到 `WAITING`；
+2. `AsyncWaitingCoordinator` 将 Continuation 归一化为稳定的
+   `plan_id + node_id + job_ref`，并写入 `PlanExecutionState.pending_jobs`；
+3. 当前 API 返回 `ResultStatus.ACCEPTED`；
+4. 外部系统完成任务后调用
+   `ExecutionEngine.complete_async_node(plan_id, node_id, terminal_result)`；
+5. `terminal_result` 只能是 `SUCCESS / PARTIAL / FAILED / DENIED / CANCELLED`；
+6. completion 快照先写回 StateStore，再复用 `resume(plan_id)` 继续 DAG。
+
+异步完成结果仍由 Scheduler 原有 `_apply_node_result()` 解释，因此 FailurePolicy、
+`SUCCESS / FAILED / DENIED` Edge、PARTIAL issue 聚合和最终结果组合保持统一语义。
+
+普通 Async WAITING 必须提供 `job_ref`。Provider 可以省略 `plan_id/node_id`，Engine
+会补成当前 Plan/Node；如果 Provider 显式给出冲突的 Plan/Node 引用，则按无效状态拒绝。
+`pending_jobs` 与 WAITING checkpoint 之间的崩溃窗口可在下一次 Resume 时自动修复。
+
+阶段二不在这里实现 callback server、polling framework 或外部 event broker adapter；
+`complete_async_node(...)` 是明确的 completion ingress。
