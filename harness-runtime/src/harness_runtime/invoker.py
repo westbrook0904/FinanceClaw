@@ -8,7 +8,9 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 from harness_contracts import (
+    ApprovalGrant,
     CapabilityError,
+    Continuation,
     HarnessError,
     HarnessTimeoutError,
     InvocationContext,
@@ -119,6 +121,13 @@ class CapabilityInvoker:
                     details={"policy": decision.policy, "constraints": constraints},
                 )
                 result = ResultEnvelope.denied(error.to_detail())
+            elif decision.effect is PolicyEffect.REQUIRE_APPROVAL:
+                result = self._approval_required_result(
+                    input,
+                    context,
+                    resolved,
+                    decision,
+                )
             else:
                 result = await self._invoke_capability(
                     input,
@@ -254,6 +263,7 @@ class CapabilityInvoker:
             ),
             capability=resolved.descriptor,
             phase=PolicyPhase.PRE_EXECUTE,
+            approval_grant=self._approval_grant(context),
         )
         try:
             decision = self._policy_engine.evaluate(policy_context)
@@ -272,11 +282,86 @@ class CapabilityInvoker:
             self._lifecycle.finish_error(span, wrapped)
             raise wrapped from exc
 
-        self._lifecycle.finish_ok(
-            span,
-            attributes={"effect": decision.effect.value, "policy": decision.policy},
-        )
+        attributes: dict[str, JsonValue] = {
+            "effect": decision.effect.value,
+            "policy": decision.policy,
+        }
+        if policy_context.approval_grant is not None:
+            attributes["approval_id"] = policy_context.approval_grant.approval_id
+        self._lifecycle.finish_ok(span, attributes=attributes)
         return decision
+
+    def _approval_required_result(
+        self,
+        input: RequestInput,
+        context: InvocationContext,
+        resolved: ResolvedCapability,
+        decision: PolicyDecision,
+    ) -> ResultEnvelope:
+        """把 PRE_EXECUTE REQUIRE_APPROVAL 转成 Plan WAITING 或 Direct DENIED。"""
+
+        plan_id = context.attributes.get("plan_id")
+        node_id = context.attributes.get("node_id")
+        if not isinstance(plan_id, str) or not isinstance(node_id, str):
+            error = PolicyError(
+                decision.reason or "human approval is required",
+                code="HARNESS.POLICY.APPROVAL_REQUIRED",
+                details={
+                    "policy": decision.policy,
+                    "capability_id": resolved.descriptor.id,
+                },
+            )
+            return ResultEnvelope.denied(error.to_detail())
+
+        content = input.model_dump(mode="json")["content"]
+        parameter_names = sorted(content)[:32] if isinstance(content, dict) else []
+        profile = resolved.descriptor.execution_profile
+        continuation = Continuation(
+            plan_id=plan_id,
+            node_id=node_id,
+            waiting_reason="policy_approval",
+        )
+        return ResultEnvelope.accepted(
+            continuation,
+            metadata={
+                "approval_request": {
+                    "capability": resolved.descriptor.id,
+                    "side_effect": profile.side_effect.value,
+                    "egress": profile.egress.value,
+                    "parameter_summary": (
+                        {"parameter_names": parameter_names} if parameter_names else {}
+                    ),
+                    "reason": decision.reason or "policy requires approval",
+                    "policy": decision.policy,
+                }
+            },
+        )
+
+    @staticmethod
+    def _approval_grant(context: InvocationContext) -> ApprovalGrant | None:
+        """只接受 ExecutionEngine 从持久化状态注入的匹配 grant。"""
+
+        payload = context.attributes.get("_harness_approval_grants")
+        if payload is None:
+            return None
+        if not isinstance(payload, tuple | list):
+            raise PolicyError(
+                "approval grant context is invalid",
+                code="HARNESS.POLICY.APPROVAL_GRANT_INVALID",
+            )
+        plan_id = context.attributes.get("plan_id")
+        node_id = context.attributes.get("node_id")
+        for raw in payload:
+            try:
+                grant = ApprovalGrant.model_validate(raw)
+            except Exception as exc:
+                raise PolicyError(
+                    "approval grant context is invalid",
+                    code="HARNESS.POLICY.APPROVAL_GRANT_INVALID",
+                ) from exc
+            if grant.plan_id == plan_id and grant.node_id == node_id:
+                return grant
+        return None
 
     async def _invoke_capability(
         self,

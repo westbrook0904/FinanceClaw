@@ -1,11 +1,13 @@
-"""Harness 调用边界上的策略判断。
-
-策略引擎产生结构化决策，具体 Capability 无需感知权限校验过程。
-"""
+"""Harness 的 PRE_PLAN / PRE_EXECUTE 治理边界。"""
 
 from .engine import PolicyEngine
 from .models import PolicyContext, PolicyDecision, PolicyEffect, PolicyPhase
-from .policies import AllowAllPolicy, CapabilityPermissionPolicy, TenantPolicy
+from .policies import (
+    AllowAllPolicy,
+    CapabilityPermissionPolicy,
+    RequireApprovalPolicy,
+    TenantPolicy,
+)
 from .policy import Policy
 
 __all__ = [
@@ -17,5 +19,6 @@ __all__ = [
     "PolicyEffect",
     "PolicyEngine",
     "PolicyPhase",
+    "RequireApprovalPolicy",
     "TenantPolicy",
 ]

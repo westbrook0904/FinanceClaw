@@ -33,6 +33,20 @@ class ApprovalRequest(ContractModel):
     _validate_requested_at = field_validator("requested_at")(_require_timezone)
 
 
+class ApprovalGrant(ContractModel):
+    """Policy 再次执行时携带的结构化、可持久化审批授权。"""
+
+    approval_id: NonEmptyString
+    plan_id: NonEmptyString
+    node_id: NonEmptyString
+    decided_by: NonEmptyString
+    granted_at: datetime
+    reason: NonEmptyString | None = None
+    metadata: FrozenJsonMapping = Field(default_factory=dict)
+
+    _validate_granted_at = field_validator("granted_at")(_require_timezone)
+
+
 class ApprovalDecision(ContractModel):
     approval_id: NonEmptyString
     decision: ApprovalDecisionType

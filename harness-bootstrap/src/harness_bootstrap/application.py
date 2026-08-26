@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 from harness_contracts import ApprovalDecision, ExecutionPlan, Request, ResultEnvelope
+from harness_events import EventPublisher
 from harness_execution import BasicScheduler, ExecutionEngine
 from harness_plugin_local import LoadedPlugin, LocalPluginLoader
 from harness_planning import PlanValidator
@@ -51,6 +52,7 @@ class HarnessComponents:
     scheduler: BasicScheduler
     execution_engine: ExecutionEngine
     state_store: StateStore
+    event_publisher: EventPublisher
 
 
 class HarnessApplication:
@@ -90,6 +92,10 @@ class HarnessApplication:
     @property
     def state_store(self) -> StateStore:
         return self._components.state_store
+
+    @property
+    def event_publisher(self) -> EventPublisher:
+        return self._components.event_publisher
 
     @property
     def registry(self) -> CapabilityRegistry:

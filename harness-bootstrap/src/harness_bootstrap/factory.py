@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
+from harness_events import EventPublisher, InMemoryEventBus
 from harness_execution import BasicScheduler, ExecutionEngine
 from harness_plugin_local import LocalPluginLoader, LocalPluginProvider
 from harness_planning import PlanValidator
@@ -39,6 +40,7 @@ def build_harness(
     capability_catalog: CapabilityCatalog | None = None,
     plan_validator: PlanValidator | None = None,
     state_store: StateStore | None = None,
+    event_publisher: EventPublisher | None = None,
     plugin_provider: LocalPluginProvider | None = None,
     entry_point_group: str | None = "financeclaw.plugins",
 ) -> HarnessApplication:
@@ -63,6 +65,8 @@ def build_harness(
         raise TypeError("plan_validator must be PlanValidator")
     if state_store is not None and not isinstance(state_store, StateStore):
         raise TypeError("state_store must implement StateStore")
+    if event_publisher is not None and not isinstance(event_publisher, EventPublisher):
+        raise TypeError("event_publisher must implement EventPublisher")
     if (
         capability_catalog is not None
         and plan_validator is not None
@@ -97,6 +101,7 @@ def build_harness(
         plan_validator if plan_validator is not None else PlanValidator(effective_catalog)
     )
     effective_state_store = state_store or InMemoryStateStore()
+    effective_event_publisher = event_publisher or InMemoryEventBus()
     effective_provider = (
         plugin_provider
         if plugin_provider is not None
@@ -129,6 +134,7 @@ def build_harness(
         effective_tracer,
         lifecycle,
         state_store=effective_state_store,
+        event_publisher=effective_event_publisher,
     )
     runtime = HarnessRuntime(
         effective_registry,
@@ -153,5 +159,6 @@ def build_harness(
             scheduler=scheduler,
             execution_engine=execution_engine,
             state_store=effective_state_store,
+            event_publisher=effective_event_publisher,
         )
     )

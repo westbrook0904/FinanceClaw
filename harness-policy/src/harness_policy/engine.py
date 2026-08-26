@@ -1,4 +1,4 @@
-"""阶段一 Policy 链执行引擎。"""
+"""阶段二 Policy 链执行引擎。"""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from .policy import Policy
 
 
 class PolicyEngine:
-    """顺序执行 Policy，并在首个 DENY 决策处短路。"""
+    """顺序执行当前 phase 的 Policy，按 DENY > REQUIRE_APPROVAL > ALLOW 聚合。"""
 
     def __init__(
         self,
@@ -22,30 +22,27 @@ class PolicyEngine:
         self._policies = tuple(policies)
         if any(not isinstance(policy, Policy) for policy in self._policies):
             raise TypeError("all policies must implement Policy")
+        if not isinstance(default_effect, PolicyEffect):
+            raise TypeError("default_effect must be PolicyEffect")
         self._default_effect = default_effect
 
     @property
     def policies(self) -> tuple[Policy, ...]:
-        """返回不可变的 Policy 链。"""
-
         return self._policies
 
     def evaluate(self, context: PolicyContext) -> PolicyDecision:
-        """执行策略链，并聚合所有 ALLOW 决策携带的约束。"""
+        if not isinstance(context, PolicyContext):
+            raise TypeError("context must be PolicyContext")
 
-        if not self._policies:
-            if self._default_effect is PolicyEffect.DENY:
-                return PolicyDecision.deny(
-                    "policy-engine",
-                    reason="no policy allowed the invocation",
-                )
-            return PolicyDecision.allow(
-                "policy-engine",
-                reason="no policies configured",
-            )
+        applicable = tuple(
+            policy for policy in self._policies if context.phase in policy.phases
+        )
+        if not applicable:
+            return self._default_decision(context)
 
         constraints: dict[str, JsonValue] = {}
-        for policy in self._policies:
+        approval: PolicyDecision | None = None
+        for policy in applicable:
             decision = policy.evaluate(context)
             if not isinstance(decision, PolicyDecision):
                 raise TypeError(f"policy {policy.name} must return PolicyDecision")
@@ -58,9 +55,28 @@ class PolicyEngine:
                     reason=decision.reason or "policy denied invocation",
                     constraints=constraints,
                 )
+            if (
+                decision.effect is PolicyEffect.REQUIRE_APPROVAL
+                and approval is None
+            ):
+                approval = decision
 
+        if approval is not None:
+            return PolicyDecision.require_approval(
+                approval.policy,
+                reason=approval.reason or "policy requires approval",
+                constraints=constraints,
+            )
         return PolicyDecision.allow(
             "policy-engine",
-            reason="all policies allowed the invocation",
+            reason="all applicable policies allowed the operation",
             constraints=constraints,
         )
+
+    def _default_decision(self, context: PolicyContext) -> PolicyDecision:
+        reason = f"no policies configured for {context.phase.value}"
+        if self._default_effect is PolicyEffect.DENY:
+            return PolicyDecision.deny("policy-engine", reason=reason)
+        if self._default_effect is PolicyEffect.REQUIRE_APPROVAL:
+            return PolicyDecision.require_approval("policy-engine", reason=reason)
+        return PolicyDecision.allow("policy-engine", reason=reason)

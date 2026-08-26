@@ -1,14 +1,17 @@
-"""显式 Human Approval 的持久化等待与决策协调。"""
+"""Explicit / Policy-triggered Human Approval 的持久化协调。"""
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from uuid import uuid4
 
 from harness_contracts import (
     ApprovalDecision,
     ApprovalDecisionType,
+    ApprovalGrant,
     ApprovalRequest,
+    EgressType,
     ExecutionPlan,
     NodeExecutionStatus,
     PlanExecutionRecord,
@@ -20,18 +23,18 @@ from harness_contracts import (
     ResultEnvelope,
     ResultOutput,
     ResultStatus,
+    SideEffectType,
 )
 
 from .scheduler import BasicScheduler
 
 
-class ApprovalCoordinator:
-    """管理显式 ``APPROVAL`` 节点的等待快照和外部审批决定。
+_EXPLICIT_WAITING = "approval"
+_POLICY_WAITING = "policy_approval"
 
-    Scheduler 仍负责 DAG READY/RUNNING/WAITING/terminal 状态机；本协调器只补全
-    Human Approval 特有的持久化数据，并把外部 ``ApprovalDecision`` 转换成节点
-    的标准 ResultEnvelope。StateStore 保持纯快照存储，不理解审批业务语义。
-    """
+
+class ApprovalCoordinator:
+    """把两种 Approval 来源统一到 ApprovalRequest/Decision/WAITING/Resume。"""
 
     def __init__(self, scheduler: BasicScheduler) -> None:
         if not isinstance(scheduler, BasicScheduler):
@@ -43,12 +46,7 @@ class ApprovalCoordinator:
         plan: ExecutionPlan,
         state: PlanExecutionState,
     ) -> tuple[ApprovalRequest, ...]:
-        """为已经进入 WAITING 的显式 Approval Node 补全稳定 ApprovalRequest。
-
-        正常路径会在当前 API 返回前调用本方法并 checkpoint。若进程恰好在
-        Scheduler 的 WAITING checkpoint 后、ApprovalRequest 落盘前退出，Resume
-        也会再次调用本方法，因此这个小窗口仍然可以自愈。
-        """
+        """为 WAITING Approval 补全稳定 request/approval_id，并支持 crash-window 自愈。"""
 
         self.validate(plan, state, allow_unmaterialized=True)
         existing_by_node = {item.node_id: item for item in state.pending_approvals}
@@ -57,18 +55,19 @@ class ApprovalCoordinator:
         changed = False
 
         for node in plan.nodes:
-            if node.kind is not PlanNodeKind.APPROVAL:
-                continue
             node_state = state.nodes[node.node_id]
-            if (
-                node_state.status is not NodeExecutionStatus.WAITING
-                or node_state.waiting_reason != "approval"
-            ):
+            if node_state.status is not NodeExecutionStatus.WAITING:
+                continue
+            if not self._is_approval_waiting(node, node_state.waiting_reason):
                 continue
 
             approval = existing_by_node.get(node.node_id)
             if approval is None:
-                approval = self._build_request(plan, node)
+                approval = (
+                    self._build_explicit_request(plan, node)
+                    if node.kind is PlanNodeKind.APPROVAL
+                    else self._build_policy_request(plan, node, node_state.result)
+                )
                 state.pending_approvals.append(approval)
                 existing_by_node[node.node_id] = approval
                 materialized.append(approval)
@@ -77,10 +76,8 @@ class ApprovalCoordinator:
 
             continuation = node_state.continuation
             if continuation is None:
-                raise RequestError(
-                    "waiting approval node has no continuation",
-                    code="HARNESS.APPROVAL.STATE_INVALID",
-                    details={"plan_id": plan.plan_id, "node_id": node.node_id},
+                raise self._state_error(
+                    plan, node.node_id, "waiting approval has no continuation"
                 )
             if continuation.approval_id != approval.approval_id:
                 continuation = continuation.model_copy(
@@ -91,10 +88,10 @@ class ApprovalCoordinator:
                     node_state.result is None
                     or node_state.result.status is not ResultStatus.ACCEPTED
                 ):
-                    raise RequestError(
-                        "waiting approval node has no accepted result",
-                        code="HARNESS.APPROVAL.STATE_INVALID",
-                        details={"plan_id": plan.plan_id, "node_id": node.node_id},
+                    raise self._state_error(
+                        plan,
+                        node.node_id,
+                        "waiting approval has no accepted result",
                     )
                 node_state.result = ResultEnvelope.accepted(
                     continuation,
@@ -116,7 +113,7 @@ class ApprovalCoordinator:
         record: PlanExecutionRecord,
         decision: ApprovalDecision,
     ) -> PlanExecutionRecord:
-        """把一个 pending ApprovalDecision 应用到快照，但不自行执行 Resume。"""
+        """应用一个 pending 决策；批准 Policy Approval 时生成 Grant 后重新执行节点。"""
 
         if not isinstance(record, PlanExecutionRecord):
             raise TypeError("record must be PlanExecutionRecord")
@@ -126,108 +123,67 @@ class ApprovalCoordinator:
         plan = record.plan
         state = self._snapshot(record.state)
         self.ensure_waiting_requests(plan, state)
-
         request = next(
-            (
-                item
-                for item in state.pending_approvals
-                if item.approval_id == decision.approval_id
-            ),
+            (item for item in state.pending_approvals if item.approval_id == decision.approval_id),
             None,
         )
         if request is None:
             raise RequestError(
                 "approval request is not pending",
                 code="HARNESS.APPROVAL.NOT_PENDING",
-                details={
-                    "plan_id": plan.plan_id,
-                    "approval_id": decision.approval_id,
-                },
+                details={"plan_id": plan.plan_id, "approval_id": decision.approval_id},
             )
         if request.plan_id != plan.plan_id:
             raise RequestError(
                 "approval request belongs to another plan",
                 code="HARNESS.APPROVAL.PLAN_MISMATCH",
-                details={
-                    "plan_id": plan.plan_id,
-                    "approval_id": decision.approval_id,
-                },
+                details={"plan_id": plan.plan_id, "approval_id": decision.approval_id},
             )
 
         node = next((item for item in plan.nodes if item.node_id == request.node_id), None)
-        if node is None or node.kind is not PlanNodeKind.APPROVAL:
-            raise RequestError(
-                "approval request does not reference an approval node",
-                code="HARNESS.APPROVAL.STATE_INVALID",
-                details={
-                    "plan_id": plan.plan_id,
-                    "approval_id": decision.approval_id,
-                    "node_id": request.node_id,
-                },
-            )
-        node_state = state.nodes[node.node_id]
+        node_state = state.nodes.get(request.node_id)
         if (
-            node_state.status is not NodeExecutionStatus.WAITING
+            node is None
+            or node_state is None
+            or node_state.status is not NodeExecutionStatus.WAITING
             or node_state.continuation is None
             or node_state.continuation.approval_id != decision.approval_id
+            or not self._is_approval_waiting(node, node_state.waiting_reason)
         ):
-            raise RequestError(
+            raise self._state_error(
+                plan,
+                request.node_id,
                 "approval node is not waiting for this decision",
-                code="HARNESS.APPROVAL.STATE_INVALID",
-                details={
-                    "plan_id": plan.plan_id,
-                    "approval_id": decision.approval_id,
-                    "node_id": node.node_id,
-                },
+                approval_id=decision.approval_id,
             )
 
         state.pending_approvals = [
             item for item in state.pending_approvals if item.approval_id != decision.approval_id
         ]
-        node_state.waiting_reason = None
-        node_state.continuation = None
-
-        if decision.decision is ApprovalDecisionType.APPROVED:
-            result = ResultEnvelope.success(
-                ResultOutput(
-                    type="approval",
-                    data={
-                        "approval_id": decision.approval_id,
-                        "decision": decision.decision.value,
-                        "decided_by": decision.decided_by,
-                        "decided_at": decision.decided_at.isoformat(),
-                        **({"reason": decision.reason} if decision.reason else {}),
-                    },
-                ),
-                metadata={
-                    "plan_id": plan.plan_id,
-                    "node_id": node.node_id,
-                    "approval_id": decision.approval_id,
-                },
-            )
-        else:
-            error = PolicyError(
-                "approval was rejected",
-                code="HARNESS.APPROVAL.REJECTED",
-                details={
-                    "plan_id": plan.plan_id,
-                    "node_id": node.node_id,
-                    "approval_id": decision.approval_id,
-                    "decided_by": decision.decided_by,
-                    **({"reason": decision.reason} if decision.reason else {}),
-                },
-            )
-            result = ResultEnvelope.denied(
-                error.to_detail(),
-                metadata={
-                    "plan_id": plan.plan_id,
-                    "node_id": node.node_id,
-                    "approval_id": decision.approval_id,
-                },
-            )
-
         self._append_decision_audit(state, request, decision)
-        self._scheduler._apply_node_result(state, node, result)  # noqa: SLF001
+
+        if (
+            node.kind is PlanNodeKind.CAPABILITY
+            and decision.decision is ApprovalDecisionType.APPROVED
+        ):
+            self._append_grant(state, request, decision)
+            # Policy 尚未真正调用 Provider，因此审批通过后回到“未执行 READY”，而不是
+            # 把原 WAITING attempt 当作 crash 中断的 Provider attempt 去做 replay guard。
+            node_state.status = NodeExecutionStatus.READY
+            node_state.attempt = 0
+            node_state.started_at = None
+            node_state.completed_at = None
+            node_state.result = None
+            node_state.error = None
+            node_state.waiting_reason = None
+            node_state.continuation = None
+            self._touch(state)
+        else:
+            node_state.waiting_reason = None
+            node_state.continuation = None
+            result = self._decision_result(plan, node, decision)
+            self._scheduler._apply_node_result(state, node, result)  # noqa: SLF001
+
         return PlanExecutionRecord(
             plan_id=record.plan_id,
             plan=plan,
@@ -242,7 +198,7 @@ class ApprovalCoordinator:
         *,
         allow_unmaterialized: bool = False,
     ) -> None:
-        """验证 pending approval 与节点 WAITING 状态的一致性。"""
+        """验证 pending approval 与显式/Policy WAITING 节点的一致性。"""
 
         node_index = {node.node_id: node for node in plan.nodes}
         approval_ids: set[str] = set()
@@ -261,41 +217,43 @@ class ApprovalCoordinator:
             if (
                 request.plan_id != plan.plan_id
                 or node is None
-                or node.kind is not PlanNodeKind.APPROVAL
                 or node_state is None
                 or node_state.status is not NodeExecutionStatus.WAITING
-                or node_state.waiting_reason != "approval"
                 or node_state.continuation is None
+                or not self._is_approval_waiting(node, node_state.waiting_reason)
                 or (
                     node_state.continuation.approval_id is not None
                     and node_state.continuation.approval_id != request.approval_id
                 )
             ):
-                raise RequestError(
+                raise self._state_error(
+                    plan,
+                    request.node_id,
                     "stored approval request is inconsistent with node state",
-                    code="HARNESS.APPROVAL.STATE_INVALID",
-                    details={
-                        "plan_id": plan.plan_id,
-                        "approval_id": request.approval_id,
-                        "node_id": request.node_id,
-                    },
+                    approval_id=request.approval_id,
+                )
+            if node.kind is PlanNodeKind.APPROVAL and request.capability is not None:
+                raise self._state_error(plan, request.node_id, "explicit approval has capability")
+            if node.kind is PlanNodeKind.CAPABILITY and request.capability != node.capability:
+                raise self._state_error(
+                    plan,
+                    request.node_id,
+                    "policy approval capability does not match plan node",
                 )
 
         if allow_unmaterialized:
             return
         for node in plan.nodes:
-            if node.kind is not PlanNodeKind.APPROVAL:
-                continue
             node_state = state.nodes[node.node_id]
             if (
                 node_state.status is NodeExecutionStatus.WAITING
-                and node_state.waiting_reason == "approval"
+                and self._is_approval_waiting(node, node_state.waiting_reason)
                 and node.node_id not in approval_nodes
             ):
-                raise RequestError(
-                    "waiting approval node has no pending approval request",
-                    code="HARNESS.APPROVAL.STATE_INVALID",
-                    details={"plan_id": plan.plan_id, "node_id": node.node_id},
+                raise self._state_error(
+                    plan,
+                    node.node_id,
+                    "waiting approval has no pending approval request",
                 )
 
     @staticmethod
@@ -303,8 +261,6 @@ class ApprovalCoordinator:
         result: ResultEnvelope,
         state: PlanExecutionState,
     ) -> ResultEnvelope:
-        """让当前 API 的 ACCEPTED 结果返回已持久化的 approval_id。"""
-
         if result.status is not ResultStatus.ACCEPTED or result.continuation is None:
             return result
         node_id = result.continuation.node_id
@@ -315,6 +271,7 @@ class ApprovalCoordinator:
             node_state is None
             or node_state.status is not NodeExecutionStatus.WAITING
             or node_state.continuation is None
+            or node_state.continuation.approval_id is None
         ):
             return result
         return ResultEnvelope.accepted(
@@ -324,7 +281,36 @@ class ApprovalCoordinator:
         )
 
     @staticmethod
-    def _build_request(plan: ExecutionPlan, node: PlanNode) -> ApprovalRequest:
+    def grants(state: PlanExecutionState) -> tuple[ApprovalGrant, ...]:
+        payload = state.metadata.get("approval_grants", [])
+        if not isinstance(payload, tuple | list):
+            raise RequestError(
+                "stored approval grants are invalid",
+                code="HARNESS.APPROVAL.STATE_INVALID",
+                details={"plan_id": state.plan_id},
+            )
+        grants: list[ApprovalGrant] = []
+        for raw in payload:
+            try:
+                grants.append(ApprovalGrant.model_validate(raw))
+            except Exception as exc:
+                raise RequestError(
+                    "stored approval grant is invalid",
+                    code="HARNESS.APPROVAL.STATE_INVALID",
+                    details={"plan_id": state.plan_id},
+                ) from exc
+        return tuple(grants)
+
+    @staticmethod
+    def _is_approval_waiting(node: PlanNode, waiting_reason: str | None) -> bool:
+        return (
+            node.kind is PlanNodeKind.APPROVAL and waiting_reason == _EXPLICIT_WAITING
+        ) or (
+            node.kind is PlanNodeKind.CAPABILITY and waiting_reason == _POLICY_WAITING
+        )
+
+    @staticmethod
+    def _build_explicit_request(plan: ExecutionPlan, node: PlanNode) -> ApprovalRequest:
         reason = ApprovalCoordinator._safe_metadata_string(
             node,
             "approval_reason",
@@ -339,12 +325,168 @@ class ApprovalCoordinator:
             plan_id=plan.plan_id,
             node_id=node.node_id,
             resource_category=resource_category,
-            parameter_summary=(
-                {"parameter_names": parameter_names} if parameter_names else {}
-            ),
+            parameter_summary={"parameter_names": parameter_names} if parameter_names else {},
             reason=reason,
             metadata={"source": "explicit_node"},
         )
+
+    @staticmethod
+    def _build_policy_request(
+        plan: ExecutionPlan,
+        node: PlanNode,
+        accepted_result: ResultEnvelope | None,
+    ) -> ApprovalRequest:
+        if accepted_result is None or accepted_result.status is not ResultStatus.ACCEPTED:
+            raise ApprovalCoordinator._state_error(
+                plan,
+                node.node_id,
+                "policy approval has no accepted result",
+            )
+        payload = accepted_result.metadata.get("approval_request")
+        if not isinstance(payload, Mapping):
+            raise ApprovalCoordinator._state_error(
+                plan,
+                node.node_id,
+                "policy approval request summary is missing",
+            )
+        capability = payload.get("capability")
+        reason = payload.get("reason")
+        side_effect = payload.get("side_effect", SideEffectType.NONE.value)
+        egress = payload.get("egress", EgressType.NONE.value)
+        policy = payload.get("policy")
+        parameter_summary = payload.get("parameter_summary", {})
+        if capability != node.capability or not isinstance(reason, str) or not reason.strip():
+            raise ApprovalCoordinator._state_error(
+                plan,
+                node.node_id,
+                "policy approval request summary is invalid",
+            )
+        if not isinstance(parameter_summary, Mapping):
+            parameter_summary = {}
+        try:
+            side_effect_value = SideEffectType(side_effect)
+            egress_value = EgressType(egress)
+        except ValueError as exc:
+            raise ApprovalCoordinator._state_error(
+                plan,
+                node.node_id,
+                "policy approval execution profile is invalid",
+            ) from exc
+        metadata = {"source": "policy"}
+        if isinstance(policy, str) and policy.strip():
+            metadata["policy"] = policy.strip()
+        return ApprovalRequest(
+            approval_id=uuid4().hex,
+            plan_id=plan.plan_id,
+            node_id=node.node_id,
+            capability=node.capability,
+            side_effect=side_effect_value,
+            egress=egress_value,
+            parameter_summary=dict(parameter_summary),
+            reason=reason.strip(),
+            metadata=metadata,
+        )
+
+    @staticmethod
+    def _decision_result(
+        plan: ExecutionPlan,
+        node: PlanNode,
+        decision: ApprovalDecision,
+    ) -> ResultEnvelope:
+        if decision.decision is ApprovalDecisionType.APPROVED:
+            return ResultEnvelope.success(
+                ResultOutput(
+                    type="approval",
+                    data={
+                        "approval_id": decision.approval_id,
+                        "decision": decision.decision.value,
+                        "decided_by": decision.decided_by,
+                        "decided_at": decision.decided_at.isoformat(),
+                        **({"reason": decision.reason} if decision.reason else {}),
+                    },
+                ),
+                metadata={
+                    "plan_id": plan.plan_id,
+                    "node_id": node.node_id,
+                    "approval_id": decision.approval_id,
+                },
+            )
+        error = PolicyError(
+            "approval was rejected",
+            code="HARNESS.APPROVAL.REJECTED",
+            details={
+                "plan_id": plan.plan_id,
+                "node_id": node.node_id,
+                "approval_id": decision.approval_id,
+                "decided_by": decision.decided_by,
+                **({"reason": decision.reason} if decision.reason else {}),
+            },
+        )
+        return ResultEnvelope.denied(
+            error.to_detail(),
+            metadata={
+                "plan_id": plan.plan_id,
+                "node_id": node.node_id,
+                "approval_id": decision.approval_id,
+            },
+        )
+
+    @staticmethod
+    def _append_grant(
+        state: PlanExecutionState,
+        request: ApprovalRequest,
+        decision: ApprovalDecision,
+    ) -> None:
+        grant = ApprovalGrant(
+            approval_id=decision.approval_id,
+            plan_id=request.plan_id,
+            node_id=request.node_id,
+            decided_by=decision.decided_by,
+            granted_at=decision.decided_at,
+            reason=decision.reason,
+            metadata={
+                "source": "policy",
+                **(
+                    {"policy": request.metadata["policy"]}
+                    if isinstance(request.metadata.get("policy"), str)
+                    else {}
+                ),
+            },
+        )
+        current = state.metadata.get("approval_grants", [])
+        history = list(current) if isinstance(current, tuple | list) else []
+        history = [
+            item
+            for item in history
+            if not (
+                isinstance(item, Mapping)
+                and item.get("plan_id") == grant.plan_id
+                and item.get("node_id") == grant.node_id
+            )
+        ]
+        history.append(grant.model_dump(mode="json"))
+        state.metadata["approval_grants"] = history
+
+    @staticmethod
+    def _append_decision_audit(
+        state: PlanExecutionState,
+        request: ApprovalRequest,
+        decision: ApprovalDecision,
+    ) -> None:
+        current = state.metadata.get("approval_decisions", [])
+        history = list(current) if isinstance(current, tuple | list) else []
+        history.append(
+            {
+                "approval_id": decision.approval_id,
+                "node_id": request.node_id,
+                "source": request.metadata.get("source", "unknown"),
+                "decision": decision.decision.value,
+                "decided_by": decision.decided_by,
+                "decided_at": decision.decided_at.isoformat(),
+                **({"reason": decision.reason} if decision.reason else {}),
+            }
+        )
+        state.metadata["approval_decisions"] = history
 
     @staticmethod
     def _safe_metadata_string(node: PlanNode, key: str) -> str | None:
@@ -365,24 +507,22 @@ class ApprovalCoordinator:
         return names
 
     @staticmethod
-    def _append_decision_audit(
-        state: PlanExecutionState,
-        request: ApprovalRequest,
-        decision: ApprovalDecision,
-    ) -> None:
-        current = state.metadata.get("approval_decisions", [])
-        history = list(current) if isinstance(current, tuple | list) else []
-        history.append(
-            {
-                "approval_id": decision.approval_id,
-                "node_id": request.node_id,
-                "decision": decision.decision.value,
-                "decided_by": decision.decided_by,
-                "decided_at": decision.decided_at.isoformat(),
-                **({"reason": decision.reason} if decision.reason else {}),
-            }
+    def _state_error(
+        plan: ExecutionPlan,
+        node_id: str,
+        message: str,
+        *,
+        approval_id: str | None = None,
+    ) -> RequestError:
+        return RequestError(
+            message,
+            code="HARNESS.APPROVAL.STATE_INVALID",
+            details={
+                "plan_id": plan.plan_id,
+                "node_id": node_id,
+                **({"approval_id": approval_id} if approval_id else {}),
+            },
         )
-        state.metadata["approval_decisions"] = history
 
     @staticmethod
     def _touch(state: PlanExecutionState) -> None:

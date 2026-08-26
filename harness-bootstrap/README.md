@@ -122,3 +122,13 @@ result = await app.complete_async_node(
 ```
 
 `complete_async_node()` 会先持久化终态节点快照，再复用 `resume_plan` 的状态机继续 DAG。
+
+## Stage 2 Policy / Trace / Events
+
+`build_harness()` 现在额外组装 `EventPublisher`，默认使用 `InMemoryEventBus`，不会产生
+磁盘或外部网络副作用。可通过 `event_publisher=` 注入自定义实现，并通过
+`HarnessApplication.event_publisher` 访问当前实例。
+
+PolicyEngine 同时支持 `PRE_PLAN` 与 `PRE_EXECUTE`。需要人工审批的 Capability 可以
+配置 `RequireApprovalPolicy`；审批批准后 ExecutionEngine 会携带结构化
+`ApprovalGrant` 再次经过 PRE_EXECUTE，而不是直接绕过 Policy。

@@ -12,7 +12,7 @@ from harness_contracts.base import FrozenJsonMapping, NonEmptyString
 
 
 class SpanType(StrEnum):
-    """阶段一 Harness 调用链中的 Span 类型。"""
+    """稳定 Harness Span 类型；瞬时状态继续使用 Event/Attribute。"""
 
     REQUEST = "request"
     RUNTIME = "runtime"
@@ -24,6 +24,7 @@ class SpanType(StrEnum):
     PLAN = "plan"
     PLAN_NODE = "plan_node"
     SCHEDULER = "scheduler"
+    PLANNER = "planner"
 
 
 class SpanStatus(StrEnum):

@@ -88,3 +88,37 @@ Provider 调用转换成可持久化的异步等待，而不是长期占用原�
 
 阶段二不在这里实现 callback server、polling framework 或外部 event broker adapter；
 `complete_async_node(...)` 是明确的 completion ingress。
+
+## Policy / Trace / Execution Events
+
+Stage 2 Step 10 完成两层 Policy 边界：
+
+- `PRE_PLAN` 在 Scheduler 启动前评估整个 `ExecutionPlan`；`DENY` 会阻止 Plan 创建和
+  Provider 调用。
+- `PRE_EXECUTE` 继续由 `CapabilityInvoker` 在每次 Capability 尝试前执行。
+- `PolicyEffect.REQUIRE_APPROVAL` 在 Plan Capability 节点上转换为
+  `WAITING(policy_approval)`，复用 `ApprovalRequest / ApprovalDecision / Resume`。
+- Policy Approval 批准后生成结构化 `ApprovalGrant`；Resume 再次进入 PRE_EXECUTE 时
+  Policy 可以识别该 Grant，避免审批循环。Grant 保存在 Plan State 中，不接受调用方
+  伪造的 `_harness_approval_grants` Invocation attribute。
+- Direct Invocation 遇到 `REQUIRE_APPROVAL` 会返回
+  `HARNESS.POLICY.APPROVAL_REQUIRED`，不会绕过审批继续调用 Provider。
+
+Trace 稳定层级补齐 `SCHEDULER`，节点状态变化继续使用 Trace Event，而不是新增大量
+SpanType。Plan 执行的关键结构是：
+
+```text
+REQUEST
+└── RUNTIME
+    └── PLAN
+        ├── SCHEDULER
+        └── PLAN_NODE
+            ├── POLICY / REGISTRY_RESOLVE
+            └── CAPABILITY
+                └── AGENT / TOOL
+```
+
+ExecutionEngine 同时向 `EventPublisher` 发布业务无关的执行事件。checkpoint 前后快照
+用于推导 `plan.* / node.* / checkpoint.saved`；Approval 与 Async completion 额外发布
+`approval.* / async.*`。EventPublisher 属于观察面，发布或订阅失败不会改变 StateStore
+中的 DAG 执行事实。

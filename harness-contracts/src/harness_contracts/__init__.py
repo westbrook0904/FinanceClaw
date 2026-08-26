@@ -3,7 +3,12 @@
 其他模块应从本包顶层导入稳定类型，不依赖内部文件布局。
 """
 
-from .approval import ApprovalDecision, ApprovalDecisionType, ApprovalRequest
+from .approval import (
+    ApprovalDecision,
+    ApprovalDecisionType,
+    ApprovalGrant,
+    ApprovalRequest,
+)
 from .base import ContractModel, JsonPrimitive, JsonValue, MutableContractModel
 from .capability import (
     CapabilityDescriptor,
@@ -66,6 +71,7 @@ from .result import Continuation, ResultEnvelope, ResultIssue, ResultOutput, Res
 __all__ = [
     "ApprovalDecision",
     "ApprovalDecisionType",
+    "ApprovalGrant",
     "ApprovalRequest",
     "BindingKind",
     "CancellationContext",

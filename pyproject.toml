@@ -41,6 +41,7 @@ packages = [
     "harness_bootstrap",
     "harness_contracts",
     "harness_execution",
+    "harness_events",
     "harness_plugin_local",
     "harness_planning",
     "harness_policy",
@@ -58,6 +59,7 @@ packages = [
 harness_bootstrap = "harness-bootstrap/src/harness_bootstrap"
 harness_contracts = "harness-contracts/src/harness_contracts"
 harness_execution = "harness-execution/src/harness_execution"
+harness_events = "harness-events/src/harness_events"
 harness_plugin_local = "harness-plugin-local/src/harness_plugin_local"
 harness_planning = "harness-planning/src/harness_planning"
 harness_policy = "harness-policy/src/harness_policy"
@@ -73,6 +75,7 @@ mock_finance_agent = "plugins/mock-finance-agent/src/mock_finance_agent"
 [tool.setuptools.package-data]
 harness_contracts = ["py.typed"]
 harness_execution = ["py.typed"]
+harness_events = ["py.typed"]
 harness_spi = ["py.typed"]
 harness_registry = ["py.typed"]
 harness_plugin_local = ["py.typed"]

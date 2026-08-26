@@ -67,6 +67,10 @@ class AsyncWaitingCoordinator:
             node_state = state.nodes[node.node_id]
             if node_state.status is not NodeExecutionStatus.WAITING:
                 continue
+            # Policy-triggered Approval 也会让 CAPABILITY 节点进入 WAITING，但它
+            # 由 ApprovalCoordinator 管理，不属于异步 Job completion。
+            if node_state.waiting_reason == "policy_approval":
+                continue
             continuation = node_state.continuation
             if continuation is None:
                 raise RequestError(
@@ -258,6 +262,8 @@ class AsyncWaitingCoordinator:
                 continue
             node_state = state.nodes[node.node_id]
             if node_state.status is not NodeExecutionStatus.WAITING:
+                continue
+            if node_state.waiting_reason == "policy_approval":
                 continue
             continuation = node_state.continuation
             if continuation is None:

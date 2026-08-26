@@ -1,18 +1,24 @@
-"""阶段一内置 Policy。"""
+"""阶段二内置通用 Policy。"""
 
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 
-from .models import PolicyContext, PolicyDecision
+from harness_contracts import EgressType, SideEffectType
+
+from .models import PolicyContext, PolicyDecision, PolicyPhase
 from .policy import Policy
 
 
 class AllowAllPolicy(Policy):
-    """显式允许所有调用，主要用于开发和组合测试。"""
+    """显式允许 PRE_PLAN/PRE_EXECUTE，主要用于开发和组合测试。"""
+
+    @property
+    def phases(self) -> frozenset[PolicyPhase]:
+        return frozenset({PolicyPhase.PRE_PLAN, PolicyPhase.PRE_EXECUTE})
 
     def evaluate(self, context: PolicyContext) -> PolicyDecision:
-        return PolicyDecision.allow(self.name, reason="invocation allowed")
+        return PolicyDecision.allow(self.name, reason=f"{context.phase.value} allowed")
 
 
 class TenantPolicy(Policy):
@@ -29,16 +35,17 @@ class TenantPolicy(Policy):
         )
         self._require_tenant = require_tenant
 
+    @property
+    def phases(self) -> frozenset[PolicyPhase]:
+        return frozenset({PolicyPhase.PRE_PLAN, PolicyPhase.PRE_EXECUTE})
+
     def evaluate(self, context: PolicyContext) -> PolicyDecision:
         requested = context.invocation.request.tenant_id
         runtime_tenant = context.invocation.tenant
         resolved = runtime_tenant.tenant_id if runtime_tenant is not None else None
 
         if requested is not None and resolved is None:
-            return PolicyDecision.deny(
-                self.name,
-                reason="runtime tenant context is missing",
-            )
+            return PolicyDecision.deny(self.name, reason="runtime tenant context is missing")
         if requested is not None and resolved is not None and requested != resolved:
             return PolicyDecision.deny(
                 self.name,
@@ -71,17 +78,16 @@ class CapabilityPermissionPolicy(Policy):
         allow_unconfigured: bool = False,
     ) -> None:
         self._permissions = {
-            capability: frozenset(scopes)
-            for capability, scopes in permissions.items()
+            capability: frozenset(scopes) for capability, scopes in permissions.items()
         }
         self._allow_unconfigured = allow_unconfigured
 
     def evaluate(self, context: PolicyContext) -> PolicyDecision:
-        capability_id = context.capability.id
-        required = self._permissions.get(
-            capability_id,
-            self._permissions.get("*"),
-        )
+        capability = context.capability
+        if capability is None:
+            return PolicyDecision.allow(self.name, reason="not a capability boundary")
+        capability_id = capability.id
+        required = self._permissions.get(capability_id, self._permissions.get("*"))
 
         if required is None:
             if self._allow_unconfigured:
@@ -93,12 +99,8 @@ class CapabilityPermissionPolicy(Policy):
                 self.name,
                 reason="capability has no configured permission rule",
             )
-
         if not required:
-            return PolicyDecision.allow(
-                self.name,
-                reason="capability requires no scopes",
-            )
+            return PolicyDecision.allow(self.name, reason="capability requires no scopes")
 
         identity = context.invocation.identity
         if identity is None:
@@ -114,9 +116,65 @@ class CapabilityPermissionPolicy(Policy):
                 reason="required capability scope is missing",
                 constraints={"required_scopes": sorted(required)},
             )
-
         return PolicyDecision.allow(
             self.name,
             reason="capability scope allowed",
             constraints={"required_scopes": sorted(required)},
+        )
+
+
+class RequireApprovalPolicy(Policy):
+    """按 Capability/副作用/egress 要求一次 Human Approval。"""
+
+    def __init__(
+        self,
+        *,
+        capabilities: Iterable[str] = (),
+        side_effects: Iterable[SideEffectType] = (),
+        egress: Iterable[EgressType] = (),
+        reason: str = "capability requires human approval",
+    ) -> None:
+        self._capabilities = frozenset(capabilities)
+        self._side_effects = frozenset(side_effects)
+        self._egress = frozenset(egress)
+        if not isinstance(reason, str) or not reason.strip():
+            raise TypeError("reason must be a non-empty string")
+        self._reason = reason.strip()
+
+    def evaluate(self, context: PolicyContext) -> PolicyDecision:
+        capability = context.capability
+        if capability is None or not self._matches(context):
+            return PolicyDecision.allow(self.name, reason="approval rule did not match")
+        if context.approval_grant is not None:
+            return PolicyDecision.allow(
+                self.name,
+                reason="matching approval grant supplied",
+                constraints={"approval_id": context.approval_grant.approval_id},
+            )
+        profile = capability.execution_profile
+        return PolicyDecision.require_approval(
+            self.name,
+            reason=self._reason,
+            constraints={
+                "capability": capability.id,
+                "side_effect": profile.side_effect.value,
+                "egress": profile.egress.value,
+            },
+        )
+
+    def _matches(self, context: PolicyContext) -> bool:
+        capability = context.capability
+        if capability is None:
+            return False
+        profile = capability.execution_profile
+        selectors_configured = bool(
+            self._capabilities or self._side_effects or self._egress
+        )
+        if not selectors_configured:
+            return True
+        return (
+            capability.id in self._capabilities
+            or "*" in self._capabilities
+            or profile.side_effect in self._side_effects
+            or profile.egress in self._egress
         )
