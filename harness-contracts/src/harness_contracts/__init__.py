@@ -36,8 +36,10 @@ from .errors import (
     HarnessTimeoutError,
     PluginError,
     PolicyError,
+    ProviderError,
     RegistryError,
     RequestError,
+    SelectionError,
 )
 from .execution import (
     NodeExecutionState,
@@ -65,8 +67,17 @@ from .plan import (
     ValueReference,
 )
 from .persistence import PlanExecutionRecord
+from .provider import (
+    ProviderAttempt,
+    ProviderAttemptStatus,
+    ProviderDescriptor,
+    ProviderHealthSnapshot,
+    ProviderHealthStatus,
+    ProviderPin,
+)
 from .request import Request, RequestInput, RequestOptions, RequestTarget
 from .result import Continuation, ResultEnvelope, ResultIssue, ResultOutput, ResultStatus
+from .selection import SelectionContext, SelectionDecision, SelectionRejection
 
 __all__ = [
     "ApprovalDecision",
@@ -115,6 +126,13 @@ __all__ = [
     "PlanNodeKind",
     "PluginError",
     "PolicyError",
+    "ProviderAttempt",
+    "ProviderAttemptStatus",
+    "ProviderDescriptor",
+    "ProviderError",
+    "ProviderHealthSnapshot",
+    "ProviderHealthStatus",
+    "ProviderPin",
     "RegistryError",
     "Request",
     "RequestBinding",
@@ -127,6 +145,10 @@ __all__ = [
     "ResultOutput",
     "ResultStatus",
     "RetryPolicy",
+    "SelectionContext",
+    "SelectionDecision",
+    "SelectionError",
+    "SelectionRejection",
     "SideEffectType",
     "TenantContext",
     "TraceContext",

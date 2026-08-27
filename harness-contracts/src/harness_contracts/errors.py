@@ -15,6 +15,8 @@ class ErrorCategory(StrEnum):
     POLICY = "policy"
     PLUGIN = "plugin"
     CAPABILITY = "capability"
+    PROVIDER = "provider"
+    SELECTION = "selection"
     TIMEOUT = "timeout"
 
 
@@ -25,6 +27,22 @@ class ErrorCode(StrEnum):
     POLICY_DENIED = "HARNESS.POLICY.DENIED"
     PLUGIN_LOAD_FAILED = "HARNESS.PLUGIN.LOAD_FAILED"
     CAPABILITY_EXECUTION_FAILED = "HARNESS.CAPABILITY.EXECUTION_FAILED"
+
+    PROVIDER_NOT_FOUND = "HARNESS.PROVIDER.NOT_FOUND"
+    PROVIDER_DUPLICATE = "HARNESS.PROVIDER.DUPLICATE"
+    PROVIDER_CAPABILITY_MISMATCH = "HARNESS.PROVIDER.CAPABILITY_MISMATCH"
+    PROVIDER_NO_ELIGIBLE_CANDIDATE = "HARNESS.PROVIDER.NO_ELIGIBLE_CANDIDATE"
+    PROVIDER_PIN_NOT_ALLOWED = "HARNESS.PROVIDER.PIN_NOT_ALLOWED"
+    PROVIDER_PIN_NOT_FOUND = "HARNESS.PROVIDER.PIN_NOT_FOUND"
+    PROVIDER_FALLBACK_UNSAFE = "HARNESS.PROVIDER.FALLBACK_UNSAFE"
+    PROVIDER_SELECTION_FAILED = "HARNESS.PROVIDER.SELECTION_FAILED"
+    PROVIDER_HEALTH_UNAVAILABLE = "HARNESS.PROVIDER.HEALTH_UNAVAILABLE"
+    PROVIDER_EXECUTION_FAILED = "HARNESS.PROVIDER.EXECUTION_FAILED"
+    PROVIDER_RESUME_UNSAFE = "HARNESS.PROVIDER.RESUME_UNSAFE"
+
+    SELECTION_INVALID_CONTEXT = "HARNESS.SELECTION.INVALID_CONTEXT"
+    SELECTION_INVALID_DECISION = "HARNESS.SELECTION.INVALID_DECISION"
+
     TIMEOUT = "HARNESS.TIMEOUT"
 
 
@@ -35,6 +53,7 @@ class ErrorDetail(ContractModel):
     category: ErrorCategory
     message: NonEmptyString
     retryable: bool = False
+    fallbackable: bool = False
     details: FrozenJsonMapping = Field(default_factory=dict)
 
 
@@ -44,6 +63,7 @@ class HarnessError(Exception):
     default_code = ErrorCode.CAPABILITY_EXECUTION_FAILED
     default_category = ErrorCategory.CAPABILITY
     default_retryable = False
+    default_fallbackable = False
 
     def __init__(
         self,
@@ -52,6 +72,7 @@ class HarnessError(Exception):
         code: str | ErrorCode | None = None,
         details: dict[str, JsonValue] | None = None,
         retryable: bool | None = None,
+        fallbackable: bool | None = None,
     ) -> None:
         super().__init__(message)
         self.message = message
@@ -59,6 +80,9 @@ class HarnessError(Exception):
         self.category = self.default_category
         self.details = details or {}
         self.retryable = self.default_retryable if retryable is None else retryable
+        self.fallbackable = (
+            self.default_fallbackable if fallbackable is None else fallbackable
+        )
 
     def to_detail(self) -> ErrorDetail:
         """转换为不包含 Python 异常对象的跨模块错误协议。"""
@@ -68,6 +92,7 @@ class HarnessError(Exception):
             category=self.category,
             message=self.message,
             retryable=self.retryable,
+            fallbackable=self.fallbackable,
             details=self.details,
         )
 
@@ -95,6 +120,16 @@ class PluginError(HarnessError):
 class CapabilityError(HarnessError):
     default_code = ErrorCode.CAPABILITY_EXECUTION_FAILED
     default_category = ErrorCategory.CAPABILITY
+
+
+class ProviderError(HarnessError):
+    default_code = ErrorCode.PROVIDER_EXECUTION_FAILED
+    default_category = ErrorCategory.PROVIDER
+
+
+class SelectionError(HarnessError):
+    default_code = ErrorCode.SELECTION_INVALID_DECISION
+    default_category = ErrorCategory.SELECTION
 
 
 class HarnessTimeoutError(HarnessError):
