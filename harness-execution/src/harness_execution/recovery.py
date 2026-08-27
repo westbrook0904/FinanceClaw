@@ -19,6 +19,7 @@ from harness_contracts import (
     PlanExecutionStatus,
     PlanNode,
     PlanNodeKind,
+    ProviderAttempt,
     Request,
     RequestError,
     ResultEnvelope,
@@ -30,7 +31,6 @@ from harness_trace import Span, SpanType
 from .cancellation import CancellationSignal
 from .resolution import BindingResolutionError
 from .scheduler import BasicScheduler, CheckpointError, SchedulerOutcome
-
 
 type CheckpointCallback = Callable[[PlanExecutionState], Awaitable[None]]
 type AttemptCheckpointCallback = Callable[[int], Awaitable[None]]
@@ -146,10 +146,7 @@ class ResumeCoordinator:
             item.status in {NodeExecutionStatus.READY, NodeExecutionStatus.RUNNING}
             for item in state.nodes.values()
         ) or (
-            any(
-                item.status is NodeExecutionStatus.PENDING
-                for item in state.nodes.values()
-            )
+            any(item.status is NodeExecutionStatus.PENDING for item in state.nodes.values())
             and (
                 state.status in {PlanExecutionStatus.CREATED, PlanExecutionStatus.RUNNING}
                 or not has_waiting
@@ -235,8 +232,7 @@ class ResumeCoordinator:
 
                 if not running:
                     if any(
-                        item.status is NodeExecutionStatus.READY
-                        for item in state.nodes.values()
+                        item.status is NodeExecutionStatus.READY for item in state.nodes.values()
                     ):
                         continue
                     break
@@ -357,7 +353,7 @@ class ResumeCoordinator:
             self._scheduler._lifecycle.finish_from_result(node_span, result)  # noqa: SLF001
             return node.node_id, result, start_attempt
 
-        attempts = start_attempt
+        attempts = start_attempt - 1
         try:
             node_input = self._scheduler._input_resolver.resolve(  # noqa: SLF001
                 request,
@@ -365,9 +361,6 @@ class ResumeCoordinator:
                 results,
             )
             deadline_at = self._effective_resume_deadline(plan, node, node_state, context)
-            descriptor = self._scheduler._capability_catalog.get(  # noqa: SLF001
-                node.capability or ""
-            )
             execution_context = context.model_copy(
                 update={
                     "deadline_at": deadline_at,
@@ -384,48 +377,42 @@ class ResumeCoordinator:
                     },
                 }
             )
-            result = ResultEnvelope.cancelled()
-            for attempt in range(start_attempt, node.retry_policy.max_attempts + 1):
-                attempts = attempt
-                if attempt > start_attempt and checkpoint_attempt is not None:
-                    await checkpoint_attempt(attempt)
-                result = await self._scheduler._invoker.invoke(  # noqa: SLF001
-                    node.capability or "",
-                    node_input,
-                    execution_context.model_copy(
-                        update={"cancellation": cancellation.snapshot()}
-                    ),
-                    deadline_at=deadline_at,
-                    parent=node_span,
-                    trace_enabled=trace_enabled,
+
+            async def on_attempt_started(attempt: ProviderAttempt) -> None:
+                nonlocal attempts
+                attempts += 1
+                if attempts > start_attempt and checkpoint_attempt is not None:
+                    await checkpoint_attempt(attempts)
+                is_retry = (
+                    attempt.retry_attempt > start_attempt
+                    if attempt.provider_attempt == 1
+                    else attempt.retry_attempt > 1
                 )
-                if not self._scheduler._should_retry(  # noqa: SLF001
-                    node,
-                    descriptor,
-                    result,
-                    attempt,
-                    deadline_at,
-                ):
-                    break
-                backoff_seconds = self._scheduler._backoff_seconds(node, attempt)  # noqa: SLF001
-                if not self._scheduler._deadline_allows(  # noqa: SLF001
-                    deadline_at,
-                    backoff_seconds,
-                ):
-                    break
-                if node_span is not None:
+                if is_retry and node_span is not None:
                     self._scheduler._tracer.add_event(  # noqa: SLF001
                         node_span,
                         "node.retrying",
                         attributes={
-                            "attempt": attempt,
-                            "next_attempt": attempt + 1,
-                            "backoff_ms": int(backoff_seconds * 1000),
+                            "attempt": attempt.retry_attempt - 1,
+                            "next_attempt": attempt.retry_attempt,
+                            "provider_id": attempt.provider_id,
+                            "provider_attempt": attempt.provider_attempt,
                             "resumed": True,
                         },
                     )
-                if backoff_seconds:
-                    await asyncio.sleep(backoff_seconds)
+
+            result = await self._scheduler._invoker.invoke(  # noqa: SLF001
+                node.capability or "",
+                node_input,
+                execution_context.model_copy(update={"cancellation": cancellation.snapshot()}),
+                deadline_at=deadline_at,
+                retry_policy=node.retry_policy,
+                idempotency_key=node.idempotency_key,
+                retry_start_attempt=start_attempt,
+                attempt_started=on_attempt_started,
+                parent=node_span,
+                trace_enabled=trace_enabled,
+            )
         except asyncio.CancelledError:
             self._scheduler._lifecycle.finish_cancelled(node_span)  # noqa: SLF001
             raise
@@ -478,6 +465,8 @@ class ResumeCoordinator:
         profile = descriptor.execution_profile
         if profile.side_effect in {SideEffectType.NONE, SideEffectType.READ}:
             return True
+        if len(self._scheduler._invoker.registry.candidates(node.capability or "")) > 1:  # noqa: SLF001
+            return False
         return (
             profile.side_effect is SideEffectType.WRITE
             and profile.idempotency in {IdempotencyType.OPTIONAL, IdempotencyType.REQUIRED}
@@ -562,11 +551,15 @@ class ResumeCoordinator:
                         code="HARNESS.PLAN.STATE_INVALID",
                         details={"plan_id": plan.plan_id, "node_id": node_id},
                     )
-            elif node_state.status in {
-                NodeExecutionStatus.PENDING,
-                NodeExecutionStatus.READY,
-                NodeExecutionStatus.SKIPPED,
-            } and node_state.result is not None:
+            elif (
+                node_state.status
+                in {
+                    NodeExecutionStatus.PENDING,
+                    NodeExecutionStatus.READY,
+                    NodeExecutionStatus.SKIPPED,
+                }
+                and node_state.result is not None
+            ):
                 raise RequestError(
                     "stored unexecuted node unexpectedly contains a result",
                     code="HARNESS.PLAN.STATE_INVALID",

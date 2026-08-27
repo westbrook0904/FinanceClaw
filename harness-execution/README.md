@@ -14,7 +14,8 @@
   Capability 终态并继续。
 - `ExecutionEngine.cancel(plan_id, reason)`：取消当前进程内活动 Plan。
 - `ExecutionEngine.state(plan_id)`：读取当前 Engine 已见过的 State 快照。
-- `BasicScheduler`：DAG、Binding、Condition、Retry、Deadline、Cancellation 和结果组合。
+- `BasicScheduler`：DAG、Binding、Condition、Node Deadline、Cancellation 和结果组合；
+  Provider Retry/Fallback 委托给 Runtime。
 - `CancellationSignal`：进程内可变取消信号及可持久化 CancellationContext 快照。
 - `InputResolver`、`ConditionEvaluator`、`resolve_json_pointer()`：结构化数据求值。
 
@@ -34,7 +35,11 @@ BasicScheduler 支持：
 Capability 返回 `PARTIAL` 时节点仍视为成功并可供下游读取 output，issues 会提升到 Plan；
 返回 `ACCEPTED` 时节点进入 WAITING，不占用长期 asyncio Task。
 
-## Retry、Deadline 与取消
+## Retry / Fallback、Deadline 与取消
+
+Scheduler 每个 Node 只调用一次 `CapabilityInvoker`。Runtime 在已选 Provider 内执行
+Retry，因此 Retry 不会重新 Selection；当前 Provider 的 Retry 耗尽后，只有最终错误
+`fallbackable=true` 才会从尚未尝试的 eligible Provider 中重新选择。
 
 Retry 只有同时满足以下条件才会发生：
 
@@ -46,6 +51,11 @@ Retry 只有同时满足以下条件才会发生：
 
 退避采用无 jitter 的确定性指数策略。Request、Plan 和 Node 三层时间预算合并为最早的
 绝对 Deadline，全部 Retry 共享该时间点。
+
+`NONE/READ` 允许跨 Provider Fallback。WRITE 默认 fail-closed，只有 Capability 声明
+支持幂等、Node 提供稳定 `idempotency_key`，且 source/target Provider 的非空
+`equivalence_group` 完全相同，才允许切换；否则返回
+`HARNESS.PROVIDER.FALLBACK_UNSAFE`。
 
 `ExecutionEngine.cancel()` 使用 `CancellationSignal` 停止新节点、取消运行 Task，并
 把剩余节点和 Plan 收敛到 CANCELLED。调用 `execute()` 的客户端 task 被取消时，

@@ -16,21 +16,22 @@ from harness_contracts import (
     ConditionOperator,
     ExecutionPlan,
     FailurePolicy,
-    InvocationContext,
     IdempotencyType,
+    InvocationContext,
     LiteralBinding,
     NodeExecutionStatus,
     NodeOutputBinding,
     PlanBudget,
     PlanEdge,
     PlanNode,
+    ProviderDescriptor,
     Request,
     RequestBinding,
     RequestInput,
-    RetryPolicy,
     ResultEnvelope,
     ResultOutput,
     ResultStatus,
+    RetryPolicy,
     SideEffectType,
     ValueReference,
 )
@@ -98,9 +99,7 @@ class ControlledTool(ToolSPI):
             if self._delay:
                 await asyncio.sleep(self._delay)
             if self._fail:
-                return ResultEnvelope.failure(
-                    CapabilityError("controlled failure").to_detail()
-                )
+                return ResultEnvelope.failure(CapabilityError("controlled failure").to_detail())
             return ResultEnvelope.success(ResultOutput(type="json", data=arguments))
         finally:
             if self._tracker is not None:
@@ -118,6 +117,7 @@ class ReliabilityTool(ToolSPI):
         profile: CapabilityExecutionProfile | None = None,
         delay: float = 0,
         started: asyncio.Event | None = None,
+        fallbackable: bool = False,
     ) -> None:
         self._descriptor = CapabilityDescriptor(
             id=capability_id,
@@ -129,6 +129,7 @@ class ReliabilityTool(ToolSPI):
         self.failures_before_success = failures_before_success
         self.delay = delay
         self.started = started
+        self.fallbackable = fallbackable
         self.calls = 0
         self.cancelled = False
         self.contexts: list[InvocationContext] = []
@@ -153,7 +154,11 @@ class ReliabilityTool(ToolSPI):
             raise
         if self.calls <= self.failures_before_success:
             return ResultEnvelope.failure(
-                CapabilityError("transient failure", retryable=True).to_detail()
+                CapabilityError(
+                    "transient failure",
+                    retryable=True,
+                    fallbackable=self.fallbackable,
+                ).to_detail()
             )
         return ResultEnvelope.success(ResultOutput(type="json", data={"calls": self.calls}))
 
@@ -165,6 +170,14 @@ def make_engine(
     registry = InMemoryCapabilityRegistry()
     for provider in providers:
         registry.register(provider, plugin_id="execution-tests")
+    return make_engine_from_registry(registry, state_store=state_store)
+
+
+def make_engine_from_registry(
+    registry: InMemoryCapabilityRegistry,
+    *,
+    state_store: StateStore | None = None,
+) -> tuple[ExecutionEngine, InMemoryTracer]:
     tracer = InMemoryTracer()
     policy_engine = PolicyEngine((AllowAllPolicy(),))
     lifecycle = InvocationLifecycle(
@@ -589,6 +602,62 @@ class ExecutionEngineTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.error.message, "transient failure")
         self.assertEqual(tool.calls, 3)
         self.assertEqual(engine.state("retry-exhausted").nodes["work"].attempt, 3)
+
+    async def test_retry_exhaustion_falls_back_without_scheduler_reselection(self) -> None:
+        capability_id = "retry.fallback/v1"
+        primary = ReliabilityTool(
+            capability_id,
+            failures_before_success=10,
+            profile=CapabilityExecutionProfile(side_effect=SideEffectType.READ),
+            fallbackable=True,
+        )
+        backup = ReliabilityTool(
+            capability_id,
+            profile=CapabilityExecutionProfile(side_effect=SideEffectType.READ),
+        )
+        registry = InMemoryCapabilityRegistry()
+        registry.register_provider(
+            primary,
+            descriptor=ProviderDescriptor(
+                provider_id="retry-primary",
+                capability_id=capability_id,
+                plugin_id="primary-plugin",
+                implementation_version="1.0.0",
+                priority=100,
+            ),
+        )
+        registry.register_provider(
+            backup,
+            descriptor=ProviderDescriptor(
+                provider_id="retry-backup",
+                capability_id=capability_id,
+                plugin_id="backup-plugin",
+                implementation_version="1.0.0",
+                priority=10,
+            ),
+        )
+        engine, _ = make_engine_from_registry(registry)
+        plan = ExecutionPlan(
+            plan_id="retry-fallback",
+            nodes=(
+                PlanNode(
+                    node_id="work",
+                    capability=capability_id,
+                    retry_policy=RetryPolicy(
+                        max_attempts=2,
+                        initial_backoff_ms=0,
+                        max_backoff_ms=0,
+                    ),
+                ),
+            ),
+        )
+
+        result = await engine.execute(make_request(), plan)
+
+        self.assertEqual(result.status, ResultStatus.SUCCESS)
+        self.assertEqual(primary.calls, 2)
+        self.assertEqual(backup.calls, 1)
+        self.assertEqual(engine.state(plan.plan_id).nodes["work"].attempt, 3)
 
     async def test_write_retry_requires_supported_idempotency_and_key(self) -> None:
         unsafe = ReliabilityTool(

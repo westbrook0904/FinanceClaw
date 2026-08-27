@@ -27,6 +27,12 @@
       <sourceFolder url="file://$MODULE_DIR$/plugins/mock-finance-agent/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/plugins/tests" isTestSource="true" />
       <sourceFolder url="file://$MODULE_DIR$/tests" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/harness-events/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/harness-events/tests" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/harness-selection/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/harness-selection/tests" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/harness-state/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/harness-state/tests" isTestSource="true" />
       <excludeFolder url="file://$MODULE_DIR$/.venv" />
     </content>
     <orderEntry type="jdk" jdkName="Python 3.14 (FinanceClaw)" jdkType="Python SDK" />

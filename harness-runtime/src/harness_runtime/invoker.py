@@ -22,17 +22,22 @@ from harness_contracts import (
     RequestError,
     RequestInput,
     ResultEnvelope,
+    RetryPolicy,
     SelectionContext,
-    SelectionDecision,
     TraceContext,
 )
 from harness_policy import PolicyContext, PolicyDecision, PolicyEffect, PolicyEngine, PolicyPhase
-from harness_registry import CapabilityRegistry, ResolvedCapability
+from harness_registry import CapabilityRegistry, ProviderRegistration, ResolvedCapability
 from harness_selection import PrioritySelector, ProviderSelector
 from harness_spi import AgentRequest, AgentSPI, ToolRequest, ToolSPI
 from harness_trace import Span, SpanType, Tracer
 
 from .lifecycle import InvocationLifecycle
+from .provider_execution import (
+    AttemptStartedCallback,
+    ProviderExecutionCoordinator,
+    SelectedProvider,
+)
 
 type InvocationParent = Span | TraceContext | None
 
@@ -48,6 +53,7 @@ class CapabilityInvoker:
         *,
         lifecycle: InvocationLifecycle | None = None,
         provider_selector: ProviderSelector | None = None,
+        provider_execution: ProviderExecutionCoordinator | None = None,
     ) -> None:
         if not isinstance(registry, CapabilityRegistry):
             raise TypeError("registry must implement CapabilityRegistry")
@@ -55,9 +61,21 @@ class CapabilityInvoker:
             raise TypeError("policy_engine must be PolicyEngine")
         if not isinstance(tracer, Tracer):
             raise TypeError("tracer must implement Tracer")
-        effective_selector = provider_selector or PrioritySelector()
+        effective_selector = provider_selector or (
+            provider_execution.selector
+            if isinstance(provider_execution, ProviderExecutionCoordinator)
+            else PrioritySelector()
+        )
         if not isinstance(effective_selector, ProviderSelector):
             raise TypeError("provider_selector must implement ProviderSelector")
+
+        effective_provider_execution = provider_execution or ProviderExecutionCoordinator(
+            effective_selector
+        )
+        if not isinstance(effective_provider_execution, ProviderExecutionCoordinator):
+            raise TypeError("provider_execution must be ProviderExecutionCoordinator")
+        if effective_provider_execution.selector is not effective_selector:
+            raise ValueError("provider_execution and invoker must use the same selector")
 
         effective_lifecycle = lifecycle or InvocationLifecycle(tracer)
         if not isinstance(effective_lifecycle, InvocationLifecycle):
@@ -69,6 +87,7 @@ class CapabilityInvoker:
         self._policy_engine = policy_engine
         self._tracer = tracer
         self._provider_selector = effective_selector
+        self._provider_execution = effective_provider_execution
         self._lifecycle = effective_lifecycle
 
     @property
@@ -88,6 +107,10 @@ class CapabilityInvoker:
         return self._provider_selector
 
     @property
+    def provider_execution(self) -> ProviderExecutionCoordinator:
+        return self._provider_execution
+
+    @property
     def lifecycle(self) -> InvocationLifecycle:
         return self._lifecycle
 
@@ -100,6 +123,10 @@ class CapabilityInvoker:
         plugin_id: str | None = None,
         timeout_ms: int | None = None,
         deadline_at: datetime | None = None,
+        retry_policy: RetryPolicy | None = None,
+        idempotency_key: str | None = None,
+        retry_start_attempt: int = 1,
+        attempt_started: AttemptStartedCallback | None = None,
         parent: InvocationParent = None,
         trace_enabled: bool = True,
     ) -> ResultEnvelope:
@@ -112,56 +139,100 @@ class CapabilityInvoker:
             plugin_id=plugin_id,
             timeout_ms=timeout_ms,
             deadline_at=deadline_at,
+            retry_policy=retry_policy,
+            idempotency_key=idempotency_key,
+            retry_start_attempt=retry_start_attempt,
+            attempt_started=attempt_started,
             parent=parent,
         )
         trace = _TraceAnchor(parent if parent is not None else context.trace_context)
+        effective_deadline = self._effective_deadline(
+            context,
+            timeout_ms=timeout_ms,
+            deadline_at=deadline_at,
+        )
+        effective_idempotency_key = idempotency_key
+        if effective_idempotency_key is None:
+            context_key = context.attributes.get("idempotency_key")
+            if isinstance(context_key, str) and context_key.strip():
+                effective_idempotency_key = context_key
+        progress_error: Exception | None = None
+
+        async def notify_attempt_started(attempt) -> None:
+            nonlocal progress_error
+            if attempt_started is None:
+                return
+            try:
+                await attempt_started(attempt)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                progress_error = exc
+                raise
 
         try:
-            selected = self._resolve_capability(
+            resolution = self._resolve_capability(
                 capability_id,
                 context,
                 plugin_id=plugin_id,
-                deadline_at=deadline_at,
+                deadline_at=effective_deadline,
                 trace=trace,
                 trace_enabled=trace_enabled,
             )
-            resolved = selected.resolved
-            decision = self._evaluate_policy(
-                context,
-                resolved,
-                selected.provider_descriptor,
-                trace=trace,
-                trace_enabled=trace_enabled,
-            )
-            if decision.effect is PolicyEffect.DENY:
-                constraints = decision.model_dump(mode="json")["constraints"]
-                error = PolicyError(
-                    decision.reason or "policy denied invocation",
-                    details={"policy": decision.policy, "constraints": constraints},
-                )
-                result = ResultEnvelope.denied(error.to_detail())
-            elif decision.effect is PolicyEffect.REQUIRE_APPROVAL:
-                result = self._approval_required_result(
-                    input,
+
+            async def invoke_selected(selected: SelectedProvider) -> ResultEnvelope:
+                resolved = selected.resolved
+                decision = self._evaluate_policy(
                     context,
                     resolved,
-                    decision,
+                    selected.registration.descriptor,
+                    trace=trace,
+                    trace_enabled=trace_enabled,
                 )
-            else:
-                result = await self._invoke_capability(
+                if decision.effect is PolicyEffect.DENY:
+                    constraints = decision.model_dump(mode="json")["constraints"]
+                    error = PolicyError(
+                        decision.reason or "policy denied invocation",
+                        details={"policy": decision.policy, "constraints": constraints},
+                    )
+                    return ResultEnvelope.denied(error.to_detail())
+                if decision.effect is PolicyEffect.REQUIRE_APPROVAL:
+                    return self._approval_required_result(
+                        input,
+                        context,
+                        resolved,
+                        decision,
+                    )
+                return await self._invoke_capability(
                     input,
                     context,
                     resolved,
                     timeout_ms=timeout_ms,
-                    deadline_at=deadline_at,
+                    deadline_at=effective_deadline,
                     trace=trace,
                     trace_enabled=trace_enabled,
                 )
+
+            result = await self._provider_execution.execute(
+                resolution.candidates,
+                resolution.selection_context,
+                invoke_selected,
+                retry_policy=retry_policy,
+                idempotency_key=effective_idempotency_key,
+                deadline_at=effective_deadline,
+                initial_selection=resolution.selected,
+                retry_start_attempt=retry_start_attempt,
+                attempt_started=(notify_attempt_started if attempt_started is not None else None),
+            )
         except asyncio.CancelledError:
             raise
         except HarnessError as exc:
+            if exc is progress_error:
+                raise
             result = ResultEnvelope.failure(exc.to_detail())
         except Exception as exc:
+            if exc is progress_error:
+                raise
             wrapped = CapabilityError(
                 "capability invocation failed",
                 code="HARNESS.CAPABILITY.INVOCATION_FAILED",
@@ -183,6 +254,10 @@ class CapabilityInvoker:
         plugin_id: str | None,
         timeout_ms: int | None,
         deadline_at: datetime | None,
+        retry_policy: RetryPolicy | None,
+        idempotency_key: str | None,
+        retry_start_attempt: int,
+        attempt_started: AttemptStartedCallback | None,
         parent: InvocationParent,
     ) -> None:
         if not isinstance(capability_id, str) or not capability_id.strip():
@@ -203,8 +278,35 @@ class CapabilityInvoker:
             or deadline_at.utcoffset() is None
         ):
             raise TypeError("deadline_at must be a timezone-aware datetime when provided")
+        if retry_policy is not None and not isinstance(retry_policy, RetryPolicy):
+            raise TypeError("retry_policy must be RetryPolicy when provided")
+        if idempotency_key is not None and (
+            not isinstance(idempotency_key, str) or not idempotency_key.strip()
+        ):
+            raise TypeError("idempotency_key must be a non-empty string when provided")
+        if (
+            not isinstance(retry_start_attempt, int)
+            or isinstance(retry_start_attempt, bool)
+            or retry_start_attempt < 1
+            or (retry_policy is not None and retry_start_attempt > retry_policy.max_attempts)
+        ):
+            raise ValueError("retry_start_attempt must be within RetryPolicy.max_attempts")
+        if attempt_started is not None and not callable(attempt_started):
+            raise TypeError("attempt_started must be callable when provided")
         if parent is not None and not isinstance(parent, Span | TraceContext):
             raise TypeError("parent must be Span, TraceContext, or None")
+
+    @staticmethod
+    def _effective_deadline(
+        context: InvocationContext,
+        *,
+        timeout_ms: int | None,
+        deadline_at: datetime | None,
+    ) -> datetime | None:
+        candidates = [item for item in (context.deadline_at, deadline_at) if item is not None]
+        if timeout_ms is not None:
+            candidates.append(datetime.now(UTC) + timedelta(milliseconds=timeout_ms))
+        return min(candidates) if candidates else None
 
     def _resolve_capability(
         self,
@@ -215,7 +317,7 @@ class CapabilityInvoker:
         deadline_at: datetime | None,
         trace: _TraceAnchor,
         trace_enabled: bool,
-    ) -> _SelectedCapability:
+    ) -> _ProviderResolution:
         span = (
             self._tracer.start_span(
                 "registry.resolve",
@@ -268,33 +370,9 @@ class CapabilityInvoker:
             raise error
 
         capability = candidates[0].capability
-        plan_id = context.attributes.get("plan_id")
-        node_id = context.attributes.get("node_id")
-        if (
-            len(candidates) > 1
-            and isinstance(plan_id, str)
-            and isinstance(node_id, str)
-            and capability.execution_profile.side_effect.value == "write"
-        ):
-            error = ProviderError(
-                "multi-provider WRITE plan execution requires durable provider checkpoint",
-                code="HARNESS.PROVIDER.RESUME_UNSAFE",
-                details={
-                    "capability_id": capability_id,
-                    "plan_id": plan_id,
-                    "node_id": node_id,
-                    "provider_ids": [item.provider_id for item in candidates],
-                },
-            )
-            self._lifecycle.finish_error(span, error)
-            raise error
 
-        trusted_tenant_id = (
-            context.tenant.tenant_id if context.tenant is not None else None
-        )
-        identity_subject = (
-            context.identity.subject if context.identity is not None else None
-        )
+        trusted_tenant_id = context.tenant.tenant_id if context.tenant is not None else None
+        identity_subject = context.identity.subject if context.identity is not None else None
         selection_context = SelectionContext(
             request_id=context.request.request_id,
             capability_id=capability_id,
@@ -306,7 +384,7 @@ class CapabilityInvoker:
         )
 
         try:
-            selection = self._provider_selector.select(candidates, selection_context)
+            selected = self._provider_execution.select(candidates, selection_context)
         except asyncio.CancelledError:
             self._lifecycle.finish_cancelled(span)
             raise
@@ -326,33 +404,9 @@ class CapabilityInvoker:
             self._lifecycle.finish_error(span, wrapped)
             raise wrapped from exc
 
-        registration = next(
-            (
-                candidate
-                for candidate in candidates
-                if candidate.provider_id == selection.selected_provider_id
-            ),
-            None,
-        )
-        if registration is None:
-            error = ProviderError(
-                "selector returned a provider outside the candidate set",
-                code="HARNESS.PROVIDER.SELECTION_FAILED",
-                details={
-                    "capability_id": capability_id,
-                    "selected_provider_id": selection.selected_provider_id,
-                    "selector": selection.selector,
-                },
-            )
-            self._lifecycle.finish_error(span, error)
-            raise error
-
-        resolved = ResolvedCapability(
-            descriptor=registration.capability,
-            plugin_id=registration.plugin_id,
-            provider=registration.provider,
-            provider_id=registration.provider_id,
-        )
+        registration = selected.registration
+        selection = selected.decision
+        resolved = selected.resolved
         self._lifecycle.finish_ok(
             span,
             attributes={
@@ -366,10 +420,10 @@ class CapabilityInvoker:
                 "selector": selection.selector,
             },
         )
-        return _SelectedCapability(
-            resolved=resolved,
-            provider_descriptor=registration.descriptor,
-            decision=selection,
+        return _ProviderResolution(
+            selected=selected,
+            candidates=candidates,
+            selection_context=selection_context,
         )
 
     def _evaluate_policy(
@@ -396,9 +450,7 @@ class CapabilityInvoker:
         )
         policy_context = PolicyContext(
             invocation=(
-                self._lifecycle.with_trace_context(context, span)
-                if span is not None
-                else context
+                self._lifecycle.with_trace_context(context, span) if span is not None else context
             ),
             capability=resolved.descriptor,
             provider=provider_descriptor,
@@ -694,10 +746,10 @@ def _compact_attributes(values: Mapping[str, JsonValue | None]) -> dict[str, Jso
 
 
 @dataclass(frozen=True, slots=True)
-class _SelectedCapability:
-    resolved: ResolvedCapability
-    provider_descriptor: ProviderDescriptor
-    decision: SelectionDecision
+class _ProviderResolution:
+    selected: SelectedProvider
+    candidates: tuple[ProviderRegistration, ...]
+    selection_context: SelectionContext
 
 
 @dataclass(slots=True)

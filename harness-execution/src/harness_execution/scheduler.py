@@ -21,13 +21,11 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 from harness_contracts import (
-    CapabilityDescriptor,
     CapabilityError,
     Continuation,
     EdgeTrigger,
     ExecutionPlan,
     FailurePolicy,
-    IdempotencyType,
     InvocationContext,
     NodeExecutionState,
     NodeExecutionStatus,
@@ -36,13 +34,13 @@ from harness_contracts import (
     PlanExecutionStatus,
     PlanNode,
     PlanNodeKind,
+    ProviderAttempt,
     Request,
     RequestError,
     ResultEnvelope,
     ResultIssue,
     ResultOutput,
     ResultStatus,
-    SideEffectType,
 )
 from harness_registry import CapabilityCatalog, RegistryCapabilityCatalog
 from harness_runtime import CapabilityInvoker, InvocationLifecycle
@@ -56,7 +54,6 @@ from .resolution import (
     JsonPointerResolutionError,
     resolve_json_pointer,
 )
-
 
 # 只有这些状态表示节点不会在当前调度轮次中继续执行。WAITING 不是终态：它需要
 # Approval/Async completion 等外部事件后恢复，因此依赖它的后继节点仍需等待。
@@ -255,8 +252,7 @@ class BasicScheduler:
                 # 或被 WAITING 节点阻塞，需要返回 ACCEPTED 给调用方。
                 if not running:
                     if any(
-                        item.status is NodeExecutionStatus.READY
-                        for item in state.nodes.values()
+                        item.status is NodeExecutionStatus.READY for item in state.nodes.values()
                     ):
                         continue
                     break
@@ -372,8 +368,7 @@ class BasicScheduler:
                 # Join 必须等待全部前驱终态。不能因第一条成功边先到就提前启动，
                 # 否则其他并行前驱的输出和失败状态尚未稳定。
                 if not all(
-                    state.nodes[edge.from_node].status in _TERMINAL_NODE_STATUSES
-                    for edge in edges
+                    state.nodes[edge.from_node].status in _TERMINAL_NODE_STATUSES for edge in edges
                 ):
                     continue
                 activated = any(self._edge_activated(edge, state, results) for edge in edges)
@@ -469,7 +464,7 @@ class BasicScheduler:
             self._lifecycle.finish_from_result(node_span, result)
             return node.node_id, result, 1
 
-        attempts = 1
+        attempts = 0
         try:
             # 所有跨节点数据都在调用前解析成新的 RequestInput。Invoker 不需要理解
             # Plan Binding，也不会获得其他节点的状态对象。
@@ -481,7 +476,6 @@ class BasicScheduler:
             # Deadline 在首次尝试前只计算一次；后续重试共享同一个绝对时间点，不能
             # 因每次调用重新获得完整 timeout_ms 而突破 Request/Plan/Node 预算。
             deadline_at = self._effective_deadline(plan, node, context)
-            descriptor = self._capability_catalog.get(node.capability or "")
             execution_context = context.model_copy(
                 update={
                     "deadline_at": deadline_at,
@@ -498,38 +492,37 @@ class BasicScheduler:
                     },
                 }
             )
-            result = ResultEnvelope.cancelled()
-            for attempt in range(1, node.retry_policy.max_attempts + 1):
-                attempts = attempt
-                if attempt > 1 and checkpoint_attempt is not None:
-                    await checkpoint_attempt(attempt)
-                # Scheduler 禁止裸调 Provider；每一次尝试都重新经过 Invoker，因此
-                # PRE_EXECUTE Policy、Registry 解析和调用 Trace 不会被重试绕过。
-                result = await self._invoker.invoke(
-                    node.capability or "",
-                    node_input,
-                    execution_context.model_copy(update={"cancellation": cancellation.snapshot()}),
-                    deadline_at=deadline_at,
-                    parent=node_span,
-                    trace_enabled=trace_enabled,
-                )
-                if not self._should_retry(node, descriptor, result, attempt, deadline_at):
-                    break
-                backoff_seconds = self._backoff_seconds(node, attempt)
-                if not self._deadline_allows(deadline_at, backoff_seconds):
-                    break
-                if node_span is not None:
+
+            async def on_attempt_started(attempt: ProviderAttempt) -> None:
+                nonlocal attempts
+                attempts += 1
+                if attempts > 1 and checkpoint_attempt is not None:
+                    await checkpoint_attempt(attempts)
+                if attempt.retry_attempt > 1 and node_span is not None:
                     self._tracer.add_event(
                         node_span,
                         "node.retrying",
                         attributes={
-                            "attempt": attempt,
-                            "next_attempt": attempt + 1,
-                            "backoff_ms": int(backoff_seconds * 1000),
+                            "attempt": attempt.retry_attempt - 1,
+                            "next_attempt": attempt.retry_attempt,
+                            "provider_id": attempt.provider_id,
+                            "provider_attempt": attempt.provider_attempt,
                         },
                     )
-                if backoff_seconds:
-                    await asyncio.sleep(backoff_seconds)
+
+            # Scheduler 只发起一次受控节点调用；same-provider retry 与 fallback
+            # 均由 Runtime 的 ProviderExecutionCoordinator 完成。
+            result = await self._invoker.invoke(
+                node.capability or "",
+                node_input,
+                execution_context.model_copy(update={"cancellation": cancellation.snapshot()}),
+                deadline_at=deadline_at,
+                retry_policy=node.retry_policy,
+                idempotency_key=node.idempotency_key,
+                attempt_started=on_attempt_started,
+                parent=node_span,
+                trace_enabled=trace_enabled,
+            )
         except asyncio.CancelledError:
             # 内部 fail-fast 或外部取消都必须以 CANCELLED 结束 PLAN_NODE Span。
             self._lifecycle.finish_cancelled(node_span)
@@ -560,7 +553,7 @@ class BasicScheduler:
             result = ResultEnvelope.failure(error.to_detail())
 
         self._lifecycle.finish_from_result(node_span, result)
-        return node.node_id, result, attempts
+        return node.node_id, result, max(attempts, 1)
 
     def _effective_deadline(
         self,
@@ -574,46 +567,6 @@ class BasicScheduler:
         if node.timeout_ms is not None:
             candidates.append(self._now() + timedelta(milliseconds=node.timeout_ms))
         return min(candidates) if candidates else None
-
-    def _should_retry(
-        self,
-        node: PlanNode,
-        descriptor: CapabilityDescriptor | None,
-        result: ResultEnvelope,
-        attempt: int,
-        deadline_at: datetime | None,
-    ) -> bool:
-        """仅在错误可重试、操作幂等安全且仍有预算时允许下一次尝试。"""
-
-        if attempt >= node.retry_policy.max_attempts:
-            return False
-        if result.status is not ResultStatus.FAILED or result.error is None:
-            return False
-        if not result.error.retryable or not self._deadline_allows(deadline_at, 0):
-            return False
-        if descriptor is None:
-            return False
-        profile = descriptor.execution_profile
-        if profile.side_effect in {SideEffectType.NONE, SideEffectType.READ}:
-            return True
-        if profile.side_effect is not SideEffectType.WRITE:
-            return False
-        return (
-            profile.idempotency in {IdempotencyType.OPTIONAL, IdempotencyType.REQUIRED}
-            and node.idempotency_key is not None
-        )
-
-    @staticmethod
-    def _backoff_seconds(node: PlanNode, attempt: int) -> float:
-        policy = node.retry_policy
-        milliseconds = min(
-            policy.max_backoff_ms,
-            policy.initial_backoff_ms * policy.multiplier ** (attempt - 1),
-        )
-        return milliseconds / 1000
-
-    def _deadline_allows(self, deadline_at: datetime | None, delay_seconds: float) -> bool:
-        return deadline_at is None or (deadline_at - self._now()).total_seconds() > delay_seconds
 
     def _now(self) -> datetime:
         value = self._clock()
@@ -663,8 +616,7 @@ class BasicScheduler:
         # 只有终止类结果与节点 FAIL_PLAN 同时出现才中止整个 DAG。CONTINUE 节点
         # 保留问题后允许 Scheduler 继续寻找其他可执行分支。
         return (
-            result.status
-            in {ResultStatus.FAILED, ResultStatus.DENIED, ResultStatus.CANCELLED}
+            result.status in {ResultStatus.FAILED, ResultStatus.DENIED, ResultStatus.CANCELLED}
             and node.failure_policy is FailurePolicy.FAIL_PLAN
         )
 
@@ -747,9 +699,7 @@ class BasicScheduler:
             )
             return ResultEnvelope.accepted(continuation, metadata=metadata)
 
-        if any(
-            item.status is NodeExecutionStatus.CANCELLED for item in state.nodes.values()
-        ):
+        if any(item.status is NodeExecutionStatus.CANCELLED for item in state.nodes.values()):
             return ResultEnvelope.cancelled(metadata=metadata)
 
         # 最终输出仍使用与节点输入相同的显式 JSON Pointer 机制，禁止从共享对象

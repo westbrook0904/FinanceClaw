@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import unittest
+from collections.abc import Sequence
 
 from harness_contracts import (
     CapabilityDescriptor,
+    CapabilityError,
     CapabilityExecutionProfile,
     CapabilityType,
     ErrorCategory,
+    IdempotencyType,
     InvocationContext,
     ProviderDescriptor,
     ProviderHealthStatus,
@@ -17,12 +20,13 @@ from harness_contracts import (
     ResultEnvelope,
     ResultOutput,
     ResultStatus,
+    RetryPolicy,
     SelectionContext,
     SelectionDecision,
     SideEffectType,
 )
 from harness_policy import AllowAllPolicy, Policy, PolicyContext, PolicyDecision, PolicyEngine
-from harness_registry import InMemoryCapabilityRegistry
+from harness_registry import InMemoryCapabilityRegistry, ProviderRegistration
 from harness_runtime import CapabilityInvoker
 from harness_selection import (
     EligibilityPipeline,
@@ -32,7 +36,6 @@ from harness_selection import (
 )
 from harness_spi import AgentRequest, AgentSPI
 from harness_trace import InMemoryTracer, SpanType
-
 
 CAPABILITY_ID = "web.search/v1"
 
@@ -69,6 +72,23 @@ class RecordingSearchAgent(AgentSPI):
                 data={"provider": self.provider_name},
             )
         )
+
+
+class ScriptedSearchAgent(RecordingSearchAgent):
+    def __init__(
+        self,
+        provider_name: str,
+        results: Sequence[ResultEnvelope],
+        *,
+        execution_profile: CapabilityExecutionProfile | None = None,
+    ) -> None:
+        super().__init__(provider_name, execution_profile=execution_profile)
+        self._results = tuple(results)
+
+    async def invoke(self, request: AgentRequest, context: InvocationContext) -> ResultEnvelope:
+        self.calls += 1
+        index = min(self.calls - 1, len(self._results) - 1)
+        return self._results[index]
 
 
 class ProviderAwareDenyPolicy(Policy):
@@ -108,13 +128,32 @@ class InvalidSelector(ProviderSelector):
         )
 
 
+class CountingSelector(ProviderSelector):
+    def __init__(self) -> None:
+        self.calls = 0
+        self._delegate = PrioritySelector()
+
+    @property
+    def name(self) -> str:
+        return "counting-priority"
+
+    def select(
+        self,
+        candidates: Sequence[ProviderRegistration],
+        context: SelectionContext,
+    ) -> SelectionDecision:
+        self.calls += 1
+        return self._delegate.select(candidates, context).model_copy(update={"selector": self.name})
+
+
 def register(
     registry: InMemoryCapabilityRegistry,
-    agent: RecordingSearchAgent,
+    agent: AgentSPI,
     *,
     provider_id: str,
     plugin_id: str,
     priority: int,
+    equivalence_group: str | None = None,
 ) -> None:
     registry.register_provider(
         agent,
@@ -124,7 +163,24 @@ def register(
             plugin_id=plugin_id,
             implementation_version="1.0.0",
             priority=priority,
+            equivalence_group=equivalence_group,
         ),
+    )
+
+
+def failure(
+    code: str,
+    *,
+    retryable: bool = False,
+    fallbackable: bool = False,
+) -> ResultEnvelope:
+    return ResultEnvelope.failure(
+        CapabilityError(
+            "injected provider failure",
+            code=code,
+            retryable=retryable,
+            fallbackable=fallbackable,
+        ).to_detail()
     )
 
 
@@ -293,7 +349,7 @@ class CapabilityInvokerSelectionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(primary.calls, 0)
         self.assertEqual(backup.calls, 0)
 
-    async def test_multi_provider_write_plan_is_fail_closed_before_checkpoint_support(
+    async def test_multi_provider_write_invokes_primary_when_fallback_is_not_needed(
         self,
     ) -> None:
         registry = InMemoryCapabilityRegistry()
@@ -326,10 +382,263 @@ class CapabilityInvokerSelectionTests(unittest.IsolatedAsyncioTestCase):
 
         result = await invoker.invoke(CAPABILITY_ID, request.input, context)
 
-        self.assertEqual(result.status, ResultStatus.FAILED)
-        self.assertEqual(result.error.code, "HARNESS.PROVIDER.RESUME_UNSAFE")
-        self.assertEqual(primary.calls, 0)
+        self.assertEqual(result.status, ResultStatus.SUCCESS)
+        self.assertEqual(primary.calls, 1)
         self.assertEqual(backup.calls, 0)
+
+    async def test_retry_stays_on_selected_provider_then_succeeds(self) -> None:
+        registry = InMemoryCapabilityRegistry()
+        primary = ScriptedSearchAgent(
+            "primary",
+            (
+                failure("TEST.TRANSIENT", retryable=True, fallbackable=True),
+                ResultEnvelope.success(ResultOutput(type="json", data={"provider": "primary"})),
+            ),
+        )
+        backup = RecordingSearchAgent("backup")
+        register(
+            registry,
+            primary,
+            provider_id="search-primary",
+            plugin_id="primary-plugin",
+            priority=100,
+        )
+        register(
+            registry,
+            backup,
+            provider_id="search-backup",
+            plugin_id="backup-plugin",
+            priority=10,
+        )
+        selector = CountingSelector()
+        invoker, _ = make_invoker(registry, selector=selector)
+        context = make_context()
+
+        result = await invoker.invoke(
+            CAPABILITY_ID,
+            context.request.input,
+            context,
+            retry_policy=RetryPolicy(
+                max_attempts=2,
+                initial_backoff_ms=0,
+                max_backoff_ms=0,
+            ),
+        )
+
+        self.assertEqual(result.status, ResultStatus.SUCCESS)
+        self.assertEqual(primary.calls, 2)
+        self.assertEqual(backup.calls, 0)
+        self.assertEqual(selector.calls, 1)
+
+    async def test_retry_exhaustion_reselects_backup_and_resets_retry_attempt(self) -> None:
+        registry = InMemoryCapabilityRegistry()
+        primary = ScriptedSearchAgent(
+            "primary",
+            (failure("TEST.PRIMARY", retryable=True, fallbackable=True),),
+        )
+        backup = RecordingSearchAgent("backup")
+        register(
+            registry,
+            primary,
+            provider_id="search-primary",
+            plugin_id="primary-plugin",
+            priority=100,
+        )
+        register(
+            registry,
+            backup,
+            provider_id="search-backup",
+            plugin_id="backup-plugin",
+            priority=10,
+        )
+        selector = CountingSelector()
+        invoker, _ = make_invoker(registry, selector=selector)
+        context = make_context()
+        attempts = []
+
+        async def record_attempt(attempt) -> None:
+            attempts.append(attempt)
+
+        result = await invoker.invoke(
+            CAPABILITY_ID,
+            context.request.input,
+            context,
+            retry_policy=RetryPolicy(
+                max_attempts=2,
+                initial_backoff_ms=0,
+                max_backoff_ms=0,
+            ),
+            attempt_started=record_attempt,
+        )
+
+        self.assertEqual(result.status, ResultStatus.SUCCESS)
+        self.assertEqual(primary.calls, 2)
+        self.assertEqual(backup.calls, 1)
+        self.assertEqual(selector.calls, 2)
+        self.assertEqual(
+            [(item.provider_id, item.provider_attempt, item.retry_attempt) for item in attempts],
+            [
+                ("search-primary", 1, 1),
+                ("search-primary", 1, 2),
+                ("search-backup", 2, 1),
+            ],
+        )
+
+    async def test_all_fallback_providers_failed_preserves_last_failure(self) -> None:
+        registry = InMemoryCapabilityRegistry()
+        primary = ScriptedSearchAgent(
+            "primary",
+            (failure("TEST.PRIMARY", fallbackable=True),),
+        )
+        backup = ScriptedSearchAgent(
+            "backup",
+            (failure("TEST.BACKUP", fallbackable=True),),
+        )
+        register(
+            registry,
+            primary,
+            provider_id="search-primary",
+            plugin_id="primary-plugin",
+            priority=100,
+        )
+        register(
+            registry,
+            backup,
+            provider_id="search-backup",
+            plugin_id="backup-plugin",
+            priority=10,
+        )
+        invoker, _ = make_invoker(registry)
+        context = make_context()
+
+        result = await invoker.invoke(CAPABILITY_ID, context.request.input, context)
+
+        self.assertEqual(result.status, ResultStatus.FAILED)
+        self.assertEqual(result.error.code, "TEST.BACKUP")
+        self.assertEqual(primary.calls, 1)
+        self.assertEqual(backup.calls, 1)
+
+    async def test_non_idempotent_write_fallback_is_fail_closed(self) -> None:
+        registry = InMemoryCapabilityRegistry()
+        write_profile = CapabilityExecutionProfile(side_effect=SideEffectType.WRITE)
+        primary = ScriptedSearchAgent(
+            "primary",
+            (failure("TEST.WRITE", fallbackable=True),),
+            execution_profile=write_profile,
+        )
+        backup = RecordingSearchAgent("backup", execution_profile=write_profile)
+        register(
+            registry,
+            primary,
+            provider_id="write-primary",
+            plugin_id="primary-plugin",
+            priority=100,
+            equivalence_group="payments",
+        )
+        register(
+            registry,
+            backup,
+            provider_id="write-backup",
+            plugin_id="backup-plugin",
+            priority=10,
+            equivalence_group="payments",
+        )
+        invoker, _ = make_invoker(registry)
+        context = make_context()
+
+        result = await invoker.invoke(CAPABILITY_ID, context.request.input, context)
+
+        self.assertEqual(result.status, ResultStatus.FAILED)
+        self.assertEqual(result.error.code, "HARNESS.PROVIDER.FALLBACK_UNSAFE")
+        self.assertEqual(primary.calls, 1)
+        self.assertEqual(backup.calls, 0)
+
+    async def test_idempotent_write_fallback_requires_matching_equivalence_group(
+        self,
+    ) -> None:
+        registry = InMemoryCapabilityRegistry()
+        write_profile = CapabilityExecutionProfile(
+            side_effect=SideEffectType.WRITE,
+            idempotency=IdempotencyType.REQUIRED,
+        )
+        primary = ScriptedSearchAgent(
+            "primary",
+            (failure("TEST.WRITE", fallbackable=True),),
+            execution_profile=write_profile,
+        )
+        mismatched = RecordingSearchAgent("mismatched", execution_profile=write_profile)
+        register(
+            registry,
+            primary,
+            provider_id="write-primary",
+            plugin_id="primary-plugin",
+            priority=100,
+            equivalence_group="payments-prod",
+        )
+        register(
+            registry,
+            mismatched,
+            provider_id="write-mismatched",
+            plugin_id="backup-plugin",
+            priority=10,
+            equivalence_group="payments-backup",
+        )
+        invoker, _ = make_invoker(registry)
+        context = make_context()
+
+        result = await invoker.invoke(
+            CAPABILITY_ID,
+            context.request.input,
+            context,
+            idempotency_key="payment-42",
+        )
+
+        self.assertEqual(result.status, ResultStatus.FAILED)
+        self.assertEqual(result.error.code, "HARNESS.PROVIDER.FALLBACK_UNSAFE")
+        self.assertEqual(mismatched.calls, 0)
+
+    async def test_idempotent_write_same_group_with_stable_key_can_fallback(self) -> None:
+        registry = InMemoryCapabilityRegistry()
+        write_profile = CapabilityExecutionProfile(
+            side_effect=SideEffectType.WRITE,
+            idempotency=IdempotencyType.REQUIRED,
+        )
+        primary = ScriptedSearchAgent(
+            "primary",
+            (failure("TEST.WRITE", fallbackable=True),),
+            execution_profile=write_profile,
+        )
+        backup = RecordingSearchAgent("backup", execution_profile=write_profile)
+        register(
+            registry,
+            primary,
+            provider_id="write-primary",
+            plugin_id="primary-plugin",
+            priority=100,
+            equivalence_group="payments-prod",
+        )
+        register(
+            registry,
+            backup,
+            provider_id="write-backup",
+            plugin_id="backup-plugin",
+            priority=10,
+            equivalence_group="payments-prod",
+        )
+        invoker, _ = make_invoker(registry)
+        context = make_context()
+
+        result = await invoker.invoke(
+            CAPABILITY_ID,
+            context.request.input,
+            context,
+            idempotency_key="payment-42",
+        )
+
+        self.assertEqual(result.status, ResultStatus.SUCCESS)
+        self.assertEqual(result.output.data["provider"], "backup")
+        self.assertEqual(primary.calls, 1)
+        self.assertEqual(backup.calls, 1)
 
     async def test_registry_miss_remains_registry_failure(self) -> None:
         registry = InMemoryCapabilityRegistry()

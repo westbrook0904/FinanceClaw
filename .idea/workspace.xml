@@ -4,9 +4,19 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="0d67a81b-cd68-49de-9544-1b30058fe17e" name="Changes" comment="第二阶段文档更新">
+    <list default="true" id="0d67a81b-cd68-49de-9544-1b30058fe17e" name="Changes" comment="Stage 3A: integrate provider selection into capability invoker&#10;&#10;- replace unique registry resolution with candidate selection&#10;- build SelectionContext for each invocation&#10;- execute only the selected provider&#10;- expose ProviderDescriptor to PRE_EXECUTE policy&#10;- keep RequestTarget.plugin as a provider candidate constraint&#10;- add provider identity to capability trace attributes&#10;- inject ProviderSelector through bootstrap&#10;- preserve Stage 1 and Stage 2 invocation compatibility&#10;- fail closed on invalid selector decisions">
+      <change afterPath="$PROJECT_DIR$/harness-runtime/src/harness_runtime/provider_execution.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/FinanceClaw.iml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/FinanceClaw.iml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/harness-bootstrap/tests/test_bootstrap.py" beforeDir="false" afterPath="$PROJECT_DIR$/harness-bootstrap/tests/test_bootstrap.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/harness-execution/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/harness-execution/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/harness-execution/src/harness_execution/recovery.py" beforeDir="false" afterPath="$PROJECT_DIR$/harness-execution/src/harness_execution/recovery.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/harness-execution/src/harness_execution/scheduler.py" beforeDir="false" afterPath="$PROJECT_DIR$/harness-execution/src/harness_execution/scheduler.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/harness-execution/tests/test_execution.py" beforeDir="false" afterPath="$PROJECT_DIR$/harness-execution/tests/test_execution.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/harness-execution/tests/test_resume.py" beforeDir="false" afterPath="$PROJECT_DIR$/harness-execution/tests/test_resume.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/harness-runtime/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/harness-runtime/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/harness-runtime/src/harness_runtime/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/harness-runtime/src/harness_runtime/__init__.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/harness-runtime/src/harness_runtime/invoker.py" beforeDir="false" afterPath="$PROJECT_DIR$/harness-runtime/src/harness_runtime/invoker.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/harness-runtime/tests/test_provider_selection.py" beforeDir="false" afterPath="$PROJECT_DIR$/harness-runtime/tests/test_provider_selection.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -21,6 +31,18 @@
     </option>
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
   </component>
+  <component name="GitHubPullRequestSearchHistory"><![CDATA[{
+  "lastFilter": {
+    "state": "OPEN",
+    "assignee": "westbrook0904"
+  }
+}]]></component>
+  <component name="GithubPullRequestsUISettings"><![CDATA[{
+  "selectedUrlAndAccountId": {
+    "url": "https://github.com/westbrook0904/FinanceClaw.git",
+    "accountId": "ba6758a1-1d43-4d1b-9bc4-215395e0435a"
+  }
+}]]></component>
   <component name="ProjectColorInfo">{
   &quot;associatedIndex&quot;: 4
 }</component>
@@ -192,6 +214,7 @@
       <workItem from="1787569287520" duration="1000" />
       <workItem from="1787571075492" duration="31000" />
       <workItem from="1787572776988" duration="31571000" />
+      <workItem from="1787830268390" duration="2681000" />
     </task>
     <task id="LOCAL-00001" summary="init project">
       <option name="closed" value="true" />
@@ -425,7 +448,47 @@
       <option name="project" value="LOCAL" />
       <updated>1787791450707</updated>
     </task>
-    <option name="localTasksCounter" value="30" />
+    <task id="LOCAL-00030" summary="第三阶段3A设计说明书+测试用例修复">
+      <option name="closed" value="true" />
+      <created>1787830385137</created>
+      <option name="number" value="00030" />
+      <option name="presentableId" value="LOCAL-00030" />
+      <option name="project" value="LOCAL" />
+      <updated>1787830385137</updated>
+    </task>
+    <task id="LOCAL-00031" summary="Stage 3A: add provider contracts&#10;&#10;- add ProviderDescriptor, ProviderHealthSnapshot and ProviderPin&#10;- add SelectionContext, SelectionDecision and SelectionRejection&#10;- add ProviderAttempt contract&#10;- extend ErrorDetail with fallbackable&#10;- add provider and selection error codes&#10;- export new contracts from harness_contracts&#10;- add provider contract validation tests">
+      <option name="closed" value="true" />
+      <created>1787830484765</created>
+      <option name="number" value="00031" />
+      <option name="presentableId" value="LOCAL-00031" />
+      <option name="project" value="LOCAL" />
+      <updated>1787830484765</updated>
+    </task>
+    <task id="LOCAL-00032" summary="Stage 3A: support multi-provider registry&#10;&#10;- upgrade capability registry from 1:1 to 1:N provider mapping&#10;- add ProviderRegistration and ProviderQuery&#10;- add register_provider, unregister_provider and candidates APIs&#10;- keep canonical CapabilityDescriptor per capability&#10;- preserve legacy resolve behavior for single-provider capabilities&#10;- adapt CapabilityCatalog to remain capability-only&#10;- update LocalPluginLoader to track and unload provider ids&#10;- allow different plugins to provide the same capability&#10;- reject incompatible provider capability contracts">
+      <option name="closed" value="true" />
+      <created>1787830517113</created>
+      <option name="number" value="00032" />
+      <option name="presentableId" value="LOCAL-00032" />
+      <option name="project" value="LOCAL" />
+      <updated>1787830517113</updated>
+    </task>
+    <task id="LOCAL-00033" summary="Stage 3A: add provider selection and health foundation&#10;&#10;- add harness-selection module&#10;- add ProviderSelector SPI and PrioritySelector&#10;- add EligibilityPipeline&#10;- add StaticHealthSource and TestHealthSource&#10;- support tenant, policy, health and provider-pin eligibility&#10;- add deterministic provider ordering&#10;- reject unhealthy and ineligible providers&#10;- fail closed on unsupported selection constraints&#10;- add selection and health unit tests">
+      <option name="closed" value="true" />
+      <created>1787830557641</created>
+      <option name="number" value="00033" />
+      <option name="presentableId" value="LOCAL-00033" />
+      <option name="project" value="LOCAL" />
+      <updated>1787830557641</updated>
+    </task>
+    <task id="LOCAL-00034" summary="Stage 3A: integrate provider selection into capability invoker&#10;&#10;- replace unique registry resolution with candidate selection&#10;- build SelectionContext for each invocation&#10;- execute only the selected provider&#10;- expose ProviderDescriptor to PRE_EXECUTE policy&#10;- keep RequestTarget.plugin as a provider candidate constraint&#10;- add provider identity to capability trace attributes&#10;- inject ProviderSelector through bootstrap&#10;- preserve Stage 1 and Stage 2 invocation compatibility&#10;- fail closed on invalid selector decisions">
+      <option name="closed" value="true" />
+      <created>1787830611090</created>
+      <option name="number" value="00034" />
+      <option name="presentableId" value="LOCAL-00034" />
+      <option name="project" value="LOCAL" />
+      <updated>1787830611090</updated>
+    </task>
+    <option name="localTasksCounter" value="35" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -455,11 +518,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="init project" />
-    <MESSAGE value="init stage 1 project structure" />
-    <MESSAGE value="init harness-contracts modules" />
-    <MESSAGE value="init harness-spi modules" />
-    <MESSAGE value="init harness-registry and harness-plugin-local modules" />
     <MESSAGE value="init harness-registry and harness-trace modules" />
     <MESSAGE value="init harness-policy and harness-trace modules" />
     <MESSAGE value="init harness-runtime modules" />
@@ -480,7 +538,12 @@
     <MESSAGE value="1、End-to-End：验证 Stage 1 Direct Invocation 没被破坏；使用真实 finance.mock-query/v1 + math.calculate/v1 → Join → Approval → echo.reply/v1 跑 finance-review-plan；以及 Retry success + CONTINUE failure + Approval + SQLite restart + Resume → PARTIAL 的完整故障链路。说明书要求的确定性 finance-review-plan 和 restart 流程也覆盖到了。&#10;2、Fault Injection：transient failure、retry exhausted、unsafe WRITE 不重试、timeout、运行前取消、运行中取消、provider exception、invalid provider result，以及额外的 checkpoint 写失败时 Provider 不得产生副作用。&#10;3、Restart：RUNNING 的 READ 节点安全重放、非幂等 WRITE 返回 HARNESS.PLAN.RESUME_UNSAFE、Async WAITING 跨重启完成、损坏 SQLite snapshot 后 fail-closed。" />
     <MESSAGE value="第三阶段架构演进与设计说明书" />
     <MESSAGE value="第二阶段文档更新" />
-    <option name="LAST_COMMIT_MESSAGE" value="第二阶段文档更新" />
+    <MESSAGE value="第三阶段3A设计说明书+测试用例修复" />
+    <MESSAGE value="Stage 3A: add provider contracts&#10;&#10;- add ProviderDescriptor, ProviderHealthSnapshot and ProviderPin&#10;- add SelectionContext, SelectionDecision and SelectionRejection&#10;- add ProviderAttempt contract&#10;- extend ErrorDetail with fallbackable&#10;- add provider and selection error codes&#10;- export new contracts from harness_contracts&#10;- add provider contract validation tests" />
+    <MESSAGE value="Stage 3A: support multi-provider registry&#10;&#10;- upgrade capability registry from 1:1 to 1:N provider mapping&#10;- add ProviderRegistration and ProviderQuery&#10;- add register_provider, unregister_provider and candidates APIs&#10;- keep canonical CapabilityDescriptor per capability&#10;- preserve legacy resolve behavior for single-provider capabilities&#10;- adapt CapabilityCatalog to remain capability-only&#10;- update LocalPluginLoader to track and unload provider ids&#10;- allow different plugins to provide the same capability&#10;- reject incompatible provider capability contracts" />
+    <MESSAGE value="Stage 3A: add provider selection and health foundation&#10;&#10;- add harness-selection module&#10;- add ProviderSelector SPI and PrioritySelector&#10;- add EligibilityPipeline&#10;- add StaticHealthSource and TestHealthSource&#10;- support tenant, policy, health and provider-pin eligibility&#10;- add deterministic provider ordering&#10;- reject unhealthy and ineligible providers&#10;- fail closed on unsupported selection constraints&#10;- add selection and health unit tests" />
+    <MESSAGE value="Stage 3A: integrate provider selection into capability invoker&#10;&#10;- replace unique registry resolution with candidate selection&#10;- build SelectionContext for each invocation&#10;- execute only the selected provider&#10;- expose ProviderDescriptor to PRE_EXECUTE policy&#10;- keep RequestTarget.plugin as a provider candidate constraint&#10;- add provider identity to capability trace attributes&#10;- inject ProviderSelector through bootstrap&#10;- preserve Stage 1 and Stage 2 invocation compatibility&#10;- fail closed on invalid selector decisions" />
+    <option name="LAST_COMMIT_MESSAGE" value="Stage 3A: integrate provider selection into capability invoker&#10;&#10;- replace unique registry resolution with candidate selection&#10;- build SelectionContext for each invocation&#10;- execute only the selected provider&#10;- expose ProviderDescriptor to PRE_EXECUTE policy&#10;- keep RequestTarget.plugin as a provider candidate constraint&#10;- add provider identity to capability trace attributes&#10;- inject ProviderSelector through bootstrap&#10;- preserve Stage 1 and Stage 2 invocation compatibility&#10;- fail closed on invalid selector decisions" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>

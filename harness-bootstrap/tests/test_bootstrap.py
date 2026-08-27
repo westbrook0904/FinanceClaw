@@ -26,9 +26,9 @@ from harness_contracts import (
     ResultOutput,
     ResultStatus,
 )
+from harness_planning import PlanValidator
 from harness_plugin_local import LocalPluginProvider
 from harness_policy import AllowAllPolicy, Policy, PolicyContext, PolicyDecision, PolicyEngine
-from harness_planning import PlanValidator
 from harness_registry import InMemoryCapabilityRegistry, RegistryCapabilityCatalog
 from harness_runtime import CapabilityInvoker, DefaultInvocationContextFactory
 from harness_spi import PluginManifest, PluginSPI, ToolRequest, ToolSPI
@@ -37,12 +37,17 @@ from harness_trace import InMemoryTracer
 
 
 class EchoTool(ToolSPI):
-    def __init__(self, capability_id: str = "echo.tool/v1") -> None:
+    def __init__(
+        self,
+        capability_id: str = "echo.tool/v1",
+        *,
+        version: str = "1.0.0",
+    ) -> None:
         self._descriptor = CapabilityDescriptor(
             id=capability_id,
             name=capability_id,
             type=CapabilityType.TOOL,
-            version="1.0.0",
+            version=version,
         )
         self.calls = 0
 
@@ -299,7 +304,7 @@ class BootstrapLifecycleTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_startup_failure_rolls_back_batch_and_keeps_created_state(self) -> None:
         first = StubPlugin("first", (EchoTool("shared.tool/v1"),))
-        second = StubPlugin("second", (EchoTool("shared.tool/v1"),))
+        second = StubPlugin("second", (EchoTool("shared.tool/v1", version="2.0.0"),))
         app = build_harness(
             plugins=(first, second),
             entry_point_group=None,
