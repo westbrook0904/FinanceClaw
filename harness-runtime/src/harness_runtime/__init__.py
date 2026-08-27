@@ -7,7 +7,11 @@ Runtime 是 Registry、Policy、Trace 与 Capability Provider 之间的薄协调
 from .context import DefaultInvocationContextFactory, InvocationContextFactory
 from .invoker import CapabilityInvoker
 from .lifecycle import InvocationLifecycle
-from .provider_execution import ProviderExecutionCoordinator, SelectedProvider
+from .provider_execution import (
+    ProviderExecutionCoordinator,
+    ProviderResumeState,
+    SelectedProvider,
+)
 from .runtime import HarnessRuntime
 
 __all__ = [
@@ -17,5 +21,6 @@ __all__ = [
     "InvocationContextFactory",
     "InvocationLifecycle",
     "ProviderExecutionCoordinator",
+    "ProviderResumeState",
     "SelectedProvider",
 ]

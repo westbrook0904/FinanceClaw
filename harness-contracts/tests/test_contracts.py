@@ -5,8 +5,6 @@ from __future__ import annotations
 import unittest
 from datetime import UTC, datetime, timedelta
 
-from pydantic import ValidationError
-
 from harness_contracts import (
     ApprovalDecision,
     ApprovalDecisionType,
@@ -32,12 +30,13 @@ from harness_contracts import (
     NodeOutputBinding,
     PlanBudget,
     PlanEdge,
-    PlanExecutionState,
     PlanExecutionRecord,
+    PlanExecutionState,
     PlanExecutionStatus,
     PlanNode,
     PlanNodeKind,
     PolicyError,
+    ProviderAttempt,
     Request,
     RequestBinding,
     RequestInput,
@@ -52,6 +51,7 @@ from harness_contracts import (
     TraceContext,
     ValueReference,
 )
+from pydantic import ValidationError
 
 
 def make_request() -> Request:
@@ -202,9 +202,7 @@ class PlanContractTests(unittest.TestCase):
                     node_id="n2",
                     capability="finance.rank/v1",
                     input_mapping={
-                        "items": NodeOutputBinding(
-                            node_id="n1", pointer="/output/data/items"
-                        )
+                        "items": NodeOutputBinding(node_id="n1", pointer="/output/data/items")
                     },
                     failure_policy=FailurePolicy.CONTINUE,
                 ),
@@ -217,9 +215,7 @@ class PlanContractTests(unittest.TestCase):
                     condition=condition,
                 ),
             ),
-            outputs={
-                "ranking": NodeOutputBinding(node_id="n2", pointer="/output/data")
-            },
+            outputs={"ranking": NodeOutputBinding(node_id="n2", pointer="/output/data")},
         )
 
     def test_plan_round_trip_is_json_safe_and_frozen(self) -> None:
@@ -280,9 +276,7 @@ class ApprovalAndStateContractTests(unittest.TestCase):
             decided_by="operator-001",
         )
 
-        self.assertEqual(
-            ApprovalRequest.model_validate(approval.model_dump(mode="json")), approval
-        )
+        self.assertEqual(ApprovalRequest.model_validate(approval.model_dump(mode="json")), approval)
         self.assertEqual(decision.decision, ApprovalDecisionType.APPROVED)
         with self.assertRaises(ValidationError):
             ApprovalDecision(
@@ -293,7 +287,23 @@ class ApprovalAndStateContractTests(unittest.TestCase):
             )
 
     def test_plan_state_is_mutable_and_serializable(self) -> None:
-        node = NodeExecutionState(node_id="n1")
+        provider_attempt = ProviderAttempt(
+            provider_id="provider-a",
+            selection_key="selection-001",
+            provider_attempt=1,
+            retry_attempt=1,
+            equivalence_group="finance-prod",
+            started_at=datetime.now(UTC),
+        )
+        node = NodeExecutionState(
+            node_id="n1",
+            selected_provider_id="provider-a",
+            provider_attempt=1,
+            provider_retry_attempt=1,
+            provider_selection_key="selection-001",
+            provider_equivalence_group="finance-prod",
+            provider_history=[provider_attempt],
+        )
         state = PlanExecutionState(
             plan_id="plan-001",
             plan_revision=1,
@@ -306,6 +316,10 @@ class ApprovalAndStateContractTests(unittest.TestCase):
         restored = PlanExecutionState.model_validate(state.model_dump(mode="json"))
         self.assertEqual(restored.status, PlanExecutionStatus.RUNNING)
         self.assertEqual(restored.nodes["n1"].status, NodeExecutionStatus.RUNNING)
+        self.assertEqual(restored.nodes["n1"].selected_provider_id, "provider-a")
+        self.assertEqual(restored.nodes["n1"].provider_attempt, 1)
+        self.assertEqual(restored.nodes["n1"].provider_retry_attempt, 1)
+        self.assertEqual(restored.nodes["n1"].provider_history, [provider_attempt])
         self.assertEqual(restored.state_version, 2)
 
     def test_plan_execution_record_round_trips_and_checks_identity(self) -> None:
@@ -337,6 +351,8 @@ class ApprovalAndStateContractTests(unittest.TestCase):
                 context=InvocationContext(request=request),
                 state=state,
             )
+
+
 class ResultAndErrorContractTests(unittest.TestCase):
     def test_success_factory_builds_valid_envelope(self) -> None:
         result = ResultEnvelope.success(
@@ -369,12 +385,8 @@ class ResultAndErrorContractTests(unittest.TestCase):
     def test_stage_two_result_statuses_enforce_payload_rules(self) -> None:
         error = PolicyError("local branch failed").to_detail()
         issue = ResultIssue(source="n2", error=error)
-        partial = ResultEnvelope.partial(
-            ResultOutput(type="json", data={"usable": True}), [issue]
-        )
-        continuation = Continuation(
-            plan_id="plan-001", node_id="n3", waiting_reason="approval"
-        )
+        partial = ResultEnvelope.partial(ResultOutput(type="json", data={"usable": True}), [issue])
+        continuation = Continuation(plan_id="plan-001", node_id="n3", waiting_reason="approval")
         accepted = ResultEnvelope.accepted(continuation)
         cancelled = ResultEnvelope.cancelled()
 

@@ -20,12 +20,14 @@ from harness_contracts import (
     PlanNode,
     PlanNodeKind,
     ProviderAttempt,
+    ProviderAttemptStatus,
     Request,
     RequestError,
     ResultEnvelope,
     ResultStatus,
     SideEffectType,
 )
+from harness_runtime import ProviderResumeState
 from harness_trace import Span, SpanType
 
 from .cancellation import CancellationSignal
@@ -33,7 +35,10 @@ from .resolution import BindingResolutionError
 from .scheduler import BasicScheduler, CheckpointError, SchedulerOutcome
 
 type CheckpointCallback = Callable[[PlanExecutionState], Awaitable[None]]
-type AttemptCheckpointCallback = Callable[[int], Awaitable[None]]
+type ProviderCheckpointCallback = Callable[
+    [ProviderAttempt, ResultEnvelope | None],
+    Awaitable[int],
+]
 
 _TERMINAL_PLAN_STATUSES = {
     PlanExecutionStatus.SUCCEEDED,
@@ -112,14 +117,15 @@ class ResumeCoordinator:
         # RUNNING 表示进程可能在 Provider 调用期间退出。重放前必须通过与 Retry
         # 相同的幂等规则；READY + attempt>0 则表示上一次 resume 已完成恢复 checkpoint
         # 但尚未来得及重新创建 Task，同样属于中断中的调用尝试。
-        replay_attempts: dict[str, int] = {}
+        replay_attempts: dict[str, tuple[int, ProviderResumeState | None]] = {}
         state_changed = False
         for node in plan.nodes:
             node_state = state.nodes[node.node_id]
             if node_state.status is NodeExecutionStatus.RUNNING or (
                 node_state.status is NodeExecutionStatus.READY and node_state.attempt > 0
             ):
-                if not self._replay_safe(node):
+                provider_resume = self._provider_resume_state(node_state)
+                if not self._replay_safe(node, provider_resume):
                     raise RequestError(
                         "interrupted capability cannot be safely replayed",
                         code="HARNESS.PLAN.RESUME_UNSAFE",
@@ -129,7 +135,10 @@ class ResumeCoordinator:
                             "attempt": node_state.attempt,
                         },
                     )
-                replay_attempts[node.node_id] = max(node_state.attempt, 1)
+                replay_attempts[node.node_id] = (
+                    max(node_state.attempt, 1),
+                    provider_resume,
+                )
                 node_state.status = NodeExecutionStatus.READY
                 node_state.completed_at = None
                 node_state.error = None
@@ -196,7 +205,10 @@ class ResumeCoordinator:
                 for node_id in ready[:available]:
                     node = nodes[node_id]
                     node_state = state.nodes[node_id]
-                    start_attempt = replay_attempts.pop(node_id, 1)
+                    start_attempt, provider_resume = replay_attempts.pop(
+                        node_id,
+                        (1, None),
+                    )
                     node_state.status = NodeExecutionStatus.RUNNING
                     node_state.attempt = start_attempt
                     if node_state.started_at is None:
@@ -204,14 +216,27 @@ class ResumeCoordinator:
                     self._scheduler._touch(state)  # noqa: SLF001
                     await self._scheduler._checkpoint(checkpoint, state)  # noqa: SLF001
 
-                    async def checkpoint_attempt(
-                        attempt: int,
+                    async def checkpoint_provider(
+                        provider_attempt: ProviderAttempt,
+                        provider_result: ResultEnvelope | None,
                         *,
                         current_node_id: str = node_id,
-                    ) -> None:
-                        state.nodes[current_node_id].attempt = attempt
+                    ) -> int:
+                        current = state.nodes[current_node_id]
+                        if provider_result is None:
+                            self._scheduler._record_provider_attempt_started(  # noqa: SLF001
+                                current,
+                                provider_attempt,
+                            )
+                        else:
+                            self._scheduler._record_provider_attempt_completed(  # noqa: SLF001
+                                current,
+                                provider_attempt,
+                                provider_result,
+                            )
                         self._scheduler._touch(state)  # noqa: SLF001
                         await self._scheduler._checkpoint(checkpoint, state)  # noqa: SLF001
+                        return current.attempt
 
                     task = asyncio.create_task(
                         self._execute_node(
@@ -222,10 +247,11 @@ class ResumeCoordinator:
                             context,
                             results,
                             start_attempt=start_attempt,
+                            provider_resume=provider_resume,
                             parent=parent,
                             trace_enabled=trace_enabled,
                             cancellation=cancellation,
-                            checkpoint_attempt=checkpoint_attempt,
+                            checkpoint_provider=checkpoint_provider,
                         )
                     )
                     running[task] = (node_id, start_attempt)
@@ -319,10 +345,11 @@ class ResumeCoordinator:
         results: dict[str, ResultEnvelope],
         *,
         start_attempt: int,
+        provider_resume: ProviderResumeState | None,
         parent: Span | None,
         trace_enabled: bool,
         cancellation: CancellationSignal,
-        checkpoint_attempt: AttemptCheckpointCallback | None,
+        checkpoint_provider: ProviderCheckpointCallback | None,
     ) -> tuple[str, ResultEnvelope, int]:
         """从持久化 attempt 继续同一次节点执行，保持原 Retry/Deadline 语义。"""
 
@@ -353,7 +380,7 @@ class ResumeCoordinator:
             self._scheduler._lifecycle.finish_from_result(node_span, result)  # noqa: SLF001
             return node.node_id, result, start_attempt
 
-        attempts = start_attempt - 1
+        attempts = start_attempt
         try:
             node_input = self._scheduler._input_resolver.resolve(  # noqa: SLF001
                 request,
@@ -380,12 +407,19 @@ class ResumeCoordinator:
 
             async def on_attempt_started(attempt: ProviderAttempt) -> None:
                 nonlocal attempts
-                attempts += 1
-                if attempts > start_attempt and checkpoint_attempt is not None:
-                    await checkpoint_attempt(attempts)
+                if checkpoint_provider is not None:
+                    attempts = await checkpoint_provider(attempt, None)
+                initial_provider_attempt = (
+                    provider_resume.attempt.provider_attempt if provider_resume is not None else 1
+                )
+                initial_retry_attempt = (
+                    provider_resume.attempt.retry_attempt
+                    if provider_resume is not None
+                    else start_attempt
+                )
                 is_retry = (
-                    attempt.retry_attempt > start_attempt
-                    if attempt.provider_attempt == 1
+                    attempt.retry_attempt > initial_retry_attempt
+                    if attempt.provider_attempt == initial_provider_attempt
                     else attempt.retry_attempt > 1
                 )
                 if is_retry and node_span is not None:
@@ -401,6 +435,14 @@ class ResumeCoordinator:
                         },
                     )
 
+            async def on_attempt_completed(
+                attempt: ProviderAttempt,
+                provider_result: ResultEnvelope,
+            ) -> None:
+                nonlocal attempts
+                if checkpoint_provider is not None:
+                    attempts = await checkpoint_provider(attempt, provider_result)
+
             result = await self._scheduler._invoker.invoke(  # noqa: SLF001
                 node.capability or "",
                 node_input,
@@ -408,8 +450,10 @@ class ResumeCoordinator:
                 deadline_at=deadline_at,
                 retry_policy=node.retry_policy,
                 idempotency_key=node.idempotency_key,
-                retry_start_attempt=start_attempt,
+                retry_start_attempt=(start_attempt if provider_resume is None else 1),
                 attempt_started=on_attempt_started,
+                attempt_completed=on_attempt_completed,
+                provider_resume=provider_resume,
                 parent=node_span,
                 trace_enabled=trace_enabled,
             )
@@ -456,7 +500,68 @@ class ResumeCoordinator:
             candidates.append(started_at + timedelta(milliseconds=node.timeout_ms))
         return min(candidates) if candidates else None
 
-    def _replay_safe(self, node: PlanNode) -> bool:
+    @staticmethod
+    def _provider_resume_state(
+        node_state: NodeExecutionState,
+    ) -> ProviderResumeState | None:
+        if node_state.selected_provider_id is None:
+            return None
+
+        if node_state.provider_history:
+            attempt = node_state.provider_history[-1]
+            attempted_provider_ids = frozenset(
+                item.provider_id for item in node_state.provider_history
+            )
+        else:
+            started_at = node_state.started_at or datetime.now(UTC)
+            result = node_state.provider_last_result
+            completed_at = max(started_at, datetime.now(UTC)) if result is not None else None
+            succeeded = result is not None and result.status in {
+                ResultStatus.SUCCESS,
+                ResultStatus.PARTIAL,
+            }
+            status = (
+                ProviderAttemptStatus.RUNNING
+                if result is None
+                else (
+                    ProviderAttemptStatus.SUCCEEDED if succeeded else ProviderAttemptStatus.FAILED
+                )
+            )
+            failure_code = None
+            if result is not None and not succeeded:
+                failure_code = (
+                    result.error.code
+                    if result.error is not None
+                    else f"HARNESS.RESULT.{result.status.value.upper()}"
+                )
+            attempt = ProviderAttempt(
+                provider_id=node_state.selected_provider_id,
+                selection_key=node_state.provider_selection_key or "legacy-provider-selection",
+                provider_attempt=node_state.provider_attempt,
+                retry_attempt=node_state.provider_retry_attempt,
+                equivalence_group=node_state.provider_equivalence_group,
+                started_at=started_at,
+                completed_at=completed_at,
+                status=status,
+                failure_code=failure_code,
+            )
+            attempted_provider_ids = frozenset({node_state.selected_provider_id})
+
+        return ProviderResumeState(
+            attempt=attempt,
+            result=(
+                node_state.provider_last_result
+                if attempt.status is not ProviderAttemptStatus.RUNNING
+                else None
+            ),
+            attempted_provider_ids=attempted_provider_ids,
+        )
+
+    def _replay_safe(
+        self,
+        node: PlanNode,
+        provider_resume: ProviderResumeState | None,
+    ) -> bool:
         if node.kind is PlanNodeKind.APPROVAL:
             return True
         descriptor = self._scheduler._capability_catalog.get(node.capability or "")  # noqa: SLF001
@@ -465,7 +570,18 @@ class ResumeCoordinator:
         profile = descriptor.execution_profile
         if profile.side_effect in {SideEffectType.NONE, SideEffectType.READ}:
             return True
-        if len(self._scheduler._invoker.registry.candidates(node.capability or "")) > 1:  # noqa: SLF001
+        if (
+            provider_resume is not None
+            and provider_resume.attempt.status is not ProviderAttemptStatus.RUNNING
+        ):
+            return True
+        if (
+            provider_resume is None
+            and len(  # noqa: SLF001
+                self._scheduler._invoker.registry.candidates(node.capability or "")  # noqa: SLF001
+            )
+            > 1
+        ):
             return False
         return (
             profile.side_effect is SideEffectType.WRITE
@@ -510,6 +626,11 @@ class ResumeCoordinator:
                 details={"plan_id": plan.plan_id},
             )
         for node_id, node_state in state.nodes.items():
+            ResumeCoordinator._validate_provider_checkpoint(
+                plan,
+                plan_nodes[node_id],
+                node_state,
+            )
             expected = _EXPECTED_RESULT_STATUSES.get(node_state.status)
             if expected is not None:
                 if node_state.result is None or node_state.result.status not in expected:
@@ -531,7 +652,10 @@ class ResumeCoordinator:
             elif node_state.status is NodeExecutionStatus.RUNNING:
                 if (
                     node_state.attempt < 1
-                    or node_state.attempt > plan_nodes[node_id].retry_policy.max_attempts
+                    or (
+                        node_state.selected_provider_id is None
+                        and node_state.attempt > plan_nodes[node_id].retry_policy.max_attempts
+                    )
                     or node_state.started_at is None
                     or node_state.result is not None
                 ):
@@ -542,7 +666,10 @@ class ResumeCoordinator:
                     )
             elif node_state.status is NodeExecutionStatus.READY and node_state.attempt > 0:
                 if (
-                    node_state.attempt > plan_nodes[node_id].retry_policy.max_attempts
+                    (
+                        node_state.selected_provider_id is None
+                        and node_state.attempt > plan_nodes[node_id].retry_policy.max_attempts
+                    )
                     or node_state.started_at is None
                     or node_state.result is not None
                 ):
@@ -565,6 +692,65 @@ class ResumeCoordinator:
                     code="HARNESS.PLAN.STATE_INVALID",
                     details={"plan_id": plan.plan_id, "node_id": node_id},
                 )
+
+    @staticmethod
+    def _validate_provider_checkpoint(
+        plan: ExecutionPlan,
+        node: PlanNode,
+        node_state: NodeExecutionState,
+    ) -> None:
+        def invalid(message: str) -> RequestError:
+            return RequestError(
+                message,
+                code="HARNESS.PLAN.STATE_INVALID",
+                details={"plan_id": plan.plan_id, "node_id": node.node_id},
+            )
+
+        if node_state.selected_provider_id is None:
+            if (
+                node_state.provider_attempt != 0
+                or node_state.provider_retry_attempt != 0
+                or node_state.provider_selection_key is not None
+                or node_state.provider_equivalence_group is not None
+                or node_state.provider_history
+                or node_state.provider_last_result is not None
+            ):
+                raise invalid("stored provider checkpoint is incomplete")
+            return
+
+        if (
+            node_state.provider_attempt < 1
+            or node_state.provider_retry_attempt < 1
+            or node_state.provider_selection_key is None
+            or node_state.provider_retry_attempt > node.retry_policy.max_attempts
+        ):
+            raise invalid("stored provider checkpoint contains invalid attempt fields")
+
+        if node_state.provider_history:
+            if any(
+                item.status is ProviderAttemptStatus.RUNNING
+                for item in node_state.provider_history[:-1]
+            ):
+                raise invalid("stored provider history contains an unfinished prior attempt")
+            latest = node_state.provider_history[-1]
+            if (
+                latest.provider_id != node_state.selected_provider_id
+                or latest.provider_attempt != node_state.provider_attempt
+                or latest.retry_attempt != node_state.provider_retry_attempt
+                or latest.selection_key != node_state.provider_selection_key
+                or latest.equivalence_group != node_state.provider_equivalence_group
+            ):
+                raise invalid("stored provider history does not match current provider")
+            if latest.status is ProviderAttemptStatus.RUNNING:
+                if latest.completed_at is not None or node_state.provider_last_result is not None:
+                    raise invalid("running provider attempt contains a completed result")
+            elif latest.completed_at is None or node_state.provider_last_result is None:
+                raise invalid("completed provider attempt is missing its result")
+
+        try:
+            ResumeCoordinator._provider_resume_state(node_state)
+        except (TypeError, ValueError) as exc:
+            raise invalid("stored provider checkpoint cannot be resumed") from exc
 
     @staticmethod
     def _snapshot(state: PlanExecutionState) -> PlanExecutionState:

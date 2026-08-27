@@ -4,19 +4,20 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="0d67a81b-cd68-49de-9544-1b30058fe17e" name="Changes" comment="Stage 3A: integrate provider selection into capability invoker&#10;&#10;- replace unique registry resolution with candidate selection&#10;- build SelectionContext for each invocation&#10;- execute only the selected provider&#10;- expose ProviderDescriptor to PRE_EXECUTE policy&#10;- keep RequestTarget.plugin as a provider candidate constraint&#10;- add provider identity to capability trace attributes&#10;- inject ProviderSelector through bootstrap&#10;- preserve Stage 1 and Stage 2 invocation compatibility&#10;- fail closed on invalid selector decisions">
-      <change afterPath="$PROJECT_DIR$/harness-runtime/src/harness_runtime/provider_execution.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/FinanceClaw.iml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/FinanceClaw.iml" afterDir="false" />
+    <list default="true" id="0d67a81b-cd68-49de-9544-1b30058fe17e" name="Changes" comment="新增 [provider_execution.py (line 47)](/Users/hebinghui/PycharmProjects/FinanceClaw/harness-runtime/src/harness_runtime/provider_execution.py:47)，统一负责 same-provider retry、fallback、deadline、错误归一化及 WRITE 安全校验。&#10;[CapabilityInvoker (line 117)](/Users/hebinghui/PycharmProjects/FinanceClaw/harness-runtime/src/harness_runtime/invoker.py:117) 接入协调器。&#10;[Scheduler (line 496)](/Users/hebinghui/PycharmProjects/FinanceClaw/harness-execution/src/harness_execution/scheduler.py:496) 和 [Recovery (line 381)](/Users/hebinghui/PycharmProjects/FinanceClaw/harness-execution/src/harness_execution/recovery.py:381) 不再自行循环 Retry。&#10;WRITE fallback 要求幂等能力、稳定 key、两端非空且相同的 equivalence_group，否则返回 HARNESS.PROVIDER.FALLBACK_UNSAFE。&#10;增加 Retry 固定 Provider、READ fallback、全部失败、WRITE 安全/不安全 fallback 等测试。&#10;多 Provider WRITE 的跨进程恢复继续 fail-closed，等待 Step 6 持久化 Provider selection。">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/harness-bootstrap/tests/test_bootstrap.py" beforeDir="false" afterPath="$PROJECT_DIR$/harness-bootstrap/tests/test_bootstrap.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/harness-contracts/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/harness-contracts/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/harness-contracts/src/harness_contracts/execution.py" beforeDir="false" afterPath="$PROJECT_DIR$/harness-contracts/src/harness_contracts/execution.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/harness-contracts/tests/test_contracts.py" beforeDir="false" afterPath="$PROJECT_DIR$/harness-contracts/tests/test_contracts.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/harness-execution/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/harness-execution/README.md" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/harness-execution/src/harness_execution/recovery.py" beforeDir="false" afterPath="$PROJECT_DIR$/harness-execution/src/harness_execution/recovery.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/harness-execution/src/harness_execution/scheduler.py" beforeDir="false" afterPath="$PROJECT_DIR$/harness-execution/src/harness_execution/scheduler.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/harness-execution/tests/test_execution.py" beforeDir="false" afterPath="$PROJECT_DIR$/harness-execution/tests/test_execution.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/harness-execution/tests/test_resume.py" beforeDir="false" afterPath="$PROJECT_DIR$/harness-execution/tests/test_resume.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/harness-runtime/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/harness-runtime/README.md" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/harness-runtime/src/harness_runtime/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/harness-runtime/src/harness_runtime/__init__.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/harness-runtime/src/harness_runtime/invoker.py" beforeDir="false" afterPath="$PROJECT_DIR$/harness-runtime/src/harness_runtime/invoker.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/harness-runtime/tests/test_provider_selection.py" beforeDir="false" afterPath="$PROJECT_DIR$/harness-runtime/tests/test_provider_selection.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/harness-runtime/src/harness_runtime/provider_execution.py" beforeDir="false" afterPath="$PROJECT_DIR$/harness-runtime/src/harness_runtime/provider_execution.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -214,7 +215,7 @@
       <workItem from="1787569287520" duration="1000" />
       <workItem from="1787571075492" duration="31000" />
       <workItem from="1787572776988" duration="31571000" />
-      <workItem from="1787830268390" duration="2681000" />
+      <workItem from="1787830268390" duration="4974000" />
     </task>
     <task id="LOCAL-00001" summary="init project">
       <option name="closed" value="true" />
@@ -488,7 +489,15 @@
       <option name="project" value="LOCAL" />
       <updated>1787830611090</updated>
     </task>
-    <option name="localTasksCounter" value="35" />
+    <task id="LOCAL-00035" summary="新增 [provider_execution.py (line 47)](/Users/hebinghui/PycharmProjects/FinanceClaw/harness-runtime/src/harness_runtime/provider_execution.py:47)，统一负责 same-provider retry、fallback、deadline、错误归一化及 WRITE 安全校验。&#10;[CapabilityInvoker (line 117)](/Users/hebinghui/PycharmProjects/FinanceClaw/harness-runtime/src/harness_runtime/invoker.py:117) 接入协调器。&#10;[Scheduler (line 496)](/Users/hebinghui/PycharmProjects/FinanceClaw/harness-execution/src/harness_execution/scheduler.py:496) 和 [Recovery (line 381)](/Users/hebinghui/PycharmProjects/FinanceClaw/harness-execution/src/harness_execution/recovery.py:381) 不再自行循环 Retry。&#10;WRITE fallback 要求幂等能力、稳定 key、两端非空且相同的 equivalence_group，否则返回 HARNESS.PROVIDER.FALLBACK_UNSAFE。&#10;增加 Retry 固定 Provider、READ fallback、全部失败、WRITE 安全/不安全 fallback 等测试。&#10;多 Provider WRITE 的跨进程恢复继续 fail-closed，等待 Step 6 持久化 Provider selection。">
+      <option name="closed" value="true" />
+      <created>1787833269376</created>
+      <option name="number" value="00035" />
+      <option name="presentableId" value="LOCAL-00035" />
+      <option name="project" value="LOCAL" />
+      <updated>1787833269376</updated>
+    </task>
+    <option name="localTasksCounter" value="36" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -518,7 +527,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="init harness-registry and harness-trace modules" />
     <MESSAGE value="init harness-policy and harness-trace modules" />
     <MESSAGE value="init harness-runtime modules" />
     <MESSAGE value="init harness-bootstrap modules" />
@@ -543,7 +551,8 @@
     <MESSAGE value="Stage 3A: support multi-provider registry&#10;&#10;- upgrade capability registry from 1:1 to 1:N provider mapping&#10;- add ProviderRegistration and ProviderQuery&#10;- add register_provider, unregister_provider and candidates APIs&#10;- keep canonical CapabilityDescriptor per capability&#10;- preserve legacy resolve behavior for single-provider capabilities&#10;- adapt CapabilityCatalog to remain capability-only&#10;- update LocalPluginLoader to track and unload provider ids&#10;- allow different plugins to provide the same capability&#10;- reject incompatible provider capability contracts" />
     <MESSAGE value="Stage 3A: add provider selection and health foundation&#10;&#10;- add harness-selection module&#10;- add ProviderSelector SPI and PrioritySelector&#10;- add EligibilityPipeline&#10;- add StaticHealthSource and TestHealthSource&#10;- support tenant, policy, health and provider-pin eligibility&#10;- add deterministic provider ordering&#10;- reject unhealthy and ineligible providers&#10;- fail closed on unsupported selection constraints&#10;- add selection and health unit tests" />
     <MESSAGE value="Stage 3A: integrate provider selection into capability invoker&#10;&#10;- replace unique registry resolution with candidate selection&#10;- build SelectionContext for each invocation&#10;- execute only the selected provider&#10;- expose ProviderDescriptor to PRE_EXECUTE policy&#10;- keep RequestTarget.plugin as a provider candidate constraint&#10;- add provider identity to capability trace attributes&#10;- inject ProviderSelector through bootstrap&#10;- preserve Stage 1 and Stage 2 invocation compatibility&#10;- fail closed on invalid selector decisions" />
-    <option name="LAST_COMMIT_MESSAGE" value="Stage 3A: integrate provider selection into capability invoker&#10;&#10;- replace unique registry resolution with candidate selection&#10;- build SelectionContext for each invocation&#10;- execute only the selected provider&#10;- expose ProviderDescriptor to PRE_EXECUTE policy&#10;- keep RequestTarget.plugin as a provider candidate constraint&#10;- add provider identity to capability trace attributes&#10;- inject ProviderSelector through bootstrap&#10;- preserve Stage 1 and Stage 2 invocation compatibility&#10;- fail closed on invalid selector decisions" />
+    <MESSAGE value="新增 [provider_execution.py (line 47)](/Users/hebinghui/PycharmProjects/FinanceClaw/harness-runtime/src/harness_runtime/provider_execution.py:47)，统一负责 same-provider retry、fallback、deadline、错误归一化及 WRITE 安全校验。&#10;[CapabilityInvoker (line 117)](/Users/hebinghui/PycharmProjects/FinanceClaw/harness-runtime/src/harness_runtime/invoker.py:117) 接入协调器。&#10;[Scheduler (line 496)](/Users/hebinghui/PycharmProjects/FinanceClaw/harness-execution/src/harness_execution/scheduler.py:496) 和 [Recovery (line 381)](/Users/hebinghui/PycharmProjects/FinanceClaw/harness-execution/src/harness_execution/recovery.py:381) 不再自行循环 Retry。&#10;WRITE fallback 要求幂等能力、稳定 key、两端非空且相同的 equivalence_group，否则返回 HARNESS.PROVIDER.FALLBACK_UNSAFE。&#10;增加 Retry 固定 Provider、READ fallback、全部失败、WRITE 安全/不安全 fallback 等测试。&#10;多 Provider WRITE 的跨进程恢复继续 fail-closed，等待 Step 6 持久化 Provider selection。" />
+    <option name="LAST_COMMIT_MESSAGE" value="新增 [provider_execution.py (line 47)](/Users/hebinghui/PycharmProjects/FinanceClaw/harness-runtime/src/harness_runtime/provider_execution.py:47)，统一负责 same-provider retry、fallback、deadline、错误归一化及 WRITE 安全校验。&#10;[CapabilityInvoker (line 117)](/Users/hebinghui/PycharmProjects/FinanceClaw/harness-runtime/src/harness_runtime/invoker.py:117) 接入协调器。&#10;[Scheduler (line 496)](/Users/hebinghui/PycharmProjects/FinanceClaw/harness-execution/src/harness_execution/scheduler.py:496) 和 [Recovery (line 381)](/Users/hebinghui/PycharmProjects/FinanceClaw/harness-execution/src/harness_execution/recovery.py:381) 不再自行循环 Retry。&#10;WRITE fallback 要求幂等能力、稳定 key、两端非空且相同的 equivalence_group，否则返回 HARNESS.PROVIDER.FALLBACK_UNSAFE。&#10;增加 Retry 固定 Provider、READ fallback、全部失败、WRITE 安全/不安全 fallback 等测试。&#10;多 Provider WRITE 的跨进程恢复继续 fail-closed，等待 Step 6 持久化 Provider selection。" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>

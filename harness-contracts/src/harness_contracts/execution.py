@@ -11,6 +11,7 @@ from .approval import ApprovalRequest
 from .base import JsonValue, MutableContractModel, NonEmptyString
 from .context import _require_timezone
 from .errors import ErrorDetail
+from .provider import ProviderAttempt
 from .result import Continuation, ResultEnvelope, ResultIssue
 
 
@@ -41,6 +42,13 @@ class NodeExecutionState(MutableContractModel):
     node_id: NonEmptyString
     status: NodeExecutionStatus = NodeExecutionStatus.PENDING
     attempt: int = Field(default=0, ge=0)
+    selected_provider_id: NonEmptyString | None = None
+    provider_attempt: int = Field(default=0, ge=0)
+    provider_retry_attempt: int = Field(default=0, ge=0)
+    provider_selection_key: NonEmptyString | None = None
+    provider_equivalence_group: NonEmptyString | None = None
+    provider_history: list[ProviderAttempt] = Field(default_factory=list)
+    provider_last_result: ResultEnvelope | None = None
     started_at: datetime | None = None
     completed_at: datetime | None = None
     result: ResultEnvelope | None = None

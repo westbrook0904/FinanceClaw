@@ -53,6 +53,10 @@ Plan 状态包含 `CREATED/RUNNING/WAITING/SUCCEEDED/PARTIAL/FAILED/DENIED/CANCE
 Node 额外包含 `PENDING/READY/SKIPPED`。Plan/Node State 是明确可变的运行快照，
 其余跨模块协议默认深度冻结。
 
+Capability Node 状态同时记录选中的 Provider、Provider/retry 二维 attempt、selection key、
+equivalence group、Provider attempt history 和最近结果，用于跨进程恢复时固定重放原
+Provider，禁止重新自由选择可能改变 WRITE 副作用目标的实现。
+
 `ResultStatus` 支持：
 
 - `SUCCESS`：必须有最终 output。

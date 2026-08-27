@@ -63,16 +63,24 @@ Retry 只有同时满足以下条件才会发生：
 
 ## Checkpoint 与 Resume
 
-ExecutionEngine 通过 StateStore 在 Plan 创建、节点调用前、Retry、节点终态、WAITING、
-取消和 Plan 终态等稳定边界保存完整 `PlanExecutionRecord`。Provider 调用前 checkpoint
-失败会阻止 Provider 产生副作用。
+ExecutionEngine 通过 StateStore 在 Plan 创建、Provider 选择完成、每次 Provider 调用前、
+Provider attempt 完成、Retry/Fallback 切换、节点终态、WAITING、取消和 Plan 终态等稳定
+边界保存完整 `PlanExecutionRecord`。Provider 调用前 checkpoint 失败会阻止 Provider
+产生副作用。
+
+`NodeExecutionState` 保存当前 `selected_provider_id`、Provider/retry 二维 attempt、
+selection key、equivalence group、attempt history 和最近一次 Provider 结果。因而进程即使
+在 Provider 返回后、节点终态落盘前退出，也能复用已完成 attempt 而不会重复调用。
 
 `resume(plan_id)` 复用持久化的 Plan、InvocationContext 和 Node State：
 
 - 已完成节点直接复用已保存的 `ResultEnvelope`；
-- 中断的 `NONE/READ` Capability 可安全重放；
-- 中断的 WRITE 只有声明 `OPTIONAL/REQUIRED` 幂等且 Node 有 key 才重放，否则返回
-  `HARNESS.PLAN.RESUME_UNSAFE`；
+- 已选择 Provider 的 `NONE/READ` 节点优先重放原 Provider，失败后才受控 fallback；
+- 中断的 WRITE 只有声明 `OPTIONAL/REQUIRED` 幂等且 Node 有 key 才固定重放原 Provider，
+  否则返回 `HARNESS.PLAN.RESUME_UNSAFE`；
+- WRITE 重放失败后仍必须满足稳定 key 和相同非空 equivalence group 才能 fallback；
+- checkpointed Provider 缺失或 equivalence group 发生变化时返回
+  `HARNESS.PROVIDER.RESUME_UNSAFE`，不会重新自由 Selection；
 - attempt 从持久化值继续，不从 1 重置；
 - Request/Plan Deadline 与已开始 Node timeout 都不会被延长；
 - WAITING 在没有外部终态时幂等返回原 Continuation；

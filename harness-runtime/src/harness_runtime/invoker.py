@@ -34,8 +34,10 @@ from harness_trace import Span, SpanType, Tracer
 
 from .lifecycle import InvocationLifecycle
 from .provider_execution import (
+    AttemptCompletedCallback,
     AttemptStartedCallback,
     ProviderExecutionCoordinator,
+    ProviderResumeState,
     SelectedProvider,
 )
 
@@ -127,6 +129,8 @@ class CapabilityInvoker:
         idempotency_key: str | None = None,
         retry_start_attempt: int = 1,
         attempt_started: AttemptStartedCallback | None = None,
+        attempt_completed: AttemptCompletedCallback | None = None,
+        provider_resume: ProviderResumeState | None = None,
         parent: InvocationParent = None,
         trace_enabled: bool = True,
     ) -> ResultEnvelope:
@@ -143,6 +147,8 @@ class CapabilityInvoker:
             idempotency_key=idempotency_key,
             retry_start_attempt=retry_start_attempt,
             attempt_started=attempt_started,
+            attempt_completed=attempt_completed,
+            provider_resume=provider_resume,
             parent=parent,
         )
         trace = _TraceAnchor(parent if parent is not None else context.trace_context)
@@ -170,6 +176,18 @@ class CapabilityInvoker:
                 progress_error = exc
                 raise
 
+        async def notify_attempt_completed(attempt, result) -> None:
+            nonlocal progress_error
+            if attempt_completed is None:
+                return
+            try:
+                await attempt_completed(attempt, result)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                progress_error = exc
+                raise
+
         try:
             resolution = self._resolve_capability(
                 capability_id,
@@ -178,6 +196,7 @@ class CapabilityInvoker:
                 deadline_at=effective_deadline,
                 trace=trace,
                 trace_enabled=trace_enabled,
+                provider_resume=provider_resume,
             )
 
             async def invoke_selected(selected: SelectedProvider) -> ResultEnvelope:
@@ -223,6 +242,10 @@ class CapabilityInvoker:
                 initial_selection=resolution.selected,
                 retry_start_attempt=retry_start_attempt,
                 attempt_started=(notify_attempt_started if attempt_started is not None else None),
+                attempt_completed=(
+                    notify_attempt_completed if attempt_completed is not None else None
+                ),
+                resume_state=provider_resume,
             )
         except asyncio.CancelledError:
             raise
@@ -258,6 +281,8 @@ class CapabilityInvoker:
         idempotency_key: str | None,
         retry_start_attempt: int,
         attempt_started: AttemptStartedCallback | None,
+        attempt_completed: AttemptCompletedCallback | None,
+        provider_resume: ProviderResumeState | None,
         parent: InvocationParent,
     ) -> None:
         if not isinstance(capability_id, str) or not capability_id.strip():
@@ -293,6 +318,13 @@ class CapabilityInvoker:
             raise ValueError("retry_start_attempt must be within RetryPolicy.max_attempts")
         if attempt_started is not None and not callable(attempt_started):
             raise TypeError("attempt_started must be callable when provided")
+        if attempt_completed is not None and not callable(attempt_completed):
+            raise TypeError("attempt_completed must be callable when provided")
+        if provider_resume is not None and not isinstance(
+            provider_resume,
+            ProviderResumeState,
+        ):
+            raise TypeError("provider_resume must be ProviderResumeState when provided")
         if parent is not None and not isinstance(parent, Span | TraceContext):
             raise TypeError("parent must be Span, TraceContext, or None")
 
@@ -317,6 +349,7 @@ class CapabilityInvoker:
         deadline_at: datetime | None,
         trace: _TraceAnchor,
         trace_enabled: bool,
+        provider_resume: ProviderResumeState | None,
     ) -> _ProviderResolution:
         span = (
             self._tracer.start_span(
@@ -384,7 +417,15 @@ class CapabilityInvoker:
         )
 
         try:
-            selected = self._provider_execution.select(candidates, selection_context)
+            selected = (
+                self._provider_execution.select_for_resume(
+                    candidates,
+                    selection_context,
+                    provider_resume,
+                )
+                if provider_resume is not None
+                else self._provider_execution.select(candidates, selection_context)
+            )
         except asyncio.CancelledError:
             self._lifecycle.finish_cancelled(span)
             raise

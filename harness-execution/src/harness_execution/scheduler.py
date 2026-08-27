@@ -65,8 +65,20 @@ _TERMINAL_NODE_STATUSES = {
     NodeExecutionStatus.CANCELLED,
 }
 
+
+def _same_provider_attempt(left: ProviderAttempt, right: ProviderAttempt) -> bool:
+    return (
+        left.provider_id == right.provider_id
+        and left.provider_attempt == right.provider_attempt
+        and left.retry_attempt == right.retry_attempt
+    )
+
+
 type CheckpointCallback = Callable[[PlanExecutionState], Awaitable[None]]
-type AttemptCheckpointCallback = Callable[[int], Awaitable[None]]
+type ProviderCheckpointCallback = Callable[
+    [ProviderAttempt, ResultEnvelope | None],
+    Awaitable[int],
+]
 
 
 class CheckpointError(RuntimeError):
@@ -222,16 +234,26 @@ class BasicScheduler:
                     # 调用期间退出，恢复方才能识别这是一次中断中的尝试。
                     await self._checkpoint(checkpoint, state)
 
-                    async def checkpoint_attempt(
-                        attempt: int,
+                    async def checkpoint_provider(
+                        provider_attempt: ProviderAttempt,
+                        provider_result: ResultEnvelope | None,
                         *,
                         current_node_id: str = node_id,
-                    ) -> None:
-                        """在 Retry 真正调用 Provider 前保存新的 attempt。"""
+                    ) -> int:
+                        """保存 Provider 选择、调用前与调用完成后的稳定边界。"""
 
-                        state.nodes[current_node_id].attempt = attempt
+                        current = state.nodes[current_node_id]
+                        if provider_result is None:
+                            self._record_provider_attempt_started(current, provider_attempt)
+                        else:
+                            self._record_provider_attempt_completed(
+                                current,
+                                provider_attempt,
+                                provider_result,
+                            )
                         self._touch(state)
                         await self._checkpoint(checkpoint, state)
+                        return current.attempt
 
                     task = asyncio.create_task(
                         self._execute_node(
@@ -243,7 +265,7 @@ class BasicScheduler:
                             parent=parent,
                             trace_enabled=trace_enabled,
                             cancellation=signal,
-                            checkpoint_attempt=checkpoint_attempt,
+                            checkpoint_provider=checkpoint_provider,
                         )
                     )
                     running[task] = node_id
@@ -341,6 +363,67 @@ class BasicScheduler:
             except Exception as exc:
                 raise CheckpointError("plan checkpoint failed") from exc
 
+    @staticmethod
+    def _record_provider_attempt_started(
+        node_state: NodeExecutionState,
+        attempt: ProviderAttempt,
+    ) -> None:
+        current_identity = (
+            node_state.selected_provider_id,
+            node_state.provider_attempt,
+            node_state.provider_retry_attempt,
+        )
+        next_identity = (
+            attempt.provider_id,
+            attempt.provider_attempt,
+            attempt.retry_attempt,
+        )
+        if node_state.selected_provider_id is None:
+            node_state.attempt = max(node_state.attempt, 1)
+        elif current_identity != next_identity:
+            node_state.attempt += 1
+
+        node_state.selected_provider_id = attempt.provider_id
+        node_state.provider_attempt = attempt.provider_attempt
+        node_state.provider_retry_attempt = attempt.retry_attempt
+        node_state.provider_selection_key = attempt.selection_key
+        node_state.provider_equivalence_group = attempt.equivalence_group
+        node_state.provider_last_result = None
+        if node_state.provider_history and _same_provider_attempt(
+            node_state.provider_history[-1], attempt
+        ):
+            node_state.provider_history[-1] = attempt
+        else:
+            node_state.provider_history.append(attempt)
+
+    @staticmethod
+    def _record_provider_attempt_completed(
+        node_state: NodeExecutionState,
+        attempt: ProviderAttempt,
+        result: ResultEnvelope,
+    ) -> None:
+        current_identity = (
+            node_state.selected_provider_id,
+            node_state.provider_attempt,
+            node_state.provider_retry_attempt,
+        )
+        completed_identity = (
+            attempt.provider_id,
+            attempt.provider_attempt,
+            attempt.retry_attempt,
+        )
+        if current_identity != completed_identity:
+            raise CheckpointError("completed provider attempt does not match running state")
+        node_state.provider_selection_key = attempt.selection_key
+        node_state.provider_equivalence_group = attempt.equivalence_group
+        node_state.provider_last_result = result
+        if node_state.provider_history and _same_provider_attempt(
+            node_state.provider_history[-1], attempt
+        ):
+            node_state.provider_history[-1] = attempt
+        else:
+            node_state.provider_history.append(attempt)
+
     def _advance_pending(
         self,
         state: PlanExecutionState,
@@ -426,7 +509,7 @@ class BasicScheduler:
         parent: Span | None,
         trace_enabled: bool,
         cancellation: CancellationSignal,
-        checkpoint_attempt: AttemptCheckpointCallback | None = None,
+        checkpoint_provider: ProviderCheckpointCallback | None = None,
     ) -> tuple[str, ResultEnvelope, int]:
         """执行单个 READY 节点，并返回尚未写入 Plan State 的统一结果。
 
@@ -464,7 +547,7 @@ class BasicScheduler:
             self._lifecycle.finish_from_result(node_span, result)
             return node.node_id, result, 1
 
-        attempts = 0
+        attempts = 1
         try:
             # 所有跨节点数据都在调用前解析成新的 RequestInput。Invoker 不需要理解
             # Plan Binding，也不会获得其他节点的状态对象。
@@ -495,9 +578,8 @@ class BasicScheduler:
 
             async def on_attempt_started(attempt: ProviderAttempt) -> None:
                 nonlocal attempts
-                attempts += 1
-                if attempts > 1 and checkpoint_attempt is not None:
-                    await checkpoint_attempt(attempts)
+                if checkpoint_provider is not None:
+                    attempts = await checkpoint_provider(attempt, None)
                 if attempt.retry_attempt > 1 and node_span is not None:
                     self._tracer.add_event(
                         node_span,
@@ -510,6 +592,14 @@ class BasicScheduler:
                         },
                     )
 
+            async def on_attempt_completed(
+                attempt: ProviderAttempt,
+                provider_result: ResultEnvelope,
+            ) -> None:
+                nonlocal attempts
+                if checkpoint_provider is not None:
+                    attempts = await checkpoint_provider(attempt, provider_result)
+
             # Scheduler 只发起一次受控节点调用；same-provider retry 与 fallback
             # 均由 Runtime 的 ProviderExecutionCoordinator 完成。
             result = await self._invoker.invoke(
@@ -520,6 +610,7 @@ class BasicScheduler:
                 retry_policy=node.retry_policy,
                 idempotency_key=node.idempotency_key,
                 attempt_started=on_attempt_started,
+                attempt_completed=on_attempt_completed,
                 parent=node_span,
                 trace_enabled=trace_enabled,
             )
@@ -553,7 +644,7 @@ class BasicScheduler:
             result = ResultEnvelope.failure(error.to_detail())
 
         self._lifecycle.finish_from_result(node_span, result)
-        return node.node_id, result, max(attempts, 1)
+        return node.node_id, result, attempts
 
     def _effective_deadline(
         self,

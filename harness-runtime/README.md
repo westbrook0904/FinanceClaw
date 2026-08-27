@@ -12,6 +12,8 @@
   可供 Plan Node 复用的统一调用入口。
 - `ProviderExecutionCoordinator`：区分同 Provider Retry 与跨 Provider Fallback，
   并统一执行 Deadline、幂等和 equivalence group 安全校验。
+- `ProviderResumeState`：携带 checkpointed ProviderAttempt、最近结果和已尝试 Provider
+  集合，使 Resume 固定原 Provider，并避免重新选择或重复已完成 attempt。
 - `InvocationLifecycle`：共享 Context 创建、Trace 传播、结果 trace ID 与 Span
   收尾语义。
 - `InvocationContextFactory.create(Request) -> InvocationContext`。

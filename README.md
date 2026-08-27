@@ -106,9 +106,10 @@ async with build_harness() as app:
 系统随后分别通过 `resolve_approval(...)` 或 `complete_async_node(...)` 持久化终态并继续
 同一 DAG。
 
-恢复会复用已完成节点结果；中断的 `NONE` / `READ` 节点可安全重放，`WRITE` 节点只有在
-Capability 声明支持幂等且节点提供 `idempotency_key` 时才会重放。Request、Plan、Node 的
-Deadline 不会因 Resume 或 Retry 被重置。
+恢复会复用已完成节点和 Provider attempt 结果；已选择 Provider 的 `NONE` / `READ` 节点
+优先重放原 Provider，`WRITE` 节点只有在 Capability 声明支持幂等且节点提供稳定
+`idempotency_key` 时才固定重放原 Provider。跨 Provider WRITE fallback 还要求相同的非空
+`equivalence_group`。Request、Plan、Node 的 Deadline 不会因 Resume 或 Retry 被重置。
 
 ## 示例能力
 
