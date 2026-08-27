@@ -46,6 +46,7 @@ packages = [
     "harness_planning",
     "harness_policy",
     "harness_registry",
+    "harness_selection",
     "harness_runtime",
     "harness_state",
     "harness_spi",
@@ -64,6 +65,7 @@ harness_plugin_local = "harness-plugin-local/src/harness_plugin_local"
 harness_planning = "harness-planning/src/harness_planning"
 harness_policy = "harness-policy/src/harness_policy"
 harness_registry = "harness-registry/src/harness_registry"
+harness_selection = "harness-selection/src/harness_selection"
 harness_runtime = "harness-runtime/src/harness_runtime"
 harness_state = "harness-state/src/harness_state"
 harness_spi = "harness-spi/src/harness_spi"
@@ -78,6 +80,7 @@ harness_execution = ["py.typed"]
 harness_events = ["py.typed"]
 harness_spi = ["py.typed"]
 harness_registry = ["py.typed"]
+harness_selection = ["py.typed"]
 harness_plugin_local = ["py.typed"]
 harness_planning = ["py.typed"]
 harness_policy = ["py.typed"]
