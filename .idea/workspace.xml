@@ -4,10 +4,30 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="0d67a81b-cd68-49de-9544-1b30058fe17e" name="Changes" comment="1、End-to-End：验证 Stage 1 Direct Invocation 没被破坏；使用真实 finance.mock-query/v1 + math.calculate/v1 → Join → Approval → echo.reply/v1 跑 finance-review-plan；以及 Retry success + CONTINUE failure + Approval + SQLite restart + Resume → PARTIAL 的完整故障链路。说明书要求的确定性 finance-review-plan 和 restart 流程也覆盖到了。&#10;2、Fault Injection：transient failure、retry exhausted、unsafe WRITE 不重试、timeout、运行前取消、运行中取消、provider exception、invalid provider result，以及额外的 checkpoint 写失败时 Provider 不得产生副作用。&#10;3、Restart：RUNNING 的 READ 节点安全重放、非幂等 WRITE 返回 HARNESS.PLAN.RESUME_UNSAFE、Async WAITING 跨重启完成、损坏 SQLite snapshot 后 fail-closed。">
-      <change afterPath="$PROJECT_DIR$/.design/FinanceClaw-第三阶段待讨论ADR.md" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.design/FinanceClaw-第三阶段说明书.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.design/Harness-Agent_通用可插拔智能体平台架构设计_修订版.md" beforeDir="false" afterPath="$PROJECT_DIR$/.design/Harness-Agent_通用可插拔智能体平台架构设计_修订版.md" afterDir="false" />
+    <list default="true" id="0d67a81b-cd68-49de-9544-1b30058fe17e" name="Changes" comment="第三阶段架构演进与设计说明书">
+      <change beforePath="$PROJECT_DIR$/.idea/FinanceClaw.iml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/FinanceClaw.iml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/harness-bootstrap/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/harness-bootstrap/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/harness-contracts/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/harness-contracts/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/harness-events/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/harness-events/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/harness-execution/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/harness-execution/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/harness-planning/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/harness-planning/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/harness-plugin-local/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/harness-plugin-local/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/harness-policy/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/harness-policy/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/harness-registry/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/harness-registry/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/harness-runtime/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/harness-runtime/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/harness-spi/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/harness-spi/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/harness-state/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/harness-state/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/harness-trace/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/harness-trace/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/plugins/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/plugins/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/plugins/calculator-tool/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/plugins/calculator-tool/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/plugins/echo-agent/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/plugins/echo-agent/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/plugins/mock-finance-agent/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/plugins/mock-finance-agent/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tests/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/tests/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tests/contract-tests/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/tests/contract-tests/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tests/integration-tests/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/tests/integration-tests/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tests/plugin-tests/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/tests/plugin-tests/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tests/stage2/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/tests/stage2/README.md" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -409,7 +429,15 @@
       <option name="project" value="LOCAL" />
       <updated>1787758067291</updated>
     </task>
-    <option name="localTasksCounter" value="28" />
+    <task id="LOCAL-00028" summary="第三阶段架构演进与设计说明书">
+      <option name="closed" value="true" />
+      <created>1787758208473</created>
+      <option name="number" value="00028" />
+      <option name="presentableId" value="LOCAL-00028" />
+      <option name="project" value="LOCAL" />
+      <updated>1787758208473</updated>
+    </task>
+    <option name="localTasksCounter" value="29" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -462,7 +490,8 @@
     <MESSAGE value="1、Capability 返回 ACCEPTED + Continuation.job_ref 后，节点进入 WAITING，API 立即返回，不长期占用 asyncio Task。&#10;2、新增 AsyncWaitingCoordinator，将 Continuation 归一化为稳定的 plan_id + node_id + job_ref 并写入 pending_jobs。&#10;3、新增 ExecutionEngine.complete_async_node(plan_id, node_id, terminal_result)。&#10;4、新增 HarnessApplication.complete_async_node(...)。&#10;completion 只允许 SUCCESS / PARTIAL / FAILED / DENIED / CANCELLED，再次传 ACCEPTED 会返回 HARNESS.ASYNC.RESULT_NOT_TERMINAL。&#10;5、completion 先写 StateStore，再调用 Resume，因此原进程退出后仍可在新进程完成同一个 plan_id。&#10;6、terminal result 继续使用 Scheduler 原有 _apply_node_result()，因此 FailurePolicy、SUCCESS/FAILED/DENIED Edge、PARTIAL 和下游 Binding 都不会出现第二套特殊语义。Scheduler 原本就把 ACCEPTED 映射为 WAITING + Continuation。&#10;7、Provider 可以不填写 plan_id/node_id，Engine 自动补全；但 job_ref 必须存在，冲突的 Plan/Node 引用会 fail-closed。&#10;支持 WAITING 已 checkpoint、但 pending_jobs 尚未来得及保存就崩溃的恢复窗口。&#10;8、Resume Deadline 超时时同步清理 pending_jobs。&#10;9、保存最小 async completion audit：node_id / job_ref / terminal status / completed_at。" />
     <MESSAGE value="补齐 PRE_PLAN + PRE_EXECUTE、REQUIRE_APPROVAL、稳定 Plan/Node Trace，以及最小 in-process Execution Event Model" />
     <MESSAGE value="1、End-to-End：验证 Stage 1 Direct Invocation 没被破坏；使用真实 finance.mock-query/v1 + math.calculate/v1 → Join → Approval → echo.reply/v1 跑 finance-review-plan；以及 Retry success + CONTINUE failure + Approval + SQLite restart + Resume → PARTIAL 的完整故障链路。说明书要求的确定性 finance-review-plan 和 restart 流程也覆盖到了。&#10;2、Fault Injection：transient failure、retry exhausted、unsafe WRITE 不重试、timeout、运行前取消、运行中取消、provider exception、invalid provider result，以及额外的 checkpoint 写失败时 Provider 不得产生副作用。&#10;3、Restart：RUNNING 的 READ 节点安全重放、非幂等 WRITE 返回 HARNESS.PLAN.RESUME_UNSAFE、Async WAITING 跨重启完成、损坏 SQLite snapshot 后 fail-closed。" />
-    <option name="LAST_COMMIT_MESSAGE" value="1、End-to-End：验证 Stage 1 Direct Invocation 没被破坏；使用真实 finance.mock-query/v1 + math.calculate/v1 → Join → Approval → echo.reply/v1 跑 finance-review-plan；以及 Retry success + CONTINUE failure + Approval + SQLite restart + Resume → PARTIAL 的完整故障链路。说明书要求的确定性 finance-review-plan 和 restart 流程也覆盖到了。&#10;2、Fault Injection：transient failure、retry exhausted、unsafe WRITE 不重试、timeout、运行前取消、运行中取消、provider exception、invalid provider result，以及额外的 checkpoint 写失败时 Provider 不得产生副作用。&#10;3、Restart：RUNNING 的 READ 节点安全重放、非幂等 WRITE 返回 HARNESS.PLAN.RESUME_UNSAFE、Async WAITING 跨重启完成、损坏 SQLite snapshot 后 fail-closed。" />
+    <MESSAGE value="第三阶段架构演进与设计说明书" />
+    <option name="LAST_COMMIT_MESSAGE" value="第三阶段架构演进与设计说明书" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>

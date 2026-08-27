@@ -2,7 +2,17 @@
 
 契约测试主要位于：
 
-- `harness-contracts/tests`：Request、Context、Descriptor、ResultEnvelope、错误码、冻结和 JSON round-trip。
-- `harness-spi/tests`：AgentRequest、ToolRequest、PluginManifest 及 Manifest/Provider 一致性。
+- `harness-contracts/tests`：Request、Context、Descriptor、ExecutionPlan、Binding、
+  Condition、Plan/Node State、Approval、Continuation、ResultEnvelope、错误、冻结和
+  JSON round-trip。
+- `harness-spi/tests`：AgentRequest、ToolRequest、PluginManifest，以及
+  Manifest/Provider Descriptor 一致性。
+- `harness-planning/tests`：跨模型 DAG、引用和 Capability Catalog 可执行性校验。
 
-这些测试确保其他模块可以只依赖顶层公共 API 开发，并尽早发现协议字段或执行语义的非兼容变化。
+这些测试保证模块可以只依赖顶层公共 API 开发，并尽早发现协议字段、序列化、冻结/可变
+边界或执行语义的非兼容变化。
+
+```bash
+.venv/bin/python -m pytest \
+  harness-contracts/tests harness-spi/tests harness-planning/tests -v
+```

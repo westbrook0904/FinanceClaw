@@ -1,124 +1,121 @@
 # harness-execution
 
-`harness-execution` 负责执行已经通过 `PlanValidator` 的 `ExecutionPlan`。Basic
-Scheduler 支持串行、并行、Join、条件分支、结构化输入/输出 Binding、跳过传播、
-fail-fast、continue-on-failure、Plan 级并发限制、Retry、Deadline 与 Cancellation。
+`harness-execution` 负责验证、执行和恢复调用方提供的 `ExecutionPlan`。它实现第二阶段
+可靠执行状态机，不包含业务逻辑；所有 Capability Node 都通过
+`CapabilityInvoker`，Scheduler 不直接访问 Registry Provider。
 
-所有 Capability 节点都通过 `CapabilityInvoker` 执行，Scheduler 不直接访问 Registry
-或 Provider。Retry 只有在错误可重试、Capability 副作用/幂等规则允许且 Deadline
-仍有剩余时发生；所有尝试共享 Request、Plan 和 Node 合并后的绝对 Deadline。
+## 公共 API
 
-`ExecutionEngine.cancel(plan_id, reason)` 使用进程内 `CancellationSignal` 停止新节点、
-取消运行中 Task，并把剩余节点与 Plan 收敛到 `CANCELLED`。ExecutionEngine 通过
-`StateStore` 在 Plan 创建、节点调用前、节点终态、取消和 Plan 终态等稳定边界保存
-完整 JSON Snapshot。
+- `ExecutionEngine.execute(request, plan)`：创建、校验并推进 Plan，直到终态或明确
+  WAITING。
+- `ExecutionEngine.resume(plan_id)`：从 StateStore 加载同一快照并继续。
+- `ExecutionEngine.resolve_approval(plan_id, decision)`：持久化审批决定并继续。
+- `ExecutionEngine.complete_async_node(plan_id, node_id, terminal_result)`：提交异步
+  Capability 终态并继续。
+- `ExecutionEngine.cancel(plan_id, reason)`：取消当前进程内活动 Plan。
+- `ExecutionEngine.state(plan_id)`：读取当前 Engine 已见过的 State 快照。
+- `BasicScheduler`：DAG、Binding、Condition、Retry、Deadline、Cancellation 和结果组合。
+- `CancellationSignal`：进程内可变取消信号及可持久化 CancellationContext 快照。
+- `InputResolver`、`ConditionEvaluator`、`resolve_json_pointer()`：结构化数据求值。
 
-## Resume
+## 调度语义
 
-`ExecutionEngine.resume(plan_id)` 从 `StateStore` 加载同一个 Plan 的
-`PlanExecutionRecord`，复用持久化的 `ExecutionPlan`、`InvocationContext` 和节点状态
-继续推进，不重新创建 Request Context，也不会重新执行已经完成的节点。
+BasicScheduler 支持：
 
-恢复规则保持原执行语义：
+- 串行、多个并行 root 和 Plan 级 `max_concurrency`；
+- Join 等待全部前驱终态后，再判断至少一条入边是否激活；
+- `SUCCESS/FAILED/DENIED/COMPLETED/ALWAYS` Edge Trigger；
+- 受限 Condition 表达式和 JSON Pointer；
+- Request、literal、Node Result Input Binding 与最终 Output Binding；
+- 非活动分支递归收敛为 `SKIPPED`；
+- Node `FAIL_PLAN` / `CONTINUE` 与 Plan `FAIL_FAST`；
+- 有完整输出但存在可继续问题时组合 `PARTIAL`。
 
-- `SUCCEEDED` / `FAILED` / `DENIED` 等已完成节点直接复用已保存的 `ResultEnvelope`；
-- 中断在 `RUNNING` 的 `NONE` / `READ` Capability 可以安全重放；
-- 中断在 `RUNNING` 的 `WRITE` Capability 只有声明支持幂等且节点提供
-  `idempotency_key` 时才重放，否则返回 `HARNESS.PLAN.RESUME_UNSAFE`；
-- Retry 从持久化 `attempt` 继续，不重新从 1 开始；
-- Request/Plan 的绝对 Deadline 不会因 Resume 延长；已开始节点的 `timeout_ms` 仍从
-  原 `started_at` 计算；
-- `WAITING` 状态在尚无外部完成事件时幂等返回原 Continuation；后续 Approval/Async
-  里程碑可以先更新等待节点，再复用同一 Resume 入口继续调度；
-- 缺失或不可读状态分别返回 `HARNESS.PLAN.NOT_FOUND` 与
-  `HARNESS.PLAN.STATE_LOAD_FAILED`。
+Capability 返回 `PARTIAL` 时节点仍视为成功并可供下游读取 output，issues 会提升到 Plan；
+返回 `ACCEPTED` 时节点进入 WAITING，不占用长期 asyncio Task。
 
-跨进程恢复需要使用 SQLite 等持久化 `StateStore`；默认 `InMemoryStateStore` 只适合
-单进程测试和默认组装。
+## Retry、Deadline 与取消
+
+Retry 只有同时满足以下条件才会发生：
+
+1. 最终结果是 FAILED，且 `ErrorDetail.retryable=true`；
+2. 尚未达到 `RetryPolicy.max_attempts`；
+3. Capability 是 `NONE/READ` 副作用，或 WRITE 声明支持幂等且 Node 提供
+   `idempotency_key`；
+4. 绝对 Deadline 仍容纳下一次尝试和退避。
+
+退避采用无 jitter 的确定性指数策略。Request、Plan 和 Node 三层时间预算合并为最早的
+绝对 Deadline，全部 Retry 共享该时间点。
+
+`ExecutionEngine.cancel()` 使用 `CancellationSignal` 停止新节点、取消运行 Task，并
+把剩余节点和 Plan 收敛到 CANCELLED。调用 `execute()` 的客户端 task 被取消时，
+`CancelledError` 仍向上传播，同时开放 Span 和节点状态被清理。
+
+## Checkpoint 与 Resume
+
+ExecutionEngine 通过 StateStore 在 Plan 创建、节点调用前、Retry、节点终态、WAITING、
+取消和 Plan 终态等稳定边界保存完整 `PlanExecutionRecord`。Provider 调用前 checkpoint
+失败会阻止 Provider 产生副作用。
+
+`resume(plan_id)` 复用持久化的 Plan、InvocationContext 和 Node State：
+
+- 已完成节点直接复用已保存的 `ResultEnvelope`；
+- 中断的 `NONE/READ` Capability 可安全重放；
+- 中断的 WRITE 只有声明 `OPTIONAL/REQUIRED` 幂等且 Node 有 key 才重放，否则返回
+  `HARNESS.PLAN.RESUME_UNSAFE`；
+- attempt 从持久化值继续，不从 1 重置；
+- Request/Plan Deadline 与已开始 Node timeout 都不会被延长；
+- WAITING 在没有外部终态时幂等返回原 Continuation；
+- 缺失、损坏或不可读状态 fail-closed，并返回结构化错误。
+
+跨进程恢复需要文件型 `SQLiteStateStore`；默认 InMemoryStateStore 只适合单进程。
 
 ## Human Approval
 
-显式 `PlanNodeKind.APPROVAL` 是 Execution Engine 的一等等待节点，不注册为
-Capability，也不会长期占用 asyncio Task。节点到达后：
+显式 `PlanNodeKind.APPROVAL` 是一等等待节点：
 
-1. Scheduler 先把节点推进到 `WAITING`；
-2. `ApprovalCoordinator` 生成持久化 `ApprovalRequest` 并写入
-   `PlanExecutionState.pending_approvals`；
-3. 当前 API 返回 `ResultStatus.ACCEPTED`，Continuation 同时携带 `plan_id`、`node_id`
-   与稳定 `approval_id`；
-4. 外部调用 `ExecutionEngine.resolve_approval(plan_id, decision)`；
-5. `APPROVED` 映射为 Approval Node `SUCCEEDED`，`REJECTED` 映射为 `DENIED`；
-6. 决策后的快照先写回 StateStore，再复用 `resume(plan_id)` 继续 DAG。
+1. Scheduler 将节点推进到 WAITING；
+2. ApprovalCoordinator 生成安全、可持久化的 `ApprovalRequest`；
+3. API 返回带稳定 `plan_id/node_id/approval_id` 的 ACCEPTED；
+4. 外部提交 `ApprovalDecision`；
+5. APPROVED 映射为节点 SUCCEEDED，REJECTED 映射为 DENIED；
+6. 决策先 checkpoint，再复用 Resume 继续 DAG。
 
-审批拒绝仍遵守 Node `failure_policy` 和普通 `EdgeTrigger.DENIED` 语义，因此可以选择
-fail-plan，也可以通过 `CONTINUE + DENIED edge` 进入补偿/拒绝分支。
+拒绝仍遵守 Node FailurePolicy 和 DENIED Edge，可进入显式拒绝/补偿分支。ApprovalRequest
+只读取审批专用摘要字段，不复制任意 metadata、完整输入、Prompt 或 Secret。
 
-`ApprovalRequest` 不复制任意节点 metadata 或完整请求输入。显式 Approval Node 只读取
-以下专用安全摘要字段：
-
-- `metadata.approval_reason`
-- `metadata.approval_resource_category`
-- `metadata.approval_parameter_names`
-
-其他 metadata（包括 Secret、Token 或完整 Prompt）不会进入 ApprovalRequest。
-
-Policy 触发的 `REQUIRE_APPROVAL` 将在第二阶段第 10 步 Policy 完整化时接入；第 8 步
-先稳定共享的 ApprovalRequest / ApprovalDecision / WAITING / checkpoint / resume 基础链路。
+PRE_EXECUTE Policy 的 REQUIRE_APPROVAL 复用同一流程。批准后生成持久化
+`ApprovalGrant`，恢复时再次进入 Policy，而不是绕过治理边界。
 
 ## Async WAITING
 
-Capability Provider 可以返回 `ResultStatus.ACCEPTED + Continuation.job_ref`，把一次
-Provider 调用转换成可持久化的异步等待，而不是长期占用原始 API Task：
+Capability 可以返回 `ACCEPTED + Continuation.job_ref`：
 
-1. Scheduler 把 Capability Node 推进到 `WAITING`；
-2. `AsyncWaitingCoordinator` 将 Continuation 归一化为稳定的
-   `plan_id + node_id + job_ref`，并写入 `PlanExecutionState.pending_jobs`；
-3. 当前 API 返回 `ResultStatus.ACCEPTED`；
-4. 外部系统完成任务后调用
-   `ExecutionEngine.complete_async_node(plan_id, node_id, terminal_result)`；
-5. `terminal_result` 只能是 `SUCCESS / PARTIAL / FAILED / DENIED / CANCELLED`；
-6. completion 快照先写回 StateStore，再复用 `resume(plan_id)` 继续 DAG。
+1. 节点进入 WAITING，job 信息持久化到 `pending_jobs`；
+2. API 立即返回 ACCEPTED；
+3. 外部调用 `complete_async_node()` 提交终态；
+4. 终态只能是 SUCCESS、PARTIAL、FAILED、DENIED 或 CANCELLED；
+5. completion 先 checkpoint，再 Resume。
 
-异步完成结果仍由 Scheduler 原有 `_apply_node_result()` 解释，因此 FailurePolicy、
-`SUCCESS / FAILED / DENIED` Edge、PARTIAL issue 聚合和最终结果组合保持统一语义。
+Provider 可以省略 Continuation 的 plan/node ID，由 Engine 补全，但 `job_ref` 必须存在；
+显式冲突的引用、重复 completion 或再次提交 ACCEPTED 都会 fail-closed。WAITING
+checkpoint 与 Approval/Job materialization 之间的崩溃窗口可在 Resume 时修复。
 
-普通 Async WAITING 必须提供 `job_ref`。Provider 可以省略 `plan_id/node_id`，Engine
-会补成当前 Plan/Node；如果 Provider 显式给出冲突的 Plan/Node 引用，则按无效状态拒绝。
-`pending_jobs` 与 WAITING checkpoint 之间的崩溃窗口可在下一次 Resume 时自动修复。
+## Policy、Trace 与 Events
 
-阶段二不在这里实现 callback server、polling framework 或外部 event broker adapter；
-`complete_async_node(...)` 是明确的 completion ingress。
+PRE_PLAN 在 Scheduler 启动前运行；PRE_EXECUTE 由每次 Invoker 尝试执行。Plan Trace
+包含 REQUEST → RUNTIME → PLAN → SCHEDULER/PLAN_NODE → Capability 子树。
 
-## Policy / Trace / Execution Events
+ExecutionEngine 同时发布 Plan/Node/Approval/Async/Checkpoint Execution Events。事件是
+best-effort 观察面，Publisher/Subscriber 失败不会覆盖 StateStore 中的执行事实。
 
-Stage 2 Step 10 完成两层 Policy 边界：
+## 当前范围
 
-- `PRE_PLAN` 在 Scheduler 启动前评估整个 `ExecutionPlan`；`DENY` 会阻止 Plan 创建和
-  Provider 调用。
-- `PRE_EXECUTE` 继续由 `CapabilityInvoker` 在每次 Capability 尝试前执行。
-- `PolicyEffect.REQUIRE_APPROVAL` 在 Plan Capability 节点上转换为
-  `WAITING(policy_approval)`，复用 `ApprovalRequest / ApprovalDecision / Resume`。
-- Policy Approval 批准后生成结构化 `ApprovalGrant`；Resume 再次进入 PRE_EXECUTE 时
-  Policy 可以识别该 Grant，避免审批循环。Grant 保存在 Plan State 中，不接受调用方
-  伪造的 `_harness_approval_grants` Invocation attribute。
-- Direct Invocation 遇到 `REQUIRE_APPROVAL` 会返回
-  `HARNESS.POLICY.APPROVAL_REQUIRED`，不会绕过审批继续调用 Provider。
+第二阶段不实现动态 Plan Patch、分布式 Scheduler/锁、多 Scheduler 竞争、外部 callback
+server、轮询框架或外部 Event Broker。
 
-Trace 稳定层级补齐 `SCHEDULER`，节点状态变化继续使用 Trace Event，而不是新增大量
-SpanType。Plan 执行的关键结构是：
+## 测试
 
-```text
-REQUEST
-└── RUNTIME
-    └── PLAN
-        ├── SCHEDULER
-        └── PLAN_NODE
-            ├── POLICY / REGISTRY_RESOLVE
-            └── CAPABILITY
-                └── AGENT / TOOL
+```bash
+.venv/bin/python -m pytest harness-execution/tests -v
 ```
-
-ExecutionEngine 同时向 `EventPublisher` 发布业务无关的执行事件。checkpoint 前后快照
-用于推导 `plan.* / node.* / checkpoint.saved`；Approval 与 Async completion 额外发布
-`approval.* / async.*`。EventPublisher 属于观察面，发布或订阅失败不会改变 StateStore
-中的 DAG 执行事实。

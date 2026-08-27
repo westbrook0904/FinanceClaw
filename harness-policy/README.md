@@ -1,51 +1,69 @@
 # harness-policy
 
-`harness-policy` 在 Capability 执行边界运行独立策略链，并产生结构化允许或拒绝决策。业务插件不感知公共权限校验过程。
+`harness-policy` 在 Plan 和 Capability 两个受控边界运行独立策略链，产生结构化
+`ALLOW`、`DENY` 或 `REQUIRE_APPROVAL` 决策。Policy 只做判断，不调用 Provider，
+也不自行等待人工审批。
 
 ## 公共 API
 
-- `Policy`：同步 `evaluate(PolicyContext) -> PolicyDecision` 扩展接口。
-- `PolicyContext`：可信 InvocationContext、已解析 CapabilityDescriptor 和执行阶段。
-- `PolicyDecision`：`ALLOW` / `DENY`、策略名、原因和不可变约束。
-- `PolicyEngine`：顺序执行策略、合并约束并在首个 DENY 处短路。
-- `PolicyPhase`：阶段一仅支持 `PRE_EXECUTE`。
+- `Policy.evaluate(PolicyContext) -> PolicyDecision`：同步扩展接口。
+- `Policy.phases`：声明策略参与的阶段；为兼容阶段一策略，默认仅
+  `PRE_EXECUTE`。
+- `PolicyContext`：可信 InvocationContext，以及当前 Plan 或已解析
+  CapabilityDescriptor；PRE_EXECUTE 可携带持久化 `ApprovalGrant`。
+- `PolicyDecision`：effect、策略名、原因和不可变 constraints。
+- `PolicyEngine`：按当前 phase 顺序执行并聚合决策。
+- `PolicyPhase`：`PRE_PLAN`、`PRE_EXECUTE`。
+- `PolicyEffect`：`ALLOW`、`DENY`、`REQUIRE_APPROVAL`。
 
 ## 内置策略
 
-- `AllowAllPolicy`：显式允许调用，默认用于开发和组合测试。
-- `TenantPolicy`：校验 Request tenant 与 Runtime 注入的可信 TenantContext，支持必填和允许列表。
-- `CapabilityPermissionPolicy`：按 Capability ID 或 `*` 规则检查可信 Identity scopes；未配置能力默认拒绝，可通过 `allow_unconfigured=True` 放宽。
+- `AllowAllPolicy`：同时允许 PRE_PLAN 和 PRE_EXECUTE，默认用于开发与组合测试。
+- `TenantPolicy`：校验 Request tenant 与 Runtime 注入的可信 TenantContext，支持
+  必填和允许列表。
+- `CapabilityPermissionPolicy`：按 Capability ID 或 `*` 规则检查可信 Identity
+  scopes；未配置能力默认拒绝，可用 `allow_unconfigured=True` 放宽。
+- `RequireApprovalPolicy`：按 Capability ID、`SideEffectType` 或 `EgressType`
+  要求人工审批；匹配的 `ApprovalGrant` 可允许恢复后的同一节点继续执行。
 
-`CapabilityPermissionPolicy` 的规则值是可接受 scope 集合：Identity 具有其中至少一个 scope，或具有全局 `*` scope，即通过检查。空集合表示该 Capability 不要求 scope。
+`CapabilityPermissionPolicy` 的规则值是可接受 scope 集合：Identity 具备其中任一
+scope，或具备全局 `*`，即通过；空集合表示该 Capability 不要求 scope。
 
-## PolicyEngine 语义
+## PolicyEngine 聚合语义
 
 ```text
-Policy 1: ALLOW + constraints
-  ↓ merge
-Policy 2: ALLOW + constraints
-  ↓ merge
-Policy 3: DENY
-  ↓ short-circuit
-Final DENY + merged constraints
+ALLOW constraints ─┐
+REQUIRE_APPROVAL ──┼─ constraints 按顺序合并
+ALLOW constraints ─┘
+         ↓
+DENY 优先级最高并立即短路
+         ↓
+否则 REQUIRE_APPROVAL 优先于 ALLOW
 ```
 
-无策略时默认 ALLOW，也可以通过 `default_effect=DENY` 改为默认拒绝。后出现的同名约束覆盖之前的值。
+同名 constraint 以后出现的值为准。当前 phase 没有适用策略时使用
+`default_effect`，默认 ALLOW，也可配置 DENY 或 REQUIRE_APPROVAL。
+
+## Approval 行为
+
+- PRE_PLAN DENY 会在创建执行记录和调用 Provider 前阻止 Plan。
+- Plan 节点的 PRE_EXECUTE REQUIRE_APPROVAL 会转成
+  `WAITING(policy_approval)`，由 ExecutionEngine 生成安全的
+  `ApprovalRequest`。
+- 批准后，ExecutionEngine 从持久化状态注入匹配 `ApprovalGrant`，该节点重新经过
+  PRE_EXECUTE，而不是绕过 Policy。
+- Direct Invocation 没有 Plan/Node 恢复位置，遇到 REQUIRE_APPROVAL 会返回
+  `HARNESS.POLICY.APPROVAL_REQUIRED` 的 DENIED 结果。
 
 ## 依赖边界
 
-- 只依赖 `harness-contracts` 和 `harness-spi`。
-- Policy 不调用 Provider、不修改 Registry，也不写入 Runtime。
-- Runtime 在 Registry 解析之后构造 PRE_EXECUTE PolicyContext。
+本模块只依赖 `harness-contracts`。Policy 不访问 Registry/Provider、不修改 Runtime
+或 StateStore；Runtime/ExecutionEngine 在受控边界构造 PolicyContext。
+
+PRE_ROUTE、POST_EXECUTE、限流、降级、复杂规则语言和策略持久化不在第二阶段范围内。
 
 ## 测试
 
-项目安装后运行：
-
 ```bash
-.venv/bin/python -m unittest discover -s harness-policy/tests -v
+.venv/bin/python -m pytest harness-policy/tests -v
 ```
-
-## 阶段一非目标
-
-不实现 PRE_ROUTE、POST_EXECUTE、审批、限流、降级、复杂规则语言或租户策略持久化。

@@ -1,23 +1,42 @@
 # integration-tests
 
-阶段一集成覆盖主要位于：
+第二阶段集成覆盖分为两条稳定主链。
 
-- `harness-runtime/tests`：Request → Context → Registry → Policy → Capability → Result → Trace。
-- `harness-bootstrap/tests`：Composition Root、Plugin Loader、Registry 和 Runtime 的组装生命周期。
-- `plugins/tests`：三个真实示例插件通过 Bootstrap/Runtime 的端到端调用。
-
-关键验收链路为：
+Direct Invocation：
 
 ```text
-Plugin discovery
+Plugin discovery → initialize/register
   ↓
-initialize / register
+Request → Context → Registry → PRE_EXECUTE Policy → Agent/Tool
   ↓
-Request → Context → Registry → Policy → Agent/Tool
-  ↓
-ResultEnvelope + Trace
-  ↓
-unregister / shutdown
+ResultEnvelope + Trace → unregister/shutdown
 ```
 
-测试同时覆盖策略拒绝、Registry miss、Provider 异常、Tool 输入错误、超时、task 取消、Trace 关闭和启动批次回滚。
+Plan Execution：
+
+```text
+Request + ExecutionPlan
+  ↓
+PRE_PLAN + PlanValidator + Scheduler
+  ↓
+CapabilityInvoker + Checkpoint + Plan/Node Trace + Events
+  ↓
+Approval / Async WAITING → SQLite restart → Resume
+  ↓
+SUCCESS / PARTIAL / FAILED / DENIED / CANCELLED
+```
+
+主要测试位置：
+
+- `harness-runtime/tests`：Direct Runtime 和共用 CapabilityInvoker。
+- `harness-execution/tests`：DAG、Retry、Cancellation、Resume、Approval、Async、
+  Policy、Trace 和 Events。
+- `harness-bootstrap/tests`：Composition Root、Application API 和 Plugin 生命周期。
+- `plugins/tests`：真实示例插件通过 Bootstrap 的调用。
+- `tests/stage2`：finance-review-plan、故障注入、SQLite 重启和损坏状态 fail-closed。
+
+```bash
+.venv/bin/python -m pytest \
+  harness-runtime/tests harness-execution/tests harness-bootstrap/tests \
+  plugins/tests tests/stage2 -v
+```

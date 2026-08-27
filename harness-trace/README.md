@@ -1,21 +1,25 @@
 # harness-trace
 
-第二阶段在第一阶段 Request/Runtime/Capability Span 基础上增加 `PLAN`、
-`PLAN_NODE` 和 `SCHEDULER` 类型，用于表达计划与节点的稳定执行层级。
-
-`harness-trace` 提供与观测厂商无关的 Trace、Span 和 Event 抽象。Runtime 面向本模块的 `Tracer` 编程，不直接依赖 OpenTelemetry SDK。
+`harness-trace` 提供与观测厂商无关的 Trace、Span 和瞬时 Event 抽象。第二阶段在
+Request/Runtime/Capability 层级上增加 Plan、Scheduler 和 Plan Node，使完整 DAG 调用链
+可审计。
 
 ## 公共 API
 
 - `Tracer`：`start_span()`、`add_event()`、`end_span()` 抽象。
-- `Span`、`TraceEvent`、`TraceError`：深度不可变的可序列化快照。
+- `Span`、`TraceEvent`、`TraceError`：深度不可变、可序列化快照。
 - `SpanStatus`：`RUNNING`、`OK`、`ERROR`、`CANCELLED`。
-- `SpanType`：REQUEST、RUNTIME、POLICY、REGISTRY_RESOLVE、CAPABILITY、AGENT、TOOL。
-- `InMemoryTracer`：线程安全地保存 Span/Event，支持按 trace/span 过滤和 TraceContext 转换。
-- `ConsoleTracer`：在保留内存快照的同时输出 JSON Lines 生命周期记录。
-- `TraceStateError`：Span 生命周期非法使用时抛出。
+- `SpanType`：`REQUEST`、`RUNTIME`、`POLICY`、`REGISTRY_RESOLVE`、
+  `CAPABILITY`、`AGENT`、`TOOL`、`PLAN`、`SCHEDULER`、
+  `PLAN_NODE`、`PLANNER`。
+- `InMemoryTracer`：线程安全保存 Span/Event，可按 trace/span 过滤并生成
+  `TraceContext`。
+- `ConsoleTracer`：保留内存快照，同时输出 JSON Lines 生命周期记录。
+- `TraceStateError`：非法 Span 生命周期操作。
 
-## Runtime Trace 层级
+## Trace 层级
+
+Direct Invocation：
 
 ```text
 REQUEST
@@ -26,28 +30,47 @@ REQUEST
         └── AGENT / TOOL
 ```
 
-已有 `InvocationContext.trace_context` 会作为新 REQUEST Span 的父上下文，实现同一进程内的 Trace 续接。`request.options.trace=false` 时 Runtime 不创建 Span，也不向结果强制写入 trace ID。
+Plan Execution：
+
+```text
+REQUEST
+└── RUNTIME
+    └── PLAN
+        ├── POLICY（PRE_PLAN）
+        ├── SCHEDULER
+        └── PLAN_NODE（与 SCHEDULER 同级）
+            ├── REGISTRY_RESOLVE
+            ├── POLICY
+            └── CAPABILITY
+                └── AGENT / TOOL
+```
+
+Retry、WAITING、Resume、Approval 和 Checkpoint 等瞬时变化使用 Event/Attribute，不为每种
+状态增加 SpanType。已有 `InvocationContext.trace_context` 可续接上游 trace；
+`request.options.trace=false` 时不创建 Span，也不强制写入 result trace ID。
 
 ## 生命周期约束
 
-- 所有时间必须带时区。
+- 所有时间必须包含时区。
 - RUNNING Span 不能有结束时间或错误。
 - ERROR Span 必须携带错误；OK/CANCELLED Span 不能携带错误。
 - 已结束 Span 不能再次结束、添加 Event 或创建子 Span。
 - `HarnessError` 会归一化为包含类型、消息和错误码的 `TraceError`。
+- 并行 Plan Node 共享 Plan/Scheduler 上下文，但各自保留独立 PLAN_NODE 子树。
 
-## 依赖边界
+## Trace 与 Execution Events
 
-只依赖 `harness-contracts`。业务插件只接收 Runtime 传播的 TraceContext，无需维护 Harness 主链路。
+Trace Event 绑定具体 Span，用于调用链内诊断；`harness-events` 的 ExecutionEvent 是
+独立的业务无关执行事实，可供订阅者观察。两者都不是 StateStore，也不承担 Resume。
+
+## 依赖边界与当前范围
+
+本模块只依赖 `harness-contracts`。业务插件只接收传播后的 TraceContext，无需维护主
+链路。OpenTelemetry SDK/Exporter、远程 Collector、采样、Metrics、日志聚合和持久化
+Trace Store 不在第二阶段范围内。
 
 ## 测试
 
-项目安装后运行：
-
 ```bash
-.venv/bin/python -m unittest discover -s harness-trace/tests -v
+.venv/bin/python -m pytest harness-trace/tests -v
 ```
-
-## 阶段一非目标
-
-不实现 OpenTelemetry SDK 绑定、Exporter、远程 Collector、采样、Metrics、日志聚合、跨进程 Baggage 管理或持久化 Trace Store。

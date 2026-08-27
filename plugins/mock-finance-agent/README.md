@@ -1,11 +1,13 @@
 # mock-finance-agent
 
-阶段一业务边界验证插件，实现 `finance.mock-query/v1`。
+业务边界验证 Agent 插件，实现 `finance.mock-query/v1`。它是第二阶段
+`finance-review-plan` 的真实内置 Capability 之一，用于证明财经业务仍完全位于
+Harness Core 之外。
 
 ## 公共类型
 
 - `MockFinanceAgent`：实现 `AgentSPI`。
-- `MockFinanceAgentPlugin`：实现 `PluginSPI`，暴露一个稳定 MockFinanceAgent Provider。
+- `MockFinanceAgentPlugin`：实现 `PluginSPI`，暴露一个稳定 Provider。
 
 ## 行为
 
@@ -22,4 +24,9 @@ Agent 返回确定性的 JSON mock 结果：
 }
 ```
 
-它不访问真实行情、数据库、LLM 或其他数据源，也不执行真实金融分析。该插件用于证明加入财经领域 Capability 时，Harness Core 仍不需要财经类型或业务依赖。
+Result metadata 包含 Capability ID、Request ID 和 `data_source=none`。Descriptor 使用
+无副作用执行画像默认值。
+
+该插件不访问真实行情、数据库、LLM 或其他数据源，也不执行真实金融分析。它可通过 Direct
+Invocation 调用，也可作为 Plan Node 参与并行、Join、Checkpoint/Resume 和输出 Binding；
+这些执行语义全部由 Harness 提供。

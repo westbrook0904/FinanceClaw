@@ -1,6 +1,8 @@
 # harness-contracts
 
-`harness-contracts` 是所有 Harness 模块共享的稳定、业务无关协议层，不依赖其他 Harness 模块或插件。
+`harness-contracts` 是所有 Harness 模块共享的稳定、业务无关协议层，不依赖其他
+Harness 模块或插件。第二阶段在阶段一 Request/Context/Capability/Result 基线上补齐了
+Plan、可恢复状态、审批、异步 Continuation 和能力执行画像。
 
 ## 公共 API
 
@@ -8,16 +10,16 @@
 |---|---|
 | 请求 | `Request`、`RequestInput`、`RequestTarget`、`RequestOptions` |
 | 计划 | `ExecutionPlan`、`PlanNode`、`PlanEdge`、Binding、Condition、Budget、Retry / Failure Policy |
-| 持久化 | `PlanExecutionRecord`，包含 Plan、可恢复 Context 和 Plan/Node State 快照 |
-| 上下文 | `InvocationContext`、`IdentityContext`、`TenantContext`、`TraceContext`、`CancellationContext` |
-| 执行状态 | Direct Invocation、Plan 与 Node 的状态模型及状态枚举 |
+| 执行状态 | `PlanExecutionState`、`NodeExecutionState` 及状态枚举 |
+| 持久化 | `PlanExecutionRecord`，包含 Plan、可恢复 Context 和完整 State |
+| 上下文 | `InvocationContext`、Identity、Tenant、Trace、Cancellation Context |
 | 能力 | `CapabilityDescriptor`、`CapabilityType`、`CapabilityExecutionProfile` |
-| 审批 | `ApprovalRequest`、`ApprovalDecision` |
-| 结果 | `ResultEnvelope`、`ResultOutput`、`ResultIssue`、`Continuation`、`ResultStatus` |
+| 审批 | `ApprovalRequest`、`ApprovalDecision`、`ApprovalGrant` |
+| 结果 | `ResultEnvelope`、`ResultOutput`、`ResultIssue`、`Continuation` |
 | 错误 | `ErrorDetail`、`ErrorCode`、`HarnessError` 及模块异常 |
-| 基础类型 | `ContractModel`、`MutableContractModel`、`JsonPrimitive`、`JsonValue` |
+| 基础类型 | `ContractModel`、`MutableContractModel`、JSON 类型别名 |
 
-所有公共类型均从 `harness_contracts` 顶层导入：
+公共类型应从 `harness_contracts` 顶层导入：
 
 ```python
 from harness_contracts import Request, RequestInput, RequestTarget
@@ -28,27 +30,59 @@ request = Request(
 )
 ```
 
+## ExecutionPlan
+
+`ExecutionPlan` 是不可变 DAG 定义。Capability Node 通过 Registry 调用 Agent/Tool；
+Approval Node 是 ExecutionEngine 原生等待点，不注册为 Capability。
+
+- Input Binding 显式读取 literal、原始 Request 或上游 `ResultEnvelope`。
+- Output Binding 显式从节点结果组合最终 Plan 输出。
+- Condition 使用 `eq/ne/lt/lte/gt/gte/exists/in/and/or/not` 白名单，不执行
+  Python 表达式。
+- Edge Trigger 支持 `SUCCESS`、`FAILED`、`DENIED`、`COMPLETED` 和
+  `ALWAYS`。
+- `PlanBudget` 当前执行 Deadline 和最大并发；token/cost 字段只冻结协议。
+- Retry 总尝试次数、指数退避、节点超时、失败传播和幂等键都属于显式 Plan 契约。
+
+单模型内可以确定的约束由 Pydantic 校验；环、跨节点引用、可达性和 Capability 是否存在
+由 `harness-planning` 的 `PlanValidator` 校验。
+
+## 状态与结果
+
+Plan 状态包含 `CREATED/RUNNING/WAITING/SUCCEEDED/PARTIAL/FAILED/DENIED/CANCELLED`；
+Node 额外包含 `PENDING/READY/SKIPPED`。Plan/Node State 是明确可变的运行快照，
+其余跨模块协议默认深度冻结。
+
+`ResultStatus` 支持：
+
+- `SUCCESS`：必须有最终 output。
+- `PARTIAL`：必须有 output 和至少一个 issue。
+- `FAILED` / `DENIED`：必须有结构化 error。
+- `CANCELLED`：无最终 output，可选 error。
+- `ACCEPTED`：必须有可定位的 `Continuation`，用于 Approval 或异步等待。
+
+`PlanExecutionRecord` 原子保存 `ExecutionPlan + InvocationContext +
+PlanExecutionState`，并校验三者的 `plan_id/revision` 一致性。
+
 ## 协议约束
 
 - Pydantic 模型默认 `extra="forbid"`，拒绝未协商字段。
-- Request、Context、Descriptor 和 Result 深度冻结，嵌套 `dict/list` 也不能原地修改。
-- Context、Plan 与 Result 深度冻结；Invocation、Plan 与 Node 的 State 模型明确可变。
+- Request、Context、Descriptor、Plan、Result 和 Approval 协议深度冻结。
+- Invocation、Plan 与 Node State 明确可变。
 - 时间字段必须包含时区。
-- `Request.target` 对 Plan 请求可为空；Direct Invocation 仍必须由 Runtime 校验其存在。
-- Request 中的 `user_id`、`tenant_id` 只是外部声明，不能直接视为可信 Identity/Tenant。
-- `ResultEnvelope` 分别校验 SUCCESS、PARTIAL、FAILED、DENIED、CANCELLED、ACCEPTED 的载荷。
-- `HarnessError.to_detail()` 把内部异常转换为可安全跨模块传播的结构化错误。
+- `Request.target` 对 Plan 请求可为空；Direct Invocation 仍由 Runtime 要求 target。
+- Request 中的 `user_id`、`tenant_id` 不能直接视为可信 Identity/Tenant。
+- Capability 执行画像用 `side_effect`、`egress`、`idempotency` 支持重试、
+  恢复与审批判断。
+- `HarnessError.to_detail()` 把内部异常转换为可安全传播的结构化错误。
 
 ## 依赖边界
 
-本模块不依赖任何其他 Harness 模块或业务插件，也不包含 Finance、SQL、RAG、LLM 等业务类型。
+本模块不依赖任何其他 Harness 模块或业务插件，也不包含 Finance、SQL、RAG、LLM 等
+业务类型。它只描述跨模块数据，不执行 DAG、Policy、Capability 或持久化操作。
 
 ## 测试
 
-项目安装后运行：
-
 ```bash
-.venv/bin/python -m unittest discover -s harness-contracts/tests -v
+.venv/bin/python -m pytest harness-contracts/tests -v
 ```
-
-Contracts 只冻结跨模块数据边界；DAG 拓扑校验、调度、持久化与恢复由后续模块负责。

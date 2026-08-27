@@ -1,79 +1,84 @@
 # harness-runtime
 
-`harness-runtime` 提供 Request 级 Direct Invocation 生命周期，以及供 Direct Runtime
-和后续 ExecutionEngine 共同使用的 `CapabilityInvoker` 受控调用边界。
-
-`CapabilityInvoker` 统一执行 Registry resolve、PRE_EXECUTE Policy、Capability Trace、
-Agent/Tool 调用、绝对 deadline/timeout、asyncio cancellation、错误和 ResultEnvelope
-归一化。调用方
-不得绕过它直接从 Registry 取得 Provider 后执行。
-
-`harness-runtime` 是阶段一核心模块之间的薄协调层，负责一次 Request 的完整 Invocation 生命周期，不包含插件发现、业务路由或具体业务逻辑。
+`harness-runtime` 提供 Request 级 Direct Invocation 生命周期，以及 Direct Runtime
+和 ExecutionEngine 共同使用的 `CapabilityInvoker` 受控调用边界。Scheduler、恢复
+逻辑和其他调用方不得绕过 Invoker 直接执行 Registry Provider。
 
 ## 公共 API
 
-- `HarnessRuntime.invoke(Request) -> ResultEnvelope`
-- `CapabilityInvoker.invoke(capability_id, input, context, ...) -> ResultEnvelope`
-- `InvocationLifecycle`：共享 Context 创建、Trace 传播、结果与 Span 收尾语义。
-- `InvocationContextFactory.create(Request) -> InvocationContext`
-- `DefaultInvocationContextFactory`：构造最小可信 Context，并按 `timeout_ms` 计算 deadline。
+- `HarnessRuntime.invoke(Request) -> ResultEnvelope`：兼容阶段一的单 Capability
+  Direct Invocation。
+- `CapabilityInvoker.invoke(capability_id, input, context, ...) -> ResultEnvelope`：
+  可供 Plan Node 复用的统一调用入口。
+- `InvocationLifecycle`：共享 Context 创建、Trace 传播、结果 trace ID 与 Span
+  收尾语义。
+- `InvocationContextFactory.create(Request) -> InvocationContext`。
+- `DefaultInvocationContextFactory`：构造最小可信 Context，并按 Request
+  `timeout_ms` 计算绝对 deadline。
 
-## 执行顺序
+## Direct Invocation
 
 ```text
-Request
+Request（target required）
   ↓
 ContextFactory.create
   ↓
-REQUEST / RUNTIME trace
+REQUEST / RUNTIME
   ↓
-Registry.resolve(CapabilityQuery)
+CapabilityInvoker
+  ├── Registry.resolve
+  ├── PRE_EXECUTE Policy
+  ├── CAPABILITY
+  │   └── AGENT / TOOL
+  └── timeout / error / result normalization
   ↓
-PRE_EXECUTE PolicyEngine
-  ↓
-CAPABILITY
-  └── AgentSPI.invoke / ToolSPI.execute
-  ↓
-ResultEnvelope normalize
-  ↓
-finish Trace
+ResultEnvelope
 ```
 
-Policy 位于 Registry 之后，因为阶段一 PolicyContext 需要已解析的 CapabilityDescriptor。RequestTarget 中可选的 `plugin` 会作为 Provider 来源限定条件参与 Registry 查询。
+`Request.target` 在协议层对 Plan 请求可为空，但 `HarnessRuntime.invoke()` 仍严格要求
+target，缺失时返回 `HARNESS.REQUEST.TARGET_REQUIRED`。target 中可选的 `plugin`
+会作为 Registry Provider 来源限定条件。
+
+## CapabilityInvoker 语义
+
+Invoker 每次尝试都统一执行：
+
+1. 按 Capability/Plugin ID 唯一解析 Registry。
+2. 以可信 InvocationContext 和 Descriptor 评估 PRE_EXECUTE Policy。
+3. 创建 Registry、Policy、Capability、Agent/Tool Trace。
+4. 把 RequestInput 适配为 `AgentRequest` 或结构化 `ToolRequest`。
+5. 合并相对 timeout 与绝对 deadline，并通过 `asyncio.timeout()` 约束 Provider。
+6. 验证 Descriptor/SPI 类型与 Provider 返回的 `ResultEnvelope`。
+7. 归一化 Registry、Policy、Capability、Timeout 和未知异常。
+
+Policy DENY 返回 `DENIED`；Plan 上的 REQUIRE_APPROVAL 返回 `ACCEPTED` 供
+ExecutionEngine 持久化等待，Direct Invocation 则返回明确 DENIED。调用方取消 task 时，
+开放 Span 会关闭为 CANCELLED，`CancelledError` 继续向上传播。
 
 ## Agent 与 Tool 适配
 
-- Agent 接收 `AgentRequest(input=request.input)`。
-- Tool 要求 `RequestInput.content` 是 JSON object，并转换为 `ToolRequest(arguments=content)`。
+- Agent 接收 `AgentRequest(input=input)`。
+- Tool 要求 `RequestInput.content` 是 JSON object，并转换为
+  `ToolRequest(arguments=content)`。
 - Provider SPI 类型必须与 Descriptor 的 `CapabilityType` 一致。
-- Provider 必须返回 `ResultEnvelope`，否则归一化为 Capability failure。
+- Provider 必须返回 `ResultEnvelope`，否则返回
+  `HARNESS.CAPABILITY.INVALID_RESULT`。
 
 ## Context 与安全边界
 
-默认 Factory 不把 Request 中的 `user_id`、`tenant_id` 直接提升为可信 IdentityContext/TenantContext。认证和租户解析应在应用边界完成，并通过自定义 `InvocationContextFactory` 注入。
-
-## 超时、取消和错误
-
-- 相对 `timeout_ms` 和绝对 `deadline_at` 取最早值，通过 `asyncio.timeout()` 应用于
-  实际 Provider 调用。
-- 调用方取消 task 时，Runtime 关闭开放 Span 并继续传播 `CancelledError`。
-- Request、Registry、Policy、Capability 和 Timeout 异常统一转换为 `ResultEnvelope.failure()`。
-- Policy 拒绝转换为 `ResultEnvelope.denied()`，不会调用 Provider。
-- Trace 开启时，最终结果统一携带 REQUEST trace ID。
+默认 Factory 不把 Request 的 `user_id`、`tenant_id` 提升为可信 Identity/Tenant。
+认证和租户解析应在应用边界完成，并通过自定义 `InvocationContextFactory` 注入。
+ExecutionEngine 会为 Plan 调用附加受控的 plan/node/idempotency 和 Approval Grant
+属性；调用方提供的同名保留属性不会被信任。
 
 ## 依赖边界
 
-允许依赖 Contracts、SPI、Registry、Policy 和 Trace。Runtime 不依赖具体插件，也不负责 Plugin 生命周期。
+Runtime 可以依赖 Contracts、SPI、Registry、Policy 和 Trace；不依赖具体插件、StateStore
+或 ExecutionEngine，也不负责 DAG、Checkpoint、Approval 协调和插件生命周期，这些职责
+位于独立模块。
 
 ## 测试
 
-项目安装后运行：
-
 ```bash
-.venv/bin/python -m unittest discover -s harness-runtime/tests -v
+.venv/bin/python -m pytest harness-runtime/tests -v
 ```
-
-## 当前非目标
-
-本模块暂不实现 Planner、DAG Scheduler、Checkpoint/Resume、远程 Provider
-或数据持久化；这些能力按第二阶段后续里程碑独立实现。
