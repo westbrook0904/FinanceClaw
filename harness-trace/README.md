@@ -78,7 +78,7 @@ Trace Event 绑定具体 Span，用于调用链内诊断；`harness-events` 的 
 
 本模块只依赖 `harness-contracts`。业务插件只接收传播后的 TraceContext，无需维护主
 链路。OpenTelemetry SDK/Exporter、远程 Collector、采样、Metrics、日志聚合和持久化
-Trace Store 不在第二阶段范围内。
+Trace Store 尚未实现。
 
 ## 测试
 

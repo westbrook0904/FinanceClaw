@@ -4,7 +4,8 @@
 > **文档定位**：第三阶段 3A 实施说明书  
 > **前置基线**：Stage 1 Minimal Harness + Stage 2 Reliable Plan Execution Engine  
 > **上位设计**：Stage 3 — Adaptive Multi-Provider & Agentic Orchestration  
-> **核心目标**：在不破坏 Stage 1 / Stage 2 行为和恢复安全性的前提下，让同一个 Capability 支持多个 Provider，并完成可靠选择、Retry / Fallback、Health、Pinning、Canary、ModelProvider 和可恢复 Provider 状态。
+> **核心目标**：在不破坏 Stage 1 / Stage 2 行为和恢复安全性的前提下，让同一个 Capability 支持多个 Provider，并完成可靠选择、Retry / Fallback、Minimal Health、Provider Observability、ModelProvider 和可恢复 Provider 状态。
+> **实施状态（2026-08-27）**：Step 1–9 已完成；Stage 3A Acceptance 为 256 tests + 10 subtests 通过。Step 7 经项目决策缩减为 Provider Observability + Minimal Health，Provider Pin 外部入口、Weighted Canary 和 Passive Health 暂缓。
 
 ---
 
@@ -45,7 +46,7 @@ Capability
 
 - 同一 `capability_id` 可以注册多个 Provider。
 - Planner / ExecutionPlan 仍然只依赖 `capability_id`。
-- Harness 可以根据 Policy、Health、Tenant、Priority、Pin、Canary 选择 Provider。
+- Harness 可以根据兼容性、Policy constraints、Tenant、Minimal Health 和 Priority 选择 Provider。
 - Retry 与 Fallback 有清晰不同的执行语义。
 - WRITE 跨 Provider fallback 默认 fail-closed。
 - Provider selection 可以进入 checkpoint，进程重启后不会错误切换 WRITE Provider。
@@ -176,7 +177,7 @@ Resume 默认继续原 Provider。
         ↓
 6. Checkpoint / Resume Provider Safety
         ↓
-7. Pinning / Canary / Events
+7. Provider Observability / Minimal Health
         ↓
 8. ModelProvider / ModelGateway
         ↓
@@ -458,7 +459,7 @@ StaticHealthSource
 TestHealthSource
 ```
 
-Passive Health 可以在 Step 7 完善。
+Passive Health 暂缓到后续流量治理阶段。
 
 默认：
 
@@ -827,92 +828,28 @@ WRITE different group → B calls == 0
 
 ---
 
-## Step 7 — Pinning、Canary、Passive Health、Trace / Events
+## Step 7 — Provider Observability + Minimal Health
 
-在核心执行安全完成之后，再加流量治理功能。
+本步骤按项目当前需要缩减为可解释观测和最小只读 Health，不引入完整流量治理。
 
-### Provider Pin
-
-新增正式：
+当前实现：
 
 ```text
-ProviderPin(provider_id)
+StaticHealthSource / TestHealthSource
+HEALTHY / UNKNOWN / DEGRADED 排序
+UNHEALTHY hard reject
+Provider candidates / selected / retrying / fallback / failed events
+PROVIDER_SELECT Span（initial / resume / fallback）
 ```
 
-`RequestTarget.plugin` 暂时保留，只作为：
+已冻结但暂不通过 Request/Plan 暴露的 `ProviderPin` 契约继续保留。以下能力明确暂缓：
 
 ```text
-candidate constraint
-```
-
-不再作为精确 Provider identity。
-
-Pin 适用于：
-
-```text
-debug
-test
-admin
-replay
-```
-
-Pin 不能绕过：
-
-```text
-Policy
-Tenant visibility
-Capability compatibility
-Health hard rejection
-```
-
-### Stable Canary
-
-新增：
-
-```text
+Provider Pin external routing entry
 WeightedCanarySelector
+PassiveInvocationHealth
+provider.health_changed
 ```
-
-不要使用随机数。
-
-推荐：
-
-```text
-hash(tenant_id + stable_subject + capability_id)
-```
-
-得到稳定 bucket。
-
-目标：
-
-```text
-同一主体稳定
-进程重启稳定
-可 replay
-```
-
-### Passive Health
-
-Provider infrastructure failure 才影响 Health。
-
-例如：
-
-```text
-timeout
-connection failure
-provider unavailable
-invalid protocol result
-```
-
-业务结果：
-
-```text
-account not found
-rule rejected
-empty result
-```
-
-不能直接标记 Provider unhealthy。
 
 ### Trace
 
@@ -944,18 +881,11 @@ provider.selected
 provider.retrying
 provider.fallback
 provider.failed
-provider.health_changed
 ```
 
 ### 完成标准
 
 ```text
-stable canary
-
-pin exact Provider
-
-pin cannot bypass Policy
-
 unhealthy Provider rejected
 
 degraded Provider lower priority
@@ -1219,17 +1149,16 @@ WRITE restart safety
 
 ---
 
-## Commit 7 — Pin / Canary / Passive Health / Observability
+## Commit 7 — Provider Observability / Minimal Health
 
 ```text
-ProviderPin
-WeightedCanarySelector
-PassiveInvocationHealth
+Static/Test HealthSource
+UNHEALTHY rejection / DEGRADED ordering
 Provider trace
 Provider events
 ```
 
-完成流量治理。
+完成当前阶段最小治理观察面；Pin / Canary / Passive Health 暂缓。
 
 ---
 
@@ -1383,7 +1312,7 @@ resume original A
 - WRITE fallback 已 fail-closed。
 - Provider selection 已进入 checkpoint。
 - Resume 默认保持原 Provider。
-- Pin / Canary / Health 已可用。
+- Minimal Health 与 Provider Observability 已可用；Pin 外部入口、Canary、Passive Health 按决策暂缓。
 - Provider Trace / Events 可解释。
 - ModelProvider / ModelGateway 已稳定。
 - Stage 1 全量回归通过。

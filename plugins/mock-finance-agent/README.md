@@ -1,6 +1,6 @@
 # mock-finance-agent
 
-业务边界验证 Agent 插件，实现 `finance.mock-query/v1`。它是第二阶段
+业务边界验证 Agent 插件，实现 `finance.mock-query/v1`。它是 Stage 2
 `finance-review-plan` 的真实内置 Capability 之一，用于证明财经业务仍完全位于
 Harness Core 之外。
 

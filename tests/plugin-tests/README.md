@@ -11,10 +11,12 @@
 - 自动/显式发现、注册、注销和失败回滚；
 - 三个插件通过 Bootstrap 与 Direct Runtime 的完整调用；
 - 示例 Capability 参与第二阶段 finance-review-plan 的并行、Join、Approval 和 Resume。
+- 旧 Plugin 在 Stage 3A 下自动获得稳定 Provider ID，加载/卸载按 Provider 精确执行。
 
 插件测试同时守住依赖边界：业务插件不实现 Scheduler、Policy、Trace、StateStore 或
 恢复逻辑。
 
 ```bash
-.venv/bin/python -m pytest plugins/tests harness-plugin-local/tests tests/stage2 -v
+.venv/bin/python -m pytest \
+  plugins/tests harness-plugin-local/tests tests/stage2 tests/stage3a -v
 ```

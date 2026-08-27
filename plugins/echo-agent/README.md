@@ -1,8 +1,8 @@
 # echo-agent
 
 确定性最小 Agent 插件，实现 `echo.reply/v1`。它既用于 Direct Invocation 回归，也作为
-第二阶段 Plan 的普通 Capability Node，验证输出 Binding、Approval 后续节点和 Trace
-传播。
+Stage 2 Plan 的普通 Capability Node，验证输出 Binding、Approval 后续节点和 Trace
+传播；Stage 3A Acceptance 同时用它守住旧 Plugin 的多 Provider Registry 兼容性。
 
 ## 公共类型
 

@@ -27,15 +27,16 @@ Engine 的端到端行为，而不是只测试单个类。
 .venv/bin/python -m pytest tests/stage2 -v
 ```
 
-完整第二阶段回归：
+完整 Stage 1 / 2 / 3A 回归：
 
 ```bash
 .venv/bin/python -m pytest \
   harness-contracts/tests harness-spi/tests harness-registry/tests \
-  harness-plugin-local/tests harness-planning/tests harness-policy/tests \
+  harness-plugin-local/tests harness-selection/tests harness-planning/tests \
+  harness-policy/tests harness-model/tests \
   harness-trace/tests harness-runtime/tests harness-state/tests \
   harness-events/tests harness-execution/tests harness-bootstrap/tests \
-  plugins/tests tests/stage2 -v
+  plugins/tests tests/stage2 tests/stage3a -v
 ```
 
 ## 验收原则

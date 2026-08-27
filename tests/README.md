@@ -1,8 +1,8 @@
 # tests
 
 测试体系覆盖阶段一 Direct Invocation 兼容性、第二阶段 Reliable Plan Execution Engine
-和 Stage 3A Provider Fabric。模块测试与源码模块同目录；顶层 `tests/stage2` 提供仓库级
-端到端、故障注入和跨进程恢复验收，其余顶层子目录记录跨模块测试关注点。
+和 Stage 3A Provider Fabric。模块测试与源码模块同目录；顶层 `tests/stage2` 与
+`tests/stage3a` 分别提供 Reliable Execution 和 Provider Fabric 仓库级阻断验收。
 
 ## 测试位置
 
@@ -24,6 +24,7 @@
 | Bootstrap | `harness-bootstrap/tests` | 依赖组装、Application API 和生命周期 |
 | Plugins | `plugins/tests` | 三个示例插件行为、打包和集成 |
 | Stage 2 acceptance | `tests/stage2` | E2E、fault injection、SQLite restart 与 fail-closed |
+| Stage 3A acceptance | `tests/stage3a` | Multi-provider E2E、WRITE safety、Provider restart、Model Fabric 与旧插件回归 |
 
 ## 运行完整回归
 
@@ -34,13 +35,19 @@
   harness-policy/tests harness-model/tests \
   harness-trace/tests harness-runtime/tests harness-state/tests \
   harness-events/tests harness-execution/tests harness-bootstrap/tests \
-  plugins/tests tests/stage2 -v
+  plugins/tests tests/stage2 tests/stage3a -v
 ```
 
 只运行仓库级第二阶段验收：
 
 ```bash
 .venv/bin/python -m pytest tests/stage2 -v
+```
+
+只运行仓库级 Stage 3A 验收：
+
+```bash
+.venv/bin/python -m pytest tests/stage3a -v
 ```
 
 测试不依赖真实网络、行情、LLM 或外部数据库；ModelGateway 使用确定性 Mock Providers，

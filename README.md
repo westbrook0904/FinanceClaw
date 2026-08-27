@@ -77,6 +77,7 @@ GenerateResult + Usage + Provider Identity + Trace / Events
 | `harness-bootstrap` | 默认依赖组装、应用 API 与插件生命周期 |
 | `plugins/*` | Echo Agent、Calculator Tool 和模拟财经 Agent |
 | `tests/stage2` | 第二阶段端到端、故障注入与跨进程恢复验收 |
+| `tests/stage3a` | Provider Fabric、WRITE safety、Provider Resume 与 ModelGateway 阻断验收 |
 
 ## Direct Invocation
 
@@ -150,13 +151,19 @@ async with build_harness() as app:
   harness-policy/tests harness-model/tests \
   harness-trace/tests harness-runtime/tests harness-state/tests \
   harness-events/tests harness-execution/tests harness-bootstrap/tests \
-  plugins/tests tests/stage2 -v
+  plugins/tests tests/stage2 tests/stage3a -v
 ```
 
 只运行第二阶段仓库级验收：
 
 ```bash
 .venv/bin/python -m pytest tests/stage2 -v
+```
+
+只运行 Stage 3A Provider Fabric 验收：
+
+```bash
+.venv/bin/python -m pytest tests/stage3a -v
 ```
 
 ## 架构红线与当前边界

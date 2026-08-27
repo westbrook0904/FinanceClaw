@@ -1,7 +1,7 @@
 # harness-execution
 
-`harness-execution` 负责验证、执行和恢复调用方提供的 `ExecutionPlan`。它实现第二阶段
-可靠执行状态机，不包含业务逻辑；所有 Capability Node 都通过
+`harness-execution` 负责验证、执行和恢复调用方提供的 `ExecutionPlan`。它实现 Stage 2
+可靠执行状态机和 Stage 3A Provider-safe checkpoint/resume，不包含业务逻辑；所有 Capability Node 都通过
 `CapabilityInvoker`，Scheduler 不直接访问 Registry Provider。
 
 ## 公共 API
@@ -129,8 +129,9 @@ best-effort 观察面，Publisher/Subscriber 失败不会覆盖 StateStore 中�
 
 ## 当前范围
 
-第二阶段不实现动态 Plan Patch、分布式 Scheduler/锁、多 Scheduler 竞争、外部 callback
-server、轮询框架或外部 Event Broker。
+当前不实现动态 Plan Patch、分布式 Scheduler/锁、多 Scheduler 竞争、外部 callback
+server、轮询框架或外部 Event Broker。ModelProvider 由独立 ModelGateway 调用，不作为
+DAG Agent/Tool Node 直接执行。
 
 ## 测试
 

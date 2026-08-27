@@ -1,7 +1,7 @@
 # harness-spi
 
 `harness-spi` 定义业务插件面向 Harness 实现的扩展点，只依赖
-`harness-contracts`。阶段二没有扩大插件权限：Agent/Tool 仍只执行单个 Capability，
+`harness-contracts`。Stage 2/3A 没有扩大业务插件权限：Agent/Tool 仍只执行单个 Capability，
 Plan、Policy、Registry、重试和恢复全部由 Harness 基础设施协调。
 
 ## 公共 API
@@ -27,6 +27,10 @@ PluginSPI          → 发现、打包与生命周期
 一个 Plugin 可以提供一个或多个 Agent/Tool；每个 Provider 都有独立、稳定的
 Capability ID。这里刻意不存在万能的 `Plugin.execute()`。
 
+模型调用是独立边界：`ModelProvider` 与 GenerateRequest/GenerateResult 位于
+`harness-model`，共享 Capability 的最小 `descriptor()` 发现语义，但不伪装成
+AgentSPI/ToolSPI，也不经过 CapabilityInvoker。
+
 `CapabilityDescriptor.execution_profile` 由 Contracts 定义，插件可用
 `side_effect/egress/idempotency` 声明执行语义，供 Scheduler 的安全 Retry/Resume 和
 Policy Approval 判断。插件本身不实现这些协调逻辑。
@@ -44,7 +48,7 @@ Policy Approval 判断。插件本身不实现这些协调逻辑。
 业务插件只能依赖本模块和 `harness-contracts`，不能依赖 Runtime、Execution、
 Registry、Policy、Trace、State 或 Bootstrap。
 
-Remote Agent、MCP/HTTP Provider、流式调用、热升级和 Workflow SPI 不在第二阶段范围内。
+Remote Agent、MCP/HTTP Provider、流式调用、热升级和 Workflow SPI 尚未实现。
 
 ## 测试
 

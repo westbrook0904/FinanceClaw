@@ -1,6 +1,6 @@
 # harness-events
 
-`harness-events` 是第二阶段最小进程内执行事件边界。ExecutionEngine 发布业务无关的
+`harness-events` 是最小进程内执行事件边界。ExecutionEngine 发布业务无关的
 Plan、Node、Provider、Approval、Async 和 Checkpoint 事实，未来 Metrics、Audit、Billing 或 UI
 可以通过 `EventSubscriber` 订阅，而无需反向耦合执行状态机。
 
@@ -31,9 +31,10 @@ provider.candidates / selected / retrying / fallback / failed
 ## 执行语义
 
 ExecutionEngine 从相邻 checkpoint 状态推导大部分 Plan/Node 事件，并显式发布
-Approval 和 Async ingress 事件；CapabilityInvoker 发布 Provider 执行事件，因此
-Direct Invocation 与 Plan Node 使用相同观测语义。事件发布由执行层按 best-effort 处理：Publisher 或
-Subscriber 异常不会覆盖已经保存的 StateStore 事实，也不会使 DAG 执行失败。
+Approval 和 Async ingress 事件；CapabilityInvoker 与 ModelGateway 共享 Provider 执行
+事件，因此 Direct Invocation、Plan Node 和模型生成使用相同观测语义。事件发布由执行层
+按 best-effort 处理：Publisher 或 Subscriber 异常不会覆盖已经保存的 StateStore 事实，
+也不会使 DAG 或模型执行失败。
 
 StateStore 是恢复事实来源；Events 只用于观察和集成，不替代 checkpoint，也不保证
 外部持久投递。

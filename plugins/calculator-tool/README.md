@@ -1,7 +1,8 @@
 # calculator-tool
 
-确定性 Tool 插件，实现 `math.calculate/v1`。它既支持 Direct Invocation，也作为第二
-阶段 Plan Node 验证结构化输入 Binding、并行执行、Join 和错误传播。
+确定性 Tool 插件，实现 `math.calculate/v1`。它既支持 Direct Invocation，也作为 Stage 2
+Plan Node 验证结构化输入 Binding、并行执行、Join 和错误传播；Stage 3A 下无需修改即可
+由 Loader 生成稳定 Provider ID。
 
 ## 公共类型
 

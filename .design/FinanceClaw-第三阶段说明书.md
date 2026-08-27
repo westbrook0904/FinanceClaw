@@ -1699,9 +1699,9 @@ Harness ExplorationEngine
 
 ---
 
-## OPEN-4：ModelProvider 是否统一注册为 Capability？
+## RESOLVED-4：ModelProvider 的注册与调用边界
 
-当前建议采用“两层统一”：
+Stage 3A 已采用“两层统一”：
 
 ```text
 ModelProvider SPI
@@ -1711,9 +1711,10 @@ ModelGateway
 同时暴露 model.generate/v1 等稳定 capability 语义
 ```
 
-Router / Planner / Explorer 调用 ModelGateway，不直接依赖具体 Provider。
-
-需要继续讨论是否要求所有模型调用也统一经过 CapabilityInvoker，还是由 ModelGateway 复用 Selection / Policy / Trace 组件形成独立平台调用边界。
+Router / Planner / Explorer 调用 ModelGateway，不直接依赖具体 Provider。ModelProvider 以
+`CapabilityType.MODEL` 注册到共享 Registry；ModelGateway 复用 Selection/Minimal Health、
+ProviderExecutionCoordinator、Trace 和 Events，但不经过 CapabilityInvoker。模型调用保留
+GenerateRequest、structured output、usage、finish reason 和模型参数等原生语义。
 
 ---
 

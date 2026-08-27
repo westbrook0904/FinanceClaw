@@ -1,7 +1,7 @@
 # plugins
 
 `plugins` 保存具体 Agent/Tool 实现。Harness Core 不导入这里的代码；插件只依赖
-`harness-contracts` 和 `harness-spi`，通过 `PluginSPI` 暴露 Capability。阶段二
+`harness-contracts` 和 `harness-spi`，通过 `PluginSPI` 暴露 Capability。Stage 2
 ExecutionPlan 使用同一批 Capability 验证多节点执行，插件本身无需感知 DAG、Retry、
 Policy、Trace、Checkpoint 或 Resume。
 
@@ -30,9 +30,11 @@ app = build_harness(
 )
 ```
 
-## 阶段二用途
+## Stage 2 / 3A 用途
 
 - Direct Invocation 回归确保阶段一 API 不被破坏。
+- Stage 3A Loader 为旧插件生成稳定 Provider ID；示例插件无需修改即可进入多 Provider
+  Registry，并由 Acceptance Gate 验证兼容性。
 - `finance-review-plan` 验收组合 Mock Finance Agent、Calculator Tool、Approval 和
   Echo Agent，验证并行、Join、重启和 Resume。
 - Descriptor 的 `execution_profile` 使用安全默认值

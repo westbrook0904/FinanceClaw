@@ -1,6 +1,6 @@
-# Stage 3 待讨论 ADR 摘要
+# Stage 3 ADR 摘要
 
-当前设计已经可以开始做 Stage 3A，但以下 5 个点建议正式拍板：
+Stage 3A 已完成。以下决议已在实现中落地，其余项目继续留待 Stage 3B 讨论：
 
 1. **ExecutionMode 的归属**
    - 推荐：`RequestOptions.execution_mode`
@@ -16,11 +16,11 @@
    - 固定流程继续使用 StaticPlanner / ExecutionPlan。
 
 4. **ModelProvider 调用边界**
-   - 推荐 ModelProvider 有独立 SPI + ModelGateway。
-   - 仍需拍板：ModelGateway 是否必须走 CapabilityInvoker，还是复用 Selection / Policy / Trace 形成独立平台边界。
+   - 已决议：ModelProvider 使用独立 SPI + ModelGateway。
+   - ModelGateway 复用 Registry、Selection/Health、ProviderExecutionCoordinator、Trace/Events，但不经过 CapabilityInvoker，也不把 GenerateRequest 伪装成 Agent/Tool 请求。
 
 5. **WRITE Fallback**
    - 推荐：只有 `stable idempotency key + provider equivalence_group` 同时满足才允许跨 Provider 自动 fallback。
    - 其他 WRITE fail-closed。
 
-如果只优先讨论一个，我建议先讨论 **第 4 点 ModelProvider / CapabilityInvoker 的关系**，因为它会直接影响 LLMRouter、LLMPlanner 和 ExplorationEngine 的依赖方向。
+Stage 3B 的 Router、LLMPlanner 和 ExplorationEngine 统一依赖 ModelGateway；下一步需要优先冻结 ExecutionMode 和 Planner/Explorer 的职责边界。

@@ -1,8 +1,9 @@
 # harness-contracts
 
 `harness-contracts` 是所有 Harness 模块共享的稳定、业务无关协议层，不依赖其他
-Harness 模块或插件。第二阶段在阶段一 Request/Context/Capability/Result 基线上补齐了
-Plan、可恢复状态、审批、异步 Continuation 和能力执行画像。
+Harness 模块或插件。Stage 2 在 Request/Context/Capability/Result 基线上补齐 Plan、
+可恢复状态、审批和异步 Continuation；Stage 3A 进一步冻结 Provider 身份、Health、
+Selection、ProviderAttempt 和安全恢复协议。
 
 ## 公共 API
 
@@ -14,6 +15,7 @@ Plan、可恢复状态、审批、异步 Continuation 和能力执行画像。
 | 持久化 | `PlanExecutionRecord`，包含 Plan、可恢复 Context 和完整 State |
 | 上下文 | `InvocationContext`、Identity、Tenant、Trace、Cancellation Context |
 | 能力 | `CapabilityDescriptor`、`CapabilityType`、`CapabilityExecutionProfile` |
+| Provider Fabric | `ProviderDescriptor`、`ProviderHealthSnapshot`、`ProviderAttempt`、`ProviderPin`、Selection 契约 |
 | 审批 | `ApprovalRequest`、`ApprovalDecision`、`ApprovalGrant` |
 | 结果 | `ResultEnvelope`、`ResultOutput`、`ResultIssue`、`Continuation` |
 | 错误 | `ErrorDetail`、`ErrorCode`、`HarnessError` 及模块异常 |
@@ -78,6 +80,8 @@ PlanExecutionState`，并校验三者的 `plan_id/revision` 一致性。
 - Request 中的 `user_id`、`tenant_id` 不能直接视为可信 Identity/Tenant。
 - Capability 执行画像用 `side_effect`、`egress`、`idempotency` 支持重试、
   恢复与审批判断。
+- `CapabilityType.MODEL` 只表达 Registry 中的稳定模型能力语义；模型原生生成协议位于
+  `harness-model`，不进入 Agent/Tool 调用协议。
 - `HarnessError.to_detail()` 把内部异常转换为可安全传播的结构化错误。
 
 ## 依赖边界

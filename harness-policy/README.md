@@ -10,7 +10,7 @@
 - `Policy.phases`：声明策略参与的阶段；为兼容阶段一策略，默认仅
   `PRE_EXECUTE`。
 - `PolicyContext`：可信 InvocationContext，以及当前 Plan 或已解析
-  CapabilityDescriptor；PRE_EXECUTE 可携带持久化 `ApprovalGrant`。
+  CapabilityDescriptor/ProviderDescriptor；PRE_EXECUTE 可携带持久化 `ApprovalGrant`。
 - `PolicyDecision`：effect、策略名、原因和不可变 constraints。
 - `PolicyEngine`：按当前 phase 顺序执行并聚合决策。
 - `PolicyPhase`：`PRE_PLAN`、`PRE_EXECUTE`。
@@ -60,7 +60,7 @@ DENY 优先级最高并立即短路
 本模块只依赖 `harness-contracts`。Policy 不访问 Registry/Provider、不修改 Runtime
 或 StateStore；Runtime/ExecutionEngine 在受控边界构造 PolicyContext。
 
-PRE_ROUTE、POST_EXECUTE、限流、降级、复杂规则语言和策略持久化不在第二阶段范围内。
+PRE_ROUTE、POST_EXECUTE、限流、降级、复杂规则语言和策略持久化尚未实现。
 
 ## 测试
 

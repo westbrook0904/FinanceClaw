@@ -39,16 +39,18 @@ record = await store.load("plan-123")
 
 ## 与 ExecutionEngine 的关系
 
-ExecutionEngine 在 Plan 创建、节点调用前、Retry、节点终态、WAITING、取消和 Plan
-终态等稳定边界 checkpoint。Resume、Approval 决策和 Async completion 都先更新
-StateStore，再从相同恢复状态机继续 DAG。
+ExecutionEngine 在 Plan 创建、Provider 选择/调用前、每次 Provider attempt 完成、
+Retry/Fallback、节点终态、WAITING、取消和 Plan 终态等稳定边界 checkpoint。
+Provider identity、selection key、二维 attempt、equivalence group、history 和最近结果随
+Node State 原子保存。Resume、Approval 决策和 Async completion 都先更新 StateStore，
+再从相同恢复状态机继续 DAG。
 
 默认 `build_harness()` 使用 `InMemoryStateStore`，不会创建数据库文件；跨进程恢复
 必须显式注入文件型 `SQLiteStateStore`。
 
 ## 当前边界
 
-SQLite 是第二阶段单进程、单 writer 参考实现，不提供 CAS、lease、分布式锁、多
+SQLite 是当前单进程、单 writer 参考实现，不提供 CAS、lease、分布式锁、多
 Scheduler 竞争或数据库故障转移。State 中保留 `state_version`，为后续并发控制演进
 预留协议位置。
 

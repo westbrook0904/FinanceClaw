@@ -1,7 +1,7 @@
 # harness-planning
 
 `harness-planning` 是 `ExecutionPlan` 进入执行引擎前的确定性校验边界。它不执行
-Capability，也不能访问 Provider 实例；当前第二阶段实现以调用方提供的 Plan 为输入，
+Capability，也不能访问 Provider 实例；当前实现以调用方提供的 Plan 为输入，
 由 `PlanValidator` 负责结构与可执行性验证。
 
 ## 公共 API
@@ -32,10 +32,11 @@ Node 类型兼容；`executable=False` 只进行结构校验。
 ## 依赖边界与当前范围
 
 本模块依赖 `harness-contracts` 和只读 `CapabilityCatalog`。Catalog 只返回
-`CapabilityDescriptor`，不会泄露 Provider。
+`CapabilityDescriptor`，即使 Registry 中同一 Capability 存在多个 Provider 也只暴露
+一条 capability-only 记录，不会泄露 Provider 身份或实例。
 
 当前仓库执行显式提交的确定性 `ExecutionPlan`；Rule/LLM Planner、动态 Plan Repair
-和运行时 Plan Patch 属于后续决策层，不在本模块的第二阶段实现中。
+和运行时 Plan Patch 属于后续决策层，不在本模块当前实现中。
 
 ## 测试
 
