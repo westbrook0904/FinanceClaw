@@ -4,30 +4,9 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="0d67a81b-cd68-49de-9544-1b30058fe17e" name="Changes" comment="第三阶段架构演进与设计说明书">
-      <change beforePath="$PROJECT_DIR$/.idea/FinanceClaw.iml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/FinanceClaw.iml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/harness-bootstrap/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/harness-bootstrap/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/harness-contracts/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/harness-contracts/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/harness-events/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/harness-events/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/harness-execution/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/harness-execution/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/harness-planning/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/harness-planning/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/harness-plugin-local/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/harness-plugin-local/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/harness-policy/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/harness-policy/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/harness-registry/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/harness-registry/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/harness-runtime/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/harness-runtime/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/harness-spi/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/harness-spi/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/harness-state/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/harness-state/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/harness-trace/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/harness-trace/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/plugins/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/plugins/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/plugins/calculator-tool/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/plugins/calculator-tool/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/plugins/echo-agent/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/plugins/echo-agent/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/plugins/mock-finance-agent/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/plugins/mock-finance-agent/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/tests/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/contract-tests/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/tests/contract-tests/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/integration-tests/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/tests/integration-tests/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/plugin-tests/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/tests/plugin-tests/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/stage2/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/tests/stage2/README.md" afterDir="false" />
+    <list default="true" id="0d67a81b-cd68-49de-9544-1b30058fe17e" name="Changes" comment="第二阶段文档更新">
+      <change beforePath="$PROJECT_DIR$/harness-execution/tests/test_execution.py" beforeDir="false" afterPath="$PROJECT_DIR$/harness-execution/tests/test_execution.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/harness-execution/tests/test_resume.py" beforeDir="false" afterPath="$PROJECT_DIR$/harness-execution/tests/test_resume.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -58,6 +37,7 @@
     &quot;Python tests.Python tests for test_contracts.RequestContractTests.executor&quot;: &quot;Run&quot;,
     &quot;Python tests.Python tests for test_plugins.PluginPackagingTests.executor&quot;: &quot;Run&quot;,
     &quot;Python tests.Python tests for test_registry.RegistryTests.executor&quot;: &quot;Run&quot;,
+    &quot;Python tests.Python tests for test_resume.ResumeTests.test_waiting_resume_is_idempotent_until_external_resolution.executor&quot;: &quot;Run&quot;,
     &quot;Python tests.Python tests for test_spi.SPITests.test_manifest_and_provider_descriptors_must_match.executor&quot;: &quot;Debug&quot;,
     &quot;Python tests.Python tests in test_contracts.py.executor&quot;: &quot;Run&quot;,
     &quot;Python tests.Python tests in tests (1).executor&quot;: &quot;Run&quot;,
@@ -88,7 +68,7 @@
       <recent name="$PROJECT_DIR$/harness-contracts" />
     </key>
   </component>
-  <component name="RunManager" selected="Python tests.Python tests in tests (3)">
+  <component name="RunManager" selected="Python tests.Python tests for test_resume.ResumeTests.test_waiting_resume_is_idempotent_until_external_resolution">
     <configuration name="FinanceClaw" type="Python.FastAPI">
       <option name="file" value="$PROJECT_DIR$/main.py" />
       <module name="FinanceClaw" />
@@ -120,20 +100,20 @@
       <option name="_new_targetType" value="&quot;PYTHON&quot;" />
       <method v="2" />
     </configuration>
-    <configuration name="Python tests in tests (1)" type="tests" factoryName="Autodetect" temporary="true" nameIsGenerated="true">
+    <configuration name="Python tests for test_resume.ResumeTests.test_waiting_resume_is_idempotent_until_external_resolution" type="tests" factoryName="Autodetect" temporary="true" nameIsGenerated="true">
       <module name="FinanceClaw" />
       <option name="ENV_FILES" value="" />
       <option name="INTERPRETER_OPTIONS" value="" />
       <option name="PARENT_ENVS" value="true" />
       <option name="SDK_HOME" value="" />
-      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/harness-trace/tests" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/harness-execution/tests" />
       <option name="IS_MODULE_SDK" value="true" />
       <option name="ADD_CONTENT_ROOTS" value="true" />
       <option name="ADD_SOURCE_ROOTS" value="true" />
       <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
       <option name="_new_additionalArguments" value="&quot;&quot;" />
-      <option name="_new_target" value="&quot;$PROJECT_DIR$/harness-trace/tests&quot;" />
-      <option name="_new_targetType" value="&quot;PATH&quot;" />
+      <option name="_new_target" value="&quot;test_resume.ResumeTests.test_waiting_resume_is_idempotent_until_external_resolution&quot;" />
+      <option name="_new_targetType" value="&quot;PYTHON&quot;" />
       <method v="2" />
     </configuration>
     <configuration name="Python tests in tests (2)" type="tests" factoryName="Autodetect" temporary="true" nameIsGenerated="true">
@@ -168,29 +148,29 @@
       <option name="_new_targetType" value="&quot;PATH&quot;" />
       <method v="2" />
     </configuration>
-    <configuration name="Python tests in tests" type="tests" factoryName="Autodetect" temporary="true" nameIsGenerated="true">
+    <configuration name="Python tests in tests (4)" type="tests" factoryName="Autodetect" temporary="true" nameIsGenerated="true">
       <module name="FinanceClaw" />
       <option name="ENV_FILES" value="" />
       <option name="INTERPRETER_OPTIONS" value="" />
       <option name="PARENT_ENVS" value="true" />
       <option name="SDK_HOME" value="" />
-      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/harness-spi/tests" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/harness-execution/tests" />
       <option name="IS_MODULE_SDK" value="true" />
       <option name="ADD_CONTENT_ROOTS" value="true" />
       <option name="ADD_SOURCE_ROOTS" value="true" />
       <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
       <option name="_new_additionalArguments" value="&quot;&quot;" />
-      <option name="_new_target" value="&quot;$PROJECT_DIR$/harness-spi/tests&quot;" />
+      <option name="_new_target" value="&quot;$PROJECT_DIR$/harness-execution/tests&quot;" />
       <option name="_new_targetType" value="&quot;PATH&quot;" />
       <method v="2" />
     </configuration>
     <recent_temporary>
       <list>
+        <item itemvalue="Python tests.Python tests for test_resume.ResumeTests.test_waiting_resume_is_idempotent_until_external_resolution" />
+        <item itemvalue="Python tests.Python tests in tests (4)" />
         <item itemvalue="Python tests.Python tests in tests (3)" />
         <item itemvalue="Python tests.Python tests in tests (2)" />
         <item itemvalue="Python tests.Python tests for test_plugins.PluginPackagingTests" />
-        <item itemvalue="Python tests.Python tests in tests (1)" />
-        <item itemvalue="Python tests.Python tests in tests" />
       </list>
     </recent_temporary>
   </component>
@@ -437,7 +417,15 @@
       <option name="project" value="LOCAL" />
       <updated>1787758208473</updated>
     </task>
-    <option name="localTasksCounter" value="29" />
+    <task id="LOCAL-00029" summary="第二阶段文档更新">
+      <option name="closed" value="true" />
+      <created>1787791450707</created>
+      <option name="number" value="00029" />
+      <option name="presentableId" value="LOCAL-00029" />
+      <option name="project" value="LOCAL" />
+      <updated>1787791450707</updated>
+    </task>
+    <option name="localTasksCounter" value="30" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -491,7 +479,8 @@
     <MESSAGE value="补齐 PRE_PLAN + PRE_EXECUTE、REQUIRE_APPROVAL、稳定 Plan/Node Trace，以及最小 in-process Execution Event Model" />
     <MESSAGE value="1、End-to-End：验证 Stage 1 Direct Invocation 没被破坏；使用真实 finance.mock-query/v1 + math.calculate/v1 → Join → Approval → echo.reply/v1 跑 finance-review-plan；以及 Retry success + CONTINUE failure + Approval + SQLite restart + Resume → PARTIAL 的完整故障链路。说明书要求的确定性 finance-review-plan 和 restart 流程也覆盖到了。&#10;2、Fault Injection：transient failure、retry exhausted、unsafe WRITE 不重试、timeout、运行前取消、运行中取消、provider exception、invalid provider result，以及额外的 checkpoint 写失败时 Provider 不得产生副作用。&#10;3、Restart：RUNNING 的 READ 节点安全重放、非幂等 WRITE 返回 HARNESS.PLAN.RESUME_UNSAFE、Async WAITING 跨重启完成、损坏 SQLite snapshot 后 fail-closed。" />
     <MESSAGE value="第三阶段架构演进与设计说明书" />
-    <option name="LAST_COMMIT_MESSAGE" value="第三阶段架构演进与设计说明书" />
+    <MESSAGE value="第二阶段文档更新" />
+    <option name="LAST_COMMIT_MESSAGE" value="第二阶段文档更新" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
@@ -510,7 +499,7 @@
     </breakpoint-manager>
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
-    <SUITE FILE_PATH="coverage/FinanceClaw$.coverage" NAME=" Coverage Results" MODIFIED="1787662535714" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/harness-contracts/tests" />
+    <SUITE FILE_PATH="coverage/FinanceClaw$.coverage" NAME=" Coverage Results" MODIFIED="1787830028880" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/harness-execution/tests" />
     <SUITE FILE_PATH="coverage/FinanceClaw$FinanceClaw.coverage" NAME="FinanceClaw Coverage Results" MODIFIED="1787582502740" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="" />
   </component>
 </project>

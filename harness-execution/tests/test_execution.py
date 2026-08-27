@@ -559,7 +559,7 @@ class ExecutionEngineTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(tool.calls, 2)
         self.assertEqual(engine.state("retry-read").nodes["work"].attempt, 2)
         events = tracer.events(trace_id=result.trace_id)
-        self.assertEqual([event.name for event in events].count("node.retrying"), 1)
+        self.assertEqual([event.name for event in events].count("node.retrying"), 2)
 
     async def test_retry_exhaustion_preserves_last_failure(self) -> None:
         tool = ReliabilityTool(

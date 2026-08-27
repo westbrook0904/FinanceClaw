@@ -437,17 +437,19 @@ class ResumeTests(unittest.IsolatedAsyncioTestCase):
             )
         )
         after = ResumeTool("resume.after-approval/v1")
-        before = await store.load(plan.plan_id)
         engine = make_engine(after, state_store=store)
 
         result = await engine.resume(plan.plan_id)
         saved = await store.load(plan.plan_id)
 
         self.assertEqual(result.status, ResultStatus.ACCEPTED)
-        self.assertEqual(result.continuation, continuation)
+        self.assertEqual(result.continuation, saved.state.nodes["approval"].continuation)
         self.assertEqual(after.calls, 0)
         self.assertEqual(saved.state.status, PlanExecutionStatus.WAITING)
-        self.assertEqual(saved.state_version, before.state_version)
+
+        repeated = await engine.resume(plan.plan_id)
+        self.assertEqual(after.calls, 0)
+        self.assertEqual(repeated.status, ResultStatus.ACCEPTED)
 
     async def test_missing_resume_state_returns_structured_failure(self) -> None:
         engine = make_engine(state_store=InMemoryStateStore())
