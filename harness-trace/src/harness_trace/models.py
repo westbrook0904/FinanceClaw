@@ -19,6 +19,7 @@ class SpanType(StrEnum):
     REGISTRY_RESOLVE = "registry_resolve"
     PROVIDER_SELECT = "provider_select"
     CAPABILITY = "capability"
+    MODEL = "model"
     AGENT = "agent"
     TOOL = "tool"
     PLAN = "plan"

@@ -6,6 +6,7 @@ from collections.abc import Iterable
 
 from harness_events import EventPublisher, InMemoryEventBus
 from harness_execution import BasicScheduler, ExecutionEngine
+from harness_model import ModelGateway
 from harness_planning import PlanValidator
 from harness_plugin_local import LocalPluginLoader, LocalPluginProvider
 from harness_policy import AllowAllPolicy, Policy, PolicyEngine
@@ -130,6 +131,14 @@ def build_harness(
         provider_selector=effective_provider_selector,
         event_publisher=effective_event_publisher,
     )
+    model_gateway = ModelGateway(
+        effective_registry,
+        effective_tracer,
+        lifecycle=lifecycle,
+        provider_selector=effective_provider_selector,
+        provider_execution=invoker.provider_execution,
+        event_publisher=effective_event_publisher,
+    )
     scheduler = BasicScheduler(
         invoker,
         effective_tracer,
@@ -165,6 +174,7 @@ def build_harness(
             plan_validator=effective_plan_validator,
             lifecycle=lifecycle,
             invoker=invoker,
+            model_gateway=model_gateway,
             runtime=runtime,
             scheduler=scheduler,
             execution_engine=execution_engine,

@@ -1,6 +1,6 @@
 # harness-bootstrap
 
-`harness-bootstrap` 是唯一 Composition Root，负责组装第二阶段所有具体基础设施实例，
+`harness-bootstrap` 是唯一 Composition Root，负责组装 Harness 的具体基础设施实例，
 并协调本地插件与 Application 生命周期；它不承担业务执行逻辑。
 
 ## 默认组装
@@ -14,6 +14,8 @@ build_harness()
 ├── DefaultInvocationContextFactory
 │   └── InvocationLifecycle
 ├── CapabilityInvoker
+│   └── ProviderExecutionCoordinator
+├── ModelGateway（共享 Registry / Selector / Coordinator / Tracer / Events）
 ├── PlanValidator
 ├── InMemoryStateStore
 ├── InMemoryEventBus
@@ -25,7 +27,7 @@ build_harness()
 ```
 
 `build_harness()` 只创建和连接对象，不发现或初始化插件，也不创建数据库文件。可注入
-Registry、PolicyEngine/Policies、Tracer、ContextFactory、CapabilityCatalog、
+Registry、PolicyEngine/Policies、Tracer、ProviderSelector、ContextFactory、CapabilityCatalog、
 PlanValidator、StateStore、EventPublisher 或 LocalPluginProvider。
 
 自定义组件必须共享一致边界，例如自定义 Catalog 与 PlanValidator.catalog 必须相同；
@@ -35,6 +37,7 @@ PlanValidator、StateStore、EventPublisher 或 LocalPluginProvider。
 
 - `start()`：发现、初始化并注册插件。
 - `invoke(request)`：Direct Invocation。
+- `model_gateway`：供未来 Router/Planner/Explorer 使用的模型生成入口。
 - `execute_plan(request, plan)`：验证并执行 Plan。
 - `resume_plan(plan_id)`：从 StateStore 恢复并继续相同 Plan。
 - `resolve_approval(plan_id, decision)`：保存审批决定并继续。
@@ -132,8 +135,8 @@ Composition Root 决定。
 Bootstrap 可以依赖全部 Harness 基础设施，其他核心模块不得反向依赖 Bootstrap。
 基础设施类不实现全局单例，实例数量与共享关系由组装决定。
 
-Router、LLM Planner、Workflow SPI、Remote Plugin、MCP、分布式调度和 HTTP 执行 API
-不在第二阶段范围内。
+ModelGateway 已组装但不经 CapabilityInvoker；Router、LLM Planner、Workflow SPI、
+Remote Plugin、MCP、分布式调度和 HTTP 执行 API 尚未实现。
 
 ## 测试
 

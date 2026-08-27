@@ -14,6 +14,7 @@ class CapabilityType(StrEnum):
 
     AGENT = "agent"
     TOOL = "tool"
+    MODEL = "model"
 
 
 class SideEffectType(StrEnum):

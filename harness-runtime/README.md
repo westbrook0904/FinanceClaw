@@ -89,6 +89,9 @@ Runtime 可以依赖 Contracts、SPI、Registry、Selection、Policy、Trace 和
 或 ExecutionEngine，也不负责 DAG、Checkpoint、Approval 协调和插件生命周期，这些职责
 位于独立模块。
 
+`ModelProvider` 不通过 CapabilityInvoker 执行。`harness-model` 的 ModelGateway 使用模型
+原生协议，并只复用本模块的 `ProviderExecutionCoordinator` 作为 Retry/Fallback 数据面。
+
 ## 测试
 
 ```bash

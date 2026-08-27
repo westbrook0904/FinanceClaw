@@ -29,6 +29,8 @@
       <sourceFolder url="file://$MODULE_DIR$/tests" isTestSource="true" />
       <sourceFolder url="file://$MODULE_DIR$/harness-events/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/harness-events/tests" isTestSource="true" />
+      <sourceFolder url="file://$MODULE_DIR$/harness-model/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/harness-model/tests" isTestSource="true" />
       <sourceFolder url="file://$MODULE_DIR$/harness-selection/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/harness-selection/tests" isTestSource="true" />
       <sourceFolder url="file://$MODULE_DIR$/harness-state/src" isTestSource="false" />

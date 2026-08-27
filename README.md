@@ -1,9 +1,10 @@
 # FinanceClaw
 
-FinanceClaw 第二阶段（Reliable Plan Execution Engine）已经完成。当前仓库在保留阶段一
-Direct Invocation API 的同时，可以验证并可靠执行调用方提供的结构化
-`ExecutionPlan`：支持 DAG 调度、持久化 Checkpoint、跨进程 Resume、重试与幂等保护、
-Deadline、取消、人工审批、异步等待、Policy、Trace 和进程内执行事件。
+FinanceClaw 第二阶段（Reliable Plan Execution Engine）已经完成，Stage 3A Provider
+Fabric 已实现多 Provider Registry、Health-aware Selection、Retry/Fallback、Provider-safe
+Checkpoint/Resume、Provider Observability，以及独立的 ModelProvider/ModelGateway。当前
+仓库仍保留阶段一 Direct Invocation API，并可可靠执行调用方提供的结构化
+`ExecutionPlan`。
 
 财经能力仍然只是插件；Harness Core 不包含财经类型、Prompt、SQL、行情访问或其他具体
 业务实现。
@@ -44,17 +45,31 @@ ResultEnvelope + StateStore Checkpoint + Trace + Execution Events
 `HarnessApplication.execute_plan()`，两条路径共享 `CapabilityInvoker`，不会绕过 Registry、
 Policy、Trace、Timeout 或错误归一化边界。
 
+模型调用使用独立边界，不经过 `CapabilityInvoker`：
+
+```text
+Router / Planner / Explorer（Stage 3B）
+        ↓
+ModelGateway
+        ↓
+Registry → Selection / Health → Retry / Fallback → ModelProvider
+        ↓
+GenerateResult + Usage + Provider Identity + Trace / Events
+```
+
 ## 模块
 
-| 模块 | 第二阶段职责 |
+| 模块 | 职责 |
 |---|---|
 | `harness-contracts` | Request、Plan、状态、审批、Continuation、Result、能力执行画像与持久化协议 |
 | `harness-spi` | 业务无关的 Agent、Tool、Plugin 扩展接口 |
 | `harness-registry` | 单 Capability 多 Provider 注册/解析，以及不暴露 Provider instance 的只读 Catalog |
+| `harness-selection` | Eligibility、最小 Health 和确定性 Priority Selection |
 | `harness-plugin-local` | 本地集合/entry point 发现、插件生命周期和事务回滚 |
 | `harness-planning` | DAG、引用、Binding、Condition 与 Capability 可执行性校验 |
 | `harness-policy` | `PRE_PLAN` / `PRE_EXECUTE` 策略链和 `REQUIRE_APPROVAL` 治理结果 |
 | `harness-runtime` | Direct Invocation 与 Plan 共用的受控 Capability 调用边界 |
+| `harness-model` | 模型原生协议、ModelProvider SPI、ModelGateway 与确定性 Mock Models |
 | `harness-execution` | DAG 调度、重试、取消、Checkpoint/Resume、Approval、Async completion 和结果组合 |
 | `harness-state` | `StateStore` SPI、内存快照与 SQLite JSON Snapshot 持久化 |
 | `harness-trace` | Request/Plan/Node/Capability Span 与状态事件 |
@@ -126,12 +141,13 @@ async with build_harness() as app:
 
 ## 测试
 
-完整第二阶段回归（模块测试、插件测试和仓库级验收）：
+完整 Stage 1 / 2 / 3A 回归（模块测试、插件测试和仓库级验收）：
 
 ```bash
 .venv/bin/python -m pytest \
   harness-contracts/tests harness-spi/tests harness-registry/tests \
-  harness-plugin-local/tests harness-planning/tests harness-policy/tests \
+  harness-plugin-local/tests harness-selection/tests harness-planning/tests \
+  harness-policy/tests harness-model/tests \
   harness-trace/tests harness-runtime/tests harness-state/tests \
   harness-events/tests harness-execution/tests harness-bootstrap/tests \
   plugins/tests tests/stage2 -v
@@ -148,8 +164,11 @@ async with build_harness() as app:
 - Harness Core 不导入 `plugins.*` 或任何财经业务实现。
 - 业务插件只依赖 `harness-contracts` 和 `harness-spi`。
 - Scheduler 不直接访问 Provider；所有 Capability 节点都通过 `CapabilityInvoker`。
+- 模型生成只通过 `ModelGateway`；它复用 Provider Fabric，但不经过
+  `CapabilityInvoker`，也不作为 DAG Agent/Tool 节点直接执行。
 - StateStore 是恢复事实来源；Execution Events 是 best-effort 观察面，不替代 Checkpoint。
 - Registry 支持单 Capability 多 Provider，并通过最小 Health-aware PrioritySelector 选择；
   Provider Pin 外部入口、Weighted Canary 和 Passive Health 暂缓。
-- 当前执行调用方提供的确定性 `ExecutionPlan`；Router、LLM Planner、动态 Plan Patch、
-  远程插件、MCP、分布式 Scheduler/锁和外部 Event Broker 不在第二阶段范围内。
+- 当前执行调用方提供的确定性 `ExecutionPlan`；Model Fabric 已就绪，但 Router、
+  LLM Planner、动态 Plan Patch、
+  远程插件、MCP、分布式 Scheduler/锁和外部 Event Broker 尚未实现。

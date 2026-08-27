@@ -9,17 +9,18 @@ from enum import StrEnum
 from harness_contracts import ApprovalDecision, ExecutionPlan, Request, ResultEnvelope
 from harness_events import EventPublisher
 from harness_execution import BasicScheduler, ExecutionEngine
-from harness_plugin_local import LoadedPlugin, LocalPluginLoader
+from harness_model import ModelGateway
 from harness_planning import PlanValidator
+from harness_plugin_local import LoadedPlugin, LocalPluginLoader
 from harness_policy import PolicyEngine
 from harness_registry import CapabilityCatalog, CapabilityRegistry
-from harness_selection import ProviderSelector
 from harness_runtime import (
     CapabilityInvoker,
     HarnessRuntime,
     InvocationContextFactory,
     InvocationLifecycle,
 )
+from harness_selection import ProviderSelector
 from harness_state import StateStore
 from harness_trace import Tracer
 
@@ -50,6 +51,7 @@ class HarnessComponents:
     plan_validator: PlanValidator
     lifecycle: InvocationLifecycle
     invoker: CapabilityInvoker
+    model_gateway: ModelGateway
     runtime: HarnessRuntime
     scheduler: BasicScheduler
     execution_engine: ExecutionEngine
@@ -82,6 +84,10 @@ class HarnessApplication:
     @property
     def invoker(self) -> CapabilityInvoker:
         return self._components.invoker
+
+    @property
+    def model_gateway(self) -> ModelGateway:
+        return self._components.model_gateway
 
     @property
     def provider_selector(self) -> ProviderSelector:

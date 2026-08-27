@@ -27,6 +27,7 @@ from harness_contracts import (
     ResultStatus,
 )
 from harness_events import ExecutionEventName, InMemoryEventBus
+from harness_model import ModelGateway
 from harness_planning import PlanValidator
 from harness_plugin_local import LocalPluginProvider
 from harness_policy import AllowAllPolicy, Policy, PolicyContext, PolicyDecision, PolicyEngine
@@ -120,6 +121,12 @@ class BootstrapFactoryTests(unittest.TestCase):
             DefaultInvocationContextFactory,
         )
         self.assertIsInstance(app.invoker, CapabilityInvoker)
+        self.assertIsInstance(app.model_gateway, ModelGateway)
+        self.assertIs(app.model_gateway.registry, app.registry)
+        self.assertIs(app.model_gateway.tracer, app.tracer)
+        self.assertIs(app.model_gateway.lifecycle, app.components.lifecycle)
+        self.assertIs(app.model_gateway.provider_selector, app.provider_selector)
+        self.assertIs(app.model_gateway.provider_execution, app.invoker.provider_execution)
         self.assertIsInstance(app.capability_catalog, RegistryCapabilityCatalog)
         self.assertIsInstance(app.plan_validator, PlanValidator)
         self.assertIs(app.plan_validator.catalog, app.capability_catalog)

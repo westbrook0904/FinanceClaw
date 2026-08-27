@@ -10,7 +10,7 @@ Request/Runtime/Capability 层级上增加 Plan、Scheduler 和 Plan Node，使�
 - `Span`、`TraceEvent`、`TraceError`：深度不可变、可序列化快照。
 - `SpanStatus`：`RUNNING`、`OK`、`ERROR`、`CANCELLED`。
 - `SpanType`：`REQUEST`、`RUNTIME`、`POLICY`、`REGISTRY_RESOLVE`、`PROVIDER_SELECT`、
-  `CAPABILITY`、`AGENT`、`TOOL`、`PLAN`、`SCHEDULER`、
+  `CAPABILITY`、`MODEL`、`AGENT`、`TOOL`、`PLAN`、`SCHEDULER`、
   `PLAN_NODE`、`PLANNER`。
 - `InMemoryTracer`：线程安全保存 Span/Event，可按 trace/span 过滤并生成
   `TraceContext`。
@@ -45,6 +45,14 @@ REQUEST
             ├── POLICY
             └── CAPABILITY
                 └── AGENT / TOOL
+```
+
+ModelGateway：
+
+```text
+REGISTRY_RESOLVE
+├── PROVIDER_SELECT（initial / fallback）
+└── MODEL（每次 Provider attempt）
 ```
 
 每次初始 Provider 选择和 fallback 选择产生一个短生命周期 `PROVIDER_SELECT` Span；
