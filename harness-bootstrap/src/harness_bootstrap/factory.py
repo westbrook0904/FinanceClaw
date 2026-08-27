@@ -15,6 +15,7 @@ from harness_registry import (
     InMemoryCapabilityRegistry,
     RegistryCapabilityCatalog,
 )
+from harness_selection import PrioritySelector, ProviderSelector
 from harness_runtime import (
     CapabilityInvoker,
     DefaultInvocationContextFactory,
@@ -36,6 +37,7 @@ def build_harness(
     registry: CapabilityRegistry | None = None,
     policy_engine: PolicyEngine | None = None,
     tracer: Tracer | None = None,
+    provider_selector: ProviderSelector | None = None,
     context_factory: InvocationContextFactory | None = None,
     capability_catalog: CapabilityCatalog | None = None,
     plan_validator: PlanValidator | None = None,
@@ -57,6 +59,8 @@ def build_harness(
         raise ValueError("plugins and plugin_provider cannot be configured together")
     if policy_engine is not None and policies is not None:
         raise ValueError("policies and policy_engine cannot be configured together")
+    if provider_selector is not None and not isinstance(provider_selector, ProviderSelector):
+        raise TypeError("provider_selector must implement ProviderSelector")
     if capability_catalog is not None and not isinstance(
         capability_catalog, CapabilityCatalog
     ):
@@ -83,6 +87,9 @@ def build_harness(
         )
     )
     effective_tracer = tracer if tracer is not None else InMemoryTracer()
+    effective_provider_selector = (
+        provider_selector if provider_selector is not None else PrioritySelector()
+    )
     effective_context_factory = (
         context_factory
         if context_factory is not None
@@ -120,6 +127,7 @@ def build_harness(
         effective_policy_engine,
         effective_tracer,
         lifecycle=lifecycle,
+        provider_selector=effective_provider_selector,
     )
     scheduler = BasicScheduler(
         invoker,
@@ -149,6 +157,7 @@ def build_harness(
             registry=effective_registry,
             policy_engine=effective_policy_engine,
             tracer=effective_tracer,
+            provider_selector=effective_provider_selector,
             plugin_loader=plugin_loader,
             context_factory=effective_context_factory,
             capability_catalog=effective_catalog,

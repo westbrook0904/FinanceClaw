@@ -16,14 +16,19 @@ from harness_contracts import (
     InvocationContext,
     JsonValue,
     PolicyError,
+    ProviderDescriptor,
+    ProviderError,
     RegistryError,
     RequestError,
     RequestInput,
     ResultEnvelope,
+    SelectionContext,
+    SelectionDecision,
     TraceContext,
 )
 from harness_policy import PolicyContext, PolicyDecision, PolicyEffect, PolicyEngine, PolicyPhase
-from harness_registry import CapabilityQuery, CapabilityRegistry, ResolvedCapability
+from harness_registry import CapabilityRegistry, ResolvedCapability
+from harness_selection import PrioritySelector, ProviderSelector
 from harness_spi import AgentRequest, AgentSPI, ToolRequest, ToolSPI
 from harness_trace import Span, SpanType, Tracer
 
@@ -42,6 +47,7 @@ class CapabilityInvoker:
         tracer: Tracer,
         *,
         lifecycle: InvocationLifecycle | None = None,
+        provider_selector: ProviderSelector | None = None,
     ) -> None:
         if not isinstance(registry, CapabilityRegistry):
             raise TypeError("registry must implement CapabilityRegistry")
@@ -49,6 +55,10 @@ class CapabilityInvoker:
             raise TypeError("policy_engine must be PolicyEngine")
         if not isinstance(tracer, Tracer):
             raise TypeError("tracer must implement Tracer")
+        effective_selector = provider_selector or PrioritySelector()
+        if not isinstance(effective_selector, ProviderSelector):
+            raise TypeError("provider_selector must implement ProviderSelector")
+
         effective_lifecycle = lifecycle or InvocationLifecycle(tracer)
         if not isinstance(effective_lifecycle, InvocationLifecycle):
             raise TypeError("lifecycle must be InvocationLifecycle")
@@ -58,6 +68,7 @@ class CapabilityInvoker:
         self._registry = registry
         self._policy_engine = policy_engine
         self._tracer = tracer
+        self._provider_selector = effective_selector
         self._lifecycle = effective_lifecycle
 
     @property
@@ -71,6 +82,10 @@ class CapabilityInvoker:
     @property
     def tracer(self) -> Tracer:
         return self._tracer
+
+    @property
+    def provider_selector(self) -> ProviderSelector:
+        return self._provider_selector
 
     @property
     def lifecycle(self) -> InvocationLifecycle:
@@ -102,15 +117,19 @@ class CapabilityInvoker:
         trace = _TraceAnchor(parent if parent is not None else context.trace_context)
 
         try:
-            resolved = self._resolve_capability(
+            selected = self._resolve_capability(
                 capability_id,
+                context,
                 plugin_id=plugin_id,
+                deadline_at=deadline_at,
                 trace=trace,
                 trace_enabled=trace_enabled,
             )
+            resolved = selected.resolved
             decision = self._evaluate_policy(
                 context,
                 resolved,
+                selected.provider_descriptor,
                 trace=trace,
                 trace_enabled=trace_enabled,
             )
@@ -190,27 +209,35 @@ class CapabilityInvoker:
     def _resolve_capability(
         self,
         capability_id: str,
+        context: InvocationContext,
         *,
         plugin_id: str | None,
+        deadline_at: datetime | None,
         trace: _TraceAnchor,
         trace_enabled: bool,
-    ) -> ResolvedCapability:
+    ) -> _SelectedCapability:
         span = (
             self._tracer.start_span(
                 "registry.resolve",
                 SpanType.REGISTRY_RESOLVE,
                 parent=trace.parent,
                 attributes=_compact_attributes(
-                    {"capability_id": capability_id, "plugin_id": plugin_id}
+                    {
+                        "capability_id": capability_id,
+                        "plugin_id": plugin_id,
+                        "selector": self._provider_selector.name,
+                    }
                 ),
             )
             if trace_enabled
             else None
         )
         trace.capture(span)
+
         try:
-            resolved = self._registry.resolve(
-                CapabilityQuery(id=capability_id, plugin_id=plugin_id)
+            candidates = self._registry.candidates(
+                capability_id,
+                plugin_id=plugin_id,
             )
         except asyncio.CancelledError:
             self._lifecycle.finish_cancelled(span)
@@ -220,27 +247,136 @@ class CapabilityInvoker:
             raise
         except Exception as exc:
             wrapped = RegistryError(
-                "capability resolution failed",
+                "provider candidate discovery failed",
                 code="HARNESS.REGISTRY.RESOLVE_FAILED",
                 details={"cause_type": type(exc).__name__},
             )
             self._lifecycle.finish_error(span, wrapped)
             raise wrapped from exc
 
+        if not candidates:
+            error = RegistryError(
+                "no capability matches query",
+                details=_compact_attributes(
+                    {
+                        "capability_id": capability_id,
+                        "plugin_id": plugin_id,
+                    }
+                ),
+            )
+            self._lifecycle.finish_error(span, error)
+            raise error
+
+        capability = candidates[0].capability
+        plan_id = context.attributes.get("plan_id")
+        node_id = context.attributes.get("node_id")
+        if (
+            len(candidates) > 1
+            and isinstance(plan_id, str)
+            and isinstance(node_id, str)
+            and capability.execution_profile.side_effect.value == "write"
+        ):
+            error = ProviderError(
+                "multi-provider WRITE plan execution requires durable provider checkpoint",
+                code="HARNESS.PROVIDER.RESUME_UNSAFE",
+                details={
+                    "capability_id": capability_id,
+                    "plan_id": plan_id,
+                    "node_id": node_id,
+                    "provider_ids": [item.provider_id for item in candidates],
+                },
+            )
+            self._lifecycle.finish_error(span, error)
+            raise error
+
+        trusted_tenant_id = (
+            context.tenant.tenant_id if context.tenant is not None else None
+        )
+        identity_subject = (
+            context.identity.subject if context.identity is not None else None
+        )
+        selection_context = SelectionContext(
+            request_id=context.request.request_id,
+            capability_id=capability_id,
+            tenant_id=trusted_tenant_id,
+            identity_subject=identity_subject,
+            side_effect=capability.execution_profile.side_effect,
+            egress=capability.execution_profile.egress,
+            deadline_at=deadline_at or context.deadline_at,
+        )
+
+        try:
+            selection = self._provider_selector.select(candidates, selection_context)
+        except asyncio.CancelledError:
+            self._lifecycle.finish_cancelled(span)
+            raise
+        except HarnessError as exc:
+            self._lifecycle.finish_error(span, exc)
+            raise
+        except Exception as exc:
+            wrapped = ProviderError(
+                "provider selection failed",
+                code="HARNESS.PROVIDER.SELECTION_FAILED",
+                details={
+                    "capability_id": capability_id,
+                    "selector": self._provider_selector.name,
+                    "cause_type": type(exc).__name__,
+                },
+            )
+            self._lifecycle.finish_error(span, wrapped)
+            raise wrapped from exc
+
+        registration = next(
+            (
+                candidate
+                for candidate in candidates
+                if candidate.provider_id == selection.selected_provider_id
+            ),
+            None,
+        )
+        if registration is None:
+            error = ProviderError(
+                "selector returned a provider outside the candidate set",
+                code="HARNESS.PROVIDER.SELECTION_FAILED",
+                details={
+                    "capability_id": capability_id,
+                    "selected_provider_id": selection.selected_provider_id,
+                    "selector": selection.selector,
+                },
+            )
+            self._lifecycle.finish_error(span, error)
+            raise error
+
+        resolved = ResolvedCapability(
+            descriptor=registration.capability,
+            plugin_id=registration.plugin_id,
+            provider=registration.provider,
+            provider_id=registration.provider_id,
+        )
         self._lifecycle.finish_ok(
             span,
             attributes={
                 "resolved_capability_id": resolved.descriptor.id,
                 "plugin_id": resolved.plugin_id,
+                "provider_id": registration.provider_id,
                 "capability_type": resolved.descriptor.type.value,
+                "candidate_count": len(candidates),
+                "selection_key": selection.selection_key,
+                "selection_reason": selection.reason_code,
+                "selector": selection.selector,
             },
         )
-        return resolved
+        return _SelectedCapability(
+            resolved=resolved,
+            provider_descriptor=registration.descriptor,
+            decision=selection,
+        )
 
     def _evaluate_policy(
         self,
         context: InvocationContext,
         resolved: ResolvedCapability,
+        provider_descriptor: ProviderDescriptor,
         *,
         trace: _TraceAnchor,
         trace_enabled: bool,
@@ -250,7 +386,10 @@ class CapabilityInvoker:
                 "policy.pre_execute",
                 SpanType.POLICY,
                 parent=trace.parent,
-                attributes={"capability_id": resolved.descriptor.id},
+                attributes={
+                    "capability_id": resolved.descriptor.id,
+                    "provider_id": provider_descriptor.provider_id,
+                },
             )
             if trace_enabled
             else None
@@ -262,6 +401,7 @@ class CapabilityInvoker:
                 else context
             ),
             capability=resolved.descriptor,
+            provider=provider_descriptor,
             phase=PolicyPhase.PRE_EXECUTE,
             approval_grant=self._approval_grant(context),
         )
@@ -285,6 +425,7 @@ class CapabilityInvoker:
         attributes: dict[str, JsonValue] = {
             "effect": decision.effect.value,
             "policy": decision.policy,
+            "provider_id": provider_descriptor.provider_id,
         }
         if policy_context.approval_grant is not None:
             attributes["approval_id"] = policy_context.approval_grant.approval_id
@@ -382,6 +523,7 @@ class CapabilityInvoker:
                 attributes={
                     "capability_id": resolved.descriptor.id,
                     "plugin_id": resolved.plugin_id,
+                    "provider_id": resolved.provider_id,
                 },
             )
             if trace_enabled
@@ -414,7 +556,12 @@ class CapabilityInvoker:
                 leaf_name,
                 leaf_type,
                 parent=capability_span,
-                attributes={"capability_id": resolved.descriptor.id},
+                attributes=_compact_attributes(
+                    {
+                        "capability_id": resolved.descriptor.id,
+                        "provider_id": resolved.provider_id,
+                    }
+                ),
             )
             if trace_enabled
             else None
@@ -544,6 +691,13 @@ class CapabilityInvoker:
 
 def _compact_attributes(values: Mapping[str, JsonValue | None]) -> dict[str, JsonValue]:
     return {key: value for key, value in values.items() if value is not None}
+
+
+@dataclass(frozen=True, slots=True)
+class _SelectedCapability:
+    resolved: ResolvedCapability
+    provider_descriptor: ProviderDescriptor
+    decision: SelectionDecision
 
 
 @dataclass(slots=True)

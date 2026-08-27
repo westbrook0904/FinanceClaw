@@ -12,6 +12,7 @@ from harness_contracts import (
     ContractModel,
     ExecutionPlan,
     InvocationContext,
+    ProviderDescriptor,
 )
 from harness_contracts.base import FrozenJsonMapping, NonEmptyString
 
@@ -37,6 +38,7 @@ class PolicyContext(ContractModel):
     invocation: InvocationContext
     phase: PolicyPhase = PolicyPhase.PRE_EXECUTE
     capability: CapabilityDescriptor | None = None
+    provider: ProviderDescriptor | None = None
     plan: ExecutionPlan | None = None
     approval_grant: ApprovalGrant | None = None
 
@@ -45,14 +47,25 @@ class PolicyContext(ContractModel):
         if self.phase is PolicyPhase.PRE_PLAN:
             if self.plan is None:
                 raise ValueError("pre_plan policy context requires plan")
-            if self.capability is not None or self.approval_grant is not None:
-                raise ValueError("pre_plan policy context forbids capability and approval_grant")
+            if (
+                self.capability is not None
+                or self.provider is not None
+                or self.approval_grant is not None
+            ):
+                raise ValueError(
+                    "pre_plan policy context forbids capability, provider and approval_grant"
+                )
             return self
 
         if self.capability is None:
             raise ValueError("pre_execute policy context requires capability")
         if self.plan is not None:
             raise ValueError("pre_execute policy context forbids plan")
+        if (
+            self.provider is not None
+            and self.provider.capability_id != self.capability.id
+        ):
+            raise ValueError("provider capability_id must match capability.id")
         return self
 
 

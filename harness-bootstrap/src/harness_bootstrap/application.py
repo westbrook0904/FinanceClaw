@@ -13,6 +13,7 @@ from harness_plugin_local import LoadedPlugin, LocalPluginLoader
 from harness_planning import PlanValidator
 from harness_policy import PolicyEngine
 from harness_registry import CapabilityCatalog, CapabilityRegistry
+from harness_selection import ProviderSelector
 from harness_runtime import (
     CapabilityInvoker,
     HarnessRuntime,
@@ -42,6 +43,7 @@ class HarnessComponents:
     registry: CapabilityRegistry
     policy_engine: PolicyEngine
     tracer: Tracer
+    provider_selector: ProviderSelector
     plugin_loader: LocalPluginLoader
     context_factory: InvocationContextFactory
     capability_catalog: CapabilityCatalog
@@ -80,6 +82,10 @@ class HarnessApplication:
     @property
     def invoker(self) -> CapabilityInvoker:
         return self._components.invoker
+
+    @property
+    def provider_selector(self) -> ProviderSelector:
+        return self._components.provider_selector
 
     @property
     def execution_engine(self) -> ExecutionEngine:
