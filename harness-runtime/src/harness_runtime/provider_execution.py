@@ -11,6 +11,7 @@ from harness_contracts import (
     ErrorCode,
     HarnessError,
     IdempotencyType,
+    JsonValue,
     ProviderAttempt,
     ProviderAttemptStatus,
     ProviderError,
@@ -30,6 +31,7 @@ type AttemptCompletedCallback = Callable[
     [ProviderAttempt, ResultEnvelope],
     Awaitable[None],
 ]
+type ProviderEventCallback = Callable[[str, dict[str, JsonValue]], Awaitable[None]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -194,6 +196,7 @@ class ProviderExecutionCoordinator:
         attempt_started: AttemptStartedCallback | None = None,
         attempt_completed: AttemptCompletedCallback | None = None,
         resume_state: ProviderResumeState | None = None,
+        provider_event: ProviderEventCallback | None = None,
     ) -> ResultEnvelope:
         """执行完整的 same-provider retry / cross-provider fallback 流程。"""
 
@@ -221,6 +224,8 @@ class ProviderExecutionCoordinator:
             raise TypeError("attempt_completed must be callable when provided")
         if resume_state is not None and not isinstance(resume_state, ProviderResumeState):
             raise TypeError("resume_state must be ProviderResumeState when provided")
+        if provider_event is not None and not callable(provider_event):
+            raise TypeError("provider_event must be callable when provided")
         if resume_state is not None and resume_state.attempt.retry_attempt > policy.max_attempts:
             raise ValueError("resume retry attempt exceeds RetryPolicy.max_attempts")
 
@@ -259,6 +264,22 @@ class ProviderExecutionCoordinator:
         )
         initial_result = resume_state.result if resume_state is not None else None
 
+        await self._emit_candidates(
+            provider_event,
+            context,
+            candidate_tuple,
+            selected.decision,
+            phase="resume" if resume_state is not None else "initial",
+        )
+        await self._emit_selected(
+            provider_event,
+            context,
+            selected,
+            provider_attempt=provider_attempt,
+            retry_attempt=first_retry_attempt,
+            phase="resume" if resume_state is not None else "initial",
+        )
+
         while True:
             attempted_provider_ids.add(selected.registration.provider_id)
             result = await self._execute_selected(
@@ -272,6 +293,7 @@ class ProviderExecutionCoordinator:
                 attempt_started=attempt_started,
                 attempt_completed=attempt_completed,
                 initial_result=initial_result,
+                provider_event=provider_event,
             )
             first_retry_attempt = 1
             initial_result = None
@@ -288,6 +310,7 @@ class ProviderExecutionCoordinator:
                 return result
 
             try:
+                source = selected
                 fallback_candidates = self._fallback_candidates(
                     selected.registration,
                     remaining,
@@ -300,6 +323,33 @@ class ProviderExecutionCoordinator:
                 return ResultEnvelope.failure(exc.to_detail())
 
             provider_attempt += 1
+            await self._emit_candidates(
+                provider_event,
+                context,
+                fallback_candidates,
+                selected.decision,
+                phase="fallback",
+            )
+            await self._notify(
+                provider_event,
+                "provider.fallback",
+                {
+                    "capability_id": context.capability_id,
+                    "source_provider_id": source.registration.provider_id,
+                    "target_provider_id": selected.registration.provider_id,
+                    "provider_attempt": provider_attempt,
+                    "retry_attempt": 1,
+                    "selection_key": selected.decision.selection_key,
+                },
+            )
+            await self._emit_selected(
+                provider_event,
+                context,
+                selected,
+                provider_attempt=provider_attempt,
+                retry_attempt=1,
+                phase="fallback",
+            )
 
     async def _execute_selected(
         self,
@@ -314,6 +364,7 @@ class ProviderExecutionCoordinator:
         attempt_started: AttemptStartedCallback | None,
         attempt_completed: AttemptCompletedCallback | None,
         initial_result: ResultEnvelope | None,
+        provider_event: ProviderEventCallback | None,
     ) -> ResultEnvelope:
         result = initial_result or ResultEnvelope.cancelled()
         next_retry_attempt = retry_start_attempt
@@ -330,9 +381,16 @@ class ProviderExecutionCoordinator:
             backoff_seconds = self._backoff_seconds(policy, retry_start_attempt)
             if not self._deadline_allows(deadline_at, backoff_seconds):
                 return initial_result
+            next_retry_attempt += 1
+            await self._emit_retrying(
+                provider_event,
+                selected,
+                provider_attempt,
+                retry_start_attempt,
+                next_retry_attempt,
+            )
             if backoff_seconds:
                 await asyncio.sleep(backoff_seconds)
-            next_retry_attempt += 1
 
         for retry_attempt in range(next_retry_attempt, policy.max_attempts + 1):
             attempt = ProviderAttempt(
@@ -376,6 +434,12 @@ class ProviderExecutionCoordinator:
                 result = ResultEnvelope.failure(error.to_detail())
 
             completed_attempt = self._completed_attempt(attempt, result)
+            await self._emit_result_events(
+                provider_event,
+                selected,
+                completed_attempt,
+                result,
+            )
             if attempt_completed is not None:
                 await attempt_completed(completed_attempt, result)
 
@@ -392,9 +456,133 @@ class ProviderExecutionCoordinator:
             backoff_seconds = self._backoff_seconds(policy, retry_attempt)
             if not self._deadline_allows(deadline_at, backoff_seconds):
                 break
+            await self._emit_retrying(
+                provider_event,
+                selected,
+                provider_attempt,
+                retry_attempt,
+                retry_attempt + 1,
+            )
             if backoff_seconds:
                 await asyncio.sleep(backoff_seconds)
         return result
+
+    async def _emit_candidates(
+        self,
+        callback: ProviderEventCallback | None,
+        context: SelectionContext,
+        candidates: Sequence[ProviderRegistration],
+        decision: SelectionDecision,
+        *,
+        phase: str,
+    ) -> None:
+        await self._notify(
+            callback,
+            "provider.candidates",
+            {
+                "capability_id": context.capability_id,
+                "phase": phase,
+                "candidate_provider_ids": [item.provider_id for item in candidates],
+                "eligible_provider_ids": list(decision.eligible_candidates),
+                "rejected_candidates": [
+                    {
+                        "provider_id": item.provider_id,
+                        "reason_code": item.reason_code,
+                    }
+                    for item in decision.rejected_candidates
+                ],
+                "selector": decision.selector,
+                "selection_key": decision.selection_key,
+            },
+        )
+
+    async def _emit_selected(
+        self,
+        callback: ProviderEventCallback | None,
+        context: SelectionContext,
+        selected: SelectedProvider,
+        *,
+        provider_attempt: int,
+        retry_attempt: int,
+        phase: str,
+    ) -> None:
+        await self._notify(
+            callback,
+            "provider.selected",
+            {
+                "capability_id": context.capability_id,
+                "provider_id": selected.registration.provider_id,
+                "provider_attempt": provider_attempt,
+                "retry_attempt": retry_attempt,
+                "phase": phase,
+                "selector": selected.decision.selector,
+                "selection_reason": selected.decision.reason_code,
+                "selection_key": selected.decision.selection_key,
+                "equivalence_group": selected.registration.descriptor.equivalence_group,
+            },
+        )
+
+    async def _emit_retrying(
+        self,
+        callback: ProviderEventCallback | None,
+        selected: SelectedProvider,
+        provider_attempt: int,
+        retry_attempt: int,
+        next_retry_attempt: int,
+    ) -> None:
+        await self._notify(
+            callback,
+            "provider.retrying",
+            {
+                "capability_id": selected.registration.capability.id,
+                "provider_id": selected.registration.provider_id,
+                "provider_attempt": provider_attempt,
+                "retry_attempt": retry_attempt,
+                "next_retry_attempt": next_retry_attempt,
+                "selection_key": selected.decision.selection_key,
+            },
+        )
+
+    async def _emit_result_events(
+        self,
+        callback: ProviderEventCallback | None,
+        selected: SelectedProvider,
+        attempt: ProviderAttempt,
+        result: ResultEnvelope,
+    ) -> None:
+        if result.status is ResultStatus.FAILED:
+            await self._notify(
+                callback,
+                "provider.failed",
+                {
+                    "capability_id": selected.registration.capability.id,
+                    "provider_id": selected.registration.provider_id,
+                    "provider_attempt": attempt.provider_attempt,
+                    "retry_attempt": attempt.retry_attempt,
+                    "selection_key": attempt.selection_key,
+                    "error_code": result.error.code if result.error is not None else None,
+                    "retryable": result.error.retryable if result.error is not None else False,
+                    "fallbackable": (
+                        result.error.fallbackable if result.error is not None else False
+                    ),
+                },
+            )
+
+    @staticmethod
+    async def _notify(
+        callback: ProviderEventCallback | None,
+        name: str,
+        attributes: dict[str, JsonValue],
+    ) -> None:
+        if callback is None:
+            return
+        try:
+            await callback(name, attributes)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            # Observability 是 best-effort，不能改变 Provider 执行结果。
+            return
 
     def _completed_attempt(
         self,

@@ -4,20 +4,22 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="0d67a81b-cd68-49de-9544-1b30058fe17e" name="Changes" comment="新增 [provider_execution.py (line 47)](/Users/hebinghui/PycharmProjects/FinanceClaw/harness-runtime/src/harness_runtime/provider_execution.py:47)，统一负责 same-provider retry、fallback、deadline、错误归一化及 WRITE 安全校验。&#10;[CapabilityInvoker (line 117)](/Users/hebinghui/PycharmProjects/FinanceClaw/harness-runtime/src/harness_runtime/invoker.py:117) 接入协调器。&#10;[Scheduler (line 496)](/Users/hebinghui/PycharmProjects/FinanceClaw/harness-execution/src/harness_execution/scheduler.py:496) 和 [Recovery (line 381)](/Users/hebinghui/PycharmProjects/FinanceClaw/harness-execution/src/harness_execution/recovery.py:381) 不再自行循环 Retry。&#10;WRITE fallback 要求幂等能力、稳定 key、两端非空且相同的 equivalence_group，否则返回 HARNESS.PROVIDER.FALLBACK_UNSAFE。&#10;增加 Retry 固定 Provider、READ fallback、全部失败、WRITE 安全/不安全 fallback 等测试。&#10;多 Provider WRITE 的跨进程恢复继续 fail-closed，等待 Step 6 持久化 Provider selection。">
+    <list default="true" id="0d67a81b-cd68-49de-9544-1b30058fe17e" name="Changes" comment="扩展 [NodeExecutionState (line 45)](/Users/hebinghui/PycharmProjects/FinanceClaw/harness-contracts/src/harness_contracts/execution.py:45)，持久化 Provider 选择、重试次数、等价组、历史及最新结果。&#10;新增 [ProviderResumeState (line 53)](/Users/hebinghui/PycharmProjects/FinanceClaw/harness-runtime/src/harness_runtime/provider_execution.py:53)，恢复时固定使用 checkpoint 中的 Provider，禁止自由重选。&#10;Scheduler 在调用前、完成、重试和 fallback 时写入 checkpoint：[scheduler.py (line 367)](/Users/hebinghui/PycharmProjects/FinanceClaw/harness-execution/src/harness_execution/scheduler.py:367)。&#10;ResumeCoordinator 实现 READ/NONE、幂等 WRITE、非幂等 WRITE 及等价组安全规则：[recovery.py (line 504)](/Users/hebinghui/PycharmProjects/FinanceClaw/harness-execution/src/harness_execution/recovery.py:504)。&#10;已覆盖原 Provider 重放、非幂等写入拒绝、幂等写入恢复、同组 fallback、跨组拒绝及完成结果复用：[test_resume.py (line 318)](/Users/hebinghui/PycharmProjects/FinanceClaw/harness-execution/tests/test_resume.py:318)。">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/harness-contracts/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/harness-contracts/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/harness-contracts/src/harness_contracts/execution.py" beforeDir="false" afterPath="$PROJECT_DIR$/harness-contracts/src/harness_contracts/execution.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/harness-contracts/tests/test_contracts.py" beforeDir="false" afterPath="$PROJECT_DIR$/harness-contracts/tests/test_contracts.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/harness-execution/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/harness-execution/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/harness-execution/src/harness_execution/recovery.py" beforeDir="false" afterPath="$PROJECT_DIR$/harness-execution/src/harness_execution/recovery.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/harness-execution/src/harness_execution/scheduler.py" beforeDir="false" afterPath="$PROJECT_DIR$/harness-execution/src/harness_execution/scheduler.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/harness-execution/tests/test_resume.py" beforeDir="false" afterPath="$PROJECT_DIR$/harness-execution/tests/test_resume.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/harness-bootstrap/src/harness_bootstrap/factory.py" beforeDir="false" afterPath="$PROJECT_DIR$/harness-bootstrap/src/harness_bootstrap/factory.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/harness-bootstrap/tests/test_bootstrap.py" beforeDir="false" afterPath="$PROJECT_DIR$/harness-bootstrap/tests/test_bootstrap.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/harness-events/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/harness-events/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/harness-events/src/harness_events/models.py" beforeDir="false" afterPath="$PROJECT_DIR$/harness-events/src/harness_events/models.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/harness-events/tests/test_events.py" beforeDir="false" afterPath="$PROJECT_DIR$/harness-events/tests/test_events.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/harness-runtime/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/harness-runtime/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/harness-runtime/src/harness_runtime/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/harness-runtime/src/harness_runtime/__init__.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/harness-runtime/src/harness_runtime/invoker.py" beforeDir="false" afterPath="$PROJECT_DIR$/harness-runtime/src/harness_runtime/invoker.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/harness-runtime/src/harness_runtime/provider_execution.py" beforeDir="false" afterPath="$PROJECT_DIR$/harness-runtime/src/harness_runtime/provider_execution.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/harness-runtime/tests/test_provider_selection.py" beforeDir="false" afterPath="$PROJECT_DIR$/harness-runtime/tests/test_provider_selection.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/harness-runtime/tests/test_runtime.py" beforeDir="false" afterPath="$PROJECT_DIR$/harness-runtime/tests/test_runtime.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/harness-selection/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/harness-selection/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/harness-trace/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/harness-trace/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/harness-trace/src/harness_trace/models.py" beforeDir="false" afterPath="$PROJECT_DIR$/harness-trace/src/harness_trace/models.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -215,7 +217,7 @@
       <workItem from="1787569287520" duration="1000" />
       <workItem from="1787571075492" duration="31000" />
       <workItem from="1787572776988" duration="31571000" />
-      <workItem from="1787830268390" duration="4974000" />
+      <workItem from="1787830268390" duration="6254000" />
     </task>
     <task id="LOCAL-00001" summary="init project">
       <option name="closed" value="true" />
@@ -497,7 +499,15 @@
       <option name="project" value="LOCAL" />
       <updated>1787833269376</updated>
     </task>
-    <option name="localTasksCounter" value="36" />
+    <task id="LOCAL-00036" summary="扩展 [NodeExecutionState (line 45)](/Users/hebinghui/PycharmProjects/FinanceClaw/harness-contracts/src/harness_contracts/execution.py:45)，持久化 Provider 选择、重试次数、等价组、历史及最新结果。&#10;新增 [ProviderResumeState (line 53)](/Users/hebinghui/PycharmProjects/FinanceClaw/harness-runtime/src/harness_runtime/provider_execution.py:53)，恢复时固定使用 checkpoint 中的 Provider，禁止自由重选。&#10;Scheduler 在调用前、完成、重试和 fallback 时写入 checkpoint：[scheduler.py (line 367)](/Users/hebinghui/PycharmProjects/FinanceClaw/harness-execution/src/harness_execution/scheduler.py:367)。&#10;ResumeCoordinator 实现 READ/NONE、幂等 WRITE、非幂等 WRITE 及等价组安全规则：[recovery.py (line 504)](/Users/hebinghui/PycharmProjects/FinanceClaw/harness-execution/src/harness_execution/recovery.py:504)。&#10;已覆盖原 Provider 重放、非幂等写入拒绝、幂等写入恢复、同组 fallback、跨组拒绝及完成结果复用：[test_resume.py (line 318)](/Users/hebinghui/PycharmProjects/FinanceClaw/harness-execution/tests/test_resume.py:318)。">
+      <option name="closed" value="true" />
+      <created>1787836134818</created>
+      <option name="number" value="00036" />
+      <option name="presentableId" value="LOCAL-00036" />
+      <option name="project" value="LOCAL" />
+      <updated>1787836134818</updated>
+    </task>
+    <option name="localTasksCounter" value="37" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -527,7 +537,6 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
-    <MESSAGE value="init harness-policy and harness-trace modules" />
     <MESSAGE value="init harness-runtime modules" />
     <MESSAGE value="init harness-bootstrap modules" />
     <MESSAGE value="init harness-plugin modules" />
@@ -552,7 +561,8 @@
     <MESSAGE value="Stage 3A: add provider selection and health foundation&#10;&#10;- add harness-selection module&#10;- add ProviderSelector SPI and PrioritySelector&#10;- add EligibilityPipeline&#10;- add StaticHealthSource and TestHealthSource&#10;- support tenant, policy, health and provider-pin eligibility&#10;- add deterministic provider ordering&#10;- reject unhealthy and ineligible providers&#10;- fail closed on unsupported selection constraints&#10;- add selection and health unit tests" />
     <MESSAGE value="Stage 3A: integrate provider selection into capability invoker&#10;&#10;- replace unique registry resolution with candidate selection&#10;- build SelectionContext for each invocation&#10;- execute only the selected provider&#10;- expose ProviderDescriptor to PRE_EXECUTE policy&#10;- keep RequestTarget.plugin as a provider candidate constraint&#10;- add provider identity to capability trace attributes&#10;- inject ProviderSelector through bootstrap&#10;- preserve Stage 1 and Stage 2 invocation compatibility&#10;- fail closed on invalid selector decisions" />
     <MESSAGE value="新增 [provider_execution.py (line 47)](/Users/hebinghui/PycharmProjects/FinanceClaw/harness-runtime/src/harness_runtime/provider_execution.py:47)，统一负责 same-provider retry、fallback、deadline、错误归一化及 WRITE 安全校验。&#10;[CapabilityInvoker (line 117)](/Users/hebinghui/PycharmProjects/FinanceClaw/harness-runtime/src/harness_runtime/invoker.py:117) 接入协调器。&#10;[Scheduler (line 496)](/Users/hebinghui/PycharmProjects/FinanceClaw/harness-execution/src/harness_execution/scheduler.py:496) 和 [Recovery (line 381)](/Users/hebinghui/PycharmProjects/FinanceClaw/harness-execution/src/harness_execution/recovery.py:381) 不再自行循环 Retry。&#10;WRITE fallback 要求幂等能力、稳定 key、两端非空且相同的 equivalence_group，否则返回 HARNESS.PROVIDER.FALLBACK_UNSAFE。&#10;增加 Retry 固定 Provider、READ fallback、全部失败、WRITE 安全/不安全 fallback 等测试。&#10;多 Provider WRITE 的跨进程恢复继续 fail-closed，等待 Step 6 持久化 Provider selection。" />
-    <option name="LAST_COMMIT_MESSAGE" value="新增 [provider_execution.py (line 47)](/Users/hebinghui/PycharmProjects/FinanceClaw/harness-runtime/src/harness_runtime/provider_execution.py:47)，统一负责 same-provider retry、fallback、deadline、错误归一化及 WRITE 安全校验。&#10;[CapabilityInvoker (line 117)](/Users/hebinghui/PycharmProjects/FinanceClaw/harness-runtime/src/harness_runtime/invoker.py:117) 接入协调器。&#10;[Scheduler (line 496)](/Users/hebinghui/PycharmProjects/FinanceClaw/harness-execution/src/harness_execution/scheduler.py:496) 和 [Recovery (line 381)](/Users/hebinghui/PycharmProjects/FinanceClaw/harness-execution/src/harness_execution/recovery.py:381) 不再自行循环 Retry。&#10;WRITE fallback 要求幂等能力、稳定 key、两端非空且相同的 equivalence_group，否则返回 HARNESS.PROVIDER.FALLBACK_UNSAFE。&#10;增加 Retry 固定 Provider、READ fallback、全部失败、WRITE 安全/不安全 fallback 等测试。&#10;多 Provider WRITE 的跨进程恢复继续 fail-closed，等待 Step 6 持久化 Provider selection。" />
+    <MESSAGE value="扩展 [NodeExecutionState (line 45)](/Users/hebinghui/PycharmProjects/FinanceClaw/harness-contracts/src/harness_contracts/execution.py:45)，持久化 Provider 选择、重试次数、等价组、历史及最新结果。&#10;新增 [ProviderResumeState (line 53)](/Users/hebinghui/PycharmProjects/FinanceClaw/harness-runtime/src/harness_runtime/provider_execution.py:53)，恢复时固定使用 checkpoint 中的 Provider，禁止自由重选。&#10;Scheduler 在调用前、完成、重试和 fallback 时写入 checkpoint：[scheduler.py (line 367)](/Users/hebinghui/PycharmProjects/FinanceClaw/harness-execution/src/harness_execution/scheduler.py:367)。&#10;ResumeCoordinator 实现 READ/NONE、幂等 WRITE、非幂等 WRITE 及等价组安全规则：[recovery.py (line 504)](/Users/hebinghui/PycharmProjects/FinanceClaw/harness-execution/src/harness_execution/recovery.py:504)。&#10;已覆盖原 Provider 重放、非幂等写入拒绝、幂等写入恢复、同组 fallback、跨组拒绝及完成结果复用：[test_resume.py (line 318)](/Users/hebinghui/PycharmProjects/FinanceClaw/harness-execution/tests/test_resume.py:318)。" />
+    <option name="LAST_COMMIT_MESSAGE" value="扩展 [NodeExecutionState (line 45)](/Users/hebinghui/PycharmProjects/FinanceClaw/harness-contracts/src/harness_contracts/execution.py:45)，持久化 Provider 选择、重试次数、等价组、历史及最新结果。&#10;新增 [ProviderResumeState (line 53)](/Users/hebinghui/PycharmProjects/FinanceClaw/harness-runtime/src/harness_runtime/provider_execution.py:53)，恢复时固定使用 checkpoint 中的 Provider，禁止自由重选。&#10;Scheduler 在调用前、完成、重试和 fallback 时写入 checkpoint：[scheduler.py (line 367)](/Users/hebinghui/PycharmProjects/FinanceClaw/harness-execution/src/harness_execution/scheduler.py:367)。&#10;ResumeCoordinator 实现 READ/NONE、幂等 WRITE、非幂等 WRITE 及等价组安全规则：[recovery.py (line 504)](/Users/hebinghui/PycharmProjects/FinanceClaw/harness-execution/src/harness_execution/recovery.py:504)。&#10;已覆盖原 Provider 重放、非幂等写入拒绝、幂等写入恢复、同组 fallback、跨组拒绝及完成结果复用：[test_resume.py (line 318)](/Users/hebinghui/PycharmProjects/FinanceClaw/harness-execution/tests/test_resume.py:318)。" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>

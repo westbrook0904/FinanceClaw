@@ -50,7 +50,7 @@ Policy、Trace、Timeout 或错误归一化边界。
 |---|---|
 | `harness-contracts` | Request、Plan、状态、审批、Continuation、Result、能力执行画像与持久化协议 |
 | `harness-spi` | 业务无关的 Agent、Tool、Plugin 扩展接口 |
-| `harness-registry` | 单 Provider 能力注册/解析，以及不暴露 Provider 的只读 Catalog |
+| `harness-registry` | 单 Capability 多 Provider 注册/解析，以及不暴露 Provider instance 的只读 Catalog |
 | `harness-plugin-local` | 本地集合/entry point 发现、插件生命周期和事务回滚 |
 | `harness-planning` | DAG、引用、Binding、Condition 与 Capability 可执行性校验 |
 | `harness-policy` | `PRE_PLAN` / `PRE_EXECUTE` 策略链和 `REQUIRE_APPROVAL` 治理结果 |
@@ -149,6 +149,7 @@ async with build_harness() as app:
 - 业务插件只依赖 `harness-contracts` 和 `harness-spi`。
 - Scheduler 不直接访问 Provider；所有 Capability 节点都通过 `CapabilityInvoker`。
 - StateStore 是恢复事实来源；Execution Events 是 best-effort 观察面，不替代 Checkpoint。
-- Registry 仍为单 Capability 单 Provider；多 Provider Selector 留给后续阶段。
+- Registry 支持单 Capability 多 Provider，并通过最小 Health-aware PrioritySelector 选择；
+  Provider Pin 外部入口、Weighted Canary 和 Passive Health 暂缓。
 - 当前执行调用方提供的确定性 `ExecutionPlan`；Router、LLM Planner、动态 Plan Patch、
   远程插件、MCP、分布式 Scheduler/锁和外部 Event Broker 不在第二阶段范围内。

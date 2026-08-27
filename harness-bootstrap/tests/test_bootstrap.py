@@ -26,6 +26,7 @@ from harness_contracts import (
     ResultOutput,
     ResultStatus,
 )
+from harness_events import ExecutionEventName, InMemoryEventBus
 from harness_planning import PlanValidator
 from harness_plugin_local import LocalPluginProvider
 from harness_policy import AllowAllPolicy, Policy, PolicyContext, PolicyDecision, PolicyEngine
@@ -239,6 +240,19 @@ class BootstrapLifecycleTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.status, ResultStatus.SUCCESS)
         self.assertEqual(result.output.data["message"], "hello")
         self.assertEqual(tool.calls, 1)
+        self.assertIsInstance(app.event_publisher, InMemoryEventBus)
+        provider_events = [
+            event.name
+            for event in app.event_publisher.events()
+            if event.name.value.startswith("provider.")
+        ]
+        self.assertEqual(
+            provider_events,
+            [
+                ExecutionEventName.PROVIDER_CANDIDATES,
+                ExecutionEventName.PROVIDER_SELECTED,
+            ],
+        )
 
         await app.shutdown()
 

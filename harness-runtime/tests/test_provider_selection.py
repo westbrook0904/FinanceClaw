@@ -25,6 +25,7 @@ from harness_contracts import (
     SelectionDecision,
     SideEffectType,
 )
+from harness_events import ExecutionEventName, InMemoryEventBus
 from harness_policy import AllowAllPolicy, Policy, PolicyContext, PolicyDecision, PolicyEngine
 from harness_registry import InMemoryCapabilityRegistry, ProviderRegistration
 from harness_runtime import CapabilityInvoker
@@ -35,7 +36,7 @@ from harness_selection import (
     StaticHealthSource,
 )
 from harness_spi import AgentRequest, AgentSPI
-from harness_trace import InMemoryTracer, SpanType
+from harness_trace import InMemoryTracer, SpanStatus, SpanType
 
 CAPABILITY_ID = "web.search/v1"
 
@@ -197,6 +198,7 @@ def make_invoker(
     *,
     selector: ProviderSelector | None = None,
     policy_engine: PolicyEngine | None = None,
+    event_publisher: InMemoryEventBus | None = None,
 ) -> tuple[CapabilityInvoker, InMemoryTracer]:
     tracer = InMemoryTracer()
     invoker = CapabilityInvoker(
@@ -204,6 +206,7 @@ def make_invoker(
         policy_engine or PolicyEngine((AllowAllPolicy(),)),
         tracer,
         provider_selector=selector,
+        event_publisher=event_publisher,
     )
     return invoker, tracer
 
@@ -274,7 +277,12 @@ class CapabilityInvokerSelectionTests(unittest.IsolatedAsyncioTestCase):
                 )
             )
         )
-        invoker, _ = make_invoker(registry, selector=selector)
+        events = InMemoryEventBus()
+        invoker, _ = make_invoker(
+            registry,
+            selector=selector,
+            event_publisher=events,
+        )
         context = make_context()
 
         result = await invoker.invoke(CAPABILITY_ID, context.request.input, context)
@@ -283,6 +291,15 @@ class CapabilityInvokerSelectionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.output.data["provider"], "backup")
         self.assertEqual(primary.calls, 0)
         self.assertEqual(backup.calls, 1)
+        candidates = next(
+            event
+            for event in events.events()
+            if event.name is ExecutionEventName.PROVIDER_CANDIDATES
+        )
+        self.assertEqual(
+            candidates.model_dump(mode="json")["attributes"]["rejected_candidates"],
+            [{"provider_id": "search-primary", "reason_code": "UNHEALTHY"}],
+        )
 
     async def test_plugin_constraint_limits_candidate_set_before_selection(self) -> None:
         registry = InMemoryCapabilityRegistry()
@@ -484,6 +501,79 @@ class CapabilityInvokerSelectionTests(unittest.IsolatedAsyncioTestCase):
             ],
         )
 
+    async def test_retry_and_fallback_emit_explainable_provider_observability(self) -> None:
+        registry = InMemoryCapabilityRegistry()
+        primary = ScriptedSearchAgent(
+            "primary",
+            (failure("TEST.PRIMARY", retryable=True, fallbackable=True),),
+        )
+        backup = RecordingSearchAgent("backup")
+        register(
+            registry,
+            primary,
+            provider_id="search-primary",
+            plugin_id="primary-plugin",
+            priority=100,
+        )
+        register(
+            registry,
+            backup,
+            provider_id="search-backup",
+            plugin_id="backup-plugin",
+            priority=10,
+        )
+        events = InMemoryEventBus()
+        invoker, tracer = make_invoker(registry, event_publisher=events)
+        context = make_context()
+        parent = tracer.start_span("runtime.test", SpanType.RUNTIME)
+
+        result = await invoker.invoke(
+            CAPABILITY_ID,
+            context.request.input,
+            context,
+            retry_policy=RetryPolicy(
+                max_attempts=2,
+                initial_backoff_ms=0,
+                max_backoff_ms=0,
+            ),
+            parent=parent,
+        )
+        tracer.end_span(parent)
+
+        self.assertEqual(result.status, ResultStatus.SUCCESS)
+        self.assertEqual(
+            [event.name for event in events.events()],
+            [
+                ExecutionEventName.PROVIDER_CANDIDATES,
+                ExecutionEventName.PROVIDER_SELECTED,
+                ExecutionEventName.PROVIDER_FAILED,
+                ExecutionEventName.PROVIDER_RETRYING,
+                ExecutionEventName.PROVIDER_FAILED,
+                ExecutionEventName.PROVIDER_CANDIDATES,
+                ExecutionEventName.PROVIDER_FALLBACK,
+                ExecutionEventName.PROVIDER_SELECTED,
+            ],
+        )
+        self.assertTrue(
+            all(event.request_id == context.request.request_id for event in events.events())
+        )
+        selection_spans = tuple(
+            span for span in tracer.spans() if span.type is SpanType.PROVIDER_SELECT
+        )
+        self.assertEqual(
+            [span.attributes["provider_id"] for span in selection_spans],
+            ["search-primary", "search-backup"],
+        )
+        self.assertEqual(
+            [span.attributes["provider_attempt"] for span in selection_spans],
+            [1, 2],
+        )
+        fallback_trace = next(
+            event for event in tracer.events() if event.name == "provider.fallback"
+        )
+        self.assertEqual(fallback_trace.attributes["source_provider_id"], "search-primary")
+        self.assertEqual(fallback_trace.attributes["target_provider_id"], "search-backup")
+
     async def test_all_fallback_providers_failed_preserves_last_failure(self) -> None:
         registry = InMemoryCapabilityRegistry()
         primary = ScriptedSearchAgent(
@@ -660,7 +750,7 @@ class CapabilityInvokerSelectionTests(unittest.IsolatedAsyncioTestCase):
             plugin_id="google-plugin",
             priority=10,
         )
-        invoker, _ = make_invoker(registry, selector=InvalidSelector())
+        invoker, tracer = make_invoker(registry, selector=InvalidSelector())
         context = make_context()
 
         result = await invoker.invoke(CAPABILITY_ID, context.request.input, context)
@@ -669,6 +759,11 @@ class CapabilityInvokerSelectionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.error.category, ErrorCategory.PROVIDER)
         self.assertEqual(result.error.code, "HARNESS.PROVIDER.SELECTION_FAILED")
         self.assertEqual(provider.calls, 0)
+        selection_span = next(
+            span for span in tracer.spans() if span.type is SpanType.PROVIDER_SELECT
+        )
+        self.assertEqual(selection_span.status, SpanStatus.ERROR)
+        self.assertEqual(selection_span.error.code, "HARNESS.PROVIDER.SELECTION_FAILED")
 
 
 if __name__ == "__main__":

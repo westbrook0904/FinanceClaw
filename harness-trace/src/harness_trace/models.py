@@ -5,10 +5,9 @@ from __future__ import annotations
 from datetime import datetime
 from enum import StrEnum
 
-from pydantic import Field, model_validator
-
 from harness_contracts import ContractModel
 from harness_contracts.base import FrozenJsonMapping, NonEmptyString
+from pydantic import Field, model_validator
 
 
 class SpanType(StrEnum):
@@ -18,6 +17,7 @@ class SpanType(StrEnum):
     RUNTIME = "runtime"
     POLICY = "policy"
     REGISTRY_RESOLVE = "registry_resolve"
+    PROVIDER_SELECT = "provider_select"
     CAPABILITY = "capability"
     AGENT = "agent"
     TOOL = "tool"

@@ -16,6 +16,8 @@
   集合，使 Resume 固定原 Provider，并避免重新选择或重复已完成 attempt。
 - `InvocationLifecycle`：共享 Context 创建、Trace 传播、结果 trace ID 与 Span
   收尾语义。
+- Provider observability：发布 candidates/selected/retrying/fallback/failed 事件，并为
+  每次初始选择或 fallback 选择创建 `PROVIDER_SELECT` Span。
 - `InvocationContextFactory.create(Request) -> InvocationContext`。
 - `DefaultInvocationContextFactory`：构造最小可信 Context，并按 Request
   `timeout_ms` 计算绝对 deadline。
@@ -55,8 +57,9 @@ Invoker 与 ProviderExecutionCoordinator 共同保证：
    PRE_EXECUTE Policy。
 4. WRITE Retry 要求 Capability 支持幂等且存在稳定 key；跨 Provider Fallback 还要求
    source/target 具有相同的非空 `equivalence_group`。
-5. 创建 Registry、Policy、Capability、Agent/Tool Trace，并把 RequestInput 适配为
-   `AgentRequest` 或结构化 `ToolRequest`。
+5. 创建 Registry、Provider Select、Policy、Capability、Agent/Tool Trace，并把
+   RequestInput 适配为 `AgentRequest` 或结构化 `ToolRequest`；retry/fallback 同时记录
+   可解释的 Trace Event 与 ExecutionEvent。
 6. 所有 ProviderAttempt 共享同一个绝对 Deadline，验证 Descriptor/SPI 类型和
    `ResultEnvelope`，并归一化执行错误。
 
@@ -82,7 +85,7 @@ ExecutionEngine 会为 Plan 调用附加受控的 plan/node/idempotency 和 Appr
 
 ## 依赖边界
 
-Runtime 可以依赖 Contracts、SPI、Registry、Policy 和 Trace；不依赖具体插件、StateStore
+Runtime 可以依赖 Contracts、SPI、Registry、Selection、Policy、Trace 和 Events；不依赖具体插件、StateStore
 或 ExecutionEngine，也不负责 DAG、Checkpoint、Approval 协调和插件生命周期，这些职责
 位于独立模块。
 

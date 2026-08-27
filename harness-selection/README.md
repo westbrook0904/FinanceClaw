@@ -39,4 +39,6 @@ provider_id ascending
 
 `UNHEALTHY` 不进入排名。
 
-Canary、Passive Health、Retry/Fallback 和 Runtime 接入属于后续 Step。
+当前 Health 保持最小只读模型：Static/Test source、UNHEALTHY hard reject 和 DEGRADED
+降级排序。Weighted Canary、Passive Health，以及从 Request/Plan 暴露 Provider Pin
+路由入口暂缓；Retry/Fallback 已由 `harness-runtime` 的 ProviderExecutionCoordinator 接管。

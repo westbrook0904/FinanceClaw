@@ -26,6 +26,12 @@ from harness_contracts import (
     SelectionContext,
     TraceContext,
 )
+from harness_events import (
+    EventPublisher,
+    ExecutionEvent,
+    ExecutionEventName,
+    NoOpEventPublisher,
+)
 from harness_policy import PolicyContext, PolicyDecision, PolicyEffect, PolicyEngine, PolicyPhase
 from harness_registry import CapabilityRegistry, ProviderRegistration, ResolvedCapability
 from harness_selection import PrioritySelector, ProviderSelector
@@ -56,6 +62,7 @@ class CapabilityInvoker:
         lifecycle: InvocationLifecycle | None = None,
         provider_selector: ProviderSelector | None = None,
         provider_execution: ProviderExecutionCoordinator | None = None,
+        event_publisher: EventPublisher | None = None,
     ) -> None:
         if not isinstance(registry, CapabilityRegistry):
             raise TypeError("registry must implement CapabilityRegistry")
@@ -84,6 +91,9 @@ class CapabilityInvoker:
             raise TypeError("lifecycle must be InvocationLifecycle")
         if effective_lifecycle.tracer is not tracer:
             raise ValueError("lifecycle and invoker must use the same tracer")
+        effective_event_publisher = event_publisher or NoOpEventPublisher()
+        if not isinstance(effective_event_publisher, EventPublisher):
+            raise TypeError("event_publisher must implement EventPublisher")
 
         self._registry = registry
         self._policy_engine = policy_engine
@@ -91,6 +101,7 @@ class CapabilityInvoker:
         self._provider_selector = effective_selector
         self._provider_execution = effective_provider_execution
         self._lifecycle = effective_lifecycle
+        self._event_publisher = effective_event_publisher
 
     @property
     def registry(self) -> CapabilityRegistry:
@@ -115,6 +126,10 @@ class CapabilityInvoker:
     @property
     def lifecycle(self) -> InvocationLifecycle:
         return self._lifecycle
+
+    @property
+    def event_publisher(self) -> EventPublisher:
+        return self._event_publisher
 
     async def invoke(
         self,
@@ -188,6 +203,15 @@ class CapabilityInvoker:
                 progress_error = exc
                 raise
 
+        async def notify_provider_event(name: str, attributes: dict[str, JsonValue]) -> None:
+            await self._observe_provider_event(
+                name,
+                attributes,
+                context=context,
+                trace=trace,
+                trace_enabled=trace_enabled,
+            )
+
         try:
             resolution = self._resolve_capability(
                 capability_id,
@@ -246,6 +270,7 @@ class CapabilityInvoker:
                     notify_attempt_completed if attempt_completed is not None else None
                 ),
                 resume_state=provider_resume,
+                provider_event=notify_provider_event,
             )
         except asyncio.CancelledError:
             raise
@@ -267,6 +292,60 @@ class CapabilityInvoker:
             result,
             trace.parent if trace_enabled else None,
         )
+
+    async def _observe_provider_event(
+        self,
+        name: str,
+        attributes: dict[str, JsonValue],
+        *,
+        context: InvocationContext,
+        trace: _TraceAnchor,
+        trace_enabled: bool,
+    ) -> None:
+        compact = _compact_attributes(attributes)
+        if trace_enabled:
+            try:
+                if isinstance(trace.parent, Span):
+                    self._tracer.add_event(trace.parent, name, attributes=compact)
+                if (
+                    name == ExecutionEventName.PROVIDER_SELECTED.value
+                    and compact.get("phase") == "fallback"
+                ):
+                    selection_span = self._tracer.start_span(
+                        "provider.select",
+                        SpanType.PROVIDER_SELECT,
+                        parent=trace.parent,
+                        attributes=compact,
+                    )
+                    trace.capture(selection_span)
+                    self._lifecycle.finish_ok(selection_span)
+            except Exception:
+                # Trace 是 best-effort，不能改变 Provider 执行结果。
+                pass
+
+        plan_id = context.attributes.get("plan_id")
+        node_id = context.attributes.get("node_id")
+        try:
+            event_name = ExecutionEventName(name)
+            await self._event_publisher.publish(
+                ExecutionEvent(
+                    name=event_name,
+                    request_id=context.request.request_id,
+                    plan_id=plan_id if isinstance(plan_id, str) and plan_id.strip() else None,
+                    node_id=node_id if isinstance(node_id, str) and node_id.strip() else None,
+                    trace_id=(
+                        trace.parent.trace_id
+                        if isinstance(trace.parent, Span | TraceContext)
+                        else None
+                    ),
+                    attributes=compact,
+                )
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            # ExecutionEvent 同样是 best-effort；Checkpoint 仍是执行事实来源。
+            pass
 
     def _validate_invocation(
         self,
@@ -415,6 +494,35 @@ class CapabilityInvoker:
             egress=capability.execution_profile.egress,
             deadline_at=deadline_at or context.deadline_at,
         )
+        selection_span = (
+            self._tracer.start_span(
+                "provider.select",
+                SpanType.PROVIDER_SELECT,
+                parent=trace.parent,
+                attributes={
+                    "capability_id": capability_id,
+                    "candidate_count": len(candidates),
+                    "selector": (
+                        "provider-resume"
+                        if provider_resume is not None
+                        else self._provider_selector.name
+                    ),
+                    "provider_attempt": (
+                        provider_resume.attempt.provider_attempt
+                        if provider_resume is not None
+                        else 1
+                    ),
+                    "retry_attempt": (
+                        provider_resume.attempt.retry_attempt
+                        if provider_resume is not None
+                        else 1
+                    ),
+                },
+            )
+            if trace_enabled
+            else None
+        )
+        trace.capture(selection_span)
 
         try:
             selected = (
@@ -427,9 +535,11 @@ class CapabilityInvoker:
                 else self._provider_execution.select(candidates, selection_context)
             )
         except asyncio.CancelledError:
+            self._lifecycle.finish_cancelled(selection_span)
             self._lifecycle.finish_cancelled(span)
             raise
         except HarnessError as exc:
+            self._lifecycle.finish_error(selection_span, exc)
             self._lifecycle.finish_error(span, exc)
             raise
         except Exception as exc:
@@ -442,12 +552,22 @@ class CapabilityInvoker:
                     "cause_type": type(exc).__name__,
                 },
             )
+            self._lifecycle.finish_error(selection_span, wrapped)
             self._lifecycle.finish_error(span, wrapped)
             raise wrapped from exc
 
         registration = selected.registration
         selection = selected.decision
         resolved = selected.resolved
+        self._lifecycle.finish_ok(
+            selection_span,
+            attributes={
+                "provider_id": registration.provider_id,
+                "selection_key": selection.selection_key,
+                "selection_reason": selection.reason_code,
+                "selector": selection.selector,
+            },
+        )
         self._lifecycle.finish_ok(
             span,
             attributes={

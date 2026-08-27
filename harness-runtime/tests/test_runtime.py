@@ -269,6 +269,7 @@ class CapabilityInvokerTests(unittest.IsolatedAsyncioTestCase):
             [span.type for span in spans],
             [
                 SpanType.REGISTRY_RESOLVE,
+                SpanType.PROVIDER_SELECT,
                 SpanType.POLICY,
                 SpanType.CAPABILITY,
                 SpanType.AGENT,
@@ -333,13 +334,23 @@ class RuntimeTests(unittest.IsolatedAsyncioTestCase):
                 SpanType.REQUEST,
                 SpanType.RUNTIME,
                 SpanType.REGISTRY_RESOLVE,
+                SpanType.PROVIDER_SELECT,
                 SpanType.POLICY,
                 SpanType.CAPABILITY,
                 SpanType.AGENT,
             ],
         )
-        request_span, runtime_span, _, _, capability_span, agent_span = spans
+        (
+            request_span,
+            runtime_span,
+            _,
+            provider_select_span,
+            _,
+            capability_span,
+            agent_span,
+        ) = spans
         self.assertEqual(runtime_span.parent_span_id, request_span.span_id)
+        self.assertEqual(provider_select_span.parent_span_id, runtime_span.span_id)
         self.assertEqual(capability_span.parent_span_id, runtime_span.span_id)
         self.assertEqual(agent_span.parent_span_id, capability_span.span_id)
         self.assertEqual(agent.last_context.trace_context.span_id, agent_span.span_id)

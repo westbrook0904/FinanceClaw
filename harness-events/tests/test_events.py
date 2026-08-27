@@ -42,3 +42,17 @@ class EventBusTests(unittest.IsolatedAsyncioTestCase):
         await publisher.publish(
             ExecutionEvent(name=ExecutionEventName.PLAN_STARTED, plan_id="plan-1")
         )
+
+    async def test_provider_event_can_use_request_reference_without_plan(self) -> None:
+        event = ExecutionEvent(
+            name=ExecutionEventName.PROVIDER_SELECTED,
+            request_id="request-1",
+            attributes={"provider_id": "provider-a"},
+        )
+
+        self.assertEqual(event.request_id, "request-1")
+        self.assertIsNone(event.plan_id)
+
+    async def test_execution_event_requires_request_or_plan_reference(self) -> None:
+        with self.assertRaises(ValueError):
+            ExecutionEvent(name=ExecutionEventName.PROVIDER_FAILED)

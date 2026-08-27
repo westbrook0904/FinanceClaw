@@ -9,7 +9,7 @@ Request/Runtime/Capability 层级上增加 Plan、Scheduler 和 Plan Node，使�
 - `Tracer`：`start_span()`、`add_event()`、`end_span()` 抽象。
 - `Span`、`TraceEvent`、`TraceError`：深度不可变、可序列化快照。
 - `SpanStatus`：`RUNNING`、`OK`、`ERROR`、`CANCELLED`。
-- `SpanType`：`REQUEST`、`RUNTIME`、`POLICY`、`REGISTRY_RESOLVE`、
+- `SpanType`：`REQUEST`、`RUNTIME`、`POLICY`、`REGISTRY_RESOLVE`、`PROVIDER_SELECT`、
   `CAPABILITY`、`AGENT`、`TOOL`、`PLAN`、`SCHEDULER`、
   `PLAN_NODE`、`PLANNER`。
 - `InMemoryTracer`：线程安全保存 Span/Event，可按 trace/span 过滤并生成
@@ -25,6 +25,7 @@ Direct Invocation：
 REQUEST
 └── RUNTIME
     ├── REGISTRY_RESOLVE
+    ├── PROVIDER_SELECT
     ├── POLICY
     └── CAPABILITY
         └── AGENT / TOOL
@@ -40,13 +41,15 @@ REQUEST
         ├── SCHEDULER
         └── PLAN_NODE（与 SCHEDULER 同级）
             ├── REGISTRY_RESOLVE
+            ├── PROVIDER_SELECT
             ├── POLICY
             └── CAPABILITY
                 └── AGENT / TOOL
 ```
 
-Retry、WAITING、Resume、Approval 和 Checkpoint 等瞬时变化使用 Event/Attribute，不为每种
-状态增加 SpanType。已有 `InvocationContext.trace_context` 可续接上游 trace；
+每次初始 Provider 选择和 fallback 选择产生一个短生命周期 `PROVIDER_SELECT` Span；
+候选集、retry、fallback 和失败细节同时记录为 Trace Event。WAITING、Resume、Approval
+和 Checkpoint 等瞬时变化继续使用 Event/Attribute。已有 `InvocationContext.trace_context` 可续接上游 trace；
 `request.options.trace=false` 时不创建 Span，也不强制写入 result trace ID。
 
 ## 生命周期约束

@@ -6,8 +6,8 @@ from collections.abc import Iterable
 
 from harness_events import EventPublisher, InMemoryEventBus
 from harness_execution import BasicScheduler, ExecutionEngine
-from harness_plugin_local import LocalPluginLoader, LocalPluginProvider
 from harness_planning import PlanValidator
+from harness_plugin_local import LocalPluginLoader, LocalPluginProvider
 from harness_policy import AllowAllPolicy, Policy, PolicyEngine
 from harness_registry import (
     CapabilityCatalog,
@@ -15,7 +15,6 @@ from harness_registry import (
     InMemoryCapabilityRegistry,
     RegistryCapabilityCatalog,
 )
-from harness_selection import PrioritySelector, ProviderSelector
 from harness_runtime import (
     CapabilityInvoker,
     DefaultInvocationContextFactory,
@@ -23,6 +22,7 @@ from harness_runtime import (
     InvocationContextFactory,
     InvocationLifecycle,
 )
+from harness_selection import PrioritySelector, ProviderSelector
 from harness_spi import PluginSPI
 from harness_state import InMemoryStateStore, StateStore
 from harness_trace import InMemoryTracer, Tracer
@@ -128,6 +128,7 @@ def build_harness(
         effective_tracer,
         lifecycle=lifecycle,
         provider_selector=effective_provider_selector,
+        event_publisher=effective_event_publisher,
     )
     scheduler = BasicScheduler(
         invoker,
