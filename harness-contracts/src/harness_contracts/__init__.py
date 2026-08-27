@@ -34,11 +34,14 @@ from .errors import (
     ErrorDetail,
     HarnessError,
     HarnessTimeoutError,
+    PlannerNotApplicableError,
+    PlanningError,
     PluginError,
     PolicyError,
     ProviderError,
     RegistryError,
     RequestError,
+    RoutingError,
     SelectionError,
 )
 from .execution import (
@@ -47,6 +50,7 @@ from .execution import (
     PlanExecutionState,
     PlanExecutionStatus,
 )
+from .persistence import PlanExecutionRecord
 from .plan import (
     BindingKind,
     ConditionExpr,
@@ -66,7 +70,6 @@ from .plan import (
     RetryPolicy,
     ValueReference,
 )
-from .persistence import PlanExecutionRecord
 from .provider import (
     ProviderAttempt,
     ProviderAttemptStatus,
@@ -77,6 +80,7 @@ from .provider import (
 )
 from .request import Request, RequestInput, RequestOptions, RequestTarget
 from .result import Continuation, ResultEnvelope, ResultIssue, ResultOutput, ResultStatus
+from .routing import ExecutionMode, RouteDecision, RouteSource, RouteType
 from .selection import SelectionContext, SelectionDecision, SelectionRejection
 
 __all__ = [
@@ -102,6 +106,7 @@ __all__ = [
     "ExecutionState",
     "ExecutionStatus",
     "ExecutionPlan",
+    "ExecutionMode",
     "FailurePolicy",
     "HarnessError",
     "HarnessTimeoutError",
@@ -124,6 +129,8 @@ __all__ = [
     "PlanExecutionStatus",
     "PlanNode",
     "PlanNodeKind",
+    "PlannerNotApplicableError",
+    "PlanningError",
     "PluginError",
     "PolicyError",
     "ProviderAttempt",
@@ -145,6 +152,10 @@ __all__ = [
     "ResultOutput",
     "ResultStatus",
     "RetryPolicy",
+    "RouteDecision",
+    "RouteSource",
+    "RouteType",
+    "RoutingError",
     "SelectionContext",
     "SelectionDecision",
     "SelectionError",

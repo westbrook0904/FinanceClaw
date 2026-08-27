@@ -3,13 +3,15 @@
 `harness-contracts` 是所有 Harness 模块共享的稳定、业务无关协议层，不依赖其他
 Harness 模块或插件。Stage 2 在 Request/Context/Capability/Result 基线上补齐 Plan、
 可恢复状态、审批和异步 Continuation；Stage 3A 进一步冻结 Provider 身份、Health、
-Selection、ProviderAttempt 和安全恢复协议。
+Selection、ProviderAttempt 和安全恢复协议；Stage 3B 冻结请求级 ExecutionMode 与
+RouteDecision 协议。
 
 ## 公共 API
 
 | 分类 | 类型 |
 |---|---|
 | 请求 | `Request`、`RequestInput`、`RequestTarget`、`RequestOptions` |
+| 路由 | `ExecutionMode`、`RouteType`、`RouteSource`、`RouteDecision` |
 | 计划 | `ExecutionPlan`、`PlanNode`、`PlanEdge`、Binding、Condition、Budget、Retry / Failure Policy |
 | 执行状态 | `PlanExecutionState`、`NodeExecutionState` 及状态枚举 |
 | 持久化 | `PlanExecutionRecord`，包含 Plan、可恢复 Context 和完整 State |
@@ -77,6 +79,8 @@ PlanExecutionState`，并校验三者的 `plan_id/revision` 一致性。
 - Invocation、Plan 与 Node State 明确可变。
 - 时间字段必须包含时区。
 - `Request.target` 对 Plan 请求可为空；Direct Invocation 仍由 Runtime 要求 target。
+- 旧 Request 未指定 `execution_mode` 时默认为 `AUTO`；最终 `RouteDecision` 不允许保留
+  `AUTO`，且模式、路由类型与目标字段必须形成合法组合。
 - Request 中的 `user_id`、`tenant_id` 不能直接视为可信 Identity/Tenant。
 - Capability 执行画像用 `side_effect`、`egress`、`idempotency` 支持重试、
   恢复与审批判断。

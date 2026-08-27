@@ -7,6 +7,7 @@ from uuid import uuid4
 from pydantic import Field
 
 from .base import ContractModel, FrozenJsonMapping, FrozenJsonValue, NonEmptyString
+from .routing import ExecutionMode
 
 
 class RequestInput(ContractModel):
@@ -32,6 +33,7 @@ class RequestOptions(ContractModel):
 
     timeout_ms: int | None = Field(default=None, gt=0)
     trace: bool = True
+    execution_mode: ExecutionMode = ExecutionMode.AUTO
 
 
 class Request(ContractModel):
