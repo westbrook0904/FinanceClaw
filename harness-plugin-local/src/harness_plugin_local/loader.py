@@ -6,8 +6,8 @@ import asyncio
 from dataclasses import dataclass
 from enum import StrEnum
 
-from harness_contracts import CapabilityDescriptor, CapabilityType, PluginError
-from harness_registry import CapabilityRegistry
+from harness_contracts import CapabilityDescriptor, CapabilityType, PluginError, ProviderDescriptor
+from harness_registry import CapabilityRegistry, legacy_provider_id
 from harness_spi import (
     AgentSPI,
     Capability,
@@ -35,11 +35,12 @@ class LoadedPlugin:
     manifest: PluginManifest
     plugin: PluginSPI
     capability_ids: tuple[str, ...]
+    provider_ids: tuple[str, ...] = ()
     state: PluginState = PluginState.ACTIVE
 
 
 class LocalPluginLoader:
-    """发现本地插件，并以单插件事务执行初始化和注册。"""
+    """发现本地插件，并以单插件事务执行初始化和 Provider 注册。"""
 
     def __init__(
         self,
@@ -83,7 +84,7 @@ class LocalPluginLoader:
         return tuple(loaded_in_batch)
 
     async def unload(self, plugin_id: str) -> LoadedPlugin:
-        """先从 Registry 摘除能力，再关闭插件。"""
+        """先从 Registry 精确摘除本插件 Provider，再关闭插件。"""
 
         async with self._lock:
             return await self._unload_locked(plugin_id)
@@ -114,6 +115,10 @@ class LocalPluginLoader:
             descriptors = tuple(provider.descriptor() for provider in providers)
             validate_manifest_capabilities(manifest, descriptors)
             _validate_provider_types(providers, descriptors)
+            provider_descriptors = tuple(
+                _legacy_provider_descriptor(manifest, descriptor)
+                for descriptor in descriptors
+            )
         except Exception as exc:
             raise _as_plugin_error("local plugin validation failed", exc) from exc
 
@@ -124,17 +129,24 @@ class LocalPluginLoader:
             )
 
         initialized = False
-        registered_ids: list[str] = []
+        registered_provider_ids: list[str] = []
         try:
             await plugin.initialize()
             initialized = True
-            for provider, descriptor in zip(providers, descriptors, strict=True):
-                self._registry.register(provider, plugin_id=manifest.plugin_id)
-                registered_ids.append(descriptor.id)
+            for provider, provider_descriptor in zip(
+                providers,
+                provider_descriptors,
+                strict=True,
+            ):
+                self._registry.register_provider(
+                    provider,
+                    descriptor=provider_descriptor,
+                )
+                registered_provider_ids.append(provider_descriptor.provider_id)
         except BaseException as exc:
-            for capability_id in reversed(registered_ids):
+            for provider_id in reversed(registered_provider_ids):
                 try:
-                    self._registry.unregister(capability_id, plugin_id=manifest.plugin_id)
+                    self._registry.unregister_provider(provider_id)
                 except Exception:
                     pass
             if initialized:
@@ -151,7 +163,8 @@ class LocalPluginLoader:
         record = LoadedPlugin(
             manifest=manifest,
             plugin=plugin,
-            capability_ids=tuple(registered_ids),
+            capability_ids=tuple(descriptor.id for descriptor in descriptors),
+            provider_ids=tuple(registered_provider_ids),
         )
         self._loaded[manifest.plugin_id] = record
         return record
@@ -170,9 +183,9 @@ class LocalPluginLoader:
             )
 
         errors: list[str] = []
-        for capability_id in reversed(record.capability_ids):
+        for provider_id in reversed(record.provider_ids):
             try:
-                self._registry.unregister(capability_id, plugin_id=plugin_id)
+                self._registry.unregister_provider(provider_id)
             except Exception as exc:
                 errors.append(str(exc))
         try:
@@ -185,6 +198,7 @@ class LocalPluginLoader:
             manifest=record.manifest,
             plugin=record.plugin,
             capability_ids=record.capability_ids,
+            provider_ids=record.provider_ids,
             state=PluginState.STOPPED,
         )
         if errors and not suppress_errors:
@@ -193,6 +207,19 @@ class LocalPluginLoader:
                 details={"plugin_id": plugin_id, "errors": errors},
             )
         return stopped
+
+
+def _legacy_provider_descriptor(
+    manifest: PluginManifest,
+    capability: CapabilityDescriptor,
+) -> ProviderDescriptor:
+    return ProviderDescriptor(
+        provider_id=legacy_provider_id(manifest.plugin_id, capability.id),
+        capability_id=capability.id,
+        plugin_id=manifest.plugin_id,
+        implementation_version=manifest.version,
+        metadata={"identity_source": "local-plugin-legacy"},
+    )
 
 
 def _validate_provider_types(

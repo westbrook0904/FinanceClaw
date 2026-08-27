@@ -1,11 +1,13 @@
-"""Capability 的注册、查询与解析。
-
-该包只管理能力目录，不承担本地插件发现，
-也不向业务代码暴露通用 Service Locator。
-"""
+"""Capability 与 Provider 的注册、查询和只读 Catalog。"""
 
 from .catalog import CapabilityCatalog, RegistryCapabilityCatalog
-from .models import CapabilityQuery, ResolvedCapability
+from .models import (
+    CapabilityQuery,
+    ProviderQuery,
+    ProviderRegistration,
+    ResolvedCapability,
+    legacy_provider_id,
+)
 from .registry import CapabilityRegistry, InMemoryCapabilityRegistry
 
 __all__ = [
@@ -13,6 +15,9 @@ __all__ = [
     "CapabilityQuery",
     "CapabilityRegistry",
     "InMemoryCapabilityRegistry",
+    "ProviderQuery",
+    "ProviderRegistration",
     "RegistryCapabilityCatalog",
     "ResolvedCapability",
+    "legacy_provider_id",
 ]

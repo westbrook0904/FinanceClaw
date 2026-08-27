@@ -1,4 +1,4 @@
-"""本地插件发现、生命周期、注册和回滚测试。"""
+"""本地插件发现、生命周期、Provider 注册和回滚测试。"""
 
 from __future__ import annotations
 
@@ -12,17 +12,17 @@ from harness_contracts import (
     ResultEnvelope,
 )
 from harness_plugin_local import LocalPluginLoader, LocalPluginProvider, PluginState
-from harness_registry import CapabilityQuery, InMemoryCapabilityRegistry
+from harness_registry import CapabilityQuery, InMemoryCapabilityRegistry, legacy_provider_id
 from harness_spi import AgentRequest, AgentSPI, PluginManifest, PluginSPI, ToolRequest, ToolSPI
 
 
 class StubAgent(AgentSPI):
-    def __init__(self, capability_id: str) -> None:
+    def __init__(self, capability_id: str, *, version: str = "1.0.0") -> None:
         self._descriptor = CapabilityDescriptor(
             id=capability_id,
             name=capability_id,
             type=CapabilityType.AGENT,
-            version="1.0.0",
+            version=version,
         )
 
     def descriptor(self) -> CapabilityDescriptor:
@@ -37,12 +37,12 @@ class StubAgent(AgentSPI):
 
 
 class StubTool(ToolSPI):
-    def __init__(self, capability_id: str) -> None:
+    def __init__(self, capability_id: str, *, version: str = "1.0.0") -> None:
         self._descriptor = CapabilityDescriptor(
             id=capability_id,
             name=capability_id,
             type=CapabilityType.TOOL,
-            version="1.0.0",
+            version=version,
         )
 
     def descriptor(self) -> CapabilityDescriptor:
@@ -86,7 +86,7 @@ class LocalPluginTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self) -> None:
         self.registry = InMemoryCapabilityRegistry()
 
-    async def test_load_registers_all_capabilities_and_unload_cleans_them(self) -> None:
+    async def test_load_registers_provider_ids_and_unload_cleans_them(self) -> None:
         plugin = StubPlugin(
             "mixed-plugin",
             (StubAgent("echo.reply/v1"), StubTool("math.add/v1")),
@@ -100,7 +100,14 @@ class LocalPluginTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(loaded[0].state, PluginState.ACTIVE)
         self.assertEqual(plugin.initialize_count, 1)
-        self.assertEqual(len(self.registry.list()), 2)
+        self.assertEqual(
+            loaded[0].provider_ids,
+            (
+                legacy_provider_id("mixed-plugin", "echo.reply/v1"),
+                legacy_provider_id("mixed-plugin", "math.add/v1"),
+            ),
+        )
+        self.assertEqual(len(self.registry.list_providers()), 2)
         self.assertIs(
             self.registry.resolve(CapabilityQuery(id="echo.reply/v1")).provider,
             plugin.providers[0],
@@ -109,14 +116,34 @@ class LocalPluginTests(unittest.IsolatedAsyncioTestCase):
         stopped = await loader.unload("mixed-plugin")
         self.assertEqual(stopped.state, PluginState.STOPPED)
         self.assertEqual(plugin.shutdown_count, 1)
-        self.assertEqual(self.registry.list(), ())
+        self.assertEqual(self.registry.list_providers(), ())
 
-    async def test_registration_failure_rolls_back_and_shuts_down_plugin(self) -> None:
-        existing = StubTool("conflict/v1")
+    async def test_two_plugins_can_provide_same_capability_and_unload_independently(self) -> None:
+        first = StubPlugin("first", (StubTool("shared/v1"),))
+        second = StubPlugin("second", (StubTool("shared/v1"),))
+        loader = LocalPluginLoader(
+            self.registry,
+            LocalPluginProvider((first, second), entry_point_group=None),
+        )
+
+        loaded = await loader.load_all()
+
+        self.assertEqual(len(loaded), 2)
+        self.assertEqual(len(self.registry.candidates("shared/v1")), 2)
+        await loader.unload("first")
+        remaining = self.registry.candidates("shared/v1")
+        self.assertEqual(len(remaining), 1)
+        self.assertEqual(remaining[0].plugin_id, "second")
+
+    async def test_registration_failure_rolls_back_registered_provider_ids(self) -> None:
+        existing = StubTool("conflict/v1", version="1.0.0")
         self.registry.register(existing, plugin_id="existing")
         plugin = StubPlugin(
             "failing-plugin",
-            (StubTool("temporary/v1"), StubTool("conflict/v1")),
+            (
+                StubTool("temporary/v1"),
+                StubTool("conflict/v1", version="2.0.0"),
+            ),
         )
         loader = LocalPluginLoader(self.registry)
 
@@ -125,7 +152,7 @@ class LocalPluginTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(plugin.initialize_count, 1)
         self.assertEqual(plugin.shutdown_count, 1)
-        self.assertIsNone(self.registry.get("temporary/v1"))
+        self.assertEqual(self.registry.candidates("temporary/v1"), ())
         self.assertIs(self.registry.get("conflict/v1").provider, existing)
         self.assertEqual(loader.loaded_plugins(), ())
 
@@ -141,11 +168,11 @@ class LocalPluginTests(unittest.IsolatedAsyncioTestCase):
             await loader.load(plugin)
 
         self.assertEqual(plugin.initialize_count, 0)
-        self.assertEqual(self.registry.list(), ())
+        self.assertEqual(self.registry.list_providers(), ())
 
-    async def test_load_all_is_atomic_for_the_discovered_batch(self) -> None:
-        first = StubPlugin("first", (StubTool("first/v1"),))
-        second = StubPlugin("second", (StubTool("first/v1"),))
+    async def test_load_all_rolls_back_batch_on_capability_contract_mismatch(self) -> None:
+        first = StubPlugin("first", (StubTool("shared/v1", version="1.0.0"),))
+        second = StubPlugin("second", (StubTool("shared/v1", version="2.0.0"),))
         loader = LocalPluginLoader(
             self.registry,
             LocalPluginProvider((first, second), entry_point_group=None),
@@ -154,7 +181,7 @@ class LocalPluginTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(PluginError):
             await loader.load_all()
 
-        self.assertEqual(self.registry.list(), ())
+        self.assertEqual(self.registry.list_providers(), ())
         self.assertEqual(first.shutdown_count, 1)
         self.assertEqual(second.shutdown_count, 1)
         self.assertEqual(loader.loaded_plugins(), ())

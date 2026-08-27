@@ -22,7 +22,7 @@ class CapabilityCatalog(ABC):
 
 
 class RegistryCapabilityCatalog(CapabilityCatalog):
-    """把 CapabilityRegistry 投影成只包含 Descriptor 的只读视图。"""
+    """把 Provider Registry 投影成 capability-only 的 canonical 只读视图。"""
 
     def __init__(self, registry: CapabilityRegistry) -> None:
         if not isinstance(registry, CapabilityRegistry):
@@ -32,8 +32,7 @@ class RegistryCapabilityCatalog(CapabilityCatalog):
     def get(self, capability_id: str) -> CapabilityDescriptor | None:
         if not isinstance(capability_id, str) or not capability_id.strip():
             raise TypeError("capability_id must be a non-empty string")
-        resolved = self._registry.get(capability_id)
-        return resolved.descriptor if resolved is not None else None
+        return self._registry.get_capability_descriptor(capability_id)
 
     def list(self) -> tuple[CapabilityDescriptor, ...]:
-        return tuple(item.descriptor for item in self._registry.list())
+        return self._registry.list_capability_descriptors()
