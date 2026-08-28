@@ -1,8 +1,8 @@
 # harness-spi
 
 `harness-spi` 定义业务插件面向 Harness 实现的扩展点，只依赖
-`harness-contracts`。Stage 2/3A 没有扩大业务插件权限：Agent/Tool 仍只执行单个 Capability，
-Plan、Policy、Registry、重试和恢复全部由 Harness 基础设施协调。
+`harness-contracts`。Stage 2/3A/3B 没有扩大业务插件权限：Agent/Tool 仍只执行单个
+Capability，Route、Plan、Policy、Registry、重试和恢复全部由 Harness 基础设施协调。
 
 ## 公共 API
 

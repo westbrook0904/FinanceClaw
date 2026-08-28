@@ -27,7 +27,7 @@ fail-closed。
 
 ## 内置策略
 
-- `AllowAllPolicy`：同时允许 PRE_PLAN 和 PRE_EXECUTE，默认用于开发与组合测试。
+- `AllowAllPolicy`：显式允许 PRE_ROUTE、PRE_PLAN 和 PRE_EXECUTE，默认用于开发与组合测试。
 - `TenantPolicy`：校验 Request tenant 与 Runtime 注入的可信 TenantContext，支持
   必填和允许列表。
 - `CapabilityPermissionPolicy`：按 Capability ID 或 `*` 规则检查可信 Identity
@@ -58,6 +58,8 @@ PRE_PLAN/PRE_EXECUTE 的同名 constraint 以后出现的值为准。PRE_ROUTE �
 
 - PRE_ROUTE REQUIRE_APPROVAL 返回 `HARNESS.ROUTE.APPROVAL_NOT_SUPPORTED`，不创建无法恢复的
   Request-level waiting 状态。
+- PRE_ROUTE forced mode、allowed mode、Capability scope 和 Planner scope 在
+  RouteDecisionValidator/Coordinator 分派前再次强制；Router 无权放宽 Policy 约束。
 - PRE_PLAN DENY 会在创建执行记录和调用 Provider 前阻止 Plan。
 - Plan 节点的 PRE_EXECUTE REQUIRE_APPROVAL 会转成
   `WAITING(policy_approval)`，由 ExecutionEngine 生成安全的

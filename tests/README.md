@@ -1,8 +1,8 @@
 # tests
 
-测试体系覆盖阶段一 Direct Invocation 兼容性、第二阶段 Reliable Plan Execution Engine
-和 Stage 3A Provider Fabric。模块测试与源码模块同目录；顶层 `tests/stage2` 与
-`tests/stage3a` 分别提供 Reliable Execution 和 Provider Fabric 仓库级阻断验收。
+测试体系覆盖阶段一 Direct Invocation 兼容性、第二阶段 Reliable Plan Execution Engine、
+Stage 3A Provider Fabric 和 Stage 3B Routing & Planning。模块测试与源码模块同目录；顶层
+`tests/stage2`、`tests/stage3a`、`tests/stage3b` 分别提供跨模块仓库级阻断验收。
 
 ## 测试位置
 
@@ -13,8 +13,9 @@
 | Registry | `harness-registry/tests` | 注册、过滤、唯一解析、所有权和只读 Catalog |
 | Selection | `harness-selection/tests` | Eligibility、Health 排序、拒绝原因和稳定 Selection |
 | Local Plugin | `harness-plugin-local/tests` | 发现、生命周期和事务回滚 |
-| Planning | `harness-planning/tests` | DAG、引用、Binding、Condition 与 Capability 可执行性 |
-| Policy | `harness-policy/tests` | PRE_PLAN/PRE_EXECUTE、决策聚合与 Approval |
+| Routing | `harness-routing/tests` | 安全投影、Rule/LLM Router、RouteDecisionValidator 与依赖边界 |
+| Planning | `harness-planning/tests` | DAG 校验、Static/Hybrid/LLM Planner、PlanDraft 与 bounded repair |
+| Policy | `harness-policy/tests` | PRE_ROUTE/PRE_PLAN/PRE_EXECUTE、约束收紧、决策聚合与 Approval |
 | Trace | `harness-trace/tests` | Span 生命周期、层级、续接和 Console 输出 |
 | Runtime | `harness-runtime/tests` | Direct Invocation、Invoker、timeout、取消和错误归一化 |
 | Model | `harness-model/tests` | Quality Selection、timeout、Retry/Fallback、structured output、usage 和 trace |
@@ -25,17 +26,19 @@
 | Plugins | `plugins/tests` | 三个示例插件行为、打包和集成 |
 | Stage 2 acceptance | `tests/stage2` | E2E、fault injection、SQLite restart 与 fail-closed |
 | Stage 3A acceptance | `tests/stage3a` | Multi-provider E2E、WRITE safety、Provider restart、Model Fabric 与旧插件回归 |
+| Stage 3B acceptance | `tests/stage3b` | ExecutionMode、Rule/LLM Route、LLM Plan/Repair、Policy、Lifecycle/Resume 与全阶段兼容性 |
 
 ## 运行完整回归
 
 ```bash
 .venv/bin/python -m pytest \
   harness-contracts/tests harness-spi/tests harness-registry/tests \
-  harness-plugin-local/tests harness-selection/tests harness-planning/tests \
+  harness-plugin-local/tests harness-selection/tests harness-routing/tests \
+  harness-planning/tests \
   harness-policy/tests harness-model/tests \
   harness-trace/tests harness-runtime/tests harness-state/tests \
   harness-events/tests harness-execution/tests harness-bootstrap/tests \
-  plugins/tests tests/stage2 tests/stage3a -v
+  plugins/tests tests/stage2 tests/stage3a tests/stage3b -v
 ```
 
 只运行仓库级第二阶段验收：
@@ -48,6 +51,12 @@
 
 ```bash
 .venv/bin/python -m pytest tests/stage3a -v
+```
+
+只运行仓库级 Stage 3B 验收：
+
+```bash
+.venv/bin/python -m pytest tests/stage3b -v
 ```
 
 测试不依赖真实网络、行情、LLM 或外部数据库；ModelGateway 使用确定性 Mock Providers，

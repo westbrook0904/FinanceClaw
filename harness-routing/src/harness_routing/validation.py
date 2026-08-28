@@ -37,14 +37,6 @@ class RouteDecisionValidator:
                 reason=type(exc).__name__,
             )
 
-        requested_mode = context.requested_mode
-        if requested_mode is not ExecutionMode.AUTO and decision.mode is not requested_mode:
-            self._raise_invalid(
-                "router changed a fixed request mode",
-                requested_mode=requested_mode.value,
-                decision_mode=decision.mode.value,
-            )
-
         constraints = context.constraints
         if constraints.forced_mode is not None and decision.mode is not constraints.forced_mode:
             raise RoutingError(
@@ -60,6 +52,14 @@ class RouteDecisionValidator:
                 "route mode is not allowed by policy",
                 code=ErrorCode.ROUTE_MODE_NOT_ALLOWED,
                 details={"decision_mode": decision.mode.value},
+            )
+
+        requested_mode = context.requested_mode
+        if requested_mode is not ExecutionMode.AUTO and decision.mode is not requested_mode:
+            self._raise_invalid(
+                "router changed a fixed request mode",
+                requested_mode=requested_mode.value,
+                decision_mode=decision.mode.value,
             )
 
         if decision.mode not in _STAGE3B_AVAILABLE_MODES:

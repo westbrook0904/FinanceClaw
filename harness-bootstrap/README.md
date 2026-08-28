@@ -159,4 +159,5 @@ Workflow SPI、Remote Plugin、MCP、分布式调度和 HTTP 执行 API 尚未�
 
 ```bash
 .venv/bin/python -m pytest harness-bootstrap/tests -v
+.venv/bin/python -m pytest tests/stage3b -v
 ```

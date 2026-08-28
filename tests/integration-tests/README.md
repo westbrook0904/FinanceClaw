@@ -1,6 +1,7 @@
 # integration-tests
 
-集成测试覆盖 Direct Invocation、Plan Execution 和 Stage 3A Provider Fabric 三条稳定主链。
+集成测试覆盖 Direct Invocation、Plan Execution、Stage 3A Provider Fabric 和 Stage 3B
+Routing & Planning 四条稳定主链。
 
 Direct Invocation：
 
@@ -36,6 +37,17 @@ Provider checkpoint → SQLite crash/restart → original Provider replay / WRIT
 ModelGateway → ModelProvider structured output / usage / trace
 ```
 
+Routing & Planning：
+
+```text
+Request → handle → PRE_ROUTE → RuleRouter / LLMRouter → RouteDecisionValidator
+  ↓
+FAST → CapabilityInvoker
+PLAN → Static/Hybrid/LLMPlanner → bounded repair → PlanValidator → ExecutionEngine
+  ↓
+WAITING / SQLite Resume（不重新 Route / Plan）
+```
+
 主要测试位置：
 
 - `harness-runtime/tests`：Direct Runtime 和共用 CapabilityInvoker。
@@ -45,9 +57,10 @@ ModelGateway → ModelProvider structured output / usage / trace
 - `plugins/tests`：真实示例插件通过 Bootstrap 的调用。
 - `tests/stage2`：finance-review-plan、故障注入、SQLite 重启和损坏状态 fail-closed。
 - `tests/stage3a`：multi-provider E2E、WRITE safety、Provider restart、Model Fabric 和旧插件回归。
+- `tests/stage3b`：ExecutionMode、Rule/LLM Route、LLM Plan/Repair、Policy、Lifecycle/Resume 和历史兼容性。
 
 ```bash
 .venv/bin/python -m pytest \
   harness-runtime/tests harness-execution/tests harness-bootstrap/tests \
-  plugins/tests tests/stage2 tests/stage3a -v
+  plugins/tests tests/stage2 tests/stage3a tests/stage3b -v
 ```

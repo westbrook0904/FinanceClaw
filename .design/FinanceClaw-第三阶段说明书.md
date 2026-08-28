@@ -2,14 +2,23 @@
 
 > **文档性质**：阶段实施设计 / Architecture Decision Baseline  
 > **阶段名称**：Stage 3 — Adaptive Multi-Provider & Agentic Orchestration  
-> **版本**：V0.9（讨论稿）  
-> **日期**：2026-08-26  
+> **版本**：V1.0（Stage 3A / 3B 实现基线）
+> **日期**：2026-08-28
 > **前置基线**：Stage 1 Minimal Harness + Stage 2 Reliable Plan Execution Engine  
 > **依据文档**：`.design/Harness-Agent_通用可插拔智能体平台架构设计_修订版.md`、`.design/第一阶段.md`、`.design/FinanceClaw-第二阶段说明书.md`
 
 ---
 
 # 0. 阶段结论
+
+当前实施状态：
+
+| Milestone | 状态 | 已落地范围 |
+|---|---|---|
+| Stage 3A — Provider Fabric | 已完成 | Registry 1:N、Selection/Minimal Health、Retry/Fallback、Provider-safe Resume、ModelGateway、Observability |
+| Stage 3B — Routing & Planning | 已完成 | ExecutionMode、handle、Rule/LLM Router、PRE_ROUTE、Static/Hybrid/LLM Planner、bounded repair、Acceptance Gate |
+| Stage 3C — Agentic Exploration | 未实施 | EXPLORE/HYBRID 当前 fail-closed |
+| Stage 3D — Expansion & Replay Eval | 未实施 | 3B 仅保留未来 Eval 所需稳定事实 |
 
 第三阶段的目标不是“加一个会自由调用所有工具的 MainAgent”。
 
@@ -85,11 +94,12 @@ ProviderSelector
 SelectionContext / SelectionDecision
 Health / Eligibility
 Retry vs Fallback
-Provider Pinning
-A/B / Canary
 ModelProvider
 Provider Selection Trace / Events
 ```
+
+Provider Pin 外部入口、Weighted Canary 与 Passive Health 已从 3A 完成门槛移出，留到 3D
+统一扩展。
 
 ## Stage 3B — Routing & Planning
 
@@ -105,8 +115,10 @@ HybridPlanner
 Structured Plan Generation
 Bounded Plan Repair
 PRE_ROUTE Policy
-Route / Plan Eval
+Route / Plan Eval 稳定事实
 ```
+
+离线 Replay、准确率统计与策略对比执行器属于 Stage 3D，不属于已完成的 3B。
 
 ## Stage 3C — Agentic Exploration
 
@@ -291,6 +303,9 @@ HYBRID
 
 高级调用方可以固定模式；普通用户默认 AUTO。
 
+已在 Stage 3B 落地到 `RequestOptions.execution_mode`；`handle(..., mode=...)` 仅为 sugar。
+AUTO/FAST/PLAN 可执行，EXPLORE/HYBRID 在 Stage 3C 前 fail-closed。
+
 ---
 
 ## ADR-P3-007：统一 `handle()`，保留低层 API
@@ -327,7 +342,7 @@ RouteDecision
 
 ---
 
-## ADR-P3-009：LLM Planner 只产出 ExecutionPlan
+## ADR-P3-009：LLM Planner 只产出受控 Plan
 
 LLMPlanner：
 
@@ -336,7 +351,9 @@ Goal + Catalog
       ↓
 ModelProvider
       ↓
-Structured ExecutionPlan
+Structured PlanDraft
+      ↓ Harness assigns plan_id / revision
+ExecutionPlan
       ↓
 PlanValidator
 ```
@@ -888,9 +905,7 @@ streaming
 候选方案：
 
 ```python
-RequestOptions(
-    execution_mode=ExecutionMode.AUTO
-)
+RequestOptions(execution_mode=ExecutionMode.AUTO)
 ```
 
 `handle(request, mode=...)` 可以作为 API sugar，但最终应归一化到 Request / Invocation Context。
@@ -917,15 +932,16 @@ HYBRID
 mode
 route_type
 capability_id?
-planner_id?
 explorer_id?
 confidence?
 reason_code
 ```
 
+Planner ID 不属于模型/Router 决策字段；由服务端配置与 PRE_ROUTE Policy 约束选择。
+
 ## 14.2 RuleRouter
 
-第一步先做 deterministic Router，建立 contract test。
+已实现 deterministic-first：显式模式、target、input-type rule，最后才进入可选 fallback。
 
 ## 14.3 LLMRouter
 
@@ -939,6 +955,9 @@ LLMRouter 只能：
 ```
 
 不得执行任何业务 Capability。
+
+Stage 3B 已实现结构化 JSON 输出、独立 RouteDecisionValidator、ModelGateway Retry/Fallback
+复用和安全 Request/Catalog 投影。
 
 ---
 
@@ -957,7 +976,8 @@ Budget
 ## 15.2 输出
 
 ```text
-ExecutionPlan
+Model output: PlanDraft
+Planner output: validated ExecutionPlan with Harness-owned identity
 ```
 
 ## 15.3 可靠生成
@@ -997,8 +1017,7 @@ Validator failed
 建议：
 
 ```python
-async def handle(self, request: Request) -> ResultEnvelope:
-    ...
+async def handle(self, request: Request) -> ResultEnvelope: ...
 ```
 
 流程：
@@ -1016,6 +1035,9 @@ FAST / PLAN / EXPLORE / HYBRID
 ```
 
 Direct Invocation 与 execute_plan API 继续稳定存在。
+
+Stage 3B 中只有 AUTO/FAST/PLAN 实际分派；EXPLORE/HYBRID 由 Validator 返回
+`HARNESS.ROUTE.MODE_NOT_AVAILABLE`，不得静默降级为 PLAN。
 
 ---
 
@@ -1210,10 +1232,15 @@ InMemoryMemoryProvider
 
 # 23. Policy
 
-Stage 3 新增建议：
+Stage 3B 已新增：
 
 ```text
 PRE_ROUTE
+```
+
+Stage 3C 预留：
+
+```text
 PRE_PATCH
 ```
 
@@ -1236,6 +1263,9 @@ Policy 可以：
 要求 Approval
 ```
 
+3B 的 PRE_ROUTE 只接受 forced/allowed mode、Capability/Planner scope、Plan attempts/nodes
+上限；REQUIRE_APPROVAL 不创建 Request-level waiting，而是 fail-closed。
+
 ---
 
 # 24. Trace / Events
@@ -1246,6 +1276,7 @@ Policy 可以：
 
 ```text
 ROUTE
+PLANNER
 PROVIDER_SELECT
 EXPLORATION
 MODEL
@@ -1261,6 +1292,7 @@ CONNECTOR
 ```text
 route.decided
 mode.selected
+route.failed
 
 provider.candidates
 provider.selected
@@ -1625,11 +1657,11 @@ WRITE fallback 禁止绕过幂等
 
 ---
 
-# 32. 需要讨论 / 最终拍板的 ADR
+# 32. ADR 决议状态
 
-以下内容建议在开始编码前确认。
+Stage 3A / 3B 编码前的决议已经冻结；Stage 3C/3D 项继续按状态说明推进。
 
-## OPEN-1：ExecutionMode 放在哪里？
+## RESOLVED-1：ExecutionMode 放在哪里？
 
 ### 方案 A（推荐）
 
@@ -1651,11 +1683,11 @@ RequestOptions.execution_mode
 
 问题：Event/Remote 调用时语义不稳定。
 
-**当前文档按方案 A 设计。**
+**Stage 3B 已按方案 A 实现。**
 
 ---
 
-## OPEN-2：ReAct 是 Harness-owned 还是 AgentPlugin-owned？
+## RESOLVED-2：ReAct 是 Harness-owned 还是 AgentPlugin-owned？
 
 ### 方案 A（推荐 Stage 3）
 
@@ -1679,11 +1711,11 @@ Harness ExplorationEngine
 
 代价：SPI、生命周期、checkpoint 和安全边界复杂很多。
 
-**当前文档 Stage 3 采用 A，把 B 留作后续演进。**
+**Stage 3C 已冻结采用 A，尚未开始实现；方案 B 留作后续演进。**
 
 ---
 
-## OPEN-3：WorkflowSPI 是否进入 Stage 3？
+## RESOLVED-3：WorkflowSPI 是否进入 Stage 3？
 
 当前建议：
 
@@ -1696,6 +1728,8 @@ Harness ExplorationEngine
 - StaticPlanner + ExecutionPlan 已经能表达固定 Workflow；
 - 当前更缺 Provider / Router / Planner / Explore；
 - Workflow-as-Capability 可在 Stage 4 单独设计版本化和 Nested Workflow。
+
+**Stage 3B 已采用 StaticPlanner / HybridPlanner + ExecutionPlan，不引入 WorkflowSPI。**
 
 ---
 
@@ -1718,7 +1752,7 @@ GenerateRequest、structured output、usage、finish reason 和模型参数等�
 
 ---
 
-## OPEN-5：WRITE Provider Fallback 的等价判定
+## RESOLVED-5：WRITE Provider Fallback 的等价判定
 
 推荐必须引入：
 
@@ -1734,7 +1768,8 @@ stable idempotency key
 WRITE 不自动跨 Provider fallback
 ```
 
-这个规则建议在 Stage 3A 编码前冻结。
+Stage 3A 已按此规则实现：缺少稳定 idempotency key 或相同非空 equivalence group 时
+fail-closed。
 
 ---
 

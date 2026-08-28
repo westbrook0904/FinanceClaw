@@ -447,6 +447,21 @@ class RouteDecisionValidatorTests(unittest.TestCase):
                     RouteDecisionValidator().validate(decision, context)
                 self.assertEqual(raised.exception.code, expected_code)
 
+        forced_context = make_context(
+            mode=ExecutionMode.PLAN,
+            constraints=RoutePolicyConstraints(forced_mode=ExecutionMode.PLAN),
+        )
+        violating_forced_mode = RouteDecision(
+            mode=ExecutionMode.FAST,
+            route_type=RouteType.DIRECT_CAPABILITY,
+            source=RouteSource.RULE,
+            capability_id="echo.reply/v1",
+            reason_code="VIOLATES_POLICY",
+        )
+        with self.assertRaises(RoutingError) as forced_error:
+            RouteDecisionValidator().validate(violating_forced_mode, forced_context)
+        self.assertEqual(forced_error.exception.code, ErrorCode.ROUTE_MODE_NOT_ALLOWED)
+
 
 class RoutingDependencyBoundaryTests(unittest.TestCase):
     def test_routing_foundation_has_no_execution_or_provider_instance_dependency(self) -> None:

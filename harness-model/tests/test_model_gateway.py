@@ -137,6 +137,19 @@ class ModelGatewayTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(model_spans[0].status, SpanStatus.ERROR)
         self.assertEqual(model_spans[0].error.code, "HARNESS.TIMEOUT")
 
+    async def test_model_failure_trace_does_not_copy_raw_provider_message(self) -> None:
+        quality = MockQualityModel(failures_before_success=1)
+        register(self.registry, quality, QUALITY_PROVIDER_ID, priority=100)
+
+        result = await self.gateway().generate(make_request(), make_context())
+
+        self.assertEqual(result.status, GenerateStatus.FAILED)
+        model_span = next(span for span in self.tracer.spans() if span.type is SpanType.MODEL)
+        self.assertEqual(model_span.status, SpanStatus.ERROR)
+        self.assertEqual(model_span.error.code, "HARNESS.MODEL.MOCK_FAILURE")
+        self.assertEqual(model_span.error.message, "model generation failed")
+        self.assertNotIn("temporarily unavailable", model_span.model_dump_json())
+
     async def test_quality_timeout_can_fall_back_to_backup_model(self) -> None:
         quality = MockQualityModel(delay_ms=50)
         backup = MockBackupModel()

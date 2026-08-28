@@ -1,10 +1,10 @@
 # FinanceClaw
 
-FinanceClaw 第二阶段（Reliable Plan Execution Engine）已经完成，Stage 3A Provider
-Fabric 已实现多 Provider Registry、Health-aware Selection、Retry/Fallback、Provider-safe
-Checkpoint/Resume、Provider Observability，以及独立的 ModelProvider/ModelGateway。当前
-仓库已接入 Stage 3B 统一 `handle()` FAST / PLAN 路径，同时保留阶段一 Direct Invocation
-API，并可可靠执行调用方或 Planner 提供的结构化 `ExecutionPlan`。
+FinanceClaw 第二阶段（Reliable Plan Execution Engine）、Stage 3A Provider Fabric 与
+Stage 3B Routing & Planning 已完成。当前仓库具备多 Provider Registry、Health-aware
+Selection、Retry/Fallback、Provider-safe Checkpoint/Resume、ModelGateway，以及统一的
+`handle()` AUTO / FAST / PLAN 路径；阶段一 Direct Invocation API 和阶段二低层 Plan API
+继续保持兼容。
 
 财经能力仍然只是插件；Harness Core 不包含财经类型、Prompt、SQL、行情访问或其他具体
 业务实现。
@@ -78,12 +78,13 @@ GenerateResult + Usage + Provider Identity + Trace / Events
 | `harness-model` | 模型原生协议、ModelProvider SPI、ModelGateway 与确定性 Mock Models |
 | `harness-execution` | DAG 调度、重试、取消、Checkpoint/Resume、Approval、Async completion 和结果组合 |
 | `harness-state` | `StateStore` SPI、内存快照与 SQLite JSON Snapshot 持久化 |
-| `harness-trace` | Request/Plan/Node/Capability Span 与状态事件 |
+| `harness-trace` | Request/Route/Planner/Model/Plan/Node/Provider Span 与瞬时事件 |
 | `harness-events` | 最小进程内执行事件协议、发布/订阅和内存事件总线 |
 | `harness-bootstrap` | 默认依赖组装、应用 API 与插件生命周期 |
 | `plugins/*` | Echo Agent、Calculator Tool 和模拟财经 Agent |
 | `tests/stage2` | 第二阶段端到端、故障注入与跨进程恢复验收 |
 | `tests/stage3a` | Provider Fabric、WRITE safety、Provider Resume 与 ModelGateway 阻断验收 |
+| `tests/stage3b` | ExecutionMode、Rule/LLM Route、LLM Plan/Repair、Policy、Lifecycle 与回归 Gate |
 
 ## Direct Invocation
 
@@ -151,7 +152,7 @@ async with build_harness() as app:
 
 ## 测试
 
-完整 Stage 1 / 2 / 3A 回归（模块测试、插件测试和仓库级验收）：
+完整 Stage 1 / 2 / 3A / 3B 回归（模块测试、插件测试和仓库级验收）：
 
 ```bash
 .venv/bin/python -m pytest \
@@ -161,7 +162,7 @@ async with build_harness() as app:
   harness-policy/tests harness-model/tests \
   harness-trace/tests harness-runtime/tests harness-state/tests \
   harness-events/tests harness-execution/tests harness-bootstrap/tests \
-  plugins/tests tests/stage2 tests/stage3a -v
+  plugins/tests tests/stage2 tests/stage3a tests/stage3b -v
 ```
 
 只运行第二阶段仓库级验收：
@@ -174,6 +175,12 @@ async with build_harness() as app:
 
 ```bash
 .venv/bin/python -m pytest tests/stage3a -v
+```
+
+只运行 Stage 3B Routing & Planning 验收：
+
+```bash
+.venv/bin/python -m pytest tests/stage3b -v
 ```
 
 ## 架构红线与当前边界
@@ -191,6 +198,8 @@ async with build_harness() as app:
   PlanDraft、执行 bounded repair，再由 Planner 与 ExecutionEngine 双重验证后执行。
   WAITING / crash resume 复用持久化 Plan，不重新路由或规划。动态 Plan Patch、远程插件、
   MCP、分布式 Scheduler/锁和外部 Event Broker 尚未实现。
+- `EXPLORE` / `HYBRID` 已冻结为协议值，但在 Stage 3B 明确 fail-closed；实际探索执行属于
+  Stage 3C。完整 Route/Plan Replay Eval 属于 Stage 3D。
 - Route / Planner 已接入同一 handle trace：ROUTE 包含安全的 RequestSummary/Catalog hash，
   PLANNER 记录 attempt 与验证摘要，repair 使用瞬时 Event 表示；观察面不保存完整输入、Prompt、
-  模型响应或隐藏推理。
+  模型响应、Provider 原始错误消息或隐藏推理。

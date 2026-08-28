@@ -31,7 +31,7 @@ from harness_events import (
 from harness_registry import CapabilityRegistry, ProviderRegistration
 from harness_runtime import InvocationLifecycle, ProviderExecutionCoordinator, SelectedProvider
 from harness_selection import PrioritySelector, ProviderSelector
-from harness_trace import Span, SpanType, Tracer
+from harness_trace import Span, SpanType, TraceError, Tracer
 
 from .contracts import (
     GenerateRequest,
@@ -395,7 +395,7 @@ class ModelGateway:
             self._lifecycle.finish_cancelled(model_span)
             raise
         except HarnessError as exc:
-            self._lifecycle.finish_error(model_span, exc)
+            self._lifecycle.finish_error(model_span, _safe_model_trace_error(exc))
             raise
         except Exception as exc:
             wrapped = ProviderError(
@@ -409,10 +409,14 @@ class ModelGateway:
                 retryable=True,
                 fallbackable=True,
             )
-            self._lifecycle.finish_error(model_span, wrapped)
+            self._lifecycle.finish_error(model_span, _safe_model_trace_error(wrapped))
             raise wrapped from exc
 
-        self._lifecycle.finish_from_result(model_span, envelope)
+        self._lifecycle.finish_from_result(
+            model_span,
+            envelope,
+            error=(_safe_model_trace_error(envelope.error) if envelope.error is not None else None),
+        )
         return envelope
 
     async def _call_model(
@@ -620,6 +624,24 @@ class ModelGateway:
             raise TypeError("deadline_at must be timezone-aware when provided")
         if parent is not None and not isinstance(parent, Span | TraceContext):
             raise TypeError("parent must be Span, TraceContext, or None")
+
+
+def _safe_model_trace_error(error: object) -> TraceError:
+    """MODEL Span 只保留稳定错误码，不复制 Provider/模型返回的原始消息。"""
+
+    raw_code = getattr(error, "code", None)
+    code = (
+        raw_code
+        if isinstance(raw_code, str)
+        and 0 < len(raw_code) <= 160
+        and all(character.isalnum() or character in "._:/-" for character in raw_code)
+        else "UNSAFE_ERROR_CODE_REDACTED"
+    )
+    return TraceError(
+        type="ModelError",
+        message="model generation failed",
+        code=code,
+    )
 
 
 @dataclass(slots=True)

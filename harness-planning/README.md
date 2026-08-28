@@ -93,4 +93,6 @@ WAITING / resume 使用 ExecutionEngine 已持久化的 Plan，不重新调用 P
 
 ```bash
 .venv/bin/python -m pytest harness-planning/tests -v
+.venv/bin/python -m pytest tests/stage3b/test_llm_planning.py \
+  tests/stage3b/test_handle_lifecycle.py -v
 ```

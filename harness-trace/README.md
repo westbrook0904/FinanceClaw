@@ -82,7 +82,8 @@ Prompt、模型响应、credential 与隐藏推理不会进入 Trace；repair �
 - RUNNING Span 不能有结束时间或错误。
 - ERROR Span 必须携带错误；OK/CANCELLED Span 不能携带错误。
 - 已结束 Span 不能再次结束、添加 Event 或创建子 Span。
-- `HarnessError` 会归一化为包含类型、消息和错误码的 `TraceError`。
+- `HarnessError` 会归一化为包含类型、摘要和错误码的 `TraceError`；MODEL Span 使用固定错误
+  摘要，禁止复制 Provider/模型返回的原始错误消息。
 - 并行 Plan Node 共享 Plan/Scheduler 上下文，但各自保留独立 PLAN_NODE 子树。
 
 ## Trace 与 Execution Events

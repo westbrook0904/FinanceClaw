@@ -12,11 +12,13 @@
 - 三个插件通过 Bootstrap 与 Direct Runtime 的完整调用；
 - 示例 Capability 参与第二阶段 finance-review-plan 的并行、Join、Approval 和 Resume。
 - 旧 Plugin 在 Stage 3A 下自动获得稳定 Provider ID，加载/卸载按 Provider 精确执行。
+- Stage 3B `handle()` 的 FAST/PLAN 路径继续只通过 CapabilityInvoker 调用插件；Router 和
+  Planner 不获得 Plugin/Provider instance。
 
 插件测试同时守住依赖边界：业务插件不实现 Scheduler、Policy、Trace、StateStore 或
 恢复逻辑。
 
 ```bash
 .venv/bin/python -m pytest \
-  plugins/tests harness-plugin-local/tests tests/stage2 tests/stage3a -v
+  plugins/tests harness-plugin-local/tests tests/stage2 tests/stage3a tests/stage3b -v
 ```

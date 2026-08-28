@@ -13,6 +13,8 @@ SelectionDecision
 ```
 
 本模块不执行 Provider，也不修改 Registry、StateStore 或 ExecutionPlan。
+Stage 3B 的 LLMRouter/LLMPlanner 通过 ModelGateway 间接复用同一选择管线，Router/Planner
+自身看不到 Provider 候选或选择器。
 
 ## 当前范围
 

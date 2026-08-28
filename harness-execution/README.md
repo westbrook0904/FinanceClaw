@@ -145,4 +145,5 @@ DAG Agent/Tool Node 直接执行。
 
 ```bash
 .venv/bin/python -m pytest harness-execution/tests -v
+.venv/bin/python -m pytest tests/stage3b/test_handle_lifecycle.py -v
 ```

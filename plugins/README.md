@@ -30,11 +30,13 @@ app = build_harness(
 )
 ```
 
-## Stage 2 / 3A 用途
+## Stage 2 / 3A / 3B 用途
 
 - Direct Invocation 回归确保阶段一 API 不被破坏。
 - Stage 3A Loader 为旧插件生成稳定 Provider ID；示例插件无需修改即可进入多 Provider
   Registry，并由 Acceptance Gate 验证兼容性。
+- Stage 3B FAST/PLAN 统一入口仍通过 CapabilityInvoker 执行这些能力；Router/Planner 只看
+  Capability Descriptor，不接触插件或 Provider instance。
 - `finance-review-plan` 验收组合 Mock Finance Agent、Calculator Tool、Approval 和
   Echo Agent，验证并行、Join、重启和 Resume。
 - Descriptor 的 `execution_profile` 使用安全默认值

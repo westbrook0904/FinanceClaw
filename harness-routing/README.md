@@ -65,4 +65,6 @@ ModelGateway。RoutingContext 只接收
 
 ```bash
 .venv/bin/python -m pytest harness-routing/tests -v
+.venv/bin/python -m pytest tests/stage3b/test_rule_routing.py \
+  tests/stage3b/test_llm_routing.py tests/stage3b/test_policy.py -v
 ```

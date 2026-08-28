@@ -1,7 +1,7 @@
 # harness-registry
 
 `harness-registry` 维护 Capability 与 Provider 的 1:N 注册关系，为 Runtime/ModelGateway
-提供候选集，并向 Planning 层提供不暴露 Provider 的只读 Capability Catalog。
+提供候选集，并向 Routing/Planning 层提供不暴露 Provider 的只读 Capability Catalog。
 
 ## 公共 API
 
@@ -39,7 +39,7 @@ profile，priority、region、tags、tenant visibility 等部署属性属于 Pro
 - 所有共享 Map 读写由 `RLock` 保护。
 
 `RegistryCapabilityCatalog` 的 `get/list` 只返回
-`CapabilityDescriptor`，PlanValidator 或未来 Planner 无法由此取得 Provider instance。
+`CapabilityDescriptor`，Router、Planner 和 PlanValidator 无法由此取得 Provider instance。
 
 ## 依赖边界与当前范围
 

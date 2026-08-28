@@ -1,7 +1,8 @@
 # harness-model
 
-`harness-model` 是 Stage 3A 的模型 Provider 边界。Router、Planner 和 Explorer 只依赖
-`ModelGateway` 与模型原生协议，不直接依赖厂商 SDK，也不把模型请求伪装成 Agent/Tool。
+`harness-model` 是 Stage 3A 建立、并由 Stage 3B Router/Planner 使用的模型 Provider 边界。
+LLMRouter、LLMPlanner 和未来 Explorer 只依赖 `ModelGateway` 与模型原生协议，不直接依赖
+厂商 SDK，也不把模型请求伪装成 Agent/Tool。
 
 ## 调用边界
 
@@ -75,13 +76,17 @@ result = await app.model_gateway.generate(
 `fallbackable` 语义切换 Backup；`deadline_at` 和 `InvocationContext.deadline_at` 是整个
 生成流程共享的绝对截止时间，不会因 Retry/Fallback 重置。
 
+MODEL Span 保留稳定错误码和固定错误摘要，不复制 Provider 返回的原始错误消息、模型响应
+或 Prompt；完整结构化错误仍只通过受控的 `GenerateResult` 返回给调用边界。
+
 ## 当前范围
 
 第一版支持非流式 `generate`、JSON structured output 顶层形状/required 校验、usage、
 timeout/cancellation、fallback、provider identity、Provider Events 和 `MODEL` Span。
 
-Streaming、vision、embedding、rerank、厂商 SDK adapter、完整 JSON Schema validator、
-Router/Planner 和 token/cost budget enforcement 暂缓。
+Stage 3B 的 LLMRouter/LLMPlanner 已通过 ModelGateway 接入；ExplorationEngine 仍属于 Stage
+3C。Streaming、vision、embedding、rerank、厂商 SDK adapter、完整 JSON Schema validator
+和 token/cost budget enforcement 暂缓。
 
 ## 测试
 

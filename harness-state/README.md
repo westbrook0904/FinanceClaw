@@ -45,6 +45,10 @@ Provider identity、selection key、二维 attempt、equivalence group、history
 Node State 原子保存。Resume、Approval 决策和 Async completion 都先更新 StateStore，
 再从相同恢复状态机继续 DAG。
 
+Stage 3B 的 RouteDecision、RequestSummary 和 PlanningAttempt 不进入
+`PlanExecutionRecord`。首次合法 Plan 创建 checkpoint 后，WAITING/crash Resume 直接复用
+已保存的 Plan 和 InvocationContext，不重新 Router 或 Planner。
+
 默认 `build_harness()` 使用 `InMemoryStateStore`，不会创建数据库文件；跨进程恢复
 必须显式注入文件型 `SQLiteStateStore`。
 

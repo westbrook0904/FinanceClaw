@@ -1,13 +1,14 @@
 # FinanceClaw Stage 3B 实施说明书
 
 > **阶段名称**：Stage 3B — Routing & Planning
-> **文档定位**：第三阶段 3B 实施讨论稿 / 编码执行基线
-> **版本**：V0.1（待讨论冻结）
-> **日期**：2026-08-27
+> **文档定位**：第三阶段 3B 已实施编码基线
+> **版本**：V1.0（实现完成）
+> **日期**：2026-08-28
 > **前置基线**：Stage 1 Minimal Harness + Stage 2 Reliable Plan Execution Engine + Stage 3A Provider Fabric
 > **上位设计**：`.design/FinanceClaw-第三阶段说明书.md`
 > **核心目标**：在不把执行权交给 Router 或模型的前提下，为 FinanceClaw 增加统一 `handle()` 入口、请求级 ExecutionMode、确定性与模型 Router、结构化 LLM Planner、有限 Plan Repair，并将合法计划继续交给 Stage 2 ExecutionEngine 执行。
 > **范围结论**：Stage 3B 实际开放 `AUTO / FAST / PLAN`；`EXPLORE / HYBRID` 只冻结协议并 fail-closed，执行能力留给 Stage 3C。Route / Plan Replay Eval 留给 Stage 3D。
+> **实施状态**：Step 1—11 已完成；Stage 1 / 2 / 3A / 3B 统一回归 Gate 已建立并通过。
 
 ---
 
@@ -757,7 +758,11 @@ HARNESS.PLANNER.MODEL_FAILED
 
 ```python
 class RoutingError(HarnessError): ...
+
+
 class PlanningError(HarnessError): ...
+
+
 class PlannerNotApplicableError(PlanningError): ...
 ```
 
@@ -1718,6 +1723,34 @@ Stage 3A provider fallback / model gateway regression
 - Router / Planner 零裸 Provider 调用。
 - 非法 Route / Plan 下业务 Capability 调用次数为零。
 
+### 实施结果（2026-08-28）
+
+已新增：
+
+```text
+tests/stage3b/
+├── README.md
+├── support.py
+├── test_execution_mode.py
+├── test_rule_routing.py
+├── test_llm_routing.py
+├── test_llm_planning.py
+├── test_handle_lifecycle.py
+├── test_policy.py
+└── test_regression_gate.py
+```
+
+验收覆盖本文全部必测场景，并额外锁定：
+
+- Policy forced mode 的错误码优先级；
+- MODEL Span 不复制 Provider/模型原始失败消息；
+- repair exhausted 时 StateStore create/save 与业务 Capability 调用均为零；
+- SQLite WAITING 跨 Application 恢复不重新调用 LLMRouter/LLMPlanner；
+- Router/Planner 源码不依赖 ExecutionEngine、CapabilityInvoker、StateStore 或 Provider SPI。
+
+最终全模块回归结果：`385 passed, 103 subtests passed`。唯一 warning 是 Stage 2 既有
+`TestPlugin` pytest collection 提示，不影响执行结果。
+
 ---
 
 # 9. 关键运行语义
@@ -2127,11 +2160,11 @@ LLMPlanner.calls == 0
 
 ---
 
-# 14. 需要共同确认的讨论项
+# 14. 已确认并落地的决议
 
-## DISCUSS-3B-1：3B 支持模式范围
+## RESOLVED-3B-1：3B 支持模式范围
 
-本文建议：
+已实现：
 
 ```text
 AUTO / FAST / PLAN = available
@@ -2140,9 +2173,9 @@ EXPLORE / HYBRID   = contract only + fail-closed
 
 这是与当前代码成熟度最一致的拆分，也避免把 3C 的 checkpoint / scope / recursion 问题提前混入 3B。
 
-## DISCUSS-3B-2：PRE_ROUTE Approval
+## RESOLVED-3B-2：PRE_ROUTE Approval
 
-本文建议第一版 fail-closed，不新增 Request-level waiting state。
+已采用 fail-closed，不新增 Request-level waiting state。
 
 如果业务确认路由前必须人工审批，则需要扩大 3B 范围，新增：
 
@@ -2155,9 +2188,9 @@ approval continuation
 
 这会显著增加 3B 复杂度，不建议现在引入。
 
-## DISCUSS-3B-3：默认 Router / Planner
+## RESOLVED-3B-3：默认 Router / Planner
 
-本文建议：
+已实现：
 
 ```text
 default Router = RuleRouter without model fallback
@@ -2173,9 +2206,9 @@ default Planner = none
 
 另一方案是默认构造指向 `model.generate/v1` 的 LLMPlanner，但这会让基础 Harness 在没有模型 Provider 时隐式失败。本文不推荐。
 
-## DISCUSS-3B-4：LLM Route 是否 repair
+## RESOLVED-3B-4：LLM Route 是否 repair
 
-本文建议：
+已实现：
 
 ```text
 3B 不做 Route repair
@@ -2184,9 +2217,9 @@ Plan 做 bounded repair
 
 RouteDecision 很小，非法输出直接 fail-closed 更容易观察；未来可根据真实失败率决定是否增加一次 route repair。
 
-## DISCUSS-3B-5：规划中间态是否 checkpoint
+## RESOLVED-3B-5：规划中间态是否 checkpoint
 
-本文建议 3B 不 checkpoint planning attempt。
+已实现为 3B 不 checkpoint planning attempt。
 
 原因：
 
