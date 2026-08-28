@@ -39,9 +39,7 @@ class PolicyEngine:
         if not isinstance(context, PolicyContext):
             raise TypeError("context must be PolicyContext")
 
-        applicable = tuple(
-            policy for policy in self._policies if context.phase in policy.phases
-        )
+        applicable = tuple(policy for policy in self._policies if context.phase in policy.phases)
         if not applicable:
             return self._default_decision(context)
 
@@ -64,10 +62,7 @@ class PolicyEngine:
                     reason=decision.reason or "policy denied invocation",
                     constraints=constraints,
                 )
-            if (
-                decision.effect is PolicyEffect.REQUIRE_APPROVAL
-                and approval is None
-            ):
+            if decision.effect is PolicyEffect.REQUIRE_APPROVAL and approval is None:
                 approval = decision
 
         if approval is not None:

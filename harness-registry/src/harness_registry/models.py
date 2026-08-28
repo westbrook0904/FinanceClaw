@@ -6,8 +6,6 @@ from dataclasses import dataclass
 from typing import Annotated
 from urllib.parse import quote
 
-from pydantic import Field
-
 from harness_contracts import (
     CapabilityDescriptor,
     CapabilityType,
@@ -15,7 +13,7 @@ from harness_contracts import (
     ProviderDescriptor,
 )
 from harness_spi import Capability
-
+from pydantic import Field
 
 NonEmptyString = Annotated[str, Field(min_length=1)]
 

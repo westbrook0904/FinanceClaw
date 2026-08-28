@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-from pydantic import Field, field_validator
-
 from harness_contracts import CapabilityDescriptor, ContractModel, RequestInput
 from harness_contracts.base import FrozenJsonMapping, NonEmptyString
+from pydantic import Field, field_validator
 
 
 class AgentRequest(ContractModel):

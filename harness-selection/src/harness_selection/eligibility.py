@@ -7,8 +7,6 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Annotated, Self
 
-from pydantic import Field, model_validator
-
 from harness_contracts import (
     ContractModel,
     ErrorCode,
@@ -20,9 +18,9 @@ from harness_contracts import (
     SelectionRejection,
 )
 from harness_registry import ProviderRegistration
+from pydantic import Field, model_validator
 
 from .health import HealthSource, StaticHealthSource
-
 
 NonEmptyString = Annotated[str, Field(min_length=1)]
 
@@ -207,10 +205,7 @@ class EligibilityPipeline:
             )
 
         if descriptor.tenant_visibility:
-            if (
-                context.tenant_id is None
-                or context.tenant_id not in descriptor.tenant_visibility
-            ):
+            if context.tenant_id is None or context.tenant_id not in descriptor.tenant_visibility:
                 return SelectionRejection(
                     provider_id=registration.provider_id,
                     reason_code=EligibilityRejectionCode.TENANT_NOT_ALLOWED,

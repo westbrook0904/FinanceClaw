@@ -18,7 +18,6 @@ from harness_contracts import (
 
 from .scheduler import BasicScheduler
 
-
 _TERMINAL_RESULT_STATUSES = {
     ResultStatus.SUCCESS,
     ResultStatus.PARTIAL,
@@ -304,9 +303,7 @@ class AsyncWaitingCoordinator:
         if node_id is None:
             # Provider 原始 continuation 可能没有 node_id；按 job_ref 找对应 WAITING。
             candidates = [
-                item
-                for item in state.pending_jobs
-                if item.job_ref == result.continuation.job_ref
+                item for item in state.pending_jobs if item.job_ref == result.continuation.job_ref
             ]
             if not candidates:
                 return result

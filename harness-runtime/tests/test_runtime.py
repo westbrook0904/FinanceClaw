@@ -311,9 +311,7 @@ class RuntimeTests(unittest.IsolatedAsyncioTestCase):
             [span.type for span in tracer.spans()],
             [SpanType.REQUEST, SpanType.RUNTIME],
         )
-        self.assertTrue(
-            all(span.status is SpanStatus.ERROR for span in tracer.spans())
-        )
+        self.assertTrue(all(span.status is SpanStatus.ERROR for span in tracer.spans()))
 
     async def test_agent_success_runs_full_phase_one_pipeline(self) -> None:
         agent = RecordingAgent()
@@ -360,9 +358,7 @@ class RuntimeTests(unittest.IsolatedAsyncioTestCase):
         tool = RecordingTool()
         runtime, _, _ = make_runtime(tool)
 
-        result = await runtime.invoke(
-            make_request("math.add/v1", content={"left": 1, "right": 2})
-        )
+        result = await runtime.invoke(make_request("math.add/v1", content={"left": 1, "right": 2}))
 
         self.assertEqual(result.status, ResultStatus.SUCCESS)
         self.assertEqual(
@@ -386,12 +382,8 @@ class RuntimeTests(unittest.IsolatedAsyncioTestCase):
         agent = RecordingAgent()
         runtime, _, _ = make_runtime(agent, plugin_id="echo-plugin")
 
-        allowed = await runtime.invoke(
-            make_request("echo.reply/v1", plugin="echo-plugin")
-        )
-        missing = await runtime.invoke(
-            make_request("echo.reply/v1", plugin="another-plugin")
-        )
+        allowed = await runtime.invoke(make_request("echo.reply/v1", plugin="echo-plugin"))
+        missing = await runtime.invoke(make_request("echo.reply/v1", plugin="another-plugin"))
 
         self.assertEqual(allowed.status, ResultStatus.SUCCESS)
         self.assertEqual(missing.status, ResultStatus.FAILED)
@@ -455,9 +447,7 @@ class RuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(agent_span.status, SpanStatus.ERROR)
 
     async def test_provider_failed_result_marks_execution_spans_error(self) -> None:
-        failure = ResultEnvelope.failure(
-            HarnessTimeoutError("upstream timed out").to_detail()
-        )
+        failure = ResultEnvelope.failure(HarnessTimeoutError("upstream timed out").to_detail())
         agent = RecordingAgent(result=failure)
         runtime, _, tracer = make_runtime(agent)
 
@@ -534,9 +524,7 @@ class RuntimeTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result.status, ResultStatus.FAILED)
         self.assertEqual(result.error.code, "HARNESS.CAPABILITY.TYPE_MISMATCH")
-        capability = next(
-            span for span in tracer.spans() if span.type is SpanType.CAPABILITY
-        )
+        capability = next(span for span in tracer.spans() if span.type is SpanType.CAPABILITY)
         self.assertEqual(capability.status, SpanStatus.ERROR)
         self.assertFalse(any(span.type is SpanType.TOOL for span in tracer.spans()))
 

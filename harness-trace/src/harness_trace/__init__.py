@@ -5,7 +5,7 @@ Runtime 只依赖本包的 ``Tracer`` SPI，不直接依赖 OpenTelemetry 或其
 
 from .console import ConsoleTracer
 from .models import Span, SpanStatus, SpanType, TraceError, TraceEvent
-from .tracer import InMemoryTracer, TraceStateError, Tracer
+from .tracer import InMemoryTracer, Tracer, TraceStateError
 
 __all__ = [
     "ConsoleTracer",

@@ -155,7 +155,6 @@ class RegistryTests(unittest.TestCase):
         )
         self.assertEqual(len(self.registry.candidates("mail.send/v1")), 1)
 
-
     def test_legacy_unregister_still_checks_plugin_ownership(self) -> None:
         self.registry.register(self.add, plugin_id="calculator")
 

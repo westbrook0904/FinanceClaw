@@ -257,9 +257,7 @@ class InMemoryCapabilityRegistry(CapabilityRegistry):
                     details={
                         "capability_id": capability_id,
                         "expected_plugin_id": plugin_id,
-                        "actual_plugin_ids": sorted(
-                            {item.plugin_id for item in all_candidates}
-                        ),
+                        "actual_plugin_ids": sorted({item.plugin_id for item in all_candidates}),
                     },
                 )
             raise RegistryError(
@@ -334,9 +332,7 @@ class InMemoryCapabilityRegistry(CapabilityRegistry):
     ) -> tuple[ProviderRegistration, ...]:
         if not isinstance(capability_id, str) or not capability_id.strip():
             raise TypeError("capability_id must be a non-empty string")
-        if plugin_id is not None and (
-            not isinstance(plugin_id, str) or not plugin_id.strip()
-        ):
+        if plugin_id is not None and (not isinstance(plugin_id, str) or not plugin_id.strip()):
             raise TypeError("plugin_id must be a non-empty string when provided")
 
         with self._lock:
@@ -357,10 +353,7 @@ class InMemoryCapabilityRegistry(CapabilityRegistry):
         )
         ordered = tuple(sorted(matches, key=_provider_sort_key))
         with self._lock:
-            return tuple(
-                self._legacy_resolved_by_provider_id[item.provider_id]
-                for item in ordered
-            )
+            return tuple(self._legacy_resolved_by_provider_id[item.provider_id] for item in ordered)
 
     def list_providers(
         self,
@@ -439,10 +432,7 @@ def _matches_capability_query(
         (query.id is None or descriptor.id == query.id)
         and (query.type is None or descriptor.type is query.type)
         and (query.version is None or descriptor.version == query.version)
-        and (
-            query.plugin_id is None
-            or registration.descriptor.plugin_id == query.plugin_id
-        )
+        and (query.plugin_id is None or registration.descriptor.plugin_id == query.plugin_id)
         and query.tags.issubset(descriptor.tags)
     )
 
@@ -457,14 +447,8 @@ def _matches_provider(
         (query.provider_id is None or descriptor.provider_id == query.provider_id)
         and (query.capability_id is None or capability.id == query.capability_id)
         and (query.plugin_id is None or descriptor.plugin_id == query.plugin_id)
-        and (
-            query.capability_type is None
-            or capability.type is query.capability_type
-        )
-        and (
-            query.capability_version is None
-            or capability.version == query.capability_version
-        )
+        and (query.capability_type is None or capability.type is query.capability_type)
+        and (query.capability_version is None or capability.version == query.capability_version)
         and (query.region is None or descriptor.region == query.region)
         and query.provider_tags.issubset(descriptor.tags)
     )

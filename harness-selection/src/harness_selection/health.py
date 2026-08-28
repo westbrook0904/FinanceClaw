@@ -8,8 +8,6 @@ from datetime import UTC, datetime
 from threading import RLock
 
 from harness_contracts import (
-    ErrorCode,
-    ProviderError,
     ProviderHealthSnapshot,
     ProviderHealthStatus,
 )
@@ -39,10 +37,7 @@ class StaticHealthSource(HealthSource):
         if not isinstance(source, str) or not source.strip():
             raise TypeError("source must be a non-empty string")
         effective_observed_at = observed_at or datetime.now(UTC)
-        if (
-            effective_observed_at.tzinfo is None
-            or effective_observed_at.utcoffset() is None
-        ):
+        if effective_observed_at.tzinfo is None or effective_observed_at.utcoffset() is None:
             raise TypeError("observed_at must be timezone-aware")
 
         normalized: dict[str, ProviderHealthStatus] = {}
@@ -103,10 +98,7 @@ class TestHealthSource(HealthSource):
         if not isinstance(status, ProviderHealthStatus):
             raise TypeError("status must be ProviderHealthStatus")
         effective_observed_at = observed_at or datetime.now(UTC)
-        if (
-            effective_observed_at.tzinfo is None
-            or effective_observed_at.utcoffset() is None
-        ):
+        if effective_observed_at.tzinfo is None or effective_observed_at.utcoffset() is None:
             raise TypeError("observed_at must be timezone-aware")
         if reason_code is not None and (
             not isinstance(reason_code, str) or not reason_code.strip()

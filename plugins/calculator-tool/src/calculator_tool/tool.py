@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import TypeAlias
-
 from harness_contracts import (
     CapabilityDescriptor,
     CapabilityError,
@@ -14,7 +12,7 @@ from harness_contracts import (
 )
 from harness_spi import ToolRequest, ToolSPI
 
-Number: TypeAlias = int | float
+type Number = int | float
 
 
 class CalculatorTool(ToolSPI):

@@ -213,9 +213,7 @@ class PrioritySelectorTests(unittest.TestCase):
     def test_pin_cannot_bypass_health_or_policy(self) -> None:
         candidate = registration("google", priority=100, region="sg")
         selector = PrioritySelector(
-            EligibilityPipeline(
-                StaticHealthSource({"google": ProviderHealthStatus.UNHEALTHY})
-            )
+            EligibilityPipeline(StaticHealthSource({"google": ProviderHealthStatus.UNHEALTHY}))
         )
 
         with self.assertRaises(ProviderError) as unhealthy:

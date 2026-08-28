@@ -47,6 +47,7 @@ class ContractModel(BaseModel):
     未声明字段会被拒绝，以便尽早暴露协议版本或字段拼写错误。模型默认冻结，
     从而使 Request、Context、Descriptor 和 Result 可安全地跨模块传递。
     """
+
     # extra="forbid"：传入未声明字段直接报错。
     # frozen=True：实例创建后字段只读。
     # str_strip_whitespace=True：字符串输入自动去掉首尾空白。

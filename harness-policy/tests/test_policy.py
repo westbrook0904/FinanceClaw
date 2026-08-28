@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import unittest
 
-from pydantic import ValidationError
-
 from harness_contracts import (
     CapabilityDescriptor,
     CapabilityType,
@@ -26,6 +24,7 @@ from harness_policy import (
     PolicyEngine,
     TenantPolicy,
 )
+from pydantic import ValidationError
 
 
 def make_context(
@@ -43,15 +42,9 @@ def make_context(
     invocation = InvocationContext(
         request=request,
         identity=(
-            None
-            if scopes is None
-            else IdentityContext(subject="user", scopes=frozenset(scopes))
+            None if scopes is None else IdentityContext(subject="user", scopes=frozenset(scopes))
         ),
-        tenant=(
-            None
-            if runtime_tenant is None
-            else TenantContext(tenant_id=runtime_tenant)
-        ),
+        tenant=(None if runtime_tenant is None else TenantContext(tenant_id=runtime_tenant)),
     )
     descriptor = CapabilityDescriptor(
         id=capability,
@@ -177,9 +170,7 @@ class BuiltInPolicyTests(unittest.TestCase):
         self.assertEqual(result.effect, PolicyEffect.DENY)
 
     def test_tenant_rejects_mismatch(self) -> None:
-        result = TenantPolicy().evaluate(
-            make_context(request_tenant="a", runtime_tenant="b")
-        )
+        result = TenantPolicy().evaluate(make_context(request_tenant="a", runtime_tenant="b"))
         self.assertEqual(result.effect, PolicyEffect.DENY)
 
     def test_tenant_require_tenant(self) -> None:
@@ -193,30 +184,22 @@ class BuiltInPolicyTests(unittest.TestCase):
         self.assertEqual(denied.effect, PolicyEffect.DENY)
 
     def test_capability_permission_allows_matching_scope(self) -> None:
-        policy = CapabilityPermissionPolicy(
-            {"finance.query/v1": {"finance.read"}}
-        )
+        policy = CapabilityPermissionPolicy({"finance.query/v1": {"finance.read"}})
         result = policy.evaluate(make_context(scopes={"finance.read"}))
         self.assertEqual(result.effect, PolicyEffect.ALLOW)
 
     def test_capability_permission_denies_missing_scope(self) -> None:
-        policy = CapabilityPermissionPolicy(
-            {"finance.query/v1": {"finance.read"}}
-        )
+        policy = CapabilityPermissionPolicy({"finance.query/v1": {"finance.read"}})
         result = policy.evaluate(make_context(scopes={"other"}))
         self.assertEqual(result.effect, PolicyEffect.DENY)
 
     def test_capability_permission_denies_anonymous(self) -> None:
-        policy = CapabilityPermissionPolicy(
-            {"finance.query/v1": {"finance.read"}}
-        )
+        policy = CapabilityPermissionPolicy({"finance.query/v1": {"finance.read"}})
         result = policy.evaluate(make_context())
         self.assertEqual(result.effect, PolicyEffect.DENY)
 
     def test_capability_permission_is_default_deny_for_unconfigured(self) -> None:
-        result = CapabilityPermissionPolicy({}).evaluate(
-            make_context(scopes={"*"})
-        )
+        result = CapabilityPermissionPolicy({}).evaluate(make_context(scopes={"*"}))
         self.assertEqual(result.effect, PolicyEffect.DENY)
 
     def test_capability_permission_can_allow_unconfigured(self) -> None:
@@ -233,9 +216,7 @@ class BuiltInPolicyTests(unittest.TestCase):
         self.assertEqual(result.effect, PolicyEffect.ALLOW)
 
     def test_identity_wildcard_scope_satisfies_rule(self) -> None:
-        policy = CapabilityPermissionPolicy(
-            {"finance.query/v1": {"finance.read"}}
-        )
+        policy = CapabilityPermissionPolicy({"finance.query/v1": {"finance.read"}})
         result = policy.evaluate(make_context(scopes={"*"}))
         self.assertEqual(result.effect, PolicyEffect.ALLOW)
 

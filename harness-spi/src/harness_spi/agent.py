@@ -20,4 +20,3 @@ class AgentSPI(Capability):
         context: InvocationContext,
     ) -> ResultEnvelope:
         """在给定调用上下文中处理任务。"""
-

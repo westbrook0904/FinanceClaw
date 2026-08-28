@@ -249,9 +249,7 @@ def make_engine(
         tracer,
         context_factory=DefaultInvocationContextFactory(),
     )
-    policy_engine = PolicyEngine(
-        tuple(policies) if policies is not None else (AllowAllPolicy(),)
-    )
+    policy_engine = PolicyEngine(tuple(policies) if policies is not None else (AllowAllPolicy(),))
     invoker = CapabilityInvoker(
         registry,
         policy_engine,

@@ -9,9 +9,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
-from pydantic import ValidationError
-
 from harness_contracts import PlanExecutionRecord
+from pydantic import ValidationError
 
 from .errors import (
     StateRecordExistsError,
@@ -19,7 +18,6 @@ from .errors import (
     StateStoreError,
 )
 from .store import StateStore, validate_plan_id, validate_record
-
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS plan_execution_records (
@@ -100,9 +98,7 @@ class SQLiteStateStore(StateStore):
         try:
             record = PlanExecutionRecord.model_validate_json(payload)
         except (ValidationError, ValueError) as exc:
-            raise StateStoreError(
-                f"stored state payload is invalid for plan: {plan_id}"
-            ) from exc
+            raise StateStoreError(f"stored state payload is invalid for plan: {plan_id}") from exc
         if record.state_version != state_version:
             raise StateStoreError(
                 f"stored state_version does not match payload for plan: {plan_id}"

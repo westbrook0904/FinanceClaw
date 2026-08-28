@@ -5,8 +5,6 @@ from __future__ import annotations
 import inspect
 import unittest
 
-from pydantic import ValidationError
-
 from harness_contracts import (
     CapabilityDescriptor,
     CapabilityType,
@@ -26,6 +24,7 @@ from harness_spi import (
     ToolSPI,
     validate_manifest_capabilities,
 )
+from pydantic import ValidationError
 
 
 def make_context(capability: str) -> InvocationContext:
@@ -46,9 +45,7 @@ class EchoAgent(AgentSPI):
             version="1.0.0",
         )
 
-    async def invoke(
-        self, request: AgentRequest, context: InvocationContext
-    ) -> ResultEnvelope:
+    async def invoke(self, request: AgentRequest, context: InvocationContext) -> ResultEnvelope:
         return ResultEnvelope.success(
             ResultOutput(type=request.input.type, data=request.input.content)
         )
@@ -63,9 +60,7 @@ class CalculatorTool(ToolSPI):
             version="1.0.0",
         )
 
-    async def execute(
-        self, request: ToolRequest, context: InvocationContext
-    ) -> ResultEnvelope:
+    async def execute(self, request: ToolRequest, context: InvocationContext) -> ResultEnvelope:
         return ResultEnvelope.success(ResultOutput(type="number", data=3))
 
 

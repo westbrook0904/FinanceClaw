@@ -90,9 +90,7 @@ class HarnessRuntime:
         context = context_result
 
         trace_enabled = request.options.trace
-        request_span = (
-            self._lifecycle.start_request_span(context) if trace_enabled else None
-        )
+        request_span = self._lifecycle.start_request_span(context) if trace_enabled else None
         runtime_span = (
             self._tracer.start_span(
                 "runtime.invoke",

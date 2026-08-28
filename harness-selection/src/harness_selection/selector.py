@@ -18,7 +18,6 @@ from harness_registry import ProviderRegistration
 
 from .eligibility import EligibilityPipeline, EligibilityResult, EligibleProvider
 
-
 _HEALTH_RANK = {
     ProviderHealthStatus.HEALTHY: 0,
     ProviderHealthStatus.UNKNOWN: 1,

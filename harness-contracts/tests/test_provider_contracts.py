@@ -5,8 +5,6 @@ from __future__ import annotations
 import unittest
 from datetime import UTC, datetime, timedelta
 
-from pydantic import ValidationError
-
 from harness_contracts import (
     EgressType,
     ErrorCode,
@@ -24,6 +22,7 @@ from harness_contracts import (
     SelectionRejection,
     SideEffectType,
 )
+from pydantic import ValidationError
 
 
 class ProviderContractTests(unittest.TestCase):

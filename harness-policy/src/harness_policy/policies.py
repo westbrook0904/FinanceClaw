@@ -36,9 +36,7 @@ class TenantPolicy(Policy):
         *,
         require_tenant: bool = False,
     ) -> None:
-        self._allowed_tenants = (
-            None if allowed_tenants is None else frozenset(allowed_tenants)
-        )
+        self._allowed_tenants = None if allowed_tenants is None else frozenset(allowed_tenants)
         self._require_tenant = require_tenant
 
     @property
@@ -183,9 +181,7 @@ class RequireApprovalPolicy(Policy):
         if capability is None:
             return False
         profile = capability.execution_profile
-        selectors_configured = bool(
-            self._capabilities or self._side_effects or self._egress
-        )
+        selectors_configured = bool(self._capabilities or self._side_effects or self._egress)
         if not selectors_configured:
             return True
         return (

@@ -8,8 +8,6 @@ from pathlib import Path
 
 from calculator_tool import CalculatorToolPlugin
 from echo_agent import EchoAgentPlugin
-from mock_finance_agent import MockFinanceAgentPlugin
-
 from harness_bootstrap import build_harness
 from harness_contracts import (
     ApprovalDecision,
@@ -38,6 +36,7 @@ from harness_contracts import (
     SideEffectType,
 )
 from harness_state import SQLiteStateStore
+from mock_finance_agent import MockFinanceAgentPlugin
 
 from tests.stage2.support import EchoTool, ScriptedTool, TestPlugin
 
@@ -92,9 +91,7 @@ class Stage2EndToEndTests(unittest.IsolatedAsyncioTestCase):
                     PlanNode(
                         node_id="n1",
                         capability="finance.mock-query/v1",
-                        input_mapping={
-                            "query": RequestBinding(pointer="/input/content/query")
-                        },
+                        input_mapping={"query": RequestBinding(pointer="/input/content/query")},
                     ),
                     PlanNode(
                         node_id="n2",
@@ -219,9 +216,7 @@ class Stage2EndToEndTests(unittest.IsolatedAsyncioTestCase):
                 "e2e.retry/v1",
                 (
                     retryable_failure(),
-                    ResultEnvelope.success(
-                        ResultOutput(type="json", data={"value": "recovered"})
-                    ),
+                    ResultEnvelope.success(ResultOutput(type="json", data={"value": "recovered"})),
                 ),
                 profile=read_profile,
             )

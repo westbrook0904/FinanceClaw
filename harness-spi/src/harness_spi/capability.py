@@ -16,4 +16,3 @@ class Capability(ABC):
     @abstractmethod
     def descriptor(self) -> CapabilityDescriptor:
         """返回稳定、无副作用的能力描述。"""
-

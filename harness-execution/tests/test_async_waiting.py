@@ -89,9 +89,7 @@ class MissingJobRefTool(ToolSPI):
         request: ToolRequest,
         context: InvocationContext,
     ) -> ResultEnvelope:
-        return ResultEnvelope.accepted(
-            Continuation(node_id="async", waiting_reason="external_job")
-        )
+        return ResultEnvelope.accepted(Continuation(node_id="async", waiting_reason="external_job"))
 
 
 class EchoTool(ToolSPI):
@@ -258,9 +256,7 @@ class AsyncWaitingTests(unittest.IsolatedAsyncioTestCase):
             result = await resumed_engine.complete_async_node(
                 plan.plan_id,
                 "async",
-                ResultEnvelope.success(
-                    ResultOutput(type="json", data={"value": "after-restart"})
-                ),
+                ResultEnvelope.success(ResultOutput(type="json", data={"value": "after-restart"})),
             )
             saved = await SQLiteStateStore(database).load(plan.plan_id)
 

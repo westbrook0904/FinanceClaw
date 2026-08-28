@@ -142,12 +142,8 @@ class PlanValidatorTests(unittest.TestCase):
                     node_id="n2",
                     capability="b/v1",
                     input_mapping={
-                        "parallel": NodeOutputBinding(
-                            node_id="n1", pointer="/output/data"
-                        ),
-                        "missing": NodeOutputBinding(
-                            node_id="missing", pointer="/output/data"
-                        ),
+                        "parallel": NodeOutputBinding(node_id="n1", pointer="/output/data"),
+                        "missing": NodeOutputBinding(node_id="missing", pointer="/output/data"),
                         "bad_request": RequestBinding(pointer="/unknown/value"),
                     },
                 ),

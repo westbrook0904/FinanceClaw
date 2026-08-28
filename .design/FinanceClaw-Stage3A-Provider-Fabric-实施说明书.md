@@ -913,13 +913,11 @@ harness-model
 
 ```python
 class ModelProvider(ABC):
-
     async def generate(
         self,
         request: GenerateRequest,
         context: InvocationContext,
-    ) -> GenerateResult:
-        ...
+    ) -> GenerateResult: ...
 ```
 
 ### ModelGateway

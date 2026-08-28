@@ -79,10 +79,7 @@ class PolicyContext(ContractModel):
             raise ValueError("pre_execute policy context requires capability")
         if self.plan is not None:
             raise ValueError("pre_execute policy context forbids plan")
-        if (
-            self.provider is not None
-            and self.provider.capability_id != self.capability.id
-        ):
+        if self.provider is not None and self.provider.capability_id != self.capability.id:
             raise ValueError("provider capability_id must match capability.id")
         return self
 

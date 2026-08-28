@@ -1116,8 +1116,7 @@ class Planner(ABC):
         request: Request,
         context: PlanningContext,
         catalog: CapabilityCatalog,
-    ) -> ExecutionPlan:
-        ...
+    ) -> ExecutionPlan: ...
 ```
 
 Planner 只产出结构化 Plan。

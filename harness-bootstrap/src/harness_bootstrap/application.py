@@ -248,9 +248,7 @@ class HarnessApplication:
         """持久化显式审批决定，并继续推进同一个 Plan。"""
 
         if self._state is not BootstrapState.STARTED:
-            raise BootstrapStateError(
-                "harness application must be started before resolve_approval"
-            )
+            raise BootstrapStateError("harness application must be started before resolve_approval")
         return await self._components.execution_engine.resolve_approval(plan_id, decision)
 
     async def complete_async_node(

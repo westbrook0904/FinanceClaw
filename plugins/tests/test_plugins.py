@@ -20,7 +20,6 @@ from harness_contracts import (
 from harness_spi import AgentRequest, ToolRequest
 from mock_finance_agent import MockFinanceAgent, MockFinanceAgentPlugin
 
-
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -158,9 +157,7 @@ class PluginBootstrapIntegrationTests(unittest.IsolatedAsyncioTestCase):
         app = build_harness(plugins=plugins, entry_point_group=None)
 
         async with app:
-            capability_ids = tuple(
-                item.descriptor.id for item in app.registry.list()
-            )
+            capability_ids = tuple(item.descriptor.id for item in app.registry.list())
             self.assertEqual(
                 capability_ids,
                 ("echo.reply/v1", "finance.mock-query/v1", "math.calculate/v1"),

@@ -28,7 +28,6 @@ from harness_contracts import (
 
 from .scheduler import BasicScheduler
 
-
 _EXPLICIT_WAITING = "approval"
 _POLICY_WAITING = "policy_approval"
 
@@ -76,13 +75,9 @@ class ApprovalCoordinator:
 
             continuation = node_state.continuation
             if continuation is None:
-                raise self._state_error(
-                    plan, node.node_id, "waiting approval has no continuation"
-                )
+                raise self._state_error(plan, node.node_id, "waiting approval has no continuation")
             if continuation.approval_id != approval.approval_id:
-                continuation = continuation.model_copy(
-                    update={"approval_id": approval.approval_id}
-                )
+                continuation = continuation.model_copy(update={"approval_id": approval.approval_id})
                 node_state.continuation = continuation
                 if (
                     node_state.result is None
@@ -303,18 +298,19 @@ class ApprovalCoordinator:
 
     @staticmethod
     def _is_approval_waiting(node: PlanNode, waiting_reason: str | None) -> bool:
-        return (
-            node.kind is PlanNodeKind.APPROVAL and waiting_reason == _EXPLICIT_WAITING
-        ) or (
+        return (node.kind is PlanNodeKind.APPROVAL and waiting_reason == _EXPLICIT_WAITING) or (
             node.kind is PlanNodeKind.CAPABILITY and waiting_reason == _POLICY_WAITING
         )
 
     @staticmethod
     def _build_explicit_request(plan: ExecutionPlan, node: PlanNode) -> ApprovalRequest:
-        reason = ApprovalCoordinator._safe_metadata_string(
-            node,
-            "approval_reason",
-        ) or "explicit approval required"
+        reason = (
+            ApprovalCoordinator._safe_metadata_string(
+                node,
+                "approval_reason",
+            )
+            or "explicit approval required"
+        )
         resource_category = ApprovalCoordinator._safe_metadata_string(
             node,
             "approval_resource_category",

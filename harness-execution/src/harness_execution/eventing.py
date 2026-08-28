@@ -99,10 +99,10 @@ def checkpoint_transition_specs(
     if previous is None and current.status is PlanExecutionStatus.CREATED:
         specs.append(EventSpec(ExecutionEventName.PLAN_CREATED))
     elif previous_status is not current.status:
-        if (
-            current.status is PlanExecutionStatus.RUNNING
-            and previous_status in {None, PlanExecutionStatus.CREATED}
-        ):
+        if current.status is PlanExecutionStatus.RUNNING and previous_status in {
+            None,
+            PlanExecutionStatus.CREATED,
+        }:
             specs.append(EventSpec(ExecutionEventName.PLAN_STARTED))
         elif current.status is PlanExecutionStatus.WAITING:
             specs.append(EventSpec(ExecutionEventName.PLAN_WAITING))

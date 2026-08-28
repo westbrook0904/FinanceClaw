@@ -121,9 +121,7 @@ class PlanValidator:
                 if edge.to_node not in adjacency[edge.from_node]:
                     adjacency[edge.from_node].add(edge.to_node)
                     incoming[edge.to_node] += 1
-                valid_edges.append(
-                    (edge_index, edge.from_node, edge.to_node, edge.condition)
-                )
+                valid_edges.append((edge_index, edge.from_node, edge.to_node, edge.condition))
 
         if nodes:
             roots = tuple(node_id for node_id, count in incoming.items() if count == 0)
@@ -460,6 +458,7 @@ class PlanValidator:
                             reference=reference.pointer,
                         )
                     )
+
     def _validate_capabilities(
         self,
         nodes: tuple[PlanNode, ...],

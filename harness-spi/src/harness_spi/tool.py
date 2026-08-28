@@ -20,4 +20,3 @@ class ToolSPI(Capability):
         context: InvocationContext,
     ) -> ResultEnvelope:
         """在给定调用上下文中执行工具操作。"""
-

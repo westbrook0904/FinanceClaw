@@ -100,9 +100,7 @@ class HarnessError(Exception):
         self.category = self.default_category
         self.details = details or {}
         self.retryable = self.default_retryable if retryable is None else retryable
-        self.fallbackable = (
-            self.default_fallbackable if fallbackable is None else fallbackable
-        )
+        self.fallbackable = self.default_fallbackable if fallbackable is None else fallbackable
 
     def to_detail(self) -> ErrorDetail:
         """转换为不包含 Python 异常对象的跨模块错误协议。"""

@@ -116,8 +116,7 @@ class LocalPluginLoader:
             validate_manifest_capabilities(manifest, descriptors)
             _validate_provider_types(providers, descriptors)
             provider_descriptors = tuple(
-                _legacy_provider_descriptor(manifest, descriptor)
-                for descriptor in descriptors
+                _legacy_provider_descriptor(manifest, descriptor) for descriptor in descriptors
             )
         except Exception as exc:
             raise _as_plugin_error("local plugin validation failed", exc) from exc

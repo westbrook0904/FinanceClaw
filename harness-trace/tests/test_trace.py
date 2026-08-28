@@ -7,8 +7,6 @@ import json
 import unittest
 from datetime import UTC, datetime, timedelta
 
-from pydantic import ValidationError
-
 from harness_contracts import PolicyError, TraceContext
 from harness_trace import (
     ConsoleTracer,
@@ -18,6 +16,7 @@ from harness_trace import (
     SpanType,
     TraceStateError,
 )
+from pydantic import ValidationError
 
 
 class SequenceClock:

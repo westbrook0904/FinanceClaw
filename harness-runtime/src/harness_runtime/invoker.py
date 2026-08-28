@@ -513,9 +513,7 @@ class CapabilityInvoker:
                         else 1
                     ),
                     "retry_attempt": (
-                        provider_resume.attempt.retry_attempt
-                        if provider_resume is not None
-                        else 1
+                        provider_resume.attempt.retry_attempt if provider_resume is not None else 1
                     ),
                 },
             )

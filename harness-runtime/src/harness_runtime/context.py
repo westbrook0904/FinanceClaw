@@ -8,7 +8,6 @@ from datetime import UTC, datetime, timedelta
 
 from harness_contracts import InvocationContext, Request
 
-
 type Clock = Callable[[], datetime]
 
 
