@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import inspect
 import json
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Awaitable, Callable, Iterable, Mapping
 from datetime import UTC, datetime
 from uuid import uuid4
 
@@ -28,10 +29,22 @@ from pydantic import ValidationError
 
 from .context import PlanningContext
 from .draft import PlanDraft
-from .planner import Planner, validate_planner_id, validate_planner_output
+from .models import PlanningAttempt, PlanValidationError
+from .planner import Planner, validate_planner_id
+from .repair import (
+    MAX_REPAIR_ERRORS,
+    RepairablePlanningFailure,
+    RepairFeedback,
+    bounded_location_part,
+    bounded_repair_value,
+    output_hash,
+    safe_plan_issue,
+)
 from .validator import PlanValidator
 
 type PlanIdFactory = Callable[[], str]
+type PlanningAttemptObserver = Callable[[PlanningAttempt], None | Awaitable[None]]
+type Clock = Callable[[], datetime]
 
 _SYSTEM_PROMPT = """You are a planning component inside a controlled Harness.
 Return exactly one JSON object matching the supplied PlanDraft schema.
@@ -69,6 +82,8 @@ class LLMPlanner(Planner):
         max_output_tokens: int | None = None,
         plan_id_factory: PlanIdFactory | None = None,
         allowed_capability_ids: Iterable[str] | None = None,
+        attempt_observer: PlanningAttemptObserver | None = None,
+        clock: Clock | None = None,
     ) -> None:
         if not isinstance(model_gateway, ModelGateway):
             raise TypeError("model_gateway must be ModelGateway")
@@ -91,12 +106,18 @@ class LLMPlanner(Planner):
             raise TypeError("max_output_tokens must be a positive integer when provided")
         if plan_id_factory is not None and not callable(plan_id_factory):
             raise TypeError("plan_id_factory must be callable")
+        if attempt_observer is not None and not callable(attempt_observer):
+            raise TypeError("attempt_observer must be callable")
+        if clock is not None and not callable(clock):
+            raise TypeError("clock must be callable")
         self._configured_capability_ids = _validate_capability_scope(allowed_capability_ids)
 
         self._model_gateway = model_gateway
         self._validator = validator
         self._max_output_tokens = max_output_tokens
         self._plan_id_factory = plan_id_factory or (lambda: f"plan-{uuid4().hex}")
+        self._attempt_observer = attempt_observer
+        self._clock = clock or (lambda: datetime.now(UTC))
         self._response_schema = PlanDraft.model_json_schema()
 
     @property
@@ -128,26 +149,123 @@ class LLMPlanner(Planner):
             raise TypeError("context must be PlanningContext")
 
         deadline_at = _effective_deadline(context)
-        if deadline_at is not None and datetime.now(UTC) >= deadline_at:
-            raise PlanningError(
-                "planning deadline has already expired",
-                code=ErrorCode.PLANNER_DEADLINE_EXCEEDED,
-                details={"planner_id": self.planner_id},
-            )
-
         allowed_capability_ids = self._allowed_capability_ids(context)
-        request = GenerateRequest(
+        base_payload = self._prompt_payload(
+            context,
+            allowed_capability_ids,
+            effective_deadline_at=deadline_at,
+        )
+        previous_output: object | None = None
+        repair_feedback: RepairFeedback | None = None
+
+        for attempt in range(1, context.constraints.max_plan_attempts + 1):
+            self._ensure_deadline(deadline_at, completed_attempts=attempt - 1)
+            kind = "initial" if attempt == 1 else "repair"
+            request = self._generation_request(
+                base_payload,
+                attempt=attempt,
+                previous_output=previous_output,
+                repair_feedback=repair_feedback,
+            )
+            result = await self._model_gateway.generate(
+                request,
+                context.invocation,
+                deadline_at=deadline_at,
+                parent=context.invocation.trace_context,
+                trace_enabled=context.invocation.request.options.trace,
+            )
+            attempt_output_hash = output_hash(result)
+            try:
+                output, response_format = self._require_generation_output(result)
+            except PlanningError:
+                await self._observe_attempt(
+                    result,
+                    attempt=attempt,
+                    kind=kind,
+                    output_hash=attempt_output_hash,
+                    validation_codes=(ErrorCode.PLANNER_MODEL_FAILED.value,),
+                )
+                raise
+
+            try:
+                draft = self._parse_draft(output, response_format=response_format)
+                self._validate_draft_guards(
+                    draft,
+                    context,
+                    allowed_capability_ids=allowed_capability_ids,
+                    effective_deadline_at=deadline_at,
+                )
+                plan = self._to_execution_plan(draft, context)
+                plan = self._validate_generated_plan(plan)
+            except RepairablePlanningFailure as failure:
+                repair_feedback = failure.feedback
+                previous_output = bounded_repair_value(output)
+                await self._observe_attempt(
+                    result,
+                    attempt=attempt,
+                    kind=kind,
+                    output_hash=attempt_output_hash,
+                    validation_codes=repair_feedback.validation_codes,
+                )
+                if attempt >= context.constraints.max_plan_attempts:
+                    raise PlanningError(
+                        "plan repair attempts exhausted",
+                        code=ErrorCode.PLANNER_REPAIR_EXHAUSTED,
+                        details={
+                            "planner_id": self.planner_id,
+                            "attempt_count": attempt,
+                            "validation_codes": repair_feedback.validation_codes,
+                        },
+                    ) from failure.error
+                continue
+            except PlanningError as exc:
+                await self._observe_attempt(
+                    result,
+                    attempt=attempt,
+                    kind=kind,
+                    output_hash=attempt_output_hash,
+                    validation_codes=(str(exc.code),),
+                )
+                raise
+
+            await self._observe_attempt(
+                result,
+                attempt=attempt,
+                kind=kind,
+                output_hash=attempt_output_hash,
+                validation_codes=(),
+            )
+            return plan
+
+        raise AssertionError("planning attempt loop must return or raise")
+
+    def _generation_request(
+        self,
+        base_payload: dict[str, object],
+        *,
+        attempt: int,
+        previous_output: object | None,
+        repair_feedback: RepairFeedback | None,
+    ) -> GenerateRequest:
+        payload = dict(base_payload)
+        if repair_feedback is not None:
+            payload["repair"] = {
+                "attempt": attempt,
+                "kind": "repair",
+                "previous_plan_draft": previous_output,
+                "parse_errors": repair_feedback.parse_errors,
+                "plan_validation_issues": repair_feedback.plan_issues,
+                "planning_guard_issues": repair_feedback.guard_issues,
+                "validation_codes": repair_feedback.validation_codes,
+            }
+        return GenerateRequest(
             model=self._planner_model_capability_id,
             messages=(
                 ModelMessage(role=ModelRole.SYSTEM, content=_SYSTEM_PROMPT),
                 ModelMessage(
                     role=ModelRole.USER,
                     content=json.dumps(
-                        self._prompt_payload(
-                            context,
-                            allowed_capability_ids,
-                            effective_deadline_at=deadline_at,
-                        ),
+                        payload,
                         ensure_ascii=False,
                         separators=(",", ":"),
                         sort_keys=True,
@@ -159,26 +277,6 @@ class LLMPlanner(Planner):
             temperature=0.0,
             max_output_tokens=self._max_output_tokens,
             metadata={"purpose": "plan", "prompt_version": self._prompt_version},
-        )
-        result = await self._model_gateway.generate(
-            request,
-            context.invocation,
-            deadline_at=deadline_at,
-            parent=context.invocation.trace_context,
-            trace_enabled=context.invocation.request.options.trace,
-        )
-        draft = self._parse_result(result)
-        self._validate_draft_guards(
-            draft,
-            context,
-            allowed_capability_ids=allowed_capability_ids,
-            effective_deadline_at=deadline_at,
-        )
-        plan = self._to_execution_plan(draft, context)
-        return validate_planner_output(
-            plan,
-            self._validator,
-            planner_id=self.planner_id,
         )
 
     def _prompt_payload(
@@ -218,7 +316,10 @@ class LLMPlanner(Planner):
             allowed.intersection_update(self._configured_capability_ids)
         return frozenset(allowed)
 
-    def _parse_result(self, result: GenerateResult) -> PlanDraft:
+    def _require_generation_output(
+        self,
+        result: GenerateResult,
+    ) -> tuple[object, ModelResponseFormat]:
         if not isinstance(result, GenerateResult):
             raise PlanningError(
                 "model gateway returned an invalid planning result",
@@ -245,15 +346,58 @@ class LLMPlanner(Planner):
             )
 
         output = result.output
-        if output is None or output.type is not ModelResponseFormat.JSON:
-            self._raise_invalid_output("model plan output must be a JSON object")
-        data = output.data
-        if not isinstance(data, Mapping):
-            self._raise_invalid_output("model plan output must be a JSON object")
-        try:
-            return PlanDraft.model_validate(dict(data))
-        except ValidationError as exc:
+        if output is None:
             raise PlanningError(
+                "model gateway returned a successful result without output",
+                code=ErrorCode.PLANNER_MODEL_FAILED,
+                details={
+                    "planner_id": self.planner_id,
+                    "model": self._planner_model_capability_id,
+                    "cause_code": "HARNESS.MODEL.INVALID_RESULT",
+                },
+            )
+        return output.data, output.type
+
+    def _parse_draft(
+        self,
+        output: object,
+        *,
+        response_format: ModelResponseFormat,
+    ) -> PlanDraft:
+        if response_format is not ModelResponseFormat.JSON or not isinstance(output, Mapping):
+            error = PlanningError(
+                "model plan output must be a JSON object",
+                code=ErrorCode.PLANNER_INVALID_OUTPUT,
+                details={
+                    "planner_id": self.planner_id,
+                    "reason": "invalid_model_output",
+                },
+            )
+            raise RepairablePlanningFailure(
+                error,
+                RepairFeedback(
+                    validation_codes=("DRAFT.INVALID_JSON_OBJECT",),
+                    parse_errors=({"type": "json_object_required", "location": ()},),
+                ),
+            ) from error
+        try:
+            return PlanDraft.model_validate(dict(output))
+        except ValidationError as exc:
+            parse_errors = tuple(
+                {
+                    "type": str(issue["type"]),
+                    "location": tuple(bounded_location_part(item) for item in issue["loc"]),
+                }
+                for issue in exc.errors(
+                    include_url=False,
+                    include_context=False,
+                    include_input=False,
+                )[:MAX_REPAIR_ERRORS]
+            )
+            validation_codes = tuple(
+                sorted({f"DRAFT.PARSE.{issue['type']}" for issue in parse_errors})
+            )
+            error = PlanningError(
                 "model returned an invalid plan draft",
                 code=ErrorCode.PLANNER_INVALID_OUTPUT,
                 details={
@@ -261,9 +405,16 @@ class LLMPlanner(Planner):
                     "reason": "invalid_model_output",
                     "issue_count": exc.error_count(),
                 },
+            )
+            raise RepairablePlanningFailure(
+                error,
+                RepairFeedback(
+                    validation_codes=validation_codes,
+                    parse_errors=parse_errors,
+                ),
             ) from exc
         except (TypeError, ValueError) as exc:
-            raise PlanningError(
+            error = PlanningError(
                 "model returned an invalid plan draft",
                 code=ErrorCode.PLANNER_INVALID_OUTPUT,
                 details={
@@ -271,7 +422,93 @@ class LLMPlanner(Planner):
                     "reason": "invalid_model_output",
                     "cause_type": type(exc).__name__,
                 },
+            )
+            raise RepairablePlanningFailure(
+                error,
+                RepairFeedback(
+                    validation_codes=(f"DRAFT.PARSE.{type(exc).__name__}",),
+                    parse_errors=({"type": type(exc).__name__, "location": ()},),
+                ),
             ) from exc
+
+    def _validate_generated_plan(self, plan: ExecutionPlan) -> ExecutionPlan:
+        try:
+            return self._validator.validate(plan)
+        except PlanValidationError as exc:
+            validation_codes = tuple(sorted({issue.code.value for issue in exc.issues}))
+            error = PlanningError(
+                "planner returned an invalid execution plan",
+                code=ErrorCode.PLANNER_INVALID_OUTPUT,
+                details={
+                    "planner_id": self.planner_id,
+                    "issue_count": len(exc.issues),
+                    "validation_codes": validation_codes,
+                },
+            )
+            raise RepairablePlanningFailure(
+                error,
+                RepairFeedback(
+                    validation_codes=validation_codes,
+                    plan_issues=tuple(
+                        safe_plan_issue(issue) for issue in exc.issues[:MAX_REPAIR_ERRORS]
+                    ),
+                ),
+            ) from exc
+        except Exception as exc:
+            raise PlanningError(
+                "planner output validation failed",
+                code=ErrorCode.PLANNER_INVALID_OUTPUT,
+                details={
+                    "planner_id": self.planner_id,
+                    "cause_type": type(exc).__name__,
+                },
+            ) from exc
+
+    async def _observe_attempt(
+        self,
+        result: object,
+        *,
+        attempt: int,
+        kind: str,
+        output_hash: str | None,
+        validation_codes: tuple[str, ...],
+    ) -> None:
+        if self._attempt_observer is None:
+            return
+        usage = result.usage if isinstance(result, GenerateResult) else None
+        observation = self._attempt_observer(
+            PlanningAttempt(
+                attempt=attempt,
+                kind=kind,
+                provider_id=(result.provider_id if isinstance(result, GenerateResult) else None),
+                prompt_version=self._prompt_version,
+                output_hash=output_hash,
+                validation_codes=validation_codes,
+                input_tokens=usage.input_tokens if usage is not None else None,
+                output_tokens=usage.output_tokens if usage is not None else None,
+            )
+        )
+        if inspect.isawaitable(observation):
+            await observation
+
+    def _ensure_deadline(
+        self,
+        deadline_at: datetime | None,
+        *,
+        completed_attempts: int,
+    ) -> None:
+        now = self._clock()
+        if not isinstance(now, datetime) or now.tzinfo is None or now.utcoffset() is None:
+            raise TypeError("clock must return a timezone-aware datetime")
+        if deadline_at is not None and now >= deadline_at:
+            raise PlanningError(
+                "planning deadline has expired",
+                code=ErrorCode.PLANNER_DEADLINE_EXCEEDED,
+                details={
+                    "planner_id": self.planner_id,
+                    "attempt_count": completed_attempts,
+                },
+            )
 
     def _validate_draft_guards(
         self,
@@ -282,7 +519,7 @@ class LLMPlanner(Planner):
         effective_deadline_at: datetime | None,
     ) -> None:
         if len(draft.nodes) > context.constraints.max_plan_nodes:
-            raise PlanningError(
+            error = PlanningError(
                 "generated plan exceeds the node limit",
                 code=ErrorCode.PLANNER_PLAN_TOO_LARGE,
                 details={
@@ -290,6 +527,11 @@ class LLMPlanner(Planner):
                     "node_count": len(draft.nodes),
                     "max_plan_nodes": context.constraints.max_plan_nodes,
                 },
+            )
+            self._raise_guard_failure(
+                error,
+                code=ErrorCode.PLANNER_PLAN_TOO_LARGE.value,
+                field="nodes",
             )
 
         disallowed = sorted(
@@ -301,7 +543,7 @@ class LLMPlanner(Planner):
             }
         )
         if disallowed:
-            raise PlanningError(
+            error = PlanningError(
                 "generated plan references capabilities outside the allowed scope",
                 code=ErrorCode.PLANNER_INVALID_OUTPUT,
                 details={
@@ -310,6 +552,12 @@ class LLMPlanner(Planner):
                     "capability_ids": disallowed,
                 },
             )
+            self._raise_guard_failure(
+                error,
+                code="PLANNING.CAPABILITY_NOT_ALLOWED",
+                field="nodes.capability",
+                reference=",".join(disallowed),
+            )
 
         draft_deadline = draft.budget.deadline_at
         if (
@@ -317,13 +565,18 @@ class LLMPlanner(Planner):
             and effective_deadline_at is not None
             and draft_deadline > effective_deadline_at
         ):
-            raise PlanningError(
+            error = PlanningError(
                 "generated plan deadline exceeds the request deadline",
                 code=ErrorCode.PLANNER_INVALID_OUTPUT,
                 details={
                     "planner_id": self.planner_id,
                     "reason": "deadline_exceeds_request",
                 },
+            )
+            self._raise_guard_failure(
+                error,
+                code="PLANNING.DEADLINE_EXCEEDS_REQUEST",
+                field="budget.deadline_at",
             )
 
         injected_keys = sorted(
@@ -335,7 +588,7 @@ class LLMPlanner(Planner):
             }
         )
         if injected_keys:
-            raise PlanningError(
+            error = PlanningError(
                 "generated plan contains reserved node metadata",
                 code=ErrorCode.PLANNER_INVALID_OUTPUT,
                 details={
@@ -344,6 +597,31 @@ class LLMPlanner(Planner):
                     "metadata_keys": injected_keys,
                 },
             )
+            self._raise_guard_failure(
+                error,
+                code="PLANNING.RESERVED_METADATA",
+                field="nodes.metadata",
+                reference=",".join(injected_keys),
+            )
+
+    @staticmethod
+    def _raise_guard_failure(
+        error: PlanningError,
+        *,
+        code: str,
+        field: str,
+        reference: str | None = None,
+    ) -> None:
+        issue: dict[str, object] = {"code": code, "field": field}
+        if reference is not None:
+            issue["reference"] = reference
+        raise RepairablePlanningFailure(
+            error,
+            RepairFeedback(
+                validation_codes=(code,),
+                guard_issues=(issue,),
+            ),
+        ) from error
 
     def _to_execution_plan(
         self,
@@ -379,16 +657,6 @@ class LLMPlanner(Planner):
                 "planner_id": self.planner_id,
                 "prompt_version": self._prompt_version,
                 "request_id": context.invocation.request.request_id,
-            },
-        )
-
-    def _raise_invalid_output(self, message: str) -> None:
-        raise PlanningError(
-            message,
-            code=ErrorCode.PLANNER_INVALID_OUTPUT,
-            details={
-                "planner_id": self.planner_id,
-                "reason": "invalid_model_output",
             },
         )
 

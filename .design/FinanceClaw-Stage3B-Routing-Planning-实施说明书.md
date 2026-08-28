@@ -1490,8 +1490,14 @@ PlanDraft schema
 - 每次调用前检查 Invocation deadline；
 - ModelGateway timeout 不自动增加 plan attempt；
 - ModelGateway 完成一次失败 generation 才消耗一个 plan attempt；
+- 只有成功 generation 的结构化输出校验失败才进入 repair；ModelGateway failure 直接保留
+  `PLANNER_MODEL_FAILED`；
 - Policy 上限只能收紧默认值；
 - repair exhausted 时零节点执行、零 Plan checkpoint。
+
+实现通过 `PlanningAttemptObserver` 输出 `PlanningAttempt` 安全摘要；Observer 不接收 raw prompt、
+raw output、异常 message/input 或 Chain-of-Thought。上一轮 JSON 在进入 repair prompt 前必须限制
+深度、集合大小、字符串长度和总值数量。
 
 ### 完成标准
 

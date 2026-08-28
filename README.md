@@ -187,5 +187,6 @@ async with build_harness() as app:
   Provider Pin 外部入口、Weighted Canary 和 Passive Health 暂缓。
 - 当前 `handle()` 只分派经过独立校验的 FAST Decision；PLAN 尚未接入执行。Router 只选择
   FAST/PLAN，服务端配置和 Policy 选择 Planner；LLMRouter 可作为 RuleRouter fallback，
-  LLMPlanner 已能自主生成受限 PlanDraft 并返回校验后的 ExecutionPlan。Plan Repair、动态 Plan Patch、
-  远程插件、MCP、分布式 Scheduler/锁和外部 Event Broker 尚未实现。
+  LLMPlanner 已能自主生成受限 PlanDraft、执行 bounded repair 并返回校验后的 ExecutionPlan。
+  PLAN handle 接线、动态 Plan Patch、远程插件、MCP、分布式 Scheduler/锁和外部 Event Broker
+  尚未实现。

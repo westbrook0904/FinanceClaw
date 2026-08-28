@@ -15,6 +15,8 @@ Capability，也不能访问 Provider 实例；Planner 输出统一交给 `PlanV
 - `PlanDraft`：模型可生成的受限 DAG 协议，不包含 plan_id、revision 或 Plan metadata。
 - `LLMPlanner`：通过 ModelGateway 从 Goal + capability-only Catalog 自主生成 PlanDraft，
   由 Harness 分配计划身份并执行 planning guards 与 PlanValidator。
+- `PlanningAttempt` / `PlanningAttemptObserver`：仅输出 attempt 序号、类型、Provider、输出哈希、
+  token 和结构化 validation codes 的安全观察边界，不保存 prompt、原始输出或隐藏推理。
 - `PlanValidator.validate(plan, executable=True) -> ExecutionPlan`：合法时原样返回；
   存在问题时一次性抛出 `PlanValidationError`。
 - `PlanValidator.find_issues(plan, executable=True)`：返回顺序稳定、可序列化的全部
@@ -58,6 +60,18 @@ LLMPlanner 的模型只产生 PlanDraft 中的节点、边、绑定与预算。`
 保留 metadata 时都会 fail-closed。Catalog 投影不包含 Provider、Plugin 或 Descriptor metadata，
 规划期间不会调用任何业务 Capability。
 
+## Bounded Plan Repair
+
+`PlanningConstraints.max_plan_attempts` 包含首次 generation，默认最多 3 次。只有模型已成功
+返回、但 JSON/PlanDraft 解析、planning guard 或 PlanValidator 校验失败时才进入 repair；
+ModelGateway failure、Harness identity failure 与 Deadline 到期直接保留各自错误语义。
+
+Repair 始终复用同一份 Goal、Capability Catalog、允许范围、Deadline 和 PlanDraft schema，
+并额外携带有界的上一轮 JSON、无异常 message/input 的 parse type/location，以及不含 message
+的 PlanValidation issue。上一轮 JSON 限制深度、集合大小、字符串长度和总值数量。每次调用前
+重新检查 Deadline；达到上限后统一返回 `HARNESS.PLANNER.REPAIR_EXHAUSTED`。整个循环不创建
+Plan checkpoint，也不调用 Capability。
+
 ## 依赖边界与当前范围
 
 本模块依赖 `harness-contracts`、`harness-routing` 的安全 RequestSummary 和只读
@@ -65,7 +79,7 @@ LLMPlanner 的模型只产生 PlanDraft 中的节点、边、绑定与预算。`
 `CapabilityDescriptor`，即使 Registry 中同一 Capability 存在多个 Provider 也只暴露
 一条 capability-only 记录，不会泄露 Provider 身份或实例。
 
-当前已实现 Static/Hybrid Planner Foundation、PlanDraft 和首轮 LLMPlanner；动态 Plan Repair、
+当前已实现 Static/Hybrid Planner Foundation、PlanDraft、LLMPlanner 和 bounded Plan Repair；
 `handle()` PLAN dispatch 和运行时 Plan Patch 属于后续步骤。
 
 ## 测试

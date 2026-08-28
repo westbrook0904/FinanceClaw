@@ -1,11 +1,26 @@
-"""PlanValidator 的稳定问题报告模型。"""
+"""规划 attempt 与 PlanValidator 的稳定问题报告模型。"""
 
 from __future__ import annotations
 
 from enum import StrEnum
+from typing import Literal
 
 from harness_contracts import ContractModel
 from harness_contracts.base import NonEmptyString
+from pydantic import Field
+
+
+class PlanningAttempt(ContractModel):
+    """一次模型规划 generation 的安全可观测摘要。"""
+
+    attempt: int = Field(ge=1)
+    kind: Literal["initial", "repair"]
+    provider_id: NonEmptyString | None = None
+    prompt_version: NonEmptyString
+    output_hash: NonEmptyString | None = None
+    validation_codes: tuple[NonEmptyString, ...] = ()
+    input_tokens: int | None = Field(default=None, ge=0)
+    output_tokens: int | None = Field(default=None, ge=0)
 
 
 class PlanValidationCode(StrEnum):

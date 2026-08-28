@@ -3,8 +3,13 @@
 from .context import PlanningConstraints, PlanningContext
 from .draft import PlanDraft
 from .hybrid import HybridPlanner
-from .llm import LLMPlanner, PlanIdFactory
-from .models import PlanValidationCode, PlanValidationError, PlanValidationIssue
+from .llm import LLMPlanner, PlanIdFactory, PlanningAttemptObserver
+from .models import (
+    PlanningAttempt,
+    PlanValidationCode,
+    PlanValidationError,
+    PlanValidationIssue,
+)
 from .planner import Planner
 from .registry import PlannerRegistry
 from .static import PlanFactory, PlanTemplate, RouteKeyFactory, StaticPlanner
@@ -23,6 +28,8 @@ __all__ = [
     "PlanValidator",
     "Planner",
     "PlannerRegistry",
+    "PlanningAttempt",
+    "PlanningAttemptObserver",
     "PlanningConstraints",
     "PlanningContext",
     "RouteKeyFactory",
