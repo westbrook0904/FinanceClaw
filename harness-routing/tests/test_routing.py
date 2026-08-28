@@ -503,7 +503,6 @@ class RoutingDependencyBoundaryTests(unittest.TestCase):
             "CapabilityInvoker",
             "ExecutionEngine",
             "ProviderRegistration",
-            "ModelGateway",
         ):
             with self.subTest(forbidden=forbidden):
                 self.assertNotIn(forbidden, source)

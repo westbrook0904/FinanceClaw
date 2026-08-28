@@ -142,8 +142,9 @@ Bootstrap 可以依赖全部 Harness 基础设施，其他核心模块不得反�
 基础设施类不实现全局单例，实例数量与共享关系由组装决定。
 
 ModelGateway 已组装但不经 CapabilityInvoker；当前 `handle()` 只支持 FAST，PLAN 调度、
-LLM Router、LLM Planner、Workflow SPI、Remote Plugin、MCP、分布式调度和 HTTP 执行
-API 尚未实现。`app.planner_registry` 已可用于本地 Static/Hybrid Planner 配置和
+LLM Planner、Workflow SPI、Remote Plugin、MCP、分布式调度和 HTTP 执行 API 尚未实现。
+LLMRouter 已可作为显式 Router 或 RuleRouter fallback 注入，默认组装仍保持无模型的
+RuleRouter。`app.planner_registry` 已可用于本地 Static/Hybrid Planner 配置和
 RouteDecision planner ID 校验，但在 PLAN shared lifecycle 接入前不会调用 Planner。
 
 ## 测试

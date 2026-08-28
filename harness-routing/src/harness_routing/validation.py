@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 from harness_contracts import (
+    CapabilityType,
     ErrorCode,
     ExecutionMode,
     PlanningError,
@@ -88,10 +89,16 @@ class RouteDecisionValidator:
 
         if decision.mode is ExecutionMode.FAST:
             capability_id = decision.capability_id
-            catalog_ids = {descriptor.id for descriptor in context.catalog_snapshot}
-            if capability_id not in catalog_ids:
+            catalog = {descriptor.id: descriptor for descriptor in context.catalog_snapshot}
+            descriptor = catalog.get(capability_id)
+            if descriptor is None:
                 self._raise_invalid(
                     "route capability does not exist in the catalog snapshot",
+                    capability_id=capability_id,
+                )
+            if descriptor.type not in {CapabilityType.AGENT, CapabilityType.TOOL}:
+                self._raise_invalid(
+                    "route capability is not directly executable",
                     capability_id=capability_id,
                 )
             if (

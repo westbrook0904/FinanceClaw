@@ -68,7 +68,7 @@ GenerateResult + Usage + Provider Identity + Trace / Events
 | `harness-contracts` | Request、Plan、状态、审批、Continuation、Result、能力执行画像与持久化协议 |
 | `harness-spi` | 业务无关的 Agent、Tool、Plugin 扩展接口 |
 | `harness-registry` | 单 Capability 多 Provider 注册/解析，以及不暴露 Provider instance 的只读 Catalog |
-| `harness-routing` | Router SPI、受限 Request 投影、确定性 RuleRouter 与路由决策校验 |
+| `harness-routing` | Router SPI、安全 Request 投影、Rule/LLM Router 与决策校验 |
 | `harness-selection` | Eligibility、最小 Health 和确定性 Priority Selection |
 | `harness-plugin-local` | 本地集合/entry point 发现、插件生命周期和事务回滚 |
 | `harness-planning` | Planner SPI/Registry、Static/Hybrid 策略及 Plan 可执行性校验 |
@@ -186,5 +186,6 @@ async with build_harness() as app:
 - Registry 支持单 Capability 多 Provider，并通过最小 Health-aware PrioritySelector 选择；
   Provider Pin 外部入口、Weighted Canary 和 Passive Health 暂缓。
 - 当前 `handle()` 只分派经过独立校验的 FAST Decision；本地 Planner Foundation 已就绪，
-  但 PLAN 尚未接入执行。LLM Router、LLM Planner、动态 Plan Patch、
+  但 PLAN 尚未接入执行。LLMRouter 已可显式配置为 RuleRouter fallback；LLM Planner、
+  动态 Plan Patch、
   远程插件、MCP、分布式 Scheduler/锁和外部 Event Broker 尚未实现。

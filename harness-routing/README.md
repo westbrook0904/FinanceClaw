@@ -1,8 +1,9 @@
 # harness-routing
 
-`harness-routing` 是 FinanceClaw 的无执行权路由决策层。当前 Stage 3B Step 2 提供
-Router SPI、受限 Request 投影、确定性 RuleRouter 和独立 RouteDecisionValidator；它只
-产生并校验 `RouteDecision`，不调用 Capability、Provider、ExecutionEngine 或 StateStore。
+`harness-routing` 是 FinanceClaw 的无执行权路由决策层。当前提供 Router SPI、受限
+Request 投影、确定性 RuleRouter、ModelGateway 驱动的 LLMRouter 和独立
+RouteDecisionValidator；它只产生并校验 `RouteDecision`，不调用 Capability、Provider、
+ExecutionEngine 或 StateStore。
 
 ## 公共 API
 
@@ -13,6 +14,8 @@ Router SPI、受限 Request 投影、确定性 RuleRouter 和独立 RouteDecisio
   snapshot 和类型化 Route Policy constraints。
 - `InputTypeRouteRule` / `RuleRouter`：按固定优先级执行显式模式、target、input type 和
   fallback Router 规则。
+- `LLMRouter`：把安全 RequestSummary、Capability-only Catalog 和收紧后的可选范围发送给
+  逻辑 Model Capability，解析结构化 RouteDecision 后再次执行独立校验。
 - `RouteDecisionValidator`：在 Harness 分派前重新校验 schema、固定模式、Catalog、Planner、
   Policy 约束、3B 模式可用性和显式 target 一致性。
 
@@ -34,9 +37,21 @@ fallback Router，或 HARNESS.ROUTE.NO_MATCH
 
 Fallback 异常会直接传播；RuleRouter 不会在 fallback 失败后反向猜测模式或 Capability。
 
+## LLMRouter 安全边界
+
+LLMRouter 只通过 `ModelGateway` 调用逻辑 Model Capability，不依赖厂商 SDK。Prompt 不包含
+Identity、Tenant attributes、Trace baggage、Plugin pin、Provider identity 或执行状态；MODEL
+类型 Capability 也不会进入 FAST 候选目录。
+
+模型输出必须满足 `RouteDecision` JSON Schema，顶层未知字段（包括 `provider_id`、
+`plugin_id`）会被拒绝，`source` 必须为 `model`，并继续经过 RouteDecisionValidator。模型失败
+只映射安全 cause code，不回传原始响应或 Provider details。Provider retry/fallback 仍完全由
+ModelGateway 负责。
+
 ## 依赖边界
 
-本模块依赖 `harness-contracts` 的稳定协议。RoutingContext 只接收
+本模块依赖 `harness-contracts` 的稳定协议，并允许 LLMRouter 依赖 `harness-model` 的
+ModelGateway。RoutingContext 只接收
 `CapabilityDescriptor` snapshot，不接收 `ProviderRegistration` 或 Provider instance；本模块
 不依赖 `harness-runtime`、`harness-execution`、业务插件或厂商模型 SDK。
 
