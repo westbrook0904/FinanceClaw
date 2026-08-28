@@ -4,10 +4,15 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from harness_contracts import JsonValue
+from harness_contracts import ExecutionMode, InvocationContext, JsonValue
 
-from .models import PolicyContext, PolicyDecision, PolicyEffect
+from .models import PolicyContext, PolicyDecision, PolicyEffect, PolicyPhase
 from .policy import Policy
+from .routing import (
+    PreRoutePolicyResult,
+    RoutePolicyConstraintReducer,
+    resolve_pre_route_policy,
+)
 
 
 class PolicyEngine:
@@ -41,6 +46,7 @@ class PolicyEngine:
             return self._default_decision(context)
 
         constraints: dict[str, JsonValue] = {}
+        route_reducer = RoutePolicyConstraintReducer()
         approval: PolicyDecision | None = None
         for policy in applicable:
             decision = policy.evaluate(context)
@@ -48,7 +54,10 @@ class PolicyEngine:
                 raise TypeError(f"policy {policy.name} must return PolicyDecision")
 
             serialized = decision.model_dump(mode="json")["constraints"]
-            constraints.update(serialized)
+            if context.phase is PolicyPhase.PRE_ROUTE:
+                constraints = route_reducer.add(serialized).model_dump(mode="json")
+            else:
+                constraints.update(serialized)
             if decision.effect is PolicyEffect.DENY:
                 return PolicyDecision.deny(
                     decision.policy,
@@ -72,6 +81,20 @@ class PolicyEngine:
             reason="all applicable policies allowed the operation",
             constraints=constraints,
         )
+
+    def evaluate_pre_route(
+        self,
+        invocation: InvocationContext,
+        requested_mode: ExecutionMode,
+    ) -> PreRoutePolicyResult:
+        """运行 PRE_ROUTE 策略、执行 effect 门禁并返回有效 Router 约束。"""
+
+        context = PolicyContext(
+            invocation=invocation,
+            phase=PolicyPhase.PRE_ROUTE,
+            requested_mode=requested_mode,
+        )
+        return resolve_pre_route_policy(self.evaluate(context), requested_mode)
 
     def _default_decision(self, context: PolicyContext) -> PolicyDecision:
         reason = f"no policies configured for {context.phase.value}"

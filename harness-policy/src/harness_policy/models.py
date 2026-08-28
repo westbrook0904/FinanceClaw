@@ -1,25 +1,26 @@
-"""阶段二 Policy 的稳定上下文与结构化决策。"""
+"""Harness Policy 的稳定上下文与结构化决策。"""
 
 from __future__ import annotations
 
 from enum import StrEnum
 
-from pydantic import Field, model_validator
-
 from harness_contracts import (
     ApprovalGrant,
     CapabilityDescriptor,
     ContractModel,
+    ExecutionMode,
     ExecutionPlan,
     InvocationContext,
     ProviderDescriptor,
 )
 from harness_contracts.base import FrozenJsonMapping, NonEmptyString
+from pydantic import Field, model_validator
 
 
 class PolicyPhase(StrEnum):
-    """阶段二治理边界。"""
+    """Harness 当前支持的治理边界。"""
 
+    PRE_ROUTE = "pre_route"
     PRE_PLAN = "pre_plan"
     PRE_EXECUTE = "pre_execute"
 
@@ -41,9 +42,26 @@ class PolicyContext(ContractModel):
     provider: ProviderDescriptor | None = None
     plan: ExecutionPlan | None = None
     approval_grant: ApprovalGrant | None = None
+    requested_mode: ExecutionMode | None = None
 
     @model_validator(mode="after")
     def validate_phase_payload(self) -> PolicyContext:
+        if self.phase is PolicyPhase.PRE_ROUTE:
+            if self.requested_mode is None:
+                raise ValueError("pre_route policy context requires requested_mode")
+            if (
+                self.plan is not None
+                or self.capability is not None
+                or self.provider is not None
+                or self.approval_grant is not None
+            ):
+                raise ValueError(
+                    "pre_route policy context forbids plan, capability, provider and approval_grant"
+                )
+            return self
+
+        if self.requested_mode is not None:
+            raise ValueError("requested_mode is only valid for pre_route policy context")
         if self.phase is PolicyPhase.PRE_PLAN:
             if self.plan is None:
                 raise ValueError("pre_plan policy context requires plan")

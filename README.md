@@ -68,7 +68,7 @@ GenerateResult + Usage + Provider Identity + Trace / Events
 | `harness-selection` | Eligibility、最小 Health 和确定性 Priority Selection |
 | `harness-plugin-local` | 本地集合/entry point 发现、插件生命周期和事务回滚 |
 | `harness-planning` | DAG、引用、Binding、Condition 与 Capability 可执行性校验 |
-| `harness-policy` | `PRE_PLAN` / `PRE_EXECUTE` 策略链和 `REQUIRE_APPROVAL` 治理结果 |
+| `harness-policy` | `PRE_ROUTE` / `PRE_PLAN` / `PRE_EXECUTE` 策略链与类型化路由约束 |
 | `harness-runtime` | Direct Invocation 与 Plan 共用的受控 Capability 调用边界 |
 | `harness-model` | 模型原生协议、ModelProvider SPI、ModelGateway 与确定性 Mock Models |
 | `harness-execution` | DAG 调度、重试、取消、Checkpoint/Resume、Approval、Async completion 和结果组合 |

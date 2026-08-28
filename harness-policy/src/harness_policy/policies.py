@@ -11,11 +11,17 @@ from .policy import Policy
 
 
 class AllowAllPolicy(Policy):
-    """显式允许 PRE_PLAN/PRE_EXECUTE，主要用于开发和组合测试。"""
+    """显式允许全部治理阶段，主要用于开发和组合测试。"""
 
     @property
     def phases(self) -> frozenset[PolicyPhase]:
-        return frozenset({PolicyPhase.PRE_PLAN, PolicyPhase.PRE_EXECUTE})
+        return frozenset(
+            {
+                PolicyPhase.PRE_ROUTE,
+                PolicyPhase.PRE_PLAN,
+                PolicyPhase.PRE_EXECUTE,
+            }
+        )
 
     def evaluate(self, context: PolicyContext) -> PolicyDecision:
         return PolicyDecision.allow(self.name, reason=f"{context.phase.value} allowed")
@@ -37,7 +43,13 @@ class TenantPolicy(Policy):
 
     @property
     def phases(self) -> frozenset[PolicyPhase]:
-        return frozenset({PolicyPhase.PRE_PLAN, PolicyPhase.PRE_EXECUTE})
+        return frozenset(
+            {
+                PolicyPhase.PRE_ROUTE,
+                PolicyPhase.PRE_PLAN,
+                PolicyPhase.PRE_EXECUTE,
+            }
+        )
 
     def evaluate(self, context: PolicyContext) -> PolicyDecision:
         requested = context.invocation.request.tenant_id
@@ -60,7 +72,11 @@ class TenantPolicy(Policy):
         ):
             return PolicyDecision.deny(self.name, reason="tenant is not allowed")
 
-        constraints = {"tenant_id": resolved} if resolved is not None else {}
+        constraints = (
+            {"tenant_id": resolved}
+            if resolved is not None and context.phase is not PolicyPhase.PRE_ROUTE
+            else {}
+        )
         return PolicyDecision.allow(
             self.name,
             reason="tenant allowed",

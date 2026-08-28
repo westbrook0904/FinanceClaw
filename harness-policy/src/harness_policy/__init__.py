@@ -1,4 +1,6 @@
-"""Harness 的 PRE_PLAN / PRE_EXECUTE 治理边界。"""
+"""Harness 的 PRE_ROUTE / PRE_PLAN / PRE_EXECUTE 治理边界。"""
+
+from harness_routing import RoutePolicyConstraints
 
 from .engine import PolicyEngine
 from .models import PolicyContext, PolicyDecision, PolicyEffect, PolicyPhase
@@ -9,6 +11,12 @@ from .policies import (
     TenantPolicy,
 )
 from .policy import Policy
+from .routing import (
+    PreRoutePolicyResult,
+    RoutePolicyConstraintReducer,
+    reduce_route_policy_constraints,
+    resolve_pre_route_policy,
+)
 
 __all__ = [
     "AllowAllPolicy",
@@ -19,6 +27,11 @@ __all__ = [
     "PolicyEffect",
     "PolicyEngine",
     "PolicyPhase",
+    "PreRoutePolicyResult",
     "RequireApprovalPolicy",
+    "RoutePolicyConstraintReducer",
+    "RoutePolicyConstraints",
     "TenantPolicy",
+    "reduce_route_policy_constraints",
+    "resolve_pre_route_policy",
 ]
