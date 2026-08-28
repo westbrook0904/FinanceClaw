@@ -64,6 +64,7 @@ GenerateResult + Usage + Provider Identity + Trace / Events
 | `harness-contracts` | Request、Plan、状态、审批、Continuation、Result、能力执行画像与持久化协议 |
 | `harness-spi` | 业务无关的 Agent、Tool、Plugin 扩展接口 |
 | `harness-registry` | 单 Capability 多 Provider 注册/解析，以及不暴露 Provider instance 的只读 Catalog |
+| `harness-routing` | Router SPI、受限 Request 投影、确定性 RuleRouter 与路由决策校验 |
 | `harness-selection` | Eligibility、最小 Health 和确定性 Priority Selection |
 | `harness-plugin-local` | 本地集合/entry point 发现、插件生命周期和事务回滚 |
 | `harness-planning` | DAG、引用、Binding、Condition 与 Capability 可执行性校验 |
@@ -147,7 +148,8 @@ async with build_harness() as app:
 ```bash
 .venv/bin/python -m pytest \
   harness-contracts/tests harness-spi/tests harness-registry/tests \
-  harness-plugin-local/tests harness-selection/tests harness-planning/tests \
+  harness-plugin-local/tests harness-selection/tests harness-routing/tests \
+  harness-planning/tests \
   harness-policy/tests harness-model/tests \
   harness-trace/tests harness-runtime/tests harness-state/tests \
   harness-events/tests harness-execution/tests harness-bootstrap/tests \
@@ -176,6 +178,6 @@ async with build_harness() as app:
 - StateStore 是恢复事实来源；Execution Events 是 best-effort 观察面，不替代 Checkpoint。
 - Registry 支持单 Capability 多 Provider，并通过最小 Health-aware PrioritySelector 选择；
   Provider Pin 外部入口、Weighted Canary 和 Passive Health 暂缓。
-- 当前执行调用方提供的确定性 `ExecutionPlan`；Model Fabric 已就绪，但 Router、
-  LLM Planner、动态 Plan Patch、
+- 当前执行调用方提供的确定性 `ExecutionPlan`；确定性 Router Foundation 已就绪但尚未接入
+  `handle()`，LLM Router、LLM Planner、动态 Plan Patch、
   远程插件、MCP、分布式 Scheduler/锁和外部 Event Broker 尚未实现。
