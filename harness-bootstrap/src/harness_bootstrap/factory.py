@@ -16,6 +16,13 @@ from harness_registry import (
     InMemoryCapabilityRegistry,
     RegistryCapabilityCatalog,
 )
+from harness_routing import (
+    RequestProjector,
+    RouteDecisionValidator,
+    Router,
+    RuleRouter,
+    SafeRequestProjector,
+)
 from harness_runtime import (
     CapabilityInvoker,
     DefaultInvocationContextFactory,
@@ -29,6 +36,7 @@ from harness_state import InMemoryStateStore, StateStore
 from harness_trace import InMemoryTracer, Tracer
 
 from .application import HarnessApplication, HarnessComponents
+from .coordinator import RequestCoordinator
 
 
 def build_harness(
@@ -44,6 +52,8 @@ def build_harness(
     plan_validator: PlanValidator | None = None,
     state_store: StateStore | None = None,
     event_publisher: EventPublisher | None = None,
+    router: Router | None = None,
+    request_projector: RequestProjector | None = None,
     plugin_provider: LocalPluginProvider | None = None,
     entry_point_group: str | None = "financeclaw.plugins",
 ) -> HarnessApplication:
@@ -72,6 +82,12 @@ def build_harness(
         raise TypeError("state_store must implement StateStore")
     if event_publisher is not None and not isinstance(event_publisher, EventPublisher):
         raise TypeError("event_publisher must implement EventPublisher")
+    if router is not None and not isinstance(router, Router):
+        raise TypeError("router must implement Router")
+    if request_projector is not None and not isinstance(
+        request_projector, RequestProjector
+    ):
+        raise TypeError("request_projector must implement RequestProjector")
     if (
         capability_catalog is not None
         and plan_validator is not None
@@ -110,6 +126,11 @@ def build_harness(
     )
     effective_state_store = state_store or InMemoryStateStore()
     effective_event_publisher = event_publisher or InMemoryEventBus()
+    effective_router = router if router is not None else RuleRouter()
+    effective_request_projector = (
+        request_projector if request_projector is not None else SafeRequestProjector()
+    )
+    route_decision_validator = RouteDecisionValidator()
     effective_provider = (
         plugin_provider
         if plugin_provider is not None
@@ -161,6 +182,16 @@ def build_harness(
         lifecycle=lifecycle,
         invoker=invoker,
     )
+    request_coordinator = RequestCoordinator(
+        effective_router,
+        route_decision_validator,
+        effective_request_projector,
+        effective_policy_engine,
+        effective_catalog,
+        invoker,
+        lifecycle,
+        effective_tracer,
+    )
 
     return HarnessApplication(
         HarnessComponents(
@@ -180,5 +211,9 @@ def build_harness(
             execution_engine=execution_engine,
             state_store=effective_state_store,
             event_publisher=effective_event_publisher,
+            router=effective_router,
+            request_projector=effective_request_projector,
+            route_decision_validator=route_decision_validator,
+            request_coordinator=request_coordinator,
         )
     )

@@ -3,8 +3,8 @@
 FinanceClaw 第二阶段（Reliable Plan Execution Engine）已经完成，Stage 3A Provider
 Fabric 已实现多 Provider Registry、Health-aware Selection、Retry/Fallback、Provider-safe
 Checkpoint/Resume、Provider Observability，以及独立的 ModelProvider/ModelGateway。当前
-仓库仍保留阶段一 Direct Invocation API，并可可靠执行调用方提供的结构化
-`ExecutionPlan`。
+仓库已接入 Stage 3B 确定性 `handle()` FAST 路径，同时保留阶段一 Direct Invocation API，
+并可可靠执行调用方提供的结构化 `ExecutionPlan`。
 
 财经能力仍然只是插件；Harness Core 不包含财经类型、Prompt、SQL、行情访问或其他具体
 业务实现。
@@ -44,6 +44,10 @@ ResultEnvelope + StateStore Checkpoint + Trace + Execution Events
 `HarnessRuntime.invoke()` 继续提供单 Capability 的 Direct Invocation；Plan 执行使用
 `HarnessApplication.execute_plan()`，两条路径共享 `CapabilityInvoker`，不会绕过 Registry、
 Policy、Trace、Timeout 或错误归一化边界。
+
+上层应用可使用 `HarnessApplication.handle()` 统一完成模式归一化、PRE_ROUTE、RuleRouter
+决策校验和 FAST 调用；一次 handle 只创建一个 InvocationContext、Deadline 和 REQUEST
+Trace。PLAN 路径将在 Stage 3B 后续步骤接入。
 
 模型调用使用独立边界，不经过 `CapabilityInvoker`：
 
@@ -98,7 +102,7 @@ async def main() -> None:
     )
 
     async with build_harness() as app:
-        result = await app.invoke(request)
+        result = await app.handle(request)
         print(result.model_dump(mode="json"))
 
 
@@ -107,6 +111,9 @@ asyncio.run(main())
 
 Plan 请求允许 `Request.target=None`，但 Direct Invocation 仍要求明确 target，否则返回
 `HARNESS.REQUEST.TARGET_REQUIRED`。
+
+需要维持原低层入口语义时仍可调用 `app.invoke(request)`；`handle(request, mode="fast")`
+会把 mode sugar 归一化到 Request 副本，不修改调用方原对象。
 
 ## Plan 执行与恢复
 
@@ -178,6 +185,6 @@ async with build_harness() as app:
 - StateStore 是恢复事实来源；Execution Events 是 best-effort 观察面，不替代 Checkpoint。
 - Registry 支持单 Capability 多 Provider，并通过最小 Health-aware PrioritySelector 选择；
   Provider Pin 外部入口、Weighted Canary 和 Passive Health 暂缓。
-- 当前执行调用方提供的确定性 `ExecutionPlan`；确定性 Router Foundation 已就绪但尚未接入
-  `handle()`，LLM Router、LLM Planner、动态 Plan Patch、
+- 当前 `handle()` 只分派经过独立校验的 FAST Decision，PLAN 尚未接入执行；LLM Router、
+  LLM Planner、动态 Plan Patch、
   远程插件、MCP、分布式 Scheduler/锁和外部 Event Broker 尚未实现。

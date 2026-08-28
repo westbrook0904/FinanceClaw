@@ -9,6 +9,7 @@ from .application import (
     HarnessApplication,
     HarnessComponents,
 )
+from .coordinator import RequestCoordinator
 from .factory import build_harness
 
 __all__ = [
@@ -16,5 +17,6 @@ __all__ = [
     "BootstrapStateError",
     "HarnessApplication",
     "HarnessComponents",
+    "RequestCoordinator",
     "build_harness",
 ]

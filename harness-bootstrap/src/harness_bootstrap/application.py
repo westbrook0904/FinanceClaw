@@ -6,7 +6,14 @@ import asyncio
 from dataclasses import dataclass
 from enum import StrEnum
 
-from harness_contracts import ApprovalDecision, ExecutionPlan, Request, ResultEnvelope
+from harness_contracts import (
+    ApprovalDecision,
+    ExecutionMode,
+    ExecutionPlan,
+    Request,
+    RequestError,
+    ResultEnvelope,
+)
 from harness_events import EventPublisher
 from harness_execution import BasicScheduler, ExecutionEngine
 from harness_model import ModelGateway
@@ -14,6 +21,7 @@ from harness_planning import PlanValidator
 from harness_plugin_local import LoadedPlugin, LocalPluginLoader
 from harness_policy import PolicyEngine
 from harness_registry import CapabilityCatalog, CapabilityRegistry
+from harness_routing import RequestProjector, RouteDecisionValidator, Router
 from harness_runtime import (
     CapabilityInvoker,
     HarnessRuntime,
@@ -23,6 +31,8 @@ from harness_runtime import (
 from harness_selection import ProviderSelector
 from harness_state import StateStore
 from harness_trace import Tracer
+
+from .coordinator import RequestCoordinator, normalize_request_mode
 
 
 class BootstrapState(StrEnum):
@@ -57,6 +67,10 @@ class HarnessComponents:
     execution_engine: ExecutionEngine
     state_store: StateStore
     event_publisher: EventPublisher
+    router: Router
+    request_projector: RequestProjector
+    route_decision_validator: RouteDecisionValidator
+    request_coordinator: RequestCoordinator
 
 
 class HarnessApplication:
@@ -134,6 +148,22 @@ class HarnessApplication:
         return self._components.plugin_loader
 
     @property
+    def router(self) -> Router:
+        return self._components.router
+
+    @property
+    def request_projector(self) -> RequestProjector:
+        return self._components.request_projector
+
+    @property
+    def route_decision_validator(self) -> RouteDecisionValidator:
+        return self._components.route_decision_validator
+
+    @property
+    def request_coordinator(self) -> RequestCoordinator:
+        return self._components.request_coordinator
+
+    @property
     def loaded_plugins(self) -> tuple[LoadedPlugin, ...]:
         return self._components.plugin_loader.loaded_plugins()
 
@@ -171,6 +201,21 @@ class HarnessApplication:
         if self._state is not BootstrapState.STARTED:
             raise BootstrapStateError("harness application must be started before invoke")
         return await self._components.runtime.invoke(request)
+
+    async def handle(
+        self,
+        request: Request,
+        mode: ExecutionMode | str | None = None,
+    ) -> ResultEnvelope:
+        """归一化执行模式并把请求交给统一 RequestCoordinator。"""
+
+        if self._state is not BootstrapState.STARTED:
+            raise BootstrapStateError("harness application must be started before handle")
+        try:
+            normalized_request = normalize_request_mode(request, mode)
+        except RequestError as exc:
+            return ResultEnvelope.failure(exc.to_detail())
+        return await self._components.request_coordinator.handle(normalized_request)
 
     async def execute_plan(
         self,

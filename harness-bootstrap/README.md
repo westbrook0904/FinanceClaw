@@ -15,6 +15,8 @@ build_harness()
 │   └── InvocationLifecycle
 ├── CapabilityInvoker
 │   └── ProviderExecutionCoordinator
+├── SafeRequestProjector / RuleRouter / RouteDecisionValidator
+├── RequestCoordinator（单 Context / Deadline / Request Trace 的 FAST 调度）
 ├── ModelGateway（共享 Registry / Selector / Coordinator / Tracer / Events）
 ├── PlanValidator
 ├── InMemoryStateStore
@@ -28,7 +30,7 @@ build_harness()
 
 `build_harness()` 只创建和连接对象，不发现或初始化插件，也不创建数据库文件。可注入
 Registry、PolicyEngine/Policies、Tracer、ProviderSelector、ContextFactory、CapabilityCatalog、
-PlanValidator、StateStore、EventPublisher 或 LocalPluginProvider。
+PlanValidator、StateStore、EventPublisher、Router、RequestProjector 或 LocalPluginProvider。
 
 自定义组件必须共享一致边界，例如自定义 Catalog 与 PlanValidator.catalog 必须相同；
 `policies` 与 `policy_engine`、`plugins` 与 `plugin_provider` 不能同时配置。
@@ -36,6 +38,8 @@ PlanValidator、StateStore、EventPublisher 或 LocalPluginProvider。
 ## HarnessApplication API
 
 - `start()`：发现、初始化并注册插件。
+- `handle(request, mode=None)`：推荐的统一入口；当前完成 PRE_ROUTE、确定性路由与 FAST
+  Capability 调用。
 - `invoke(request)`：Direct Invocation。
 - `model_gateway`：供未来 Router/Planner/Explorer 使用的模型生成入口。
 - `execute_plan(request, plan)`：验证并执行 Plan。
@@ -51,7 +55,7 @@ PlanValidator、StateStore、EventPublisher 或 LocalPluginProvider。
 
 ```python
 async with build_harness() as app:
-    result = await app.invoke(request)
+    result = await app.handle(request)
 ```
 
 ## 生命周期
@@ -70,7 +74,7 @@ STOPPED
 - 重复 `shutdown()` 幂等。
 - STOPPED Application 不能重启，应重新调用 `build_harness()`。
 - 启动批次失败由 LocalPluginLoader 回滚，Application 保持 CREATED。
-- invoke/execute/resume/approval/async completion/cancel 入口只允许在 STARTED 状态，
+- handle/invoke/execute/resume/approval/async completion/cancel 入口只允许在 STARTED 状态，
   否则抛出 `BootstrapStateError`。
 
 ## 插件发现
@@ -123,7 +127,7 @@ result = await app.complete_async_node(
 
 ## Policy / Trace / Events
 
-默认 AllowAllPolicy 同时参与 PRE_PLAN/PRE_EXECUTE。可配置
+默认 AllowAllPolicy 同时参与 PRE_ROUTE/PRE_PLAN/PRE_EXECUTE。可配置
 `RequireApprovalPolicy`；批准后的节点携带结构化 ApprovalGrant 再次经过 PRE_EXECUTE。
 
 默认 InMemoryEventBus 不产生磁盘或网络副作用，并可通过
@@ -135,8 +139,9 @@ Composition Root 决定。
 Bootstrap 可以依赖全部 Harness 基础设施，其他核心模块不得反向依赖 Bootstrap。
 基础设施类不实现全局单例，实例数量与共享关系由组装决定。
 
-ModelGateway 已组装但不经 CapabilityInvoker；Router、LLM Planner、Workflow SPI、
-Remote Plugin、MCP、分布式调度和 HTTP 执行 API 尚未实现。
+ModelGateway 已组装但不经 CapabilityInvoker；当前 `handle()` 只支持 FAST，PLAN 调度、
+LLM Router、LLM Planner、Workflow SPI、Remote Plugin、MCP、分布式调度和 HTTP 执行 API
+尚未实现。
 
 ## 测试
 
