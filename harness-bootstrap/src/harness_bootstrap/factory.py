@@ -7,7 +7,7 @@ from collections.abc import Iterable
 from harness_events import EventPublisher, InMemoryEventBus
 from harness_execution import BasicScheduler, ExecutionEngine
 from harness_model import ModelGateway
-from harness_planning import PlanValidator
+from harness_planning import Planner, PlannerRegistry, PlanValidator
 from harness_plugin_local import LocalPluginLoader, LocalPluginProvider
 from harness_policy import AllowAllPolicy, Policy, PolicyEngine
 from harness_registry import (
@@ -53,6 +53,8 @@ def build_harness(
     state_store: StateStore | None = None,
     event_publisher: EventPublisher | None = None,
     router: Router | None = None,
+    planners: Iterable[Planner] = (),
+    default_planner_id: str | None = None,
     request_projector: RequestProjector | None = None,
     plugin_provider: LocalPluginProvider | None = None,
     entry_point_group: str | None = "financeclaw.plugins",
@@ -126,11 +128,20 @@ def build_harness(
     )
     effective_state_store = state_store or InMemoryStateStore()
     effective_event_publisher = event_publisher or InMemoryEventBus()
-    effective_router = router if router is not None else RuleRouter()
+    planner_registry = PlannerRegistry(planners)
+    if default_planner_id is not None:
+        planner_registry.get(default_planner_id)
+    effective_router = (
+        router
+        if router is not None
+        else RuleRouter(default_planner_id=default_planner_id)
+    )
     effective_request_projector = (
         request_projector if request_projector is not None else SafeRequestProjector()
     )
-    route_decision_validator = RouteDecisionValidator()
+    route_decision_validator = RouteDecisionValidator(
+        planner_ids=planner_registry.planner_ids
+    )
     effective_provider = (
         plugin_provider
         if plugin_provider is not None
@@ -215,5 +226,6 @@ def build_harness(
             request_projector=effective_request_projector,
             route_decision_validator=route_decision_validator,
             request_coordinator=request_coordinator,
+            planner_registry=planner_registry,
         )
     )

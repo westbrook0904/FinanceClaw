@@ -17,7 +17,7 @@ from harness_contracts import (
 from harness_events import EventPublisher
 from harness_execution import BasicScheduler, ExecutionEngine
 from harness_model import ModelGateway
-from harness_planning import PlanValidator
+from harness_planning import PlannerRegistry, PlanValidator
 from harness_plugin_local import LoadedPlugin, LocalPluginLoader
 from harness_policy import PolicyEngine
 from harness_registry import CapabilityCatalog, CapabilityRegistry
@@ -71,6 +71,7 @@ class HarnessComponents:
     request_projector: RequestProjector
     route_decision_validator: RouteDecisionValidator
     request_coordinator: RequestCoordinator
+    planner_registry: PlannerRegistry
 
 
 class HarnessApplication:
@@ -162,6 +163,10 @@ class HarnessApplication:
     @property
     def request_coordinator(self) -> RequestCoordinator:
         return self._components.request_coordinator
+
+    @property
+    def planner_registry(self) -> PlannerRegistry:
+        return self._components.planner_registry
 
     @property
     def loaded_plugins(self) -> tuple[LoadedPlugin, ...]:

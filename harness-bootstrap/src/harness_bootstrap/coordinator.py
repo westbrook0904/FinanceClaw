@@ -9,7 +9,6 @@ from harness_contracts import (
     ExecutionMode,
     HarnessError,
     InvocationContext,
-    PlanningError,
     PolicyError,
     Request,
     RequestError,
@@ -304,10 +303,13 @@ class RequestCoordinator:
         trace_enabled: bool,
     ) -> ResultEnvelope:
         if decision.mode is not ExecutionMode.FAST or decision.capability_id is None:
-            raise PlanningError(
-                "PLAN request handling is not configured in this step",
-                code=ErrorCode.PLANNER_NOT_CONFIGURED,
-                details={"planner_id": decision.planner_id},
+            raise RoutingError(
+                "PLAN request dispatch is not available before the shared lifecycle path",
+                code=ErrorCode.ROUTE_MODE_NOT_AVAILABLE,
+                details={
+                    "execution_mode": decision.mode.value,
+                    "planner_id": decision.planner_id,
+                },
             )
 
         caller_plugin_id = request.target.plugin if request.target is not None else None

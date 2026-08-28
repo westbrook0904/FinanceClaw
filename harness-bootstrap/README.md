@@ -17,6 +17,7 @@ build_harness()
 │   └── ProviderExecutionCoordinator
 ├── SafeRequestProjector / RuleRouter / RouteDecisionValidator
 ├── RequestCoordinator（单 Context / Deadline / Request Trace 的 FAST 调度）
+├── PlannerRegistry（构造期只读 Planner 映射）
 ├── ModelGateway（共享 Registry / Selector / Coordinator / Tracer / Events）
 ├── PlanValidator
 ├── InMemoryStateStore
@@ -30,7 +31,8 @@ build_harness()
 
 `build_harness()` 只创建和连接对象，不发现或初始化插件，也不创建数据库文件。可注入
 Registry、PolicyEngine/Policies、Tracer、ProviderSelector、ContextFactory、CapabilityCatalog、
-PlanValidator、StateStore、EventPublisher、Router、RequestProjector 或 LocalPluginProvider。
+PlanValidator、StateStore、EventPublisher、Router、Planners、Default Planner、
+RequestProjector 或 LocalPluginProvider。
 
 自定义组件必须共享一致边界，例如自定义 Catalog 与 PlanValidator.catalog 必须相同；
 `policies` 与 `policy_engine`、`plugins` 与 `plugin_provider` 不能同时配置。
@@ -140,8 +142,9 @@ Bootstrap 可以依赖全部 Harness 基础设施，其他核心模块不得反�
 基础设施类不实现全局单例，实例数量与共享关系由组装决定。
 
 ModelGateway 已组装但不经 CapabilityInvoker；当前 `handle()` 只支持 FAST，PLAN 调度、
-LLM Router、LLM Planner、Workflow SPI、Remote Plugin、MCP、分布式调度和 HTTP 执行 API
-尚未实现。
+LLM Router、LLM Planner、Workflow SPI、Remote Plugin、MCP、分布式调度和 HTTP 执行
+API 尚未实现。`app.planner_registry` 已可用于本地 Static/Hybrid Planner 配置和
+RouteDecision planner ID 校验，但在 PLAN shared lifecycle 接入前不会调用 Planner。
 
 ## 测试
 
