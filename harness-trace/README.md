@@ -11,7 +11,7 @@ Request/Runtime/Capability 层级上增加 Plan、Scheduler 和 Plan Node，使�
 - `SpanStatus`：`RUNNING`、`OK`、`ERROR`、`CANCELLED`。
 - `SpanType`：`REQUEST`、`RUNTIME`、`POLICY`、`REGISTRY_RESOLVE`、`PROVIDER_SELECT`、
   `CAPABILITY`、`MODEL`、`AGENT`、`TOOL`、`PLAN`、`SCHEDULER`、
-  `PLAN_NODE`、`PLANNER`。
+  `PLAN_NODE`、`ROUTE`、`PLANNER`。
 - `InMemoryTracer`：线程安全保存 Span/Event，可按 trace/span 过滤并生成
   `TraceContext`。
 - `ConsoleTracer`：保留内存快照，同时输出 JSON Lines 生命周期记录。
@@ -55,10 +55,26 @@ REGISTRY_RESOLVE
 └── MODEL（每次 Provider attempt）
 ```
 
+统一 handle：
+
+```text
+REQUEST
+└── RUNTIME
+    ├── ROUTE
+    │   └── MODEL（LLMRouter，可选）
+    ├── PLANNER
+    │   └── MODEL（LLMPlanner，每次 generation）
+    └── PLAN → SCHEDULER / PLAN_NODE / Provider
+```
+
 每次初始 Provider 选择和 fallback 选择产生一个短生命周期 `PROVIDER_SELECT` Span；
 候选集、retry、fallback 和失败细节同时记录为 Trace Event。WAITING、Resume、Approval
 和 Checkpoint 等瞬时变化继续使用 Event/Attribute。已有 `InvocationContext.trace_context` 可续接上游 trace；
 `request.options.trace=false` 时不创建 Span，也不强制写入 result trace ID。
+
+ROUTE/PLANNER attributes 只保存安全标识符、计数和稳定 hash。RequestSummary、Catalog 原文、
+Prompt、模型响应、credential 与隐藏推理不会进入 Trace；repair 记录为 PLANNER 上的 Trace Event，
+不新增瞬时 SpanType。
 
 ## 生命周期约束
 

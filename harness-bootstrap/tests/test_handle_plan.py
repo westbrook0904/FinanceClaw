@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import inspect
+import json
 import tempfile
 import unittest
 from datetime import UTC, datetime
@@ -13,11 +15,13 @@ from harness_contracts import (
     ApprovalDecisionType,
     CapabilityDescriptor,
     CapabilityType,
+    ErrorCode,
     ExecutionMode,
     ExecutionPlan,
     InvocationContext,
     NodeOutputBinding,
     PlanEdge,
+    PlanningError,
     PlanNode,
     PlanNodeKind,
     Request,
@@ -31,7 +35,13 @@ from harness_contracts import (
     RouteSource,
     RouteType,
 )
-from harness_planning import Planner, PlanningContext
+from harness_events import ExecutionEventName
+from harness_planning import (
+    Planner,
+    PlanningAttempt,
+    PlanningAttemptObserver,
+    PlanningContext,
+)
 from harness_policy import Policy, PolicyContext, PolicyDecision, PolicyPhase
 from harness_routing import Router, RoutingContext
 from harness_runtime import InvocationContextFactory
@@ -112,6 +122,54 @@ class RecordingPlanner(Planner):
         if self._fail_if_called:
             raise AssertionError("persisted plan must resume without calling Planner")
         self.contexts.append(context)
+        return self._plan
+
+
+class ObservablePlanner(RecordingPlanner):
+    def __init__(self, plan: ExecutionPlan, *, fail: bool = False) -> None:
+        super().__init__(plan, planner_id="observable-planner")
+        self.fail = fail
+
+    @property
+    def prompt_version(self) -> str:
+        return "observable-v1"
+
+    async def plan_with_observer(
+        self,
+        context: PlanningContext,
+        *,
+        attempt_observer: PlanningAttemptObserver | None = None,
+    ) -> ExecutionPlan:
+        self.contexts.append(context)
+        attempts = (
+            PlanningAttempt(
+                attempt=1,
+                kind="initial",
+                prompt_version=self.prompt_version,
+                validation_codes=("PLAN.CYCLE",),
+                repair_scheduled=True,
+            ),
+            PlanningAttempt(
+                attempt=2,
+                kind="repair",
+                prompt_version=self.prompt_version,
+                validation_codes=("PLAN.CYCLE",) if self.fail else (),
+            ),
+        )
+        if attempt_observer is not None:
+            for attempt in attempts:
+                observation = attempt_observer(attempt)
+                if inspect.isawaitable(observation):
+                    await observation
+        if self.fail:
+            raise PlanningError(
+                "raw planner response must stay private",
+                code=ErrorCode.PLANNER_REPAIR_EXHAUSTED,
+                details={
+                    "attempt_count": 2,
+                    "validation_codes": ("raw validation secret with spaces",),
+                },
+            )
         return self._plan
 
 
@@ -263,16 +321,159 @@ class HandlePlanTests(unittest.IsolatedAsyncioTestCase):
         spans = tracer.spans(trace_id=result.trace_id)
         request_spans = [span for span in spans if span.type is SpanType.REQUEST]
         runtime_spans = [span for span in spans if span.name == "runtime.handle"]
+        route_spans = [span for span in spans if span.type is SpanType.ROUTE]
         planner_spans = [span for span in spans if span.type is SpanType.PLANNER]
         plan_spans = [span for span in spans if span.type is SpanType.PLAN]
         self.assertEqual(len(request_spans), 1)
         self.assertEqual(len(runtime_spans), 1)
+        self.assertEqual(len(route_spans), 1)
         self.assertEqual(len(planner_spans), 1)
         self.assertEqual(len(plan_spans), 1)
         self.assertEqual(runtime_spans[0].parent_span_id, request_spans[0].span_id)
+        self.assertEqual(route_spans[0].parent_span_id, runtime_spans[0].span_id)
         self.assertEqual(planner_spans[0].parent_span_id, runtime_spans[0].span_id)
         self.assertEqual(plan_spans[0].parent_span_id, runtime_spans[0].span_id)
+        planner_attributes = planner_spans[0].attributes
+        self.assertEqual(planner_attributes["planner_id"], planner.planner_id)
+        self.assertEqual(planner_attributes["prompt_version"], "not_applicable")
+        self.assertEqual(planner_attributes["attempt_count"], 1)
+        self.assertEqual(planner_attributes["plan_id"], "handle-plan-success")
+        self.assertEqual(planner_attributes["plan_revision"], 1)
+        self.assertEqual(planner_attributes["node_count"], 1)
+        self.assertEqual(planner_attributes["validation_result"], "valid")
+        self.assertEqual(len(planner_attributes["catalog_snapshot_hash"]), 64)
+        events = app.event_publisher.events()
+        event_names = [event.name for event in events]
+        self.assertIn(ExecutionEventName.PLANNER_STARTED, event_names)
+        self.assertIn(ExecutionEventName.PLANNER_COMPLETED, event_names)
+        self.assertNotIn(ExecutionEventName.PLANNER_REPAIRING, event_names)
+        self.assertNotIn(ExecutionEventName.PLANNER_FAILED, event_names)
+        planner_completed = next(
+            event for event in events if event.name is ExecutionEventName.PLANNER_COMPLETED
+        )
+        self.assertEqual(planner_completed.trace_id, result.trace_id)
+        serialized_observability = json.dumps(
+            {
+                "spans": [span.model_dump(mode="json") for span in spans],
+                "events": [event.model_dump(mode="json") for event in events],
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+        self.assertNotIn("hello", serialized_observability)
         self.assertTrue(all(span.status is not SpanStatus.RUNNING for span in spans))
+        await app.shutdown()
+
+    async def test_repairing_attempt_is_an_event_not_an_extra_span(self) -> None:
+        tracer = InMemoryTracer()
+        planner = ObservablePlanner(echo_plan("observable-plan-success"))
+        tool = RecordingTool()
+        app = build_harness(
+            plugins=(ToolPlugin(tool),),
+            planners=(planner,),
+            default_planner_id=planner.planner_id,
+            tracer=tracer,
+            entry_point_group=None,
+        )
+        await app.start()
+
+        result = await app.handle(plan_request())
+
+        self.assertEqual(result.status, ResultStatus.SUCCESS)
+        spans = tracer.spans(trace_id=result.trace_id)
+        planner_spans = [span for span in spans if span.type is SpanType.PLANNER]
+        self.assertEqual(len(planner_spans), 1)
+        self.assertEqual(planner_spans[0].attributes["prompt_version"], "observable-v1")
+        self.assertEqual(planner_spans[0].attributes["attempt_count"], 2)
+        trace_events = tracer.events(span_id=planner_spans[0].span_id)
+        self.assertEqual(
+            [event.name for event in trace_events],
+            [ExecutionEventName.PLANNER_REPAIRING.value],
+        )
+        planner_events = [
+            event
+            for event in app.event_publisher.events()
+            if event.name
+            in {
+                ExecutionEventName.PLANNER_STARTED,
+                ExecutionEventName.PLANNER_REPAIRING,
+                ExecutionEventName.PLANNER_COMPLETED,
+                ExecutionEventName.PLANNER_FAILED,
+            }
+        ]
+        self.assertEqual(
+            [event.name for event in planner_events],
+            [
+                ExecutionEventName.PLANNER_STARTED,
+                ExecutionEventName.PLANNER_REPAIRING,
+                ExecutionEventName.PLANNER_COMPLETED,
+            ],
+        )
+        repairing = planner_events[1]
+        self.assertEqual(repairing.attributes["attempt"], 2)
+        self.assertEqual(repairing.attributes["validation_codes"], ("PLAN.CYCLE",))
+        await app.shutdown()
+
+    async def test_repair_exhaustion_emits_safe_planner_failed_event(self) -> None:
+        tracer = InMemoryTracer()
+        planner = ObservablePlanner(echo_plan("observable-plan-failed"), fail=True)
+        tool = RecordingTool()
+        app = build_harness(
+            plugins=(ToolPlugin(tool),),
+            planners=(planner,),
+            default_planner_id=planner.planner_id,
+            tracer=tracer,
+            entry_point_group=None,
+        )
+        await app.start()
+
+        result = await app.handle(plan_request())
+
+        self.assertEqual(result.status, ResultStatus.FAILED)
+        self.assertEqual(result.error.code, ErrorCode.PLANNER_REPAIR_EXHAUSTED)
+        self.assertEqual(tool.contexts, [])
+        spans = tracer.spans(trace_id=result.trace_id)
+        planner_span = next(span for span in spans if span.type is SpanType.PLANNER)
+        self.assertEqual(planner_span.status, SpanStatus.ERROR)
+        self.assertEqual(planner_span.attributes["attempt_count"], 2)
+        self.assertEqual(planner_span.attributes["validation_result"], "failed")
+        self.assertEqual(
+            planner_span.attributes["error_code"],
+            ErrorCode.PLANNER_REPAIR_EXHAUSTED,
+        )
+        self.assertEqual(sum(span.type is SpanType.PLAN for span in spans), 0)
+        planner_events = [
+            event
+            for event in app.event_publisher.events()
+            if event.name.value.startswith("planner.")
+        ]
+        self.assertEqual(
+            [event.name for event in planner_events],
+            [
+                ExecutionEventName.PLANNER_STARTED,
+                ExecutionEventName.PLANNER_REPAIRING,
+                ExecutionEventName.PLANNER_FAILED,
+            ],
+        )
+        failed = planner_events[-1]
+        self.assertEqual(failed.attributes["attempt_count"], 2)
+        self.assertEqual(
+            failed.attributes["error_code"],
+            ErrorCode.PLANNER_REPAIR_EXHAUSTED,
+        )
+        self.assertEqual(
+            failed.attributes["validation_codes"],
+            ("UNSAFE_VALIDATION_CODE_REDACTED",),
+        )
+        serialized_observability = json.dumps(
+            {
+                "spans": [span.model_dump(mode="json") for span in spans],
+                "events": [event.model_dump(mode="json") for event in planner_events],
+            },
+            ensure_ascii=False,
+        )
+        self.assertNotIn("raw planner response", serialized_observability)
+        self.assertNotIn("raw validation secret", serialized_observability)
         await app.shutdown()
 
     async def test_pre_plan_deny_stops_capability_after_one_planner_call(self) -> None:

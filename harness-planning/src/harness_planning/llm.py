@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import inspect
 import json
-from collections.abc import Awaitable, Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from datetime import UTC, datetime
 from uuid import uuid4
 
@@ -29,7 +29,7 @@ from pydantic import ValidationError
 
 from .context import PlanningContext
 from .draft import PlanDraft
-from .models import PlanningAttempt, PlanValidationError
+from .models import PlanningAttempt, PlanningAttemptObserver, PlanValidationError
 from .planner import Planner, validate_planner_id
 from .repair import (
     MAX_REPAIR_ERRORS,
@@ -43,7 +43,6 @@ from .repair import (
 from .validator import PlanValidator
 
 type PlanIdFactory = Callable[[], str]
-type PlanningAttemptObserver = Callable[[PlanningAttempt], None | Awaitable[None]]
 type Clock = Callable[[], datetime]
 
 _SYSTEM_PROMPT = """You are a planning component inside a controlled Harness.
@@ -145,8 +144,18 @@ class LLMPlanner(Planner):
         return self._configured_capability_ids
 
     async def plan(self, context: PlanningContext) -> ExecutionPlan:
+        return await self.plan_with_observer(context)
+
+    async def plan_with_observer(
+        self,
+        context: PlanningContext,
+        *,
+        attempt_observer: PlanningAttemptObserver | None = None,
+    ) -> ExecutionPlan:
         if not isinstance(context, PlanningContext):
             raise TypeError("context must be PlanningContext")
+        if attempt_observer is not None and not callable(attempt_observer):
+            raise TypeError("attempt_observer must be callable")
 
         deadline_at = _effective_deadline(context)
         allowed_capability_ids = self._allowed_capability_ids(context)
@@ -184,6 +193,7 @@ class LLMPlanner(Planner):
                     kind=kind,
                     output_hash=attempt_output_hash,
                     validation_codes=(ErrorCode.PLANNER_MODEL_FAILED.value,),
+                    invocation_observer=attempt_observer,
                 )
                 raise
 
@@ -206,6 +216,8 @@ class LLMPlanner(Planner):
                     kind=kind,
                     output_hash=attempt_output_hash,
                     validation_codes=repair_feedback.validation_codes,
+                    repair_scheduled=attempt < context.constraints.max_plan_attempts,
+                    invocation_observer=attempt_observer,
                 )
                 if attempt >= context.constraints.max_plan_attempts:
                     raise PlanningError(
@@ -225,6 +237,7 @@ class LLMPlanner(Planner):
                     kind=kind,
                     output_hash=attempt_output_hash,
                     validation_codes=(str(exc.code),),
+                    invocation_observer=attempt_observer,
                 )
                 raise
 
@@ -234,6 +247,7 @@ class LLMPlanner(Planner):
                 kind=kind,
                 output_hash=attempt_output_hash,
                 validation_codes=(),
+                invocation_observer=attempt_observer,
             )
             return plan
 
@@ -472,24 +486,31 @@ class LLMPlanner(Planner):
         kind: str,
         output_hash: str | None,
         validation_codes: tuple[str, ...],
+        repair_scheduled: bool = False,
+        invocation_observer: PlanningAttemptObserver | None = None,
     ) -> None:
-        if self._attempt_observer is None:
+        observers: list[PlanningAttemptObserver] = []
+        for observer in (self._attempt_observer, invocation_observer):
+            if observer is not None and all(observer is not item for item in observers):
+                observers.append(observer)
+        if not observers:
             return
         usage = result.usage if isinstance(result, GenerateResult) else None
-        observation = self._attempt_observer(
-            PlanningAttempt(
-                attempt=attempt,
-                kind=kind,
-                provider_id=(result.provider_id if isinstance(result, GenerateResult) else None),
-                prompt_version=self._prompt_version,
-                output_hash=output_hash,
-                validation_codes=validation_codes,
-                input_tokens=usage.input_tokens if usage is not None else None,
-                output_tokens=usage.output_tokens if usage is not None else None,
-            )
+        summary = PlanningAttempt(
+            attempt=attempt,
+            kind=kind,
+            provider_id=(result.provider_id if isinstance(result, GenerateResult) else None),
+            prompt_version=self._prompt_version,
+            output_hash=output_hash,
+            validation_codes=validation_codes,
+            input_tokens=usage.input_tokens if usage is not None else None,
+            output_tokens=usage.output_tokens if usage is not None else None,
+            repair_scheduled=repair_scheduled,
         )
-        if inspect.isawaitable(observation):
-            await observation
+        for observer in observers:
+            observation = observer(summary)
+            if inspect.isawaitable(observation):
+                await observation
 
     def _ensure_deadline(
         self,

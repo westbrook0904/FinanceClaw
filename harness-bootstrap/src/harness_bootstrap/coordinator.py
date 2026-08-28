@@ -10,6 +10,7 @@ from harness_contracts import (
     ExecutionPlan,
     HarnessError,
     InvocationContext,
+    JsonValue,
     PlanningError,
     PolicyError,
     Request,
@@ -18,10 +19,12 @@ from harness_contracts import (
     RouteDecision,
     RoutingError,
 )
+from harness_events import EventPublisher, ExecutionEventName
 from harness_execution import ExecutionEngine
 from harness_planning import (
     Planner,
     PlannerRegistry,
+    PlanningAttempt,
     PlanningConstraints,
     PlanningContext,
 )
@@ -34,7 +37,13 @@ from harness_routing import (
     RoutingContext,
 )
 from harness_runtime import CapabilityInvoker, InvocationLifecycle
-from harness_trace import Span, SpanType, Tracer
+from harness_trace import Span, SpanType, TraceError, Tracer
+
+from .observability import (
+    RequestEventEmitter,
+    safe_observation_code,
+    stable_observation_hash,
+)
 
 
 def normalize_request_mode(
@@ -93,6 +102,7 @@ class RequestCoordinator:
         execution_engine: ExecutionEngine,
         lifecycle: InvocationLifecycle,
         tracer: Tracer,
+        event_publisher: EventPublisher,
         planner_registry: PlannerRegistry,
         default_planner_id: str | None,
     ) -> None:
@@ -114,6 +124,8 @@ class RequestCoordinator:
             raise TypeError("lifecycle must be InvocationLifecycle")
         if not isinstance(tracer, Tracer):
             raise TypeError("tracer must implement Tracer")
+        if not isinstance(event_publisher, EventPublisher):
+            raise TypeError("event_publisher must implement EventPublisher")
         if not isinstance(planner_registry, PlannerRegistry):
             raise TypeError("planner_registry must be PlannerRegistry")
         if default_planner_id is not None:
@@ -126,6 +138,10 @@ class RequestCoordinator:
             raise ValueError("invoker and coordinator must use the same policy_engine")
         if invoker.tracer is not tracer:
             raise ValueError("invoker and coordinator must use the same tracer")
+        if invoker.event_publisher is not event_publisher:
+            raise ValueError("invoker and coordinator must use the same event_publisher")
+        if execution_engine.event_publisher is not event_publisher:
+            raise ValueError("execution_engine and coordinator must use the same event_publisher")
 
         self._router = router
         self._decision_validator = decision_validator
@@ -136,6 +152,7 @@ class RequestCoordinator:
         self._execution_engine = execution_engine
         self._lifecycle = lifecycle
         self._tracer = tracer
+        self._events = RequestEventEmitter(event_publisher)
         self._planner_registry = planner_registry
         self._default_planner_id = default_planner_id
 
@@ -174,6 +191,10 @@ class RequestCoordinator:
     @property
     def tracer(self) -> Tracer:
         return self._tracer
+
+    @property
+    def event_publisher(self) -> EventPublisher:
+        return self._events.publisher
 
     @property
     def planner_registry(self) -> PlannerRegistry:
@@ -226,8 +247,13 @@ class RequestCoordinator:
                 catalog_snapshot=self._capability_catalog.list(),
                 constraints=pre_route.constraints,
             )
-            decision = await self._router.route(routing_context)
-            decision = self._decision_validator.validate(decision, routing_context)
+            decision = await self._route(
+                routing_context,
+                requested_mode=request.options.execution_mode,
+                effective_mode=pre_route.effective_mode,
+                parent=runtime_span,
+                trace_enabled=trace_enabled,
+            )
             result, planner_id = await self._dispatch(
                 request,
                 context,
@@ -246,16 +272,18 @@ class RequestCoordinator:
                 exc.to_detail(),
                 trace_id=request_span.trace_id if request_span is not None else None,
             )
-            self._lifecycle.finish_from_result(runtime_span, result, error=exc)
-            self._lifecycle.finish_from_result(request_span, result, error=exc)
+            trace_error = self._safe_trace_error(exc, message="request policy denied")
+            self._lifecycle.finish_from_result(runtime_span, result, error=trace_error)
+            self._lifecycle.finish_from_result(request_span, result, error=trace_error)
             return result
         except HarnessError as exc:
             result = ResultEnvelope.failure(
                 exc.to_detail(),
                 trace_id=request_span.trace_id if request_span is not None else None,
             )
-            self._lifecycle.finish_from_result(runtime_span, result, error=exc)
-            self._lifecycle.finish_from_result(request_span, result, error=exc)
+            trace_error = self._safe_trace_error(exc, message="request handling failed")
+            self._lifecycle.finish_from_result(runtime_span, result, error=trace_error)
+            self._lifecycle.finish_from_result(request_span, result, error=trace_error)
             return result
         except Exception as exc:
             wrapped = RoutingError(
@@ -270,8 +298,9 @@ class RequestCoordinator:
                 wrapped.to_detail(),
                 trace_id=request_span.trace_id if request_span is not None else None,
             )
-            self._lifecycle.finish_from_result(runtime_span, result, error=wrapped)
-            self._lifecycle.finish_from_result(request_span, result, error=wrapped)
+            trace_error = self._safe_trace_error(wrapped, message="request handling failed")
+            self._lifecycle.finish_from_result(runtime_span, result, error=trace_error)
+            self._lifecycle.finish_from_result(request_span, result, error=trace_error)
             return result
 
         result = self._lifecycle.normalize_trace_id(result, request_span)
@@ -306,7 +335,10 @@ class RequestCoordinator:
             self._lifecycle.finish_cancelled(span)
             raise
         except HarnessError as exc:
-            self._lifecycle.finish_error(span, exc)
+            self._lifecycle.finish_error(
+                span,
+                self._safe_trace_error(exc, message="pre-route policy failed"),
+            )
             raise
         except Exception as exc:
             wrapped = PolicyError(
@@ -314,7 +346,10 @@ class RequestCoordinator:
                 code="HARNESS.POLICY.EVALUATION_FAILED",
                 details={"cause_type": type(exc).__name__},
             )
-            self._lifecycle.finish_error(span, wrapped)
+            self._lifecycle.finish_error(
+                span,
+                self._safe_trace_error(wrapped, message="pre-route policy failed"),
+            )
             raise wrapped from exc
 
         self._lifecycle.finish_ok(
@@ -326,6 +361,151 @@ class RequestCoordinator:
             },
         )
         return result
+
+    async def _route(
+        self,
+        routing_context: RoutingContext,
+        *,
+        requested_mode: ExecutionMode,
+        effective_mode: ExecutionMode,
+        parent: Span | None,
+        trace_enabled: bool,
+    ) -> RouteDecision:
+        request_id = routing_context.invocation.request.request_id
+        catalog_hash = stable_observation_hash(
+            [descriptor.model_dump(mode="json") for descriptor in routing_context.catalog_snapshot]
+        )
+        summary_hash = stable_observation_hash(
+            routing_context.request_summary.model_dump(mode="json")
+        )
+        route_span = (
+            self._tracer.start_span(
+                f"route.{self._router.router_id}",
+                SpanType.ROUTE,
+                parent=parent,
+                attributes={
+                    "router_id": self._router.router_id,
+                    "requested_mode": requested_mode.value,
+                    "effective_mode": effective_mode.value,
+                    "catalog_snapshot_hash": catalog_hash,
+                    "request_summary_hash": summary_hash,
+                },
+            )
+            if trace_enabled
+            else None
+        )
+        observed_context = routing_context
+        if route_span is not None:
+            observed_context = routing_context.model_copy(
+                update={
+                    "invocation": self._lifecycle.with_trace_context(
+                        routing_context.invocation,
+                        route_span,
+                    )
+                }
+            )
+
+        try:
+            decision = await self._router.route(observed_context)
+            decision = self._decision_validator.validate(decision, observed_context)
+        except asyncio.CancelledError:
+            self._lifecycle.finish_cancelled(route_span)
+            raise
+        except HarnessError as exc:
+            safe_error_code = safe_observation_code(
+                exc.code,
+                fallback="UNSAFE_ERROR_CODE_REDACTED",
+            )
+            await self._emit_route_failed(
+                request_id,
+                safe_error_code,
+                route_span=route_span,
+            )
+            self._lifecycle.finish_error(
+                route_span,
+                self._safe_trace_error(exc, message="route failed"),
+                attributes={"error_code": safe_error_code},
+            )
+            raise
+        except Exception as exc:
+            wrapped = RoutingError(
+                "request routing failed",
+                code=ErrorCode.ROUTE_INVALID_DECISION,
+                details={
+                    "router_id": self._router.router_id,
+                    "cause_type": type(exc).__name__,
+                },
+            )
+            safe_error_code = safe_observation_code(
+                wrapped.code,
+                fallback="UNSAFE_ERROR_CODE_REDACTED",
+            )
+            await self._emit_route_failed(
+                request_id,
+                safe_error_code,
+                route_span=route_span,
+            )
+            self._lifecycle.finish_error(
+                route_span,
+                self._safe_trace_error(wrapped, message="route failed"),
+                attributes={"error_code": safe_error_code},
+            )
+            raise wrapped from exc
+
+        mode_source = "policy" if requested_mode is not effective_mode else decision.source.value
+        safe_reason_code = safe_observation_code(
+            decision.reason_code,
+            fallback="UNSAFE_REASON_CODE_REDACTED",
+        )
+        route_attributes: dict[str, JsonValue] = {
+            "router_id": self._router.router_id,
+            "route_type": decision.route_type.value,
+            "decision_source": decision.source.value,
+            "reason_code": safe_reason_code,
+        }
+        if decision.confidence is not None:
+            route_attributes["confidence"] = decision.confidence
+        await self._events.emit(
+            ExecutionEventName.ROUTE_DECIDED,
+            request_id=request_id,
+            trace_id=route_span.trace_id if route_span is not None else None,
+            attributes={
+                "router_id": self._router.router_id,
+                "mode": decision.mode.value,
+                "route_type": decision.route_type.value,
+                "reason_code": safe_reason_code,
+                **({"confidence": decision.confidence} if decision.confidence is not None else {}),
+            },
+        )
+        await self._events.emit(
+            ExecutionEventName.MODE_SELECTED,
+            request_id=request_id,
+            trace_id=route_span.trace_id if route_span is not None else None,
+            attributes={
+                "requested_mode": requested_mode.value,
+                "selected_mode": decision.mode.value,
+                "source": mode_source,
+            },
+        )
+        self._lifecycle.finish_ok(route_span, attributes=route_attributes)
+        return decision
+
+    async def _emit_route_failed(
+        self,
+        request_id: str,
+        error_code: str,
+        *,
+        route_span: Span | None,
+    ) -> None:
+        await self._events.emit(
+            ExecutionEventName.ROUTE_FAILED,
+            request_id=request_id,
+            trace_id=route_span.trace_id if route_span is not None else None,
+            attributes={
+                "router_id": self._router.router_id,
+                "error_code": error_code,
+            },
+        )
 
     async def _dispatch(
         self,
@@ -371,12 +551,20 @@ class RequestCoordinator:
         parent: Span | None,
         trace_enabled: bool,
     ) -> ResultEnvelope:
+        prompt_version = self._planner_prompt_version(planner)
+        catalog_hash = stable_observation_hash(
+            [descriptor.model_dump(mode="json") for descriptor in routing_context.catalog_snapshot]
+        )
         planner_span = (
             self._tracer.start_span(
                 f"planner.{planner.planner_id}",
                 SpanType.PLANNER,
                 parent=parent,
-                attributes={"planner_id": planner.planner_id},
+                attributes={
+                    "planner_id": planner.planner_id,
+                    "prompt_version": prompt_version,
+                    "catalog_snapshot_hash": catalog_hash,
+                },
             )
             if trace_enabled
             else None
@@ -398,9 +586,55 @@ class RequestCoordinator:
                 deadline_at=context.deadline_at,
             ),
         )
+        attempts: list[PlanningAttempt] = []
+
+        async def observe_attempt(attempt: PlanningAttempt) -> None:
+            attempts.append(attempt)
+            if not attempt.repair_scheduled:
+                return
+            validation_codes = [
+                safe_observation_code(
+                    value,
+                    fallback="UNSAFE_VALIDATION_CODE_REDACTED",
+                )
+                for value in attempt.validation_codes[:16]
+            ]
+            attributes: dict[str, JsonValue] = {
+                "planner_id": planner.planner_id,
+                "attempt": attempt.attempt + 1,
+                "validation_codes": validation_codes,
+            }
+            if planner_span is not None:
+                try:
+                    self._tracer.add_event(
+                        planner_span,
+                        ExecutionEventName.PLANNER_REPAIRING.value,
+                        attributes=attributes,
+                    )
+                except Exception:
+                    pass
+            await self._events.emit(
+                ExecutionEventName.PLANNER_REPAIRING,
+                request_id=request.request_id,
+                trace_id=planner_span.trace_id if planner_span is not None else None,
+                attributes=attributes,
+            )
 
         try:
-            plan = await planner.plan(planning_context)
+            await self._events.emit(
+                ExecutionEventName.PLANNER_STARTED,
+                request_id=request.request_id,
+                trace_id=planner_span.trace_id if planner_span is not None else None,
+                attributes={
+                    "planner_id": planner.planner_id,
+                    "prompt_version": prompt_version,
+                    "max_attempts": planning_context.constraints.max_plan_attempts,
+                },
+            )
+            plan = await planner.plan_with_observer(
+                planning_context,
+                attempt_observer=observe_attempt,
+            )
             if not isinstance(plan, ExecutionPlan):
                 raise PlanningError(
                     "planner returned a non-ExecutionPlan output",
@@ -414,7 +648,30 @@ class RequestCoordinator:
             self._lifecycle.finish_cancelled(planner_span)
             raise
         except HarnessError as exc:
-            self._lifecycle.finish_error(planner_span, exc)
+            attempt_count = self._planner_attempt_count(attempts, error=exc)
+            validation_codes = self._planner_validation_codes(attempts, error=exc)
+            safe_error_code = safe_observation_code(
+                exc.code,
+                fallback="UNSAFE_ERROR_CODE_REDACTED",
+            )
+            await self._emit_planner_failed(
+                request,
+                planner,
+                attempt_count=attempt_count,
+                error_code=safe_error_code,
+                validation_codes=validation_codes,
+                planner_span=planner_span,
+            )
+            self._lifecycle.finish_error(
+                planner_span,
+                self._safe_trace_error(exc, message="planner failed"),
+                attributes={
+                    "attempt_count": attempt_count,
+                    "validation_result": "failed",
+                    "error_code": safe_error_code,
+                    "validation_codes": list(validation_codes),
+                },
+            )
             raise
         except Exception as exc:
             wrapped = PlanningError(
@@ -425,15 +682,53 @@ class RequestCoordinator:
                     "cause_type": type(exc).__name__,
                 },
             )
-            self._lifecycle.finish_error(planner_span, wrapped)
+            attempt_count = self._planner_attempt_count(attempts, error=wrapped)
+            validation_codes = self._planner_validation_codes(attempts, error=wrapped)
+            safe_error_code = safe_observation_code(
+                wrapped.code,
+                fallback="UNSAFE_ERROR_CODE_REDACTED",
+            )
+            await self._emit_planner_failed(
+                request,
+                planner,
+                attempt_count=attempt_count,
+                error_code=safe_error_code,
+                validation_codes=validation_codes,
+                planner_span=planner_span,
+            )
+            self._lifecycle.finish_error(
+                planner_span,
+                self._safe_trace_error(wrapped, message="planner failed"),
+                attributes={
+                    "attempt_count": attempt_count,
+                    "validation_result": "failed",
+                    "error_code": safe_error_code,
+                    "validation_codes": list(validation_codes),
+                },
+            )
             raise wrapped from exc
 
+        attempt_count = self._planner_attempt_count(attempts)
+        await self._events.emit(
+            ExecutionEventName.PLANNER_COMPLETED,
+            request_id=request.request_id,
+            plan_id=plan.plan_id,
+            trace_id=planner_span.trace_id if planner_span is not None else None,
+            attributes={
+                "planner_id": planner.planner_id,
+                "attempt_count": attempt_count,
+                "plan_id": plan.plan_id,
+                "node_count": len(plan.nodes),
+            },
+        )
         self._lifecycle.finish_ok(
             planner_span,
             attributes={
+                "attempt_count": attempt_count,
                 "plan_id": plan.plan_id,
                 "plan_revision": plan.revision,
                 "node_count": len(plan.nodes),
+                "validation_result": "valid",
             },
         )
         return await self._execution_engine.execute_with_context(
@@ -441,6 +736,77 @@ class RequestCoordinator:
             plan,
             context,
             parent=parent,
+        )
+
+    async def _emit_planner_failed(
+        self,
+        request: Request,
+        planner: Planner,
+        *,
+        attempt_count: int,
+        error_code: str,
+        validation_codes: tuple[str, ...],
+        planner_span: Span | None,
+    ) -> None:
+        await self._events.emit(
+            ExecutionEventName.PLANNER_FAILED,
+            request_id=request.request_id,
+            trace_id=planner_span.trace_id if planner_span is not None else None,
+            attributes={
+                "planner_id": planner.planner_id,
+                "attempt_count": attempt_count,
+                "error_code": error_code,
+                "validation_codes": list(validation_codes),
+            },
+        )
+
+    @staticmethod
+    def _planner_prompt_version(planner: Planner) -> str:
+        try:
+            value = getattr(planner, "prompt_version", None)
+        except Exception:
+            return "not_applicable"
+        return safe_observation_code(value, fallback="not_applicable")
+
+    @staticmethod
+    def _safe_trace_error(error: HarnessError, *, message: str) -> TraceError:
+        return TraceError(
+            type="HarnessError",
+            message=message,
+            code=safe_observation_code(
+                error.code,
+                fallback="UNSAFE_ERROR_CODE_REDACTED",
+            ),
+        )
+
+    @staticmethod
+    def _planner_attempt_count(
+        attempts: list[PlanningAttempt],
+        *,
+        error: HarnessError | None = None,
+    ) -> int:
+        if error is not None:
+            detail_count = error.details.get("attempt_count")
+            if (
+                isinstance(detail_count, int)
+                and not isinstance(detail_count, bool)
+                and detail_count >= 0
+            ):
+                return detail_count
+        return max((attempt.attempt for attempt in attempts), default=1)
+
+    @staticmethod
+    def _planner_validation_codes(
+        attempts: list[PlanningAttempt],
+        *,
+        error: HarnessError,
+    ) -> tuple[str, ...]:
+        values: object = error.details.get("validation_codes")
+        if not isinstance(values, list | tuple):
+            values = attempts[-1].validation_codes if attempts else ()
+        return tuple(
+            safe_observation_code(value, fallback="UNSAFE_VALIDATION_CODE_REDACTED")
+            for value in values[:16]
         )
 
     def _select_planner(self, routing_context: RoutingContext) -> Planner:

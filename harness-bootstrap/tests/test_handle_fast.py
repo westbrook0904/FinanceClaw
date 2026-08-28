@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import unittest
 from datetime import UTC, datetime
 
@@ -21,7 +22,9 @@ from harness_contracts import (
     RouteDecision,
     RouteSource,
     RouteType,
+    RoutingError,
 )
+from harness_events import ExecutionEventName
 from harness_policy import Policy, PolicyContext, PolicyDecision, PolicyPhase
 from harness_routing import Router, RoutingContext, SafeRequestProjector
 from harness_runtime import InvocationContextFactory
@@ -102,6 +105,21 @@ class RecordingRouter(Router):
         return self.decision
 
 
+class FailingRouter(Router):
+    def __init__(self, message: str) -> None:
+        self.message = message
+
+    @property
+    def router_id(self) -> str:
+        return "failing-router"
+
+    async def route(self, context: RoutingContext) -> RouteDecision:
+        raise RoutingError(
+            self.message,
+            code="HARNESS.ROUTE.NO_MATCH",
+        )
+
+
 class DenyPreRoutePolicy(Policy):
     @property
     def phases(self) -> frozenset[PolicyPhase]:
@@ -134,14 +152,18 @@ def make_request(
     )
 
 
-def fast_decision(*, metadata: dict | None = None) -> RouteDecision:
+def fast_decision(
+    *,
+    metadata: dict | None = None,
+    reason_code: str = "TEST_FAST",
+) -> RouteDecision:
     return RouteDecision(
         mode=ExecutionMode.FAST,
         route_type=RouteType.DIRECT_CAPABILITY,
         source=RouteSource.RULE,
         capability_id="echo.tool/v1",
         confidence=1.0,
-        reason_code="TEST_FAST",
+        reason_code=reason_code,
         metadata=metadata or {},
     )
 
@@ -211,10 +233,97 @@ class HandleFastTests(unittest.IsolatedAsyncioTestCase):
         spans = tracer.spans(trace_id=result.trace_id)
         request_spans = [span for span in spans if span.type is SpanType.REQUEST]
         handle_spans = [span for span in spans if span.name == "runtime.handle"]
+        route_spans = [span for span in spans if span.type is SpanType.ROUTE]
         self.assertEqual(len(request_spans), 1)
         self.assertEqual(len(handle_spans), 1)
+        self.assertEqual(len(route_spans), 1)
         self.assertEqual(handle_spans[0].parent_span_id, request_spans[0].span_id)
+        self.assertEqual(route_spans[0].parent_span_id, handle_spans[0].span_id)
+        self.assertEqual(route_spans[0].attributes["decision_source"], "request")
+        self.assertEqual(route_spans[0].attributes["route_type"], "direct_capability")
+        event_names = [event.name for event in app.event_publisher.events()]
+        self.assertIn(ExecutionEventName.ROUTE_DECIDED, event_names)
+        self.assertIn(ExecutionEventName.MODE_SELECTED, event_names)
         self.assertTrue(all(span.status is not SpanStatus.RUNNING for span in spans))
+        await app.shutdown()
+
+    async def test_route_failure_emits_safe_error_observability(self) -> None:
+        tracer = InMemoryTracer()
+        secret = "raw-secret-must-not-appear"
+        app = build_harness(
+            tracer=tracer,
+            router=FailingRouter(secret),
+            entry_point_group=None,
+        )
+        await app.start()
+
+        result = await app.handle(
+            Request(input=RequestInput(type="unmatched", content={"message": secret}))
+        )
+
+        self.assertEqual(result.status, ResultStatus.FAILED)
+        self.assertEqual(result.error.code, "HARNESS.ROUTE.NO_MATCH")
+        spans = tracer.spans(trace_id=result.trace_id)
+        route_span = next(span for span in spans if span.type is SpanType.ROUTE)
+        self.assertEqual(route_span.status, SpanStatus.ERROR)
+        self.assertEqual(route_span.attributes["error_code"], "HARNESS.ROUTE.NO_MATCH")
+        failed = next(
+            event
+            for event in app.event_publisher.events()
+            if event.name is ExecutionEventName.ROUTE_FAILED
+        )
+        self.assertEqual(failed.attributes["router_id"], "failing-router")
+        self.assertEqual(failed.attributes["error_code"], "HARNESS.ROUTE.NO_MATCH")
+        serialized = json.dumps(
+            {
+                "spans": [span.model_dump(mode="json") for span in spans],
+                "events": [event.model_dump(mode="json") for event in app.event_publisher.events()],
+            },
+            ensure_ascii=False,
+        )
+        self.assertNotIn(secret, serialized)
+        await app.shutdown()
+
+    async def test_free_text_reason_code_is_redacted_from_observability(self) -> None:
+        secret = "raw user content must stay private"
+        tracer = InMemoryTracer()
+        tool = RecordingTool()
+        router = RecordingRouter(fast_decision(reason_code=secret))
+        app = build_harness(
+            plugins=(StubPlugin("echo-plugin", (tool,)),),
+            router=router,
+            tracer=tracer,
+            entry_point_group=None,
+        )
+        await app.start()
+
+        result = await app.handle(make_request())
+
+        self.assertEqual(result.status, ResultStatus.SUCCESS)
+        route_span = next(
+            span for span in tracer.spans(trace_id=result.trace_id) if span.type is SpanType.ROUTE
+        )
+        self.assertEqual(
+            route_span.attributes["reason_code"],
+            "UNSAFE_REASON_CODE_REDACTED",
+        )
+        decided = next(
+            event
+            for event in app.event_publisher.events()
+            if event.name is ExecutionEventName.ROUTE_DECIDED
+        )
+        self.assertEqual(
+            decided.attributes["reason_code"],
+            "UNSAFE_REASON_CODE_REDACTED",
+        )
+        serialized = json.dumps(
+            {
+                "span": route_span.model_dump(mode="json"),
+                "event": decided.model_dump(mode="json"),
+            },
+            ensure_ascii=False,
+        )
+        self.assertNotIn(secret, serialized)
         await app.shutdown()
 
     async def test_mode_sugar_copies_request_and_conflicts_fail_before_context(self) -> None:
@@ -306,6 +415,7 @@ class HandleFastTests(unittest.IsolatedAsyncioTestCase):
         self.assertIs(app.request_coordinator.lifecycle, app.components.lifecycle)
         self.assertIs(app.request_coordinator.invoker, app.invoker)
         self.assertIs(app.request_coordinator.execution_engine, app.execution_engine)
+        self.assertIs(app.request_coordinator.event_publisher, app.event_publisher)
 
     async def test_handle_requires_started_application(self) -> None:
         app = build_harness(entry_point_group=None)

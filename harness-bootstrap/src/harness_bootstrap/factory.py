@@ -189,6 +189,7 @@ def build_harness(
         execution_engine,
         lifecycle,
         effective_tracer,
+        effective_event_publisher,
         planner_registry,
         default_planner_id,
     )

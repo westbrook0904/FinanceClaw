@@ -7,7 +7,7 @@ from abc import ABC, abstractmethod
 from harness_contracts import ErrorCode, ExecutionPlan, PlanningError
 
 from .context import PlanningContext
-from .models import PlanValidationError
+from .models import PlanningAttemptObserver, PlanValidationError
 from .validator import PlanValidator
 
 
@@ -22,6 +22,18 @@ class Planner(ABC):
     @abstractmethod
     async def plan(self, context: PlanningContext) -> ExecutionPlan:
         """根据受限 PlanningContext 生成一个经过验证的 ExecutionPlan。"""
+
+    async def plan_with_observer(
+        self,
+        context: PlanningContext,
+        *,
+        attempt_observer: PlanningAttemptObserver | None = None,
+    ) -> ExecutionPlan:
+        """为单次调用附加安全 attempt observer；非生成式 Planner 默认忽略。"""
+
+        if attempt_observer is not None and not callable(attempt_observer):
+            raise TypeError("attempt_observer must be callable")
+        return await self.plan(context)
 
 
 def validate_planner_id(planner_id: str) -> str:

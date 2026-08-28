@@ -188,6 +188,9 @@ async with build_harness() as app:
   Provider Pin 外部入口、Weighted Canary 和 Passive Health 暂缓。
 - `handle()` 分派经过独立校验的 FAST / PLAN Decision。Router 只选择模式，服务端配置和
   Policy 选择 Planner；LLMRouter 可作为 RuleRouter fallback，LLMPlanner 可自主生成受限
-  PlanDraft、执行 bounded repair，再由 Coordinator 与 ExecutionEngine 双重验证后执行。
+  PlanDraft、执行 bounded repair，再由 Planner 与 ExecutionEngine 双重验证后执行。
   WAITING / crash resume 复用持久化 Plan，不重新路由或规划。动态 Plan Patch、远程插件、
   MCP、分布式 Scheduler/锁和外部 Event Broker 尚未实现。
+- Route / Planner 已接入同一 handle trace：ROUTE 包含安全的 RequestSummary/Catalog hash，
+  PLANNER 记录 attempt 与验证摘要，repair 使用瞬时 Event 表示；观察面不保存完整输入、Prompt、
+  模型响应或隐藏推理。

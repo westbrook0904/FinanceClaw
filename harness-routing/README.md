@@ -49,6 +49,11 @@ RouteDecisionValidator。PLAN Decision 只表达“需要规划”；Planner 由
 受信任配置和 Policy 约束选择。模型失败只映射安全 cause code，不回传原始响应或 Provider
 details。Provider retry/fallback 仍完全由 ModelGateway 负责。
 
+RequestCoordinator 在 Router 外层创建 ROUTE span。RuleRouter 或 LLMRouter 都使用同一安全
+观察边界；调用 LLMRouter 时，RoutingContext 传播 ROUTE TraceContext，因此 ModelGateway 的
+MODEL span 位于 ROUTE 子树。Trace 只记录模式、来源、短 reason code，以及 RequestSummary 和
+Catalog snapshot 的稳定 hash，不记录投影原文或模型响应。
+
 ## 依赖边界
 
 本模块依赖 `harness-contracts` 的稳定协议，并允许 LLMRouter 依赖 `harness-model` 的

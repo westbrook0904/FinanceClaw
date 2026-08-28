@@ -40,7 +40,7 @@ from harness_planning import (
 from harness_registry import InMemoryCapabilityRegistry, RegistryCapabilityCatalog
 from harness_routing import SafeRequestProjector
 from harness_spi import ToolRequest, ToolSPI
-from harness_trace import InMemoryTracer
+from harness_trace import InMemoryTracer, SpanType
 from pydantic import ValidationError
 
 MODEL_ID = "model.plan/v1"
@@ -304,15 +304,23 @@ class LLMPlannerTests(unittest.IsolatedAsyncioTestCase):
         long_model_value = "model-value-" + ("x" * 2_000)
         invalid = valid_draft(metadata={"diagnostic": long_model_value})
         attempts: list[PlanningAttempt] = []
+        invocation_attempts: list[PlanningAttempt] = []
         planner, model, tools, catalog = make_planner(
             (invalid, valid_draft()),
             attempt_observer=attempts.append,
         )
 
-        plan = await planner.plan(make_context(catalog))
+        plan = await planner.plan_with_observer(
+            make_context(catalog),
+            attempt_observer=invocation_attempts.append,
+        )
 
         self.assertEqual(plan.plan_id, "plan-harness-owned")
         self.assertEqual(model.calls, 2)
+        model_spans = [
+            span for span in planner.model_gateway.tracer.spans() if span.type is SpanType.MODEL
+        ]
+        self.assertEqual(len(model_spans), 2)
         self.assertEqual([tool.calls for tool in tools], [0, 0])
         initial_payload = json.loads(model.requests[0].messages[-1].content)
         repair_payload = json.loads(model.requests[1].messages[-1].content)
@@ -338,6 +346,8 @@ class LLMPlannerTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual([item.attempt for item in attempts], [1, 2])
         self.assertEqual([item.kind for item in attempts], ["initial", "repair"])
+        self.assertEqual(invocation_attempts, attempts)
+        self.assertEqual([item.repair_scheduled for item in attempts], [True, False])
         self.assertTrue(attempts[0].validation_codes[0].startswith("DRAFT.PARSE."))
         self.assertEqual(attempts[1].validation_codes, ())
         self.assertTrue(all(item.output_hash is not None for item in attempts))
@@ -395,6 +405,10 @@ class LLMPlannerTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(raised.exception.details["validation_codes"])
         self.assertEqual(model.calls, 3)
         self.assertEqual([item.kind for item in attempts], ["initial", "repair", "repair"])
+        self.assertEqual(
+            [item.repair_scheduled for item in attempts],
+            [True, True, False],
+        )
         self.assertEqual([tool.calls for tool in tools], [0, 0])
 
     async def test_single_attempt_budget_never_sends_a_repair_request(self) -> None:

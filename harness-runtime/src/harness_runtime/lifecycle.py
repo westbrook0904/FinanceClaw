@@ -119,7 +119,7 @@ class InvocationLifecycle:
         span: Span | None,
         result: ResultEnvelope,
         *,
-        error: BaseException | None = None,
+        error: BaseException | TraceError | str | None = None,
     ) -> None:
         """根据统一结果语义关闭 Span。"""
 
@@ -153,9 +153,20 @@ class InvocationLifecycle:
         if span is not None:
             self._tracer.end_span(span, status=SpanStatus.OK, attributes=attributes)
 
-    def finish_error(self, span: Span | None, error: BaseException) -> None:
+    def finish_error(
+        self,
+        span: Span | None,
+        error: BaseException | TraceError | str,
+        *,
+        attributes: dict[str, JsonValue] | None = None,
+    ) -> None:
         if span is not None:
-            self._tracer.end_span(span, status=SpanStatus.ERROR, error=error)
+            self._tracer.end_span(
+                span,
+                status=SpanStatus.ERROR,
+                error=error,
+                attributes=attributes,
+            )
 
     def finish_cancelled(self, span: Span | None) -> None:
         if span is not None:

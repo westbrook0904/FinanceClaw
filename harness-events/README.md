@@ -17,6 +17,8 @@ Plan、Node、Provider、Approval、Async 和 Checkpoint 事实，未来 Metrics
 ## 事件集合
 
 ```text
+route.decided / mode.selected / route.failed
+planner.started / repairing / completed / failed
 plan.created / started / waiting / resumed / completed / failed / cancelled
 node.ready / started / retrying / waiting / resumed / completed / failed / denied / cancelled
 approval.requested / approval.resolved
@@ -30,11 +32,14 @@ provider.candidates / selected / retrying / fallback / failed
 
 ## 执行语义
 
-ExecutionEngine 从相邻 checkpoint 状态推导大部分 Plan/Node 事件，并显式发布
+RequestCoordinator 发布 request-level Route/Planner 事件；ExecutionEngine 从相邻 checkpoint 状态推导大部分 Plan/Node 事件，并显式发布
 Approval 和 Async ingress 事件；CapabilityInvoker 与 ModelGateway 共享 Provider 执行
 事件，因此 Direct Invocation、Plan Node 和模型生成使用相同观测语义。事件发布由执行层
 按 best-effort 处理：Publisher 或 Subscriber 异常不会覆盖已经保存的 StateStore 事实，
 也不会使 DAG 或模型执行失败。
+
+Route/Planner 事件只包含受控 ID、模式、attempt、validation code、Plan 摘要与 trace ID；不包含
+完整 RequestSummary、Prompt、模型响应、Policy attributes、credential 或 Chain-of-Thought。
 
 StateStore 是恢复事实来源；Events 只用于观察和集成，不替代 checkpoint，也不保证
 外部持久投递。

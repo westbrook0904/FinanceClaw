@@ -16,7 +16,9 @@ Capability，也不能访问 Provider 实例；Planner 输出统一交给 `PlanV
 - `LLMPlanner`：通过 ModelGateway 从 Goal + capability-only Catalog 自主生成 PlanDraft，
   由 Harness 分配计划身份并执行 planning guards 与 PlanValidator。
 - `PlanningAttempt` / `PlanningAttemptObserver`：仅输出 attempt 序号、类型、Provider、输出哈希、
-  token 和结构化 validation codes 的安全观察边界，不保存 prompt、原始输出或隐藏推理。
+  token、结构化 validation codes 和是否安排 repair 的安全观察边界，不保存 prompt、原始输出
+  或隐藏推理。`Planner.plan_with_observer()` 支持为单次并发调用附加 observer，不修改共享
+  Planner 实例。
 - `PlanValidator.validate(plan, executable=True) -> ExecutionPlan`：合法时原样返回；
   存在问题时一次性抛出 `PlanValidationError`。
 - `PlanValidator.find_issues(plan, executable=True)`：返回顺序稳定、可序列化的全部
@@ -71,6 +73,9 @@ Repair 始终复用同一份 Goal、Capability Catalog、允许范围、Deadline
 的 PlanValidation issue。上一轮 JSON 限制深度、集合大小、字符串长度和总值数量。每次调用前
 重新检查 Deadline；达到上限后统一返回 `HARNESS.PLANNER.REPAIR_EXHAUSTED`。整个循环不创建
 Plan checkpoint，也不调用 Capability。
+
+Coordinator 把 `repair_scheduled` 映射成 `planner.repairing` Trace/Execution Event；每次模型
+generation 仍由 ModelGateway 创建独立 MODEL span，不为 attempt 增加新的 SpanType。
 
 ## 依赖边界与当前范围
 

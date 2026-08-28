@@ -136,6 +136,12 @@ result = await app.complete_async_node(
 `app.event_publisher` 访问；Tracer、StateStore 和 EventPublisher 的生命周期均由
 Composition Root 决定。
 
+RequestCoordinator 为每次已进入 Router 的调用创建 ROUTE span，并发布
+`route.decided/mode.selected/route.failed`；PLAN 路径发布
+`planner.started/repairing/completed/failed`。RequestSummary 与 Catalog 只以稳定 SHA-256
+hash 进入 Trace，自由文本 reason/validation code 会被拒绝或替换，Event Publisher 失败保持
+best-effort，不覆盖路由、规划或执行结果。
+
 ## 依赖边界与当前范围
 
 Bootstrap 可以依赖全部 Harness 基础设施，其他核心模块不得反向依赖 Bootstrap。
@@ -145,9 +151,9 @@ ModelGateway 已组装但不经 CapabilityInvoker。LLMRouter 可作为显式 Ro
 fallback 注入，默认组装仍保持无模型的 RuleRouter。Router 只决定 FAST/PLAN，不接收
 PlannerRegistry；RequestCoordinator 使用受信任的 `default_planner_id` 和 PRE_ROUTE
 `allowed_planner_ids` 选择本地 Planner，并把约束、Catalog snapshot 与现有 Deadline 组成
-PlanningContext。Planner 输出先在 Coordinator 验证，再通过 ExecutionEngine 的 context-aware
-入口复用同一 Request 生命周期执行。Workflow SPI、Remote Plugin、MCP、分布式调度和 HTTP
-执行 API 尚未实现。
+PlanningContext。Planner 输出通过 ExecutionEngine 的 context-aware 入口复用同一 Request
+生命周期执行。Planner 实现负责首次 PlanValidator 校验，ExecutionEngine 在执行边界再次校验。
+Workflow SPI、Remote Plugin、MCP、分布式调度和 HTTP 执行 API 尚未实现。
 
 ## 测试
 

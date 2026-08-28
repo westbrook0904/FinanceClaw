@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from enum import StrEnum
 from typing import Literal
 
@@ -21,6 +22,10 @@ class PlanningAttempt(ContractModel):
     validation_codes: tuple[NonEmptyString, ...] = ()
     input_tokens: int | None = Field(default=None, ge=0)
     output_tokens: int | None = Field(default=None, ge=0)
+    repair_scheduled: bool = False
+
+
+type PlanningAttemptObserver = Callable[[PlanningAttempt], None | Awaitable[None]]
 
 
 class PlanValidationCode(StrEnum):

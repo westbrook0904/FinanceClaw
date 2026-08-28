@@ -3,9 +3,10 @@
 from .context import PlanningConstraints, PlanningContext
 from .draft import PlanDraft
 from .hybrid import HybridPlanner
-from .llm import LLMPlanner, PlanIdFactory, PlanningAttemptObserver
+from .llm import LLMPlanner, PlanIdFactory
 from .models import (
     PlanningAttempt,
+    PlanningAttemptObserver,
     PlanValidationCode,
     PlanValidationError,
     PlanValidationIssue,

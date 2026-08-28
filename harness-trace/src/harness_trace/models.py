@@ -25,6 +25,7 @@ class SpanType(StrEnum):
     PLAN = "plan"
     PLAN_NODE = "plan_node"
     SCHEDULER = "scheduler"
+    ROUTE = "route"
     PLANNER = "planner"
 
 

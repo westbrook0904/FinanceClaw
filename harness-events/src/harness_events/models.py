@@ -13,6 +13,13 @@ from pydantic import Field, field_validator, model_validator
 
 
 class ExecutionEventName(StrEnum):
+    ROUTE_DECIDED = "route.decided"
+    MODE_SELECTED = "mode.selected"
+    ROUTE_FAILED = "route.failed"
+    PLANNER_STARTED = "planner.started"
+    PLANNER_REPAIRING = "planner.repairing"
+    PLANNER_COMPLETED = "planner.completed"
+    PLANNER_FAILED = "planner.failed"
     PLAN_CREATED = "plan.created"
     PLAN_STARTED = "plan.started"
     PLAN_WAITING = "plan.waiting"

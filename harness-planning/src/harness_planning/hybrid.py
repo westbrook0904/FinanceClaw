@@ -5,6 +5,7 @@ from __future__ import annotations
 from harness_contracts import ExecutionPlan, PlannerNotApplicableError
 
 from .context import PlanningContext
+from .models import PlanningAttemptObserver
 from .planner import Planner, validate_planner_id, validate_planner_output
 from .validator import PlanValidator
 
@@ -49,15 +50,31 @@ class HybridPlanner(Planner):
         return self._validator
 
     async def plan(self, context: PlanningContext) -> ExecutionPlan:
+        return await self.plan_with_observer(context)
+
+    async def plan_with_observer(
+        self,
+        context: PlanningContext,
+        *,
+        attempt_observer: PlanningAttemptObserver | None = None,
+    ) -> ExecutionPlan:
         if not isinstance(context, PlanningContext):
             raise TypeError("context must be PlanningContext")
+        if attempt_observer is not None and not callable(attempt_observer):
+            raise TypeError("attempt_observer must be callable")
 
         selected = self._primary
         try:
-            output = await selected.plan(context)
+            output = await selected.plan_with_observer(
+                context,
+                attempt_observer=attempt_observer,
+            )
         except PlannerNotApplicableError:
             selected = self._fallback
-            output = await selected.plan(context)
+            output = await selected.plan_with_observer(
+                context,
+                attempt_observer=attempt_observer,
+            )
 
         return validate_planner_output(
             output,
