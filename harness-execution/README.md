@@ -8,6 +8,9 @@
 
 - `ExecutionEngine.execute(request, plan)`：创建、校验并推进 Plan，直到终态或明确
   WAITING。
+- `ExecutionEngine.execute_with_context(request, plan, context, parent=...)`：供统一请求编排层
+  在已有 Context、Deadline 和 REQUEST/RUNTIME Trace 内执行同一核心，不创建第二套请求生命
+  周期。
 - `ExecutionEngine.resume(plan_id)`：从 StateStore 加载同一快照并继续。
 - `ExecutionEngine.resolve_approval(plan_id, decision)`：持久化审批决定并继续。
 - `ExecutionEngine.complete_async_node(plan_id, node_id, terminal_result)`：提交异步
@@ -86,6 +89,10 @@ selection key、equivalence group、attempt history 和最近一次 Provider 结
 - WAITING 在没有外部终态时幂等返回原 Continuation；
 - 缺失、损坏或不可读状态 fail-closed，并返回结构化错误。
 
+RouteDecision 与 PlanningAttempt 不写入 `PlanExecutionRecord`。一旦首次 PLAN 执行产生
+checkpoint，后续 WAITING / crash resume 只恢复其中的 Plan 与 Node State，不重新路由或调用
+Planner。
+
 跨进程恢复需要文件型 `SQLiteStateStore`；默认 InMemoryStateStore 只适合单进程。
 
 ## Human Approval
@@ -121,8 +128,9 @@ checkpoint 与 Approval/Job materialization 之间的崩溃窗口可在 Resume �
 
 ## Policy、Trace 与 Events
 
-PRE_PLAN 在 Scheduler 启动前运行；PRE_EXECUTE 由每次 Invoker 尝试执行。Plan Trace
-包含 REQUEST → RUNTIME → PLAN → SCHEDULER/PLAN_NODE → Capability 子树。
+PRE_PLAN 在 Scheduler 启动前运行；PRE_EXECUTE 由每次 Invoker 尝试执行。公共 `execute()` 的
+Plan Trace 包含 REQUEST → RUNTIME → PLAN → SCHEDULER/PLAN_NODE → Capability 子树；统一
+`handle()` 则在同一个 REQUEST → RUNTIME 下依次记录 PLANNER 与 PLAN 阶段。
 
 ExecutionEngine 同时发布 Plan/Node/Approval/Async/Checkpoint Execution Events。事件是
 best-effort 观察面，Publisher/Subscriber 失败不会覆盖 StateStore 中的执行事实。

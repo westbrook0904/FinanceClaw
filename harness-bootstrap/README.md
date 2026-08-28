@@ -40,8 +40,8 @@ RequestProjector 或 LocalPluginProvider。
 ## HarnessApplication API
 
 - `start()`：发现、初始化并注册插件。
-- `handle(request, mode=None)`：推荐的统一入口；当前完成 PRE_ROUTE、确定性路由与 FAST
-  Capability 调用。
+- `handle(request, mode=None)`：推荐的统一入口；完成 PRE_ROUTE、路由与 FAST Capability
+  调用或 PLAN 规划执行。
 - `invoke(request)`：Direct Invocation。
 - `model_gateway`：供未来 Router/Planner/Explorer 使用的模型生成入口。
 - `execute_plan(request, plan)`：验证并执行 Plan。
@@ -141,12 +141,13 @@ Composition Root 决定。
 Bootstrap 可以依赖全部 Harness 基础设施，其他核心模块不得反向依赖 Bootstrap。
 基础设施类不实现全局单例，实例数量与共享关系由组装决定。
 
-ModelGateway 已组装但不经 CapabilityInvoker；当前 `handle()` 只支持 FAST，PLAN 执行接线、
-Workflow SPI、Remote Plugin、MCP、分布式调度和 HTTP 执行 API 尚未实现。LLMRouter 已可作为
-显式 Router 或 RuleRouter fallback 注入，默认组装仍保持无模型的 RuleRouter。Router 只决定
-FAST/PLAN，不接收 PlannerRegistry；RequestCoordinator 使用受信任的 `default_planner_id` 和
-PRE_ROUTE `allowed_planner_ids` 选择本地 Planner。`LLMPlanner` 可显式注入 PlannerRegistry，
-但在 PLAN shared lifecycle 接入前不会由 `handle()` 调用。
+ModelGateway 已组装但不经 CapabilityInvoker。LLMRouter 可作为显式 Router 或 RuleRouter
+fallback 注入，默认组装仍保持无模型的 RuleRouter。Router 只决定 FAST/PLAN，不接收
+PlannerRegistry；RequestCoordinator 使用受信任的 `default_planner_id` 和 PRE_ROUTE
+`allowed_planner_ids` 选择本地 Planner，并把约束、Catalog snapshot 与现有 Deadline 组成
+PlanningContext。Planner 输出先在 Coordinator 验证，再通过 ExecutionEngine 的 context-aware
+入口复用同一 Request 生命周期执行。Workflow SPI、Remote Plugin、MCP、分布式调度和 HTTP
+执行 API 尚未实现。
 
 ## 测试
 

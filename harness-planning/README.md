@@ -79,8 +79,10 @@ Plan checkpoint，也不调用 Capability。
 `CapabilityDescriptor`，即使 Registry 中同一 Capability 存在多个 Provider 也只暴露
 一条 capability-only 记录，不会泄露 Provider 身份或实例。
 
-当前已实现 Static/Hybrid Planner Foundation、PlanDraft、LLMPlanner 和 bounded Plan Repair；
-`handle()` PLAN dispatch 和运行时 Plan Patch 属于后续步骤。
+当前已实现 Static/Hybrid Planner Foundation、PlanDraft、LLMPlanner、bounded Plan Repair 和
+`handle()` PLAN dispatch。RequestCoordinator 负责服务端 Planner 选择和执行前再次验证；
+WAITING / resume 使用 ExecutionEngine 已持久化的 Plan，不重新调用 Planner。运行时 Plan Patch
+属于后续步骤。
 
 ## 测试
 

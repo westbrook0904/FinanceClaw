@@ -37,7 +37,6 @@ from .eventing import EventSpec, ExecutionEventEmitter
 from .recovery import ResumeCoordinator
 from .scheduler import BasicScheduler
 
-
 _TERMINAL_PLAN_STATUSES = {
     PlanExecutionStatus.SUCCEEDED,
     PlanExecutionStatus.PARTIAL,
@@ -116,7 +115,7 @@ class ExecutionEngine:
         context_result = self._lifecycle.create_context(request)
         if isinstance(context_result, ResultEnvelope):
             return context_result
-        context = self._strip_reserved_attributes(context_result)
+        context = context_result
         trace_enabled = request.options.trace
         request_span = self._lifecycle.start_request_span(context) if trace_enabled else None
         runtime_span = (
@@ -129,11 +128,58 @@ class ExecutionEngine:
             if trace_enabled
             else None
         )
+        if runtime_span is not None:
+            context = self._lifecycle.with_trace_context(context, runtime_span)
+
+        try:
+            result = await self.execute_with_context(
+                request,
+                plan,
+                context,
+                parent=runtime_span,
+            )
+        except asyncio.CancelledError:
+            self._lifecycle.finish_cancelled(runtime_span)
+            self._lifecycle.finish_cancelled(request_span)
+            raise
+
+        result = self._lifecycle.normalize_trace_id(result, request_span)
+        self._lifecycle.finish_from_result(runtime_span, result)
+        self._lifecycle.finish_from_result(request_span, result)
+        return result
+
+    async def execute_with_context(
+        self,
+        request: Request,
+        plan: ExecutionPlan,
+        context: InvocationContext,
+        *,
+        parent: Span | None,
+    ) -> ResultEnvelope:
+        """在调用方已有的 Request 生命周期内验证并推进一个 Plan。"""
+
+        if not isinstance(request, Request):
+            raise TypeError("request must be Request")
+        if not isinstance(plan, ExecutionPlan):
+            raise TypeError("plan must be ExecutionPlan")
+        if not isinstance(context, InvocationContext):
+            raise TypeError("context must be InvocationContext")
+        if parent is not None and not isinstance(parent, Span):
+            raise TypeError("parent must be Span or None")
+        if context.request != request:
+            error = RequestError(
+                "invocation context belongs to another request",
+                code="HARNESS.REQUEST.CONTEXT_MISMATCH",
+            )
+            return ResultEnvelope.failure(error.to_detail())
+
+        context = self._strip_reserved_attributes(context)
+        trace_enabled = request.options.trace
         plan_span = (
             self._tracer.start_span(
                 f"plan.{plan.plan_id}",
                 SpanType.PLAN,
-                parent=runtime_span,
+                parent=parent,
                 attributes={"plan_id": plan.plan_id, "plan_revision": plan.revision},
             )
             if trace_enabled
@@ -231,8 +277,6 @@ class ExecutionEngine:
         except asyncio.CancelledError:
             self._finish_cancelled_if_running(scheduler_span)
             self._lifecycle.finish_cancelled(plan_span)
-            self._lifecycle.finish_cancelled(runtime_span)
-            self._lifecycle.finish_cancelled(request_span)
             raise
         except PlanValidationError as exc:
             error = RequestError(
@@ -259,11 +303,8 @@ class ExecutionEngine:
                     if self._active.get(plan.plan_id) is signal:
                         del self._active[plan.plan_id]
 
-        result = self._lifecycle.normalize_trace_id(result, request_span)
         self._finish_span_from_result_if_running(scheduler_span, result)
         self._lifecycle.finish_from_result(plan_span, result)
-        self._lifecycle.finish_from_result(runtime_span, result)
-        self._lifecycle.finish_from_result(request_span, result)
         return result
 
     async def resume(self, plan_id: str) -> ResultEnvelope:
@@ -787,9 +828,7 @@ class ExecutionEngine:
         )
         policy_context = PolicyContext(
             invocation=(
-                self._lifecycle.with_trace_context(context, span)
-                if span is not None
-                else context
+                self._lifecycle.with_trace_context(context, span) if span is not None else context
             ),
             phase=PolicyPhase.PRE_PLAN,
             plan=plan,

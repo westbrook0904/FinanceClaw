@@ -74,9 +74,7 @@ def build_harness(
         raise ValueError("policies and policy_engine cannot be configured together")
     if provider_selector is not None and not isinstance(provider_selector, ProviderSelector):
         raise TypeError("provider_selector must implement ProviderSelector")
-    if capability_catalog is not None and not isinstance(
-        capability_catalog, CapabilityCatalog
-    ):
+    if capability_catalog is not None and not isinstance(capability_catalog, CapabilityCatalog):
         raise TypeError("capability_catalog must implement CapabilityCatalog")
     if plan_validator is not None and not isinstance(plan_validator, PlanValidator):
         raise TypeError("plan_validator must be PlanValidator")
@@ -86,9 +84,7 @@ def build_harness(
         raise TypeError("event_publisher must implement EventPublisher")
     if router is not None and not isinstance(router, Router):
         raise TypeError("router must implement Router")
-    if request_projector is not None and not isinstance(
-        request_projector, RequestProjector
-    ):
+    if request_projector is not None and not isinstance(request_projector, RequestProjector):
         raise TypeError("request_projector must implement RequestProjector")
     if (
         capability_catalog is not None
@@ -101,18 +97,14 @@ def build_harness(
     effective_policy_engine = (
         policy_engine
         if policy_engine is not None
-        else PolicyEngine(
-            tuple(policies) if policies is not None else (AllowAllPolicy(),)
-        )
+        else PolicyEngine(tuple(policies) if policies is not None else (AllowAllPolicy(),))
     )
     effective_tracer = tracer if tracer is not None else InMemoryTracer()
     effective_provider_selector = (
         provider_selector if provider_selector is not None else PrioritySelector()
     )
     effective_context_factory = (
-        context_factory
-        if context_factory is not None
-        else DefaultInvocationContextFactory()
+        context_factory if context_factory is not None else DefaultInvocationContextFactory()
     )
     effective_catalog = (
         capability_catalog
@@ -194,6 +186,7 @@ def build_harness(
         effective_policy_engine,
         effective_catalog,
         invoker,
+        execution_engine,
         lifecycle,
         effective_tracer,
         planner_registry,

@@ -305,6 +305,7 @@ class HandleFastTests(unittest.IsolatedAsyncioTestCase):
         self.assertIs(app.request_coordinator.request_projector, projector)
         self.assertIs(app.request_coordinator.lifecycle, app.components.lifecycle)
         self.assertIs(app.request_coordinator.invoker, app.invoker)
+        self.assertIs(app.request_coordinator.execution_engine, app.execution_engine)
 
     async def test_handle_requires_started_application(self) -> None:
         app = build_harness(entry_point_group=None)

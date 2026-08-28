@@ -1,4 +1,4 @@
-"""统一 Request 入口的路由与 FAST 执行编排。"""
+"""统一 Request 入口的路由、规划与执行编排。"""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ import asyncio
 from harness_contracts import (
     ErrorCode,
     ExecutionMode,
+    ExecutionPlan,
     HarnessError,
     InvocationContext,
     PlanningError,
@@ -17,7 +18,13 @@ from harness_contracts import (
     RouteDecision,
     RoutingError,
 )
-from harness_planning import PlannerRegistry
+from harness_execution import ExecutionEngine
+from harness_planning import (
+    Planner,
+    PlannerRegistry,
+    PlanningConstraints,
+    PlanningContext,
+)
 from harness_policy import PolicyEngine, PreRoutePolicyResult
 from harness_registry import CapabilityCatalog
 from harness_routing import (
@@ -73,7 +80,7 @@ def normalize_request_mode(
 
 
 class RequestCoordinator:
-    """在一个 Request 生命周期内执行 PRE_ROUTE、路由校验与 FAST 调用。"""
+    """在一个 Request 生命周期内执行 PRE_ROUTE、路由、规划与调度。"""
 
     def __init__(
         self,
@@ -83,6 +90,7 @@ class RequestCoordinator:
         policy_engine: PolicyEngine,
         capability_catalog: CapabilityCatalog,
         invoker: CapabilityInvoker,
+        execution_engine: ExecutionEngine,
         lifecycle: InvocationLifecycle,
         tracer: Tracer,
         planner_registry: PlannerRegistry,
@@ -100,6 +108,8 @@ class RequestCoordinator:
             raise TypeError("capability_catalog must implement CapabilityCatalog")
         if not isinstance(invoker, CapabilityInvoker):
             raise TypeError("invoker must be CapabilityInvoker")
+        if not isinstance(execution_engine, ExecutionEngine):
+            raise TypeError("execution_engine must be ExecutionEngine")
         if not isinstance(lifecycle, InvocationLifecycle):
             raise TypeError("lifecycle must be InvocationLifecycle")
         if not isinstance(tracer, Tracer):
@@ -123,6 +133,7 @@ class RequestCoordinator:
         self._policy_engine = policy_engine
         self._capability_catalog = capability_catalog
         self._invoker = invoker
+        self._execution_engine = execution_engine
         self._lifecycle = lifecycle
         self._tracer = tracer
         self._planner_registry = planner_registry
@@ -153,6 +164,10 @@ class RequestCoordinator:
         return self._invoker
 
     @property
+    def execution_engine(self) -> ExecutionEngine:
+        return self._execution_engine
+
+    @property
     def lifecycle(self) -> InvocationLifecycle:
         return self._lifecycle
 
@@ -169,7 +184,7 @@ class RequestCoordinator:
         return self._default_planner_id
 
     async def handle(self, request: Request) -> ResultEnvelope:
-        """用单一 Context、Deadline 与 REQUEST span 完成一次 FAST 调度。"""
+        """用单一 Context、Deadline 与 REQUEST span 完成一次请求调度。"""
 
         if not isinstance(request, Request):
             raise TypeError("request must be Request")
@@ -213,7 +228,7 @@ class RequestCoordinator:
             )
             decision = await self._router.route(routing_context)
             decision = self._decision_validator.validate(decision, routing_context)
-            result = await self._dispatch_fast(
+            result, planner_id = await self._dispatch(
                 request,
                 context,
                 decision,
@@ -221,7 +236,7 @@ class RequestCoordinator:
                 parent=runtime_span,
                 trace_enabled=trace_enabled,
             )
-            result = self._with_route_metadata(result, decision)
+            result = self._with_route_metadata(result, decision, planner_id=planner_id)
         except asyncio.CancelledError:
             self._lifecycle.finish_cancelled(runtime_span)
             self._lifecycle.finish_cancelled(request_span)
@@ -312,7 +327,7 @@ class RequestCoordinator:
         )
         return result
 
-    async def _dispatch_fast(
+    async def _dispatch(
         self,
         request: Request,
         context: InvocationContext,
@@ -321,30 +336,114 @@ class RequestCoordinator:
         routing_context: RoutingContext,
         parent: Span | None,
         trace_enabled: bool,
-    ) -> ResultEnvelope:
-        if decision.mode is not ExecutionMode.FAST or decision.capability_id is None:
-            planner_id = self._select_planner_id(routing_context)
-            raise RoutingError(
-                "PLAN request dispatch is not available before the shared lifecycle path",
-                code=ErrorCode.ROUTE_MODE_NOT_AVAILABLE,
-                details={
-                    "execution_mode": decision.mode.value,
-                    "planner_id": planner_id,
-                },
+    ) -> tuple[ResultEnvelope, str | None]:
+        if decision.mode is ExecutionMode.FAST and decision.capability_id is not None:
+            caller_plugin_id = request.target.plugin if request.target is not None else None
+            result = await self._invoker.invoke(
+                decision.capability_id,
+                request.input,
+                context,
+                plugin_id=caller_plugin_id,
+                deadline_at=context.deadline_at,
+                parent=parent,
+                trace_enabled=trace_enabled,
             )
+            return result, None
 
-        caller_plugin_id = request.target.plugin if request.target is not None else None
-        return await self._invoker.invoke(
-            decision.capability_id,
-            request.input,
+        planner = self._select_planner(routing_context)
+        result = await self._dispatch_plan(
+            request,
             context,
-            plugin_id=caller_plugin_id,
-            deadline_at=context.deadline_at,
+            planner,
+            routing_context=routing_context,
             parent=parent,
             trace_enabled=trace_enabled,
         )
+        return result, planner.planner_id
 
-    def _select_planner_id(self, routing_context: RoutingContext) -> str:
+    async def _dispatch_plan(
+        self,
+        request: Request,
+        context: InvocationContext,
+        planner: Planner,
+        *,
+        routing_context: RoutingContext,
+        parent: Span | None,
+        trace_enabled: bool,
+    ) -> ResultEnvelope:
+        planner_span = (
+            self._tracer.start_span(
+                f"planner.{planner.planner_id}",
+                SpanType.PLANNER,
+                parent=parent,
+                attributes={"planner_id": planner.planner_id},
+            )
+            if trace_enabled
+            else None
+        )
+        planner_invocation = (
+            self._lifecycle.with_trace_context(context, planner_span)
+            if planner_span is not None
+            else context
+        )
+        route_constraints = routing_context.constraints
+        planning_context = PlanningContext(
+            invocation=planner_invocation,
+            goal=routing_context.request_summary,
+            catalog_snapshot=routing_context.catalog_snapshot,
+            constraints=PlanningConstraints(
+                max_plan_attempts=route_constraints.max_plan_attempts or 3,
+                max_plan_nodes=route_constraints.max_plan_nodes or 32,
+                allowed_capability_ids=route_constraints.allowed_capability_ids,
+                deadline_at=context.deadline_at,
+            ),
+        )
+
+        try:
+            plan = await planner.plan(planning_context)
+            if not isinstance(plan, ExecutionPlan):
+                raise PlanningError(
+                    "planner returned a non-ExecutionPlan output",
+                    code=ErrorCode.PLANNER_INVALID_OUTPUT,
+                    details={
+                        "planner_id": planner.planner_id,
+                        "output_type": type(plan).__name__,
+                    },
+                )
+        except asyncio.CancelledError:
+            self._lifecycle.finish_cancelled(planner_span)
+            raise
+        except HarnessError as exc:
+            self._lifecycle.finish_error(planner_span, exc)
+            raise
+        except Exception as exc:
+            wrapped = PlanningError(
+                "planner execution failed",
+                code=ErrorCode.PLANNER_INVALID_OUTPUT,
+                details={
+                    "planner_id": planner.planner_id,
+                    "cause_type": type(exc).__name__,
+                },
+            )
+            self._lifecycle.finish_error(planner_span, wrapped)
+            raise wrapped from exc
+
+        self._lifecycle.finish_ok(
+            planner_span,
+            attributes={
+                "plan_id": plan.plan_id,
+                "plan_revision": plan.revision,
+                "node_count": len(plan.nodes),
+            },
+        )
+        return await self._execution_engine.execute_with_context(
+            request,
+            plan,
+            context,
+            parent=parent,
+        )
+
+    def _select_planner(self, routing_context: RoutingContext) -> Planner:
         """由受信任配置与 PRE_ROUTE Policy 选择 Planner，而不是接受模型选择。"""
 
         planner_id = self._default_planner_id
@@ -362,12 +461,14 @@ class RequestCoordinator:
                 code=ErrorCode.ROUTE_PLANNER_NOT_ALLOWED,
                 details={"planner_id": planner.planner_id},
             )
-        return planner.planner_id
+        return planner
 
     def _with_route_metadata(
         self,
         result: ResultEnvelope,
         decision: RouteDecision,
+        *,
+        planner_id: str | None,
     ) -> ResultEnvelope:
         payload = result.model_dump(mode="json")
         metadata = dict(payload["metadata"])
@@ -380,5 +481,7 @@ class RequestCoordinator:
                 "capability_id": decision.capability_id,
             }
         )
+        if planner_id is not None:
+            metadata["planner_id"] = planner_id
         payload["metadata"] = metadata
         return ResultEnvelope.model_validate(payload)

@@ -62,9 +62,9 @@ class PlannerCompositionTests(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(result.status, ResultStatus.FAILED)
-        self.assertEqual(result.error.code, ErrorCode.ROUTE_MODE_NOT_AVAILABLE)
-        self.assertEqual(result.error.details["planner_id"], "static")
-        self.assertEqual(planner.calls, 0)
+        self.assertEqual(result.error.code, "HARNESS.PLAN.INVALID")
+        self.assertEqual(result.error.details["plan_id"], "not-executed-in-step-5")
+        self.assertEqual(planner.calls, 1)
         await app.shutdown()
 
     async def test_pre_route_policy_can_reject_the_server_selected_planner(self) -> None:
