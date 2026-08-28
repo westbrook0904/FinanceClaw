@@ -9,6 +9,7 @@ from harness_contracts import (
     ExecutionMode,
     HarnessError,
     InvocationContext,
+    PlanningError,
     PolicyError,
     Request,
     RequestError,
@@ -16,6 +17,7 @@ from harness_contracts import (
     RouteDecision,
     RoutingError,
 )
+from harness_planning import PlannerRegistry
 from harness_policy import PolicyEngine, PreRoutePolicyResult
 from harness_registry import CapabilityCatalog
 from harness_routing import (
@@ -83,6 +85,8 @@ class RequestCoordinator:
         invoker: CapabilityInvoker,
         lifecycle: InvocationLifecycle,
         tracer: Tracer,
+        planner_registry: PlannerRegistry,
+        default_planner_id: str | None,
     ) -> None:
         if not isinstance(router, Router):
             raise TypeError("router must implement Router")
@@ -100,6 +104,10 @@ class RequestCoordinator:
             raise TypeError("lifecycle must be InvocationLifecycle")
         if not isinstance(tracer, Tracer):
             raise TypeError("tracer must implement Tracer")
+        if not isinstance(planner_registry, PlannerRegistry):
+            raise TypeError("planner_registry must be PlannerRegistry")
+        if default_planner_id is not None:
+            planner_registry.get(default_planner_id)
         if lifecycle.tracer is not tracer:
             raise ValueError("lifecycle and coordinator must use the same tracer")
         if invoker.lifecycle is not lifecycle:
@@ -117,6 +125,8 @@ class RequestCoordinator:
         self._invoker = invoker
         self._lifecycle = lifecycle
         self._tracer = tracer
+        self._planner_registry = planner_registry
+        self._default_planner_id = default_planner_id
 
     @property
     def router(self) -> Router:
@@ -149,6 +159,14 @@ class RequestCoordinator:
     @property
     def tracer(self) -> Tracer:
         return self._tracer
+
+    @property
+    def planner_registry(self) -> PlannerRegistry:
+        return self._planner_registry
+
+    @property
+    def default_planner_id(self) -> str | None:
+        return self._default_planner_id
 
     async def handle(self, request: Request) -> ResultEnvelope:
         """用单一 Context、Deadline 与 REQUEST span 完成一次 FAST 调度。"""
@@ -199,6 +217,7 @@ class RequestCoordinator:
                 request,
                 context,
                 decision,
+                routing_context=routing_context,
                 parent=runtime_span,
                 trace_enabled=trace_enabled,
             )
@@ -299,16 +318,18 @@ class RequestCoordinator:
         context: InvocationContext,
         decision: RouteDecision,
         *,
+        routing_context: RoutingContext,
         parent: Span | None,
         trace_enabled: bool,
     ) -> ResultEnvelope:
         if decision.mode is not ExecutionMode.FAST or decision.capability_id is None:
+            planner_id = self._select_planner_id(routing_context)
             raise RoutingError(
                 "PLAN request dispatch is not available before the shared lifecycle path",
                 code=ErrorCode.ROUTE_MODE_NOT_AVAILABLE,
                 details={
                     "execution_mode": decision.mode.value,
-                    "planner_id": decision.planner_id,
+                    "planner_id": planner_id,
                 },
             )
 
@@ -322,6 +343,26 @@ class RequestCoordinator:
             parent=parent,
             trace_enabled=trace_enabled,
         )
+
+    def _select_planner_id(self, routing_context: RoutingContext) -> str:
+        """由受信任配置与 PRE_ROUTE Policy 选择 Planner，而不是接受模型选择。"""
+
+        planner_id = self._default_planner_id
+        if planner_id is None:
+            raise PlanningError(
+                "PLAN mode requires a configured default planner",
+                code=ErrorCode.PLANNER_NOT_CONFIGURED,
+                details={"router_id": self._router.router_id},
+            )
+        planner = self._planner_registry.get(planner_id)
+        allowed = routing_context.constraints.allowed_planner_ids
+        if allowed is not None and planner.planner_id not in allowed:
+            raise RoutingError(
+                "configured planner is not allowed by policy",
+                code=ErrorCode.ROUTE_PLANNER_NOT_ALLOWED,
+                details={"planner_id": planner.planner_id},
+            )
+        return planner.planner_id
 
     def _with_route_metadata(
         self,

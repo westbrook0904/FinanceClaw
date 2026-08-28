@@ -12,6 +12,9 @@ Capability，也不能访问 Provider 实例；Planner 输出统一交给 `PlanV
 - `PlannerRegistry`：Composition Root 构造期冻结的本地只读 Planner 映射。
 - `StaticPlanner`：按 request route key 选择不可变 Plan 模板或同步/异步 factory。
 - `HybridPlanner`：仅在 primary 抛出 `PlannerNotApplicableError` 时调用 fallback。
+- `PlanDraft`：模型可生成的受限 DAG 协议，不包含 plan_id、revision 或 Plan metadata。
+- `LLMPlanner`：通过 ModelGateway 从 Goal + capability-only Catalog 自主生成 PlanDraft，
+  由 Harness 分配计划身份并执行 planning guards 与 PlanValidator。
 - `PlanValidator.validate(plan, executable=True) -> ExecutionPlan`：合法时原样返回；
   存在问题时一次性抛出 `PlanValidationError`。
 - `PlanValidator.find_issues(plan, executable=True)`：返回顺序稳定、可序列化的全部
@@ -43,8 +46,17 @@ primary NOT_APPLICABLE  → fallback 一次 → validate → return
 primary invalid/denied/timeout/other failure → 原错误传播，禁止 fallback
 ```
 
-StaticPlanner 和 HybridPlanner 都在返回边界调用 PlanValidator。PlannerRegistry 只允许在
-构造时传入 Planner，运行中没有 `register()`，也不是插件 Registry 或 Workflow Catalog。
+StaticPlanner、HybridPlanner 和 LLMPlanner 都在返回边界调用 PlanValidator。PlannerRegistry
+只允许在构造时传入 Planner，运行中没有 `register()`，也不是插件 Registry 或 Workflow
+Catalog。
+
+## LLMPlanner 安全边界
+
+LLMPlanner 的模型只产生 PlanDraft 中的节点、边、绑定与预算。`plan_id`、`revision=1` 和
+`planner_id/prompt_version/request_id` metadata 均由 Harness 写入；模型注入这些字段、引用
+超出 Catalog/Policy/Planner 交集的 Capability、超过节点上限、扩大 Request Deadline 或写入
+保留 metadata 时都会 fail-closed。Catalog 投影不包含 Provider、Plugin 或 Descriptor metadata，
+规划期间不会调用任何业务 Capability。
 
 ## 依赖边界与当前范围
 
@@ -53,7 +65,7 @@ StaticPlanner 和 HybridPlanner 都在返回边界调用 PlanValidator。Planner
 `CapabilityDescriptor`，即使 Registry 中同一 Capability 存在多个 Provider 也只暴露
 一条 capability-only 记录，不会泄露 Provider 身份或实例。
 
-当前已实现不依赖模型的 Static/Hybrid Planner Foundation；LLMPlanner、动态 Plan Repair、
+当前已实现 Static/Hybrid Planner Foundation、PlanDraft 和首轮 LLMPlanner；动态 Plan Repair、
 `handle()` PLAN dispatch 和运行时 Plan Patch 属于后续步骤。
 
 ## 测试

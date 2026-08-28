@@ -119,7 +119,6 @@ class CountingModelFallbackRouter(Router):
             mode=ExecutionMode.PLAN,
             route_type=RouteType.GENERATED_PLAN,
             source=RouteSource.MODEL,
-            planner_id="llm-planner",
             reason_code="MODEL_ROUTE",
         )
 

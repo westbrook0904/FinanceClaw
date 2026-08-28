@@ -16,8 +16,8 @@ build_harness()
 ├── CapabilityInvoker
 │   └── ProviderExecutionCoordinator
 ├── SafeRequestProjector / RuleRouter / RouteDecisionValidator
-├── RequestCoordinator（单 Context / Deadline / Request Trace 的 FAST 调度）
-├── PlannerRegistry（构造期只读 Planner 映射）
+├── RequestCoordinator（单 Context / Deadline / Request Trace；服务端 Planner 选择）
+├── PlannerRegistry（构造期只读 Planner 映射）/ default_planner_id
 ├── ModelGateway（共享 Registry / Selector / Coordinator / Tracer / Events）
 ├── PlanValidator
 ├── InMemoryStateStore
@@ -141,11 +141,12 @@ Composition Root 决定。
 Bootstrap 可以依赖全部 Harness 基础设施，其他核心模块不得反向依赖 Bootstrap。
 基础设施类不实现全局单例，实例数量与共享关系由组装决定。
 
-ModelGateway 已组装但不经 CapabilityInvoker；当前 `handle()` 只支持 FAST，PLAN 调度、
-LLM Planner、Workflow SPI、Remote Plugin、MCP、分布式调度和 HTTP 执行 API 尚未实现。
-LLMRouter 已可作为显式 Router 或 RuleRouter fallback 注入，默认组装仍保持无模型的
-RuleRouter。`app.planner_registry` 已可用于本地 Static/Hybrid Planner 配置和
-RouteDecision planner ID 校验，但在 PLAN shared lifecycle 接入前不会调用 Planner。
+ModelGateway 已组装但不经 CapabilityInvoker；当前 `handle()` 只支持 FAST，PLAN 执行接线、
+Workflow SPI、Remote Plugin、MCP、分布式调度和 HTTP 执行 API 尚未实现。LLMRouter 已可作为
+显式 Router 或 RuleRouter fallback 注入，默认组装仍保持无模型的 RuleRouter。Router 只决定
+FAST/PLAN，不接收 PlannerRegistry；RequestCoordinator 使用受信任的 `default_planner_id` 和
+PRE_ROUTE `allowed_planner_ids` 选择本地 Planner。`LLMPlanner` 可显式注入 PlannerRegistry，
+但在 PLAN shared lifecycle 接入前不会由 `handle()` 调用。
 
 ## 测试
 

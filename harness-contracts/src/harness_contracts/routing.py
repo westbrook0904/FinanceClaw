@@ -45,7 +45,6 @@ class RouteDecision(ContractModel):
     route_type: RouteType
     source: RouteSource
     capability_id: NonEmptyString | None = None
-    planner_id: NonEmptyString | None = None
     explorer_id: NonEmptyString | None = None
     confidence: float | None = Field(default=None, ge=0.0, le=1.0)
     reason_code: NonEmptyString
@@ -71,11 +70,11 @@ class RouteDecision(ContractModel):
 
         required_fields = {
             ExecutionMode.FAST: ("capability_id",),
-            ExecutionMode.PLAN: ("planner_id",),
+            ExecutionMode.PLAN: (),
             ExecutionMode.EXPLORE: ("explorer_id",),
-            ExecutionMode.HYBRID: ("planner_id", "explorer_id"),
+            ExecutionMode.HYBRID: ("explorer_id",),
         }[self.mode]
-        target_fields = ("capability_id", "planner_id", "explorer_id")
+        target_fields = ("capability_id", "explorer_id")
         missing_fields = [
             field_name for field_name in required_fields if getattr(self, field_name) is None
         ]

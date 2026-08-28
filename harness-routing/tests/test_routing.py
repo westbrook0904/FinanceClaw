@@ -12,7 +12,6 @@ from harness_contracts import (
     ExecutionMode,
     IdentityContext,
     InvocationContext,
-    PlanningError,
     Request,
     RequestError,
     RequestInput,
@@ -215,7 +214,6 @@ class RuleRouterTests(unittest.IsolatedAsyncioTestCase):
                 InputTypeRouteRule(
                     input_type="text",
                     mode=ExecutionMode.PLAN,
-                    planner_id="configured-planner",
                 ),
             )
         )
@@ -227,9 +225,8 @@ class RuleRouterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(decision.source, RouteSource.REQUEST)
         self.assertEqual(decision.reason_code, "EXPLICIT_TARGET")
 
-    async def test_plan_mode_uses_default_planner_before_input_rule(self) -> None:
+    async def test_plan_mode_only_selects_mode_before_input_rule(self) -> None:
         router = RuleRouter(
-            default_planner_id="default-planner",
             input_type_rules=(
                 InputTypeRouteRule(
                     input_type="text",
@@ -242,8 +239,8 @@ class RuleRouterTests(unittest.IsolatedAsyncioTestCase):
         decision = await router.route(make_context(mode=ExecutionMode.PLAN, target="echo.reply/v1"))
 
         self.assertEqual(decision.mode, ExecutionMode.PLAN)
-        self.assertEqual(decision.planner_id, "default-planner")
         self.assertEqual(decision.source, RouteSource.REQUEST)
+        self.assertFalse(hasattr(decision, "planner_id"))
 
     async def test_fast_without_target_uses_only_fast_input_rule(self) -> None:
         router = RuleRouter(
@@ -270,7 +267,6 @@ class RuleRouterTests(unittest.IsolatedAsyncioTestCase):
                 InputTypeRouteRule(
                     input_type="goal",
                     mode=ExecutionMode.PLAN,
-                    planner_id="static-planner",
                 ),
             )
         )
@@ -278,7 +274,7 @@ class RuleRouterTests(unittest.IsolatedAsyncioTestCase):
         decision = await router.route(make_context(input_type="goal"))
 
         self.assertEqual(decision.mode, ExecutionMode.PLAN)
-        self.assertEqual(decision.planner_id, "static-planner")
+        self.assertFalse(hasattr(decision, "planner_id"))
 
     async def test_no_match_is_explicit_and_does_not_guess_capability(self) -> None:
         with self.assertRaises(RoutingError) as raised:
@@ -287,11 +283,10 @@ class RuleRouterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(raised.exception.code, ErrorCode.ROUTE_NO_MATCH)
         self.assertNotIn("capability_id", raised.exception.details)
 
-    async def test_plan_without_default_planner_is_explicit(self) -> None:
-        with self.assertRaises(PlanningError) as raised:
-            await RuleRouter().route(make_context(mode=ExecutionMode.PLAN))
+    async def test_plan_routing_does_not_require_a_planner_configuration(self) -> None:
+        decision = await RuleRouter().route(make_context(mode=ExecutionMode.PLAN))
 
-        self.assertEqual(raised.exception.code, ErrorCode.PLANNER_NOT_CONFIGURED)
+        self.assertEqual(decision.mode, ExecutionMode.PLAN)
 
     async def test_fallback_is_last_and_its_failure_is_not_reinterpreted(self) -> None:
         failure = RoutingError("model failed", code=ErrorCode.ROUTE_MODEL_FAILED)
@@ -309,7 +304,6 @@ class RuleRouterTests(unittest.IsolatedAsyncioTestCase):
             mode=ExecutionMode.PLAN,
             route_type=RouteType.GENERATED_PLAN,
             source=RouteSource.MODEL,
-            planner_id="llm-planner",
             reason_code="MODEL_ROUTE",
         )
         fallback = StubFallbackRouter(decision=fallback_decision)
@@ -320,8 +314,8 @@ class RuleRouterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(fallback.calls, 1)
 
     async def test_explore_and_hybrid_produce_contract_decisions_for_guard(self) -> None:
-        router = RuleRouter(default_planner_id="default-planner")
-        validator = RouteDecisionValidator(planner_ids={"default-planner"})
+        router = RuleRouter()
+        validator = RouteDecisionValidator()
 
         for mode in (ExecutionMode.EXPLORE, ExecutionMode.HYBRID):
             with self.subTest(mode=mode):
@@ -334,12 +328,8 @@ class RuleRouterTests(unittest.IsolatedAsyncioTestCase):
 
 
 class RouteDecisionValidatorTests(unittest.TestCase):
-    def test_validator_rejects_a_string_as_planner_collection(self) -> None:
-        with self.assertRaises(TypeError):
-            RouteDecisionValidator(planner_ids="default-planner")
-
     def test_valid_fast_and_plan_decisions_pass(self) -> None:
-        validator = RouteDecisionValidator(planner_ids={"default-planner"})
+        validator = RouteDecisionValidator()
         fast_context = make_context(target="echo.reply/v1")
         fast = RouteDecision(
             mode=ExecutionMode.FAST,
@@ -353,7 +343,6 @@ class RouteDecisionValidatorTests(unittest.TestCase):
             mode=ExecutionMode.PLAN,
             route_type=RouteType.GENERATED_PLAN,
             source=RouteSource.REQUEST,
-            planner_id="default-planner",
             reason_code="REQUEST_MODE_PLAN",
         )
 
@@ -361,7 +350,7 @@ class RouteDecisionValidatorTests(unittest.TestCase):
         self.assertIs(validator.validate(plan, plan_context), plan)
 
     def test_validator_rechecks_schema_and_fixed_request_mode(self) -> None:
-        validator = RouteDecisionValidator(planner_ids={"default-planner"})
+        validator = RouteDecisionValidator()
         invalid = RouteDecision.model_construct(
             mode=ExecutionMode.AUTO,
             route_type=RouteType.DIRECT_CAPABILITY,
@@ -378,7 +367,6 @@ class RouteDecisionValidatorTests(unittest.TestCase):
             mode=ExecutionMode.PLAN,
             route_type=RouteType.GENERATED_PLAN,
             source=RouteSource.MODEL,
-            planner_id="default-planner",
             reason_code="MODE_CHANGED",
         )
         with self.assertRaises(RoutingError) as mode_error:
@@ -409,23 +397,6 @@ class RouteDecisionValidatorTests(unittest.TestCase):
             validator.validate(rewritten, make_context(target="echo.reply/v1"))
         self.assertEqual(target_error.exception.code, ErrorCode.ROUTE_INVALID_DECISION)
 
-    def test_planner_must_exist_in_local_snapshot(self) -> None:
-        decision = RouteDecision(
-            mode=ExecutionMode.PLAN,
-            route_type=RouteType.GENERATED_PLAN,
-            source=RouteSource.MODEL,
-            planner_id="missing-planner",
-            reason_code="MODEL_SELECTED",
-        )
-
-        with self.assertRaises(PlanningError) as raised:
-            RouteDecisionValidator(planner_ids={"other-planner"}).validate(
-                decision,
-                make_context(mode=ExecutionMode.PLAN),
-            )
-
-        self.assertEqual(raised.exception.code, ErrorCode.PLANNER_NOT_CONFIGURED)
-
     def test_policy_constraints_fail_closed_with_specific_codes(self) -> None:
         cases = (
             (
@@ -446,11 +417,10 @@ class RouteDecisionValidatorTests(unittest.TestCase):
                     mode=ExecutionMode.PLAN,
                     route_type=RouteType.GENERATED_PLAN,
                     source=RouteSource.RULE,
-                    planner_id="default-planner",
                     reason_code="RULE",
                 ),
                 ErrorCode.ROUTE_MODE_NOT_ALLOWED,
-                {"default-planner"},
+                set(),
             ),
             (
                 RoutePolicyConstraints(allowed_capability_ids=frozenset({"finance.query/v1"})),
@@ -464,21 +434,9 @@ class RouteDecisionValidatorTests(unittest.TestCase):
                 ErrorCode.ROUTE_CAPABILITY_NOT_ALLOWED,
                 set(),
             ),
-            (
-                RoutePolicyConstraints(allowed_planner_ids=frozenset({"other-planner"})),
-                RouteDecision(
-                    mode=ExecutionMode.PLAN,
-                    route_type=RouteType.GENERATED_PLAN,
-                    source=RouteSource.RULE,
-                    planner_id="default-planner",
-                    reason_code="RULE",
-                ),
-                ErrorCode.ROUTE_PLANNER_NOT_ALLOWED,
-                {"default-planner"},
-            ),
         )
 
-        for constraints, decision, expected_code, planner_ids in cases:
+        for constraints, decision, expected_code, _planner_ids in cases:
             with self.subTest(code=expected_code):
                 context = make_context(
                     mode=ExecutionMode.AUTO,
@@ -486,7 +444,7 @@ class RouteDecisionValidatorTests(unittest.TestCase):
                     constraints=constraints,
                 )
                 with self.assertRaises(RoutingError) as raised:
-                    RouteDecisionValidator(planner_ids=planner_ids).validate(decision, context)
+                    RouteDecisionValidator().validate(decision, context)
                 self.assertEqual(raised.exception.code, expected_code)
 
 

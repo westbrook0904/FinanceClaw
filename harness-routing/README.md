@@ -16,7 +16,7 @@ ExecutionEngine 或 StateStore。
   fallback Router 规则。
 - `LLMRouter`：把安全 RequestSummary、Capability-only Catalog 和收紧后的可选范围发送给
   逻辑 Model Capability，解析结构化 RouteDecision 后再次执行独立校验。
-- `RouteDecisionValidator`：在 Harness 分派前重新校验 schema、固定模式、Catalog、Planner、
+- `RouteDecisionValidator`：在 Harness 分派前重新校验 schema、固定模式、Catalog、
   Policy 约束、3B 模式可用性和显式 target 一致性。
 
 ## RuleRouter 顺序
@@ -26,7 +26,7 @@ EXPLORE / HYBRID request（产生协议决策，Validator 在 3B fail-closed）
   ↓
 AUTO / FAST + explicit target → FAST
   ↓
-PLAN → configured default planner
+PLAN → GENERATED_PLAN（只选择模式，不选择 Planner）
   ↓
 FAST + matching FAST input-type rule
   ↓
@@ -43,10 +43,11 @@ LLMRouter 只通过 `ModelGateway` 调用逻辑 Model Capability，不依赖厂�
 Identity、Tenant attributes、Trace baggage、Plugin pin、Provider identity 或执行状态；MODEL
 类型 Capability 也不会进入 FAST 候选目录。
 
-模型输出必须满足 `RouteDecision` JSON Schema，顶层未知字段（包括 `provider_id`、
-`plugin_id`）会被拒绝，`source` 必须为 `model`，并继续经过 RouteDecisionValidator。模型失败
-只映射安全 cause code，不回传原始响应或 Provider details。Provider retry/fallback 仍完全由
-ModelGateway 负责。
+模型输出必须满足 `RouteDecision` JSON Schema，顶层未知字段（包括 `planner_id`、
+`provider_id`、`plugin_id`）会被拒绝，`source` 必须为 `model`，并继续经过
+RouteDecisionValidator。PLAN Decision 只表达“需要规划”；Planner 由 Bootstrap/Coordinator 的
+受信任配置和 Policy 约束选择。模型失败只映射安全 cause code，不回传原始响应或 Provider
+details。Provider retry/fallback 仍完全由 ModelGateway 负责。
 
 ## 依赖边界
 

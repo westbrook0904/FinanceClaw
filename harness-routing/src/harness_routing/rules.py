@@ -9,7 +9,6 @@ from harness_contracts import (
     ContractModel,
     ErrorCode,
     ExecutionMode,
-    PlanningError,
     RouteDecision,
     RouteSource,
     RouteType,
@@ -25,24 +24,23 @@ _STAGE3B_UNAVAILABLE_COMPONENT_ID = "stage3b-unavailable"
 
 
 class InputTypeRouteRule(ContractModel):
-    """把一个稳定 input type 映射到 FAST Capability 或 PLAN Planner。"""
+    """把一个稳定 input type 映射到 FAST Capability 或 PLAN 模式。"""
 
     input_type: NonEmptyString
     mode: ExecutionMode
     capability_id: NonEmptyString | None = None
-    planner_id: NonEmptyString | None = None
     reason_code: NonEmptyString = "INPUT_TYPE_RULE"
     metadata: FrozenJsonMapping = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def validate_rule_shape(self) -> Self:
         if self.mode is ExecutionMode.FAST:
-            if self.capability_id is None or self.planner_id is not None:
-                raise ValueError("FAST input type rule requires only capability_id")
+            if self.capability_id is None:
+                raise ValueError("FAST input type rule requires capability_id")
             return self
         if self.mode is ExecutionMode.PLAN:
-            if self.planner_id is None or self.capability_id is not None:
-                raise ValueError("PLAN input type rule requires only planner_id")
+            if self.capability_id is not None:
+                raise ValueError("PLAN input type rule forbids capability_id")
             return self
         raise ValueError("input type rule mode must be FAST or PLAN")
 
@@ -61,7 +59,6 @@ class InputTypeRouteRule(ContractModel):
             mode=self.mode,
             route_type=RouteType.GENERATED_PLAN,
             source=RouteSource.RULE,
-            planner_id=self.planner_id,
             confidence=1.0,
             reason_code=self.reason_code,
             metadata=self.metadata,
@@ -75,16 +72,11 @@ class RuleRouter(Router):
         self,
         *,
         router_id: str = "rule-router",
-        default_planner_id: str | None = None,
         input_type_rules: Iterable[InputTypeRouteRule] = (),
         fallback: Router | None = None,
     ) -> None:
         if not isinstance(router_id, str) or not router_id.strip():
             raise TypeError("router_id must be a non-empty string")
-        if default_planner_id is not None and (
-            not isinstance(default_planner_id, str) or not default_planner_id.strip()
-        ):
-            raise TypeError("default_planner_id must be a non-empty string when provided")
         if fallback is not None and not isinstance(fallback, Router):
             raise TypeError("fallback must implement Router")
 
@@ -96,9 +88,6 @@ class RuleRouter(Router):
             raise ValueError("input_type_rules must not contain duplicate input types")
 
         self._router_id = router_id.strip()
-        self._default_planner_id = (
-            default_planner_id.strip() if default_planner_id is not None else None
-        )
         self._rules = {rule.input_type: rule for rule in rules}
         self._fallback = fallback
 
@@ -125,7 +114,6 @@ class RuleRouter(Router):
                 mode=ExecutionMode.HYBRID,
                 route_type=RouteType.HYBRID,
                 source=RouteSource.REQUEST,
-                planner_id=self._default_planner_id or _STAGE3B_UNAVAILABLE_COMPONENT_ID,
                 explorer_id=_STAGE3B_UNAVAILABLE_COMPONENT_ID,
                 confidence=1.0,
                 reason_code="REQUEST_MODE_HYBRID",
@@ -143,17 +131,10 @@ class RuleRouter(Router):
             )
 
         if requested_mode is ExecutionMode.PLAN:
-            if self._default_planner_id is None:
-                raise PlanningError(
-                    "PLAN mode requires a configured default planner",
-                    code=ErrorCode.PLANNER_NOT_CONFIGURED,
-                    details={"router_id": self.router_id},
-                )
             return RouteDecision(
                 mode=ExecutionMode.PLAN,
                 route_type=RouteType.GENERATED_PLAN,
                 source=RouteSource.REQUEST,
-                planner_id=self._default_planner_id,
                 confidence=1.0,
                 reason_code="REQUEST_MODE_PLAN",
             )

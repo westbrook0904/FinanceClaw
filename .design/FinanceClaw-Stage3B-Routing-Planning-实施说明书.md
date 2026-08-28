@@ -517,7 +517,6 @@ class RouteDecision(ContractModel):
     route_type: RouteType
     source: RouteSource
     capability_id: NonEmptyString | None = None
-    planner_id: NonEmptyString | None = None
     explorer_id: NonEmptyString | None = None
     confidence: float | None = Field(default=None, ge=0.0, le=1.0)
     reason_code: NonEmptyString
@@ -528,17 +527,18 @@ class RouteDecision(ContractModel):
 
 | mode | route_type | 必填 | 禁止 |
 |---|---|---|---|
-| FAST | DIRECT_CAPABILITY | capability_id | planner_id、explorer_id |
-| PLAN | GENERATED_PLAN | planner_id | capability_id、explorer_id |
-| EXPLORE | EXPLORATION | explorer_id | capability_id、planner_id |
-| HYBRID | HYBRID | planner_id、explorer_id | capability_id |
+| FAST | DIRECT_CAPABILITY | capability_id | explorer_id |
+| PLAN | GENERATED_PLAN | — | capability_id、explorer_id |
+| EXPLORE | EXPLORATION | explorer_id | capability_id |
+| HYBRID | HYBRID | explorer_id | capability_id |
 | AUTO | 不允许出现在最终 Decision | — | — |
 
 3B 的 Validator 在结构正确后还要检查：
 
 - FAST capability 必须存在于本次 CapabilityCatalog snapshot；
 - Router 只能返回 capability_id，不能返回 provider_id / plugin_id；
-- PLAN planner_id 必须存在于本地 PlannerRegistry；
+- PLAN 只表达“需要规划”，不得携带 planner_id；
+- Planner 由 Composition Root / RequestCoordinator 根据服务端默认配置和 Policy 约束选择；
 - Decision 必须满足 PRE_ROUTE allowed modes / capabilities / planners；
 - 3B 收到 EXPLORE / HYBRID Decision 时返回 MODE_NOT_AVAILABLE；
 - 固定请求模式不能被 Router 改成其他模式；
@@ -1090,7 +1090,7 @@ class Router(ABC):
    → FAST + DIRECT_CAPABILITY(target.capability)
 
 3. requested mode = PLAN
-   → PLAN + GENERATED_PLAN(default_planner_id)
+   → PLAN + GENERATED_PLAN（不选择 Planner）
 
 4. requested mode = FAST 且没有 target
    → 查询显式配置的 input-type → capability rule
@@ -1261,7 +1261,7 @@ Provider identity 继续由 Provider observability 提供，不由 Router metada
 
 ### 目标
 
-建立不依赖 LLM 的 Planner 稳定边界，为 RouteDecision.planner_id 提供可验证落点。
+建立不依赖 LLM 的 Planner 稳定边界，为 Composition Root 的服务端 Planner 选择提供可验证落点。
 
 ### PlannerRegistry
 
@@ -1305,7 +1305,7 @@ primary planner
 
 ### 完成标准
 
-- Router 可以验证 planner_id。
+- Composition Root 可以验证 default_planner_id，Router 不接收 PlannerRegistry。
 - StaticPlanner 结果必须通过 PlanValidator。
 - HybridPlanner primary 命中时 fallback 零调用。
 - primary NOT_APPLICABLE 时 fallback 恰好调用一次。
@@ -1344,7 +1344,6 @@ effective requested mode
 allowed modes
 capability-only Catalog snapshot
 allowed capability IDs
-available planner IDs
 RouteDecision JSON schema
 ```
 
@@ -1379,6 +1378,7 @@ validated decision or RoutingError
 
 - LLMRouter 只依赖 ModelGateway，不依赖厂商 SDK。
 - 模型输出 provider_id / plugin_id 因 schema extra field 被拒绝。
+- 模型输出 planner_id 因 schema extra field 被拒绝；Planner 选择属于服务端控制面。
 - 不存在的 capability 被 Validator 拒绝。
 - 固定 PLAN 不能被模型改成 FAST。
 - ModelGateway failure 被映射为安全 Route error。
@@ -1515,7 +1515,9 @@ PlanDraft schema
 ```text
 validated PLAN RouteDecision
   ↓
-PlannerRegistry.get(planner_id)
+RequestCoordinator 根据 default_planner_id + PRE_ROUTE allowed_planner_ids 选择 Planner
+  ↓
+PlannerRegistry.get(default_planner_id)
   ↓
 Planner.plan(PlanningContext)
   ↓
@@ -1968,7 +1970,9 @@ target = None
 ```text
 RuleRouter no match
   ↓
-LLMRouter → RouteDecision(PLAN, planner_id=llm-default)
+LLMRouter → RouteDecision(PLAN)
+  ↓
+RequestCoordinator → server-selected LLMPlanner(llm-default)
   ↓
 LLMPlanner → valid PlanDraft
   ↓

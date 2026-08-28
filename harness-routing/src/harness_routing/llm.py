@@ -30,7 +30,8 @@ from .validation import RouteDecisionValidator
 
 _SYSTEM_PROMPT = """You are a routing decision component inside a controlled Harness.
 Return exactly one JSON object matching the supplied RouteDecision schema.
-Choose only from the supplied execution modes, capability IDs, and planner IDs.
+Choose only from the supplied execution modes and capability IDs.
+PLAN means that planning is required; never choose or name a Planner.
 Never output provider IDs, plugin IDs, credentials, or executable instructions.
 Do not call tools, execute capabilities, or invent unavailable targets."""
 
@@ -163,10 +164,6 @@ class LLMRouter(Router):
         if constraints.allowed_capability_ids is not None:
             allowed_capabilities.intersection_update(constraints.allowed_capability_ids)
 
-        available_planners = set(self._decision_validator.planner_ids)
-        if constraints.allowed_planner_ids is not None:
-            available_planners.intersection_update(constraints.allowed_planner_ids)
-
         return {
             "request_summary": context.request_summary.model_dump(mode="json"),
             "requested_mode": context.requested_mode.value,
@@ -175,7 +172,6 @@ class LLMRouter(Router):
                 descriptor.model_dump(mode="json") for descriptor in routable_catalog
             ],
             "allowed_capability_ids": sorted(allowed_capabilities),
-            "available_planner_ids": sorted(available_planners),
             "route_decision_schema": self._response_schema,
         }
 

@@ -12,7 +12,6 @@ from harness_contracts import (
     ExecutionMode,
     IdentityContext,
     InvocationContext,
-    PlanningError,
     ProviderDescriptor,
     ProviderError,
     Request,
@@ -80,14 +79,14 @@ def fast_decision(
     }
 
 
-def plan_decision(planner_id: str = "planner-a") -> dict[str, object]:
+def plan_decision(**extra: object) -> dict[str, object]:
     return {
         "mode": "plan",
         "route_type": "generated_plan",
         "source": "model",
-        "planner_id": planner_id,
         "confidence": 0.82,
         "reason_code": "MODEL_PLAN",
+        **extra,
     }
 
 
@@ -202,12 +201,10 @@ def make_context(
 
 def make_router(
     model: ScriptedRouteModel,
-    *,
-    planner_ids: tuple[str, ...] = ("planner-a", "planner-b"),
 ) -> tuple[LLMRouter, InMemoryCapabilityRegistry]:
     registry = InMemoryCapabilityRegistry()
     register_model(registry, model, "route-provider")
-    validator = RouteDecisionValidator(planner_ids=planner_ids)
+    validator = RouteDecisionValidator()
     return (
         LLMRouter(
             ModelGateway(registry, InMemoryTracer()),
@@ -254,7 +251,7 @@ class LLMRouterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(prompt["requested_mode"], "auto")
         self.assertEqual(prompt["allowed_modes"], ["fast"])
         self.assertEqual(prompt["allowed_capability_ids"], [TOOL_ID])
-        self.assertEqual(prompt["available_planner_ids"], ["planner-a"])
+        self.assertNotIn("available_planner_ids", prompt)
         self.assertEqual(
             [item["id"] for item in prompt["capability_catalog"]],
             [TOOL_ID],
@@ -309,14 +306,15 @@ class LLMRouterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(raised.exception.code, ErrorCode.ROUTE_INVALID_DECISION)
         self.assertEqual(raised.exception.details["requested_mode"], "plan")
 
-    async def test_unconfigured_planner_is_rejected(self) -> None:
-        model = ScriptedRouteModel(plan_decision("missing-planner"))
+    async def test_model_cannot_select_a_planner(self) -> None:
+        model = ScriptedRouteModel(plan_decision(planner_id="model-injected"))
         router, _ = make_router(model)
 
-        with self.assertRaises(PlanningError) as raised:
+        with self.assertRaises(RoutingError) as raised:
             await router.route(make_context())
 
-        self.assertEqual(raised.exception.code, ErrorCode.PLANNER_NOT_CONFIGURED)
+        self.assertEqual(raised.exception.code, ErrorCode.ROUTE_INVALID_DECISION)
+        self.assertNotIn("model-injected", str(raised.exception.details))
 
     async def test_provider_and_plugin_fields_are_rejected_without_echoing_output(self) -> None:
         for field_name in ("provider_id", "plugin_id"):

@@ -131,17 +131,11 @@ def build_harness(
     planner_registry = PlannerRegistry(planners)
     if default_planner_id is not None:
         planner_registry.get(default_planner_id)
-    effective_router = (
-        router
-        if router is not None
-        else RuleRouter(default_planner_id=default_planner_id)
-    )
+    effective_router = router if router is not None else RuleRouter()
     effective_request_projector = (
         request_projector if request_projector is not None else SafeRequestProjector()
     )
-    route_decision_validator = RouteDecisionValidator(
-        planner_ids=planner_registry.planner_ids
-    )
+    route_decision_validator = RouteDecisionValidator()
     effective_provider = (
         plugin_provider
         if plugin_provider is not None
@@ -202,6 +196,8 @@ def build_harness(
         invoker,
         lifecycle,
         effective_tracer,
+        planner_registry,
+        default_planner_id,
     )
 
     return HarnessApplication(

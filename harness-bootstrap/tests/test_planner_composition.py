@@ -17,6 +17,7 @@ from harness_contracts import (
     ResultStatus,
 )
 from harness_planning import Planner, PlannerRegistry, PlanningContext
+from harness_policy import Policy, PolicyContext, PolicyDecision, PolicyPhase
 from harness_routing import RuleRouter
 
 
@@ -49,8 +50,8 @@ class PlannerCompositionTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsInstance(app.planner_registry, PlannerRegistry)
         self.assertIs(app.planner_registry.get("static"), planner)
         self.assertEqual(app.planner_registry.list(), ("static",))
-        self.assertEqual(app.route_decision_validator.planner_ids, frozenset({"static"}))
         self.assertIsInstance(app.router, RuleRouter)
+        self.assertEqual(app.request_coordinator.default_planner_id, "static")
 
         await app.start()
         result = await app.handle(
@@ -66,6 +67,44 @@ class PlannerCompositionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(planner.calls, 0)
         await app.shutdown()
 
+    async def test_pre_route_policy_can_reject_the_server_selected_planner(self) -> None:
+        class RestrictPlannerPolicy(Policy):
+            @property
+            def name(self) -> str:
+                return "restrict-planner"
+
+            @property
+            def phases(self) -> frozenset[PolicyPhase]:
+                return frozenset({PolicyPhase.PRE_ROUTE})
+
+            def evaluate(self, context: PolicyContext) -> PolicyDecision:
+                return PolicyDecision.allow(
+                    self.name,
+                    reason="planner scope",
+                    constraints={"allowed_planner_ids": ["other"]},
+                )
+
+        planner = RecordingPlanner("static")
+        app = build_harness(
+            planners=(planner,),
+            default_planner_id="static",
+            policies=(RestrictPlannerPolicy(),),
+            entry_point_group=None,
+        )
+        await app.start()
+
+        result = await app.handle(
+            Request(
+                input=RequestInput(type="goal", content={"task": "plan"}),
+                options=RequestOptions(execution_mode=ExecutionMode.PLAN),
+            )
+        )
+
+        self.assertEqual(result.error.code, ErrorCode.ROUTE_PLANNER_NOT_ALLOWED)
+        self.assertEqual(result.error.details["planner_id"], "static")
+        self.assertEqual(planner.calls, 0)
+        await app.shutdown()
+
     async def test_default_planner_must_be_registered(self) -> None:
         with self.assertRaises(PlanningError) as raised:
             build_harness(
@@ -74,6 +113,21 @@ class PlannerCompositionTests(unittest.IsolatedAsyncioTestCase):
             )
 
         self.assertEqual(raised.exception.code, ErrorCode.PLANNER_NOT_CONFIGURED)
+
+    async def test_plan_handle_without_server_default_fails_in_coordinator(self) -> None:
+        app = build_harness(entry_point_group=None)
+        await app.start()
+
+        result = await app.handle(
+            Request(
+                input=RequestInput(type="goal", content={"task": "plan"}),
+                options=RequestOptions(execution_mode=ExecutionMode.PLAN),
+            )
+        )
+
+        self.assertEqual(result.error.code, ErrorCode.PLANNER_NOT_CONFIGURED)
+        self.assertEqual(result.error.details["router_id"], "rule-router")
+        await app.shutdown()
 
     async def test_duplicate_planner_ids_fail_during_build(self) -> None:
         with self.assertRaisesRegex(ValueError, "duplicate planner_id"):
