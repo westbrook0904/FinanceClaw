@@ -1,7 +1,8 @@
 # Stage 3 ADR 状态摘要
 
-Stage 3A 与 Stage 3B 已完成。原先需要在 3B 前冻结的决议均已落地；当前只保留 Stage 3C/3D
-尚未实施的决策边界。
+Stage 3A 与 Stage 3B 已完成。Stage 3C 详细设计已经冻结、尚未实施；Stage 3D 仍待设计与实施。
+3C 的完整编码基线见
+`.design/FinanceClaw-Stage3C-Agentic-Exploration-实施说明书.md`。
 
 ## 已决议并实现
 
@@ -35,12 +36,33 @@ Stage 3A 与 Stage 3B 已完成。原先需要在 3B 前冻结的决议均已落
    - Trace/Events 只保存安全 ID、hash、计数和验证码，不保存 Prompt、模型响应、Provider
      原始错误消息或隐藏 Chain-of-Thought。
 
-## Stage 3C 已冻结、尚未实现
+## Stage 3C 设计已冻结、尚未实现
 
 - ReAct 采用 Harness-owned `ExplorationEngine`。
-- 普通 AgentPlugin 不获得 `CapabilityInvoker`；模型只提交 `ActionProposal`。
-- EXPLORE/HYBRID 实际执行、Explore checkpoint、ScopedActionExecutor、PlanPatchProposal 与
-  Plan revision validation 均属于 Stage 3C。
+- 普通 AgentPlugin 不获得 `CapabilityInvoker`；模型只提交 identity-free Draft，Harness
+  materialize 最终 Proposal。
+- EXPLORE/HYBRID 实际执行、PlanExecutionRecord 内的 Exploration child state、
+  ScopedActionExecutor、PlanPatchProposal 与 Plan revision validation 均属于 Stage 3C。
+- `handle()` 是标准 orchestration API；`invoke()` / `execute_plan()` 是稳定高级 API，
+  不删除。
+- Routing 默认采用 deterministic-first Pipeline，只有类型化 NOT_APPLICABLE 才进入模型
+  fallback。
+- 模型只填写未知字段；requested/effective mode 不进入模型 Prompt，Harness 生成最终
+  `RouteDecision`。
+- Structured Output 采用 Provider-native strict、完整本地 Schema/Pydantic 与业务 Validator
+  三层门禁，不支持 strict 时禁止静默降级。
+- `plan_id` 是 fresh execution identity；任意 Planner（包含第三方 Planner）输出
+  在 Coordinator trust boundary 统一归一化为模板，每次 fresh execution 只由
+  PlanMaterializer 物化一次新 ID；Patch 保持同 ID、revision 精确加一。
+- standalone EXPLORE 物化为真实单 EXPLORATION 节点 Plan，action 子状态与 Plan 一起
+  checkpoint；Approval/Async 恢复定位到 action。
+- 任何包含 EXPLORATION 节点的 Plan 都必须设置
+  `checkpoint_cas_required=true`，所有 checkpoint / approval / async completion /
+  cancel / resume 变更都经 versioned CAS，与是否允许 Patch 无关。
+- PlanPatch v1 append-only，必须按 PRE_PATCH → PlanValidator → PRE_PLAN →
+  StateStore CAS 顺序通过治理。
+- 3C 不自动把成功 Plan 晋升为 Workflow，只记录未来 3D Eval 所需的安全 candidate facts；
+  Workflow Catalog/版本化发布仍属于 Stage 4。
 
 ## Stage 3D 待实施
 

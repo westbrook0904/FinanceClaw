@@ -41,5 +41,5 @@ StateStore 未创建 checkpoint。Resume Gate 使用临时 SQLite 文件重建 A
   plugins/tests tests/stage2 tests/stage3a tests/stage3b -v
 ```
 
-验收还要求对变更文件运行 Ruff check/format，并执行 `git diff --check`。完整 Replay Eval、
-EXPLORE/HYBRID 实际执行和 Plan Patch 不属于 3B，分别留给 Stage 3D 与 Stage 3C。
+验收还要求对变更文件运行 Ruff check/format，并执行 `git diff --check`。EXPLORE/HYBRID
+实际执行与 Plan Patch 属于 Stage 3C；完整 Replay Eval 属于 Stage 3D，均不属于 3B。

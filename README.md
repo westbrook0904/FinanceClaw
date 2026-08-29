@@ -6,6 +6,10 @@ Selection、Retry/Fallback、Provider-safe Checkpoint/Resume、ModelGateway，�
 `handle()` AUTO / FAST / PLAN 路径；阶段一 Direct Invocation API 和阶段二低层 Plan API
 继续保持兼容。
 
+Stage 3C Agentic Exploration 的实施设计已经冻结，但代码尚未开始实现；当前
+`EXPLORE` / `HYBRID` 仍按 Stage 3B 语义 fail-closed。详细设计见
+`.design/FinanceClaw-Stage3C-Agentic-Exploration-实施说明书.md`。
+
 财经能力仍然只是插件；Harness Core 不包含财经类型、Prompt、SQL、行情访问或其他具体
 业务实现。
 
@@ -53,7 +57,7 @@ Deadline 和 REQUEST Trace。
 模型调用使用独立边界，不经过 `CapabilityInvoker`：
 
 ```text
-Router / Planner / Explorer（Stage 3B）
+Router / Planner（Stage 3B；Explorer 在 Stage 3C 实施）
         ↓
 ModelGateway
         ↓
@@ -193,9 +197,12 @@ async with build_harness() as app:
 - StateStore 是恢复事实来源；Execution Events 是 best-effort 观察面，不替代 Checkpoint。
 - Registry 支持单 Capability 多 Provider，并通过最小 Health-aware PrioritySelector 选择；
   Provider Pin 外部入口、Weighted Canary 和 Passive Health 暂缓。
-- `handle()` 分派经过独立校验的 FAST / PLAN Decision。Router 只选择模式，服务端配置和
-  Policy 选择 Planner；LLMRouter 可作为 RuleRouter fallback，LLMPlanner 可自主生成受限
-  PlanDraft、执行 bounded repair，再由 Planner 与 ExecutionEngine 双重验证后执行。
+- `handle()` 分派经过独立校验的 FAST / PLAN Decision。Router 产出经验证的
+  `RouteDecision`（mode / route type / direct capability），不选择 Provider；服务端配置和
+  Policy 选择 Planner。RoutingPipeline 先做 deterministic 匹配，只有类型化
+  NOT_APPLICABLE 才进入可选模型 fallback。LLMPlanner 可自主生成受限 PlanDraft、
+  执行 bounded repair，再经 Coordinator/PlanMaterializer 统一物化和
+  ExecutionEngine 二次验证后执行。
   WAITING / crash resume 复用持久化 Plan，不重新路由或规划。动态 Plan Patch、远程插件、
   MCP、分布式 Scheduler/锁和外部 Event Broker 尚未实现。
 - `EXPLORE` / `HYBRID` 已冻结为协议值，但在 Stage 3B 明确 fail-closed；实际探索执行属于

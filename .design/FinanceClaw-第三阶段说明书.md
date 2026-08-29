@@ -2,10 +2,11 @@
 
 > **文档性质**：阶段实施设计 / Architecture Decision Baseline  
 > **阶段名称**：Stage 3 — Adaptive Multi-Provider & Agentic Orchestration  
-> **版本**：V1.0（Stage 3A / 3B 实现基线）
-> **日期**：2026-08-28
+> **版本**：V1.1（Stage 3A / 3B 实现基线 + Stage 3C 设计基线）
+> **日期**：2026-08-29
 > **前置基线**：Stage 1 Minimal Harness + Stage 2 Reliable Plan Execution Engine  
 > **依据文档**：`.design/Harness-Agent_通用可插拔智能体平台架构设计_修订版.md`、`.design/第一阶段.md`、`.design/FinanceClaw-第二阶段说明书.md`
+> **3C 实施基线**：`.design/FinanceClaw-Stage3C-Agentic-Exploration-实施说明书.md`
 
 ---
 
@@ -17,7 +18,7 @@
 |---|---|---|
 | Stage 3A — Provider Fabric | 已完成 | Registry 1:N、Selection/Minimal Health、Retry/Fallback、Provider-safe Resume、ModelGateway、Observability |
 | Stage 3B — Routing & Planning | 已完成 | ExecutionMode、handle、Rule/LLM Router、PRE_ROUTE、Static/Hybrid/LLM Planner、bounded repair、Acceptance Gate |
-| Stage 3C — Agentic Exploration | 未实施 | EXPLORE/HYBRID 当前 fail-closed |
+| Stage 3C — Agentic Exploration | 设计已冻结，未实施 | EXPLORE/HYBRID 当前仍 fail-closed；实施基线已覆盖 bounded exploration、action checkpoint、HYBRID、PlanPatch 与恢复 |
 | Stage 3D — Expansion & Replay Eval | 未实施 | 3B 仅保留未来 Eval 所需稳定事实 |
 
 第三阶段的目标不是“加一个会自由调用所有工具的 MainAgent”。
@@ -128,12 +129,27 @@ ExplorationBudget
 ActionProposal
 ScopedActionExecutor
 Bounded ReAct
-Explore Checkpoint
+Explore child state in PlanExecutionRecord
 EXPLORE mode
 HYBRID mode
 PlanPatchProposal
 Plan Revision Validation
 Agentic Scope / Recursion Limits
+```
+
+详细编码顺序、Contracts、状态机、错误模型、恢复语义与 Acceptance Gate 已冻结在
+`.design/FinanceClaw-Stage3C-Agentic-Exploration-实施说明书.md`。
+
+该实施基线同时收口 3B 暴露出的前置问题：
+
+```text
+Planner output 在 Coordinator trust boundary 每次 fresh execution 物化新 plan_id
+RoutingPipeline deterministic-first
+模型只生成未知字段的 Draft / Proposal
+requested_mode / effective_mode 不进入模型 Prompt
+provider-native strict output + 本地完整校验 + 业务校验
+standalone EXPLORE 物化为真实单 EXPLORATION 节点 Plan
+PlanPatch append-only + PRE_PATCH + revision CAS
 ```
 
 ## Stage 3D — Provider Expansion & Replay Eval
@@ -145,7 +161,8 @@ Selection Replay
 Route Replay
 Plan Replay / Validation Eval
 Provider Comparison
-E2E / Fault Injection
+generic execution-fact clustering / scoring（不创建 WorkflowCandidate 生命周期）
+Full Stage-3 cross-provider E2E / provider-expansion fault injection
 ```
 
 ---
@@ -401,15 +418,18 @@ Idempotency
 
 ## ADR-P3-011：模型没有执行权
 
-模型允许输出：
+模型允许输出 identity-free Draft / Proposal：
 
 ```text
-RouteDecision
-ExecutionPlan
-ActionProposal
-PlanPatchProposal
-Final structured result
+Route Proposal
+PlanDraft
+ExplorationTurnDraft
+PlanPatchDraft
+FinalResultDraft
 ```
+
+Harness 负责物化最终 `RouteDecision`、`ExecutionPlan`、`ActionProposal`、
+`PlanPatchProposal` 的控制字段、身份、Scope、Budget、幂等键与 revision。
 
 模型禁止：
 
@@ -425,20 +445,21 @@ Final structured result
 ## ADR-P3-012：PlanPatch 是受治理的 Plan Revision
 
 ```text
-Proposal
+identity-free PlanPatchDraft
   ↓
-validate
+Harness materialize Proposal
   ↓
-policy
+append-only / scope / budget validation
   ↓
-revision++
+PRE_PATCH → PlanValidator → PRE_PLAN
   ↓
-checkpoint
+CAS 原子保存 same plan_id / revision + 1
   ↓
-continue
+new Scheduler generation continues from Patch-added tail
 ```
 
-已完成节点历史不可被 Patch 重写。
+3C v1 严格 append-only：任何既有节点、边和执行历史都不可被 Patch
+重写；新 edge 的 `to_node` 必须是新节点。
 
 ---
 
@@ -499,39 +520,44 @@ Plan Validation Replay
                              PRE_ROUTE Policy
                                    │
                                    ▼
-                              Intent Router
+                     RoutingPipeline
+                 deterministic → model fallback
                                    │
-              ┌────────────────────┼─────────────────────┐
-              ▼                    ▼                     ▼
-            FAST                  PLAN             EXPLORE / HYBRID
-              │                    │                     │
-              │                 Planner            ExplorationEngine
-              │                    │                     │
-              │                    ▼                     │
-              │             ExecutionPlan                │
-              │                    │                     │
-              │               PlanValidator              │
-              │                    │                     │
-              │                    ▼                     │
-              │             ExecutionEngine              │
-              │                    │                     │
-              └──────────────┬─────┴──────────────┬──────┘
-                             ▼                    ▼
-                      CapabilityInvoker     ScopedActionExecutor
-                             ▲                    │
-                             └────────────────────┘
-                             │
-                      Registry candidates
-                             │
-                             ▼
-                       ProviderSelector
-                             │
-            ┌────────────────┼────────────────┐
-            ▼                ▼                ▼
-          Agent             Tool            Model
-            │                │                │
-            └──────────── Connector / Memory ┘
+                 ┌─────────────────┼─────────────────┐
+                 ▼                                   ▼
+               FAST                         PLAN / EXPLORE / HYBRID
+                 │                                   │
+                 │                       Planner artifact /
+                 │                       ExplorationPlanFactory
+                 │                                   │
+                 │                         PlanMaterializer
+                 │                                   │
+                 │                           ExecutionPlan
+                 │                                   │
+                 │                       PlanValidator + PRE_PLAN
+                 │                                   │
+                 │                           ExecutionEngine
+                 │                                   │
+                 │             ┌───────────┼───────────┐
+                 │             ▼           ▼           ▼
+                 │       CAPABILITY   APPROVAL   EXPLORATION
+                 │             │                       │
+                 │             │              ExplorationEngine
+                 │             │                       │
+                 │             │              ScopedActionExecutor
+                 └─────────────┬──────────────────────┘
+                               ▼
+                        CapabilityInvoker
+                               │
+                  Registry → ProviderSelector
+                               │
+                     Agent / Tool / Model
 ```
+
+standalone EXPLORE 不绕过 Plan / ExecutionEngine；它物化为真实单
+EXPLORATION 节点 Plan。HYBRID 也是包含显式 EXPLORATION 节点的 ExecutionPlan。
+Exploration child state 与外层 NodeExecutionState 一起写入 PlanExecutionRecord，不建立
+独立 Exploration checkpoint 真相。
 
 ---
 
@@ -549,13 +575,17 @@ ProviderHealthSnapshot
 SelectionContext
 SelectionDecision
 ProviderAttempt
+PlanNodeKind.EXPLORATION
+ExplorationNodeSpec / ExplorationPermissions
 ExplorationBudget
-ActionProposal
+ExplorationUsage / ExplorationModelAttemptState
+ActionProposal / ActionExecutionState
 Observation
 ExplorationState
-ExplorationResult
-PlanPatchProposal
-PlanRevisionResult
+ExecutionUnitRef
+PlanPatchProposal / PlanPatchExecutionState
+PlanRevisionAudit / PlanExecutionProfile
+StructuredOutputSpec / Model accounting contracts
 ```
 
 ---
@@ -570,6 +600,7 @@ unregister provider
 list providers
 candidates(capability)
 get provider by provider_id
+immutable ModelProviderFeatures snapshot
 ```
 
 不能把 Selector 逻辑塞回 Registry。
@@ -597,6 +628,8 @@ HealthSource
 ModelProvider SPI
 ModelGateway
 GenerateRequest / GenerateResult
+strict Structured Output preparation + local validation
+complete retry/fallback accounting
 EmbedRequest / EmbedResult（可以延后到 3D）
 MockFastModel
 MockQualityModel
@@ -612,6 +645,9 @@ Router / Planner / Explorer 只依赖 ModelGateway / Model SPI。
 Router SPI
 RuleRouter
 LLMRouter
+RoutingPipeline（deterministic-first）
+RouterNotApplicableError
+Route Draft / RouteDecision materialization
 RouteDecision validation
 ```
 
@@ -626,6 +662,8 @@ LLMPlanner
 HybridPlanner
 PlanningAttempt
 Plan repair loop
+PlanTemplate / PlannerOutputNormalizer / PlanMaterializer
+PlanNodeDraft
 PlanPatch validation
 ```
 
@@ -637,8 +675,8 @@ PlanPatch validation
 ExplorationEngine
 ScopedActionExecutor
 ExplorationBudgetGuard
-ExplorationCheckpoint
 ActionValidator
+ExplorationNodeExecutor
 PlanPatchCoordinator
 ```
 
@@ -646,7 +684,33 @@ PlanPatchCoordinator
 
 ---
 
-## 6.8 `harness-connectors`（3D）
+## 6.8 `harness-execution` / `harness-state`
+
+```text
+EXPLORATION node dispatch
+ExplorationRecoveryValidator
+PlanCheckpointCoordinator
+scheduler_generation / external operation claim
+PlanMutationSuspension / scheduler handoff
+StateStore compare-and-save（EXPLORATION Plan 必须）
+```
+
+Exploration 不建立第二个 StateStore；所有 child state 进入同一 PlanExecutionRecord。
+
+---
+
+## 6.9 `harness-runtime` / `harness-bootstrap`
+
+```text
+Provider selection intent -> PRE_EXECUTE -> Provider attempt
+Approval proposal/provider/policy hash binding
+FAST / PLAN / EXPLORE / HYBRID 穷举分派
+Exploration profile / executor / checkpoint sink 组装
+```
+
+---
+
+## 6.10 `harness-connectors`（3D）
 
 ```text
 ConnectorProvider SPI
@@ -658,7 +722,7 @@ MockRetrieverConnector
 
 ---
 
-## 6.9 `harness-memory`（3D）
+## 6.11 `harness-memory`（3D）
 
 ```text
 MemoryProvider SPI
@@ -674,7 +738,7 @@ InMemoryMemoryProvider
 
 ---
 
-## 6.10 `harness-eval`（3D）
+## 6.12 `harness-eval`（3D）
 
 ```text
 SelectionReplay
@@ -951,10 +1015,13 @@ LLMRouter 只能：
 读取安全 Request summary
 读取 CapabilityCatalog summary
 调用 ModelGateway
-返回 RouteDecision
+让模型返回仅含未知字段的 Route Draft
+由 Harness materialize 并返回验证后的 RouteDecision
 ```
 
 不得执行任何业务 Capability。
+模型 Prompt 不携带 requested/effective mode，也不得让模型回显
+mode / route_type / source 等 Harness-owned 字段。
 
 Stage 3B 已实现结构化 JSON 输出、独立 RouteDecisionValidator、ModelGateway Retry/Fallback
 复用和安全 Request/Catalog 投影。
@@ -1079,10 +1146,13 @@ Decision
 ```text
 capability_id
 input
-idempotency_key?
 reason_code
 expected_observation_type?
 ```
+
+以上是模型可生成的 identity-free Action Draft。正式 ActionProposal 中的
+action_id、proposal_hash 与 idempotency_key 都是 Harness-owned materialized fields；
+模型 Schema 必须拒绝 idempotency_key。
 
 ## 17.4 ScopedActionExecutor
 
@@ -1115,7 +1185,8 @@ Cancellation
 Deadline
 ```
 
-但需要新增 Exploration checkpoint。
+但需要在同一 PlanExecutionRecord 中新增 Exploration child state，并对所有
+包含 EXPLORATION node 的 checkpoint 使用 versioned CAS。
 
 核心原则：
 
@@ -1133,17 +1204,13 @@ Deadline
 
 推荐默认复杂生产模式。
 
-典型：
+典型基础 Plan：
 
 ```text
 n1 query
 n2 query
      ↓
-n3 explore
-     ↓
-n4 approval
-     ↓
-n5 report
+n3 explore barrier
 ```
 
 n3 内部：
@@ -1153,6 +1220,8 @@ bounded exploration
 ```
 
 对 Scheduler 来说，n3 仍表现为一个有明确 ResultEnvelope 的执行节点。
+如果它接受 Patch，n4 Approval / n5 report 是 Patch 新增的 tail，不是被动态
+改写依赖的既有 downstream。
 
 ---
 
@@ -1176,11 +1245,13 @@ PlanPatchProposal
 
 ```text
 base_revision 必须匹配
-不能删除已完成节点
-不能修改已完成节点输入语义
+不能删除或替换任何既有节点 / 边
+新 edge 的 to_node 必须是新节点
+只追加 new tail 并可更新 final outputs
+修改尚未 READY 的既有节点属于 Patch v2，不属于 3C v1
+新节点不得越过 persisted scope / side-effect / egress / action / provider-attempt budget
 新增节点必须通过 PlanValidator
-必须重新跑 PRE_PLAN / PRE_PATCH Policy
-必须重新计算 Budget
+必须按 PRE_PATCH → PlanValidator → PRE_PLAN → CAS 顺序执行
 revision 单调递增
 ```
 
@@ -1513,11 +1584,15 @@ n2 order.query
                          Plan Revision
                               │
                               ▼
+                 Patch-added new tail:
                          n4 Approval
                               │
                               ▼
                          n5 report
 ```
+
+`n4` / `n5` 只能是 Patch 追加的 new tail；基础 Plan 不预置可被 Explore
+改写的 downstream，Patch 也不得向任何既有节点添加入边。
 
 Provider：
 
@@ -1561,55 +1636,24 @@ Replay Eval 可复现 route / selection
 
 # 29. 推荐实施顺序
 
-严格建议：
+阶段状态与后续顺序：
 
 ```text
-1. Provider Contracts
-      ↓
-2. Registry 1:N
-      ↓
-3. ProviderSelector SPI
-      ↓
-4. CapabilityInvoker Selection Integration
-      ↓
-5. Health / Eligibility
-      ↓
-6. Retry vs Fallback
-      ↓
-7. Pinning / Canary
-      ↓
-8. ModelProvider / ModelGateway
-      ↓
-9. ExecutionMode / RouteDecision
-      ↓
-10. HarnessApplication.handle()
-      ↓
-11. RuleRouter
-      ↓
-12. LLMRouter
-      ↓
-13. LLMPlanner + bounded repair
-      ↓
-14. Exploration Contracts
-      ↓
-15. ExplorationEngine + ScopedActionExecutor
-      ↓
-16. Explore Checkpoint / Resume
-      ↓
-17. HYBRID
-      ↓
-18. PlanPatchProposal / Revision
-      ↓
-19. ConnectorProvider
-      ↓
-20. MemoryProvider
-      ↓
-21. Trace / Events / Metrics completion
-      ↓
-22. Replay Eval
-      ↓
-23. E2E / Fault Injection / Restart
+Stage 3A — Provider Fabric
+  已完成；以 Stage 3A 实施说明书和验收集为准
+
+Stage 3B — Routing & Planning
+  已完成；以 Stage 3B 实施说明书和验收集为准
+
+Stage 3C — Agentic Exploration
+  按 FinanceClaw-Stage3C-Agentic-Exploration-实施说明书的 13 个步骤实施与验收
+
+Stage 3D — Provider Expansion & Replay Eval
+  在 3C Acceptance Gate 通过后另行设计与实施
 ```
+
+3C 的步骤内容、依赖顺序、迁移要求和每步 Gate 以独立实施说明书
+为唯一编码基线，本章不再维护重复的组件级清单。
 
 ---
 
@@ -1624,13 +1668,17 @@ Replay Eval 可复现 route / selection
 5. 非幂等 WRITE 不会自动跨 Provider fallback。
 6. ModelProvider 可替换，Router / Planner 不直接引用厂商 SDK。
 7. `handle()` 可以执行 FAST / PLAN / EXPLORE / HYBRID。
-8. LLMRouter 只产生 RouteDecision。
-9. LLMPlanner 只产生经过 PlanValidator 的 ExecutionPlan。
+8. LLMRouter 边界只返回 Harness 验证后的 RouteDecision；模型只生成
+   identity-free Route Draft。
+9. 任意 Planner 输出在 Coordinator trust boundary 统一归一化为模板，
+   每次 fresh execution 只 materialize 一次新 plan_id，并通过 PlanValidator。
 10. Explore 每次 Action 都经过 ScopedActionExecutor / CapabilityInvoker。
 11. Explore 有 steps / calls / deadline / cost / scope / recursion guard。
 12. Approval / Async WAITING 在 Explore / Hybrid 中仍可恢复。
-13. PlanPatchProposal 不允许直接修改主 Plan。
-14. Plan revision 可 checkpoint / audit / resume。
+13. PlanPatchProposal 不允许直接修改主 Plan；3C v1 只能 append-only
+    追加 new tail。
+14. 所有含 EXPLORATION 节点的 Plan checkpoint 都使用 versioned CAS，
+    Plan revision 可 audit / resume。
 15. Memory 与 StateStore 明确分离。
 16. Replay 默认不会重放真实 WRITE 副作用。
 17. Stage 1 Direct Invocation 与 Stage 2 execute_plan API 继续兼容。
