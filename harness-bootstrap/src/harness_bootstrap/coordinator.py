@@ -7,7 +7,6 @@ import asyncio
 from harness_contracts import (
     ErrorCode,
     ExecutionMode,
-    ExecutionPlan,
     HarnessError,
     InvocationContext,
     JsonValue,
@@ -22,11 +21,14 @@ from harness_contracts import (
 from harness_events import EventPublisher, ExecutionEventName
 from harness_execution import ExecutionEngine
 from harness_planning import (
+    PlanMaterializer,
     Planner,
+    PlannerOutputNormalizer,
     PlannerRegistry,
     PlanningAttempt,
     PlanningConstraints,
     PlanningContext,
+    PlanValidationError,
 )
 from harness_policy import PolicyEngine, PreRoutePolicyResult
 from harness_registry import CapabilityCatalog
@@ -105,6 +107,8 @@ class RequestCoordinator:
         event_publisher: EventPublisher,
         planner_registry: PlannerRegistry,
         default_planner_id: str | None,
+        planner_output_normalizer: PlannerOutputNormalizer | None = None,
+        plan_materializer: PlanMaterializer | None = None,
     ) -> None:
         if not isinstance(router, Router):
             raise TypeError("router must implement Router")
@@ -130,6 +134,13 @@ class RequestCoordinator:
             raise TypeError("planner_registry must be PlannerRegistry")
         if default_planner_id is not None:
             planner_registry.get(default_planner_id)
+        if planner_output_normalizer is not None and not isinstance(
+            planner_output_normalizer,
+            PlannerOutputNormalizer,
+        ):
+            raise TypeError("planner_output_normalizer must be PlannerOutputNormalizer")
+        if plan_materializer is not None and not isinstance(plan_materializer, PlanMaterializer):
+            raise TypeError("plan_materializer must be PlanMaterializer")
         if lifecycle.tracer is not tracer:
             raise ValueError("lifecycle and coordinator must use the same tracer")
         if invoker.lifecycle is not lifecycle:
@@ -155,6 +166,10 @@ class RequestCoordinator:
         self._events = RequestEventEmitter(event_publisher)
         self._planner_registry = planner_registry
         self._default_planner_id = default_planner_id
+        self._planner_output_normalizer = (
+            planner_output_normalizer or PlannerOutputNormalizer()
+        )
+        self._plan_materializer = plan_materializer or PlanMaterializer()
 
     @property
     def router(self) -> Router:
@@ -199,6 +214,14 @@ class RequestCoordinator:
     @property
     def planner_registry(self) -> PlannerRegistry:
         return self._planner_registry
+
+    @property
+    def planner_output_normalizer(self) -> PlannerOutputNormalizer:
+        return self._planner_output_normalizer
+
+    @property
+    def plan_materializer(self) -> PlanMaterializer:
+        return self._plan_materializer
 
     @property
     def default_planner_id(self) -> str | None:
@@ -631,19 +654,34 @@ class RequestCoordinator:
                     "max_attempts": planning_context.constraints.max_plan_attempts,
                 },
             )
-            plan = await planner.plan_with_observer(
+            artifact = await planner.plan_artifact_with_observer(
                 planning_context,
                 attempt_observer=observe_attempt,
             )
-            if not isinstance(plan, ExecutionPlan):
+            template = self._planner_output_normalizer.normalize(
+                artifact,
+                planner_id=planner.planner_id,
+            )
+            plan = self._plan_materializer.materialize(
+                template,
+                planner_invocation,
+                planner_id=planner.planner_id,
+                trusted_metadata={"prompt_version": prompt_version},
+            )
+            try:
+                self._execution_engine.validator.validate(plan)
+            except PlanValidationError as exc:
                 raise PlanningError(
-                    "planner returned a non-ExecutionPlan output",
+                    "planner returned an invalid plan artifact",
                     code=ErrorCode.PLANNER_INVALID_OUTPUT,
                     details={
                         "planner_id": planner.planner_id,
-                        "output_type": type(plan).__name__,
+                        "issue_count": len(exc.issues),
+                        "validation_codes": sorted(
+                            {issue.code.value for issue in exc.issues}
+                        ),
                     },
-                )
+                ) from exc
         except asyncio.CancelledError:
             self._lifecycle.finish_cancelled(planner_span)
             raise

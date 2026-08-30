@@ -175,7 +175,8 @@ class HandleLifecycleAcceptanceTests(unittest.IsolatedAsyncioTestCase):
             )
             await first_app.start()
             waiting = await first_app.handle(make_request(trace=False))
-            saved = await first_app.state_store.load("stage3b-resume-plan")
+            plan_id = waiting.continuation.plan_id
+            saved = await first_app.state_store.load(plan_id)
             await first_app.shutdown()
 
             self.assertEqual(waiting.status, ResultStatus.ACCEPTED)
@@ -196,9 +197,9 @@ class HandleLifecycleAcceptanceTests(unittest.IsolatedAsyncioTestCase):
             )
             await resumed_app.start()
             try:
-                resumed = await resumed_app.resume_plan("stage3b-resume-plan")
+                resumed = await resumed_app.resume_plan(plan_id)
                 completed = await resumed_app.resolve_approval(
-                    "stage3b-resume-plan",
+                    plan_id,
                     ApprovalDecision(
                         approval_id=resumed.continuation.approval_id,
                         decision=ApprovalDecisionType.APPROVED,

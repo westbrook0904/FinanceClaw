@@ -6,8 +6,9 @@ Selection、Retry/Fallback、Provider-safe Checkpoint/Resume、ModelGateway，�
 `handle()` AUTO / FAST / PLAN 路径；阶段一 Direct Invocation API 和阶段二低层 Plan API
 继续保持兼容。
 
-Stage 3C Agentic Exploration 的实施设计已经冻结，但代码尚未开始实现；当前
-`EXPLORE` / `HYBRID` 仍按 Stage 3B 语义 fail-closed。详细设计见
+Stage 3C Agentic Exploration 的实施设计已经冻结，Step 1 Plan Identity / Materialization
+收口已经实现；后续 Exploration 步骤尚未实施，当前 `EXPLORE` / `HYBRID` 仍按 Stage 3B
+语义 fail-closed。详细设计见
 `.design/FinanceClaw-Stage3C-Agentic-Exploration-实施说明书.md`。
 
 财经能力仍然只是插件；Harness Core 不包含财经类型、Prompt、SQL、行情访问或其他具体
@@ -76,7 +77,7 @@ GenerateResult + Usage + Provider Identity + Trace / Events
 | `harness-routing` | Router SPI、安全 Request 投影、Rule/LLM Router 与决策校验 |
 | `harness-selection` | Eligibility、最小 Health 和确定性 Priority Selection |
 | `harness-plugin-local` | 本地集合/entry point 发现、插件生命周期和事务回滚 |
-| `harness-planning` | Planner SPI/Registry、Static/Hybrid/LLM 策略、PlanDraft 及可执行性校验 |
+| `harness-planning` | Planner SPI/Registry、Static/Hybrid/LLM 策略、PlanTemplate/Materializer、PlanDraft 及可执行性校验 |
 | `harness-policy` | `PRE_ROUTE` / `PRE_PLAN` / `PRE_EXECUTE` 策略链与类型化路由约束 |
 | `harness-runtime` | Direct Invocation 与 Plan 共用的受控 Capability 调用边界 |
 | `harness-model` | 模型原生协议、ModelProvider SPI、ModelGateway 与确定性 Mock Models |
@@ -89,6 +90,7 @@ GenerateResult + Usage + Provider Identity + Trace / Events
 | `tests/stage2` | 第二阶段端到端、故障注入与跨进程恢复验收 |
 | `tests/stage3a` | Provider Fabric、WRITE safety、Provider Resume 与 ModelGateway 阻断验收 |
 | `tests/stage3b` | ExecutionMode、Rule/LLM Route、LLM Plan/Repair、Policy、Lifecycle 与回归 Gate |
+| `tests/stage3c` | Stage 3C 分步验收；当前覆盖 fresh Plan identity/materialization |
 
 ## Direct Invocation
 
@@ -130,6 +132,11 @@ async with build_harness() as app:
     result = await app.execute_plan(request, plan)
 ```
 
+`execute_plan()` 是使用具体 `plan_id/revision` 的 advanced API，不重新分配身份；同一
+`plan_id` 重复创建返回 `HARNESS.PLAN.EXECUTION_ID_CONFLICT`。标准 `handle()` PLAN 路径把
+Planner 输出视为 candidate，经 `PlannerOutputNormalizer -> PlanMaterializer` 每次生成新的
+`plan_id`，并从 `revision=1` 开始。
+
 默认 `InMemoryStateStore` 不产生磁盘副作用。需要进程重启后继续相同 `plan_id` 时，注入
 `SQLiteStateStore`，重建 Application 后调用 `resume_plan(plan_id)`。到达 Approval 或返回
 异步 `ACCEPTED` 的 Capability 时，API 会立即返回带 `Continuation` 的 `ACCEPTED`，外部
@@ -156,7 +163,7 @@ async with build_harness() as app:
 
 ## 测试
 
-完整 Stage 1 / 2 / 3A / 3B 回归（模块测试、插件测试和仓库级验收）：
+完整 Stage 1 / 2 / 3A / 3B 与 Stage 3C 当前步骤回归（模块测试、插件测试和仓库级验收）：
 
 ```bash
 .venv/bin/python -m pytest \
@@ -166,7 +173,7 @@ async with build_harness() as app:
   harness-policy/tests harness-model/tests \
   harness-trace/tests harness-runtime/tests harness-state/tests \
   harness-events/tests harness-execution/tests harness-bootstrap/tests \
-  plugins/tests tests/stage2 tests/stage3a tests/stage3b -v
+  plugins/tests tests/stage2 tests/stage3a tests/stage3b tests/stage3c -v
 ```
 
 只运行第二阶段仓库级验收：

@@ -18,6 +18,7 @@ build_harness()
 ├── SafeRequestProjector / RuleRouter / RouteDecisionValidator
 ├── RequestCoordinator（单 Context / Deadline / Request Trace；服务端 Planner 选择）
 ├── PlannerRegistry（构造期只读 Planner 映射）/ default_planner_id
+├── PlannerOutputNormalizer / PlanMaterializer（fresh execution identity 唯一边界）
 ├── ModelGateway（共享 Registry / Selector / Coordinator / Tracer / Events）
 ├── PlanValidator
 ├── InMemoryStateStore
@@ -32,7 +33,7 @@ build_harness()
 `build_harness()` 只创建和连接对象，不发现或初始化插件，也不创建数据库文件。可注入
 Registry、PolicyEngine/Policies、Tracer、ProviderSelector、ContextFactory、CapabilityCatalog、
 PlanValidator、StateStore、EventPublisher、Router、Planners、Default Planner、
-RequestProjector 或 LocalPluginProvider。
+PlanIdentityFactory、RequestProjector 或 LocalPluginProvider。
 
 自定义组件必须共享一致边界，例如自定义 Catalog 与 PlanValidator.catalog 必须相同；
 `policies` 与 `policy_engine`、`plugins` 与 `plugin_provider` 不能同时配置。
@@ -44,7 +45,8 @@ RequestProjector 或 LocalPluginProvider。
   调用或 PLAN 规划执行。
 - `invoke(request)`：Direct Invocation。
 - `model_gateway`：供未来 Router/Planner/Explorer 使用的模型生成入口。
-- `execute_plan(request, plan)`：验证并执行 Plan。
+- `execute_plan(request, plan)`：advanced API；验证并执行带具体 identity 的 Plan，绕过 fresh
+  materialization，重复 `plan_id` 明确冲突。
 - `resume_plan(plan_id)`：从 StateStore 恢复并继续相同 Plan。
 - `resolve_approval(plan_id, decision)`：保存审批决定并继续。
 - `complete_async_node(plan_id, node_id, terminal_result)`：保存异步节点终态并继续。
@@ -152,7 +154,9 @@ fallback 注入，默认组装仍保持无模型的 RuleRouter。Router 只决�
 PlannerRegistry；RequestCoordinator 使用受信任的 `default_planner_id` 和 PRE_ROUTE
 `allowed_planner_ids` 选择本地 Planner，并把约束、Catalog snapshot 与现有 Deadline 组成
 PlanningContext。Planner 输出通过 ExecutionEngine 的 context-aware 入口复用同一 Request
-生命周期执行。Planner 实现负责首次 PlanValidator 校验，ExecutionEngine 在执行边界再次校验。
+生命周期执行。所有 Planner artifact 先由 RequestCoordinator 归一化为 `PlanTemplate`，再恰好
+物化一次 fresh `plan_id/revision=1`；旧自定义 Planner 返回的 identity 不受信任。
+Planner 实现负责首次 PlanValidator 校验，ExecutionEngine 在执行边界再次校验。
 Workflow SPI、Remote Plugin、MCP、分布式调度和 HTTP 执行 API 尚未实现。
 
 ## 测试

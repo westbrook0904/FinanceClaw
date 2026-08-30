@@ -62,8 +62,11 @@ class PlannerCompositionTests(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(result.status, ResultStatus.FAILED)
-        self.assertEqual(result.error.code, "HARNESS.PLAN.INVALID")
-        self.assertEqual(result.error.details["plan_id"], "not-executed-in-step-5")
+        self.assertEqual(result.error.code, ErrorCode.PLANNER_INVALID_OUTPUT)
+        self.assertEqual(
+            result.error.details["validation_codes"],
+            ("PLAN.CAPABILITY_NOT_FOUND",),
+        )
         self.assertEqual(planner.calls, 1)
         await app.shutdown()
 

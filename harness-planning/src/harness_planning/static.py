@@ -6,14 +6,28 @@ import inspect
 from collections.abc import Awaitable, Callable, Mapping
 from types import MappingProxyType
 
-from harness_contracts import ExecutionPlan, HarnessError, PlannerNotApplicableError, PlanningError
+from harness_contracts import (
+    ErrorCode,
+    ExecutionPlan,
+    HarnessError,
+    PlannerNotApplicableError,
+    PlanningError,
+)
 
 from .context import PlanningContext
+from .identity import (
+    PlanIdentityFactory,
+    PlanMaterializer,
+    PlannerArtifact,
+    PlannerOutputNormalizer,
+    PlanTemplate,
+)
+from .models import PlanningAttemptObserver, PlanValidationError
 from .planner import Planner, validate_planner_id, validate_planner_output
 from .validator import PlanValidator
 
-type PlanFactory = Callable[[PlanningContext], ExecutionPlan | Awaitable[ExecutionPlan]]
-type PlanTemplate = ExecutionPlan | PlanFactory
+type PlanFactory = Callable[[PlanningContext], PlannerArtifact | Awaitable[PlannerArtifact]]
+type StaticPlanRoute = PlannerArtifact | PlanFactory
 type RouteKeyFactory = Callable[[PlanningContext], str]
 
 
@@ -23,33 +37,43 @@ class StaticPlanner(Planner):
     def __init__(
         self,
         planner_id: str,
-        routes: Mapping[str, PlanTemplate],
+        routes: Mapping[str, StaticPlanRoute],
         *,
         validator: PlanValidator | None = None,
         route_key: RouteKeyFactory | None = None,
+        plan_identity_factory: PlanIdentityFactory | None = None,
     ) -> None:
         self._planner_id = validate_planner_id(planner_id)
         if not isinstance(routes, Mapping):
             raise TypeError("routes must be a mapping")
 
-        copied_routes: dict[str, PlanTemplate] = {}
+        copied_routes: dict[str, StaticPlanRoute] = {}
         for key, template in routes.items():
             if not isinstance(key, str) or not key.strip():
                 raise TypeError("route keys must be non-empty strings")
             if key != key.strip():
                 raise ValueError("route keys must not include surrounding whitespace")
-            if not isinstance(template, ExecutionPlan) and not callable(template):
-                raise TypeError("route values must be ExecutionPlan values or callables")
+            if not isinstance(template, PlanTemplate | ExecutionPlan) and not callable(template):
+                raise TypeError(
+                    "route values must be PlanTemplate/ExecutionPlan values or callables"
+                )
             copied_routes[key] = template
 
         if validator is not None and not isinstance(validator, PlanValidator):
             raise TypeError("validator must be PlanValidator")
         if route_key is not None and not callable(route_key):
             raise TypeError("route_key must be callable")
+        if plan_identity_factory is not None and not isinstance(
+            plan_identity_factory,
+            PlanIdentityFactory,
+        ):
+            raise TypeError("plan_identity_factory must be PlanIdentityFactory")
 
         self._routes = MappingProxyType(copied_routes)
         self._validator = validator or PlanValidator()
         self._route_key = route_key or (lambda context: context.goal.input_type)
+        self._normalizer = PlannerOutputNormalizer()
+        self._materializer = PlanMaterializer(plan_identity_factory)
 
     @property
     def planner_id(self) -> str:
@@ -64,6 +88,19 @@ class StaticPlanner(Planner):
         return self._validator
 
     async def plan(self, context: PlanningContext) -> ExecutionPlan:
+        template = await self.plan_artifact(context)
+        plan = self._materializer.materialize(
+            template,
+            context.invocation,
+            planner_id=self.planner_id,
+        )
+        return validate_planner_output(
+            plan,
+            self._validator,
+            planner_id=self.planner_id,
+        )
+
+    async def plan_artifact(self, context: PlanningContext) -> PlanTemplate:
         if not isinstance(context, PlanningContext):
             raise TypeError("context must be PlanningContext")
 
@@ -107,8 +144,38 @@ class StaticPlanner(Planner):
                     "cause_type": type(exc).__name__,
                 },
             ) from exc
-        return validate_planner_output(
+        normalized = self._normalizer.normalize(
             output,
-            self._validator,
             planner_id=self.planner_id,
         )
+        try:
+            return self._validator.validate_template(normalized)
+        except PlanValidationError as exc:
+            codes = sorted({issue.code.value for issue in exc.issues})
+            raise PlanningError(
+                "planner returned an invalid plan template",
+                code=ErrorCode.PLANNER_INVALID_OUTPUT,
+                details={
+                    "planner_id": self.planner_id,
+                    "validation_codes": codes,
+                },
+            ) from exc
+        except Exception as exc:
+            raise PlanningError(
+                "planner output validation failed",
+                code=ErrorCode.PLANNER_INVALID_OUTPUT,
+                details={
+                    "planner_id": self.planner_id,
+                    "cause_type": type(exc).__name__,
+                },
+            ) from exc
+
+    async def plan_artifact_with_observer(
+        self,
+        context: PlanningContext,
+        *,
+        attempt_observer: PlanningAttemptObserver | None = None,
+    ) -> PlanTemplate:
+        if attempt_observer is not None and not callable(attempt_observer):
+            raise TypeError("attempt_observer must be callable")
+        return await self.plan_artifact(context)

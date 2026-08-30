@@ -6,13 +6,20 @@ Capability，也不能访问 Provider 实例；Planner 输出统一交给 `PlanV
 
 ## 公共 API
 
-- `Planner`：异步生成标准 `ExecutionPlan` 的无执行权 SPI。
+- `Planner`：无执行权 SPI；legacy `plan()` 仍返回 `ExecutionPlan` candidate，新增的 concrete-default
+  `plan_artifact()` 可返回 identity-free `PlanTemplate`。
 - `PlanningContext` / `PlanningConstraints`：受限 Goal、Capability-only Catalog、大小范围
   与 Deadline 快照。
 - `PlannerRegistry`：Composition Root 构造期冻结的本地只读 Planner 映射。
 - `StaticPlanner`：按 request route key 选择不可变 Plan 模板或同步/异步 factory。
 - `HybridPlanner`：仅在 primary 抛出 `PlannerNotApplicableError` 时调用 fallback。
 - `PlanDraft`：模型可生成的受限 DAG 协议，不包含 plan_id、revision 或 Plan metadata。
+- `PlanTemplate`：正式的无运行身份 Plan Contract，可安全复用，不包含 `plan_id/revision`，也拒绝
+  request/provider/execution metadata。
+- `PlannerOutputNormalizer`：把原生 `PlanTemplate` 或 legacy `ExecutionPlan` candidate 统一转换为
+  模板，并丢弃 candidate identity 与 runtime metadata。
+- `PlanIdentityFactory` / `PlanMaterializer`：只在 fresh handle execution 信任边界分配新的
+  `plan_id`，并固定 `revision=1`。
 - `LLMPlanner`：通过 ModelGateway 从 Goal + capability-only Catalog 自主生成 PlanDraft，
   由 Harness 分配计划身份并执行 planning guards 与 PlanValidator。
 - `PlanningAttempt` / `PlanningAttemptObserver`：仅输出 attempt 序号、类型、Provider、输出哈希、
@@ -21,6 +28,7 @@ Capability，也不能访问 Provider 实例；Planner 输出统一交给 `PlanV
   Planner 实例。
 - `PlanValidator.validate(plan, executable=True) -> ExecutionPlan`：合法时原样返回；
   存在问题时一次性抛出 `PlanValidationError`。
+- `PlanValidator.validate_template(...)`：直接校验模板结构，不制造 throwaway identity。
 - `PlanValidator.find_issues(plan, executable=True)`：返回顺序稳定、可序列化的全部
   `PlanValidationIssue`，适合 API/UI 展示。
 - `PlanValidationCode`：稳定的问题分类枚举。
@@ -50,14 +58,36 @@ primary NOT_APPLICABLE  → fallback 一次 → validate → return
 primary invalid/denied/timeout/other failure → 原错误传播，禁止 fallback
 ```
 
-StaticPlanner、HybridPlanner 和 LLMPlanner 都在返回边界调用 PlanValidator。PlannerRegistry
+StaticPlanner、HybridPlanner 和 LLMPlanner 都在返回边界调用 PlanValidator。三者的
+`plan_artifact()` 返回 `PlanTemplate`；兼容用 `plan()` 才物化一个 candidate。PlannerRegistry
 只允许在构造时传入 Planner，运行中没有 `register()`，也不是插件 Registry 或 Workflow
 Catalog。
+
+## Plan identity 边界
+
+`plan_id` 表示一次 fresh execution lineage；同一模板连续执行两次也必须得到不同 ID。
+`revision` 表示同一 execution 内的 Plan 定义版本，fresh execution 从 1 开始，resume 保持
+原值。未来可复用定义使用独立的 `workflow_id/workflow_version`，不得复用 `plan_id`。
+
+```text
+Planner.plan_artifact() -> PlanTemplate / legacy ExecutionPlan candidate
+        ↓
+PlannerOutputNormalizer（剥离 candidate plan_id/revision/runtime metadata）
+        ↓
+RequestCoordinator-owned PlanMaterializer（恰好一次）
+        ↓
+ExecutionPlan(fresh plan_id, revision=1)
+```
+
+`execute_plan(request, plan)` 是明确例外：它接收调用方提供的具体 execution identity，不经过
+Normalizer/Materializer；相同 `plan_id` 重复创建返回
+`HARNESS.PLAN.EXECUTION_ID_CONFLICT`。`resume_plan(plan_id)` 继续原 execution，不重新规划或
+生成身份。
 
 ## LLMPlanner 安全边界
 
 LLMPlanner 的模型只产生 PlanDraft 中的节点、边、绑定与预算。`plan_id`、`revision=1` 和
-`planner_id/prompt_version/request_id` metadata 均由 Harness 写入；模型注入这些字段、引用
+`planner_id/prompt_version/request_id` metadata 均由 RequestCoordinator 的 Materializer 写入；模型注入这些字段、引用
 超出 Catalog/Policy/Planner 交集的 Capability、超过节点上限、扩大 Request Deadline 或写入
 保留 metadata 时都会 fail-closed。Catalog 投影不包含 Provider、Plugin 或 Descriptor metadata，
 规划期间不会调用任何业务 Capability。
@@ -84,8 +114,9 @@ generation 仍由 ModelGateway 创建独立 MODEL span，不为 attempt 增加�
 `CapabilityDescriptor`，即使 Registry 中同一 Capability 存在多个 Provider 也只暴露
 一条 capability-only 记录，不会泄露 Provider 身份或实例。
 
-当前已实现 Static/Hybrid Planner Foundation、PlanDraft、LLMPlanner、bounded Plan Repair 和
-`handle()` PLAN dispatch。RequestCoordinator 负责服务端 Planner 选择和执行前再次验证；
+当前已实现 Static/Hybrid Planner Foundation、PlanDraft、LLMPlanner、bounded Plan Repair、
+`handle()` PLAN dispatch，以及 Stage 3C Step 1 identity/materialization 收口。RequestCoordinator
+负责服务端 Planner 选择、唯一 fresh identity 物化和执行前再次验证；
 WAITING / resume 使用 ExecutionEngine 已持久化的 Plan，不重新调用 Planner。运行时 Plan Patch
 属于后续步骤。
 

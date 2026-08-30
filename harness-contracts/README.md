@@ -72,6 +72,10 @@ Provider，禁止重新自由选择可能改变 WRITE 副作用目标的实现�
 `PlanExecutionRecord` 原子保存 `ExecutionPlan + InvocationContext +
 PlanExecutionState`，并校验三者的 `plan_id/revision` 一致性。
 
+`plan_id` 是一次 fresh execution lineage 的稳定身份，resume 保持不变；`revision` 是同一
+execution 内的 Plan 定义版本，fresh execution 从 1 开始。未来 Workflow 定义使用独立的
+`workflow_id/workflow_version`，不能复用 `plan_id`。
+
 ## 协议约束
 
 - Pydantic 模型默认 `extra="forbid"`，拒绝未协商字段。

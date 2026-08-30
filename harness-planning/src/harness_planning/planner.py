@@ -7,6 +7,7 @@ from abc import ABC, abstractmethod
 from harness_contracts import ErrorCode, ExecutionPlan, PlanningError
 
 from .context import PlanningContext
+from .identity import PlannerArtifact
 from .models import PlanningAttemptObserver, PlanValidationError
 from .validator import PlanValidator
 
@@ -23,6 +24,11 @@ class Planner(ABC):
     async def plan(self, context: PlanningContext) -> ExecutionPlan:
         """根据受限 PlanningContext 生成一个经过验证的 ExecutionPlan。"""
 
+    async def plan_artifact(self, context: PlanningContext) -> PlannerArtifact:
+        """返回 identity-free 模板；legacy Planner 默认返回 ExecutionPlan candidate。"""
+
+        return await self.plan(context)
+
     async def plan_with_observer(
         self,
         context: PlanningContext,
@@ -34,6 +40,25 @@ class Planner(ABC):
         if attempt_observer is not None and not callable(attempt_observer):
             raise TypeError("attempt_observer must be callable")
         return await self.plan(context)
+
+    async def plan_artifact_with_observer(
+        self,
+        context: PlanningContext,
+        *,
+        attempt_observer: PlanningAttemptObserver | None = None,
+    ) -> PlannerArtifact:
+        """Coordinator-facing artifact API，兼容旧的 observer-aware Planner。"""
+
+        if attempt_observer is not None and not callable(attempt_observer):
+            raise TypeError("attempt_observer must be callable")
+        # 新 Planner 显式覆写 plan_artifact() 时必须优先使用无身份 artifact；旧 Planner
+        # 若只覆写 plan_with_observer()，则保留其 attempt 观察兼容行为。
+        if type(self).plan_artifact is not Planner.plan_artifact:
+            return await self.plan_artifact(context)
+        return await self.plan_with_observer(
+            context,
+            attempt_observer=attempt_observer,
+        )
 
 
 def validate_planner_id(planner_id: str) -> str:

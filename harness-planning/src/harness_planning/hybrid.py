@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from harness_contracts import ExecutionPlan, PlannerNotApplicableError
+from harness_contracts import ErrorCode, ExecutionPlan, PlannerNotApplicableError, PlanningError
 
 from .context import PlanningContext
-from .models import PlanningAttemptObserver
+from .identity import PlanMaterializer, PlannerOutputNormalizer, PlanTemplate
+from .models import PlanningAttemptObserver, PlanValidationError
 from .planner import Planner, validate_planner_id, validate_planner_output
 from .validator import PlanValidator
 
@@ -32,6 +33,8 @@ class HybridPlanner(Planner):
         self._primary = primary
         self._fallback = fallback
         self._validator = validator or PlanValidator()
+        self._normalizer = PlannerOutputNormalizer()
+        self._materializer = PlanMaterializer()
 
     @property
     def planner_id(self) -> str:
@@ -58,6 +61,30 @@ class HybridPlanner(Planner):
         *,
         attempt_observer: PlanningAttemptObserver | None = None,
     ) -> ExecutionPlan:
+        template = await self.plan_artifact_with_observer(
+            context,
+            attempt_observer=attempt_observer,
+        )
+        plan = self._materializer.materialize(
+            template,
+            context.invocation,
+            planner_id=self.planner_id,
+        )
+        return validate_planner_output(
+            plan,
+            self._validator,
+            planner_id=self.planner_id,
+        )
+
+    async def plan_artifact(self, context: PlanningContext) -> PlanTemplate:
+        return await self.plan_artifact_with_observer(context)
+
+    async def plan_artifact_with_observer(
+        self,
+        context: PlanningContext,
+        *,
+        attempt_observer: PlanningAttemptObserver | None = None,
+    ) -> PlanTemplate:
         if not isinstance(context, PlanningContext):
             raise TypeError("context must be PlanningContext")
         if attempt_observer is not None and not callable(attempt_observer):
@@ -65,19 +92,29 @@ class HybridPlanner(Planner):
 
         selected = self._primary
         try:
-            output = await selected.plan_with_observer(
+            output = await selected.plan_artifact_with_observer(
                 context,
                 attempt_observer=attempt_observer,
             )
         except PlannerNotApplicableError:
             selected = self._fallback
-            output = await selected.plan_with_observer(
+            output = await selected.plan_artifact_with_observer(
                 context,
                 attempt_observer=attempt_observer,
             )
 
-        return validate_planner_output(
+        template = self._normalizer.normalize(
             output,
-            self._validator,
             planner_id=selected.planner_id,
         )
+        try:
+            return self._validator.validate_template(template)
+        except PlanValidationError as exc:
+            raise PlanningError(
+                "planner returned an invalid plan template",
+                code=ErrorCode.PLANNER_INVALID_OUTPUT,
+                details={
+                    "planner_id": selected.planner_id,
+                    "validation_codes": sorted({issue.code.value for issue in exc.issues}),
+                },
+            ) from exc

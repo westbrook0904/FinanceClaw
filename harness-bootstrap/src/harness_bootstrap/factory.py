@@ -7,7 +7,14 @@ from collections.abc import Iterable
 from harness_events import EventPublisher, InMemoryEventBus
 from harness_execution import BasicScheduler, ExecutionEngine
 from harness_model import ModelGateway
-from harness_planning import Planner, PlannerRegistry, PlanValidator
+from harness_planning import (
+    PlanIdentityFactory,
+    PlanMaterializer,
+    Planner,
+    PlannerOutputNormalizer,
+    PlannerRegistry,
+    PlanValidator,
+)
 from harness_plugin_local import LocalPluginLoader, LocalPluginProvider
 from harness_policy import AllowAllPolicy, Policy, PolicyEngine
 from harness_registry import (
@@ -50,6 +57,7 @@ def build_harness(
     context_factory: InvocationContextFactory | None = None,
     capability_catalog: CapabilityCatalog | None = None,
     plan_validator: PlanValidator | None = None,
+    plan_identity_factory: PlanIdentityFactory | None = None,
     state_store: StateStore | None = None,
     event_publisher: EventPublisher | None = None,
     router: Router | None = None,
@@ -78,6 +86,11 @@ def build_harness(
         raise TypeError("capability_catalog must implement CapabilityCatalog")
     if plan_validator is not None and not isinstance(plan_validator, PlanValidator):
         raise TypeError("plan_validator must be PlanValidator")
+    if plan_identity_factory is not None and not isinstance(
+        plan_identity_factory,
+        PlanIdentityFactory,
+    ):
+        raise TypeError("plan_identity_factory must be PlanIdentityFactory")
     if state_store is not None and not isinstance(state_store, StateStore):
         raise TypeError("state_store must implement StateStore")
     if event_publisher is not None and not isinstance(event_publisher, EventPublisher):
@@ -120,6 +133,8 @@ def build_harness(
     )
     effective_state_store = state_store or InMemoryStateStore()
     effective_event_publisher = event_publisher or InMemoryEventBus()
+    planner_output_normalizer = PlannerOutputNormalizer()
+    plan_materializer = PlanMaterializer(plan_identity_factory)
     planner_registry = PlannerRegistry(planners)
     if default_planner_id is not None:
         planner_registry.get(default_planner_id)
@@ -192,6 +207,8 @@ def build_harness(
         effective_event_publisher,
         planner_registry,
         default_planner_id,
+        planner_output_normalizer,
+        plan_materializer,
     )
 
     return HarnessApplication(
@@ -217,5 +234,7 @@ def build_harness(
             route_decision_validator=route_decision_validator,
             request_coordinator=request_coordinator,
             planner_registry=planner_registry,
+            planner_output_normalizer=planner_output_normalizer,
+            plan_materializer=plan_materializer,
         )
     )

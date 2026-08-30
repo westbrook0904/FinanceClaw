@@ -24,7 +24,10 @@ from harness_contracts import (
 )
 from harness_registry import CapabilityCatalog
 
+from .identity import PlanTemplate
 from .models import PlanValidationCode, PlanValidationError, PlanValidationIssue
+
+type PlanShape = ExecutionPlan | PlanTemplate
 
 
 class PlanValidator:
@@ -52,6 +55,19 @@ class PlanValidator:
             raise PlanValidationError(issues)
         return plan
 
+    def validate_template(
+        self,
+        template: PlanTemplate,
+        *,
+        executable: bool = True,
+    ) -> PlanTemplate:
+        """校验 identity-free 模板，不制造 throwaway ``plan_id``。"""
+
+        issues = self.find_template_issues(template, executable=executable)
+        if issues:
+            raise PlanValidationError(issues)
+        return template
+
     def find_issues(
         self,
         plan: ExecutionPlan,
@@ -63,9 +79,39 @@ class PlanValidator:
         if not isinstance(plan, ExecutionPlan):
             raise TypeError("plan must be ExecutionPlan")
 
+        return self._find_shape_issues(plan, executable=executable, validate_identity=True)
+
+    def find_template_issues(
+        self,
+        template: PlanTemplate,
+        *,
+        executable: bool = True,
+    ) -> tuple[PlanValidationIssue, ...]:
+        """返回模板的确定性结构与可执行性问题。"""
+
+        if not isinstance(template, PlanTemplate):
+            raise TypeError("template must be PlanTemplate")
+        return self._find_shape_issues(
+            template,
+            executable=executable,
+            validate_identity=False,
+        )
+
+    def _find_shape_issues(
+        self,
+        plan: PlanShape,
+        *,
+        executable: bool,
+        validate_identity: bool,
+    ) -> tuple[PlanValidationIssue, ...]:
         issues: list[PlanValidationIssue] = []
         nodes = tuple(plan.nodes)
-        self._validate_plan_fields(plan, nodes, issues)
+        self._validate_plan_fields(
+            plan,
+            nodes,
+            issues,
+            validate_identity=validate_identity,
+        )
 
         node_index: dict[str, PlanNode] = {}
         for node in nodes:
@@ -153,30 +199,35 @@ class PlanValidator:
 
     def _validate_plan_fields(
         self,
-        plan: ExecutionPlan,
+        plan: PlanShape,
         nodes: tuple[PlanNode, ...],
         issues: list[PlanValidationIssue],
+        *,
+        validate_identity: bool,
     ) -> None:
-        if not isinstance(plan.plan_id, str) or not plan.plan_id.strip():
-            issues.append(
-                _issue(
-                    PlanValidationCode.INVALID_PLAN_ID,
-                    "plan_id must be a non-empty string",
-                    field="plan_id",
+        if validate_identity:
+            if not isinstance(plan, ExecutionPlan):
+                raise TypeError("identity validation requires ExecutionPlan")
+            if not isinstance(plan.plan_id, str) or not plan.plan_id.strip():
+                issues.append(
+                    _issue(
+                        PlanValidationCode.INVALID_PLAN_ID,
+                        "plan_id must be a non-empty string",
+                        field="plan_id",
+                    )
                 )
-            )
-        if (
-            not isinstance(plan.revision, int)
-            or isinstance(plan.revision, bool)
-            or plan.revision < 1
-        ):
-            issues.append(
-                _issue(
-                    PlanValidationCode.INVALID_REVISION,
-                    "revision must be an integer greater than or equal to 1",
-                    field="revision",
+            if (
+                not isinstance(plan.revision, int)
+                or isinstance(plan.revision, bool)
+                or plan.revision < 1
+            ):
+                issues.append(
+                    _issue(
+                        PlanValidationCode.INVALID_REVISION,
+                        "revision must be an integer greater than or equal to 1",
+                        field="revision",
+                    )
                 )
-            )
         if not nodes:
             issues.append(
                 _issue(
@@ -275,7 +326,7 @@ class PlanValidator:
 
     def _validate_bindings(
         self,
-        plan: ExecutionPlan,
+        plan: PlanShape,
         node_index: dict[str, PlanNode],
         adjacency: dict[str, set[str]],
         issues: list[PlanValidationIssue],
@@ -352,7 +403,7 @@ class PlanValidator:
 
     def _validate_outputs(
         self,
-        plan: ExecutionPlan,
+        plan: PlanShape,
         node_index: dict[str, PlanNode],
         issues: list[PlanValidationIssue],
     ) -> None:

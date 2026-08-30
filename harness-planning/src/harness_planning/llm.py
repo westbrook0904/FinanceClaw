@@ -6,7 +6,6 @@ import inspect
 import json
 from collections.abc import Callable, Iterable, Mapping
 from datetime import UTC, datetime
-from uuid import uuid4
 
 from harness_contracts import (
     CapabilityDescriptor,
@@ -29,8 +28,9 @@ from pydantic import ValidationError
 
 from .context import PlanningContext
 from .draft import PlanDraft
+from .identity import PlanIdentityFactory, PlanIdFactory, PlanMaterializer, PlanTemplate
 from .models import PlanningAttempt, PlanningAttemptObserver, PlanValidationError
-from .planner import Planner, validate_planner_id
+from .planner import Planner, validate_planner_id, validate_planner_output
 from .repair import (
     MAX_REPAIR_ERRORS,
     RepairablePlanningFailure,
@@ -42,7 +42,6 @@ from .repair import (
 )
 from .validator import PlanValidator
 
-type PlanIdFactory = Callable[[], str]
 type Clock = Callable[[], datetime]
 
 _SYSTEM_PROMPT = """You are a planning component inside a controlled Harness.
@@ -114,7 +113,9 @@ class LLMPlanner(Planner):
         self._model_gateway = model_gateway
         self._validator = validator
         self._max_output_tokens = max_output_tokens
-        self._plan_id_factory = plan_id_factory or (lambda: f"plan-{uuid4().hex}")
+        self._compatibility_materializer = PlanMaterializer(
+            PlanIdentityFactory(plan_id_factory)
+        )
         self._attempt_observer = attempt_observer
         self._clock = clock or (lambda: datetime.now(UTC))
         self._response_schema = PlanDraft.model_json_schema()
@@ -152,6 +153,31 @@ class LLMPlanner(Planner):
         *,
         attempt_observer: PlanningAttemptObserver | None = None,
     ) -> ExecutionPlan:
+        template = await self.plan_artifact_with_observer(
+            context,
+            attempt_observer=attempt_observer,
+        )
+        plan = self._compatibility_materializer.materialize(
+            template,
+            context.invocation,
+            planner_id=self.planner_id,
+            trusted_metadata={"prompt_version": self._prompt_version},
+        )
+        return validate_planner_output(
+            plan,
+            self._validator,
+            planner_id=self.planner_id,
+        )
+
+    async def plan_artifact(self, context: PlanningContext) -> PlanTemplate:
+        return await self.plan_artifact_with_observer(context)
+
+    async def plan_artifact_with_observer(
+        self,
+        context: PlanningContext,
+        *,
+        attempt_observer: PlanningAttemptObserver | None = None,
+    ) -> PlanTemplate:
         if not isinstance(context, PlanningContext):
             raise TypeError("context must be PlanningContext")
         if attempt_observer is not None and not callable(attempt_observer):
@@ -205,8 +231,8 @@ class LLMPlanner(Planner):
                     allowed_capability_ids=allowed_capability_ids,
                     effective_deadline_at=deadline_at,
                 )
-                plan = self._to_execution_plan(draft, context)
-                plan = self._validate_generated_plan(plan)
+                template = self._to_plan_template(draft)
+                template = self._validate_generated_template(template)
             except RepairablePlanningFailure as failure:
                 repair_feedback = failure.feedback
                 previous_output = bounded_repair_value(output)
@@ -249,7 +275,7 @@ class LLMPlanner(Planner):
                 validation_codes=(),
                 invocation_observer=attempt_observer,
             )
-            return plan
+            return template
 
         raise AssertionError("planning attempt loop must return or raise")
 
@@ -445,9 +471,9 @@ class LLMPlanner(Planner):
                 ),
             ) from exc
 
-    def _validate_generated_plan(self, plan: ExecutionPlan) -> ExecutionPlan:
+    def _validate_generated_template(self, template: PlanTemplate) -> PlanTemplate:
         try:
-            return self._validator.validate(plan)
+            return self._validator.validate_template(template)
         except PlanValidationError as exc:
             validation_codes = tuple(sorted({issue.code.value for issue in exc.issues}))
             error = PlanningError(
@@ -644,41 +670,16 @@ class LLMPlanner(Planner):
             ),
         ) from error
 
-    def _to_execution_plan(
+    def _to_plan_template(
         self,
         draft: PlanDraft,
-        context: PlanningContext,
-    ) -> ExecutionPlan:
-        try:
-            plan_id = self._plan_id_factory()
-        except Exception as exc:
-            raise PlanningError(
-                "plan identity generation failed",
-                code=ErrorCode.PLANNER_INVALID_OUTPUT,
-                details={
-                    "planner_id": self.planner_id,
-                    "cause_type": type(exc).__name__,
-                },
-            ) from exc
-        if not isinstance(plan_id, str) or not plan_id.strip():
-            raise PlanningError(
-                "plan identity factory returned an invalid plan_id",
-                code=ErrorCode.PLANNER_INVALID_OUTPUT,
-                details={"planner_id": self.planner_id},
-            )
-        return ExecutionPlan(
-            plan_id=plan_id.strip(),
-            revision=1,
+    ) -> PlanTemplate:
+        return PlanTemplate(
             budget=draft.budget,
             failure_policy=draft.failure_policy,
             nodes=draft.nodes,
             edges=draft.edges,
             outputs=draft.outputs,
-            metadata={
-                "planner_id": self.planner_id,
-                "prompt_version": self._prompt_version,
-                "request_id": context.invocation.request.request_id,
-            },
         )
 
 

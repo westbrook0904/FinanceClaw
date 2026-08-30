@@ -337,7 +337,8 @@ class HandlePlanTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(planner_attributes["planner_id"], planner.planner_id)
         self.assertEqual(planner_attributes["prompt_version"], "not_applicable")
         self.assertEqual(planner_attributes["attempt_count"], 1)
-        self.assertEqual(planner_attributes["plan_id"], "handle-plan-success")
+        self.assertEqual(planner_attributes["plan_id"], result.metadata["plan_id"])
+        self.assertNotEqual(planner_attributes["plan_id"], "handle-plan-success")
         self.assertEqual(planner_attributes["plan_revision"], 1)
         self.assertEqual(planner_attributes["node_count"], 1)
         self.assertEqual(planner_attributes["validation_result"], "valid")
@@ -517,11 +518,11 @@ class HandlePlanTests(unittest.IsolatedAsyncioTestCase):
         result = await app.handle(plan_request())
 
         self.assertEqual(result.status, ResultStatus.FAILED)
-        self.assertEqual(result.error.code, "HARNESS.PLAN.INVALID")
+        self.assertEqual(result.error.code, ErrorCode.PLANNER_INVALID_OUTPUT)
         self.assertEqual(len(planner.contexts), 1)
         self.assertEqual(tool.contexts, [])
         spans = tracer.spans(trace_id=result.trace_id)
-        self.assertEqual(sum(span.type is SpanType.PLAN for span in spans), 1)
+        self.assertEqual(sum(span.type is SpanType.PLAN for span in spans), 0)
         self.assertEqual(sum(span.type is SpanType.PLANNER for span in spans), 1)
         await app.shutdown()
 
@@ -543,13 +544,17 @@ class HandlePlanTests(unittest.IsolatedAsyncioTestCase):
             await first_app.start()
 
             waiting = await first_app.handle(plan_request(trace=False))
-            saved = await first_app.state_store.load(plan.plan_id)
+            plan_id = waiting.continuation.plan_id
+            saved = await first_app.state_store.load(plan_id)
 
             self.assertEqual(waiting.status, ResultStatus.ACCEPTED)
             self.assertEqual(len(first_router.contexts), 1)
             self.assertEqual(len(first_planner.contexts), 1)
             self.assertEqual(first_tool.contexts, [])
-            self.assertEqual(saved.plan, plan)
+            self.assertEqual(saved.plan.plan_id, plan_id)
+            self.assertNotEqual(saved.plan.plan_id, plan.plan_id)
+            self.assertEqual(saved.plan.revision, 1)
+            self.assertEqual(saved.plan.nodes, plan.nodes)
             self.assertEqual(saved.context.request, plan_request(trace=False))
             self.assertNotIn("route_decision", saved.model_dump(mode="json"))
             self.assertNotIn("planning_attempt", saved.model_dump(mode="json"))
@@ -568,9 +573,9 @@ class HandlePlanTests(unittest.IsolatedAsyncioTestCase):
             )
             await resumed_app.start()
 
-            resumed = await resumed_app.resume_plan(plan.plan_id)
+            resumed = await resumed_app.resume_plan(plan_id)
             completed = await resumed_app.resolve_approval(
-                plan.plan_id,
+                plan_id,
                 ApprovalDecision(
                     approval_id=resumed.continuation.approval_id,
                     decision=ApprovalDecisionType.APPROVED,

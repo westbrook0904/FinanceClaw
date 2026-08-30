@@ -189,7 +189,9 @@ class StaticPlannerTests(unittest.IsolatedAsyncioTestCase):
 
         result = await planner.plan(context)
 
-        self.assertEqual(result, make_plan())
+        self.assertNotEqual(result.plan_id, "plan-001")
+        self.assertEqual(result.revision, 1)
+        self.assertEqual(result.nodes, make_plan().nodes)
         self.assertEqual(calls, [context])
         self.assertEqual(planner.route_keys, ("analysis",))
 
@@ -234,7 +236,8 @@ class HybridPlannerTests(unittest.IsolatedAsyncioTestCase):
 
         result = await self.make_hybrid(primary, fallback).plan(make_context())
 
-        self.assertEqual(result.plan_id, "primary-plan")
+        self.assertNotEqual(result.plan_id, "primary-plan")
+        self.assertEqual(result.nodes, make_plan("primary-plan").nodes)
         self.assertEqual(primary.calls, 1)
         self.assertEqual(fallback.calls, 0)
 
@@ -247,7 +250,8 @@ class HybridPlannerTests(unittest.IsolatedAsyncioTestCase):
 
         result = await self.make_hybrid(primary, fallback).plan(make_context())
 
-        self.assertEqual(result.plan_id, "fallback-plan")
+        self.assertNotEqual(result.plan_id, "fallback-plan")
+        self.assertEqual(result.nodes, make_plan("fallback-plan").nodes)
         self.assertEqual(primary.calls, 1)
         self.assertEqual(fallback.calls, 1)
 

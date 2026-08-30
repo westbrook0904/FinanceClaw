@@ -10,6 +10,7 @@ from harness_contracts import (
     ApprovalDecision,
     ApprovalDecisionType,
     CapabilityError,
+    ErrorCode,
     ExecutionPlan,
     HarnessTimeoutError,
     InvocationContext,
@@ -27,7 +28,7 @@ from harness_events import EventPublisher, ExecutionEventName, NoOpEventPublishe
 from harness_planning import PlanValidationError, PlanValidator
 from harness_policy import PolicyContext, PolicyEffect, PolicyPhase
 from harness_runtime import CapabilityInvoker, InvocationLifecycle
-from harness_state import InMemoryStateStore, StateStore
+from harness_state import InMemoryStateStore, StateRecordExistsError, StateStore
 from harness_trace import Span, SpanStatus, SpanType, Tracer
 
 from .approval import ApprovalCoordinator
@@ -35,7 +36,7 @@ from .async_waiting import AsyncWaitingCoordinator
 from .cancellation import CancellationSignal
 from .eventing import EventSpec, ExecutionEventEmitter
 from .recovery import ResumeCoordinator
-from .scheduler import BasicScheduler
+from .scheduler import BasicScheduler, CheckpointError
 
 _TERMINAL_PLAN_STATUSES = {
     PlanExecutionStatus.SUCCEEDED,
@@ -287,6 +288,20 @@ class ExecutionEngine:
                     "issues": [issue.model_dump(mode="json") for issue in exc.issues],
                 },
             )
+            result = ResultEnvelope.failure(error.to_detail())
+        except CheckpointError as exc:
+            if isinstance(exc.__cause__, StateRecordExistsError):
+                error = RequestError(
+                    "execution plan identity already exists",
+                    code=ErrorCode.PLAN_EXECUTION_ID_CONFLICT,
+                    details={"plan_id": plan.plan_id},
+                )
+            else:
+                error = CapabilityError(
+                    "execution engine failed",
+                    code="HARNESS.PLAN.EXECUTION_FAILED",
+                    details={"plan_id": plan.plan_id, "cause_type": type(exc).__name__},
+                )
             result = ResultEnvelope.failure(error.to_detail())
         except RequestError as exc:
             result = ResultEnvelope.failure(exc.to_detail())

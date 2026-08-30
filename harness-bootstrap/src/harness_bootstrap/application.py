@@ -17,7 +17,12 @@ from harness_contracts import (
 from harness_events import EventPublisher
 from harness_execution import BasicScheduler, ExecutionEngine
 from harness_model import ModelGateway
-from harness_planning import PlannerRegistry, PlanValidator
+from harness_planning import (
+    PlanMaterializer,
+    PlannerOutputNormalizer,
+    PlannerRegistry,
+    PlanValidator,
+)
 from harness_plugin_local import LoadedPlugin, LocalPluginLoader
 from harness_policy import PolicyEngine
 from harness_registry import CapabilityCatalog, CapabilityRegistry
@@ -72,6 +77,8 @@ class HarnessComponents:
     route_decision_validator: RouteDecisionValidator
     request_coordinator: RequestCoordinator
     planner_registry: PlannerRegistry
+    planner_output_normalizer: PlannerOutputNormalizer
+    plan_materializer: PlanMaterializer
 
 
 class HarnessApplication:
@@ -167,6 +174,14 @@ class HarnessApplication:
     @property
     def planner_registry(self) -> PlannerRegistry:
         return self._components.planner_registry
+
+    @property
+    def planner_output_normalizer(self) -> PlannerOutputNormalizer:
+        return self._components.planner_output_normalizer
+
+    @property
+    def plan_materializer(self) -> PlanMaterializer:
+        return self._components.plan_materializer
 
     @property
     def loaded_plugins(self) -> tuple[LoadedPlugin, ...]:
