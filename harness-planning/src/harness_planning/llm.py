@@ -13,7 +13,11 @@ from harness_contracts import (
     ErrorCode,
     ExecutionPlan,
     PlanningError,
+    PlanNode,
     PlanNodeKind,
+    StructuredOutputSpec,
+    StructuredOutputStrictness,
+    UnsupportedStructuredOutputBehavior,
 )
 from harness_model import (
     GenerateRequest,
@@ -50,22 +54,6 @@ Create a concrete DAG that achieves the supplied goal using only allowed capabil
 Never output plan_id, revision, plan metadata, provider IDs, plugin IDs, credentials, or state.
 Do not call tools or execute capabilities. Planning is your only responsibility."""
 
-_RESERVED_NODE_METADATA_KEYS = frozenset(
-    {
-        "plan_id",
-        "revision",
-        "planner_id",
-        "prompt_version",
-        "request_id",
-        "provider_id",
-        "plugin_id",
-        "execution_state",
-        "checkpoint_state",
-        "approval_grant",
-    }
-)
-
-
 class LLMPlanner(Planner):
     """使用逻辑 Model Capability 自主生成并验证一次 ExecutionPlan。"""
 
@@ -76,7 +64,7 @@ class LLMPlanner(Planner):
         planner_model_capability_id: str,
         validator: PlanValidator,
         planner_id: str = "llm-planner",
-        prompt_version: str = "planner-v1",
+        prompt_version: str = "planner-v2",
         max_output_tokens: int | None = None,
         plan_id_factory: PlanIdFactory | None = None,
         allowed_capability_ids: Iterable[str] | None = None,
@@ -313,7 +301,12 @@ class LLMPlanner(Planner):
                 ),
             ),
             response_format=ModelResponseFormat.JSON,
-            response_schema=self._response_schema,
+            structured_output=StructuredOutputSpec(
+                name="plan_draft_v2",
+                schema=self._response_schema,
+                strictness=StructuredOutputStrictness.REQUIRED,
+                on_unsupported=UnsupportedStructuredOutputBehavior.FAIL,
+            ),
             temperature=0.0,
             max_output_tokens=self._max_output_tokens,
             metadata={"purpose": "plan", "prompt_version": self._prompt_version},
@@ -341,7 +334,6 @@ class LLMPlanner(Planner):
                     effective_deadline_at.isoformat() if effective_deadline_at is not None else None
                 ),
             },
-            "plan_draft_schema": self._response_schema,
         }
 
     def _allowed_capability_ids(self, context: PlanningContext) -> frozenset[str]:
@@ -583,10 +575,10 @@ class LLMPlanner(Planner):
 
         disallowed = sorted(
             {
-                node.capability
+                node.capability_id
                 for node in draft.nodes
                 if node.kind is PlanNodeKind.CAPABILITY
-                and node.capability not in allowed_capability_ids
+                and node.capability_id not in allowed_capability_ids
             }
         )
         if disallowed:
@@ -602,7 +594,7 @@ class LLMPlanner(Planner):
             self._raise_guard_failure(
                 error,
                 code="PLANNING.CAPABILITY_NOT_ALLOWED",
-                field="nodes.capability",
+                field="nodes.capability_id",
                 reference=",".join(disallowed),
             )
 
@@ -624,31 +616,6 @@ class LLMPlanner(Planner):
                 error,
                 code="PLANNING.DEADLINE_EXCEEDS_REQUEST",
                 field="budget.deadline_at",
-            )
-
-        injected_keys = sorted(
-            {
-                key
-                for node in draft.nodes
-                for key in node.metadata
-                if key in _RESERVED_NODE_METADATA_KEYS
-            }
-        )
-        if injected_keys:
-            error = PlanningError(
-                "generated plan contains reserved node metadata",
-                code=ErrorCode.PLANNER_INVALID_OUTPUT,
-                details={
-                    "planner_id": self.planner_id,
-                    "reason": "reserved_metadata",
-                    "metadata_keys": injected_keys,
-                },
-            )
-            self._raise_guard_failure(
-                error,
-                code="PLANNING.RESERVED_METADATA",
-                field="nodes.metadata",
-                reference=",".join(injected_keys),
             )
 
     @staticmethod
@@ -677,7 +644,16 @@ class LLMPlanner(Planner):
         return PlanTemplate(
             budget=draft.budget,
             failure_policy=draft.failure_policy,
-            nodes=draft.nodes,
+            nodes=tuple(
+                PlanNode(
+                    node_id=node.node_id,
+                    kind=node.kind,
+                    capability=node.capability_id,
+                    input_mapping=node.input_mapping,
+                    failure_policy=node.failure_intent,
+                )
+                for node in draft.nodes
+            ),
             edges=draft.edges,
             outputs=draft.outputs,
         )

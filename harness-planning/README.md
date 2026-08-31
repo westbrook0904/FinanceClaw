@@ -13,7 +13,8 @@ Capability，也不能访问 Provider 实例；Planner 输出统一交给 `PlanV
 - `PlannerRegistry`：Composition Root 构造期冻结的本地只读 Planner 映射。
 - `StaticPlanner`：按 request route key 选择不可变 Plan 模板或同步/异步 factory。
 - `HybridPlanner`：仅在 primary 抛出 `PlannerNotApplicableError` 时调用 fallback。
-- `PlanDraft`：模型可生成的受限 DAG 协议，不包含 plan_id、revision 或 Plan metadata。
+- `PlanDraft / PlanNodeDraft`：模型可生成的受限 DAG/节点意图，不包含 plan_id、revision、
+  retry policy、trusted idempotency key、最终 timeout 或 runtime metadata。
 - `PlanTemplate`：正式的无运行身份 Plan Contract，可安全复用，不包含 `plan_id/revision`，也拒绝
   request/provider/execution metadata。
 - `PlannerOutputNormalizer`：把原生 `PlanTemplate` 或 legacy `ExecutionPlan` candidate 统一转换为
@@ -86,10 +87,12 @@ Normalizer/Materializer；相同 `plan_id` 重复创建返回
 
 ## LLMPlanner 安全边界
 
-LLMPlanner 的模型只产生 PlanDraft 中的节点、边、绑定与预算。`plan_id`、`revision=1` 和
+LLMPlanner-v2 通过 REQUIRED `StructuredOutputSpec` 生成 PlanDraft，只产生节点意图、边、绑定
+与预算。Gateway 在 Draft parser 前完成 Schema 与 finish reason 校验。`plan_id`、`revision=1` 和
 `planner_id/prompt_version/request_id` metadata 均由 RequestCoordinator 的 Materializer 写入；模型注入这些字段、引用
-超出 Catalog/Policy/Planner 交集的 Capability、超过节点上限、扩大 Request Deadline 或写入
-保留 metadata 时都会 fail-closed。Catalog 投影不包含 Provider、Plugin 或 Descriptor metadata，
+超出 Catalog/Policy/Planner 交集的 Capability、超过节点上限或扩大 Request Deadline时都会
+fail-closed。`PlanNodeDraft` 由 Harness 端转换为采用服务端 retry/idempotency/timeout 默认值的
+最终 `PlanNode`。Catalog 投影不包含 Provider、Plugin 或 Descriptor metadata，
 规划期间不会调用任何业务 Capability。
 
 ## Bounded Plan Repair
@@ -115,7 +118,8 @@ generation 仍由 ModelGateway 创建独立 MODEL span，不为 attempt 增加�
 一条 capability-only 记录，不会泄露 Provider 身份或实例。
 
 当前已实现 Static/Hybrid Planner Foundation、PlanDraft、LLMPlanner、bounded Plan Repair、
-`handle()` PLAN dispatch，以及 Stage 3C Step 1 identity/materialization 收口。RequestCoordinator
+`handle()` PLAN dispatch，以及 Stage 3C Step 1 identity/materialization 与 Step 2 strict
+LLMPlanner-v2 收口。RequestCoordinator
 负责服务端 Planner 选择、唯一 fresh identity 物化和执行前再次验证；
 WAITING / resume 使用 ExecutionEngine 已持久化的 Plan，不重新调用 Planner。运行时 Plan Patch
 属于后续步骤。

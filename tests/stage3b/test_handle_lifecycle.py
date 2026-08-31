@@ -43,7 +43,7 @@ def approval_draft() -> dict[str, object]:
             {"node_id": "approval", "kind": "approval"},
             {
                 "node_id": "echo",
-                "capability": ECHO_TOOL_ID,
+                "capability_id": ECHO_TOOL_ID,
                 "input_mapping": {
                     "message": {
                         "kind": "request",

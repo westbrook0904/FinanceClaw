@@ -11,6 +11,7 @@ from harness_contracts import (
     ExecutionMode,
     ExecutionPlan,
     InvocationContext,
+    ModelProviderFeatures,
     NodeOutputBinding,
     PlanEdge,
     PlanExecutionRecord,
@@ -26,6 +27,7 @@ from harness_contracts import (
     RouteDecision,
     RouteSource,
     RouteType,
+    StructuredOutputSpec,
 )
 from harness_model import (
     GenerateRequest,
@@ -35,7 +37,9 @@ from harness_model import (
     ModelProvider,
     ModelResponseFormat,
     ModelUsage,
+    PreparedStructuredOutput,
 )
+from harness_model.schema import structured_schema_hash
 from harness_planning import Planner, PlanningContext
 from harness_routing import Router, RoutingContext
 from harness_runtime import InvocationContextFactory
@@ -146,6 +150,44 @@ class ScriptedModel(ModelProvider):
         )
 
     async def generate(
+        self,
+        request: GenerateRequest,
+        context: InvocationContext,
+    ) -> GenerateResult:
+        return await self._generate(request, context)
+
+    @property
+    def features(self) -> ModelProviderFeatures:
+        return ModelProviderFeatures(
+            json_object=True,
+            json_schema=True,
+            json_schema_strict=True,
+        )
+
+    def prepare_structured_output(
+        self,
+        spec: StructuredOutputSpec,
+    ) -> PreparedStructuredOutput:
+        plugin_id = (
+            "stage3b-plan-model"
+            if self._model_id == PLAN_MODEL_ID
+            else "stage3b-route-model"
+        )
+        return PreparedStructuredOutput(
+            provider_id=f"{plugin_id}:{self._model_id}",
+            schema_hash=structured_schema_hash(spec),
+            semantics_preserved=True,
+        )
+
+    async def generate_prepared(
+        self,
+        request: GenerateRequest,
+        prepared: PreparedStructuredOutput,
+        context: InvocationContext,
+    ) -> GenerateResult:
+        return await self._generate(request, context)
+
+    async def _generate(
         self,
         request: GenerateRequest,
         context: InvocationContext,
@@ -340,7 +382,7 @@ def valid_plan_draft() -> dict[str, object]:
         "nodes": [
             {
                 "node_id": "echo",
-                "capability": ECHO_TOOL_ID,
+                "capability_id": ECHO_TOOL_ID,
                 "input_mapping": {
                     "message": {
                         "kind": "request",

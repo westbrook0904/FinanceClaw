@@ -4,7 +4,8 @@
 Harness 模块或插件。Stage 2 在 Request/Context/Capability/Result 基线上补齐 Plan、
 可恢复状态、审批和异步 Continuation；Stage 3A 进一步冻结 Provider 身份、Health、
 Selection、ProviderAttempt 和安全恢复协议；Stage 3B 冻结请求级 ExecutionMode 与
-RouteDecision 协议。
+RouteDecision 协议；Stage 3C Step 2 下沉 provider-neutral 模型 usage、cost、strict structured
+output 与 generation reservation/receipt 契约，避免 `harness-contracts` 反向依赖模型实现层。
 
 ## 公共 API
 
@@ -18,6 +19,7 @@ RouteDecision 协议。
 | 上下文 | `InvocationContext`、Identity、Tenant、Trace、Cancellation Context |
 | 能力 | `CapabilityDescriptor`、`CapabilityType`、`CapabilityExecutionProfile` |
 | Provider Fabric | `ProviderDescriptor`、`ProviderHealthSnapshot`、`ProviderAttempt`、`ProviderPin`、Selection 契约 |
+| 模型生成 | `StructuredOutputSpec`、`ModelProviderFeatures`、`ModelUsage`、`NormalizedCost`、`ModelGenerationAccounting`、`ModelGenerationReservation`、`ModelReservationReceipt` |
 | 审批 | `ApprovalRequest`、`ApprovalDecision`、`ApprovalGrant` |
 | 结果 | `ResultEnvelope`、`ResultOutput`、`ResultIssue`、`Continuation` |
 | 错误 | `ErrorDetail`、`ErrorCode`、`HarnessError` 及模块异常 |

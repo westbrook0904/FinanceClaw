@@ -13,10 +13,12 @@ from harness_contracts import (
     ErrorCode,
     IdentityContext,
     InvocationContext,
+    ModelProviderFeatures,
     PlanningError,
     ProviderError,
     Request,
     RequestInput,
+    StructuredOutputSpec,
     TraceContext,
 )
 from harness_model import (
@@ -28,7 +30,9 @@ from harness_model import (
     ModelProvider,
     ModelResponseFormat,
     ModelUsage,
+    PreparedStructuredOutput,
 )
+from harness_model.schema import structured_schema_hash
 from harness_planning import (
     LLMPlanner,
     PlanDraft,
@@ -55,10 +59,10 @@ def valid_draft(**extra: object) -> dict[str, object]:
         "nodes": [
             {
                 "node_id": "fetch",
-                "capability": FETCH_ID,
+                "capability_id": FETCH_ID,
                 "input_mapping": {"query": {"kind": "request", "pointer": "/input/content"}},
             },
-            {"node_id": "rank", "capability": RANK_ID},
+            {"node_id": "rank", "capability_id": RANK_ID},
         ],
         "edges": [{"from_node": "fetch", "to_node": "rank"}],
         "outputs": {
@@ -76,6 +80,8 @@ type PlanningOutcome = dict[str, object] | GenerateResult
 
 
 class ScriptedPlanningModel(ModelProvider):
+    provider_id = "planning-models:model.plan/v1"
+
     def __init__(self, outcome: PlanningOutcome | tuple[PlanningOutcome, ...]) -> None:
         self.outcomes = outcome if isinstance(outcome, tuple) else (outcome,)
         if not self.outcomes:
@@ -97,6 +103,35 @@ class ScriptedPlanningModel(ModelProvider):
         request: GenerateRequest,
         context: InvocationContext,
     ) -> GenerateResult:
+        return await self._generate(request)
+
+    @property
+    def features(self) -> ModelProviderFeatures:
+        return ModelProviderFeatures(
+            json_object=True,
+            json_schema=True,
+            json_schema_strict=True,
+        )
+
+    def prepare_structured_output(
+        self,
+        spec: StructuredOutputSpec,
+    ) -> PreparedStructuredOutput:
+        return PreparedStructuredOutput(
+            provider_id=self.provider_id,
+            schema_hash=structured_schema_hash(spec),
+            semantics_preserved=True,
+        )
+
+    async def generate_prepared(
+        self,
+        request: GenerateRequest,
+        prepared: PreparedStructuredOutput,
+        context: InvocationContext,
+    ) -> GenerateResult:
+        return await self._generate(request)
+
+    async def _generate(self, request: GenerateRequest) -> GenerateResult:
         self.calls += 1
         self.requests.append(request)
         outcome = self.outcomes[min(self.calls - 1, len(self.outcomes) - 1)]
@@ -261,7 +296,7 @@ class LLMPlannerTests(unittest.IsolatedAsyncioTestCase):
             dict(plan.metadata),
             {
                 "planner_id": "llm-default",
-                "prompt_version": "planner-v1",
+                "prompt_version": "planner-v2",
                 "request_id": "req-plan-goal",
             },
         )
@@ -275,10 +310,10 @@ class LLMPlannerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(request.temperature, 0.0)
         self.assertEqual(
             dict(request.metadata),
-            {"purpose": "plan", "prompt_version": "planner-v1"},
+            {"purpose": "plan", "prompt_version": "planner-v2"},
         )
         self.assertEqual(
-            request.model_dump(mode="json")["response_schema"],
+            request.model_dump(mode="json")["structured_output"]["schema"],
             planner._response_schema,  # noqa: SLF001
         )
         prompt = json.loads(request.messages[-1].content)
@@ -302,7 +337,15 @@ class LLMPlannerTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_invalid_draft_repairs_once_then_returns_valid_plan(self) -> None:
         long_model_value = "model-value-" + ("x" * 2_000)
-        invalid = valid_draft(metadata={"diagnostic": long_model_value})
+        invalid = valid_draft(
+            outputs={
+                "missing": {
+                    "kind": "node_output",
+                    "node_id": long_model_value,
+                    "pointer": "/output/data",
+                }
+            }
+        )
         attempts: list[PlanningAttempt] = []
         invocation_attempts: list[PlanningAttempt] = []
         planner, model, tools, catalog = make_planner(
@@ -334,13 +377,13 @@ class LLMPlannerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(repair["attempt"], 2)
         self.assertEqual(repair["kind"], "repair")
         self.assertEqual(
-            repair["previous_plan_draft"]["metadata"]["diagnostic"],
+            repair["previous_plan_draft"]["outputs"]["missing"]["node_id"],
             f"{long_model_value[:512]}<truncated>",
         )
         self.assertNotIn(long_model_value, model.requests[1].messages[-1].content)
         self.assertEqual(
-            set(repair["parse_errors"][0]),
-            {"type", "location"},
+            repair["plan_validation_issues"][0]["code"],
+            "PLAN.OUTPUT_REFERENCE_NOT_FOUND",
         )
         self.assertNotIn("traceback", model.requests[1].messages[-1].content.lower())
 
@@ -348,7 +391,10 @@ class LLMPlannerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([item.kind for item in attempts], ["initial", "repair"])
         self.assertEqual(invocation_attempts, attempts)
         self.assertEqual([item.repair_scheduled for item in attempts], [True, False])
-        self.assertTrue(attempts[0].validation_codes[0].startswith("DRAFT.PARSE."))
+        self.assertEqual(
+            attempts[0].validation_codes,
+            ("PLAN.OUTPUT_REFERENCE_NOT_FOUND",),
+        )
         self.assertEqual(attempts[1].validation_codes, ())
         self.assertTrue(all(item.output_hash is not None for item in attempts))
         self.assertTrue(all(len(item.output_hash or "") == 64 for item in attempts))
@@ -391,7 +437,15 @@ class LLMPlannerTests(unittest.IsolatedAsyncioTestCase):
         async def observe(attempt: PlanningAttempt) -> None:
             attempts.append(attempt)
 
-        invalid = valid_draft(plan_id="model-owned")
+        invalid = valid_draft(
+            outputs={
+                "missing": {
+                    "kind": "node_output",
+                    "node_id": "does-not-exist",
+                    "pointer": "/output/data",
+                }
+            }
+        )
         planner, model, tools, catalog = make_planner(
             invalid,
             attempt_observer=observe,
@@ -414,7 +468,15 @@ class LLMPlannerTests(unittest.IsolatedAsyncioTestCase):
     async def test_single_attempt_budget_never_sends_a_repair_request(self) -> None:
         attempts: list[PlanningAttempt] = []
         planner, model, tools, catalog = make_planner(
-            valid_draft(plan_id="model-owned"),
+            valid_draft(
+                outputs={
+                    "missing": {
+                        "kind": "node_output",
+                        "node_id": "does-not-exist",
+                        "pointer": "/output/data",
+                    }
+                }
+            ),
             attempt_observer=attempts.append,
         )
 
@@ -433,7 +495,15 @@ class LLMPlannerTests(unittest.IsolatedAsyncioTestCase):
         clock_values = iter((now, deadline))
         attempts: list[PlanningAttempt] = []
         planner, model, tools, catalog = make_planner(
-            valid_draft(plan_id="model-owned"),
+            valid_draft(
+                outputs={
+                    "missing": {
+                        "kind": "node_output",
+                        "node_id": "does-not-exist",
+                        "pointer": "/output/data",
+                    }
+                }
+            ),
             attempt_observer=attempts.append,
             clock=lambda: next(clock_values),
         )
@@ -457,7 +527,11 @@ class LLMPlannerTests(unittest.IsolatedAsyncioTestCase):
                 planner, model, tools, catalog = make_planner(valid_draft(**{field_name: value}))
                 with self.assertRaises(PlanningError) as raised:
                     await planner.plan(make_context(catalog, max_plan_attempts=1))
-                self.assertEqual(raised.exception.code, ErrorCode.PLANNER_REPAIR_EXHAUSTED)
+                self.assertEqual(raised.exception.code, ErrorCode.PLANNER_MODEL_FAILED)
+                self.assertEqual(
+                    raised.exception.details["cause_code"],
+                    ErrorCode.MODEL_STRUCTURED_OUTPUT_INVALID,
+                )
                 self.assertEqual(model.calls, 1)
                 self.assertEqual([tool.calls for tool in tools], [0, 0])
                 self.assertNotIn("model-choice", str(raised.exception.details))
@@ -466,8 +540,8 @@ class LLMPlannerTests(unittest.IsolatedAsyncioTestCase):
         future = datetime.now(UTC) + timedelta(minutes=30)
         too_many = valid_draft(
             nodes=[
-                {"node_id": "one", "capability": FETCH_ID},
-                {"node_id": "two", "capability": RANK_ID},
+                {"node_id": "one", "capability_id": FETCH_ID},
+                {"node_id": "two", "capability_id": RANK_ID},
             ],
             edges=[],
             outputs={},
@@ -480,7 +554,7 @@ class LLMPlannerTests(unittest.IsolatedAsyncioTestCase):
             ),
             (
                 valid_draft(
-                    nodes=[{"node_id": "unknown", "capability": "secret.tool/v1"}],
+                    nodes=[{"node_id": "unknown", "capability_id": "secret.tool/v1"}],
                     edges=[],
                     outputs={},
                 ),
@@ -496,21 +570,6 @@ class LLMPlannerTests(unittest.IsolatedAsyncioTestCase):
                 ),
                 {"deadline_at": future},
                 "PLANNING.DEADLINE_EXCEEDS_REQUEST",
-            ),
-            (
-                valid_draft(
-                    nodes=[
-                        {
-                            "node_id": "fetch",
-                            "capability": FETCH_ID,
-                            "metadata": {"provider_id": "injected-provider"},
-                        }
-                    ],
-                    edges=[],
-                    outputs={},
-                ),
-                {},
-                "PLANNING.RESERVED_METADATA",
             ),
         )
 

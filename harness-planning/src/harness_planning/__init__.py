@@ -1,7 +1,7 @@
 """ExecutionPlan 的生成策略、注册与执行前验证边界。"""
 
 from .context import PlanningConstraints, PlanningContext
-from .draft import PlanDraft
+from .draft import PlanDraft, PlanNodeDraft
 from .hybrid import HybridPlanner
 from .identity import (
     PlanIdentityFactory,
@@ -28,6 +28,7 @@ __all__ = [
     "HybridPlanner",
     "LLMPlanner",
     "PlanDraft",
+    "PlanNodeDraft",
     "PlanFactory",
     "PlanIdFactory",
     "PlanIdentityFactory",

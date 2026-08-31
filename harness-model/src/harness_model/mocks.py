@@ -12,8 +12,13 @@ from harness_contracts import (
     CapabilityType,
     EgressType,
     InvocationContext,
+    ModelAttemptAccounting,
+    ModelProviderFeatures,
+    NormalizedCost,
+    NormalizedCostRate,
     ProviderError,
     SideEffectType,
+    StructuredOutputSpec,
 )
 
 from .contracts import (
@@ -24,7 +29,9 @@ from .contracts import (
     ModelResponseFormat,
     ModelUsage,
 )
+from .preparation import PreparedStructuredOutput
 from .provider import ModelProvider
+from .schema import structured_schema_hash
 
 DEFAULT_MODEL_CAPABILITY_ID = "model.generate/v1"
 
@@ -74,6 +81,13 @@ class MockModelProvider(ModelProvider):
         return self._descriptor
 
     async def generate(
+        self,
+        request: GenerateRequest,
+        context: InvocationContext,
+    ) -> GenerateResult:
+        return await self._generate_result(request, context)
+
+    async def _generate_result(
         self,
         request: GenerateRequest,
         context: InvocationContext,
@@ -128,7 +142,11 @@ class MockModelProvider(ModelProvider):
             "provider": self.provider_identity,
             "content": prompt,
         }
-        schema = request.response_schema
+        schema = (
+            request.structured_output.schema
+            if request.structured_output is not None
+            else request.response_schema
+        )
         if schema is not None:
             properties = schema.get("properties")
             required = schema.get("required")
@@ -149,6 +167,92 @@ class MockQualityModel(MockModelProvider):
 
 class MockBackupModel(MockModelProvider):
     provider_identity = "mock-backup-model"
+
+
+class MockStrictModelProvider(MockModelProvider):
+    """支持 strict schema 编译、sound token bound 与可选成本计量的 Mock。"""
+
+    def __init__(
+        self,
+        *,
+        provider_id: str,
+        cost_rate: NormalizedCostRate | None = None,
+        **kwargs: object,
+    ) -> None:
+        if not isinstance(provider_id, str) or not provider_id.strip():
+            raise TypeError("provider_id must be a non-empty string")
+        super().__init__(**kwargs)
+        self._provider_id = provider_id
+        self._cost_rate = cost_rate
+
+    @property
+    def features(self) -> ModelProviderFeatures:
+        return ModelProviderFeatures(
+            json_object=True,
+            json_schema=True,
+            json_schema_strict=True,
+            refusal_signal=True,
+            usage_tokens=True,
+            normalized_cost=self._cost_rate is not None,
+            cost_rate=self._cost_rate,
+        )
+
+    def prepare_structured_output(
+        self,
+        spec: StructuredOutputSpec,
+    ) -> PreparedStructuredOutput:
+        return PreparedStructuredOutput(
+            provider_id=self._provider_id,
+            schema_hash=structured_schema_hash(spec),
+            semantics_preserved=True,
+            payload={"mock": "strict"},
+        )
+
+    async def generate_prepared(
+        self,
+        request: GenerateRequest,
+        prepared: PreparedStructuredOutput,
+        context: InvocationContext,
+    ) -> GenerateResult:
+        if prepared.provider_id != self._provider_id:
+            raise ProviderError("prepared output belongs to another mock provider")
+        result = await self._generate_result(request, context)
+        if result.status.value != "success" or self._cost_rate is None or result.usage is None:
+            return result
+        cost = NormalizedCost(
+            unit=self._cost_rate.unit,
+            amount=(
+                result.usage.input_tokens * self._cost_rate.max_input_token_cost
+                + result.usage.output_tokens * self._cost_rate.max_output_token_cost
+                + self._cost_rate.max_request_cost
+            ),
+        )
+        return result.model_copy(
+            update={
+                "attempt_accounting": ModelAttemptAccounting(
+                    usage=result.usage,
+                    normalized_cost=cost,
+                    complete=True,
+                )
+            }
+        )
+
+    def bound_input_tokens(
+        self,
+        request: GenerateRequest,
+        prepared: PreparedStructuredOutput,
+    ) -> int:
+        schema_bytes = 0
+        if request.structured_output is not None:
+            schema_bytes = len(
+                json.dumps(
+                    request.structured_output.model_dump(mode="json")["schema"],
+                    ensure_ascii=False,
+                    sort_keys=True,
+                ).encode("utf-8")
+            )
+        message_bytes = sum(len(item.content.encode("utf-8")) for item in request.messages)
+        return message_bytes + schema_bytes + 64
 
 
 def _serialized_output(output: ModelOutput) -> str:

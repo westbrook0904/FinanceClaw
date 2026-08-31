@@ -12,7 +12,8 @@
 - `InMemoryCapabilityRegistry`：线程安全的单进程实现。
 - `CapabilityQuery`：按 Capability ID、类型、标签、版本和 Plugin ID 过滤，所有条件
   采用 AND 语义。
-- `ProviderRegistration`：ProviderDescriptor、CapabilityDescriptor 与受信任实例。
+- `ProviderRegistration`：ProviderDescriptor、CapabilityDescriptor 与受信任实例；MODEL 注册时
+  深拷贝 `ModelProviderFeatures`，并冻结 feature hash 和 registration version。
 - `ResolvedCapability`：保留给旧单 Provider API 的兼容结果。
 - `CapabilityCatalog`：只读 Descriptor 目录抽象。
 - `RegistryCapabilityCatalog`：Registry 到 Catalog 的实时投影视图。
@@ -47,7 +48,9 @@ profile，priority、region、tags、tenant visibility 等部署属性属于 Pro
 不负责插件发现、生命周期、Policy 或业务调用，也不是通用 Service Locator。
 
 Health 与选择位于 `harness-selection`，Retry/Fallback 位于 `harness-runtime`，模型原生调用
-位于 `harness-model`。Registry 不负责 Policy、健康探测、选择、执行或恢复。分布式注册、
+位于 `harness-model`。Registry 不编译具体 JSON Schema，也不信任请求 metadata 或模型输出
+声明的 feature；ModelGateway 使用注册时快照做大类 eligibility，再调用 Provider 做无损编译。
+Registry 不负责 Policy、健康探测、选择、执行或恢复。分布式注册、
 租约和远程服务发现暂不支持。
 
 ## 测试

@@ -2,7 +2,7 @@
 
 > **文档性质**：Stage 3C 编码实施基线 / Architecture Decision Baseline
 > **阶段名称**：Stage 3C — Governed Agentic Exploration
-> **版本**：V1.0（设计冻结，尚未实施）
+> **版本**：V1.0（设计冻结；Step 1–2 已实施）
 > **日期**：2026-08-29
 > **前置基线**：Stage 3A Provider Fabric + Stage 3B Routing & Planning
 > **依据文档**：FinanceClaw 第三阶段设计说明书、Stage 3A 实施说明书、Stage 3B 实施说明书

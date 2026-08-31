@@ -18,8 +18,16 @@ from .mocks import (
     MockFastModel,
     MockModelProvider,
     MockQualityModel,
+    MockStrictModelProvider,
+)
+from .preparation import (
+    ModelAttemptPolicy,
+    ModelGenerationCheckpointSink,
+    PreparedModelGeneration,
+    PreparedStructuredOutput,
 )
 from .provider import ModelProvider
+from .structured import StructuredGenerationAdapter
 
 __all__ = [
     "DEFAULT_MODEL_CAPABILITY_ID",
@@ -28,6 +36,8 @@ __all__ = [
     "GenerateStatus",
     "ModelFinishReason",
     "ModelGateway",
+    "ModelAttemptPolicy",
+    "ModelGenerationCheckpointSink",
     "ModelMessage",
     "ModelOutput",
     "ModelProvider",
@@ -38,4 +48,8 @@ __all__ = [
     "MockFastModel",
     "MockModelProvider",
     "MockQualityModel",
+    "MockStrictModelProvider",
+    "PreparedModelGeneration",
+    "PreparedStructuredOutput",
+    "StructuredGenerationAdapter",
 ]

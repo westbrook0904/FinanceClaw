@@ -6,7 +6,14 @@ from collections.abc import Mapping
 from enum import StrEnum
 from typing import Self
 
-from harness_contracts import ContractModel, ErrorDetail
+from harness_contracts import (
+    ContractModel,
+    ErrorDetail,
+    ModelAttemptAccounting,
+    ModelGenerationAccounting,
+    ModelUsage,
+    StructuredOutputSpec,
+)
 from harness_contracts.base import (
     FrozenJsonMapping,
     FrozenJsonValue,
@@ -36,6 +43,7 @@ class ModelFinishReason(StrEnum):
     STOP = "stop"
     LENGTH = "length"
     CONTENT_FILTER = "content_filter"
+    REFUSAL = "refusal"
 
 
 class ModelOutput(ContractModel):
@@ -53,18 +61,6 @@ class ModelOutput(ContractModel):
         return self
 
 
-class ModelUsage(ContractModel):
-    input_tokens: int = Field(ge=0)
-    output_tokens: int = Field(ge=0)
-    total_tokens: int = Field(ge=0)
-
-    @model_validator(mode="after")
-    def validate_total(self) -> Self:
-        if self.total_tokens != self.input_tokens + self.output_tokens:
-            raise ValueError("total_tokens must equal input_tokens + output_tokens")
-        return self
-
-
 class GenerateRequest(ContractModel):
     """一次非流式模型生成请求；``model`` 是 Registry 中的逻辑模型能力 ID。"""
 
@@ -72,17 +68,19 @@ class GenerateRequest(ContractModel):
     messages: tuple[ModelMessage, ...] = Field(min_length=1)
     response_format: ModelResponseFormat = ModelResponseFormat.TEXT
     response_schema: FrozenJsonMapping | None = None
+    structured_output: StructuredOutputSpec | None = None
     temperature: float = Field(default=0.0, ge=0.0, le=2.0)
     max_output_tokens: int | None = Field(default=None, gt=0)
     metadata: FrozenJsonMapping = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def validate_response_schema(self) -> Self:
+        if self.response_schema is not None and self.structured_output is not None:
+            raise ValueError("response_schema and structured_output are mutually exclusive")
         if (
-            self.response_schema is not None
-            and self.response_format is not ModelResponseFormat.JSON
-        ):
-            raise ValueError("response_schema requires json response_format")
+            self.response_schema is not None or self.structured_output is not None
+        ) and self.response_format is not ModelResponseFormat.JSON:
+            raise ValueError("structured output requires json response_format")
         return self
 
 
@@ -97,6 +95,8 @@ class GenerateResult(ContractModel):
     status: GenerateStatus
     output: ModelOutput | None = None
     usage: ModelUsage | None = None
+    attempt_accounting: ModelAttemptAccounting | None = None
+    accounting: ModelGenerationAccounting | None = None
     finish_reason: ModelFinishReason | None = None
     provider_id: NonEmptyString | None = None
     error: ErrorDetail | None = None
@@ -110,6 +110,12 @@ class GenerateResult(ContractModel):
                 raise ValueError("successful generation requires output, usage, and finish_reason")
             if self.error is not None:
                 raise ValueError("successful generation cannot contain error")
+            if (
+                self.attempt_accounting is not None
+                and self.attempt_accounting.usage is not None
+                and self.attempt_accounting.usage != self.usage
+            ):
+                raise ValueError("successful attempt accounting usage must equal legacy usage")
             return self
         if self.error is None:
             raise ValueError("failed generation requires error")
@@ -125,6 +131,8 @@ class GenerateResult(ContractModel):
         *,
         finish_reason: ModelFinishReason = ModelFinishReason.STOP,
         provider_id: str | None = None,
+        attempt_accounting: ModelAttemptAccounting | None = None,
+        accounting: ModelGenerationAccounting | None = None,
         metadata: dict[str, JsonValue] | None = None,
         trace_id: str | None = None,
     ) -> GenerateResult:
@@ -134,6 +142,8 @@ class GenerateResult(ContractModel):
             usage=usage,
             finish_reason=finish_reason,
             provider_id=provider_id,
+            attempt_accounting=attempt_accounting,
+            accounting=accounting,
             metadata=metadata or {},
             trace_id=trace_id,
         )
@@ -144,6 +154,8 @@ class GenerateResult(ContractModel):
         error: ErrorDetail,
         *,
         provider_id: str | None = None,
+        attempt_accounting: ModelAttemptAccounting | None = None,
+        accounting: ModelGenerationAccounting | None = None,
         metadata: dict[str, JsonValue] | None = None,
         trace_id: str | None = None,
     ) -> GenerateResult:
@@ -151,6 +163,8 @@ class GenerateResult(ContractModel):
             status=GenerateStatus.FAILED,
             error=error,
             provider_id=provider_id,
+            attempt_accounting=attempt_accounting,
+            accounting=accounting,
             metadata=metadata or {},
             trace_id=trace_id,
         )

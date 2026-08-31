@@ -106,7 +106,16 @@ class LLMPlanningAcceptanceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sum(span.type is SpanType.TOOL for span in spans), 1)
 
     async def test_invalid_then_repair_then_valid_executes_once(self) -> None:
-        invalid = {**valid_plan_draft(), "plan_id": "model-owned-plan"}
+        invalid = {
+            **valid_plan_draft(),
+            "outputs": {
+                "missing": {
+                    "kind": "node_output",
+                    "node_id": "does-not-exist",
+                    "pointer": "/output/data",
+                }
+            },
+        }
         app, tracer, model, tool, second, _planner = planning_fixture((invalid, valid_plan_draft()))
         await app.start()
         try:
@@ -137,7 +146,16 @@ class LLMPlanningAcceptanceTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_repair_exhaustion_creates_no_checkpoint_or_business_call(self) -> None:
-        invalid = {**valid_plan_draft(), "revision": 99}
+        invalid = {
+            **valid_plan_draft(),
+            "outputs": {
+                "missing": {
+                    "kind": "node_output",
+                    "node_id": "does-not-exist",
+                    "pointer": "/output/data",
+                }
+            },
+        }
         store = CountingStateStore()
         policy = PlanningConstraintsPolicy(max_plan_attempts=3)
         app, tracer, model, tool, second, _planner = planning_fixture(
@@ -168,14 +186,14 @@ class LLMPlanningAcceptanceTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_unknown_cycle_and_oversized_plans_fail_before_execution(self) -> None:
         unknown = {
-            "nodes": [{"node_id": "unknown", "capability": "missing.tool/v1"}],
+            "nodes": [{"node_id": "unknown", "capability_id": "missing.tool/v1"}],
             "edges": [],
             "outputs": {},
         }
         cycle = {
             "nodes": [
-                {"node_id": "one", "capability": ECHO_TOOL_ID},
-                {"node_id": "two", "capability": SECOND_TOOL_ID},
+                {"node_id": "one", "capability_id": ECHO_TOOL_ID},
+                {"node_id": "two", "capability_id": SECOND_TOOL_ID},
             ],
             "edges": [
                 {"from_node": "one", "to_node": "two"},
@@ -185,8 +203,8 @@ class LLMPlanningAcceptanceTests(unittest.IsolatedAsyncioTestCase):
         }
         oversized = {
             "nodes": [
-                {"node_id": "one", "capability": ECHO_TOOL_ID},
-                {"node_id": "two", "capability": SECOND_TOOL_ID},
+                {"node_id": "one", "capability_id": ECHO_TOOL_ID},
+                {"node_id": "two", "capability_id": SECOND_TOOL_ID},
             ],
             "edges": [],
             "outputs": {},

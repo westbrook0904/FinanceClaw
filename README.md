@@ -80,7 +80,7 @@ GenerateResult + Usage + Provider Identity + Trace / Events
 | `harness-planning` | Planner SPI/Registry、Static/Hybrid/LLM 策略、PlanTemplate/Materializer、PlanDraft 及可执行性校验 |
 | `harness-policy` | `PRE_ROUTE` / `PRE_PLAN` / `PRE_EXECUTE` 策略链与类型化路由约束 |
 | `harness-runtime` | Direct Invocation 与 Plan 共用的受控 Capability 调用边界 |
-| `harness-model` | 模型原生协议、ModelProvider SPI、ModelGateway 与确定性 Mock Models |
+| `harness-model` | 模型原生协议、strict structured output、两阶段 reservation、ModelGateway 与确定性 Mock Models |
 | `harness-execution` | DAG 调度、重试、取消、Checkpoint/Resume、Approval、Async completion 和结果组合 |
 | `harness-state` | `StateStore` SPI、内存快照与 SQLite JSON Snapshot 持久化 |
 | `harness-trace` | Request/Route/Planner/Model/Plan/Node/Provider Span 与瞬时事件 |
@@ -90,7 +90,7 @@ GenerateResult + Usage + Provider Identity + Trace / Events
 | `tests/stage2` | 第二阶段端到端、故障注入与跨进程恢复验收 |
 | `tests/stage3a` | Provider Fabric、WRITE safety、Provider Resume 与 ModelGateway 阻断验收 |
 | `tests/stage3b` | ExecutionMode、Rule/LLM Route、LLM Plan/Repair、Policy、Lifecycle 与回归 Gate |
-| `tests/stage3c` | Stage 3C 分步验收；当前覆盖 fresh Plan identity/materialization |
+| `tests/stage3c` | Stage 3C 分步验收；当前覆盖 Plan identity 与 Strict Structured Output Foundation |
 
 ## Direct Invocation
 
