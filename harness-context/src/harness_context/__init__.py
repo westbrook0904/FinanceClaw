@@ -11,6 +11,7 @@ from .prompt import ContextPrompt, PromptBuilder
 from .source import (
     CapabilityCatalogContextSource,
     ContextSource,
+    ObservationContextSource,
     RequestContextSource,
     StaticContextEntry,
     StaticContextSource,
@@ -27,6 +28,7 @@ __all__ = [
     "ContextPrompt",
     "ContextSource",
     "MemoryContextSource",
+    "ObservationContextSource",
     "PromptBuilder",
     "RequestContextSource",
     "StaticContextEntry",

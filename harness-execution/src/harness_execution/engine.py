@@ -6,12 +6,14 @@ import asyncio
 from collections.abc import Mapping
 from datetime import UTC, datetime
 
+from harness_agentic import ExplorationEngine
 from harness_contracts import (
     ApprovalDecision,
     ApprovalDecisionType,
     CapabilityError,
     ErrorCode,
     ExecutionPlan,
+    ExplorationError,
     HarnessTimeoutError,
     InvocationContext,
     JsonValue,
@@ -19,6 +21,7 @@ from harness_contracts import (
     PlanExecutionRecord,
     PlanExecutionState,
     PlanExecutionStatus,
+    PlanNodeKind,
     PolicyError,
     Request,
     RequestError,
@@ -60,6 +63,7 @@ class ExecutionEngine:
         lifecycle: InvocationLifecycle,
         state_store: StateStore | None = None,
         event_publisher: EventPublisher | None = None,
+        exploration_engine: ExplorationEngine | None = None,
     ) -> None:
         if not isinstance(validator, PlanValidator):
             raise TypeError("validator must be PlanValidator")
@@ -79,6 +83,10 @@ class ExecutionEngine:
         effective_publisher = event_publisher or NoOpEventPublisher()
         if not isinstance(effective_publisher, EventPublisher):
             raise TypeError("event_publisher must implement EventPublisher")
+        if exploration_engine is not None and not isinstance(exploration_engine, ExplorationEngine):
+            raise TypeError("exploration_engine must be ExplorationEngine")
+        if exploration_engine is not None and not validator.exploration_available:
+            raise ValueError("exploration_engine requires an exploration-enabled validator")
 
         self._validator = validator
         self._scheduler = scheduler
@@ -87,6 +95,7 @@ class ExecutionEngine:
         self._lifecycle = lifecycle
         self._state_store = effective_state_store
         self._events = ExecutionEventEmitter(effective_publisher)
+        self._exploration_engine = exploration_engine
         self._resume = ResumeCoordinator(scheduler)
         self._approval = ApprovalCoordinator(scheduler)
         self._async_waiting = AsyncWaitingCoordinator(scheduler)
@@ -109,6 +118,10 @@ class ExecutionEngine:
     @property
     def event_publisher(self) -> EventPublisher:
         return self._events.publisher
+
+    @property
+    def exploration_engine(self) -> ExplorationEngine | None:
+        return self._exploration_engine
 
     async def execute(self, request: Request, plan: ExecutionPlan) -> ResultEnvelope:
         """创建并推进一个 Plan，直到最终状态或明确 WAITING。"""
@@ -243,6 +256,24 @@ class ExecutionEngine:
             )
             if pre_plan_result is not None:
                 result = pre_plan_result
+            elif self._is_exploration_plan(plan):
+                if self._exploration_engine is None:
+                    raise ExplorationError(
+                        "exploration execution is not configured",
+                        code=ErrorCode.EXPLORATION_MODE_NOT_AVAILABLE,
+                        details={"plan_id": plan.plan_id},
+                    )
+                outcome = await self._exploration_engine.run(
+                    request,
+                    plan,
+                    context,
+                    parent=plan_span,
+                    trace_enabled=trace_enabled,
+                    cancellation=signal,
+                    checkpoint=checkpoint,
+                )
+                self._states[plan.plan_id] = self._snapshot(outcome.state)
+                result = outcome.result
             else:
                 scheduler_span = self._start_scheduler_span(
                     plan,
@@ -303,7 +334,16 @@ class ExecutionEngine:
                     details={"plan_id": plan.plan_id, "cause_type": type(exc).__name__},
                 )
             result = ResultEnvelope.failure(error.to_detail())
+        except StateRecordExistsError:
+            error = RequestError(
+                "execution plan identity already exists",
+                code=ErrorCode.PLAN_EXECUTION_ID_CONFLICT,
+                details={"plan_id": plan.plan_id},
+            )
+            result = ResultEnvelope.failure(error.to_detail())
         except RequestError as exc:
+            result = ResultEnvelope.failure(exc.to_detail())
+        except ExplorationError as exc:
             result = ResultEnvelope.failure(exc.to_detail())
         except Exception as exc:
             error = CapabilityError(
@@ -681,20 +721,30 @@ class ExecutionEngine:
                 registered = True
 
             self._validator.validate(plan)
-            self._resume.validate(plan, state)
-            materialized_approvals, materialized_jobs = self._materialize_waiting(plan, state)
-            if materialized_approvals or materialized_jobs:
-                await checkpoint(state)
-            await self._emit_materialized_waiting(
-                plan,
-                state,
-                materialized_approvals,
-                materialized_jobs,
-                span=plan_span,
-                trace_id=trace_id,
-                recovered=True,
-            )
-            context = self._context_with_approval_grants(context, state)
+            is_exploration = self._is_exploration_plan(plan)
+            if is_exploration:
+                if self._exploration_engine is None:
+                    raise ExplorationError(
+                        "exploration execution is not configured",
+                        code=ErrorCode.EXPLORATION_MODE_NOT_AVAILABLE,
+                        details={"plan_id": plan.plan_id},
+                    )
+                self._exploration_engine.validate_checkpoint(plan, context, state)
+            if not is_exploration:
+                self._resume.validate(plan, state)
+                materialized_approvals, materialized_jobs = self._materialize_waiting(plan, state)
+                if materialized_approvals or materialized_jobs:
+                    await checkpoint(state)
+                await self._emit_materialized_waiting(
+                    plan,
+                    state,
+                    materialized_approvals,
+                    materialized_jobs,
+                    span=plan_span,
+                    trace_id=trace_id,
+                    recovered=True,
+                )
+                context = self._context_with_approval_grants(context, state)
 
             stored_result = (
                 self._stored_terminal_result(state)
@@ -703,6 +753,21 @@ class ExecutionEngine:
             )
             if stored_result is not None:
                 result = stored_result
+            elif is_exploration:
+                assert self._exploration_engine is not None
+                outcome = await self._exploration_engine.resume(
+                    request,
+                    plan,
+                    context,
+                    state,
+                    parent=plan_span,
+                    trace_enabled=trace_enabled,
+                    cancellation=signal,
+                    checkpoint=checkpoint,
+                )
+                state = self._snapshot(outcome.state)
+                self._states[plan.plan_id] = state
+                result = outcome.result
             elif (
                 state.status not in _TERMINAL_PLAN_STATUSES
                 and not signal.cancelled
@@ -788,6 +853,8 @@ class ExecutionEngine:
             result = ResultEnvelope.failure(error.to_detail())
         except RequestError as exc:
             result = ResultEnvelope.failure(exc.to_detail())
+        except ExplorationError as exc:
+            result = ResultEnvelope.failure(exc.to_detail())
         except Exception as exc:
             error = CapabilityError(
                 "execution plan resume failed",
@@ -822,6 +889,10 @@ class ExecutionEngine:
 
         state = self._states.get(plan_id)
         return self._snapshot(state) if state is not None else None
+
+    @staticmethod
+    def _is_exploration_plan(plan: ExecutionPlan) -> bool:
+        return any(node.kind is PlanNodeKind.EXPLORATION for node in plan.nodes)
 
     def _evaluate_pre_plan(
         self,

@@ -4,17 +4,25 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
+from harness_agentic import (
+    ExplorationEngine,
+    ExplorationPlanFactory,
+    ExplorationProfileMaterializer,
+    ScopedActionExecutor,
+)
 from harness_context import (
     CapabilityCatalogContextSource,
     ContextPipeline,
     ContextPolicy,
     MemoryContextSource,
+    ObservationContextSource,
     RequestContextSource,
 )
+from harness_contracts import ExplorationProfile
 from harness_events import EventPublisher, InMemoryEventBus
 from harness_execution import BasicScheduler, ExecutionEngine
 from harness_memory import MemoryGateway, MemoryPolicy, MemoryProvider
-from harness_model import ModelGateway
+from harness_model import ModelGateway, StructuredGenerationAdapter
 from harness_planning import (
     PlanIdentityFactory,
     PlanMaterializer,
@@ -75,6 +83,9 @@ def build_harness(
     router: Router | None = None,
     planners: Iterable[Planner] = (),
     default_planner_id: str | None = None,
+    exploration_profiles: Iterable[ExplorationProfile] = (),
+    default_explorer_id: str | None = None,
+    single_writer_guaranteed: bool = False,
     request_projector: RequestProjector | None = None,
     plugin_provider: LocalPluginProvider | None = None,
     entry_point_group: str | None = "financeclaw.plugins",
@@ -120,6 +131,30 @@ def build_harness(
         raise TypeError("router must implement Router")
     if request_projector is not None and not isinstance(request_projector, RequestProjector):
         raise TypeError("request_projector must implement RequestProjector")
+    if not isinstance(single_writer_guaranteed, bool):
+        raise TypeError("single_writer_guaranteed must be bool")
+    if isinstance(exploration_profiles, ExplorationProfile | str):
+        raise TypeError("exploration_profiles must be an iterable of ExplorationProfile")
+    configured_profiles = tuple(exploration_profiles)
+    if any(not isinstance(profile, ExplorationProfile) for profile in configured_profiles):
+        raise TypeError("exploration_profiles must contain ExplorationProfile values")
+    profile_ids = [profile.profile_id for profile in configured_profiles]
+    if len(profile_ids) != len(set(profile_ids)):
+        raise ValueError("exploration profile IDs must be unique")
+    if configured_profiles and not single_writer_guaranteed:
+        raise ValueError("exploration_profiles require explicit single_writer_guaranteed=True")
+    if default_explorer_id is not None and (
+        not isinstance(default_explorer_id, str) or not default_explorer_id.strip()
+    ):
+        raise TypeError("default_explorer_id must be a non-empty string when provided")
+    if default_explorer_id is not None and default_explorer_id not in profile_ids:
+        raise ValueError("default_explorer_id must reference a configured profile")
+    if len(configured_profiles) > 1 and default_explorer_id is None and router is None:
+        raise ValueError("multiple exploration profiles require default_explorer_id")
+    effective_default_explorer_id = default_explorer_id or (
+        configured_profiles[0].profile_id if len(configured_profiles) == 1 else None
+    )
+    exploration_available = bool(configured_profiles and single_writer_guaranteed)
     if (
         capability_catalog is not None
         and plan_validator is not None
@@ -157,7 +192,11 @@ def build_harness(
             raise ValueError("memory_namespaces must be allowed by memory_gateway")
 
     if context_pipeline is None:
-        context_sources = [RequestContextSource(), CapabilityCatalogContextSource()]
+        context_sources = [
+            RequestContextSource(),
+            CapabilityCatalogContextSource(),
+            ObservationContextSource(),
+        ]
         if effective_memory_gateway is not None:
             context_sources.append(
                 MemoryContextSource(
@@ -176,6 +215,12 @@ def build_harness(
             for source in context_pipeline.sources
         ):
             raise ValueError("custom context_pipeline must include the configured memory_gateway")
+        if exploration_available and not any(
+            isinstance(source, ObservationContextSource) for source in context_pipeline.sources
+        ):
+            raise ValueError(
+                "exploration-enabled custom context_pipeline must include ObservationContextSource"
+            )
     if effective_context_pipeline.policy.policy_engine is not effective_policy_engine:
         raise ValueError("context_pipeline and harness must use the same policy_engine")
     effective_tracer = tracer if tracer is not None else InMemoryTracer()
@@ -194,8 +239,13 @@ def build_harness(
             else RegistryCapabilityCatalog(effective_registry)
         )
     )
-    effective_plan_validator = (
-        plan_validator if plan_validator is not None else PlanValidator(effective_catalog)
+    if plan_validator is not None and (
+        plan_validator.exploration_available is not exploration_available
+    ):
+        raise ValueError("plan_validator.exploration_available must match exploration composition")
+    effective_plan_validator = plan_validator or PlanValidator(
+        effective_catalog,
+        exploration_available=exploration_available,
     )
     effective_state_store = state_store or InMemoryStateStore()
     effective_event_publisher = event_publisher or InMemoryEventBus()
@@ -204,11 +254,21 @@ def build_harness(
     planner_registry = PlannerRegistry(planners)
     if default_planner_id is not None:
         planner_registry.get(default_planner_id)
-    effective_router = router if router is not None else RuleRouter()
+    effective_router = (
+        router
+        if router is not None
+        else RuleRouter(
+            **(
+                {"explorer_id": effective_default_explorer_id}
+                if effective_default_explorer_id is not None
+                else {}
+            )
+        )
+    )
     effective_request_projector = (
         request_projector if request_projector is not None else SafeRequestProjector()
     )
-    route_decision_validator = RouteDecisionValidator()
+    route_decision_validator = RouteDecisionValidator(exploration_available=exploration_available)
     effective_provider = (
         plugin_provider
         if plugin_provider is not None
@@ -238,6 +298,43 @@ def build_harness(
         provider_execution=invoker.provider_execution,
         event_publisher=effective_event_publisher,
     )
+    exploration_profile_materializer = (
+        ExplorationProfileMaterializer(effective_catalog) if exploration_available else None
+    )
+    exploration_plan_factory = (
+        ExplorationPlanFactory(
+            exploration_profile_materializer,
+            validator=effective_plan_validator,
+        )
+        if exploration_profile_materializer is not None
+        else None
+    )
+    scoped_action_executor = (
+        ScopedActionExecutor(
+            effective_catalog,
+            invoker,
+            effective_tracer,
+            lifecycle,
+        )
+        if exploration_available
+        else None
+    )
+    exploration_engine = (
+        ExplorationEngine(
+            StructuredGenerationAdapter(model_gateway),
+            effective_context_pipeline,
+            effective_catalog,
+            scoped_action_executor,
+            effective_tracer,
+            lifecycle,
+            memory_available=any(
+                isinstance(source, MemoryContextSource)
+                for source in effective_context_pipeline.sources
+            ),
+        )
+        if scoped_action_executor is not None
+        else None
+    )
     scheduler = BasicScheduler(
         invoker,
         effective_tracer,
@@ -252,6 +349,7 @@ def build_harness(
         lifecycle,
         state_store=effective_state_store,
         event_publisher=effective_event_publisher,
+        exploration_engine=exploration_engine,
     )
     runtime = HarnessRuntime(
         effective_registry,
@@ -276,6 +374,8 @@ def build_harness(
         default_planner_id,
         planner_output_normalizer,
         plan_materializer,
+        {profile.profile_id: profile for profile in configured_profiles},
+        exploration_plan_factory,
     )
 
     return HarnessApplication(
@@ -308,6 +408,11 @@ def build_harness(
             planner_registry=planner_registry,
             planner_output_normalizer=planner_output_normalizer,
             plan_materializer=plan_materializer,
+            exploration_profile_materializer=exploration_profile_materializer,
+            exploration_plan_factory=exploration_plan_factory,
+            scoped_action_executor=scoped_action_executor,
+            exploration_engine=exploration_engine,
+            single_writer_guaranteed=single_writer_guaranteed,
         )
     )
 

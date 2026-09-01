@@ -132,6 +132,11 @@ PRE_PLAN 在 Scheduler 启动前运行；PRE_EXECUTE 由每次 Invoker 尝试执
 Plan Trace 包含 REQUEST → RUNTIME → PLAN → SCHEDULER/PLAN_NODE → Capability 子树；统一
 `handle()` 则在同一个 REQUEST → RUNTIME 下依次记录 PLANNER 与 PLAN 阶段。
 
+standalone EXPLORE 由 ExecutionEngine 识别单 `EXPLORATION` wrapper 后委托
+`ExplorationEngine`，不会进入 BasicScheduler。其 Trace 为 REQUEST → RUNTIME → PLAN →
+EXPLORATION → MODEL/ACTION → Capability；每个 Action proposal 与普通终态 Observation 都经过
+同一个 Plan StateStore checkpoint 回调。
+
 ExecutionEngine 同时发布 Plan/Node/Approval/Async/Checkpoint Execution Events。事件是
 best-effort 观察面，Publisher/Subscriber 失败不会覆盖 StateStore 中的执行事实。
 
@@ -141,9 +146,10 @@ best-effort 观察面，Publisher/Subscriber 失败不会覆盖 StateStore 中�
 server、轮询框架或外部 Event Broker。ModelProvider 由独立 ModelGateway 调用，不作为
 DAG Agent/Tool Node 直接执行。
 
-Agent Foundation F4a 只在公共 Plan/State Contract 中加入 typed `EXPLORATION` node 与 nested
-state。`PlanValidator` 的默认执行校验仍拒绝该 node，BasicScheduler 没有 Exploration 分支；
-`ExplorationEngine`、Action outbound 与 Observation-boundary resume 由 F4b 接入。
+Agent Foundation F4b 已把 typed `EXPLORATION` node 接到专用 ExplorationEngine；BasicScheduler
+仍没有 Exploration 分支。只有显式 exploration-enabled PlanValidator 才接受可执行 wrapper；恢复
+重验完整 nested checkpoint，只从 completed Observation 边界继续。HYBRID、PlanPatch、
+Approval/Async waiting 与多写者恢复仍未实现。
 
 ## 测试
 

@@ -33,14 +33,26 @@ type PlanShape = ExecutionPlan | PlanTemplate
 class PlanValidator:
     """在计划进入 Scheduler 前聚合并报告确定性的协议问题。"""
 
-    def __init__(self, catalog: CapabilityCatalog | None = None) -> None:
+    def __init__(
+        self,
+        catalog: CapabilityCatalog | None = None,
+        *,
+        exploration_available: bool = False,
+    ) -> None:
         if catalog is not None and not isinstance(catalog, CapabilityCatalog):
             raise TypeError("catalog must implement CapabilityCatalog")
+        if not isinstance(exploration_available, bool):
+            raise TypeError("exploration_available must be bool")
         self._catalog = catalog
+        self._exploration_available = exploration_available
 
     @property
     def catalog(self) -> CapabilityCatalog | None:
         return self._catalog
+
+    @property
+    def exploration_available(self) -> bool:
+        return self._exploration_available
 
     def validate(
         self,
@@ -451,11 +463,11 @@ class PlanValidator:
         exploration_nodes = tuple(node for node in nodes if node.kind is PlanNodeKind.EXPLORATION)
         if not exploration_nodes:
             return
-        if executable:
+        if executable and not self._exploration_available:
             issues.append(
                 _issue(
                     PlanValidationCode.EXPLORATION_NOT_AVAILABLE,
-                    "exploration execution is not enabled until Foundation F4b",
+                    "exploration execution is not enabled by the composition root",
                     field="nodes",
                 )
             )

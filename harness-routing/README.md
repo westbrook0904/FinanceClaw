@@ -20,12 +20,12 @@ ExecutionEngine 或 StateStore。
   可选范围发送给逻辑 Model Capability，只解析当前仍未知字段，再由 Harness 物化最终
   RouteDecision。
 - `RouteDecisionValidator`：在 Harness 分派前重新校验 schema、固定模式、Catalog、
-  Policy 约束、3B 模式可用性和显式 target 一致性。
+  Policy 约束、Composition Root 模式可用性和显式 target 一致性。
 
 ## RuleRouter 顺序
 
 ```text
-EXPLORE / HYBRID request（产生协议决策，Validator 在 3B fail-closed）
+EXPLORE / HYBRID request（EXPLORE 仅在 F4b 显式装配时可用；HYBRID fail-closed）
   ↓
 AUTO / FAST + explicit target → FAST
   ↓

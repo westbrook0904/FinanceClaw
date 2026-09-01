@@ -72,6 +72,7 @@ class RuleRouter(Router):
         self,
         *,
         router_id: str = "rule-router",
+        explorer_id: str = _STAGE3B_UNAVAILABLE_COMPONENT_ID,
         input_type_rules: Iterable[InputTypeRouteRule] = (),
         fallback: Router | None = None,
     ) -> None:
@@ -79,6 +80,10 @@ class RuleRouter(Router):
             raise TypeError("router_id must be a non-empty string")
         if fallback is not None and not isinstance(fallback, Router):
             raise TypeError("fallback must implement Router")
+        if not isinstance(explorer_id, str) or not explorer_id.strip():
+            raise TypeError("explorer_id must be a non-empty string")
+        if explorer_id != explorer_id.strip():
+            raise ValueError("explorer_id must not contain surrounding whitespace")
 
         rules = tuple(input_type_rules)
         if any(not isinstance(rule, InputTypeRouteRule) for rule in rules):
@@ -88,6 +93,7 @@ class RuleRouter(Router):
             raise ValueError("input_type_rules must not contain duplicate input types")
 
         self._router_id = router_id.strip()
+        self._explorer_id = explorer_id
         self._rules = {rule.input_type: rule for rule in rules}
         self._fallback = fallback
 
@@ -99,6 +105,10 @@ class RuleRouter(Router):
     def has_internal_fallback(self) -> bool:
         return self._fallback is not None
 
+    @property
+    def explorer_id(self) -> str:
+        return self._explorer_id
+
     async def route(self, context: RoutingContext) -> RouteDecision:
         if not isinstance(context, RoutingContext):
             raise TypeError("context must be RoutingContext")
@@ -109,7 +119,7 @@ class RuleRouter(Router):
                 mode=ExecutionMode.EXPLORE,
                 route_type=RouteType.EXPLORATION,
                 source=RouteSource.REQUEST,
-                explorer_id=_STAGE3B_UNAVAILABLE_COMPONENT_ID,
+                explorer_id=self._explorer_id,
                 confidence=1.0,
                 reason_code="REQUEST_MODE_EXPLORE",
             )
@@ -118,7 +128,7 @@ class RuleRouter(Router):
                 mode=ExecutionMode.HYBRID,
                 route_type=RouteType.HYBRID,
                 source=RouteSource.REQUEST,
-                explorer_id=_STAGE3B_UNAVAILABLE_COMPONENT_ID,
+                explorer_id=self._explorer_id,
                 confidence=1.0,
                 reason_code="REQUEST_MODE_HYBRID",
             )

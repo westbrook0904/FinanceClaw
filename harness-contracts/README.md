@@ -94,7 +94,8 @@ PlanExecutionState`，并校验三者的 `plan_id/revision` 一致性。
 当 Plan 含 `EXPLORATION` node 时，`PlanExecutionRecord` 还校验 map key、plan/node/exploration
 identity、ProfileSnapshot，以及 inner Exploration 与 outer Node/Plan 的 status、result 和
 `completed_at` 一致性。Profile/scope/action/result canonical hash 的重验位于
-`harness-agentic`；Execution loop 在 F4b 前保持不可用。
+`harness-agentic`；F4b Composition Root 开放时，ExecutionEngine 在恢复/返回 terminal result 前
+也会调用该完整性校验。
 
 `plan_id` 是一次 fresh execution lineage 的稳定身份，resume 保持不变；`revision` 是同一
 execution 内的 Plan 定义版本，fresh execution 从 1 开始。未来 Workflow 定义使用独立的

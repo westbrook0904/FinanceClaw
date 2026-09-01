@@ -13,11 +13,24 @@ from pydantic import ValidationError
 
 from .models import RoutingContext
 
-_STAGE3B_AVAILABLE_MODES = frozenset({ExecutionMode.FAST, ExecutionMode.PLAN})
+_BASE_AVAILABLE_MODES = frozenset({ExecutionMode.FAST, ExecutionMode.PLAN})
 
 
 class RouteDecisionValidator:
     """不信任 Router 实现，重新校验 schema、请求、Catalog 与 Policy 约束。"""
+
+    def __init__(self, *, exploration_available: bool = False) -> None:
+        if not isinstance(exploration_available, bool):
+            raise TypeError("exploration_available must be bool")
+        self._available_modes = (
+            _BASE_AVAILABLE_MODES | {ExecutionMode.EXPLORE}
+            if exploration_available
+            else _BASE_AVAILABLE_MODES
+        )
+
+    @property
+    def exploration_available(self) -> bool:
+        return ExecutionMode.EXPLORE in self._available_modes
 
     def validate(
         self,
@@ -62,9 +75,9 @@ class RouteDecisionValidator:
                 decision_mode=decision.mode.value,
             )
 
-        if decision.mode not in _STAGE3B_AVAILABLE_MODES:
+        if decision.mode not in self._available_modes:
             raise RoutingError(
-                "route mode is not available in Stage 3B",
+                "route mode is not available in this harness",
                 code=ErrorCode.ROUTE_MODE_NOT_AVAILABLE,
                 details={"decision_mode": decision.mode.value},
             )

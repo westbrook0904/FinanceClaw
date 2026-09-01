@@ -10,7 +10,9 @@ from harness_contracts import (
     ContextSnapshot,
     ContextUseRecord,
     ContractModel,
+    ErrorDetail,
     InvocationContext,
+    Observation,
 )
 from harness_contracts.base import FrozenJsonMapping
 
@@ -19,6 +21,7 @@ class ContextCollection(ContractModel):
     invocation: InvocationContext
     request_projection: FrozenJsonMapping
     capability_catalog: tuple[CapabilityDescriptor, ...]
+    observations: tuple[Observation, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -26,6 +29,7 @@ class ContextBundle:
     snapshot: ContextSnapshot
     projection: ContextProjection
     use_record: ContextUseRecord
+    issues: tuple[ErrorDetail, ...] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.snapshot, ContextSnapshot):
@@ -34,6 +38,8 @@ class ContextBundle:
             raise TypeError("projection must be ContextProjection")
         if not isinstance(self.use_record, ContextUseRecord):
             raise TypeError("use_record must be ContextUseRecord")
+        if any(not isinstance(issue, ErrorDetail) for issue in self.issues):
+            raise TypeError("issues must contain ErrorDetail values")
         if self.projection.snapshot_id != self.snapshot.snapshot_id:
             raise ValueError("projection snapshot_id must match snapshot")
         if self.use_record.snapshot_id != self.snapshot.snapshot_id:

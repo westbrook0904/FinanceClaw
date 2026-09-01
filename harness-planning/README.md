@@ -20,7 +20,8 @@ Capability，也不能访问 Provider 实例；Planner 输出统一交给 `PlanV
 - `PlannerOutputNormalizer`：把原生 `PlanTemplate` 或 legacy `ExecutionPlan` candidate 统一转换为
   模板，并丢弃 candidate identity 与 runtime metadata。
 - `PlanIdentityFactory` / `PlanMaterializer`：只在 fresh handle execution 信任边界分配新的
-  `plan_id`，并固定 `revision=1`。
+  `plan_id`，并固定 `revision=1`；`materialize_harness()` 为 Exploration 等 Harness-owned 模板
+  记录 `creator_id`，不伪装成 Planner 输出。
 - `LLMPlanner`：通过公共 `StructuredGenerationAdapter` 从统一 PLAN ContextProjection 自主
   生成 PlanDraft，
   由 Harness 分配计划身份并执行 planning guards 与 PlanValidator。
@@ -35,9 +36,10 @@ Capability，也不能访问 Provider 实例；Planner 输出统一交给 `PlanV
   `PlanValidationIssue`，适合 API/UI 展示。
 - `PlanValidationCode`：稳定的问题分类枚举。
 - `PlanValidationError.issues`：聚合后的结构化问题快照。
-- F4a standalone Exploration：`executable=False` 只接受单 `EXPLORATION` node、零 edge、唯一
-  `/output` 绑定的 Harness-owned wrapper；默认 `executable=True` 返回
-  `PLAN.EXPLORATION_NOT_AVAILABLE`，直到 F4b 接入专用执行器。
+- standalone Exploration：`executable=False` 只接受单 `EXPLORATION` node、零 edge、唯一
+  `/output` 绑定的 Harness-owned wrapper；`executable=True` 只有在
+  `exploration_available=True` 的 Validator 中接受，默认仍返回
+  `PLAN.EXPLORATION_NOT_AVAILABLE`。
 
 注入 `CapabilityCatalog` 后，默认还会校验 Capability 是否存在、Descriptor 是否与
 Node 类型兼容；`executable=False` 只进行结构校验。

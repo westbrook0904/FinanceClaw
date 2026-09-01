@@ -30,6 +30,7 @@ _RUNTIME_METADATA_KEYS = frozenset(
         "revision",
         "request_id",
         "planner_id",
+        "creator_id",
         "prompt_version",
         "provider_id",
         "plugin_id",
@@ -201,6 +202,52 @@ class PlanMaterializer:
         metadata.update(
             {
                 "planner_id": planner_id,
+                "request_id": invocation.request.request_id,
+            }
+        )
+        return ExecutionPlan(
+            plan_id=plan_id,
+            revision=1,
+            budget=template.budget,
+            failure_policy=template.failure_policy,
+            nodes=template.nodes,
+            edges=template.edges,
+            outputs=template.outputs,
+            metadata=metadata,
+        )
+
+    def materialize_harness(
+        self,
+        template: PlanTemplate,
+        invocation: InvocationContext,
+        *,
+        creator_id: str,
+        trusted_metadata: Mapping[str, object] | None = None,
+    ) -> ExecutionPlan:
+        """为 Harness-owned 模板分配 identity，不把其伪装成 Planner 输出。"""
+
+        if not isinstance(template, PlanTemplate):
+            raise TypeError("template must be PlanTemplate")
+        if not isinstance(invocation, InvocationContext):
+            raise TypeError("invocation must be InvocationContext")
+        if not isinstance(creator_id, str) or not creator_id.strip():
+            raise TypeError("creator_id must be a non-empty string")
+        if trusted_metadata is not None and not isinstance(trusted_metadata, Mapping):
+            raise TypeError("trusted_metadata must be a mapping")
+        try:
+            plan_id = self._identity_factory.new_plan_id()
+        except Exception as exc:
+            raise PlanningError(
+                "plan identity generation failed",
+                code=ErrorCode.PLAN_IDENTITY_GENERATION_FAILED,
+                details={"creator_id": creator_id, "cause_type": type(exc).__name__},
+            ) from exc
+        metadata = dict(template.metadata)
+        if trusted_metadata is not None:
+            metadata.update(trusted_metadata)
+        metadata.update(
+            {
+                "creator_id": creator_id,
                 "request_id": invocation.request.request_id,
             }
         )

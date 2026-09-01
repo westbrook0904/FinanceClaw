@@ -27,6 +27,8 @@ class SpanType(StrEnum):
     SCHEDULER = "scheduler"
     ROUTE = "route"
     PLANNER = "planner"
+    EXPLORATION = "exploration"
+    ACTION = "action"
 
 
 class SpanStatus(StrEnum):

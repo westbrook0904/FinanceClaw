@@ -6,6 +6,12 @@ import asyncio
 from dataclasses import dataclass
 from enum import StrEnum
 
+from harness_agentic import (
+    ExplorationEngine,
+    ExplorationPlanFactory,
+    ExplorationProfileMaterializer,
+    ScopedActionExecutor,
+)
 from harness_context import ContextPipeline
 from harness_contracts import (
     ApprovalDecision,
@@ -84,6 +90,11 @@ class HarnessComponents:
     planner_registry: PlannerRegistry
     planner_output_normalizer: PlannerOutputNormalizer
     plan_materializer: PlanMaterializer
+    exploration_profile_materializer: ExplorationProfileMaterializer | None
+    exploration_plan_factory: ExplorationPlanFactory | None
+    scoped_action_executor: ScopedActionExecutor | None
+    exploration_engine: ExplorationEngine | None
+    single_writer_guaranteed: bool
 
 
 class HarnessApplication:
@@ -199,6 +210,18 @@ class HarnessApplication:
     @property
     def plan_materializer(self) -> PlanMaterializer:
         return self._components.plan_materializer
+
+    @property
+    def exploration_engine(self) -> ExplorationEngine | None:
+        return self._components.exploration_engine
+
+    @property
+    def exploration_plan_factory(self) -> ExplorationPlanFactory | None:
+        return self._components.exploration_plan_factory
+
+    @property
+    def single_writer_guaranteed(self) -> bool:
+        return self._components.single_writer_guaranteed
 
     @property
     def loaded_plugins(self) -> tuple[LoadedPlugin, ...]:

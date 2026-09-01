@@ -23,6 +23,8 @@ build_harness()
 ├── PlannerOutputNormalizer / PlanMaterializer（fresh execution identity 唯一边界）
 ├── ModelGateway（共享 Registry / Selector / Coordinator / Tracer / Events）
 ├── PlanValidator
+├── 可选 ExplorationProfileMaterializer / ExplorationPlanFactory
+│   └── ExplorationEngine / ScopedActionExecutor（显式 single-writer 开关）
 ├── InMemoryStateStore
 ├── InMemoryEventBus
 ├── BasicScheduler
@@ -37,6 +39,11 @@ Registry、PolicyEngine/Policies、ContextPipeline、MemoryProvider/Gateway/Name
 PlanValidator、StateStore、EventPublisher、Router、Planners、Default Planner、
 PlanIdentityFactory、RequestProjector 或 LocalPluginProvider。
 
+standalone EXPLORE 必须同时配置 `exploration_profiles=(...)` 与
+`single_writer_guaranteed=True`。默认 RuleRouter 使用唯一 Profile（多个 Profile 需
+`default_explorer_id`）；未配置时 Route/Plan 可执行性继续 fail-closed。自定义 ContextPipeline 在
+开放 EXPLORE 时必须包含 `ObservationContextSource`。
+
 自定义组件必须共享一致边界，例如自定义 Catalog 与 PlanValidator.catalog 必须相同，
 自定义 ContextPipeline 与 Harness 必须使用同一个 PolicyEngine；
 自定义 MemoryGateway 也必须共享该 PolicyEngine，且自定义 ContextPipeline 必须包含同一 Gateway；
@@ -45,8 +52,8 @@ PlanIdentityFactory、RequestProjector 或 LocalPluginProvider。
 ## HarnessApplication API
 
 - `start()`：发现、初始化并注册插件。
-- `handle(request, mode=None)`：推荐的统一入口；完成 PRE_ROUTE、路由与 FAST Capability
-  调用或 PLAN 规划执行。
+- `handle(request, mode=None)`：推荐的统一入口；完成 PRE_ROUTE、路由与 FAST Capability、
+  PLAN 规划执行或显式装配的 standalone EXPLORE。
 - `invoke(request)`：Direct Invocation。
 - `model_gateway`：供现有 Router/Planner 与 Agent Foundation Minimal Explorer 使用的模型生成入口。
 - `context_pipeline`：Router/Planner 共用的 Context Engineering Pipeline。

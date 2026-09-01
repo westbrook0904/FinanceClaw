@@ -1,7 +1,7 @@
 # FinanceClaw Agent Foundation 一期实施说明书
 
 > **文档性质**：当前实施基线
-> **版本**：V1.1（Foundation F4a 完成状态）
+> **版本**：V1.2（Foundation F4b 完成状态）
 > **日期**：2026-09-01
 > **优先级**：低于已冻结的 Stage 1 / 2 / 3A / 3B 运行契约，高于旧 Stage 3C 高阶草案
 > **路线图**：`FinanceClaw-Agent-Foundation-一期路线图.md`
@@ -51,7 +51,7 @@ Routing correctness
 |---|---|---|
 | FAST | Router 确定一个 Capability，直接进入受治理调用链 | 已有基线，继续使用 |
 | PLAN | Planner 在执行前生成完整 DAG，ExecutionEngine 执行一次 | 已有基线，继续使用 |
-| EXPLORE | 外层是一个单 `EXPLORATION` 节点 Plan；节点内部每轮最多调用一个 Capability | 一期实现目标 |
+| EXPLORE | 外层是一个单 `EXPLORATION` 节点 Plan；节点内部每轮最多调用一个 Capability | F4b 已实现，需显式单写者配置 |
 | HYBRID | 稳定宏观 Plan 中嵌入探索节点 | 保留枚举，继续 fail-closed |
 
 ### 2.1 EXPLORE 的准确执行方式
@@ -866,6 +866,26 @@ outbound、Approval/Async 或 HYBRID。
 - completed-Observation resume；
 - outer/inner atomic terminal 与 unexpected ACCEPTED orphan tests；
 - Context / Memory / Action 全链路 Trace。
+
+**实施状态：已完成（2026-09-01）。** `build_harness()` 仅在配置至少一个可信
+`ExplorationProfile` 且显式声明 `single_writer_guaranteed=True` 时开放 EXPLORE；否则
+`RouteDecisionValidator` 和 `PlanValidator` 继续 fail-closed。RequestCoordinator 通过
+`ExplorationPlanFactory -> PlanMaterializer.materialize_harness()` 只创建一份 fresh 单节点 Plan，
+不调用 Planner，也不把 Harness-owned wrapper 记作 Planner 输出。
+
+`ExplorationEngine` 已实现 REQUIRED structured turn、每次模型 outbound 前 ContextUse/model-call
+checkpoint、有限 repair、基础预算与 repeated-action guard。`ScopedActionExecutor` 在 proposal
+checkpoint 前后重验可信 scope、类型、JSON Schema、`NONE/READ + NONE/INTERNAL + SYNC`，所有
+outbound 只经 `CapabilityInvoker`。普通 SUCCESS/PARTIAL/FAILED Action 与有界 Observation、
+`pending_action_id` 清理在同一 checkpoint 完成；Policy DENY/approval、取消和意外 ACCEPTED 均为
+终态，意外 ACCEPTED 保存原结果并标记 `orphaned`，返回
+`HARNESS.EXPLORATION.ASYNC_CONTRACT_VIOLATION`，不进入 WAITING/callback/retry。
+
+恢复会先重验 outer/inner、profile/scope/proposal/result hash 和计数，只从 completed Observation
+边界继续；`PROPOSED/RUNNING` action 稳定返回 `HARNESS.EXPLORATION.RESUME_UNSAFE`。EXPLORE
+Context 已包含 prior Observation，Memory-required profile 在缺少 Memory source 时模型调用为零；
+EXPLORATION/ACTION Span 仅记录 ID、hash、计数和状态，不复制 Prompt、输入或输出。HYBRID、
+PlanPatch、Approval waiting、Async waiting 和分布式 lease 仍未开放。
 
 ### Step F5 — Real-use Gate
 

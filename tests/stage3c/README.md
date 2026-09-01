@@ -62,4 +62,15 @@ Foundation F4a Minimal Explore Contracts 的 Gate 分布在 `harness-contracts/t
 - 默认 Plan 可执行性校验继续返回 `PLAN.EXPLORATION_NOT_AVAILABLE`，F4a 不产生模型或 Capability
   outbound。
 
+Foundation F4b Minimal Explore Loop 由 `test_minimal_explore.py` 与模块回归共同阻断：
+
+- 未配置 Profile 或未显式声明单写者保证时 EXPLORE fail-closed；
+- happy path 只创建一个 Plan，严格 turn 依次产生一个 Action、Observation 和 evidence-backed finish；
+- schema/scope/Policy 在 Tool outbound 前生效，Policy deny 和 memory-required 缺失均验证零 Tool/
+  Model outbound；
+- 声明 SYNC 的 Capability 返回 ACCEPTED 时 Action 保存原结果并 orphaned，Plan 不进入 WAITING；
+- completed Observation checkpoint 可继续，PROPOSED/RUNNING checkpoint 返回
+  `HARNESS.EXPLORATION.RESUME_UNSAFE` 且不重复调用 Tool；
+- Trace 含 EXPLORATION/ACTION Span，但不复制请求 Secret。
+
 测试只使用本地确定性 Provider、内存 StateStore，不访问网络。

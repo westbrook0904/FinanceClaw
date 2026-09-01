@@ -131,6 +131,63 @@ class CapabilityCatalogContextSource(ContextSource):
         return tuple(items)
 
 
+class ObservationContextSource(ContextSource):
+    """把已完成 Action 的有界 Observation 投影给后续 Explore turn。"""
+
+    @property
+    def source_name(self) -> str:
+        return "harness-context.observation"
+
+    def collect(
+        self,
+        collection: ContextCollection,
+        consumer: ContextConsumer,
+        *,
+        observed_at: datetime,
+    ) -> tuple[ContextItem, ...]:
+        if consumer is not ContextConsumer.EXPLORE:
+            return ()
+        items: list[ContextItem] = []
+        for observation in collection.observations:
+            content = {
+                "observation_id": observation.observation_id,
+                "action_id": observation.action_id,
+                "result_status": observation.result_status.value,
+                "bounded_summary": observation.model_dump(mode="json")["bounded_summary"],
+                "evidence_refs": list(observation.evidence_refs),
+                "result_hash": observation.result_hash,
+            }
+            source_version = canonical_hash(content)
+            items.append(
+                ContextItem(
+                    item_id=stable_item_id(
+                        source_kind=ContextSourceKind.OBSERVATION.value,
+                        source_id=observation.observation_id,
+                        source_version=source_version,
+                        kind="observation",
+                    ),
+                    kind="observation",
+                    content=content,
+                    source=ContextSourceRef(
+                        source_kind=ContextSourceKind.OBSERVATION,
+                        source_id=observation.observation_id,
+                    ),
+                    provenance=ContextProvenance(
+                        producer=self.source_name,
+                        evidence_refs=observation.evidence_refs,
+                    ),
+                    freshness=ContextFreshness(
+                        source_version=source_version,
+                        observed_at=observed_at,
+                    ),
+                    trust_tier=ContextTrustTier.DATA,
+                    sensitivity=ContextSensitivity.CONFIDENTIAL,
+                    created_at=observed_at,
+                )
+            )
+        return tuple(items)
+
+
 class StaticContextEntry(ContractModel):
     source_id: NonEmptyString
     content: NonEmptyString

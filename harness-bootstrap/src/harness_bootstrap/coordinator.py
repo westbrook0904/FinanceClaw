@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Mapping
 
+from harness_agentic import ExplorationPlanFactory
 from harness_context import ContextPipeline
 from harness_contracts import (
     CapabilityDescriptor,
@@ -12,12 +14,14 @@ from harness_contracts import (
     ContextUseRecord,
     ErrorCode,
     ExecutionMode,
+    ExplorationProfile,
     HarnessError,
     InvocationContext,
     JsonValue,
     PlanningError,
     PolicyError,
     Request,
+    RequestBinding,
     RequestError,
     ResultEnvelope,
     RouteDecision,
@@ -116,6 +120,8 @@ class RequestCoordinator:
         default_planner_id: str | None,
         planner_output_normalizer: PlannerOutputNormalizer | None = None,
         plan_materializer: PlanMaterializer | None = None,
+        exploration_profiles: Mapping[str, ExplorationProfile] | None = None,
+        exploration_plan_factory: ExplorationPlanFactory | None = None,
     ) -> None:
         if not isinstance(router, Router):
             raise TypeError("router must implement Router")
@@ -150,6 +156,21 @@ class RequestCoordinator:
             raise TypeError("planner_output_normalizer must be PlannerOutputNormalizer")
         if plan_materializer is not None and not isinstance(plan_materializer, PlanMaterializer):
             raise TypeError("plan_materializer must be PlanMaterializer")
+        configured_profiles = dict(exploration_profiles or {})
+        if any(
+            not isinstance(key, str)
+            or not key.strip()
+            or not isinstance(value, ExplorationProfile)
+            or key != value.profile_id
+            for key, value in configured_profiles.items()
+        ):
+            raise TypeError("exploration_profiles must map profile_id to ExplorationProfile")
+        if exploration_plan_factory is not None and not isinstance(
+            exploration_plan_factory, ExplorationPlanFactory
+        ):
+            raise TypeError("exploration_plan_factory must be ExplorationPlanFactory")
+        if configured_profiles and exploration_plan_factory is None:
+            raise ValueError("exploration profiles require an ExplorationPlanFactory")
         if lifecycle.tracer is not tracer:
             raise ValueError("lifecycle and coordinator must use the same tracer")
         if invoker.lifecycle is not lifecycle:
@@ -180,6 +201,8 @@ class RequestCoordinator:
         self._default_planner_id = default_planner_id
         self._planner_output_normalizer = planner_output_normalizer or PlannerOutputNormalizer()
         self._plan_materializer = plan_materializer or PlanMaterializer()
+        self._exploration_profiles = configured_profiles
+        self._exploration_plan_factory = exploration_plan_factory
 
     @property
     def router(self) -> Router:
@@ -240,6 +263,14 @@ class RequestCoordinator:
     @property
     def default_planner_id(self) -> str | None:
         return self._default_planner_id
+
+    @property
+    def exploration_profiles(self) -> dict[str, ExplorationProfile]:
+        return dict(self._exploration_profiles)
+
+    @property
+    def exploration_plan_factory(self) -> ExplorationPlanFactory | None:
+        return self._exploration_plan_factory
 
     async def handle(self, request: Request) -> ResultEnvelope:
         """用单一 Context、Deadline 与 REQUEST span 完成一次请求调度。"""
@@ -582,6 +613,23 @@ class RequestCoordinator:
             )
             return result, None
 
+        if decision.mode is ExecutionMode.EXPLORE and decision.explorer_id is not None:
+            result = await self._dispatch_explore(
+                request,
+                context,
+                decision,
+                routing_context=routing_context,
+                parent=parent,
+            )
+            return result, None
+
+        if decision.mode is not ExecutionMode.PLAN:
+            raise RoutingError(
+                "route mode is not implemented by this harness",
+                code=ErrorCode.ROUTE_MODE_NOT_AVAILABLE,
+                details={"decision_mode": decision.mode.value},
+            )
+
         planner = self._select_planner(routing_context)
         result = await self._dispatch_plan(
             request,
@@ -592,6 +640,57 @@ class RequestCoordinator:
             trace_enabled=trace_enabled,
         )
         return result, planner.planner_id
+
+    async def _dispatch_explore(
+        self,
+        request: Request,
+        context: InvocationContext,
+        decision: RouteDecision,
+        *,
+        routing_context: RoutingContext,
+        parent: Span | None,
+    ) -> ResultEnvelope:
+        profile = self._exploration_profiles.get(decision.explorer_id or "")
+        factory = self._exploration_plan_factory
+        if profile is None or factory is None:
+            raise RoutingError(
+                "route selected an unavailable exploration profile",
+                code=ErrorCode.ROUTE_MODE_NOT_AVAILABLE,
+                details={"explorer_id": decision.explorer_id},
+            )
+        allowed = routing_context.constraints.allowed_capability_ids
+        if allowed is not None:
+            effective_scope = profile.allowed_capability_ids.intersection(allowed)
+            if not effective_scope:
+                raise RoutingError(
+                    "exploration profile has no capability allowed by policy",
+                    code=ErrorCode.ROUTE_CAPABILITY_NOT_ALLOWED,
+                    details={"explorer_id": decision.explorer_id},
+                )
+            profile = profile.model_copy(
+                update={"allowed_capability_ids": frozenset(effective_scope)}
+            )
+        template = factory.create_template(
+            profile,
+            goal_bindings={"request": RequestBinding(pointer="/input")},
+        )
+        plan = self._plan_materializer.materialize_harness(
+            template,
+            context,
+            creator_id="harness-exploration",
+            trusted_metadata={
+                "execution_kind": "standalone_exploration",
+                "explorer_id": profile.profile_id,
+                "prompt_version": profile.prompt_version,
+            },
+        )
+        self._execution_engine.validator.validate(plan)
+        return await self._execution_engine.execute_with_context(
+            request,
+            plan,
+            context,
+            parent=parent,
+        )
 
     async def _dispatch_plan(
         self,

@@ -15,6 +15,8 @@ from harness_contracts import (
     ContextUseRecord,
     InvocationContext,
     JsonValue,
+    MemoryAccessError,
+    Observation,
 )
 
 from .assembler import ContextAssembler
@@ -99,33 +101,53 @@ class ContextPipeline:
         *,
         request_projection: Mapping[str, JsonValue],
         capability_catalog: tuple[CapabilityDescriptor, ...],
+        observations: tuple[Observation, ...] = (),
+        suppress_memory_errors: bool = False,
     ) -> ContextBundle:
         if not isinstance(invocation, InvocationContext):
             raise TypeError("invocation must be InvocationContext")
         if not isinstance(consumer, ContextConsumer):
             raise TypeError("consumer must be ContextConsumer")
         now = self._clock()
+        if not isinstance(suppress_memory_errors, bool):
+            raise TypeError("suppress_memory_errors must be bool")
         collection = ContextCollection(
             invocation=invocation,
             request_projection=dict(request_projection),
             capability_catalog=capability_catalog,
+            observations=observations,
         )
         candidates = []
+        source_issues = []
         for source in self._sources:
-            collected = source.collect(collection, consumer, observed_at=now)
-            if inspect.isawaitable(collected):
-                collected = await collected
+            try:
+                collected = source.collect(collection, consumer, observed_at=now)
+                if inspect.isawaitable(collected):
+                    collected = await collected
+            except MemoryAccessError as exc:
+                if not suppress_memory_errors:
+                    raise
+                source_issues.append(exc.to_detail())
+                continue
             if not isinstance(collected, tuple) or any(
                 not isinstance(item, ContextItem) for item in collected
             ):
                 raise TypeError("ContextSource.collect must return a tuple of ContextItem")
             candidates.extend(collected)
 
-        return self.materialize(
+        bundle = self.materialize(
             invocation,
             consumer,
             candidates,
             assembled_at=now,
+        )
+        if not source_issues:
+            return bundle
+        return ContextBundle(
+            snapshot=bundle.snapshot,
+            projection=bundle.projection,
+            use_record=bundle.use_record,
+            issues=tuple(source_issues),
         )
 
     def materialize(
