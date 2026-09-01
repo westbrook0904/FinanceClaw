@@ -9,6 +9,7 @@
 > **核心目标**：在不把执行权交给 Router 或模型的前提下，为 FinanceClaw 增加统一 `handle()` 入口、请求级 ExecutionMode、确定性与模型 Router、结构化 LLM Planner、有限 Plan Repair，并将合法计划继续交给 Stage 2 ExecutionEngine 执行。
 > **范围结论**：Stage 3B 实际开放 `AUTO / FAST / PLAN`；`EXPLORE / HYBRID` 只冻结协议并 fail-closed，执行能力留给 Stage 3C。Route / Plan Replay Eval 留给 Stage 3D。
 > **实施状态**：Step 1—11 已完成；Stage 1 / 2 / 3A / 3B 统一回归 Gate 已建立并通过。
+> **文档状态**：历史实施基线；当前优先级以 `FinanceClaw-Agent-Foundation-一期路线图.md` 为准
 
 ---
 

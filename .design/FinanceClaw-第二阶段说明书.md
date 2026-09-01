@@ -6,6 +6,7 @@
 > **日期**：2026-08-25
 > **前置基线**：第一阶段最小 Harness Runtime 已完成
 > **依据文档**：`.design/Harness-Agent_通用可插拔智能体平台架构设计_修订版.md`、`.design/第一阶段.md`
+> **文档状态**：历史实施基线；未来阶段顺序以 `FinanceClaw-Agent-Foundation-一期路线图.md` 为准
 
 ---
 
@@ -864,7 +865,8 @@ deadline_at
 max_concurrency
 ```
 
-`token_limit / cost_limit` 先冻结契约，等待 ModelProvider / Budget Engine 阶段真正 enforcement。
+`token_limit / cost_limit` 只冻结历史协议，当前不 enforcement，也不进入 Agent Foundation 一期；
+不能因为字段已存在就实现 token/cost Budget Engine。
 
 ---
 

@@ -1,8 +1,8 @@
 # Harness-Agent 通用可插拔智能体平台架构设计
 
 > **文档性质**：架构设计 / 技术方案  
-> **版本**：V1.2（Execution Mode / Agentic Orchestration 修订版）  
-> **日期**：2026-08-26  
+> **版本**：V1.3（Agent Foundation 优先修订版）
+> **日期**：2026-08-31
 > **定位**：以财经 Agent 为首个业务域实例，面向多领域复用的 Agent Harness 设计  
 > **前置版本**：V1.1 内容审阅修订版  
 > **阶段基线**：Stage 1 Minimal Harness + Stage 2 Reliable Plan Execution Engine
@@ -11,7 +11,8 @@
 
 ## 0. 本次修订结论
 
-V1.2 不推翻 V1.1 的核心方向，而是在已经完成可靠执行底座之后，补齐“模型决策能力如何进入 Harness”的架构边界。
+V1.3 保留长期目标架构，但调整实施顺序：先完成 Context Engineering、Memory 和最小单 Agent
+闭环并投入真实使用，再依据运行证据决定是否引入 HYBRID、PlanPatch 与其他高阶编排。
 
 新增或强化以下原则：
 
@@ -22,11 +23,11 @@ V1.2 不推翻 V1.1 的核心方向，而是在已经完成可靠执行底座之
    - Planner 决定“要做哪些步骤”；
    - Explorer 决定“在未知路径中下一步探索什么”；
    - Scheduler / CapabilityInvoker 始终掌握真正执行权。
-4. **Decision != Execution**：LLM 可以路由、规划、提出 Action 或 PlanPatch，但不能绕过 Validator / Policy / CapabilityInvoker 直接执行 Provider。
-5. **宏观计划 + 局部探索**：复杂生产任务优先使用 `HYBRID`，由可靠 ExecutionPlan 管主流程，在明确的 Explore Node 内使用 bounded ReAct。
-6. **受治理的动态扩展**：探索过程中需要新增工作时只能提交 `PlanPatchProposal`，经过 Validator + Policy 后形成新的 plan revision。
+4. **Decision != Execution**：LLM 可以路由、规划或提出一个 Action，但不能绕过 Validator / Policy / CapabilityInvoker 直接执行 Provider。
+5. **上下文与记忆先行**：模型决策前必须经过统一 Context Assembly / Projection；Memory 是受治理的上下文来源，不是执行状态。
+6. **高阶编排后置**：`HYBRID` 与 `PlanPatchProposal` 只保留长期设计方向，一期投入使用前不实现。
 7. **模型抽象先于智能编排**：LLM Router / LLM Planner / ExplorationEngine 依赖 `ModelProvider` 抽象，不直接绑定 OpenAI、Anthropic、Gemini 或其他厂商 SDK。
-8. **Stage 3 扩展为 Adaptive Multi-Provider & Agentic Orchestration**：先完成多 Provider 与 ModelProvider，再引入 Router / LLM Planner / Explore / Hybrid / Replay Eval。
+8. **Stage 3 先交付 Agent Foundation**：完成多 Provider、Router / Planner、Context、Memory 与最小 Explore，再进入真实业务试用。
 9. **不建立万能 MainAgent**：统一入口是 Harness Orchestrator，不是一个拥有无限工具权限和执行权的单一 LLM Agent。
 10. **不持久化模型隐藏思维链**：Trace / State 只记录结构化决策、Action、Observation 摘要和理由，不要求保存自由文本 Chain-of-Thought。
 
@@ -49,13 +50,13 @@ result = await app.handle(request)
 ```text
 Request Normalize
       ↓
-Context / Policy
+Context Assembly / Memory Slice / Policy
       ↓
 Intent Router
       ↓
 Execution Mode
       ↓
-FAST / PLAN / EXPLORE / HYBRID
+FAST / PLAN / standalone EXPLORE
       ↓
 Capability / ExecutionPlan / Exploration
       ↓
@@ -81,12 +82,12 @@ Trace / Events / Eval
 | 统一入口 | 对上提供稳定 API / SDK / Event 接口，并通过 `handle()` 自动选择执行模式。 |
 | 多执行模式 | 简单任务不强制 Agent 化，复杂任务支持计划式与探索式执行。 |
 | 可插拔 | Agent、Tool、Model、Memory、Connector、Policy、Router、Planner、Selector 可独立替换。 |
-| 可组合 | 一个请求可以形成静态 DAG、LLM Plan、局部 ReAct 或二者组合。 |
+| 可组合 | 一期支持静态 DAG、LLM Plan 或最小 standalone ReAct；二者组合待真实使用后评审。 |
 | 契约优先 | Router、Planner、Explorer、Selector 都返回结构化 Contract。 |
 | 低耦合 | Planner 面向 CapabilityCatalog，业务插件不依赖 Provider 实现。 |
 | 可治理 | Route、Plan、Action、Provider Selection、Write/Egress 均可被 Policy 检查。 |
 | 可观测 | Request → Route → Plan/Explore → Node → Provider → Model/Connector 形成统一 Trace。 |
-| 可恢复 | PLAN/HYBRID 继续复用 Stage 2 checkpoint / Resume；探索过程必须有显式可恢复边界。 |
+| 可恢复 | PLAN 继续复用 Stage 2 checkpoint / Resume；一期探索只从已完成 Observation 边界恢复。 |
 | 可评测 | Router、Planner、Provider Selector、Exploration 都有可回放的结构化决策记录。 |
 | 可演进 | 本地 Provider 可逐步迁移到 Worker / Remote Service，而不改变上层能力协议。 |
 
@@ -108,12 +109,12 @@ Trace / Events / Eval
 | 原则 | 含义 |
 |---|---|
 | **Core Minimal** | Core 只保留请求、路由、计划、探索控制、注册发现、调度、策略、状态、观测。 |
-| **Contract First** | RouteDecision、ExecutionPlan、ActionProposal、PlanPatchProposal 等先定义协议。 |
+| **Contract First** | RouteDecision、ExecutionPlan、ContextProjection、MemorySlice、ActionProposal 等先定义协议。 |
 | **Capability over Implementation** | Planner / Explorer 选择 capability，不选择业务实现类。 |
 | **Provider Replaceable** | 同一 capability 可以有多个 Provider，并由 Selector 决定实际实现。 |
 | **Deterministic First** | FAST > PLAN > EXPLORE；能确定完成的任务不升级为更自治模式。 |
 | **Decision != Execution** | 模型负责判断和提议；执行必须经过 Harness 执行边界。 |
-| **Bounded Agentic** | Explore 必须受 steps / calls / cost / deadline / scope / recursion 限制。 |
+| **Bounded Agentic** | 一期 Explore 受 steps / model calls / action calls / repeat / scope / recursion 限制。 |
 | **Plan as Reliability Boundary** | 可提前描述的复杂任务优先转成 ExecutionPlan，由 Stage 2 引擎可靠执行。 |
 | **Explore as Local Autonomy** | ReAct 主要用于无法预先完整规划的局部探索，不替代全局 Scheduler。 |
 | **Policy Everywhere** | Route、Plan、Provider Select、Action、Write、Egress 和 Patch 都可检查。 |
@@ -126,6 +127,9 @@ Trace / Events / Eval
 # 4. 总体架构
 
 ## 4.1 高层架构
+
+下图是长期目标态，不是一期 backlog。当前启用 FAST / PLAN；一期增加 standalone EXPLORE。
+HYBRID 与 PlanPatch 分支继续 fail-closed，必须通过投产后的新 ADR 才能启用。
 
 ```mermaid
 flowchart TB
@@ -185,7 +189,8 @@ Planner:
     不执行 Plan Node
 
 Explorer / ReAct Model:
-    可以提出 ActionProposal / PlanPatchProposal
+    一期可以提出 ActionProposal
+    PlanPatchProposal 只有投产后新 ADR 通过才可提出
     不直接调用 Provider
 
 Scheduler:
@@ -294,11 +299,14 @@ Model Decision
 
 适合根因分析、开放调查、复杂研究。
 
-EXPLORE 必须受预算约束，且 WRITE / EXTERNAL Action 仍需要 Policy / Approval。
+一期 EXPLORE 固定只允许 `side_effect ∈ {NONE, READ}`、`egress ∈ {NONE, INTERNAL}` 且同步终结。
+若 Policy 要求 Approval、Provider 返回 Async，或 Action 需要 WRITE / EXTERNAL egress，则按
+Foundation 契约 fail-closed / unsafe terminal；这些长生命周期分支投产后再评审。
 
-## 5.6 HYBRID
+## 5.6 HYBRID（后续高阶设计储备）
 
-推荐的复杂生产任务模式。
+一期不实现，也不预设为复杂生产任务的默认答案。只有真实使用证明 PLAN 与 standalone EXPLORE
+无法覆盖某类高价值任务时，才重新评估以下目标形态。
 
 ```text
 LLM Planner
@@ -325,7 +333,7 @@ Scheduler
 | FAST | Router | CapabilityInvoker | Invocation |
 | PLAN | ExecutionPlan | Scheduler + Invoker | Plan checkpoint |
 | EXPLORE | ExplorationEngine | ScopedActionExecutor + Invoker | Exploration checkpoint |
-| HYBRID | ExecutionPlan + local Explorer | Scheduler + ScopedActionExecutor | Plan + Explore checkpoint |
+| HYBRID（未启用） | ExecutionPlan + local Explorer | Scheduler + ScopedActionExecutor | 后续设计 |
 | AUTO | Router 选择上述模式 | 取决于最终模式 | 取决于最终模式 |
 
 ---
@@ -353,7 +361,7 @@ route
 │ FAST    → invoke direct capability   │
 │ PLAN    → planner → execute_plan     │
 │ EXPLORE → exploration engine         │
-│ HYBRID  → planner → hybrid execute   │
+│ HYBRID  → unavailable / fail-closed  │
 └──────────────────────────────────────┘
   ↓
 compose result
@@ -485,18 +493,20 @@ next step / finish / plan proposal
 
 ## 9.3 ExplorationBudget
 
-至少包含：
+一期只包含基础次数和范围限制：
 
 ```text
 max_steps
-max_tool_calls
 max_model_calls
-deadline_at
-cost_limit
-token_limit
-max_recursion_depth
+max_action_calls
+max_repeated_actions
+max_observations
 allowed_capabilities
 ```
+
+Request / Plan / Node 的既有 timeout/deadline 继续生效。token、cost 与独立 Exploration duration
+预算在真实调用计量和运营需求稳定后再设计。nested exploration 一期固定禁止，不为它增加可配置
+depth budget。
 
 ## 9.4 不保存隐藏思维链
 
@@ -544,7 +554,9 @@ Provider
 
 ---
 
-# 10. 动态计划扩展
+# 10. 动态计划扩展（后续高阶设计储备）
+
+本节不进入一期 backlog。只有真实任务证明主 Plan 必须在执行中扩展时，才通过新 ADR 启动。
 
 Explorer / Sub-Agent 不允许直接修改主 DAG。
 
@@ -699,9 +711,42 @@ Prompt / system instruction 属于 Router / Planner / Agent 配置，不进入 H
 
 ---
 
-# 14. Connector 与 Memory
+# 14. Context Engineering、Connector 与 Memory
 
-## 14.1 Connector
+## 14.1 Context Engineering
+
+必须区分四种状态：
+
+```text
+InvocationContext    → 身份、租户、trace、deadline 等执行元数据
+ExecutionState       → 当前执行真相
+ContextSnapshot      → 本轮允许模型看见的不可变输入
+MemorySlice          → 经检索和 Policy 裁剪的历史事实
+```
+
+统一 pipeline：
+
+```text
+trusted instructions / Request / Session / Memory / Catalog / Observations
+  ↓
+ContextSource
+  ↓
+ContextAssembler（规范化、去重、固定优先级；Policy 前仅 transient candidate）
+  ↓
+ContextPolicy（身份、租户、敏感级别、用途）
+  ↓
+ContextSnapshot materialization
+  ↓
+ContextProjector（Router / Planner / Explorer 最小视图）
+  ↓
+Prompt Builder
+```
+
+每个 item 必须带 source、provenance、freshness、sensitivity 与 trust tier。系统指令优先于用户
+输入；用户输入、Memory 和 Tool output 始终作为数据，不能升级为控制指令。一期使用条目数和
+字符数做确定性裁剪，不引入 token-aware 优化器。
+
+## 14.2 Connector
 
 Agent / Tool 面向 capability：
 
@@ -720,7 +765,7 @@ VectorDBClient
 内部 HTTP 地址
 ```
 
-## 14.2 Memory
+## 14.3 Memory
 
 必须继续与 StateStore 分离：
 
@@ -734,7 +779,9 @@ Conversation / Domain Memory
     → “系统过去知道什么”
 ```
 
-探索模式可以读取经 Policy 裁剪的 Memory Slice，但不能把 Memory 当执行真相来源。
+Router、Planner 和探索模式都只能读取经 Context pipeline 与 Policy 裁剪的 MemorySlice，不能
+直接访问 MemoryProvider，更不能把 Memory 当执行真相来源。第一版提供 namespace、provenance、
+TTL、显式 search/put/delete、InMemory 与 SQLite 实现；向量检索和自动 compact 延后。
 
 ---
 
@@ -769,6 +816,8 @@ Budget
 Tenant visibility
 Approval
 ```
+
+其中 PlanPatchProposal / PRE_PATCH 是投产后治理对象，不进入一期 Policy 实现清单。
 
 对于 EXPLORE：
 
@@ -855,6 +904,10 @@ Stage 3 默认不把 CapabilityInvoker 注入普通 AgentPlugin。
 
 # 18. 测试与评测
 
+一期只建立 deterministic golden cases、Context/Memory 隔离与泄漏测试、groundedness、
+Action 合法率和真实失败分类。以下完整 Router / Planner / Explorer / Selector 对比指标在真实
+轨迹积累后逐步启用，不阻塞 Agent Foundation 投产。
+
 ## 18.1 Router Eval
 
 ```text
@@ -910,8 +963,10 @@ canary stability
 | Stage 2：Reliable Plan Execution | ExecutionPlan、DAG、StateStore、Retry、Cancel、Approval、Async、Resume、Events。 |
 | Stage 3A：Provider Fabric | Multi Provider、Selector、Health、Fallback、Canary、ModelProvider。 |
 | Stage 3B：Routing & Planning | `handle()`、ExecutionMode、Router、LLMRouter、LLMPlanner、HybridPlanner。 |
-| Stage 3C：Agentic Exploration | Bounded ReAct、ExplorationEngine、ScopedActionExecutor、PlanPatchProposal、HYBRID。 |
-| Stage 3D：Provider Expansion & Eval | ConnectorProvider、MemoryProvider、Selection/Route/Plan Replay Eval。 |
+| Agent Foundation F1：Routing Correctness | deterministic-first、模型只填写未知字段、统一 Structured Output。 |
+| Agent Foundation F2–F3：Context & Memory | Context pipeline、MemoryProvider/Gateway、SQLite 持久化。 |
+| Agent Foundation F4–F5：Minimal Explore & Real-use | standalone EXPLORE、串行单 Action、基础次数限制、真实业务试用。 |
+| Post-Foundation Advanced | 投产后按证据评审 HYBRID、PlanPatch、高阶预算、复杂恢复与 Replay。 |
 | Stage 4：Platformization | Remote Plugin、Worker、Catalog、Tenant Config、Quota、SecretProvider、Control Plane。 |
 | Stage 5：Ecosystem | SDK、插件认证、兼容矩阵、Marketplace。 |
 
@@ -930,7 +985,7 @@ canary stability
 9. Model SDK 不进入 Harness Core orchestration 代码。
 10. Memory 不替代 StateStore。
 11. Trace 不保存 Secret 或原始隐藏思维链。
-12. Explore 必须有预算、Scope 和 Deadline。
+12. Explore 必须有基础次数限制和 Scope；现有执行 timeout/deadline 继续生效。
 
 ---
 
@@ -947,9 +1002,9 @@ Stage 2:
 
 Stage 3:
 同一个 Capability 的多个实现能不能被可靠选择，
-并且模型能不能在不取得执行权的前提下可靠路由、规划和探索？
+并且模型能不能在正确 Context 与 Memory 支撑下，不取得执行权地可靠路由、规划和行动？
 ```
 
 最终目标不是构建一个万能 MainAgent，而是构建：
 
-> **一个能够在 FAST、PLAN、EXPLORE、HYBRID 间选择，并把 LLM 决策能力安全装配到可靠 Execution Platform 上的 Harness。**
+> **先构建一个具备可信上下文、受治理记忆和安全行动闭环的 Agent Harness；再用真实运行证据决定是否需要更复杂的编排模式。**

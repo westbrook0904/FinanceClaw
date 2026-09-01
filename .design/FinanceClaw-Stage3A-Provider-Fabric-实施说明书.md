@@ -6,6 +6,7 @@
 > **上位设计**：Stage 3 — Adaptive Multi-Provider & Agentic Orchestration  
 > **核心目标**：在不破坏 Stage 1 / Stage 2 行为和恢复安全性的前提下，让同一个 Capability 支持多个 Provider，并完成可靠选择、Retry / Fallback、Minimal Health、Provider Observability、ModelProvider 和可恢复 Provider 状态。
 > **实施状态（2026-08-27）**：Step 1–9 已完成；Stage 3A Acceptance 为 256 tests + 10 subtests 通过。Step 7 经项目决策缩减为 Provider Observability + Minimal Health，Provider Pin 外部入口、Weighted Canary 和 Passive Health 暂缓。
+> **文档状态**：历史实施基线；后续 Agent 能力优先级以 `FinanceClaw-Agent-Foundation-一期路线图.md` 为准
 
 ---
 

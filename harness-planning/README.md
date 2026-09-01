@@ -122,7 +122,7 @@ generation 仍由 ModelGateway 创建独立 MODEL span，不为 attempt 增加�
 LLMPlanner-v2 收口。RequestCoordinator
 负责服务端 Planner 选择、唯一 fresh identity 物化和执行前再次验证；
 WAITING / resume 使用 ExecutionEngine 已持久化的 Plan，不重新调用 Planner。运行时 Plan Patch
-属于后续步骤。
+属于一期真实使用后的高阶设计储备，不是当前后续步骤。
 
 ## 测试
 

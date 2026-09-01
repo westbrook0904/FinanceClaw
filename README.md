@@ -6,10 +6,13 @@ Selection、Retry/Fallback、Provider-safe Checkpoint/Resume、ModelGateway，�
 `handle()` AUTO / FAST / PLAN 路径；阶段一 Direct Invocation API 和阶段二低层 Plan API
 继续保持兼容。
 
-Stage 3C Agentic Exploration 的实施设计已经冻结，Step 1 Plan Identity / Materialization
-收口已经实现；后续 Exploration 步骤尚未实施，当前 `EXPLORE` / `HYBRID` 仍按 Stage 3B
-语义 fail-closed。详细设计见
-`.design/FinanceClaw-Stage3C-Agentic-Exploration-实施说明书.md`。
+Stage 3C 的 Plan Identity 与 Strict Structured Output 两个基础步骤已经实现。当前路线已调整为
+Agent Foundation 优先：先完成 Context Engineering、Memory 与最小 standalone EXPLORE，并在
+真实业务中验证；`HYBRID`、PlanPatch 和高阶资源预算延后。当前 `EXPLORE` / `HYBRID` 仍按
+Stage 3B 语义 fail-closed。当前优先级见
+`.design/FinanceClaw-Agent-Foundation-一期路线图.md`，当前 Context、Memory 与 Minimal Explore
+契约见 `.design/FinanceClaw-Agent-Foundation-一期实施说明书.md`。旧 Stage 3C 完整编排文档已
+整体降级为高阶设计储备。
 
 财经能力仍然只是插件；Harness Core 不包含财经类型、Prompt、SQL、行情访问或其他具体
 业务实现。
@@ -58,7 +61,7 @@ Deadline 和 REQUEST Trace。
 模型调用使用独立边界，不经过 `CapabilityInvoker`：
 
 ```text
-Router / Planner（Stage 3B；Explorer 在 Stage 3C 实施）
+Router / Planner（已实现；Explorer 按 Agent Foundation 实施）
         ↓
 ModelGateway
         ↓
@@ -90,7 +93,7 @@ GenerateResult + Usage + Provider Identity + Trace / Events
 | `tests/stage2` | 第二阶段端到端、故障注入与跨进程恢复验收 |
 | `tests/stage3a` | Provider Fabric、WRITE safety、Provider Resume 与 ModelGateway 阻断验收 |
 | `tests/stage3b` | ExecutionMode、Rule/LLM Route、LLM Plan/Repair、Policy、Lifecycle 与回归 Gate |
-| `tests/stage3c` | Stage 3C 分步验收；当前覆盖 Plan identity 与 Strict Structured Output Foundation |
+| `tests/stage3c` | Agent Foundation 前置验收；当前覆盖 Plan identity 与 Strict Structured Output |
 
 ## Direct Invocation
 
@@ -163,7 +166,7 @@ Planner 输出视为 candidate，经 `PlannerOutputNormalizer -> PlanMaterialize
 
 ## 测试
 
-完整 Stage 1 / 2 / 3A / 3B 与 Stage 3C 当前步骤回归（模块测试、插件测试和仓库级验收）：
+完整 Stage 1 / 2 / 3A / 3B 与 Agent Foundation 当前前置步骤回归（模块测试、插件测试和仓库级验收）：
 
 ```bash
 .venv/bin/python -m pytest \
@@ -212,8 +215,8 @@ Planner 输出视为 candidate，经 `PlannerOutputNormalizer -> PlanMaterialize
   ExecutionEngine 二次验证后执行。
   WAITING / crash resume 复用持久化 Plan，不重新路由或规划。动态 Plan Patch、远程插件、
   MCP、分布式 Scheduler/锁和外部 Event Broker 尚未实现。
-- `EXPLORE` / `HYBRID` 已冻结为协议值，但在 Stage 3B 明确 fail-closed；实际探索执行属于
-  Stage 3C。完整 Route/Plan Replay Eval 属于 Stage 3D。
+- `EXPLORE` / `HYBRID` 已冻结为协议值并继续 fail-closed；一期只实现最小 standalone
+  `EXPLORE`。`HYBRID`、PlanPatch 与完整 Replay Eval 均需在一期真实使用后重新评审。
 - Route / Planner 已接入同一 handle trace：ROUTE 包含安全的 RequestSummary/Catalog hash，
   PLANNER 记录 attempt 与验证摘要，repair 使用瞬时 Event 表示；观察面不保存完整输入、Prompt、
   模型响应、Provider 原始错误消息或隐藏推理。

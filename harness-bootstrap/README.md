@@ -44,7 +44,7 @@ PlanIdentityFactory、RequestProjector 或 LocalPluginProvider。
 - `handle(request, mode=None)`：推荐的统一入口；完成 PRE_ROUTE、路由与 FAST Capability
   调用或 PLAN 规划执行。
 - `invoke(request)`：Direct Invocation。
-- `model_gateway`：供未来 Router/Planner/Explorer 使用的模型生成入口。
+- `model_gateway`：供现有 Router/Planner 与 Agent Foundation Minimal Explorer 使用的模型生成入口。
 - `execute_plan(request, plan)`：advanced API；验证并执行带具体 identity 的 Plan，绕过 fresh
   materialization，重复 `plan_id` 明确冲突。
 - `resume_plan(plan_id)`：从 StateStore 恢复并继续相同 Plan。

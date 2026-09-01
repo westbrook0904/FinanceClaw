@@ -1,14 +1,27 @@
-# FinanceClaw Stage 3C 实施说明书
+# FinanceClaw Stage 3C Agentic Exploration 高阶设计储备（历史草案）
 
-> **文档性质**：Stage 3C 编码实施基线 / Architecture Decision Baseline
-> **阶段名称**：Stage 3C — Governed Agentic Exploration
-> **版本**：V1.0（设计冻结；Step 1–2 已实施）
-> **日期**：2026-08-29
+> **文档性质**：历史设计草案 / Future Design Reference，**不是当前实施基线**
+> **原阶段名称**：Stage 3C — Agentic Exploration & Hybrid Orchestration
+> **版本**：V1.2（归档标记；Step 1–2 的已实施事实保留）
+> **日期**：2026-08-31
 > **前置基线**：Stage 3A Provider Fabric + Stage 3B Routing & Planning
 > **依据文档**：FinanceClaw 第三阶段设计说明书、Stage 3A 实施说明书、Stage 3B 实施说明书
-> **阶段边界**：本说明书只覆盖 3C；Connector / Memory / Replay Eval 仍属于 3D，Workflow Catalog 仍属于 Stage 4
+> **当前路线图**：`.design/FinanceClaw-Agent-Foundation-一期路线图.md`
+> **当前实施说明书**：`.design/FinanceClaw-Agent-Foundation-一期实施说明书.md`
+> **阶段边界**：本文整体降级为设计参考；一期不得从本文直接提取开发任务
 
 ---
+
+> **适用性说明**：本文件曾按完整 Agentic Orchestration 编写，因此正文保留了大量 HYBRID、
+> PlanPatch、Approval/Async、跨进程恢复和复杂 CAS 设计。正文中的“必须”“完成标准”和 Commit
+> 拆分均描述旧方案，不代表当前 backlog。Strict Output、Context、Memory 与最小 Explore 的有效
+> 契约已经收敛到一期实施说明书；未来只有在真实使用证据和新 ADR 通过后，才回到本文选取设计。
+
+> **规范性优先级**：本文件没有当前实施的规范性章节。正文中 Foundation 摘要仅用于解释方案
+> 演变，所有 CAS、Approval/Async、HYBRID、PlanPatch、复杂恢复及其验收语句均为 conditional
+> future design，即使仍使用“必须”措辞也不适用于一期。任何冲突一律以
+> `FinanceClaw-Agent-Foundation-一期路线图.md`、
+> `FinanceClaw-Agent-Foundation-一期实施说明书.md` 和当前 ADR 摘要为准。
 
 ## 1. 3C 要解决什么
 
@@ -40,9 +53,8 @@ Stage 3C 要解决的是：
 
 ~~~text
 当任务无法在路由时一次性确定完整执行步骤，
-如何允许模型逐步观察、提出下一步动作、必要时扩展计划，
-同时仍然保持 Scope、Policy、Budget、Checkpoint、Resume、
-Provider Safety 和副作用一致性。
+如何让单 Agent 在可信 Context 和 Memory 支撑下逐步观察并提出一个下一步动作，
+同时仍然保持 Scope、Policy、基础次数限制和 Provider Safety。
 ~~~
 
 Stage 3C 不是给模型一组 Tool 然后让它自由循环。
@@ -70,20 +82,19 @@ Model proposes again
 ### 1.1 3C 完成后的核心能力
 
 ~~~text
-EXPLORE / HYBRID 实际可执行
+standalone EXPLORE 实际可执行
 Harness-owned ExplorationEngine
 Bounded structured exploration loop
 ActionProposal / Observation
 ScopedActionExecutor
 Checkpoint-before-dispatch
-Approval / Async WAITING / Restart
 Explicit EXPLORATION Plan node
-Append-only PlanPatchProposal
-Plan revision CAS checkpoint
 Deterministic-first RoutingPipeline
 Model-only-unknown-fields protocol
 Strict structured output contract
 Fresh plan identity materialization
+Context projection + governed Memory slice
+真实业务试用 Gate
 ~~~
 
 ### 1.2 3C 的实施优先级
@@ -91,17 +102,17 @@ Fresh plan identity materialization
 优先级必须是：
 
 ~~~text
+Context / Memory correctness
+    ↓
 Boundedness
     ↓
 Checkpoint before Action
     ↓
 Scope / Policy
     ↓
-WRITE / Provider Resume Safety
+Minimal real-use loop
     ↓
-Patch Atomicity
-    ↓
-Model Flexibility
+Advanced orchestration only after evidence
 ~~~
 
 不能为了让 Demo 看起来更“自主”，牺牲恢复一致性或治理边界。
@@ -118,22 +129,19 @@ Model Flexibility
    - LLMRouter 不再让模型回显 mode / route_type / source；
    - requested_mode / effective_mode 不进入模型 Prompt；
    - ModelGateway 增加严格 Structured Output 契约与完整本地校验；
-   - Coordinator 对 FAST / PLAN / EXPLORE / HYBRID 做穷举分派。
-2. 新增 Harness-owned ExplorationEngine。
-3. 新增显式有限的 ExplorationProfile、Scope、Budget 与 Usage。
-4. 模型只输出结构化 ExplorationTurnDraft。
-5. Harness 物化 ActionProposal、action_id 与可信幂等键。
-6. 每个动作只能经 ScopedActionExecutor → CapabilityInvoker。
-7. 动作执行前必须 checkpoint proposal 与执行身份。
-8. EXPLORE 物化为真实的单 EXPLORATION 节点 ExecutionPlan。
-9. HYBRID 使用包含 EXPLORATION 节点的 ExecutionPlan。
-10. Exploration 子状态进入 PlanExecutionRecord，复用现有 StateStore 作为唯一执行真相。
-11. Approval、Async completion、Cancellation、Deadline、Crash/Resume 支持 action 粒度。
-12. 新增 PRE_PATCH Policy。
-13. 新增 append-only PlanPatchProposal、PlanPatchValidator、PlanPatchCoordinator。
-14. PlanPatch 保持 plan_id，不改变历史执行事实，只让 revision 单调加一。
-15. 内置 StateStore 提供 compare-and-save，用于 Patch 原子版本更新。
-16. 新增 Explore / Action / Patch Trace、Events 与 Stage 3C Acceptance Gate。
+   - Coordinator 对 FAST / PLAN / EXPLORE / HYBRID 做穷举分派，HYBRID 继续 fail-closed。
+2. 建立统一 Context Engineering pipeline，并让 Router / Planner / Explorer 消费最小投影。
+3. 建立 MemoryProvider / MemoryGateway、InMemory / SQLite 实现和受治理读写。
+4. 新增 Harness-owned ExplorationEngine。
+5. 新增显式有限的 ExplorationProfile、Scope、基础次数 Budget 与 Usage。
+6. 模型每轮只输出 `call_one_capability | finish` 结构化 Draft。
+7. Harness 物化 ActionProposal、action_id 与可信幂等键。
+8. 每个动作只能经 ScopedActionExecutor → CapabilityInvoker。
+9. 动作执行前必须 checkpoint proposal 与执行身份。
+10. EXPLORE 物化为真实的单 EXPLORATION 节点 ExecutionPlan。
+11. Exploration 子状态进入 PlanExecutionRecord，复用现有 StateStore 作为唯一执行真相。
+12. 一期只从 completed Observation 边界恢复；其他探索中间态 fail-closed。
+13. 新增 Context / Memory / Explore / Action 安全 Trace 与基础验收 Gate。
 
 ### 2.2 3C 前置收口不是对 3B 语义的推翻
 
@@ -171,8 +179,6 @@ StaticPlanner 可以原样返回一个 ExecutionPlan 模板
 ### 2.3 本阶段明确不实现
 
 ~~~text
-× ConnectorProvider
-× MemoryProvider
 × Selection / Route / Plan Replay 执行器
 × 真实 OpenAI / Anthropic / Gemini SDK 适配器的完整矩阵
 × WorkflowSPI / Workflow Catalog
@@ -189,11 +195,21 @@ StaticPlanner 可以原样返回一个 ExecutionPlan 模板
 × 分布式 Scheduler / Lock / Lease
 × Remote Plugin / Worker
 × 隐藏 Chain-of-Thought 持久化
+× Exploration 耗时、token、成本等高阶资源预算与准入
+× normalized cost rate、token upper bound 与跨 Provider 成本归一化
+× HYBRID mode 实际执行
+× PlanPatch / PRE_PATCH / 动态 Plan revision
+× Exploration 内 Approval / Async / WRITE 自动恢复
+× operation claim / lease takeover / multi-worker fencing
 ~~~
+
+3C 先建立次数限制、状态机、checkpoint 与 fencing 骨架。`ModelUsage` 可以作为结果遥测保留，
+但不参与 Exploration 预算、Provider eligibility 或 generation 成败判定。请求、Plan、Node 和
+Provider 既有 timeout/deadline 语义继续生效；本阶段不再叠加独立的 Exploration 时长预算。
 
 ### 2.4 与 3D / Stage 4 的边界
 
-3C 只记录未来评测需要的安全事实：
+一期只记录基础验证需要的安全事实：
 
 ~~~text
 route proposal kind
@@ -202,12 +218,12 @@ plan shape hash
 template hash
 action proposal hash
 observation hash
-patch hash
 outcome / error code
-token / call / latency counters
+call counters
+optional model usage telemetry
 ~~~
 
-3D 才实现：
+完整 Replay 与策略优化等真实轨迹积累后再实现：
 
 ~~~text
 DecisionRecord / EvalCase
@@ -545,11 +561,11 @@ build Observation
 
 模型输出中的任意 idempotency_key 字段必须被 Schema 拒绝。
 
-### 3.9 Budget 与 Usage 分离且 resume 不重置
+### 3.9 基础 Budget 与 Usage 分离且 resume 不重置
 
 ExplorationBudget 是不可放宽的上限。
 
-ExplorationUsage 是持久化、单调增长的实际消耗。
+ExplorationUsage 是持久化、单调增长的次数计数。
 
 至少强制：
 
@@ -557,8 +573,6 @@ ExplorationUsage 是持久化、单调增长的实际消耗。
 max_steps
 max_model_calls
 max_action_calls
-max_total_tokens
-deadline_at
 max_repeated_actions
 max_patch_count
 max_exploration_depth
@@ -573,14 +587,8 @@ max_exploration_depth = 1
 每个 Exploration 最多一个 in-flight Action
 ~~~
 
-如果配置 cost limit，而 Provider 不能提供规范化成本：
-
-~~~text
-fail closed
-HARNESS.EXPLORATION.BUDGET_ACCOUNTING_UNAVAILABLE
-~~~
-
-不能把未知成本按 0 处理。
+本阶段不在 Budget / Usage 中加入 duration、token 或 cost 字段。这些字段只有在真实运行数据、
+Provider 计量契约和运营需求稳定后，才以独立扩展重新设计，不能提前塞入基础状态机。
 
 ### 3.10 WAITING 必须定位到 action
 
@@ -624,7 +632,9 @@ CAPABILITY node 可以继续省略；EXPLORATION node 必须提供并匹配 acti
 pending ActionState，形成 Observation，再恢复 Exploration loop。仅靠“当前唯一 pending
 action”不能抵御上一轮迟到或重复的 callback。
 
-### 3.11 HYBRID 使用显式 EXPLORATION 节点
+### 3.11 HYBRID 使用显式 EXPLORATION 节点（后续高阶设计储备）
+
+本节不进入一期实现；`HYBRID` 继续 fail-closed。
 
 新增：
 
@@ -654,7 +664,7 @@ LLM PlanDraft 只能表达：
 需要一个 exploration node
 该节点的 goal bindings
 请求的 capability subset
-建议的较小 budget
+建议的较小次数 budget
 ~~~
 
 Harness / Policy 注入：
@@ -662,14 +672,16 @@ Harness / Policy 注入：
 ~~~text
 exploration_profile_id
 最终 scope
-最终 budget 上限
+最终次数 budget 上限
 exploration_id
 allow_patch
 ~~~
 
 现有 HybridPlanner 是“Planner fallback 组合”，不等于 ExecutionMode.HYBRID。
 
-### 3.12 PlanPatch v1 使用 append-only + CAS
+### 3.12 PlanPatch v1 使用 append-only + CAS（后续高阶设计储备）
+
+本节不进入一期实现。若投产证据证明需要动态修改主 Plan，必须通过新 ADR 重新启用。
 
 模型只输出 identity-free PlanPatchDraft。
 
@@ -703,7 +715,7 @@ modify historical NodeExecutionState
 modify provider history / result / approval history
 add MODEL-backed Capability or another EXPLORATION node
 add WRITE / external-egress Capability in Patch v1
-increase deadline / concurrency / token / cost ceiling
+increase concurrency / count ceilings
 expand capability scope without Policy
 ~~~
 
@@ -717,27 +729,22 @@ reserved_action_calls <= ExplorationBudget.max_action_calls - ExplorationUsage.a
 every added node retry_policy.max_attempts = 1
 finite max_provider_attempts_per_node from trusted Patch execution profile
 reserved_provider_attempts = capability_node_count * max_provider_attempts_per_node
-deadline_at <= persisted Exploration deadline
 ~~~
 
 CAS 把 Plan revision、Patch reservation 与 `ExplorationUsage.action_calls += reserved_action_calls`
 原子写入，额度预留后不返还；同时为每个新增节点写入 Harness-owned
 `patch_node_origins[node_id]`，绑定 patch_id / proposal_hash / descriptor security hash / source
-scope hash / ledger / absolute deadline。新 Scheduler 对 Patch-added node 强制共享
+scope hash / ledger。新 Scheduler 对 Patch-added node 强制共享
 `PlanPatchExecutionLedger`，每次 Provider outbound 前 CAS 同时递增总数与该 node 的
 consumed_provider_attempts，超限时禁止调用。
 
-Patch-added node admission 以及每次 Provider retry / fallback outbound 都必须重新检查
-`now < reservation.deadline_at`，并把实际 timeout 取 request / plan / node timeout 与该绝对
-deadline 的最小值；过期时 outbound=0。每次 dispatch 还要从 persisted accepted Patch 解析
-origin，并重验当前 Catalog descriptor 的 capability type、side-effect、egress 与 security hash
-仍满足 accept 时的 source scope 和 Patch v1 禁令。descriptor 漂移时 fail-closed，不能退回普通
-Plan node 路径。
+每次 dispatch 还要从 persisted accepted Patch 解析 origin，并重验当前 Catalog descriptor 的
+capability type、side-effect、egress 与 security hash 仍满足 accept 时的 source scope 和
+Patch v1 禁令。descriptor 漂移时 fail-closed，不能退回普通 Plan node 路径。请求、Plan、Node
+已有 timeout/deadline 继续由现有执行链路处理，不在 Patch ledger 中复制一套时间预算。
 
-Exploration 的 token/cost ceiling 在 3C 只计量 ModelGateway generation。Patch v1 因此
-禁止 MODEL Capability 与嵌套 EXPLORATION；对业务 Capability 内部不可见的费用不做
-“已精确计费”的虚假声明。通用 Plan token/cost ledger 属于后续预算扩展；
-3C v1 的硬边界是 action count、provider attempt count、node count 与 absolute deadline。
+Patch v1 禁止 MODEL Capability 与嵌套 EXPLORATION。3C v1 的新增硬边界只包含 action count、
+provider attempt count 与 node count；token、cost 和独立 Exploration duration 延后实现。
 
 PlanPatchValidator 对每个新 CAPABILITY node 重用 ActionValidator 的 capability type、
 persisted scope、side-effect、egress、input schema 与幂等性检查。即使同一 capability_id
@@ -809,7 +816,7 @@ template_hash
 plan_shape_hash
 provenance
 outcome
-cost / token / latency
+optional model usage telemetry
 policy / validation result
 ~~~
 
@@ -986,7 +993,7 @@ Proposal、状态、approval、base revision 与 expected state version。
 12. Exploration terminal + outer EXPLORATION Node terminal 同一 CAS checkpoint。
 
 模型调用本身没有业务副作用。若在尚未得到合法 Draft 前崩溃，可以重新 generation；
-但已预占的 model_calls / token reservation 不回退。一旦 Proposal 已 checkpoint，就不能重新
+但已增加的 model_calls 不回退。一旦 Proposal 已 checkpoint，就不能重新
 generation 替换该 Proposal。
 
 ---
@@ -1115,6 +1122,8 @@ class GenerateRequest(ContractModel):
 - Gateway 计算 schema_hash，观察面不保存完整 schema；
 - Provider adapter 可以把通用 schema 编译为厂商支持子集，但不能放宽语义；
 - 无法无损转换时 Provider 不 eligible。
+- Draft 2020-12 的合法 primitive-root schema 也必须支持；JSON output 不能被额外限制为仅
+  object / array。
 
 ### 6.4 ModelProviderFeatures
 
@@ -1125,8 +1134,6 @@ class ModelProviderFeatures(ContractModel):
     json_schema_strict: bool = False
     refusal_signal: bool = False
     usage_tokens: bool = True
-    normalized_cost: bool = False
-    cost_rate: NormalizedCostRate | None = None
 ~~~
 
 boolean feature 只表示大类能力，不足以证明具体 Schema 可无损编译。
@@ -1154,14 +1161,6 @@ class ModelProvider(Capability):
     ) -> GenerateResult:
         # legacy default 抛 STRUCTURED_OUTPUT_UNSUPPORTED，不得调用 generate() 降级
         ...
-
-    def bound_input_tokens(
-        self,
-        request: GenerateRequest,
-        prepared: PreparedStructuredOutput,
-    ) -> int | None:
-        # 必须是包含 message/schema/protocol overhead 的 sound upper bound
-        return None
 ~~~
 
 `PreparedStructuredOutput` 是 Gateway 内部的一次性 provider-specific 请求配置，至少包含
@@ -1179,30 +1178,26 @@ Gateway 为每个 eligible Provider 保存独立的 prepared mapping；ProviderE
 复用。prepared.provider_id / schema_hash 与 request structured_output 不匹配时，在网络
 调用前 fail-closed。BEST_EFFORT legacy 路径仍可调用现有 `generate()`。
 
-Exploration 的 hard budget 需要两阶段 Gateway，不能让 Explorer 先按自己猜测预留，
-然后再让 Gateway 重新选 Provider。新增 provider-neutral 持久化 Contract：
+为确保 checkpoint-before-outbound，两阶段 Gateway 先冻结可执行的 Provider attempt 槽位，
+再由 Explorer 持久化 reservation。新增 provider-neutral 持久化 Contract：
 
 ~~~python
 class ModelGenerationAttemptSlot(ContractModel):
     slot_id: NonEmptyString
     provider_id: NonEmptyString
     provider_registration_version: NonEmptyString
+    provider_incarnation: NonEmptyString
     provider_features_hash: NonEmptyString
     prepared_schema_hash: NonEmptyString
     provider_attempt: int
-    input_token_upper_bound: int
-    output_token_upper_bound: int
-    token_upper_bound: int
-    normalized_cost_upper_bound: NormalizedCost | None
 
 class ModelGenerationReservation(ContractModel):
     generation_id: NonEmptyString
     request_fingerprint: NonEmptyString
+    authorization_context_hash: NonEmptyString
     schema_hash: NonEmptyString
     registry_snapshot_hash: NonEmptyString
     slots: tuple[ModelGenerationAttemptSlot, ...]
-    total_token_upper_bound: int
-    total_cost_upper_bound: NormalizedCost | None
     reservation_hash: NonEmptyString
 
 class ModelReservationReceipt(ContractModel):
@@ -1226,18 +1221,21 @@ receipt = await exploration_checkpoint_sink.reserve_model_generation(
 result = await model_gateway.execute_prepared(prepared, receipt, context)
 ~~~
 
-`prepare_generation` 只做本地 Catalog/feature/schema/token/cost/attempt-slot 冻结，零网络调用。
+`prepare_generation` 只做本地 Catalog/feature/schema/attempt-slot 冻结，零网络调用。
 `reserve_model_generation` 在同一 CAS 中增加 model_calls、写入
 ExplorationModelAttemptState(RESERVED) 并返回绑定 generation_id / reservation_hash /
 state_version / scheduler_generation 的 `ModelReservationReceipt`。`execute_prepared` 没有匹配
 receipt 时禁止任何 outbound。
 
-Gateway 只能按 reservation.slots 的顺序、Provider registration version 与次数执行；
+`authorization_context_hash` 覆盖 trusted Request、IdentityContext、TenantContext 与
+plan/node/exploration ref；trace、cancellation snapshot 和可进一步收紧的 deadline 不进入 hash。
+Gateway 只能按 reservation.slots 的顺序、Provider registration version / process-local
+incarnation 与次数执行；
 不得因 Registry 变化动态加入新 Provider / retry。`execute_prepared` 在每个 slot 首次 outbound
 前还必须通过 ExplorationCheckpointSink 将该 slot 从 PREPARED CAS 为 STARTED，并取得绑定
 slot_id / owner epoch / scheduler generation 的短期执行票据；CAS 或票据校验失败时 outbound=0。
 Provider 返回后，完整 accounting 与 slot terminal 状态也要先 CAS，之后才可尝试下一个已预留
-slot。accounting 不完整时整个 generation 直接 ORPHANED，不允许 fallback。
+slot。usage accounting 只作为遥测事实，不参与 slot 准入或 generation 成败判定。
 
 这个 slot STARTED CAS 必须读取最新 record；如果 cancel、approval takeover、Patch handoff 或
 新的 scheduler generation 已先成功，旧 receipt 即失效，零 outbound。fallback slot 也重复同一
@@ -1247,54 +1245,32 @@ slot。accounting 不完整时整个 generation 直接 ORPHANED，不允许 fall
 `reprepare_generation`。进程恢复时，任何 RESERVED / RUNNING generation——无论某个 slot
 看起来仍是 PREPARED 还是已经 STARTED——都整体标为 ORPHANED，永久消耗 reservation；若剩余
 预算允许，Explorer 只能以新的 generation_id 重新执行 prepare → reserve → execute。这样即使
-Provider 已经 outbound / 计费但 accounting checkpoint 前崩溃，也不会重放同一 slot。
+Provider 已经 outbound 但 terminal checkpoint 前崩溃，也不会重放同一 slot。
 
 同一进程内的 retry / fallback 只允许消费 reservation 中尚未开始的下一个 slot，并且前一个
-slot 已有完整、持久化的 terminal accounting。Provider Registry、registration version、feature
-hash、schema hash 或计费率在 reserve 后变化时，当前 generation ORPHANED，不能替换 Provider。
-
-`bound_input_tokens` 必须给出包含完整 messages、schema 传输与 Provider 协议 overhead
-的可证明上界。可以使用受信 tokenizer，或使用经证明的保守 UTF-8 byte 上界；
-无法给出 sound finite bound 的 Provider 对 budgeted Exploration 不 eligible。Gateway 同时
-验证每个 slot.input_token_upper_bound 不超过 Profile 的 per-call 上限。
-
-每个 slot 的 normalized cost 上界必须在 prepare 阶段按同一 unit 直接冻结：
-
-~~~text
-slot.normalized_cost_upper_bound
-  = slot.input_token_upper_bound  * max_input_token_cost_per_token
-  + slot.output_token_upper_bound * max_output_token_cost_per_token
-  + finite request surcharge upper bound
-
-reservation.total_cost_upper_bound
-  = sum(slot.normalized_cost_upper_bound for every permitted slot)
-~~~
-
-存在 cost_limit 时，任一乘数、附加费或 unit 无法给出有限可信上界，该 Provider 对本次
-Exploration 不 eligible；禁止用 rate 对象本身求和或把未知费用当 0。
+slot 已有持久化的 terminal 状态。Provider Registry、registration version、feature hash 或
+schema hash 在 reserve 后变化时，当前 generation ORPHANED，不能替换 Provider。同 descriptor /
+features 的 Provider 实例热替换也必须因 incarnation 变化而在 outbound 前失败。
 
 Provider-neutral usage 不能让 `harness-contracts` 反向依赖 `harness-model`。
-3C 将 `ModelUsage`、`NormalizedCost`、`NormalizedCostRate` 与下列聚合计费 Contract
-下沉到 `harness-contracts`；`harness-model` 保留旧 import path 的 re-export：
+3C 将 `ModelUsage` 与下列聚合遥测 Contract 下沉到 `harness-contracts`；
+`harness-model` 保留旧 import path 的 re-export：
 
 ~~~python
 class ModelAttemptAccounting(ContractModel):
     # 单个 Provider adapter 返给 Gateway；provider_id / ordinal 由 Gateway 注入
     usage: ModelUsage | None
-    normalized_cost: NormalizedCost | None
     complete: bool
 
 class ModelProviderAttemptUsage(ContractModel):
     provider_id: NonEmptyString
     ordinal: int
     usage: ModelUsage | None
-    normalized_cost: NormalizedCost | None
     complete: bool
 
 class ModelGenerationAccounting(ContractModel):
-    attempts: tuple[ModelProviderAttemptUsage, ...]
+    attempts: tuple[ModelProviderAttemptUsage, ...]  # min_length=1
     aggregate_usage: ModelUsage
-    aggregate_cost: NormalizedCost | None
     complete: bool
 
 class GenerateResult(ContractModel):
@@ -1306,26 +1282,25 @@ class GenerateResult(ContractModel):
     accounting: ModelGenerationAccounting | None = None
 ~~~
 
-现有校验“FAILED 不能携带 success `usage`”保持；失败 Provider 已消耗的
-token/cost 使用独立 `attempt_accounting` 返回。SUCCESS 的 attempt_accounting.usage
+现有校验“FAILED 不能携带 success `usage`”保持；失败 Provider 已知的 token usage
+使用独立 `attempt_accounting` 返回。SUCCESS 的 attempt_accounting.usage
 必须与 legacy `usage` 相等。Provider adapter 不得构造 aggregate `accounting`；Gateway
 不得向最终 caller 暴露未验证的 raw attempt accounting。
 
-`cost_rate` 提供与 profile token ceiling 配合的单次最坏费用上界；
-`GenerateResult.accounting` 则汇总所有 retry / fallback Provider attempt 的实际 token
-和 cost。开启 token/cost budget 的 Exploration 要求 `accounting.complete=true`；任何一次
-attempt 无法计量时 fail-closed，不得把它当成 0。
+`GenerateResult.accounting` 汇总 retry / fallback Provider attempt 已知的 token usage；
+`complete=false` 只表示遥测不完整，不能阻断 generation，也不能把未知 usage 伪造为 0。
+`complete=true` 必须携带 usage；空 attempts 不是合法 generation accounting。
 
 ModelGateway 复用 ProviderExecutionCoordinator 时，必须在 `_invoke_selected` 收到每一个
 GenerateResult 后，先交给 Harness-owned `ModelAccountingAccumulator`，再转换为
 ResultEnvelope。成功和失败 attempt 都要记录，不得因 failure envelope 只保留
-ErrorDetail 而丢弃 token/cost。timeout / crash 的 attempt 保留预留额并标记
-`complete=false`。Gateway 同时对 attempt-started / completed 观察回调传递聚合事实。
+ErrorDetail 而丢弃已知 usage。timeout / crash 的 attempt 标记 `complete=false`。Gateway
+同时对 attempt-started / completed 观察回调传递聚合事实。
 它使用当前 selected provider_id 和单调 ordinal 包装 raw attempt_accounting，不信任
 Provider metadata 中自报的 identity。
 
-必测场景：第一个 Model Provider 已消耗 token 后失败，fallback Provider 成功；
-ModelGenerationAccounting 的 total_tokens / cost 必须同时包含两个 attempt。
+必测场景：第一个 Model Provider 返回失败但携带已知 usage，fallback Provider 成功；
+ModelGenerationAccounting 的 total_tokens 必须包含两个 attempt，且该遥测不参与预算门禁。
 
 Provider feature 是模型协议能力，不是业务 Capability 权限。
 
@@ -1402,13 +1377,11 @@ class ExplorationProfile(ContractModel):
     profile_id: NonEmptyString
     model_capability_id: NonEmptyString
     allowed_capability_ids: frozenset[NonEmptyString]
-    default_budget: ExplorationBudgetTemplate
+    default_budget: ExplorationBudget
     allow_write: bool = False
     allow_external_egress: bool = False
     allow_plan_patch: bool = False
     patch_limits: PatchExecutionLimits | None = None
-    max_input_tokens_per_model_call: int
-    max_output_tokens_per_model_call: int
     prompt_version: NonEmptyString
 
 class ExplorationPermissions(ContractModel):
@@ -1425,44 +1398,15 @@ class ExplorationPermissions(ContractModel):
 - profile 只含 capability IDs，不含 Provider / Plugin IDs；
 - Policy 只能进一步收紧 profile。
 - allow_plan_patch=false 时 patch_limits 必须为 None；true 时必须是有限正整数上限。
-
-`ExplorationProfile` 是可复用的 composition-time 定义，因此它不得携带绝对
-`deadline_at`。`ExplorationBudgetTemplate` 与 ExplorationBudget 维度相同，但使用
-`max_duration_ms` 表示相对时长。ExplorationPlanFactory / PlanMaterializer 在 fresh execution
-时取 `started_at + max_duration_ms`、Request deadline 与 Plan/Node deadline 的最早值，物化
-为持久化 `ExplorationBudget.deadline_at`。
+- profile 不包含 token、cost 或 duration 预算；模型调用参数仍由 ModelGateway 配置。
 
 ### 6.7 ExplorationBudget / Usage
 
 ~~~python
-class NormalizedCost(ContractModel):
-    unit: NonEmptyString
-    amount: float  # >= 0
-
-class NormalizedCostRate(ContractModel):
-    unit: NonEmptyString
-    max_input_token_cost: float  # >= 0
-    max_output_token_cost: float  # >= 0
-
 class ExplorationBudget(ContractModel):
     max_steps: int
     max_model_calls: int
     max_action_calls: int
-    max_total_tokens: int | None
-    cost_limit: NormalizedCost | None
-    deadline_at: datetime | None
-    max_repeated_actions: int
-    max_patch_count: int
-    max_exploration_depth: int
-    max_observations: int
-
-class ExplorationBudgetTemplate(ContractModel):
-    max_steps: int
-    max_model_calls: int
-    max_action_calls: int
-    max_total_tokens: int | None
-    cost_limit: NormalizedCost | None
-    max_duration_ms: int
     max_repeated_actions: int
     max_patch_count: int
     max_exploration_depth: int
@@ -1472,10 +1416,11 @@ class ExplorationUsage(MutableContractModel):
     steps: int
     model_calls: int
     action_calls: int
-    total_tokens: int
-    normalized_cost: NormalizedCost | None
     patch_count: int
 ~~~
+
+所有字段都是基础次数上限或单调计数。`ModelUsage` 不复制进 ExplorationUsage，也不参与
+BudgetGuard。请求、Plan、Node 和 Provider 的既有 timeout/deadline 由原执行层继续管理。
 
 为了让“Policy 只能收紧”可被实现和测试，新增可选维度的类型化约束：
 
@@ -1484,9 +1429,6 @@ class ExplorationBudgetCeiling(ContractModel):
     max_steps: int | None = None
     max_model_calls: int | None = None
     max_action_calls: int | None = None
-    max_total_tokens: int | None = None
-    cost_limit: NormalizedCost | None = None
-    deadline_at: datetime | None = None
     max_repeated_actions: int | None = None
     max_patch_count: int | None = None
     max_exploration_depth: int | None = None
@@ -1508,10 +1450,9 @@ PRE_ROUTE Policy：
 
 ~~~text
 allowed_capability_ids -> intersection
-numeric / token / cost ceilings -> minimum（cost unit 必须相同）
-deadline_at -> earliest
+numeric count ceilings -> minimum
 allow_* -> logical AND；None 表示不附加约束
-empty scope / incompatible cost unit -> fail closed
+empty scope -> fail closed
 ~~~
 
 standalone EXPLORE 在 ExplorationPlanFactory 中使用 PRE_ROUTE 结果；HYBRID 在
@@ -1532,46 +1473,21 @@ PRE_PLAN `REQUIRE_APPROVAL` 在 3C 继续保持 3B 语义：稳定失败
 Budget 合并：
 
 ~~~text
-Request deadline
-∩ Plan / Node timeout
-∩ ExplorationProfile default
+ExplorationProfile default
 ∩ PRE_ROUTE / PlanningConstraints
 ~~~
 
-所有维度只允许取更小上限。
+所有次数维度只允许取更小上限。Request / Plan / Node timeout 不复制进 ExplorationBudget。
 
 PRE_PATCH 只在具体 Patch 已存在后约束 Patch 新增工作；它不参与初始 Exploration 或普通
-Action 的 Budget 计算。Patch 新增节点的预算是持久化 Exploration 剩余额度与 PRE_PATCH
+Action 的 Budget 计算。Patch 新增节点的次数预算是持久化 Exploration 剩余额度与 PRE_PATCH
 约束的进一步交集。
-
-cost unit 由服务端配置的 Model accounting contract 冻结；不同 unit 不能直接相加或比较。
-Provider 无法提供相同 unit 的最坏计费上界与实际 usage 时，带 cost_limit 的探索必须
-fail-closed。
 
 每次逻辑 ModelGateway generation 必须先由 Gateway 生成唯一的
 `ModelGenerationReservation`。它冻结 eligible Provider 的 registration / feature / schema
-hash、严格有序的 retry / fallback slots，以及每个 slot 的 token / cost 上界；Explorer
-不得根据 Profile 自行重算一份平行的 attempt budget。
-
-~~~text
-reserved_tokens
-  = reservation.total_token_upper_bound
-
-reserved_cost
-  = reservation.total_cost_upper_bound
-
-where each slot.normalized_cost_upper_bound
-  = input_token_upper_bound  * max_input_token_cost_per_token
-  + output_token_upper_bound * max_output_token_cost_per_token
-  + finite request surcharge upper bound
-~~~
-
-因此预留额覆盖同一 logical generation 可能发生的所有 retry / fallback，不是只
-覆盖第一次 Provider call。所有 slot 的 cost 必须使用相同的 NormalizedCost unit，reservation
-总额是 slot 上界值的和，不是 `NormalizedCostRate` 对象的和。调用方不得把
-`GenerateRequest.max_output_tokens` 设置得更大；Gateway 不得执行不在 reservation 中的
-Provider 或额外 retry。
-任何数量 / 费率无法给出有限上界时，不允许进入网络调用。
+hash 与严格有序的 retry / fallback slots。一次 logical generation 在 reservation CAS 中只让
+`model_calls + 1`；Provider retry / fallback 不重复增加 model_calls。Gateway 不得执行 reservation
+之外的 Provider 或额外 retry。reservation 不包含 token、cost 或 duration 上界。
 
 ### 6.8 ExplorationTurnDraft
 
@@ -1691,7 +1607,7 @@ input matches CapabilityDescriptor.input_schema
 input depth / size / values bounded
 side-effect / egress allowed
 budget remaining
-deadline remaining
+existing execution deadline remaining
 repeated fingerprint threshold
 no recursive exploration
 no reserved control fields
@@ -1885,11 +1801,11 @@ Approval request/grant binding == current Proposal / Provider selection / Policy
 BoundApprovalState status / Grant consumption / plan-level pending index 一致
 claimed_operation 与 history operation_id 唯一，input hash / owner epoch / generation 可验证
 applied transition_id 唯一、fact hash 稳定、committed_state_version 严格递增且不超过 record version
-Model reservation/hash/total bounds/slot execution state 一致；非终态 restart 只能 ORPHANED
-Patch-added node 与 ACCEPTED Patch / origin / ledger / deadline 一一对应
+Model reservation/hash/slot execution state 一致；非终态 restart 只能 ORPHANED
+Patch-added node 与 ACCEPTED Patch / origin / ledger 一一对应
 terminal Exploration / outer node / Plan status 与 ResultEnvelope / error / completed_at 一致
 revision_history 从 1 开始、base/new 连续、hash 与当前 Plan 可重算
-usage / attempt reservations / state_version 单调不回退
+count usage / state_version 单调不回退
 ~~~
 
 ResumeCoordinator 新增显式 `PlanNodeKind.EXPLORATION` 分支，不得把 RUNNING
@@ -2044,7 +1960,7 @@ exploration_id / profile_id 由 Harness materialize。
 PLAN mode 默认不允许 EXPLORATION node；只有 HYBRID 或 Harness-owned standalone
 EXPLORE wrapper 可启用。
 
-### 6.16 PlanPatchProposal
+### 6.16 PlanPatchProposal（后续高阶设计储备）
 
 ~~~python
 class PlanPatchProposal(ContractModel):
@@ -2074,7 +1990,7 @@ source_exploration_id、物化后的 nodes/edges/outputs 与 evidence refs，显
 `patch_id` 和 `proposal_hash` 本身。顺序为先规范化 candidate 内容与计算 hash，
 再生成 patch_id 和最终 Proposal。Approval / Resume 重算必须得到同一 hash。
 
-### 6.17 PlanRevisionAudit
+### 6.17 PlanRevisionAudit（后续高阶设计储备）
 
 ~~~python
 class PlanRevisionAudit(ContractModel):
@@ -2091,7 +2007,7 @@ RevisionAudit 是 execution truth，必须进入 PlanExecutionRecord。
 
 Event 不是唯一审计来源。
 
-### 6.18 PlanPatchExecutionState
+### 6.18 PlanPatchExecutionState（后续高阶设计储备）
 
 ~~~python
 class PlanPatchBudgetReservation(ContractModel):
@@ -2100,7 +2016,6 @@ class PlanPatchBudgetReservation(ContractModel):
     max_provider_attempts_per_node: int
     provider_attempt_limits_by_node: dict[NonEmptyString, int]
     reserved_provider_attempts: int
-    deadline_at: datetime
 
 class PlanPatchExecutionLedger(MutableContractModel):
     consumed_provider_attempts: int = 0
@@ -2114,7 +2029,6 @@ class PatchNodeOrigin(ContractModel):
     capability_id: NonEmptyString | None
     capability_security_descriptor_hash: NonEmptyString | None
     source_scope_hash: NonEmptyString
-    deadline_at: datetime
 
 class PlanPatchExecutionState(MutableContractModel):
     patch_id: NonEmptyString
@@ -2160,10 +2074,10 @@ PlanExecutionState.patch_node_origins。普通 Planner 产生的节点不得拥�
 节点缺失、重复或指向非 ACCEPTED patch 的 origin 都是不可恢复的 checkpoint corruption。
 
 Scheduler admission、Invoker dispatch 与每个 retry / fallback outbound 都从 origin 解析同一个
-accepted Patch reservation / ledger，检查 absolute deadline，并重算当前 Catalog descriptor 的
-security hash。只有 descriptor 仍是 accept 时允许的 capability type、READ/无外部 egress、仍属于
-persisted source scope 且 hash 精确匹配时才可继续；变化时零 outbound fail-closed。每次 outbound
-的 ledger 递增使用 PlanCheckpointCoordinator CAS，不能只记进程内 counter。
+accepted Patch reservation / ledger，并重算当前 Catalog descriptor 的 security hash。只有
+descriptor 仍是 accept 时允许的 capability type、READ/无外部 egress、仍属于 persisted source
+scope 且 hash 精确匹配时才可继续；变化时零 outbound fail-closed。每次 outbound 的 ledger
+递增使用 PlanCheckpointCoordinator CAS，不能只记进程内 counter。
 
 ### 6.19 ExplorationModelAttemptState
 
@@ -2184,8 +2098,6 @@ class ExplorationModelAttemptState(MutableContractModel):
     reservation: ModelGenerationReservation
     reservation_hash: NonEmptyString
     registry_snapshot_hash: NonEmptyString
-    reserved_tokens: int
-    reserved_cost: NormalizedCost | None
     receipt_state_version: int
     receipt_scheduler_generation: int
     slots: list[ModelAttemptSlotExecutionState]
@@ -2193,48 +2105,31 @@ class ExplorationModelAttemptState(MutableContractModel):
     schema_hash: NonEmptyString
 ~~~
 
-`reservation_hash`、registry/schema hash、reserved_tokens / reserved_cost 是便于索引与审计的
-冗余字段，RecoveryValidator 必须验证它们分别等于 reservation 中的 canonical 值；不能成为第二
-份预算来源。slots 与 reservation.slots 按 slot_id 一一对应，顺序和数量不可漂移。
+`reservation_hash`、registry/schema hash 是便于索引与审计的冗余字段，RecoveryValidator 必须
+验证它们分别等于 reservation 中的 canonical 值。slots 与 reservation.slots 按 slot_id
+一一对应，顺序和数量不可漂移。
 
 逻辑 generation 的顺序严格是：
 
 1. Gateway 本地 `prepare_generation` 生成 reservation，零网络；
-2. BudgetGuard 用 reservation.total_* 检查剩余额度；
+2. BudgetGuard 检查 `model_calls < max_model_calls`；
 3. 同一 CAS 增加 model_calls、写入 generation=reserved 与全部 slot=prepared；
 4. 返回 ModelReservationReceipt；
 5. `execute_prepared` 在每个 Provider outbound 前再 CAS 对应 slot=started。
 
-成功后按所有 Provider attempts 的聚合 accounting reconcile；crash 后未完成 reservation 标为 orphaned，
-额度不返还。不能因为模型调用“没有业务副作用”而忽略真实 token / cost 副作用。
+成功后保存所有 Provider attempts 的聚合 usage 遥测；crash 后未完成 reservation 标为 orphaned，
+已经增加的 model_calls 不回退。
 
 跨进程恢复不执行 persisted RESERVED / RUNNING generation。恢复事务把 generation 及所有未终态
 slot 标为 ORPHANED；旧 owner 的回调因 scheduler_generation / owner_epoch / state_version 不匹配
 而被拒绝。只有新的 generation_id 可以再次调用模型。这个保守规则也适用于“已预留但尚未观察到
 slot STARTED”的 crash window，因为 opaque prepared object 与真实 outbound 状态都不在持久化边界。
 
-ExplorationUsage 中的 token/cost 只记已知实际值，保持单调。BudgetGuard 的
-实时占用额另按下式计算：
+COMPLETED / FAILED attempt 可以携带 usage 遥测；`accounting.complete=false` 不改变状态机判定。
+ORPHANED 仅表示 outbound/terminal checkpoint 状态无法安全确认，因此禁止重放同一 generation，
+不再承担 token 或成本预留语义。
 
-~~~text
-effective token charge
-  = ExplorationUsage.total_tokens
-  + sum(reserved_tokens for RESERVED, RUNNING or ORPHANED generations)
-
-effective cost charge
-  = ExplorationUsage.normalized_cost
-  + sum(reserved_cost for RESERVED, RUNNING or ORPHANED generations)
-~~~
-
-COMPLETED attempt 从 reservation 项移除，并把聚合实际值加入 Usage。
-FAILED 只允许表示 `accounting.complete=true` 的已知失败（包括 refusal / truncated /
-content filter / 后续 Draft validation failure）；它同样原子累加实际值并释放
-reservation。无法取得完整 accounting 的 timeout / crash / failed generation 必须转为
-ORPHANED，永久按预留额占用，不得使用 FAILED 让额度消失。若实际值超过
-预留上界，说明 Provider accounting contract 违约，
-Exploration fail-closed 且按更大值计费。
-
-### 6.20 PlanExecutionProfile
+### 6.20 PlanExecutionProfile（含高阶编排设计储备）
 
 PlanValidator 不能依赖可伪造 metadata 判断 EXPLORATION node 是否允许。
 
@@ -2242,12 +2137,10 @@ PlanExecutionRecord 新增 Harness-owned：
 
 ~~~python
 class PlanExecutionProfile(ContractModel):
-    origin: Literal["prebuilt", "planned", "explore_wrapper", "hybrid"]
+    origin: Literal["prebuilt", "planned", "explore_wrapper"]
     selected_mode: ExecutionMode
     allowed_node_kinds: frozenset[PlanNodeKind]
     allowed_exploration_profile_ids: frozenset[NonEmptyString]
-    patch_enabled: bool
-    checkpoint_cas_required: bool
 
 class PlanExecutionRecord(ContractModel):
     # 其他现有字段省略；None 仅用于旧 wire 读取
@@ -2255,14 +2148,13 @@ class PlanExecutionRecord(ContractModel):
 ~~~
 
 首次执行时由 RequestCoordinator / ExecutionEngine 根据已验证 Route、配置与 Policy 创建；
-resume、Patch 和再次 PlanValidator 使用持久化 profile。execute_plan 的输入仍不受信任，默认
+resume 和再次 PlanValidator 使用持久化 profile。execute_plan 的输入仍不受信任，默认
 prebuilt profile 只允许 CAPABILITY / APPROVAL；若请求执行 EXPLORATION node，必须经过显式
-EXPLORE/HYBRID mode、配置和 Policy 验证后由 Harness 生成对应 profile。
+EXPLORE mode、配置和 Policy 验证后由 Harness 生成对应 profile。
 
-任何包含 EXPLORATION node 的 Plan（standalone EXPLORE 或 HYBRID）都必须
-`checkpoint_cas_required=true`，与 allow_patch 无关。原因是 approval / async completion /
-cancel / resume 可以由多进程并发提交；仅靠本进程 lock 不能防止重复模型或
-Action 执行。
+一期只允许 Harness-owned standalone wrapper，并只从 completed Observation 边界恢复；不支持
+并发 Approval / Async / multi-worker takeover，因此不新增 `patch_enabled` 或
+`checkpoint_cas_required`。这些 profile 字段属于未来 HYBRID / Patch 设计储备。
 
 旧 checkpoint 缺少 execution_profile 时，PlanRecordMigration 在任何执行前将 None
 物化为：
@@ -2272,12 +2164,10 @@ origin = prebuilt
 selected_mode = PLAN
 allowed_node_kinds = {CAPABILITY, APPROVAL}
 allowed_exploration_profile_ids = empty
-patch_enabled = false
-checkpoint_cas_required = false
 ~~~
 
 迁移器不得根据 metadata 或节点内容“猜测” HYBRID / EXPLORE 权限。Record
-一致性验证还必须确认 selected_mode / origin / allowed_node_kinds / patch_enabled
+一致性验证还必须确认 selected_mode / origin / allowed_node_kinds
 与当前 Plan shape 一致。旧 record 若竟然包含 EXPLORATION node 却没有 profile，
 直接 RESUME_UNSAFE；迁移完成后的 in-memory / newly-saved record 禁止 profile=None。
 
@@ -2317,13 +2207,13 @@ hidden reasoning
 ~~~text
 load / create ExplorationState
   ↓
-check cancellation / deadline / budget
+check cancellation / basic count budget
   ↓
 build bounded decision input
   ↓
-ModelGateway.prepare_generation（零网络，冻结 slots / bounds）
+ModelGateway.prepare_generation（零网络，冻结 slots）
   ↓
-BudgetGuard checks exact reservation.total_*
+BudgetGuard checks max_model_calls
   ↓
 CAS checkpoint generation=RESERVED / slots=PREPARED / model_calls+1
   ↓
@@ -2362,7 +2252,7 @@ validate ExplorationTurnDraft
 ~~~
 
 `prepare_generation` 返回的 opaque prepared object 只在当前进程、当前 scheduler generation
-存活；crash 后不得重建并继续同一个 reservation。Budget reservation CAS 失败、slot STARTED
+存活；crash 后不得重建并继续同一个 reservation。Reservation CAS 失败、slot STARTED
 CAS 失败或 receipt / owner fencing 不匹配时，模型 outbound 必须为 0。
 
 ### 7.3 Decision repair
@@ -2387,9 +2277,7 @@ bounded previous JSON
 每次 repair：
 
 - 消耗 model_calls；
-- 累计 token/cost；
-- generation 前先持久化额度 reservation，crash 后不返还；
-- 受 absolute deadline；
+- generation 前先持久化 reservation，crash 后 model_calls 不返还；
 - 不创建 Action；
 - 不触发 Capability；
 - 达到上限返回 INVALID_DECISION / REPAIR_EXHAUSTED。
@@ -2486,7 +2374,7 @@ Action schema / input schema
   ↓
 scope / side-effect / egress
   ↓
-budget / deadline / recursion / repeated action
+count budget / existing execution deadline / recursion / repeated action
   ↓
 checkpoint proposal
   ↓
@@ -2656,7 +2544,7 @@ best-effort 运输动作；持久化的 Harness 终态才是执行真相。
 
 ---
 
-## 9. PlanPatch 运行语义
+## 9. PlanPatch 运行语义（后续高阶设计储备）
 
 ### 9.1 为什么第一版严格 append-only
 
@@ -3012,7 +2900,6 @@ HARNESS.EXPLORATION.INVALID_PROFILE
 HARNESS.EXPLORATION.INVALID_DECISION
 HARNESS.EXPLORATION.DECISION_REPAIR_EXHAUSTED
 HARNESS.EXPLORATION.BUDGET_EXHAUSTED
-HARNESS.EXPLORATION.BUDGET_ACCOUNTING_UNAVAILABLE
 HARNESS.EXPLORATION.ACTION_INVALID
 HARNESS.EXPLORATION.ACTION_NOT_ALLOWED
 HARNESS.EXPLORATION.INPUT_SCHEMA_INVALID
@@ -3065,7 +2952,6 @@ HARNESS.PLAN.EXECUTION_ID_CONFLICT
 PlanNodeKind.EXPLORATION
 ExplorationNodeSpec
 ExplorationBudget
-ExplorationBudgetTemplate
 ExplorationBudgetCeiling
 ExplorationUsage
 ExplorationPermissions
@@ -3090,7 +2976,6 @@ PlanExecutionProfile
 StructuredOutputSpec
 ModelProviderFeatures
 ModelGenerationAttemptSlot / ModelGenerationReservation / ModelReservationReceipt
-NormalizedCost / NormalizedCostRate
 ModelUsage / ModelAttemptAccounting / ModelProviderAttemptUsage / ModelGenerationAccounting
 Continuation.execution_ref
 ApprovalRequest / Grant execution_ref + proposal/provider/policy binding
@@ -3122,7 +3007,6 @@ provider feature eligibility
 GenerateRequest.structured_output
 GenerateResult.accounting
 ModelProvider.features / prepare_structured_output / generate_prepared
-ModelProvider.bound_input_tokens
 ModelGateway.prepare_generation / execute_prepared
 PreparedModelGeneration / reservation builder
 per-slot STARTED / terminal checkpoint fencing
@@ -3392,6 +3276,9 @@ provider_id，不重新自由 selection。
 
 ### 11.10 harness-execution
 
+一期只增加 standalone EXPLORATION node 的协议分派与最小状态保存。本节后续描述的 immutable
+transition delta、scheduler generation、operation claim 与 Patch handoff 属于高阶设计储备。
+
 修改：
 
 ~~~text
@@ -3453,6 +3340,9 @@ PlanExecutionProfile.checkpoint_cas_required=true，必须切换到上述 delta 
 
 ### 11.11 harness-state
 
+`compare_and_save` 可作为未来通用能力保留，但一期 standalone EXPLORE 不以 Patch 级 CAS、
+multi-worker fencing 或 third-party CAS 支持作为启用前提。以下严格 CAS 语义属于高阶设计储备。
+
 StateStore 新增可选能力：
 
 ~~~python
@@ -3486,8 +3376,8 @@ SQLiteStateStore → UPDATE ... WHERE plan_id=? AND state_version=?
 旧第三方 Store：
 
 - 普通 create/load/save/delete 不变；
-- 未实现 CAS 时，任何 EXPLORE / HYBRID / 含 EXPLORATION node 的 execute_plan
-  都在首次模型或业务调用前 fail-closed；
+- 未实现 CAS 时，HYBRID / PlanPatch 等高阶路径 fail-closed；一期 standalone EXPLORE
+  只要求最小 StateStore save/load contract；
 - 普通不含 EXPLORATION node 的 PLAN 仍可工作；
 - 不允许用 load + unconditional save 假装 CAS。
 
@@ -3502,7 +3392,6 @@ plan_materializer
 exploration_profiles
 exploration_engine
 exploration_plan_factory
-plan_patch_coordinator
 ~~~
 
 RequestCoordinator._dispatch 必须穷举：
@@ -3611,6 +3500,26 @@ tests/stage3c/README.md
 
 ## 12. 推荐实施步骤
 
+本节旧版编号保留用于追溯，但当前执行顺序由一期路线图覆盖：
+
+~~~text
+已完成 Step 1–2
+  ↓
+Routing correctness
+  ↓
+Context Engineering
+  ↓
+Memory Foundation
+  ↓
+Minimal Exploration Contracts / Loop / Scoped Action
+  ↓
+standalone EXPLORE
+  ↓
+真实业务试用 Gate
+~~~
+
+Step 8、10、11 明确延后。Step 4–7、9、12–13 只采用与最小闭环相关的子集。
+
 ### Step 1 — Plan Identity / Materialization 收口
 
 #### 目标
@@ -3653,17 +3562,16 @@ tests/stage3c/README.md
 1. StructuredOutputSpec。
 2. GenerateRequest.structured_output / GenerateResult.accounting。
 3. ModelProviderFeatures / prepare_structured_output / Registry feature snapshot。
-4. ModelProvider.bound_input_tokens 与可信 normalized cost upper bound。
-5. ModelGenerationAttemptSlot / Reservation / Receipt。
-6. ModelGateway prepare_generation → reserve CAS → execute_prepared 两阶段 API。
-7. 每个 retry / fallback slot 的 STARTED / terminal checkpoint fencing。
-8. Provider eligibility 与具体 Schema 无损编译。
-9. 完整本地 JSON Schema 校验。
-10. schema resource limits / remote ref rejection。
-11. refusal / truncated / content filter 归一化。
-12. ModelAccountingAccumulator / StructuredGenerationAdapter。
-13. LLMPlanner-v2 迁移到 identity-free PlanDraft / PlanNodeDraft strict schema。
-14. Mock strict / legacy / fallback-accounting Provider。
+4. ModelGenerationAttemptSlot / Reservation / Receipt。
+5. ModelGateway prepare_generation → reserve CAS → execute_prepared 两阶段 API。
+6. 每个 retry / fallback slot 的 STARTED / terminal checkpoint fencing。
+7. Provider eligibility 与具体 Schema 无损编译。
+8. 完整本地 JSON Schema 校验。
+9. schema resource limits / remote ref rejection。
+10. refusal / truncated / content filter 归一化。
+11. ModelAccountingAccumulator / StructuredGenerationAdapter。
+12. LLMPlanner-v2 迁移到 identity-free PlanDraft / PlanNodeDraft strict schema。
+13. Mock strict / legacy / fallback-accounting Provider。
 
 #### 完成标准
 
@@ -3672,8 +3580,8 @@ tests/stage3c/README.md
 - nested type / enum / additionalProperties 被正确校验；
 - max tokens / refusal / filter 不进入下游 Draft parser；
 - schema hash 可观察，完整 schema / prompt / raw response 不可观察；
-- 首 Provider 消耗后失败、fallback 成功时，token/cost 聚合包含两次 attempt；
-- reservation 覆盖所有允许 slots 的 sound input/output token 与 normalized cost 上界；
+- 首 Provider 失败但携带 usage、fallback 成功时，token usage 遥测包含两次 attempt；
+- reservation 覆盖所有允许的 retry/fallback slots，不包含资源上界；
 - 无 reservation receipt / slot STARTED CAS 时 Provider outbound=0；
 - cancel / handoff 抢先后旧 receipt 失效，fallback 也不能绕过 fencing；
 - RESERVED / RUNNING crash 后整体 ORPHANED，同一 generation / slot 不跨进程重放；
@@ -3714,7 +3622,7 @@ tests/stage3c/README.md
 
 ---
 
-### Step 4 — Exploration Contracts / Persisted State
+### Step 4 — Exploration Contracts / Persisted State（仅最小子集）
 
 #### 目标
 
@@ -3723,18 +3631,15 @@ tests/stage3c/README.md
 #### 实施内容
 
 1. ExplorationProfile / registry。
-2. Budget Template / Budget / Usage / typed Policy constraints。
+2. 基础次数 Budget / Usage / typed Policy constraints。
 3. Turn Draft 判别联合。
 4. ActionProposal / ActionState / ProviderSelectionIntent。
 5. Observation。
 6. ExplorationState。
 7. ExecutionUnitRef。
 8. Model Reservation / slot state / ExplorationModelAttemptState。
-9. PlanPatchExecutionState / PatchNodeOrigin / per-node ledger。
-10. PlanExecutionProfile。
-11. PlanExecutionState.explorations / operation history / applied transitions。
-12. Continuation / Approval additive compatibility、BoundApprovalState 与 binding。
-13. ExplorationRecoveryValidator invariants。
+9. 最小 PlanExecutionState.explorations。
+10. completed Observation boundary recovery invariants。
 
 #### 完成标准
 
@@ -3758,11 +3663,11 @@ tests/stage3c/README.md
 
 1. bounded prompt projector。
 2. dynamic strict schema。
-3. prepare_generation → exact reservation CAS → execute_prepared。
+3. prepare_generation → slot reservation CAS → execute_prepared。
 4. bounded decision repair。
 5. final / evidence validator。
 6. repeated-action fingerprint。
-7. usage accounting。
+7. optional usage telemetry。
 8. budget guard。
 
 #### 完成标准
@@ -3771,7 +3676,7 @@ tests/stage3c/README.md
 - invalid → bounded repair；
 - repair exhausted 零 Action；
 - model fallback 仍由 ModelGateway 管理；
-- token / model call / deadline 消耗正确；
+- model/action/step 次数计数正确；
 - 每个 slot outbound 前有最新 generation/owner fencing CAS；
 - crash 后旧 generation 只 ORPHANED，不 reprepare / replay；
 - Observation 之外的 raw result 不进入 Prompt；
@@ -3793,23 +3698,19 @@ tests/stage3c/README.md
 3. Capability input schema validation。
 4. scope / side-effect / egress guard。
 5. proposal-before-dispatch checkpoint callback。
-6. ProviderSelectionIntent checkpoint → PRE_EXECUTE → ProviderAttempt callbacks。
+6. 复用 CapabilityInvoker 的 PRE_EXECUTE 与 Provider safety。
 7. Result → Observation projector。
-8. WRITE resume safety。
 
 #### 完成标准
 
 - 未知 / 越 scope / invalid input 零 Provider 调用；
 - MODEL Capability 不能作为 Action；
 - Action 每次经过 PRE_EXECUTE；
-- REQUIRE_APPROVAL 之前不创建 ProviderAttempt，批准后 pin 同一 Provider；
-- ProviderSelectionIntent checkpoint 失败时 provider_history 为空且 outbound=0；
-- Policy WAITING 时 provider_history 为空；cross-provider fallback 为新 Provider 重跑
-  selection checkpoint + PRE_EXECUTE；
-- READ / WRITE fallback 继续符合 3A；
+- 一期只允许同步 READ / NONE 且无 external egress；Approval / Async / WRITE fail-closed；
+- Provider retry / fallback 继续符合 3A；
 - 模型 idempotency 字段被拒绝；
 - checkpoint 失败时零业务调用；
-- proposal checkpoint 后 crash 不重新决策。
+- proposal checkpoint 后 crash 不自动 replay Action；只从 completed Observation 继续。
 
 ---
 
@@ -3827,7 +3728,7 @@ tests/stage3c/README.md
 4. Scheduler protocol-only dispatch。
 5. ExplorationNodeExecutor。
 6. Node input binding。
-7. Result / WAITING 映射。
+7. Result 映射；WAITING 在一期 fail-closed。
 8. same-record child state checkpoint。
 9. package import-cycle smoke tests。
 
@@ -3835,7 +3736,7 @@ tests/stage3c/README.md
 
 - EXPLORATION 不是 Registry Capability；
 - 普通 PLAN 默认不能偷偷包含 exploration node；
-- HYBRID / wrapper Plan 可以显式允许；
+- 只有 Harness-owned standalone wrapper Plan 可以显式允许；
 - child action 完成不会提前完成 outer node；
 - Exploration terminal 与 outer node terminal 使用同一 CAS，不存在 child-terminal /
   outer-running 稳定 checkpoint；
@@ -3845,7 +3746,10 @@ tests/stage3c/README.md
 
 ---
 
-### Step 8 — Approval / Async / Restart
+### Step 8 — Approval / Async / Restart（后续高阶设计储备）
+
+一期遇到 Explore 内 Approval、Async、WRITE 或非 completed Observation 中间态时 fail-closed；
+不实现 operation claim、lease takeover 或跨 worker 自动恢复。以下是未来设计参考。
 
 #### 目标
 
@@ -3901,13 +3805,15 @@ tests/stage3c/README.md
 - 配置后显式 EXPLORE model Router calls=0；
 - fresh plan_id / exploration_id；
 - 统一 REQUEST lifecycle；
-- WAITING 返回 plan-controllable continuation；
+- Approval / Async / WRITE 请求稳定 fail-closed；
 - invoke / execute_plan 语义不变。
-- Step 11 完成前 standalone EXPLORE 固定 allow_patch=false。
+- standalone EXPLORE 永久固定 allow_patch=false，直到后续新 ADR。
 
 ---
 
-### Step 10 — HYBRID Path
+### Step 10 — HYBRID Path（后续高阶设计储备）
+
+一期不实现，`HYBRID` 保持 fail-closed。
 
 #### 目标
 
@@ -3935,7 +3841,9 @@ tests/stage3c/README.md
 
 ---
 
-### Step 11 — PRE_PATCH / Plan Revision / CAS
+### Step 11 — PRE_PATCH / Plan Revision / CAS（后续高阶设计储备）
+
+一期不实现。以下内容必须在真实使用后通过新 ADR 才能恢复为 backlog。
 
 #### 目标
 
@@ -3954,7 +3862,7 @@ tests/stage3c/README.md
 9. Scheduler quiesce / PlanMutationSuspension / generation handoff。
 10. PlanPatchCoordinator。
 11. PlanPatchExecutionState / PatchNodeOrigin / per-node ledger / state migration。
-12. absolute deadline admission + every-outbound guard / descriptor revalidation。
+12. every-outbound descriptor revalidation。
 13. revision-aware Scheduler。
 14. patch approval typed Grant exact binding + SQLite restart。
 15. persisted WAITING patch cancellation / late Grant invalidation。
@@ -3981,8 +3889,7 @@ tests/stage3c/README.md
 - accept CAS 同时保存 SUCCESS accepted result、child/outer timestamps、清除 matching pending
   indexes，reload 后 source binding 可用；
 - governed reject 同时保存 DENIED child/outer/Plan result / issue / timestamps；
-- Patch-added node 只能凭 persisted origin 消费同一 ledger/deadline，Catalog 漂移或 deadline
-  过期时零 outbound；
+- Patch-added node 只能凭 persisted origin 消费同一 ledger，Catalog 漂移时零 outbound；
 - 非 barrier 的 allow_patch Plan 在 validation 阶段失败，QUIESCE_TIMEOUT 不启动新 Scheduler。
 
 ---
@@ -3991,15 +3898,15 @@ tests/stage3c/README.md
 
 #### 目标
 
-建立 Request → Plan → Exploration → Action → Provider → Patch 的安全关联。
+建立 Request → Context → Memory → Plan / Exploration → Action → Provider 的安全关联。
 
 #### 实施内容
 
-1. EXPLORATION / PLAN_PATCH Span。
-2. Explore / Action / Patch Events。
+1. CONTEXT / MEMORY / EXPLORATION Span。
+2. Context / Memory / Explore / Action Events。
 3. IDs / hashes / counters。
-4. usage / budget attributes。
-5. waiting / resumed events。
+4. projection / memory slice / basic count attributes。
+5. completed Observation resume events。
 6. redaction tests。
 
 #### 完成标准
@@ -4017,25 +3924,26 @@ tests/stage3c/README.md
 
 #### 目标
 
-建立仓库级阻断 Gate 并同步所有 Markdown 文档。
+建立仓库级阻断 Gate、真实试用入口并同步所有 Markdown 文档。
 
 #### 实施内容
 
 1. tests/stage3c。
 2. deterministic model / capability fixtures。
-3. SQLite restart / crash windows。
-4. CAS concurrency。
+3. completed Observation boundary restart tests。
+4. Context / Memory isolation、redaction、TTL、delete tests。
 5. Stage 1 / 2 / 3A / 3B regression。
 6. README / design / ADR update。
 7. Ruff / diff check。
 
 #### 完成标准
 
-- 所有 3C Gate 通过；
+- 所有一期 Foundation Gate 通过；
 - 所有旧 Gate 通过；
 - 无真实网络或真实模型依赖；
 - 文档中 Stage 状态一致；
-- EXPLORE/HYBRID 不再被错误标成 3D；
+- standalone EXPLORE 可用且 HYBRID 继续 fail-closed；
+- 至少一个真实业务 Agent 场景形成质量与失败基线；
 - 非目标未被偷偷实现。
 
 ---
@@ -4092,7 +4000,8 @@ exploration result 可供下游节点使用
 受 Profile / Policy 允许时可提出 PlanPatch
 ~~~
 
-第一版 standalone EXPLORE 不允许 Patch；需要动态扩展主 Plan 的请求应使用 HYBRID。
+一期 standalone EXPLORE 不允许 Patch；遇到必须动态扩展主 Plan 的请求应明确返回当前能力边界，
+并记录为投产证据，而不是自动切换到尚未启用的 HYBRID。
 
 ### 13.4 HybridPlanner 不等于 HYBRID mode
 
@@ -4154,15 +4063,14 @@ Provider retry / fallback
 
 Explorer 不应因 Provider transient failure 自己重复提出相同 Action 来模拟 retry。
 
-### 13.8 Budget 精确计数
+### 13.8 基础 Budget 精确计数
 
 精确计数：
 
-- 每次逻辑 generation 先由 `prepare_generation` 冻结 exact reservation，再在
-  `reserve_model_generation` CAS 中预留 `model_calls + 1` 与 reservation.total_*；
-- 同一 Gateway generation 内的 Provider retry / fallback 不另加 model_calls，但所有
-  attempt 的 token/cost 必须全部累加；
-- crash 后 RESERVED / RUNNING generation 以 ORPHANED reservation 继续占用额度；新
+- 每次逻辑 generation 先由 `prepare_generation` 冻结 attempt slots，再在
+  `reserve_model_generation` CAS 中执行 `model_calls + 1`；
+- 同一 Gateway generation 内的 Provider retry / fallback 不另加 model_calls；
+- crash 后 RESERVED / RUNNING generation 变为 ORPHANED，已增加的 model_calls 不回退；新
   generation 再独立增加 model_calls；
 - decision repair 再次 generation，model_calls +1；
 - 合法 ActionProposal checkpoint 后，action_calls +1；
@@ -4188,9 +4096,9 @@ FAILED
 HARNESS.EXPLORATION.BUDGET_EXHAUSTED
 ~~~
 
-不得为了生成漂亮总结突破 absolute budget。
+不得为了生成漂亮总结突破基础次数 budget。
 
-### 13.10 Patch reject 后的行为
+### 13.10 Patch reject 后的行为（后续高阶设计储备）
 
 所有拒绝都不改变 Plan，但后续语义分两类：
 
@@ -4208,7 +4116,7 @@ ExplorationState 是 execution truth，属于 PlanExecutionRecord / StateStore�
 
 它不是长期对话 Memory。
 
-3D MemoryProvider 上线后也不能成为：
+一期 MemoryProvider 上线后也不能成为：
 
 ~~~text
 Action completion truth
@@ -4234,6 +4142,8 @@ EXPLORE / HYBRID fail-closed
 ---
 
 ## 14. 推荐模块实施顺序
+
+> **归档提示**：第 14–19 节是旧方案的模块、Commit、场景与 Gate 清单，不是当前执行计划。
 
 ~~~text
 1. harness-contracts：identity / structured output additions
@@ -4266,6 +4176,8 @@ EXPLORE / HYBRID fail-closed
 ---
 
 ## 15. 推荐 Commit 拆分
+
+> **归档提示**：以下 Commit 仅保留历史拆分思路；当前 Commit 应按 Foundation F1→F5 规划。
 
 ### Commit 1 — Stage 3C Identity Foundation
 
@@ -4387,6 +4299,8 @@ README / design / ADR
 
 ## 16. 最终验收场景
 
+> **归档提示**：以下场景包含大量后续高阶设计；一期验收以 Foundation 实施说明书为准。
+
 ### 场景 A：默认配置继续 fail-closed
 
 ~~~text
@@ -4454,11 +4368,10 @@ additional property rejected
 refusal rejected
 truncated output rejected
 no silent fallback
-first Provider consumed tokens then failed + fallback succeeded -> both attempts accounted
-refused / truncated / failed generation with complete accounting charges actual usage
-failed generation with incomplete accounting remains ORPHANED at worst-case reservation
+first Provider failed with known usage + fallback succeeded -> both attempts observed
+incomplete usage telemetry does not gate generation
 prepare_generation performs zero network calls
-reservation covers every permitted slot with sound token/cost upper bounds
+reservation covers every permitted retry/fallback slot without resource bounds
 no receipt or slot STARTED CAS -> outbound=0
 cancel/handoff wins before slot start -> stale receipt outbound=0
 restart sees RESERVED/RUNNING -> ORPHANED; same generation/slot is never replayed
@@ -4527,19 +4440,15 @@ recursive exploration
 max_steps
 max_model_calls
 max_action_calls
-max_total_tokens
-deadline
 max_observations
 max_patch_count
 max_exploration_depth
-cost unavailable
 ~~~
 
-验证 usage 不回退，resume 不重置；首 Provider 满额失败 + fallback 满额成功不会
-在 generation 途中超过预留的 hard budget。无法提供 sound input token bound 或同 unit
-finite cost upper bound 的 Provider 在任何网络调用前 ineligible。
+验证次数 usage 不回退、resume 不重置，同一 logical generation 的 retry/fallback 只增加一次
+model_calls。token、成本与独立 Exploration 耗时预算不属于本阶段验收范围。
 
-### 场景 I：Approval WAITING / Restart
+### 场景 I：Approval WAITING / Restart（后续高阶设计储备）
 
 ~~~text
 Action proposal checkpoint
@@ -4570,7 +4479,7 @@ duplicate decision returns persisted outcome; same approval_id with different in
 no duplicate WRITE
 ~~~
 
-### 场景 J：Async WAITING / Restart
+### 场景 J：Async WAITING / Restart（后续高阶设计储备）
 
 ~~~text
 Action returns ACCEPTED(job_ref)
@@ -4590,7 +4499,7 @@ next model turn
 execution_ref、wrong/old job_ref、上一个 Action 的迟到 callback、duplicate/concurrent callback
 均在 CAS 后保持 record 不变，不能写入当前 Action。
 
-### 场景 K：Crash windows
+### 场景 K：复杂 Crash windows（后续高阶设计储备）
 
 注入：
 
@@ -4622,7 +4531,7 @@ claim lease takeover fences old owner and reuses durable operation input
 each transition increments state_version exactly once; concurrent callbacks never merge snapshots
 ~~~
 
-### 场景 L：HYBRID
+### 场景 L：HYBRID（后续高阶设计储备）
 
 不产生 Patch 的基础 HYBRID：
 
@@ -4645,7 +4554,7 @@ single plan_id
 single trace tree
 ~~~
 
-### 场景 M：PlanPatch accepted
+### 场景 M：PlanPatch accepted（后续高阶设计储备）
 
 ~~~text
 HYBRID exploration
@@ -4675,7 +4584,6 @@ RevisionAudit exists
 restart continues revision 2
 ordinary revision-N checkpoint racing CAS cannot overwrite revision 2
 accepted revision reloads through RecoveryValidator before new-tail admission
-Patch absolute deadline is checked at admission and every retry/fallback outbound
 Catalog descriptor drift after accept -> zero outbound
 ~~~
 
@@ -4691,7 +4599,7 @@ proposal checkpoint -> WAITING_APPROVAL -> SQLite restart
 
 mismatched / stale Grant 必须零 Plan mutation。
 
-### 场景 N：PlanPatch rejected
+### 场景 N：PlanPatch rejected（后续高阶设计储备）
 
 分别测试：
 
@@ -4709,7 +4617,6 @@ unknown capability
 cycle
 allow_patch exploration is not an execution-wide barrier
 quiesce timeout / old in-flight callback
-Patch absolute deadline already expired
 accepted Patch origin missing or descriptor changed
 Policy DENY
 unsupported CAS Store
@@ -4730,6 +4637,9 @@ QUIESCE_TIMEOUT persists terminal FAILED truth and never starts a replacement Sc
 
 ### 场景 O：Cancellation / corrupted checkpoint
 
+一期只覆盖 Context / Memory 隔离、completed Observation 边界和最小 ExplorationState 损坏。
+Patch、Approval/Async、operation claim 与 multi-worker corruption matrix 属于后续高阶 Gate。
+
 SQLite restart 后分别取消 WAITING Action 和 WAITING Patch，验证 Action/Patch/Exploration/
 outer node/Plan 持久化收敛为 CANCELLED，迟到 Approval 或 job callback 不能恢复执行。
 
@@ -4744,14 +4654,15 @@ observation source ref
 revision audit chain
 model reservation / slot state
 approval Grant consumption / operation claim history
-patch node origin / per-node ledger / deadline
+patch node origin / per-node ledger
 applied transition id / fact hash
 usage / state version
 ~~~
 
 ExplorationRecoveryValidator 必须在任何新的模型或业务调用之前 fail-closed。
 旧第三方 StateStore subclass 必须仍可实例化并执行 Direct / 普通 PLAN；
-EXPLORE / HYBRID 则因 CAS_UNSUPPORTED 在任何模型/业务调用前 fail-closed。
+HYBRID 继续 fail-closed；standalone EXPLORE 是否可用取决于一期最小 StateStore contract，
+不以 Patch 级 CAS 支持为前提。
 
 ### 场景 P：Regression
 
@@ -4770,6 +4681,8 @@ invoke / execute_plan / resume_plan 旧 API 与旧 checkpoint 必须继续通过
 ---
 
 ## 17. Stage 3C Acceptance Gate
+
+> **归档提示**：本 Gate 已停用，不得作为当前测试清单；当前 Gate 见 `tests/stage3c/README.md`。
 
 新增目录：
 
@@ -4790,7 +4703,7 @@ tests/stage3c/
   test_hybrid.py
   test_plan_patch.py
   test_plan_patch_approval_restart.py
-  test_plan_patch_provenance_deadline.py
+  test_plan_patch_provenance.py
   test_execution_transition_cas.py
   test_observability.py
   test_regression_gate.py
@@ -4822,7 +4735,7 @@ No real vendor SDK
 11. External operation claim / typed Grant 可恢复且旧 owner 被 fencing。
 12. 每条 CAS transition 由 Coordinator 唯一 version+1。
 13. Patch accepted/rejected 的 child/outer/Plan terminal payload 完整一致。
-14. Patch-added node 的 origin / ledger / deadline 每次 dispatch 都重验。
+14. Patch-added node 的 origin / ledger 每次 dispatch 都重验。
 15. Trace / Events 不泄漏敏感内容。
 16. 所有历史 Gate 通过。
 
@@ -4839,6 +4752,8 @@ tests/stage2、tests/stage3a、tests/stage3b、tests/stage3c。
 
 ## 18. 3C 完成定义
 
+> **归档提示**：本完成定义属于旧阶段划分；当前完成定义见 Agent Foundation 一期实施说明书。
+
 以下条件全部满足后，Stage 3C 才能标记完成：
 
 - plan_id fresh execution identity 已冻结并由 Materializer 统一生成；
@@ -4851,35 +4766,33 @@ tests/stage2、tests/stage3a、tests/stage3b、tests/stage3c。
 - REQUIRED 不静默降级；
 - 完整本地 Schema + Pydantic + semantic validation 生效；
 - 模型调用使用 prepare → reservation CAS → per-slot fencing，crash 不重放同一 generation；
-- EXPLORE / HYBRID 在正确配置时可执行；
+- standalone EXPLORE 在正确配置时可执行，HYBRID 继续 fail-closed；
 - 未配置 Explorer 时继续 fail-closed；
 - ExplorationEngine 由 Harness 持有；
 - 模型 / Plugin 不持有 Invoker / Provider / StateStore；
 - 每个 Action 有显式有限 scope；
 - 每个 Action proposal-before-dispatch；
 - Action input schema 校验真实生效；
-- steps / model calls / action calls / tokens / deadline / repeat / patch / depth 有上限；
-- cost accounting 不可用时不伪造 0 成本；
-- WRITE Action 遵守 idempotency / equivalence / Provider resume；
+- steps / model calls / action calls / repeat / depth 有上限；
+- token usage 仅作可选遥测，不参与预算或准入；
+- 一期 Explore 仅支持同步 READ / NONE 且无 external egress；
 - standalone EXPLORE 是真实单 EXPLORATION 节点 Plan；
-- HYBRID 使用显式 EXPLORATION node；
-- Approval / Async WAITING 可跨 SQLite restart；
-- typed Grant、ExternalOperationClaim 与 takeover fencing 可跨 crash 恢复；
-- complete_async_node 不误完成整个探索节点；
-- PlanPatch v1 append-only；
-- PRE_PATCH / PRE_PLAN / PlanValidator 均生效；
-- Patch 使用 CAS，revision 单调、plan_id 不变；
-- Coordinator 独占 CAS transition / state_version，Scheduler 不提交预改 whole-record snapshot；
-- Patch source 是 execution-wide barrier；新增节点始终受 persisted origin / ledger / absolute
-  deadline 约束；
-- RevisionAudit 进入 checkpoint；
+- 只从 completed Observation 边界恢复，其他探索中间态 fail-closed；
+- ContextSource → Assembler → Policy → Projector → PromptBuilder 生效；
+- Context item 具备 trust tier、provenance、freshness、sensitivity 与确定性裁剪；
+- MemoryProvider / Gateway 具备 namespace、Policy、TTL、search/put/delete；
+- InMemory 与 SQLite MemoryProvider 通过隔离、持久化和删除 Gate；
+- Router / Planner / Explorer 不直接访问 MemoryProvider；
 - 不持久化 raw Prompt / raw response / hidden CoT；
 - 不引入 WorkflowSPI / Catalog / 自动发布；
+- 至少一个真实业务 Agent 场景完成试用并形成失败案例集；
 - Stage 1 / 2 / 3A / 3B / 3C 全量 Gate 通过。
 
 ---
 
 ## 19. 已确认的 Stage 3C ADR
+
+> **归档提示**：仅保留历史决策背景；当前状态以第三阶段 ADR 摘要为准。
 
 ### ADR-P3C-001：Application API 分层
 
@@ -4908,8 +4821,8 @@ fallback model Router
 
 **决议**：
 
-模型生成 Route / Plan / Action / Patch Draft；Harness materialize final identities、
-mode、route type、scope、budget、idempotency 与 revision。
+一期模型生成 Route / Plan / Action Draft；Harness materialize final identities、mode、route type、
+scope、budget 与 idempotency。Patch Draft 属于后续设计储备。
 
 ### ADR-P3C-004：Strict Structured Output
 
@@ -4921,7 +4834,7 @@ Provider-native strict 优先；unsupported 不静默降级；完整本地 Schem
 
 **决议**：
 
-plan_id 是 fresh execution lineage identity；template / workflow identity 分离；Patch 只增加 revision。
+plan_id 是 fresh execution lineage identity；template / workflow identity 分离。
 
 ### ADR-P3C-006：Harness-owned Exploration
 
@@ -4942,24 +4855,23 @@ PlanExecutionRecord，避免第二套 execution truth。
 
 ActionProposal 必须先 checkpoint 再执行；恢复同一 Action，不重新模型决策。
 
-### ADR-P3C-009：Action-level WAITING
+### ADR-P3C-009：Action-level WAITING（延期）
 
 **决议**：
 
-Continuation / Approval 使用 action-level ExecutionUnitRef；外层 Plan API 继续兼容。
+一期 Explore 遇到 Approval / Async 时 fail-closed。action-level Continuation 方案仅作后续参考。
 
-### ADR-P3C-010：HYBRID 是显式 Plan node
-
-**决议**：
-
-HYBRID 用 PlanNodeKind.EXPLORATION；不把 ExplorationEngine 注册成业务 Capability。
-
-### ADR-P3C-011：PlanPatch append-only + CAS
+### ADR-P3C-010：HYBRID 是显式 Plan node（延期）
 
 **决议**：
 
-v1 Patch 不修改既有节点/边/历史；同 plan_id、revision+1；PRE_PATCH / PRE_PLAN /
-PlanValidator / StateStore CAS 全部成功后才可见。
+若后续启用，HYBRID 使用 PlanNodeKind.EXPLORATION；一期继续 fail-closed。
+
+### ADR-P3C-011：PlanPatch append-only + CAS（延期）
+
+**决议**：
+
+只有真实使用证明需要动态 Plan 时才重开 ADR；append-only + CAS 作为候选安全方向保留。
 
 ### ADR-P3C-012：No hidden CoT
 
@@ -4971,7 +4883,7 @@ PlanValidator / StateStore CAS 全部成功后才可见。
 
 **决议**：
 
-3C 只记录安全 candidate facts；3D Eval；Stage 4 版本化发布。
+一期只记录安全基础事实；完整 Eval 与 Workflow 版本化发布均在真实轨迹积累后评审。
 
 ### ADR-P3C-014：不新增 ModelConnector SPI
 
@@ -5007,11 +4919,12 @@ Stage 3 ADR 状态摘要
 
 Stage 3B 实施说明书继续作为“3B 当时完成的实现基线”，不回写成已经实现 3C。
 
-`tests/stage3b/README` 已初步明确下列边界；3C 实施和后续文档必须持续保持：
+当前边界统一调整为：
 
 ~~~text
-EXPLORE / HYBRID / PlanPatch → Stage 3C
-Replay Eval                  → Stage 3D
+Context Engineering / Memory / standalone EXPLORE → Agent Foundation 一期
+HYBRID / PlanPatch / complex recovery             → 投产后重新 ADR
+Full Replay Eval / strategy optimization           → 真实轨迹积累后
 ~~~
 
 ---

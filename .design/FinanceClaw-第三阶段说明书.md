@@ -2,11 +2,12 @@
 
 > **文档性质**：阶段实施设计 / Architecture Decision Baseline  
 > **阶段名称**：Stage 3 — Adaptive Multi-Provider & Agentic Orchestration  
-> **版本**：V1.1（Stage 3A / 3B 实现基线 + Stage 3C 设计基线）
-> **日期**：2026-08-29
+> **版本**：V1.2（Agent Foundation 优先级调整）
+> **日期**：2026-08-31
 > **前置基线**：Stage 1 Minimal Harness + Stage 2 Reliable Plan Execution Engine  
 > **依据文档**：`.design/Harness-Agent_通用可插拔智能体平台架构设计_修订版.md`、`.design/第一阶段.md`、`.design/FinanceClaw-第二阶段说明书.md`
-> **3C 实施基线**：`.design/FinanceClaw-Stage3C-Agentic-Exploration-实施说明书.md`
+> **Foundation 实施基线**：`.design/FinanceClaw-Agent-Foundation-一期实施说明书.md`
+> **当前路线图**：`.design/FinanceClaw-Agent-Foundation-一期路线图.md`
 
 ---
 
@@ -18,8 +19,10 @@
 |---|---|---|
 | Stage 3A — Provider Fabric | 已完成 | Registry 1:N、Selection/Minimal Health、Retry/Fallback、Provider-safe Resume、ModelGateway、Observability |
 | Stage 3B — Routing & Planning | 已完成 | ExecutionMode、handle、Rule/LLM Router、PRE_ROUTE、Static/Hybrid/LLM Planner、bounded repair、Acceptance Gate |
-| Stage 3C — Agentic Exploration | 设计已冻结，未实施 | EXPLORE/HYBRID 当前仍 fail-closed；实施基线已覆盖 bounded exploration、action checkpoint、HYBRID、PlanPatch 与恢复 |
-| Stage 3D — Expansion & Replay Eval | 未实施 | 3B 仅保留未来 Eval 所需稳定事实 |
+| Agent Foundation F0–F1 | 进行中 | Plan identity 与 Strict Output 已完成；下一步收口 routing correctness |
+| Agent Foundation F2–F3 | 待实施 | 先完成 Context Engineering、MemoryProvider/Gateway 与 SQLite 持久化 |
+| Agent Foundation F4–F5 | 待实施 | 再实现最小 standalone EXPLORE，并进入真实业务试用 Gate |
+| Post-Foundation Advanced | 设计储备 | HYBRID、PlanPatch、高阶预算、复杂恢复与大规模 Replay，待一期投产后重新 ADR |
 
 第三阶段的目标不是“加一个会自由调用所有工具的 MainAgent”。
 
@@ -36,8 +39,8 @@ Stage 3A:
 
              ↓
 
-Stage 3B / 3C:
-模型可以可靠地 Route / Plan / Explore，
+Stage 3B / Foundation:
+模型可以在可信 Context 和 Memory 支撑下可靠 Route / Plan / Minimal Explore，
 但实际执行仍由 Harness 控制
 ```
 
@@ -84,7 +87,8 @@ FailurePolicy
 
 # 2. Stage 3 必须完成的能力
 
-第三阶段拆为四个内部 Milestone。
+第三阶段按 Foundation-first 顺序推进。Stage 3A / 3B 是已完成基线；当前 Foundation 不再把
+Context、Memory 与 Explore 拆成前后倒置的两个阶段。
 
 ## Stage 3A — Provider Fabric
 
@@ -99,8 +103,8 @@ ModelProvider
 Provider Selection Trace / Events
 ```
 
-Provider Pin 外部入口、Weighted Canary 与 Passive Health 已从 3A 完成门槛移出，留到 3D
-统一扩展。
+Provider Pin 外部入口、Weighted Canary 与 Passive Health 已从 3A 完成门槛移出，等待真实
+Provider 运营数据后单独评审，不再由旧 3D 编号自动触发。
 
 ## Stage 3B — Routing & Planning
 
@@ -119,51 +123,68 @@ PRE_ROUTE Policy
 Route / Plan Eval 稳定事实
 ```
 
-离线 Replay、准确率统计与策略对比执行器属于 Stage 3D，不属于已完成的 3B。
+离线 Replay、准确率统计与策略对比执行器属于投产后的 advanced backlog，不属于已完成的 3B。
 
-## Stage 3C — Agentic Exploration
+## Agent Foundation F0–F1 — 已完成前置与 Routing Correctness
+
+已完成：
+
+```text
+fresh Plan identity
+Strict Structured Output
+```
+
+当前先收口：
+
+```text
+RoutingPipeline deterministic-first
+模型只生成未知字段的 Draft / Proposal
+requested_mode / effective_mode 不进入模型 Prompt
+Router / Planner 共用 strict structured generation adapter
+```
+
+## Agent Foundation F2–F3 — Context Engineering & Memory
+
+```text
+ContextItem / ContextSnapshot / ContextProjection
+ContextSource / ContextAssembler / ContextProjector
+Context Policy / provenance / deterministic trimming
+MemoryProvider
+MemoryGateway
+InMemory / SQLite MemoryProvider
+Memory read / write Policy
+Router / Planner / Explorer context integration
+```
+
+Context 与 Memory 必须在 Explore 之前形成公共能力，不能作为 Explore 内部临时 Prompt 拼装逻辑。
+
+## Agent Foundation F4–F5 — Minimal Agent Loop & Real-use Gate
 
 ```text
 ExplorationEngine
 ExplorationBudget
 ActionProposal
 ScopedActionExecutor
-Bounded ReAct
 Explore child state in PlanExecutionRecord
-EXPLORE mode
-HYBRID mode
-PlanPatchProposal
-Plan Revision Validation
-Agentic Scope / Recursion Limits
+standalone EXPLORE mode
+真实业务试用与基础质量基线
 ```
 
-详细编码顺序、Contracts、状态机、错误模型、恢复语义与 Acceptance Gate 已冻结在
-`.design/FinanceClaw-Stage3C-Agentic-Exploration-实施说明书.md`。
+一期只实现串行、单 Action turn、无 Patch 的 standalone EXPLORE。唯一当前实施契约是
+`.design/FinanceClaw-Agent-Foundation-一期实施说明书.md`。旧 Stage 3C Agentic Exploration
+文档整体作为高阶设计参考，不直接生成编码任务。
 
-该实施基线同时收口 3B 暴露出的前置问题：
+Minimal Explore 使用已完成的前置能力：
 
 ```text
 Planner output 在 Coordinator trust boundary 每次 fresh execution 物化新 plan_id
-RoutingPipeline deterministic-first
-模型只生成未知字段的 Draft / Proposal
-requested_mode / effective_mode 不进入模型 Prompt
 provider-native strict output + 本地完整校验 + 业务校验
 standalone EXPLORE 物化为真实单 EXPLORATION 节点 Plan
-PlanPatch append-only + PRE_PATCH + revision CAS
+HYBRID / PlanPatch 继续 fail-closed
 ```
 
-## Stage 3D — Provider Expansion & Replay Eval
-
-```text
-ConnectorProvider
-MemoryProvider
-Selection Replay
-Route Replay
-Plan Replay / Validation Eval
-Provider Comparison
-generic execution-fact clustering / scoring（不创建 WorkflowCandidate 生命周期）
-Full Stage-3 cross-provider E2E / provider-expansion fault injection
-```
+Selection/Route/Plan Replay、Provider Comparison 与完整策略优化不再和 Memory 打包，统一进入
+一期真实使用后的 advanced backlog。
 
 ---
 
@@ -321,7 +342,8 @@ HYBRID
 高级调用方可以固定模式；普通用户默认 AUTO。
 
 已在 Stage 3B 落地到 `RequestOptions.execution_mode`；`handle(..., mode=...)` 仅为 sugar。
-AUTO/FAST/PLAN 可执行，EXPLORE/HYBRID 在 Stage 3C 前 fail-closed。
+AUTO/FAST/PLAN 可执行；EXPLORE 在 Foundation F4 完成前 fail-closed，HYBRID 在一期投产后重新
+ADR 之前始终 fail-closed。
 
 ---
 
@@ -409,10 +431,12 @@ CapabilityInvoker
 Policy
 Trace
 Deadline
-Approval
 Provider Selection
 Idempotency
 ```
+
+一期 Explore 固定 `side_effect ∈ {NONE, READ}`、`egress ∈ {NONE, INTERNAL}` 且同步终结；若执行链
+要求 Approval 或返回 Async，则按 Foundation 实施契约 fail-closed / unsafe terminal。
 
 ---
 
@@ -424,12 +448,11 @@ Idempotency
 Route Proposal
 PlanDraft
 ExplorationTurnDraft
-PlanPatchDraft
 FinalResultDraft
 ```
 
-Harness 负责物化最终 `RouteDecision`、`ExecutionPlan`、`ActionProposal`、
-`PlanPatchProposal` 的控制字段、身份、Scope、Budget、幂等键与 revision。
+Harness 负责物化最终 `RouteDecision`、`ExecutionPlan`、`ActionProposal` 的控制字段、身份、Scope、
+基础次数限制与幂等键。`PlanPatchDraft / PlanPatchProposal` 仅是后续高阶设计储备。
 
 模型禁止：
 
@@ -442,7 +465,7 @@ Harness 负责物化最终 `RouteDecision`、`ExecutionPlan`、`ActionProposal`�
 
 ---
 
-## ADR-P3-012：PlanPatch 是受治理的 Plan Revision
+## ADR-P3-012：PlanPatch 是受治理的 Plan Revision（设计储备）
 
 ```text
 identity-free PlanPatchDraft
@@ -458,8 +481,8 @@ CAS 原子保存 same plan_id / revision + 1
 new Scheduler generation continues from Patch-added tail
 ```
 
-3C v1 严格 append-only：任何既有节点、边和执行历史都不可被 Patch
-重写；新 edge 的 `to_node` 必须是新节点。
+该方向不进入一期实施。若真实使用证明需要动态扩展主 Plan，必须重新提交 ADR；届时优先沿用
+append-only、不可改写历史的安全约束。
 
 ---
 
@@ -497,9 +520,9 @@ Memory 不参与恢复执行的真相判断。
 
 ---
 
-## ADR-P3-015：Replay 默认不重新执行 WRITE
+## ADR-P3-015：Replay 默认不重新执行 WRITE（投产后设计储备）
 
-第一版 Replay Eval：
+若投产后启动 Replay Eval，第一版候选为：
 
 ```text
 Selection Replay
@@ -512,6 +535,8 @@ Plan Validation Replay
 ---
 
 # 5. 目标架构
+
+下图包含长期目标态。当前只启用 FAST / PLAN；一期增加 standalone EXPLORE，HYBRID 分支不启用。
 
 ```text
                          HarnessApplication.handle()
@@ -555,7 +580,7 @@ Plan Validation Replay
 ```
 
 standalone EXPLORE 不绕过 Plan / ExecutionEngine；它物化为真实单
-EXPLORATION 节点 Plan。HYBRID 也是包含显式 EXPLORATION 节点的 ExecutionPlan。
+EXPLORATION 节点 Plan。图中的 HYBRID 是投产后的候选形态，不属于一期实现。
 Exploration child state 与外层 NodeExecutionState 一起写入 PlanExecutionRecord，不建立
 独立 Exploration checkpoint 真相。
 
@@ -565,7 +590,7 @@ Exploration child state 与外层 NodeExecutionState 一起写入 PlanExecutionR
 
 ## 6.1 `harness-contracts`
 
-新增：
+Foundation 当前新增或保留：
 
 ```text
 ExecutionMode
@@ -576,17 +601,20 @@ SelectionContext
 SelectionDecision
 ProviderAttempt
 PlanNodeKind.EXPLORATION
-ExplorationNodeSpec / ExplorationPermissions
+ExplorationNodeSpec
 ExplorationBudget
-ExplorationUsage / ExplorationModelAttemptState
+ExplorationUsage
 ActionProposal / ActionExecutionState
 Observation
 ExplorationState
-ExecutionUnitRef
-PlanPatchProposal / PlanPatchExecutionState
-PlanRevisionAudit / PlanExecutionProfile
 StructuredOutputSpec / Model accounting contracts
+ContextItem / ContextSnapshot / ContextProjection / ContextUseRecord
+MemoryRecord / MemoryQuery / MemorySlice / MemoryWriteDraft / MemoryWriteProposal
+Capability completion mode
 ```
+
+PlanPatchProposal / PlanPatchExecutionState、PlanRevisionAudit、复杂 ExecutionUnitRef 和跨 worker
+恢复状态属于投产后设计储备，不进入一期 Contract。
 
 ---
 
@@ -630,7 +658,7 @@ ModelGateway
 GenerateRequest / GenerateResult
 strict Structured Output preparation + local validation
 complete retry/fallback accounting
-EmbedRequest / EmbedResult（可以延后到 3D）
+EmbedRequest / EmbedResult（真实 Memory 检索需要时再评审）
 MockFastModel
 MockQualityModel
 ```
@@ -664,8 +692,9 @@ PlanningAttempt
 Plan repair loop
 PlanTemplate / PlannerOutputNormalizer / PlanMaterializer
 PlanNodeDraft
-PlanPatch validation
 ```
+
+PlanPatch validation 不进入一期 planning 模块。
 
 ---
 
@@ -677,10 +706,9 @@ ScopedActionExecutor
 ExplorationBudgetGuard
 ActionValidator
 ExplorationNodeExecutor
-PlanPatchCoordinator
 ```
 
-第一版不新增万能 `AgenticAgentSPI`。
+第一版不新增万能 `AgenticAgentSPI`，也不新增 PlanPatchCoordinator。
 
 ---
 
@@ -688,29 +716,40 @@ PlanPatchCoordinator
 
 ```text
 EXPLORATION node dispatch
-ExplorationRecoveryValidator
-PlanCheckpointCoordinator
-scheduler_generation / external operation claim
-PlanMutationSuspension / scheduler handoff
-StateStore compare-and-save（EXPLORATION Plan 必须）
+minimal ExplorationState
+completed Observation boundary recovery
+non-completed exploration state fail-closed
 ```
 
 Exploration 不建立第二个 StateStore；所有 child state 进入同一 PlanExecutionRecord。
+operation claim、lease takeover、Plan mutation handoff 与 Patch CAS 属于后续高阶设计。
 
 ---
 
 ## 6.9 `harness-runtime` / `harness-bootstrap`
 
 ```text
-Provider selection intent -> PRE_EXECUTE -> Provider attempt
-Approval proposal/provider/policy hash binding
-FAST / PLAN / EXPLORE / HYBRID 穷举分派
-Exploration profile / executor / checkpoint sink 组装
+Context / Memory / Router / Planner / Explorer 安全组装
+FAST / PLAN / EXPLORE / HYBRID 穷举分派（HYBRID fail-closed）
+Exploration profile / executor 组装
 ```
 
 ---
 
-## 6.10 `harness-connectors`（3D）
+## 6.10 `harness-context`（Foundation F2 新增）
+
+```text
+ContextSource
+ContextAssembler
+ContextPolicy
+ContextProjector
+PromptBuilder
+ContextSnapshot / ContextProjection
+```
+
+---
+
+## 6.11 `harness-connectors`（可选，真实抽象出现后）
 
 ```text
 ConnectorProvider SPI
@@ -720,25 +759,28 @@ MockQueryConnector
 MockRetrieverConnector
 ```
 
+一期业务检索可以继续使用现有 Tool / Agent Capability；只有多个真实 connector 出现共同边界后，
+才引入专用 ConnectorProvider SPI。
+
 ---
 
-## 6.11 `harness-memory`（3D）
+## 6.12 `harness-memory`（Foundation F3）
 
 ```text
-MemoryProvider SPI
-load
+MemoryProvider SPI / MemoryGateway
 search
-write
-compact
+put
+delete
 
 InMemoryMemoryProvider
+SQLiteMemoryProvider
 ```
 
-不在本阶段接真实 Vector DB。
+同时实现 namespace、TTL、provenance 与 Policy-gated write；不在一期接真实 Vector DB。
 
 ---
 
-## 6.12 `harness-eval`（3D）
+## 6.13 `harness-eval`（投产后扩展）
 
 ```text
 SelectionReplay
@@ -1160,49 +1202,44 @@ action_id、proposal_hash 与 idempotency_key 都是 Harness-owned materialized 
 
 ```text
 Capability allowed?
-Budget allowed?
+Input schema valid?
+Basic count / repeat allowed?
+Side effect NONE/READ?
+Egress NONE/INTERNAL?
+Completion explicitly SYNC?
 Deadline?
-Policy?
-Approval?
 Provider available?
-Idempotency?
+PRE_EXECUTE Policy ALLOW?
 ```
 
-然后调用现有 CapabilityInvoker。
+ActionProposal checkpoint 后调用现有 CapabilityInvoker。PRE_EXECUTE 要求 Approval 时零 Provider
+outbound 并终止本次 Exploration；unexpected ACCEPTED 按 ORPHANED/FAILED 处理。
 
 ---
 
-# 18. Exploration WAITING / Restart
+# 18. Exploration Recovery 边界
 
-EXPLORE 也必须支持长生命周期场景。
-
-可以复用 Stage 2：
-
-```text
-Approval WAITING
-Async WAITING
-Cancellation
-Deadline
-```
-
-但需要在同一 PlanExecutionRecord 中新增 Exploration child state，并对所有
-包含 EXPLORATION node 的 checkpoint 使用 versioned CAS。
-
-核心原则：
+一期只支持从 completed Observation 边界恢复：该 Observation 与 terminal Action result 已完整
+写入同一 PlanExecutionRecord，且 `pending_action_id=None`。
 
 ```text
-探索进程崩溃
-≠
-用户取消
+completed Observation → 可以继续下一轮
+PROPOSED / RUNNING    → RESUME_UNSAFE
+Approval / Async      → 不进入 WAITING，fail-closed
+WRITE / egress        → 不进入一期 Action scope
+cross-worker takeover → 不支持
 ```
 
-恢复后从最后一个稳定 Observation / Action 边界继续，而不是重新执行已经确认完成的 WRITE Action。
+Stage 2 的 Approval / Async / Resume 能力继续服务既有 CAPABILITY / APPROVAL 节点，但一期不把整套
+长生命周期协议复制到 Exploration 子状态。复杂 checkpoint CAS、operation claim 与 takeover 留待
+真实部署提出故障模型后再设计。
 
 ---
 
-# 19. HYBRID
+# 19. HYBRID（后续高阶设计储备）
 
-推荐默认复杂生产模式。
+一期不实现，也不作为默认复杂生产模式。只有 FAST / PLAN / standalone EXPLORE 投入使用后，
+出现稳定证据证明任务同时需要宏观 DAG 和局部未知探索，才重新评审本节。
 
 典型基础 Plan：
 
@@ -1225,7 +1262,9 @@ bounded exploration
 
 ---
 
-# 20. PlanPatchProposal
+# 20. PlanPatchProposal（后续高阶设计储备）
+
+本节不属于一期 backlog。以下内容只保存安全设计方向，不能直接转化为当前实现任务。
 
 Explorer 发现需要扩展主 Plan：
 
@@ -1259,7 +1298,7 @@ revision 单调递增
 
 # 21. ConnectorProvider
 
-Stage 3D 最小实现：
+一期可选的最小 Context Source 适配：
 
 ```text
 QueryConnector
@@ -1280,22 +1319,23 @@ data.query/v1
 
 # 22. MemoryProvider
 
-Stage 3D 最小接口：
+Foundation F3 基础接口：
 
 ```text
-load
+get
 search
-write
-compact
+put
+delete
 ```
 
-第一版：
+第一版先完成：
 
 ```text
 InMemoryMemoryProvider
+SQLiteMemoryProvider
 ```
 
-只验证 SPI、Context Slice、Policy 与多 Provider 边界。
+验证 SPI、MemoryGateway、ContextProjection、namespace、Policy、持久化与删除边界。
 
 真实向量数据库、长期记忆质量策略延后。
 
@@ -1309,7 +1349,7 @@ Stage 3B 已新增：
 PRE_ROUTE
 ```
 
-Stage 3C 预留：
+后续高阶设计预留，不进入一期：
 
 ```text
 PRE_PATCH
@@ -1322,6 +1362,18 @@ PRE_PLAN
 PRE_EXECUTE
 ```
 
+Agent Foundation 新增类型化 phase：
+
+```text
+PRE_CONTEXT
+PRE_MEMORY_READ
+PRE_MEMORY_WRITE
+PRE_MEMORY_DELETE
+```
+
+它们复用同一个 PolicyEngine，基础 guard 始终执行；一期仅接受 ALLOW / DENY，不建立新的 Approval
+waiting。
+
 Policy 可以：
 
 ```text
@@ -1333,6 +1385,9 @@ Policy 可以：
 禁止 external egress
 要求 Approval
 ```
+
+既有 PLAN/CAPABILITY 路径继续使用 Stage 2 Approval；最小 Explore 遇到 PRE_EXECUTE
+REQUIRE_APPROVAL 时零 Provider outbound 并 fail-closed。
 
 3B 的 PRE_ROUTE 只接受 forced/allowed mode、Capability/Planner scope、Plan attempts/nodes
 上限；REQUIRE_APPROVAL 不创建 Request-level waiting，而是 fail-closed。
@@ -1390,7 +1445,9 @@ plan_patch.rejected
 
 ---
 
-# 25. Replay Eval
+# 25. Replay Eval（投产后设计储备）
+
+本节不进入一期实现。只有积累足够真实结构化轨迹后，才单独评审 Replay 的数据契约与指标。
 
 ## 25.1 Selection Replay
 
@@ -1524,20 +1581,20 @@ unsafe write missing approval / policy handling
 
 ## 27.6 Explore
 
+一期只执行 multi-step success、基础次数限制、repeated action、scope violation 与 completed
+Observation recovery。Approval / Async / WRITE / 复杂 restart 条目转入后续 Gate。
+
 ```text
 multi-step success
 max_steps
-tool_calls exhausted
-deadline
-approval WAITING
-async WAITING
-restart
+action_calls exhausted
+completed Observation recovery
 repeated action guard
-unsafe write
 scope violation
+Approval / Async / WRITE fail-closed
 ```
 
-## 27.7 Hybrid
+## 27.7 Hybrid（后续高阶设计储备）
 
 ```text
 Plan → Explore Node → Result → downstream
@@ -1549,6 +1606,24 @@ restart after accepted Patch
 ---
 
 # 28. Stage 3 最终 E2E
+
+一期验收改为：
+
+```text
+真实 Request
+  ↓
+ContextAssembler + governed MemorySlice
+  ↓
+FAST / PLAN / standalone EXPLORE
+  ↓
+一个同步 READ Action / Observation 循环
+  ↓
+带 evidence refs 的结果
+  ↓
+Policy-gated MemoryWriteProposal
+```
+
+以下 HYBRID + PlanPatch 流程只保留为后续目标态，不作为当前验收请求。
 
 建议验收请求：
 
@@ -1626,10 +1701,10 @@ resume
 ```text
 Result SUCCESS / PARTIAL
 完整 provider selection trace
-完整 route / plan / exploration trace
+完整 route / plan / context / memory / exploration trace
 无重复 WRITE
-Plan revision 可审计
-Replay Eval 可复现 route / selection
+Memory write 具备 evidence / Policy / namespace 记录
+HYBRID / PlanPatch 未进入一期运行路径
 ```
 
 ---
@@ -1645,15 +1720,22 @@ Stage 3A — Provider Fabric
 Stage 3B — Routing & Planning
   已完成；以 Stage 3B 实施说明书和验收集为准
 
-Stage 3C — Agentic Exploration
-  按 FinanceClaw-Stage3C-Agentic-Exploration-实施说明书的 13 个步骤实施与验收
+Agent Foundation F1 — Routing Correctness
+  收口 deterministic-first 与模型只填写未知字段
 
-Stage 3D — Provider Expansion & Replay Eval
-  在 3C Acceptance Gate 通过后另行设计与实施
+Agent Foundation F2–F3 — Context Engineering & Memory
+  先完成 Context pipeline、MemoryProvider / Gateway 与 SQLite 持久化
+
+Agent Foundation F4–F5 — Minimal Explore & Real-use Gate
+  再实施最小 standalone EXPLORE、安全 Action、基础次数限制与真实试用
+
+Post-Foundation Advanced
+  一期投产后根据真实问题重新评审 HYBRID、PlanPatch、高阶预算与 Replay
 ```
 
-3C 的步骤内容、依赖顺序、迁移要求和每步 Gate 以独立实施说明书
-为唯一编码基线，本章不再维护重复的组件级清单。
+当前步骤与 Gate 以 `FinanceClaw-Agent-Foundation-一期路线图.md` 和
+`FinanceClaw-Agent-Foundation-一期实施说明书.md` 为基线。旧 Stage 3C Agentic Exploration
+文档整体仅作设计储备。
 
 ---
 
@@ -1663,28 +1745,27 @@ Stage 3D — Provider Expansion & Replay Eval
 
 1. 同一 capability 可以注册多个 Provider。
 2. Planner 仍只面向 capability，不依赖 provider_id。
-3. Selector 可以基于 Health / Policy / Cost 等约束选择 Provider。
+3. Selector 可以基于 Health / Policy / 显式资格约束选择 Provider。
 4. Retry 和 Fallback 有明确不同的可观测语义。
 5. 非幂等 WRITE 不会自动跨 Provider fallback。
 6. ModelProvider 可替换，Router / Planner 不直接引用厂商 SDK。
-7. `handle()` 可以执行 FAST / PLAN / EXPLORE / HYBRID。
+7. `handle()` 可以执行 FAST / PLAN / standalone EXPLORE；HYBRID 保持 fail-closed。
 8. LLMRouter 边界只返回 Harness 验证后的 RouteDecision；模型只生成
    identity-free Route Draft。
 9. 任意 Planner 输出在 Coordinator trust boundary 统一归一化为模板，
    每次 fresh execution 只 materialize 一次新 plan_id，并通过 PlanValidator。
 10. Explore 每次 Action 都经过 ScopedActionExecutor / CapabilityInvoker。
-11. Explore 有 steps / calls / deadline / cost / scope / recursion guard。
-12. Approval / Async WAITING 在 Explore / Hybrid 中仍可恢复。
-13. PlanPatchProposal 不允许直接修改主 Plan；3C v1 只能 append-only
-    追加 new tail。
-14. 所有含 EXPLORATION 节点的 Plan checkpoint 都使用 versioned CAS，
-    Plan revision 可 audit / resume。
-15. Memory 与 StateStore 明确分离。
-16. Replay 默认不会重放真实 WRITE 副作用。
+11. Explore 有 steps / model calls / action calls / scope / repeat 基础 guard，并固定禁止 nested explore。
+12. standalone Explore 只从已完成 Observation 边界恢复；其他中间态 fail-closed。
+13. Context projection 具备 provenance、隔离、确定性裁剪和泄漏测试。
+14. Memory 具备 namespace、Policy、持久化、删除和过期能力。
+15. Memory 与 StateStore 明确分离，Router / Planner / Explorer 只消费受控 ContextProjection。
+16. 至少一个真实业务 Agent 场景完成试用并形成质量与失败基线。
 17. Stage 1 Direct Invocation 与 Stage 2 execute_plan API 继续兼容。
-18. Trace 能关联 Route → Plan/Explore → Provider Select → Capability。
+18. Trace 能关联 Context / Memory → Route → Plan/Explore → Provider Select → Capability。
 19. Plugin 不获得 Harness 内部 Service Locator。
-20. Fault Injection 证明模型失败、Provider 失败、进程重启不会破坏执行一致性。
+20. Fault Injection 证明模型失败、Provider 失败、既有 Plan 恢复与 completed-Observation 恢复不会
+    破坏执行一致性；其他 Explore 中间态稳定 fail-closed。
 
 ---
 
@@ -1707,7 +1788,8 @@ WRITE fallback 禁止绕过幂等
 
 # 32. ADR 决议状态
 
-Stage 3A / 3B 编码前的决议已经冻结；Stage 3C/3D 项继续按状态说明推进。
+Stage 3A / 3B 编码前的决议已经冻结；当前按 Agent Foundation F1→F5 推进。旧 Stage 3C/3D
+编号及高阶条目不再代表实施顺序。
 
 ## RESOLVED-1：ExecutionMode 放在哪里？
 
@@ -1759,7 +1841,7 @@ Harness ExplorationEngine
 
 代价：SPI、生命周期、checkpoint 和安全边界复杂很多。
 
-**Stage 3C 已冻结采用 A，尚未开始实现；方案 B 留作后续演进。**
+**一期最小 Agent Loop 采用 A；HYBRID、多 Agent 与 AgenticAgentSPI 留待真实使用后评审。**
 
 ---
 
