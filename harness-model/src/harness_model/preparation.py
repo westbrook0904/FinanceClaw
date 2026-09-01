@@ -44,9 +44,6 @@ class ModelAttemptPolicy(ContractModel):
     retry_policy: RetryPolicy = Field(default_factory=RetryPolicy)
     allow_fallback: bool = True
     max_provider_count: int = Field(default=8, ge=1)
-    max_input_tokens_per_call: int | None = Field(default=None, ge=1)
-    require_complete_accounting: bool = True
-    require_cost_bounds: bool = False
 
 
 @dataclass(frozen=True, slots=True)

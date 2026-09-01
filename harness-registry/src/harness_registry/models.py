@@ -54,6 +54,7 @@ class ProviderRegistration:
     model_features: ModelProviderFeatures = dataclass_field(default_factory=ModelProviderFeatures)
     model_features_hash: str = ""
     registration_version: str = ""
+    provider_incarnation: str = dataclass_field(init=False, default="")
 
     def __post_init__(self) -> None:
         features = self.model_features
@@ -73,6 +74,11 @@ class ProviderRegistration:
         object.__setattr__(self, "model_features", features)
         object.__setattr__(self, "model_features_hash", feature_hash)
         object.__setattr__(self, "registration_version", version)
+        object.__setattr__(
+            self,
+            "provider_incarnation",
+            _stable_hash({"process_provider_object_id": id(self.provider)}),
+        )
 
     @property
     def provider_id(self) -> str:

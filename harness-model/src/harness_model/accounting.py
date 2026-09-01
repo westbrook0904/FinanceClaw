@@ -1,4 +1,4 @@
-"""Gateway-owned model attempt 计费聚合。"""
+"""Gateway-owned model attempt 用量遥测聚合。"""
 
 from __future__ import annotations
 
@@ -9,7 +9,6 @@ from harness_contracts import (
     ModelProviderAttemptUsage,
     ModelProviderFeatures,
     ModelUsage,
-    NormalizedCost,
     ProviderError,
 )
 
@@ -50,32 +49,15 @@ class ModelAccountingAccumulator:
                 "model provider accounting does not match successful usage",
                 code=ErrorCode.MODEL_ACCOUNTING_INCOMPLETE,
             )
-        if raw.complete and features.usage_tokens and raw.usage is None:
+        if raw.complete and raw.usage is None:
             raise ProviderError(
                 "complete model accounting requires token usage",
                 code=ErrorCode.MODEL_ACCOUNTING_INCOMPLETE,
             )
-        if raw.complete and features.normalized_cost and raw.normalized_cost is None:
-            raise ProviderError(
-                "complete model accounting requires normalized cost",
-                code=ErrorCode.MODEL_ACCOUNTING_INCOMPLETE,
-            )
-        if raw.normalized_cost is not None:
-            if not features.normalized_cost or features.cost_rate is None:
-                raise ProviderError(
-                    "provider returned cost without registered cost features",
-                    code=ErrorCode.MODEL_ACCOUNTING_INCOMPLETE,
-                )
-            if raw.normalized_cost.unit != features.cost_rate.unit:
-                raise ProviderError(
-                    "provider cost unit differs from its registered feature snapshot",
-                    code=ErrorCode.MODEL_ACCOUNTING_INCOMPLETE,
-                )
         attempt = ModelProviderAttemptUsage(
             provider_id=provider_id,
             ordinal=len(self._attempts) + 1,
             usage=raw.usage,
-            normalized_cost=raw.normalized_cost,
             complete=raw.complete,
         )
         self._attempts.append(attempt)
@@ -92,32 +74,11 @@ class ModelAccountingAccumulator:
 
     def aggregate(self) -> ModelGenerationAccounting:
         input_tokens = sum(
-            attempt.usage.input_tokens
-            for attempt in self._attempts
-            if attempt.usage is not None
+            attempt.usage.input_tokens for attempt in self._attempts if attempt.usage is not None
         )
         output_tokens = sum(
-            attempt.usage.output_tokens
-            for attempt in self._attempts
-            if attempt.usage is not None
+            attempt.usage.output_tokens for attempt in self._attempts if attempt.usage is not None
         )
-        costs = [
-            attempt.normalized_cost
-            for attempt in self._attempts
-            if attempt.normalized_cost is not None
-        ]
-        aggregate_cost = None
-        if costs:
-            units = {cost.unit for cost in costs}
-            if len(units) != 1:
-                raise ProviderError(
-                    "model attempt accounting uses incompatible cost units",
-                    code=ErrorCode.MODEL_ACCOUNTING_INCOMPLETE,
-                )
-            aggregate_cost = NormalizedCost(
-                unit=costs[0].unit,
-                amount=sum(cost.amount for cost in costs),
-            )
         return ModelGenerationAccounting(
             attempts=tuple(self._attempts),
             aggregate_usage=ModelUsage(
@@ -125,7 +86,6 @@ class ModelAccountingAccumulator:
                 output_tokens=output_tokens,
                 total_tokens=input_tokens + output_tokens,
             ),
-            aggregate_cost=aggregate_cost,
             complete=all(attempt.complete for attempt in self._attempts),
         )
 
@@ -143,13 +103,8 @@ class ModelAccountingAccumulator:
         features: ModelProviderFeatures,
     ) -> ModelAttemptAccounting:
         usage = result.usage if result.status is GenerateStatus.SUCCESS else None
-        complete = (
-            usage is not None
-            and features.usage_tokens
-            and not features.normalized_cost
-        )
+        complete = usage is not None and features.usage_tokens
         return ModelAttemptAccounting(
             usage=usage,
-            normalized_cost=None,
             complete=complete,
         )

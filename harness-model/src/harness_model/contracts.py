@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from enum import StrEnum
 from typing import Self
 
@@ -54,10 +53,6 @@ class ModelOutput(ContractModel):
     def validate_data_shape(self) -> Self:
         if self.type is ModelResponseFormat.TEXT and not isinstance(self.data, str):
             raise ValueError("text model output must contain a string")
-        if self.type is ModelResponseFormat.JSON and not isinstance(
-            self.data, Mapping | tuple | list
-        ):
-            raise ValueError("json model output must contain an object or array")
         return self
 
 

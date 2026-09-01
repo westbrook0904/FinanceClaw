@@ -4,8 +4,12 @@
 Harness 模块或插件。Stage 2 在 Request/Context/Capability/Result 基线上补齐 Plan、
 可恢复状态、审批和异步 Continuation；Stage 3A 进一步冻结 Provider 身份、Health、
 Selection、ProviderAttempt 和安全恢复协议；Stage 3B 冻结请求级 ExecutionMode 与
-RouteDecision 协议；Stage 3C Step 2 下沉 provider-neutral 模型 usage、cost、strict structured
+RouteDecision 协议；Stage 3C Step 2 下沉 provider-neutral 模型 usage 遥测、strict structured
 output 与 generation reservation/receipt 契约，避免 `harness-contracts` 反向依赖模型实现层。
+
+Agent Foundation 重基线将未发布的 `NormalizedCost*`、token/cost reservation 上界与相关
+ModelAttemptPolicy 字段作为 pre-release corrective break 删除；仓库没有旧 reservation 的生产
+持久化消费者，不提供 wire migration。旧快照必须丢弃并重新 prepare。
 
 ## 公共 API
 
@@ -19,7 +23,7 @@ output 与 generation reservation/receipt 契约，避免 `harness-contracts` �
 | 上下文 | `InvocationContext`、Identity、Tenant、Trace、Cancellation Context |
 | 能力 | `CapabilityDescriptor`、`CapabilityType`、`CapabilityExecutionProfile` |
 | Provider Fabric | `ProviderDescriptor`、`ProviderHealthSnapshot`、`ProviderAttempt`、`ProviderPin`、Selection 契约 |
-| 模型生成 | `StructuredOutputSpec`、`ModelProviderFeatures`、`ModelUsage`、`NormalizedCost`、`ModelGenerationAccounting`、`ModelGenerationReservation`、`ModelReservationReceipt` |
+| 模型生成 | `StructuredOutputSpec`、`ModelProviderFeatures`、`ModelUsage`、`ModelGenerationAccounting`、`ModelGenerationReservation`、`ModelReservationReceipt` |
 | 审批 | `ApprovalRequest`、`ApprovalDecision`、`ApprovalGrant` |
 | 结果 | `ResultEnvelope`、`ResultOutput`、`ResultIssue`、`Continuation` |
 | 错误 | `ErrorDetail`、`ErrorCode`、`HarnessError` 及模块异常 |
@@ -47,7 +51,8 @@ Approval Node 是 ExecutionEngine 原生等待点，不注册为 Capability。
   Python 表达式。
 - Edge Trigger 支持 `SUCCESS`、`FAILED`、`DENIED`、`COMPLETED` 和
   `ALWAYS`。
-- `PlanBudget` 当前执行 Deadline 和最大并发；token/cost 字段只冻结协议。
+- `PlanBudget` 当前只执行 Deadline 和最大并发；历史 token/cost 字段不参与 enforcement，也不
+  进入 Agent Foundation 一期能力。
 - Retry 总尝试次数、指数退避、节点超时、失败传播和幂等键都属于显式 Plan 契约。
 
 单模型内可以确定的约束由 Pydantic 校验；环、跨节点引用、可达性和 Capability 是否存在

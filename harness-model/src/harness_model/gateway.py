@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -19,10 +18,8 @@ from harness_contracts import (
     JsonValue,
     ModelGenerationAttemptSlot,
     ModelGenerationReservation,
-    ModelProviderAttemptUsage,
     ModelReservationReceipt,
     ModelSlotExecutionTicket,
-    NormalizedCost,
     ProviderAttempt,
     ProviderError,
     ResultEnvelope,
@@ -258,7 +255,7 @@ class ModelGateway:
         context: InvocationContext,
         attempt_policy: ModelAttemptPolicy | None = None,
     ) -> PreparedModelGeneration:
-        """冻结 strict generation 的 Provider、attempt 与最坏资源上界；零 outbound。"""
+        """冻结 strict generation 的 Provider 与 attempt 槽位；零 outbound。"""
 
         if not isinstance(request, GenerateRequest):
             raise TypeError("request must be GenerateRequest")
@@ -272,12 +269,7 @@ class ModelGateway:
             or request.structured_output.strictness is not StructuredOutputStrictness.REQUIRED
         ):
             raise ProviderError(
-                "budgeted generation requires strict structured output",
-                code=ErrorCode.MODEL_RESERVATION_INVALID,
-            )
-        if request.max_output_tokens is None:
-            raise ProviderError(
-                "budgeted generation requires max_output_tokens",
+                "reserved generation requires strict structured output",
                 code=ErrorCode.MODEL_RESERVATION_INVALID,
             )
 
@@ -299,9 +291,7 @@ class ModelGateway:
             max_count=policy.max_provider_count if policy.allow_fallback else 1,
         )
 
-        slot_specs: list[tuple[ProviderRegistration, PreparedStructuredOutput, int, int]] = []
-        cost_unit: str | None = None
-        reserve_cost_bounds: bool | None = None
+        slot_specs: list[tuple[ProviderRegistration, PreparedStructuredOutput]] = []
         for registration in ordered:
             provider = registration.provider
             prepared = prepared_by_provider.get(registration.provider_id)
@@ -309,40 +299,12 @@ class ModelGateway:
                 prepared, PreparedStructuredOutput
             ):
                 continue
-            if policy.require_complete_accounting and not registration.model_features.usage_tokens:
-                continue
-            try:
-                input_bound = provider.bound_input_tokens(request, prepared)
-            except Exception:
-                input_bound = None
-            if (
-                not isinstance(input_bound, int)
-                or isinstance(input_bound, bool)
-                or input_bound < 0
-                or (
-                    policy.max_input_tokens_per_call is not None
-                    and input_bound > policy.max_input_tokens_per_call
-                )
-            ):
-                continue
-            rate = registration.model_features.cost_rate
-            if policy.require_cost_bounds and rate is None:
-                continue
-            has_cost_bound = rate is not None
-            if reserve_cost_bounds is not None and has_cost_bound != reserve_cost_bounds:
-                continue
-            if reserve_cost_bounds is None:
-                reserve_cost_bounds = has_cost_bound
-            if rate is not None:
-                if cost_unit is not None and rate.unit != cost_unit:
-                    continue
-                cost_unit = rate.unit
-            for retry_attempt in range(1, policy.retry_policy.max_attempts + 1):
-                slot_specs.append((registration, prepared, input_bound, retry_attempt))
+            for _ in range(policy.retry_policy.max_attempts):
+                slot_specs.append((registration, prepared))
 
         if not slot_specs:
             raise ProviderError(
-                "no provider can produce sound generation resource bounds",
+                "no provider can prepare the reserved structured generation",
                 code=ErrorCode.MODEL_RESERVATION_INVALID,
                 details={"model": request.model, "schema_hash": structured.schema_hash},
             )
@@ -350,72 +312,41 @@ class ModelGateway:
         generation_id = str(uuid4())
         slots: list[ModelGenerationAttemptSlot] = []
         prepared_by_slot: dict[str, PreparedStructuredOutput] = {}
-        for ordinal, (registration, prepared, input_bound, _retry_attempt) in enumerate(
-            slot_specs, start=1
-        ):
+        for ordinal, (registration, prepared) in enumerate(slot_specs, start=1):
             slot_id = f"{generation_id}:{ordinal}"
-            rate = registration.model_features.cost_rate
-            cost_bound = None
-            if rate is not None:
-                amount = (
-                    input_bound * rate.max_input_token_cost
-                    + request.max_output_tokens * rate.max_output_token_cost
-                    + rate.max_request_cost
-                )
-                if not math.isfinite(amount):
-                    raise ProviderError(
-                        "provider cost upper bound is not finite",
-                        code=ErrorCode.MODEL_RESERVATION_INVALID,
-                    )
-                cost_bound = NormalizedCost(unit=rate.unit, amount=amount)
             slot = ModelGenerationAttemptSlot(
                 slot_id=slot_id,
                 provider_id=registration.provider_id,
                 provider_registration_version=registration.registration_version,
+                provider_incarnation=registration.provider_incarnation,
                 provider_features_hash=registration.model_features_hash,
                 prepared_schema_hash=structured.schema_hash,
                 provider_attempt=ordinal,
-                input_token_upper_bound=input_bound,
-                output_token_upper_bound=request.max_output_tokens,
-                token_upper_bound=input_bound + request.max_output_tokens,
-                normalized_cost_upper_bound=cost_bound,
             )
             slots.append(slot)
             prepared_by_slot[slot_id] = prepared
 
         request_fingerprint = stable_request_fingerprint(request.model_dump(mode="json"))
+        authorization_context_hash = self._authorization_context_fingerprint(context)
         registry_snapshot_hash = stable_request_fingerprint(
             [
                 {
                     "provider_id": registration.provider_id,
                     "registration_version": registration.registration_version,
+                    "provider_incarnation": registration.provider_incarnation,
                     "features_hash": registration.model_features_hash,
                 }
                 for registration in ordered
                 if any(slot.provider_id == registration.provider_id for slot in slots)
             ]
         )
-        total_cost = None
-        cost_bounds = [
-            slot.normalized_cost_upper_bound
-            for slot in slots
-            if slot.normalized_cost_upper_bound is not None
-        ]
-        if cost_bounds:
-            total_cost = NormalizedCost(
-                unit=cost_bounds[0].unit,
-                amount=sum(item.amount for item in cost_bounds),
-            )
         reservation_payload = {
             "generation_id": generation_id,
             "request_fingerprint": request_fingerprint,
+            "authorization_context_hash": authorization_context_hash,
             "schema_hash": structured.schema_hash,
             "registry_snapshot_hash": registry_snapshot_hash,
             "slots": [slot.model_dump(mode="json") for slot in slots],
-            "total_token_upper_bound": sum(slot.token_upper_bound for slot in slots),
-            "total_cost_upper_bound": (
-                total_cost.model_dump(mode="json") if total_cost is not None else None
-            ),
         }
         reservation = ModelGenerationReservation(
             **reservation_payload,
@@ -483,17 +414,15 @@ class ModelGateway:
                 break
             registration = self._registry.get_provider(slot.provider_id)
             frozen_registration = next(
-                (
-                    item
-                    for item in prepared.registrations
-                    if item.provider_id == slot.provider_id
-                ),
+                (item for item in prepared.registrations if item.provider_id == slot.provider_id),
                 None,
             )
             if (
                 registration is None
                 or frozen_registration is None
                 or registration.registration_version != slot.provider_registration_version
+                or registration.provider_incarnation != slot.provider_incarnation
+                or registration.provider is not frozen_registration.provider
                 or registration.model_features_hash != slot.provider_features_hash
             ):
                 error = ProviderError(
@@ -535,7 +464,6 @@ class ModelGateway:
                 )
                 return accounting.attach(GenerateResult.failure(error.to_detail()))
             result: GenerateResult
-            reservation_violation = False
             try:
                 result = await self._call_model(
                     provider,
@@ -555,11 +483,6 @@ class ModelGateway:
                     result,
                     registration.model_features,
                 )
-                reservation_violation = not self._attempt_within_slot(
-                    attempt_usage,
-                    slot,
-                    require_cost=prepared.attempt_policy.require_cost_bounds,
-                )
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
@@ -576,8 +499,6 @@ class ModelGateway:
             except HarnessError as exc:
                 result = GenerateResult.failure(exc.to_detail(), provider_id=slot.provider_id)
             outcome = "completed" if result.status is GenerateStatus.SUCCESS else "failed"
-            if not attempt_usage.complete or reservation_violation:
-                outcome = "orphaned"
             try:
                 await sink.complete_model_generation_slot(
                     receipt,
@@ -594,21 +515,6 @@ class ModelGateway:
                     details={"slot_id": slot.slot_id, "cause_type": type(exc).__name__},
                 )
                 return accounting.attach(GenerateResult.failure(error.to_detail()))
-            if not attempt_usage.complete:
-                error = ProviderError(
-                    "model attempt accounting is incomplete",
-                    code=ErrorCode.MODEL_ACCOUNTING_INCOMPLETE,
-                    details={"slot_id": slot.slot_id},
-                )
-                return accounting.attach(GenerateResult.failure(error.to_detail()))
-            if reservation_violation:
-                error = ProviderError(
-                    "model attempt exceeded or violated its reserved resource bounds",
-                    code=ErrorCode.MODEL_GENERATION_ORPHANED,
-                    details={"slot_id": slot.slot_id},
-                )
-                return accounting.attach(GenerateResult.failure(error.to_detail()))
-
             last_result = result
             previous_provider_id = slot.provider_id
             if result.status is GenerateStatus.SUCCESS:
@@ -1108,9 +1014,7 @@ class ModelGateway:
             if not isinstance(provider, ModelProvider):
                 continue
             features = registration.model_features
-            can_compile = features.json_schema and (
-                features.json_schema_strict or not required
-            )
+            can_compile = features.json_schema and (features.json_schema_strict or not required)
             prepared: PreparedStructuredOutput | None = None
             if can_compile:
                 try:
@@ -1195,11 +1099,17 @@ class ModelGateway:
             reservation.request_fingerprint
         ):
             return "request_fingerprint"
+        if (
+            ModelGateway._authorization_context_fingerprint(context)
+            != reservation.authorization_context_hash
+        ):
+            return "authorization_context"
         registry_snapshot_hash = stable_request_fingerprint(
             [
                 {
                     "provider_id": registration.provider_id,
                     "registration_version": registration.registration_version,
+                    "provider_incarnation": registration.provider_incarnation,
                     "features_hash": registration.model_features_hash,
                 }
                 for registration in prepared.registrations
@@ -1219,6 +1129,29 @@ class ModelGateway:
         return None
 
     @staticmethod
+    def _authorization_context_fingerprint(context: InvocationContext) -> str:
+        """绑定影响授权/选择的稳定调用身份，不绑定 trace、取消或可收紧 deadline。"""
+
+        return stable_request_fingerprint(
+            {
+                "request": context.request.model_dump(mode="json"),
+                "identity": (
+                    context.identity.model_dump(mode="json")
+                    if context.identity is not None
+                    else None
+                ),
+                "tenant": (
+                    context.tenant.model_dump(mode="json") if context.tenant is not None else None
+                ),
+                "execution": {
+                    "plan_id": context.attributes.get("plan_id"),
+                    "node_id": context.attributes.get("node_id"),
+                    "exploration_id": context.attributes.get("exploration_id"),
+                },
+            }
+        )
+
+    @staticmethod
     def _ticket_matches(
         receipt: ModelReservationReceipt,
         reservation: ModelGenerationReservation,
@@ -1233,34 +1166,6 @@ class ModelGateway:
             and ticket.committed_state_version >= receipt.committed_state_version
             and ticket.scheduler_generation == receipt.scheduler_generation
             and ticket.owner_epoch == receipt.owner_epoch
-        )
-
-    @staticmethod
-    def _attempt_within_slot(
-        accounting: ModelProviderAttemptUsage,
-        slot: ModelGenerationAttemptSlot,
-        *,
-        require_cost: bool,
-    ) -> bool:
-        usage = accounting.usage
-        if usage is None:
-            return False
-        if (
-            usage.input_tokens > slot.input_token_upper_bound
-            or usage.output_tokens > slot.output_token_upper_bound
-            or usage.total_tokens > slot.token_upper_bound
-        ):
-            return False
-        actual_cost = accounting.normalized_cost
-        reserved_cost = slot.normalized_cost_upper_bound
-        if require_cost and (actual_cost is None or reserved_cost is None):
-            return False
-        if actual_cost is None:
-            return True
-        return (
-            reserved_cost is not None
-            and actual_cost.unit == reserved_cost.unit
-            and actual_cost.amount <= reserved_cost.amount
         )
 
     async def _observe_provider_event(

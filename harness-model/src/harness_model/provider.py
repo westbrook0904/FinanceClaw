@@ -54,12 +54,3 @@ class ModelProvider(Capability):
             "model provider does not support prepared structured output",
             code=ErrorCode.MODEL_STRUCTURED_OUTPUT_UNSUPPORTED,
         )
-
-    def bound_input_tokens(
-        self,
-        request: GenerateRequest,
-        prepared: PreparedStructuredOutput,
-    ) -> int | None:
-        """返回 messages/schema/protocol overhead 的 sound token 上界。"""
-
-        return None

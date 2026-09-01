@@ -13,7 +13,8 @@
 - `CapabilityQuery`：按 Capability ID、类型、标签、版本和 Plugin ID 过滤，所有条件
   采用 AND 语义。
 - `ProviderRegistration`：ProviderDescriptor、CapabilityDescriptor 与受信任实例；MODEL 注册时
-  深拷贝 `ModelProviderFeatures`，并冻结 feature hash 和 registration version。
+  深拷贝 `ModelProviderFeatures`，并冻结 feature hash、registration version 和单进程
+  provider incarnation。后者用于阻断热替换实例继续消费旧 prepared reservation，不是跨进程身份。
 - `ResolvedCapability`：保留给旧单 Provider API 的兼容结果。
 - `CapabilityCatalog`：只读 Descriptor 目录抽象。
 - `RegistryCapabilityCatalog`：Registry 到 Catalog 的实时投影视图。

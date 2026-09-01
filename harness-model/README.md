@@ -24,13 +24,15 @@ structured output、usage、token count 和 finish reason。
 ## 公共 API
 
 - `ModelProvider.generate(GenerateRequest, InvocationContext) -> GenerateResult`
-- `ModelProvider.features / prepare_structured_output / generate_prepared / bound_input_tokens`：
-  受信任能力快照、无损本地 Schema 编译、strict generation 与 sound input token 上界。
+- `ModelProvider.features / prepare_structured_output / generate_prepared`：
+  受信任能力快照、无损本地 Schema 编译与 strict generation。
 - `ModelGateway.generate(...)`：Provider 发现、Health-aware Selection、单 Provider Retry、
   跨 Provider Fallback、完整本地 JSON Schema 校验、finish reason 归一化、attempt accounting
   聚合和 Trace。
 - `ModelGateway.prepare_generation(...) / execute_prepared(...)`：冻结所有允许的 retry/fallback
-  slots 与 token/cost 上界；只有匹配 reservation receipt 和逐 slot STARTED ticket 后才 outbound。
+  slots、授权上下文 hash 与 Provider incarnation；只有匹配 reservation receipt 和逐 slot
+  STARTED ticket 后才 outbound。跨 Tenant/Identity/Request/执行引用复用或热替换 Provider 实例
+  都会在网络调用前 fail-closed。
 - `GenerateRequest`：逻辑 model capability ID、messages、legacy response schema 或互斥的
   `StructuredOutputSpec`、
   temperature、max output tokens 和 metadata。
@@ -38,7 +40,7 @@ structured output、usage、token count 和 finish reason。
   provider identity、metadata、error 和 trace ID。
 - `StructuredGenerationAdapter`：Router/Planner/Explorer 共用的 strict-only 助手，不是新的 SPI。
 - `MockFastModel`、`MockQualityModel`、`MockBackupModel`：确定性测试 Provider，支持延迟和
-  瞬时失败注入；`MockStrictModelProvider` 额外支持 strict Schema 与资源上界。
+  瞬时失败注入；`MockStrictModelProvider` 额外支持 strict Schema。
 
 ## 注册和调用
 
@@ -90,13 +92,15 @@ MODEL Span 保留稳定错误码和固定错误摘要，不复制 Provider 返�
 ## 当前范围
 
 Stage 3C Step 2 已支持非流式 strict structured output、Provider-specific 无损 preparation、
-完整 Draft 2020-12 本地校验、Schema 资源上限/remote ref 阻断、refusal/truncation/filter
-归一化、跨 fallback accounting，以及 receipt + slot fencing 的两阶段 budgeted generation。
+完整 Draft 2020-12 本地校验（包含 primitive-root JSON）、Schema 资源上限/remote ref 阻断、refusal/truncation/filter
+归一化、跨 fallback usage accounting，以及 receipt + slot fencing 的两阶段 reserved generation。
+reservation 只冻结 Provider attempt slots，不承担 token、成本或耗时预算。
 观察面只记录 `schema_hash`，不记录完整 Schema、Prompt 或原始响应。
 
 Legacy `response_schema` 继续保持 Stage 3A/3B best-effort 语义；REQUIRED 请求不能降级到
-legacy `generate()`。LLMPlanner-v2 已迁移到 strict `PlanDraft`；ExplorationEngine 仍属于后续
-Stage 3C 步骤。Streaming、vision、embedding、rerank 和真实厂商 SDK adapter 暂缓。
+legacy `generate()`。LLMPlanner-v2 已迁移到 strict `PlanDraft`；ExplorationEngine 属于当前
+Agent Foundation 的 Minimal Explore 后续步骤。Streaming、vision、embedding、rerank 和真实
+厂商 SDK adapter 暂缓。
 
 ## 测试
 

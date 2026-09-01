@@ -9,14 +9,14 @@ from harness_contracts import (
     CapabilityDescriptor,
     CapabilityType,
     ErrorCode,
+    IdentityContext,
     InvocationContext,
     ModelAttemptAccounting,
+    ModelGenerationAccounting,
     ModelProviderFeatures,
     ModelReservationReceipt,
     ModelSlotExecutionTicket,
     ModelUsage,
-    NormalizedCost,
-    NormalizedCostRate,
     PlanNodeRef,
     ProviderDescriptor,
     ProviderError,
@@ -25,6 +25,7 @@ from harness_contracts import (
     RetryPolicy,
     StructuredOutputSpec,
     StructuredOutputStrictness,
+    TenantContext,
     UnsupportedStructuredOutputBehavior,
 )
 from harness_model import (
@@ -48,12 +49,6 @@ from harness_trace import InMemoryTracer, SpanType
 from pydantic import ValidationError
 
 MODEL_ID = "stage3c.strict-model/v1"
-RATE = NormalizedCostRate(
-    unit="credit",
-    max_input_token_cost=0.01,
-    max_output_token_cost=0.02,
-    max_request_cost=0.5,
-)
 
 
 def schema() -> dict[str, object]:
@@ -76,7 +71,7 @@ def schema() -> dict[str, object]:
 def structured_request(
     *,
     output_schema: dict[str, object] | None = None,
-    max_output_tokens: int = 40,
+    max_output_tokens: int | None = 40,
 ) -> GenerateRequest:
     return GenerateRequest(
         model=MODEL_ID,
@@ -101,25 +96,35 @@ def context() -> InvocationContext:
     )
 
 
-def reserved_context() -> InvocationContext:
-    return context().model_copy(
-        update={
-            "attributes": {
-                "plan_id": "plan-1",
-                "node_id": "node-1",
-                "exploration_id": "explore-1",
-            }
+def reserved_context(
+    *,
+    tenant_id: str | None = None,
+    identity_subject: str | None = None,
+) -> InvocationContext:
+    updates: dict[str, object] = {
+        "attributes": {
+            "plan_id": "plan-1",
+            "node_id": "node-1",
+            "exploration_id": "explore-1",
         }
-    )
+    }
+    if tenant_id is not None:
+        updates["tenant"] = TenantContext(tenant_id=tenant_id)
+    if identity_subject is not None:
+        updates["identity"] = IdentityContext(
+            subject=identity_subject,
+            scopes=frozenset({"model:generate"}),
+        )
+    return context().model_copy(update=updates)
 
 
 def success_result(
-    data: dict[str, object],
+    data: object,
     *,
     finish_reason: ModelFinishReason = ModelFinishReason.STOP,
     input_tokens: int = 5,
     output_tokens: int = 7,
-    cost: float = 0.25,
+    accounting_complete: bool = True,
 ) -> GenerateResult:
     usage = ModelUsage(
         input_tokens=input_tokens,
@@ -132,8 +137,7 @@ def success_result(
         finish_reason=finish_reason,
         attempt_accounting=ModelAttemptAccounting(
             usage=usage,
-            normalized_cost=NormalizedCost(unit="credit", amount=cost),
-            complete=True,
+            complete=accounting_complete,
         ),
     )
 
@@ -145,7 +149,6 @@ class ScriptedStrictProvider(ModelProvider):
         outcomes: GenerateResult | Sequence[GenerateResult],
         *,
         strict: bool = True,
-        input_bound: int | None = 100,
     ) -> None:
         self.provider_id = provider_id
         self.outcomes = (
@@ -159,10 +162,7 @@ class ScriptedStrictProvider(ModelProvider):
             json_schema_strict=strict,
             refusal_signal=strict,
             usage_tokens=True,
-            normalized_cost=strict,
-            cost_rate=RATE if strict else None,
         )
-        self.input_bound = input_bound
         self.legacy_calls = 0
         self.outbound_calls = 0
         self.prepare_calls = 0
@@ -209,13 +209,6 @@ class ScriptedStrictProvider(ModelProvider):
     ) -> GenerateResult:
         self.outbound_calls += 1
         return self._outcome(self.outbound_calls)
-
-    def bound_input_tokens(
-        self,
-        request: GenerateRequest,
-        prepared: PreparedStructuredOutput,
-    ) -> int | None:
-        return self.input_bound
 
     def _outcome(self, call: int) -> GenerateResult:
         return self.outcomes[min(call - 1, len(self.outcomes) - 1)]
@@ -309,6 +302,16 @@ class StructuredOutputContractTests(unittest.TestCase):
                 schema={"enum": list(range(300))},
             )
 
+    def test_complete_accounting_requires_usage_and_generation_requires_attempts(self) -> None:
+        with self.assertRaises(ValidationError):
+            ModelAttemptAccounting(complete=True)
+        with self.assertRaises(ValidationError):
+            ModelGenerationAccounting(
+                attempts=(),
+                aggregate_usage=ModelUsage(input_tokens=0, output_tokens=0, total_tokens=0),
+                complete=True,
+            )
+
     def test_plan_node_draft_schema_excludes_harness_owned_execution_fields(self) -> None:
         from harness_planning import PlanNodeDraft
 
@@ -334,6 +337,24 @@ class StructuredOutputContractTests(unittest.TestCase):
 
 
 class StructuredOutputGatewayTests(unittest.IsolatedAsyncioTestCase):
+    async def test_draft_2020_12_primitive_root_is_supported(self) -> None:
+        registry = InMemoryCapabilityRegistry()
+        provider = ScriptedStrictProvider(
+            "primitive-root",
+            success_result("approved"),
+        )
+        register(registry, provider, priority=100)
+
+        result = await ModelGateway(registry, InMemoryTracer()).generate(
+            structured_request(
+                output_schema={"type": "string", "enum": ["approved"]},
+            ),
+            context(),
+        )
+
+        self.assertEqual(result.status, GenerateStatus.SUCCESS)
+        self.assertEqual(result.output.data, "approved")
+
     async def test_required_unsupported_fails_before_any_generation(self) -> None:
         registry = InMemoryCapabilityRegistry()
         legacy = ScriptedStrictProvider(
@@ -360,9 +381,7 @@ class StructuredOutputGatewayTests(unittest.IsolatedAsyncioTestCase):
         for index, invalid in enumerate(invalid_outputs):
             with self.subTest(index=index):
                 registry = InMemoryCapabilityRegistry()
-                provider = ScriptedStrictProvider(
-                    f"strict-{index}", success_result(invalid)
-                )
+                provider = ScriptedStrictProvider(f"strict-{index}", success_result(invalid))
                 register(registry, provider, priority=100)
                 result = await ModelGateway(registry, InMemoryTracer()).generate(
                     structured_request(), context()
@@ -413,7 +432,6 @@ class StructuredOutputGatewayTests(unittest.IsolatedAsyncioTestCase):
                 first_error.to_detail(),
                 attempt_accounting=ModelAttemptAccounting(
                     usage=first_usage,
-                    normalized_cost=NormalizedCost(unit="credit", amount=0.4),
                     complete=True,
                 ),
             ),
@@ -424,7 +442,6 @@ class StructuredOutputGatewayTests(unittest.IsolatedAsyncioTestCase):
                 {"kind": "ok", "payload": {"count": 2}},
                 input_tokens=5,
                 output_tokens=7,
-                cost=0.6,
             ),
         )
         register(registry, first, priority=100)
@@ -441,7 +458,6 @@ class StructuredOutputGatewayTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result.accounting.complete)
         self.assertEqual(len(result.accounting.attempts), 2)
         self.assertEqual(result.accounting.aggregate_usage.total_tokens, 26)
-        self.assertEqual(result.accounting.aggregate_cost.amount, 1.0)
 
     async def test_only_schema_hash_is_observable(self) -> None:
         registry = InMemoryCapabilityRegistry()
@@ -487,46 +503,37 @@ class ReservedGenerationTests(unittest.IsolatedAsyncioTestCase):
         self.provider = ScriptedStrictProvider(
             "reserved-primary",
             success_result({"kind": "ok", "payload": {"count": 1}}),
-            input_bound=100,
         )
         register(self.registry, self.provider, priority=100)
         self.gateway = ModelGateway(self.registry, InMemoryTracer())
 
-    async def prepare(self):
+    async def prepare(self, invocation_context: InvocationContext | None = None):
         return await self.gateway.prepare_generation(
-            structured_request(max_output_tokens=40),
-            context(),
+            structured_request(max_output_tokens=None),
+            invocation_context or reserved_context(),
             ModelAttemptPolicy(
                 retry_policy=RetryPolicy(
                     max_attempts=2,
                     initial_backoff_ms=0,
                     max_backoff_ms=0,
                 ),
-                require_cost_bounds=True,
             ),
         )
 
-    async def test_prepare_is_zero_outbound_and_reserves_every_retry_bound(self) -> None:
+    async def test_prepare_is_zero_outbound_and_reserves_every_retry_slot(self) -> None:
         prepared = await self.prepare()
 
         self.assertEqual(self.provider.outbound_calls + self.provider.legacy_calls, 0)
         self.assertEqual(len(prepared.reservation.slots), 2)
         self.assertEqual(
-            [slot.input_token_upper_bound for slot in prepared.reservation.slots],
-            [100, 100],
+            [slot.provider_attempt for slot in prepared.reservation.slots],
+            [1, 2],
         )
-        self.assertEqual(
-            [slot.output_token_upper_bound for slot in prepared.reservation.slots],
-            [40, 40],
-        )
-        self.assertEqual(prepared.reservation.total_token_upper_bound, 280)
-        self.assertAlmostEqual(prepared.reservation.total_cost_upper_bound.amount, 4.6)
 
     async def test_reservation_covers_every_allowed_fallback_slot(self) -> None:
         backup = ScriptedStrictProvider(
             "reserved-backup",
             success_result({"kind": "ok", "payload": {"count": 2}}),
-            input_bound=80,
         )
         register(self.registry, backup, priority=10)
 
@@ -541,7 +548,6 @@ class ReservedGenerationTests(unittest.IsolatedAsyncioTestCase):
                 "reserved-backup",
             ],
         )
-        self.assertEqual(prepared.reservation.total_token_upper_bound, 520)
         self.assertEqual(self.provider.outbound_calls + backup.outbound_calls, 0)
 
     async def test_missing_receipt_or_started_cas_means_zero_outbound(self) -> None:
@@ -579,6 +585,41 @@ class ReservedGenerationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.error.code, ErrorCode.MODEL_RECEIPT_MISMATCH)
         self.assertEqual(self.provider.outbound_calls, 0)
 
+    async def test_reservation_cannot_cross_tenant_or_identity_context(self) -> None:
+        prepared = await self.prepare(
+            reserved_context(tenant_id="tenant-a", identity_subject="user-a")
+        )
+
+        result = await self.gateway.execute_prepared(
+            prepared,
+            receipt_for(prepared),
+            reserved_context(tenant_id="tenant-b", identity_subject="user-a"),
+            checkpoint_sink=MemoryCheckpointSink(),
+        )
+
+        self.assertEqual(result.error.code, ErrorCode.MODEL_RECEIPT_MISMATCH)
+        self.assertEqual(self.provider.outbound_calls, 0)
+
+    async def test_hot_replaced_provider_instance_orphans_reservation(self) -> None:
+        prepared = await self.prepare()
+        self.registry.unregister_provider(self.provider.provider_id)
+        replacement = ScriptedStrictProvider(
+            self.provider.provider_id,
+            success_result({"kind": "ok", "payload": {"count": 2}}),
+        )
+        register(self.registry, replacement, priority=100)
+
+        result = await self.gateway.execute_prepared(
+            prepared,
+            receipt_for(prepared),
+            reserved_context(),
+            checkpoint_sink=MemoryCheckpointSink(),
+        )
+
+        self.assertEqual(result.error.code, ErrorCode.MODEL_GENERATION_ORPHANED)
+        self.assertEqual(self.provider.outbound_calls, 0)
+        self.assertEqual(replacement.outbound_calls, 0)
+
     async def test_valid_fencing_checkpoints_accounting_around_outbound(self) -> None:
         prepared = await self.prepare()
         sink = MemoryCheckpointSink()
@@ -610,7 +651,7 @@ class ReservedGenerationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.error.code, ErrorCode.MODEL_GENERATION_ORPHANED)
         self.assertEqual(self.provider.outbound_calls, 1)
 
-    async def test_actual_usage_exceeding_sound_bound_orphans_generation(self) -> None:
+    async def test_usage_is_telemetry_and_does_not_gate_generation(self) -> None:
         self.provider.outcomes = (
             success_result(
                 {"kind": "ok", "payload": {"count": 1}},
@@ -628,8 +669,30 @@ class ReservedGenerationTests(unittest.IsolatedAsyncioTestCase):
             checkpoint_sink=sink,
         )
 
-        self.assertEqual(result.error.code, ErrorCode.MODEL_GENERATION_ORPHANED)
-        self.assertEqual(sink.completed[0][1], "orphaned")
+        self.assertEqual(result.status, GenerateStatus.SUCCESS)
+        self.assertEqual(result.accounting.aggregate_usage.total_tokens, 108)
+        self.assertEqual(sink.completed[0][1], "completed")
+
+    async def test_incomplete_usage_telemetry_does_not_gate_generation(self) -> None:
+        self.provider.outcomes = (
+            success_result(
+                {"kind": "ok", "payload": {"count": 1}},
+                accounting_complete=False,
+            ),
+        )
+        prepared = await self.prepare()
+        sink = MemoryCheckpointSink()
+
+        result = await self.gateway.execute_prepared(
+            prepared,
+            receipt_for(prepared),
+            reserved_context(),
+            checkpoint_sink=sink,
+        )
+
+        self.assertEqual(result.status, GenerateStatus.SUCCESS)
+        self.assertFalse(result.accounting.complete)
+        self.assertEqual(sink.completed[0][1], "completed")
 
 
 class RegistryFeatureSnapshotTests(unittest.TestCase):
