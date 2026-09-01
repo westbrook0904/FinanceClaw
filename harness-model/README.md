@@ -1,9 +1,9 @@
 # harness-model
 
 `harness-model` 是 Stage 3A 建立、并由 Stage 3B Router/Planner 使用的模型 Provider 边界。
-LLMRouter、LLMPlanner 和未来 Explorer 通过 `StructuredGenerationAdapter` 使用
+LLMRouter、LLMPlanner 和 ExplorationEngine 通过 `StructuredGenerationAdapter` 使用
 `ModelGateway` 与模型原生协议，不直接依赖
-厂商 SDK，也不把模型请求伪装成 Agent/Tool。
+厂商 SDK，也不把模型请求伪装成 Agent/Tool；具体 Provider adapter 可以使用厂商官方 SDK。
 
 ## 调用边界
 
@@ -44,11 +44,12 @@ structured output、usage、token count 和 finish reason。
 - `StructuredGenerationAdapter`：Router/Planner/Explorer 共用的 strict-only 助手，不是新的 SPI。
 - `MockFastModel`、`MockQualityModel`、`MockBackupModel`：确定性测试 Provider，支持延迟和
   瞬时失败注入；`MockStrictModelProvider` 额外支持 strict Schema。
-- `OpenAIResponsesModelProvider`：Foundation F5 的真实非流式 adapter，直接调用 Responses
-  API；默认 `store=false`，支持 strict JSON Schema、refusal、usage 与安全 HTTP 错误归一化，
-  API key 不进入 Descriptor、Result、Trace 或报告。
-- `HttpxJsonTransport`：默认异步、可取消 transport；不在线程中遗留已取消的模型请求，HTTP
-  retry/fallback 仍统一由 ModelGateway/ProviderExecutionCoordinator 决定。
+- `OpenAIResponsesModelProvider`：Foundation F5 的真实非流式 adapter，通过官方
+  `openai.AsyncOpenAI.responses.create()` 调用 Responses API；SDK 负责 HTTP、认证、响应解码和
+  OpenAI-compatible 异常，Harness 继续负责 retry/fallback、usage 与安全错误归一化。
+- Provider 默认 `store=false`。无 map-valued `additionalProperties` 的 Schema 使用
+  `text.format=json_schema`；存在该类跨 Provider 不兼容字段时使用 `json_object`，完整原始 Schema
+  仍由 ModelGateway 在结果进入 Router/Planner/Explorer 前强制校验。
 
 ## 注册和调用
 
@@ -107,10 +108,10 @@ reservation 只冻结 Provider attempt slots，不承担 token、成本或耗时
 
 Legacy `response_schema` 继续保持 Stage 3A/3B best-effort 语义；REQUIRED 请求不能降级到
 legacy `generate()`。LLMRouter-v2 已迁移到最小 route completion Draft，LLMPlanner-v2 已迁移到
-strict `PlanDraft`，两者与 ExplorationEngine 共用 strict-only adapter。F5 新增无额外 SDK
-依赖的 `OpenAIResponsesModelProvider`；协议映射依据 OpenAI Responses API 的
+strict `PlanDraft`，两者与 ExplorationEngine 共用 strict-only adapter。F5 的
+`OpenAIResponsesModelProvider` 直接依赖官方 OpenAI Python SDK；协议映射依据 OpenAI Responses API 的
 [`POST /responses`](https://developers.openai.com/api/reference/cli/resources/responses/methods/create)
-与 `text.format=json_schema`。Streaming、vision、embedding、rerank 和其他厂商 adapter 暂缓。
+以及 SDK 的 `responses.create()`。Streaming、vision、embedding、rerank 和其他厂商 adapter 暂缓。
 
 ## 测试
 

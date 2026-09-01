@@ -12,6 +12,7 @@ dependencies = [
     "fastapi>=0.141,<1",
     "httpx>=0.28,<1",
     "jsonschema>=4.25,<5",
+    "openai>=2,<3",
     "uvicorn>=0.52,<1",
 ]
 

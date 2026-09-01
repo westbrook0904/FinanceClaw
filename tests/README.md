@@ -72,6 +72,7 @@ wiring。模块测试
 .venv/bin/python -m pytest tests/stage3c -v
 ```
 
-默认测试不依赖真实网络、行情、LLM 或外部数据库；OpenAI adapter 使用记录型 HTTP transport，
-其他 ModelGateway 路径使用确定性 Mock Providers，跨进程语义使用临时 SQLite 文件验证。F5
+默认测试不依赖真实网络、行情、LLM 或外部数据库；OpenAI adapter 使用官方 SDK 和
+`httpx.MockTransport`，其他 ModelGateway 路径使用确定性 Mock Providers，跨进程语义使用临时
+SQLite 文件验证。F5
 live Gate 只在显式 `--live` 且配置 API key 后运行，不属于默认 pytest。

@@ -1,4 +1,4 @@
-"""Foundation F5 Real-use Gate 的离线全链路验收。"""
+"""Foundation F5 Real-use Gate offline SDK integration acceptance tests."""
 
 from __future__ import annotations
 
@@ -8,24 +8,18 @@ import unittest
 from collections.abc import Mapping
 from pathlib import Path
 
+import httpx
 from financeclaw_real_use.gate import default_portfolio_snapshot, run_live_gate
-from harness_model import JsonHttpResponse
+from openai import AsyncOpenAI
 from portfolio_risk_agent import PORTFOLIO_RISK_CAPABILITY_ID
 
 
-class GateScriptTransport:
+class GateScriptEndpoint:
     def __init__(self) -> None:
         self.calls: list[Mapping[str, object]] = []
 
-    async def post_json(
-        self,
-        url: str,
-        *,
-        headers: Mapping[str, str],
-        payload: Mapping[str, object],
-        timeout_seconds: float,
-    ) -> JsonHttpResponse:
-        del url, headers, timeout_seconds
+    def __call__(self, request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
         self.calls.append(payload)
         ordinal = len(self.calls)
         if ordinal == 1:
@@ -59,24 +53,31 @@ class GateScriptTransport:
             }
         else:
             raise AssertionError(f"unexpected model call: {ordinal}")
-        return JsonHttpResponse(
-            status_code=200,
-            body={
+        return httpx.Response(
+            200,
+            request=request,
+            json={
                 "id": f"resp_gate_{ordinal}",
+                "object": "response",
+                "created_at": ordinal,
                 "model": "gate-test-model",
                 "status": "completed",
                 "output": [
                     {
+                        "id": f"msg_gate_{ordinal}",
                         "type": "message",
+                        "role": "assistant",
+                        "status": "completed",
                         "content": [
                             {
                                 "type": "output_text",
                                 "text": json.dumps(output, separators=(",", ":")),
+                                "annotations": [],
                             }
                         ],
                     }
                 ],
-                "usage": {"input_tokens": 20, "output_tokens": 10},
+                "usage": {"input_tokens": 20, "output_tokens": 10, "total_tokens": 30},
             },
         )
 
@@ -125,22 +126,33 @@ class GateScriptTransport:
 
 
 class RealUseGateTests(unittest.IsolatedAsyncioTestCase):
-    async def test_offline_transport_proves_gate_wiring_without_claiming_live(self) -> None:
-        transport = GateScriptTransport()
-        with tempfile.TemporaryDirectory() as directory:
-            output_dir = Path(directory)
-            report = await run_live_gate(
-                output_dir=output_dir,
-                api_key="offline-test-secret",
-                openai_model="gate-test-model",
-                transport=transport,
-                live=False,
-            )
-            persisted = json.loads(
-                (output_dir / "real-use-report.json").read_text(encoding="utf-8")
-            )
+    async def test_offline_sdk_client_proves_gate_wiring_without_claiming_live(self) -> None:
+        endpoint = GateScriptEndpoint()
+        http_client = httpx.AsyncClient(transport=httpx.MockTransport(endpoint))
+        client = AsyncOpenAI(
+            api_key="offline-test-secret",
+            base_url="https://api.deepseek.test",
+            http_client=http_client,
+            max_retries=0,
+        )
+        try:
+            with tempfile.TemporaryDirectory() as directory:
+                output_dir = Path(directory)
+                report = await run_live_gate(
+                    output_dir=output_dir,
+                    api_key="offline-test-secret",
+                    openai_model="gate-test-model",
+                    base_url="https://api.deepseek.test",
+                    client=client,
+                    live=False,
+                )
+                persisted = json.loads(
+                    (output_dir / "real-use-report.json").read_text(encoding="utf-8")
+                )
+        finally:
+            await client.close()
 
-        self.assertEqual(len(transport.calls), 3)
+        self.assertEqual(len(endpoint.calls), 3)
         self.assertFalse(report["live"])
         self.assertTrue(report["checks_passed"])
         self.assertFalse(report["gate_passed"])
@@ -153,10 +165,12 @@ class RealUseGateTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(report["runs"]["explore"]["action_span_count"], 1)
         self.assertEqual(persisted["schema_version"], "financeclaw-real-use-gate-v1")
         self.assertNotIn("offline-test-secret", json.dumps(persisted))
+        self.assertEqual(endpoint.calls[0]["text"]["format"], {"type": "json_object"})
+        self.assertEqual(endpoint.calls[1]["text"]["format"], {"type": "json_object"})
 
-    async def test_non_live_run_requires_explicit_transport(self) -> None:
+    async def test_non_live_run_requires_explicit_sdk_client(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            with self.assertRaisesRegex(ValueError, "explicit test transport"):
+            with self.assertRaisesRegex(ValueError, "explicit test SDK client"):
                 await run_live_gate(
                     output_dir=Path(directory),
                     api_key="offline-test-secret",

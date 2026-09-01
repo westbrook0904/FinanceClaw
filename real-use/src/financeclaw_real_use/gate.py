@@ -34,12 +34,13 @@ from harness_contracts import (
     TenantContext,
 )
 from harness_memory import SQLiteMemoryProvider
-from harness_model import JsonHttpTransport, ModelGateway, OpenAIResponsesModelProvider
+from harness_model import ModelGateway, OpenAIResponsesModelProvider
 from harness_planning import LLMPlanner, PlanValidator
 from harness_registry import InMemoryCapabilityRegistry, RegistryCapabilityCatalog
 from harness_runtime import DefaultInvocationContextFactory, InvocationContextFactory
 from harness_state import SQLiteStateStore
 from harness_trace import InMemoryTracer, SpanType
+from openai import AsyncOpenAI
 from portfolio_risk_agent import PORTFOLIO_RISK_CAPABILITY_ID, PortfolioRiskAgentPlugin
 
 _MODEL_CAPABILITY_ID = "model.finance-real-use/v1"
@@ -91,10 +92,10 @@ async def run_live_gate(
     output_dir: Path,
     api_key: str,
     openai_model: str,
-    base_url: str = "https://api.openai.com/v1",
+    base_url: str = "https://api.deepseek.com",
     allow_insecure_http: bool = False,
     human_corrections: int = 0,
-    transport: JsonHttpTransport | None = None,
+    client: AsyncOpenAI | None = None,
     live: bool = True,
 ) -> dict[str, object]:
     """执行一次真实 Gate 并落盘脱敏报告；调用者必须显式提供凭证和输出目录。"""
@@ -105,8 +106,8 @@ async def run_live_gate(
         raise TypeError("human_corrections must be an integer")
     if human_corrections < 0:
         raise ValueError("human_corrections must not be negative")
-    if not live and transport is None:
-        raise ValueError("non-live gate requires an explicit test transport")
+    if not live and client is None:
+        raise ValueError("non-live gate requires an explicit test SDK client")
     output_dir.mkdir(parents=True, exist_ok=True)
     evidence_paths = (
         output_dir / "execution-state.sqlite3",
@@ -128,7 +129,7 @@ async def run_live_gate(
         provider_id=_MODEL_PROVIDER_ID,
         base_url=base_url,
         allow_insecure_http=allow_insecure_http,
-        transport=transport,
+        client=client,
     )
     registry.register_provider(
         provider,
@@ -136,7 +137,7 @@ async def run_live_gate(
             provider_id=_MODEL_PROVIDER_ID,
             capability_id=_MODEL_CAPABILITY_ID,
             plugin_id="openai-responses",
-            implementation_version="1.0.0",
+            implementation_version="1.1.0",
             priority=100,
             tags=frozenset({"real-provider", "f5-gate"}),
             metadata={"api": "responses"},
@@ -464,7 +465,7 @@ def main() -> None:
     parser.add_argument("--openai-model", default=os.environ.get("OPENAI_MODEL"))
     parser.add_argument(
         "--base-url",
-        default=os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1"),
+        default=os.environ.get("OPENAI_BASE_URL", "https://api.deepseek.com"),
     )
     parser.add_argument("--allow-insecure-http", action="store_true")
     parser.add_argument("--human-corrections", type=int, default=0)

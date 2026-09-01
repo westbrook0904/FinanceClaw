@@ -26,6 +26,6 @@ export OPENAI_MODEL='your-structured-output-capable-model'
   --output-dir .real-use/f5
 ```
 
-`--live` 是必填开关，用来防止普通测试或误操作产生真实模型费用。默认 pytest 使用记录型 HTTP
-transport，生成的报告标记为 `live=false` / `gate_passed=false`，只能证明 Gate wiring，不能作为
+`--live` 是必填开关，用来防止普通测试或误操作产生真实模型费用。默认 pytest 使用官方 SDK 与
+`httpx.MockTransport`，生成的报告标记为 `live=false` / `gate_passed=false`，只能证明 Gate wiring，不能作为
 一期投产证据。

@@ -8,7 +8,7 @@ Selection、Retry/Fallback、Provider-safe Checkpoint/Resume、ModelGateway，�
 
 Stage 3C 的 Plan Identity、Strict Structured Output、Agent Foundation F1 Routing
 correctness、F2 Context Engineering、F3 Memory 与 F4b Minimal Explore Loop 已实现。
-F5 Real-use Gate 的真实 OpenAI Responses Provider adapter、组合风险 Agent、脱敏评测报告与
+F5 Real-use Gate 的官方 OpenAI Python SDK Responses Provider adapter、组合风险 Agent、脱敏评测报告与
 显式 live runner 已就绪；当前环境缺少真实 API 凭证，因此一期 Gate 尚未宣告通过。
 `HYBRID`、PlanPatch 和高阶资源预算继续延后。F4b 已把
 Profile/Turn/Action/Observation/Checkpoint 契约和单节点 wrapper 接入 standalone

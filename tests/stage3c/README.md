@@ -76,12 +76,13 @@ Foundation F4b Minimal Explore Loop 由 `test_minimal_explore.py` 与模块回�
 Foundation F5 Gate wiring 由 `test_real_model_provider.py`、`test_real_finance_scenario.py` 与
 `test_real_use_gate.py` 阻断：
 
-- OpenAI Responses adapter 无损发送 strict Schema、`store=false`，解析 token usage/refusal，
-  并脱敏分类 429/5xx；
+- OpenAI Responses adapter 通过官方 `AsyncOpenAI` 发送 `store=false` 请求，兼容 Schema 使用
+  strict JSON Schema，map-valued `additionalProperties` 使用 JSON mode 并由 Gateway 执行完整本地
+  Schema 校验，同时解析 token usage/refusal 并脱敏分类 429/5xx；
 - `finance.portfolio-risk/v1` 对真实持仓快照执行 Decimal 估值、日损益、集中度和限额检查；
 - FAST/PLAN/EXPLORE、Memory write→read→ContextUse、Action Trace、groundedness、重复动作、
   human correction 与错误分类汇总为版本化报告；
-- 离线 transport 只能证明 Gate wiring，报告固定 `live=false` / `gate_passed=false`，不能冒充
+- 离线 SDK client 只能证明 Gate wiring，报告固定 `live=false` / `gate_passed=false`，不能冒充
   真实模型证据。
 
-默认测试只使用本地确定性 Provider、记录型 HTTP transport 和临时 SQLite，不访问网络。
+默认测试只使用本地确定性 Provider、官方 OpenAI SDK、`httpx.MockTransport` 和临时 SQLite，不访问网络。

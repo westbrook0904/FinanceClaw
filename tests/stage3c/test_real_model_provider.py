@@ -1,10 +1,12 @@
-"""Foundation F5 真实 ModelProvider adapter 的离线契约验收。"""
+"""Foundation F5 official OpenAI SDK ModelProvider offline acceptance tests."""
 
 from __future__ import annotations
 
+import json
 import unittest
 from collections.abc import Mapping
 
+import httpx
 from harness_contracts import (
     InvocationContext,
     Request,
@@ -14,36 +16,30 @@ from harness_contracts import (
 from harness_model import (
     GenerateRequest,
     GenerateStatus,
-    JsonHttpResponse,
     ModelMessage,
     ModelResponseFormat,
     ModelRole,
     OpenAIResponsesModelProvider,
 )
+from openai import AsyncOpenAI
 
 
-class RecordingTransport:
-    def __init__(self, response: JsonHttpResponse) -> None:
-        self.response = response
+class RecordingResponsesEndpoint:
+    def __init__(self, *, status_code: int, body: Mapping[str, object]) -> None:
+        self.status_code = status_code
+        self.body = body
         self.calls: list[dict[str, object]] = []
 
-    async def post_json(
-        self,
-        url: str,
-        *,
-        headers: Mapping[str, str],
-        payload: Mapping[str, object],
-        timeout_seconds: float,
-    ) -> JsonHttpResponse:
+    def __call__(self, request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
         self.calls.append(
             {
-                "url": url,
-                "headers": dict(headers),
-                "payload": dict(payload),
-                "timeout_seconds": timeout_seconds,
+                "url": str(request.url),
+                "headers": dict(request.headers),
+                "payload": payload,
             }
         )
-        return self.response
+        return httpx.Response(self.status_code, json=self.body, request=request)
 
 
 def invocation() -> InvocationContext:
@@ -54,7 +50,7 @@ def strict_request() -> GenerateRequest:
     return GenerateRequest(
         model="model.openai-responses/v1",
         messages=(
-            ModelMessage(role=ModelRole.SYSTEM, content="Return one object."),
+            ModelMessage(role=ModelRole.SYSTEM, content="Return one JSON object."),
             ModelMessage(role=ModelRole.USER, content="Evaluate this input."),
         ),
         response_format=ModelResponseFormat.JSON,
@@ -71,33 +67,60 @@ def strict_request() -> GenerateRequest:
     )
 
 
+def response_body(
+    text: str,
+    *,
+    response_id: str = "resp_f5",
+    model: str = "gpt-test",
+) -> dict[str, object]:
+    return {
+        "id": response_id,
+        "object": "response",
+        "created_at": 1,
+        "model": model,
+        "status": "completed",
+        "output": [
+            {
+                "id": "msg_1",
+                "type": "message",
+                "role": "assistant",
+                "status": "completed",
+                "content": [{"type": "output_text", "text": text, "annotations": []}],
+            }
+        ],
+        "usage": {"input_tokens": 11, "output_tokens": 4, "total_tokens": 15},
+    }
+
+
 class OpenAIResponsesProviderTests(unittest.IsolatedAsyncioTestCase):
-    async def test_strict_request_maps_to_responses_and_parses_usage(self) -> None:
-        transport = RecordingTransport(
-            JsonHttpResponse(
-                status_code=200,
-                body={
-                    "id": "resp_f5",
-                    "model": "gpt-test",
-                    "status": "completed",
-                    "output": [
-                        {
-                            "type": "message",
-                            "content": [{"type": "output_text", "text": '{"value":7}'}],
-                        }
-                    ],
-                    "usage": {"input_tokens": 11, "output_tokens": 4, "total_tokens": 15},
-                },
-            )
+    async def _provider(
+        self,
+        endpoint: RecordingResponsesEndpoint,
+        *,
+        provider_id: str = "openai:responses",
+    ) -> OpenAIResponsesModelProvider:
+        http_client = httpx.AsyncClient(transport=httpx.MockTransport(endpoint))
+        client = AsyncOpenAI(
+            api_key="test-secret-key",
+            base_url="https://api.example.test/v1",
+            http_client=http_client,
+            max_retries=0,
         )
-        provider = OpenAIResponsesModelProvider(
+        self.addAsyncCleanup(client.close)
+        return OpenAIResponsesModelProvider(
             api_key="test-secret-key",
             openai_model="gpt-test",
-            provider_id="f5-openai-provider",
-            transport=transport,
+            provider_id=provider_id,
+            base_url="https://api.example.test/v1",
+            client=client,
         )
+
+    async def test_strict_request_uses_sdk_and_parses_usage(self) -> None:
+        endpoint = RecordingResponsesEndpoint(status_code=200, body=response_body('{"value":7}'))
+        provider = await self._provider(endpoint, provider_id="f5-openai-provider")
         request = strict_request()
         prepared = provider.prepare_structured_output(request.structured_output)
+        self.assertTrue(prepared.provider_enforced)
 
         result = await provider.generate_prepared(request, prepared, invocation())
 
@@ -105,10 +128,11 @@ class OpenAIResponsesProviderTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.output.data, {"value": 7})
         self.assertEqual(result.usage.total_tokens, 15)
         self.assertEqual(result.metadata["response_id"], "resp_f5")
-        self.assertEqual(len(transport.calls), 1)
-        outbound = transport.calls[0]
-        self.assertEqual(outbound["url"], "https://api.openai.com/v1/responses")
-        self.assertEqual(outbound["headers"]["Authorization"], "Bearer test-secret-key")
+        self.assertEqual(result.metadata["sdk"], "openai-python")
+        self.assertEqual(len(endpoint.calls), 1)
+        outbound = endpoint.calls[0]
+        self.assertEqual(outbound["url"], "https://api.example.test/v1/responses")
+        self.assertEqual(outbound["headers"]["authorization"], "Bearer test-secret-key")
         payload = outbound["payload"]
         self.assertIs(payload["store"], False)
         self.assertEqual(payload["temperature"], 0.0)
@@ -125,23 +149,50 @@ class OpenAIResponsesProviderTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("test-secret-key", repr(provider))
         self.assertNotIn("test-secret-key", repr(result))
 
-    async def test_http_error_is_sanitized_and_retry_classified(self) -> None:
-        transport = RecordingTransport(
-            JsonHttpResponse(
-                status_code=429,
-                body={
-                    "error": {
-                        "code": "rate_limit_exceeded",
-                        "message": "do not expose provider diagnostic details",
-                    }
+    async def test_map_valued_additional_properties_uses_portable_json_mode(self) -> None:
+        endpoint = RecordingResponsesEndpoint(
+            status_code=200,
+            body=response_body('{"values":{"answer":7}}'),
+        )
+        provider = await self._provider(endpoint)
+        request = GenerateRequest(
+            model="model.openai-responses/v1",
+            messages=(ModelMessage(role=ModelRole.USER, content="Return JSON."),),
+            response_format=ModelResponseFormat.JSON,
+            structured_output=StructuredOutputSpec(
+                name="map_result",
+                schema={
+                    "type": "object",
+                    "properties": {
+                        "values": {
+                            "type": "object",
+                            "additionalProperties": {"type": "integer"},
+                        }
+                    },
+                    "required": ["values"],
+                    "additionalProperties": False,
                 },
-            )
+            ),
         )
-        provider = OpenAIResponsesModelProvider(
-            api_key="test-secret-key",
-            openai_model="gpt-test",
-            transport=transport,
+
+        prepared = provider.prepare_structured_output(request.structured_output)
+        self.assertFalse(prepared.provider_enforced)
+        result = await provider.generate_prepared(request, prepared, invocation())
+
+        self.assertEqual(result.status, GenerateStatus.SUCCESS)
+        self.assertEqual(endpoint.calls[0]["payload"]["text"]["format"], {"type": "json_object"})
+
+    async def test_http_error_is_sanitized_and_retry_classified(self) -> None:
+        endpoint = RecordingResponsesEndpoint(
+            status_code=429,
+            body={
+                "error": {
+                    "code": "rate_limit_exceeded",
+                    "message": "do not expose provider diagnostic details",
+                }
+            },
         )
+        provider = await self._provider(endpoint)
 
         result = await provider.generate(
             GenerateRequest(
@@ -161,27 +212,19 @@ class OpenAIResponsesProviderTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("test-secret-key", repr(result))
 
     async def test_refusal_is_preserved_as_finish_reason(self) -> None:
-        transport = RecordingTransport(
-            JsonHttpResponse(
-                status_code=200,
-                body={
-                    "id": "resp_refusal",
-                    "status": "completed",
-                    "output": [
-                        {
-                            "type": "message",
-                            "content": [{"type": "refusal", "refusal": "cannot comply"}],
-                        }
-                    ],
-                    "usage": {"input_tokens": 2, "output_tokens": 1},
-                },
-            )
-        )
-        provider = OpenAIResponsesModelProvider(
-            api_key="test-secret-key",
-            openai_model="gpt-test",
-            transport=transport,
-        )
+        body = response_body("")
+        body["id"] = "resp_refusal"
+        body["output"] = [
+            {
+                "id": "msg_refusal",
+                "type": "message",
+                "role": "assistant",
+                "status": "completed",
+                "content": [{"type": "refusal", "refusal": "cannot comply"}],
+            }
+        ]
+        endpoint = RecordingResponsesEndpoint(status_code=200, body=body)
+        provider = await self._provider(endpoint)
         request = strict_request()
 
         result = await provider.generate_prepared(

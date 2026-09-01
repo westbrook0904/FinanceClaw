@@ -1,4 +1,4 @@
-"""OpenAI Responses API 的无 SDK、非流式 ModelProvider adapter。"""
+"""Official OpenAI Python SDK based Responses API ModelProvider adapter."""
 
 from __future__ import annotations
 
@@ -6,8 +6,6 @@ import asyncio
 import json
 import os
 from collections.abc import Mapping
-from dataclasses import dataclass
-from typing import Protocol
 from urllib.parse import urlparse
 
 from harness_contracts import (
@@ -24,6 +22,14 @@ from harness_contracts import (
     SideEffectType,
     StructuredOutputSpec,
 )
+from openai import (
+    APIConnectionError,
+    APIError,
+    APIStatusError,
+    APITimeoutError,
+    AsyncOpenAI,
+)
+from openai.types.responses import Response
 
 from .contracts import (
     GenerateRequest,
@@ -40,72 +46,13 @@ OPENAI_RESPONSES_MODEL_CAPABILITY_ID = "model.openai-responses/v1"
 OPENAI_RESPONSES_PROVIDER_ID = "openai:responses"
 
 
-@dataclass(frozen=True, slots=True)
-class JsonHttpResponse:
-    status_code: int
-    body: Mapping[str, object]
-
-
-class JsonHttpTransport(Protocol):
-    async def post_json(
-        self,
-        url: str,
-        *,
-        headers: Mapping[str, str],
-        payload: Mapping[str, object],
-        timeout_seconds: float,
-    ) -> JsonHttpResponse: ...
-
-
-class HttpxJsonTransport:
-    """可取消的异步 JSON POST；重试和 fallback 仍由 Harness 治理。"""
-
-    async def post_json(
-        self,
-        url: str,
-        *,
-        headers: Mapping[str, str],
-        payload: Mapping[str, object],
-        timeout_seconds: float,
-    ) -> JsonHttpResponse:
-        try:
-            import httpx
-        except ImportError as exc:
-            raise ProviderError(
-                "HTTPX is required for OpenAI Responses API calls",
-                code="HARNESS.MODEL.OPENAI_TRANSPORT_UNAVAILABLE",
-                fallbackable=True,
-            ) from exc
-        async with httpx.AsyncClient(
-            timeout=timeout_seconds,
-            follow_redirects=False,
-        ) as client:
-            response = await client.post(
-                url,
-                headers=dict(headers),
-                json=dict(payload),
-            )
-        try:
-            body = response.json()
-        except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
-            raise ProviderError(
-                "OpenAI Responses API returned invalid JSON",
-                code="HARNESS.MODEL.OPENAI_INVALID_RESPONSE",
-                retryable=response.status_code >= 500,
-                fallbackable=True,
-            ) from exc
-        if not isinstance(body, Mapping):
-            raise ProviderError(
-                "OpenAI Responses API returned a non-object response",
-                code="HARNESS.MODEL.OPENAI_INVALID_RESPONSE",
-                retryable=response.status_code >= 500,
-                fallbackable=True,
-            )
-        return JsonHttpResponse(status_code=response.status_code, body=dict(body))
-
-
 class OpenAIResponsesModelProvider(ModelProvider):
-    """把 Harness GenerateRequest 映射到 OpenAI ``POST /v1/responses``。"""
+    """Map Harness generation onto ``AsyncOpenAI.responses.create``.
+
+    The SDK owns the HTTP protocol, authentication headers, response decoding, and
+    OpenAI-compatible error types. Harness still owns retry/fallback policy, local
+    JSON Schema validation, accounting, and safe error normalization.
+    """
 
     def __init__(
         self,
@@ -118,7 +65,7 @@ class OpenAIResponsesModelProvider(ModelProvider):
         timeout_seconds: float = 60.0,
         organization: str | None = None,
         project: str | None = None,
-        transport: JsonHttpTransport | None = None,
+        client: AsyncOpenAI | None = None,
         allow_insecure_http: bool = False,
     ) -> None:
         self._api_key = _non_empty("api_key", api_key)
@@ -137,25 +84,30 @@ class OpenAIResponsesModelProvider(ModelProvider):
             organization = _non_empty("organization", organization)
         if project is not None:
             project = _non_empty("project", project)
-        if transport is not None and not hasattr(transport, "post_json"):
-            raise TypeError("transport must implement post_json")
+        if client is not None and not isinstance(client, AsyncOpenAI):
+            raise TypeError("client must be openai.AsyncOpenAI")
         self._timeout_seconds = float(timeout_seconds)
         self._organization = organization
         self._project = project
-        self._transport = transport or HttpxJsonTransport()
+        self._client = client
         self._descriptor = CapabilityDescriptor(
             id=model_capability_id,
-            name="OpenAI Responses model generation",
+            name="OpenAI-compatible Responses model generation",
             type=CapabilityType.MODEL,
-            version="1.0.0",
+            version="1.1.0",
             input_schema={"type": "object"},
             output_schema={"type": "object"},
             execution_profile=CapabilityExecutionProfile(
                 side_effect=SideEffectType.NONE,
                 egress=EgressType.EXTERNAL,
             ),
-            tags=frozenset({"model", "openai", "responses", "real-provider"}),
-            metadata={"api": "responses", "store": False},
+            tags=frozenset({"model", "openai-sdk", "responses", "real-provider"}),
+            metadata={
+                "api": "responses",
+                "sdk": "openai-python",
+                "store": False,
+                "schema_compatibility": "json-schema-or-local-validation",
+            },
         )
 
     @classmethod
@@ -202,16 +154,24 @@ class OpenAIResponsesModelProvider(ModelProvider):
         spec: StructuredOutputSpec,
     ) -> PreparedStructuredOutput:
         validate_schema_definition(spec)
-        payload = {
-            "type": "json_schema",
-            "name": spec.name,
-            "schema": spec.model_dump(mode="json")["schema"],
-            "strict": True,
-        }
+        schema = spec.model_dump(mode="json")["schema"]
+        if _contains_schema_valued_additional_properties(schema):
+            # OpenAI-compatible endpoints differ on map-valued ``additionalProperties``.
+            # JSON mode keeps the wire format portable; ModelGateway still validates the
+            # result against the complete original schema before any caller can consume it.
+            payload: Mapping[str, object] = {"type": "json_object"}
+        else:
+            payload = {
+                "type": "json_schema",
+                "name": spec.name,
+                "schema": schema,
+                "strict": True,
+            }
         return PreparedStructuredOutput(
             provider_id=self._provider_id,
             schema_hash=structured_schema_hash(spec),
             semantics_preserved=True,
+            provider_enforced=payload["type"] == "json_schema",
             payload=payload,
         )
 
@@ -263,7 +223,7 @@ class OpenAIResponsesModelProvider(ModelProvider):
         *,
         response_format: Mapping[str, object] | None,
     ) -> GenerateResult:
-        payload: dict[str, object] = {
+        create_params: dict[str, object] = {
             "model": self._openai_model,
             "input": [
                 {"role": message.role.value, "content": message.content}
@@ -273,53 +233,71 @@ class OpenAIResponsesModelProvider(ModelProvider):
             "temperature": request.temperature,
         }
         if response_format is not None:
-            payload["text"] = {"format": dict(response_format)}
+            create_params["text"] = {"format": dict(response_format)}
         if request.max_output_tokens is not None:
-            payload["max_output_tokens"] = request.max_output_tokens
+            create_params["max_output_tokens"] = request.max_output_tokens
 
         try:
-            response = await self._transport.post_json(
-                f"{self._base_url}/responses",
-                headers=self._headers(),
-                payload=payload,
-                timeout_seconds=self._timeout_seconds,
-            )
+            response = await self._create_response(create_params)
         except asyncio.CancelledError:
             raise
-        except ProviderError:
-            raise
-        except Exception as exc:
+        except APIStatusError as exc:
+            return self._http_failure(exc)
+        except APITimeoutError as exc:
             raise ProviderError(
-                "OpenAI Responses API request failed",
+                "OpenAI SDK request timed out",
+                code="HARNESS.MODEL.OPENAI_TIMEOUT",
+                details={"cause_type": type(exc).__name__},
+                retryable=True,
+                fallbackable=True,
+            ) from exc
+        except APIConnectionError as exc:
+            raise ProviderError(
+                "OpenAI SDK connection failed",
                 code="HARNESS.MODEL.OPENAI_TRANSPORT_FAILED",
                 details={"cause_type": type(exc).__name__},
                 retryable=True,
                 fallbackable=True,
             ) from exc
+        except APIError as exc:
+            raise ProviderError(
+                "OpenAI SDK request failed",
+                code="HARNESS.MODEL.OPENAI_SDK_ERROR",
+                details={"cause_type": type(exc).__name__},
+                fallbackable=True,
+            ) from exc
+        except Exception as exc:
+            raise ProviderError(
+                "OpenAI SDK returned an invalid response",
+                code="HARNESS.MODEL.OPENAI_INVALID_RESPONSE",
+                details={"cause_type": type(exc).__name__},
+                retryable=True,
+                fallbackable=True,
+            ) from exc
+        return self._success_result(request, response)
 
-        if not 200 <= response.status_code < 300:
-            return self._http_failure(response)
-        return self._success_result(request, response.body)
+    async def _create_response(self, params: Mapping[str, object]) -> Response:
+        if self._client is not None:
+            return await self._client.responses.create(**dict(params))  # type: ignore[arg-type]
+        async with AsyncOpenAI(
+            api_key=self._api_key,
+            base_url=self._base_url,
+            timeout=self._timeout_seconds,
+            max_retries=0,
+            organization=self._organization,
+            project=self._project,
+        ) as client:
+            return await client.responses.create(**dict(params))  # type: ignore[arg-type]
 
-    def _headers(self) -> dict[str, str]:
-        headers = {
-            "Authorization": f"Bearer {self._api_key}",
-            "Content-Type": "application/json",
-        }
-        if self._organization is not None:
-            headers["OpenAI-Organization"] = self._organization
-        if self._project is not None:
-            headers["OpenAI-Project"] = self._project
-        return headers
-
-    def _http_failure(self, response: JsonHttpResponse) -> GenerateResult:
-        api_code = _api_error_code(response.body)
-        retryable = response.status_code in {408, 409, 429} or response.status_code >= 500
+    def _http_failure(self, error_response: APIStatusError) -> GenerateResult:
+        status_code = error_response.status_code
+        api_code = _api_error_code(error_response.body)
+        retryable = status_code in {408, 409, 429} or status_code >= 500
         error = ProviderError(
-            "OpenAI Responses API returned an error",
+            "OpenAI-compatible Responses API returned an error",
             code="HARNESS.MODEL.OPENAI_HTTP_ERROR",
             details={
-                "http_status": response.status_code,
+                "http_status": status_code,
                 **({"api_error_code": api_code} if api_code is not None else {}),
             },
             retryable=retryable,
@@ -330,17 +308,18 @@ class OpenAIResponsesModelProvider(ModelProvider):
     def _success_result(
         self,
         request: GenerateRequest,
-        body: Mapping[str, object],
+        response: Response,
     ) -> GenerateResult:
-        status = body.get("status")
+        status = response.status
         if status == "incomplete":
-            reason = _nested_string(body.get("incomplete_details"), "reason")
+            details = response.incomplete_details
+            reason = details.reason if details is not None else None
             finish_reason = {
                 "max_output_tokens": ModelFinishReason.LENGTH,
                 "content_filter": ModelFinishReason.CONTENT_FILTER,
             }.get(reason)
             if finish_reason is not None:
-                usage = _usage(body)
+                usage = _usage(response)
                 output_data: object = (
                     "" if request.response_format is ModelResponseFormat.TEXT else {}
                 )
@@ -350,10 +329,10 @@ class OpenAIResponsesModelProvider(ModelProvider):
                     finish_reason=finish_reason,
                     provider_id=self._provider_id,
                     attempt_accounting=ModelAttemptAccounting(usage=usage, complete=True),
-                    metadata=_response_metadata(body),
+                    metadata=_response_metadata(response),
                 )
             error = ProviderError(
-                "OpenAI response was incomplete",
+                "OpenAI-compatible response was incomplete",
                 code="HARNESS.MODEL.OPENAI_INCOMPLETE",
                 details={**({"reason": reason} if reason is not None else {})},
                 retryable=True,
@@ -362,7 +341,7 @@ class OpenAIResponsesModelProvider(ModelProvider):
             return GenerateResult.failure(error.to_detail(), provider_id=self._provider_id)
         if status != "completed":
             error = ProviderError(
-                "OpenAI response did not complete",
+                "OpenAI-compatible response did not complete",
                 code="HARNESS.MODEL.OPENAI_INCOMPLETE",
                 details={"status": str(status)[:64]},
                 retryable=status in {"queued", "in_progress"},
@@ -370,23 +349,22 @@ class OpenAIResponsesModelProvider(ModelProvider):
             )
             return GenerateResult.failure(error.to_detail(), provider_id=self._provider_id)
 
-        usage = _usage(body)
-        refusal = _output_content(body, "refusal")
-        if refusal is not None:
-            output_data: object = "" if request.response_format is ModelResponseFormat.TEXT else {}
+        usage = _usage(response)
+        if _has_refusal(response):
+            output_data = "" if request.response_format is ModelResponseFormat.TEXT else {}
             return GenerateResult.success(
                 ModelOutput(type=request.response_format, data=output_data),
                 usage,
                 finish_reason=ModelFinishReason.REFUSAL,
                 provider_id=self._provider_id,
                 attempt_accounting=ModelAttemptAccounting(usage=usage, complete=True),
-                metadata=_response_metadata(body),
+                metadata=_response_metadata(response),
             )
 
-        text = _output_text(body)
-        if text is None:
+        text = response.output_text
+        if not isinstance(text, str) or not text:
             error = ProviderError(
-                "OpenAI response did not contain output text",
+                "OpenAI-compatible response did not contain output text",
                 code="HARNESS.MODEL.OPENAI_INVALID_RESPONSE",
                 retryable=True,
                 fallbackable=True,
@@ -397,7 +375,7 @@ class OpenAIResponsesModelProvider(ModelProvider):
                 data: object = json.loads(text)
             except json.JSONDecodeError as exc:
                 error = ProviderError(
-                    "OpenAI response contained invalid JSON output",
+                    "OpenAI-compatible response contained invalid JSON output",
                     code=ErrorCode.MODEL_STRUCTURED_OUTPUT_INVALID,
                     details={"cause_type": type(exc).__name__},
                     retryable=True,
@@ -411,7 +389,7 @@ class OpenAIResponsesModelProvider(ModelProvider):
             usage,
             provider_id=self._provider_id,
             attempt_accounting=ModelAttemptAccounting(usage=usage, complete=True),
-            metadata=_response_metadata(body),
+            metadata=_response_metadata(response),
         )
 
 
@@ -439,66 +417,50 @@ def _non_empty(field_name: str, value: object) -> str:
     return value
 
 
-def _nested_string(value: object, key: str) -> str | None:
-    if not isinstance(value, Mapping):
+def _api_error_code(body: object) -> str | None:
+    if not isinstance(body, Mapping):
         return None
-    candidate = value.get(key)
-    return candidate if isinstance(candidate, str) and candidate else None
+    nested = body.get("error")
+    error = nested if isinstance(nested, Mapping) else body
+    value = error.get("code")
+    return value[:128] if isinstance(value, str) and value else None
 
 
-def _api_error_code(body: Mapping[str, object]) -> str | None:
-    value = _nested_string(body.get("error"), "code")
-    return value[:128] if value is not None else None
+def _contains_schema_valued_additional_properties(value: object) -> bool:
+    if isinstance(value, Mapping):
+        for key, item in value.items():
+            if key == "additionalProperties" and isinstance(item, Mapping):
+                return True
+            if _contains_schema_valued_additional_properties(item):
+                return True
+    elif isinstance(value, tuple | list):
+        return any(_contains_schema_valued_additional_properties(item) for item in value)
+    return False
 
 
-def _output_content(body: Mapping[str, object], content_type: str) -> str | None:
-    output = body.get("output")
-    if not isinstance(output, list):
-        return None
-    values: list[str] = []
-    for item in output:
-        if not isinstance(item, Mapping) or item.get("type") != "message":
+def _has_refusal(response: Response) -> bool:
+    for item in response.output:
+        if getattr(item, "type", None) != "message":
             continue
-        content = item.get("content")
-        if not isinstance(content, list):
-            continue
-        for part in content:
-            if not isinstance(part, Mapping) or part.get("type") != content_type:
-                continue
-            value = part.get("text" if content_type == "output_text" else "refusal")
-            if isinstance(value, str):
-                values.append(value)
-    return "".join(values) if values else None
+        for content in getattr(item, "content", ()):
+            if getattr(content, "type", None) == "refusal":
+                return True
+    return False
 
 
-def _output_text(body: Mapping[str, object]) -> str | None:
-    text = _output_content(body, "output_text")
-    if text is not None:
-        return text
-    value = body.get("output_text")
-    return value if isinstance(value, str) else None
-
-
-def _usage(body: Mapping[str, object]) -> ModelUsage:
-    usage = body.get("usage")
-    if not isinstance(usage, Mapping):
+def _usage(response: Response) -> ModelUsage:
+    usage = response.usage
+    if usage is None:
         raise ProviderError(
-            "OpenAI response did not contain token usage",
+            "OpenAI-compatible response did not contain token usage",
             code="HARNESS.MODEL.OPENAI_INVALID_RESPONSE",
             fallbackable=True,
         )
-    input_tokens = usage.get("input_tokens")
-    output_tokens = usage.get("output_tokens")
-    if (
-        not isinstance(input_tokens, int)
-        or isinstance(input_tokens, bool)
-        or input_tokens < 0
-        or not isinstance(output_tokens, int)
-        or isinstance(output_tokens, bool)
-        or output_tokens < 0
-    ):
+    input_tokens = usage.input_tokens
+    output_tokens = usage.output_tokens
+    if input_tokens < 0 or output_tokens < 0:
         raise ProviderError(
-            "OpenAI response contained invalid token usage",
+            "OpenAI-compatible response contained invalid token usage",
             code="HARNESS.MODEL.OPENAI_INVALID_RESPONSE",
             fallbackable=True,
         )
@@ -509,10 +471,13 @@ def _usage(body: Mapping[str, object]) -> ModelUsage:
     )
 
 
-def _response_metadata(body: Mapping[str, object]) -> dict[str, object]:
-    metadata: dict[str, object] = {"api": "responses", "store": False}
-    for source, target in (("id", "response_id"), ("model", "model")):
-        value = body.get(source)
+def _response_metadata(response: Response) -> dict[str, object]:
+    metadata: dict[str, object] = {
+        "api": "responses",
+        "sdk": "openai-python",
+        "store": False,
+    }
+    for value, target in ((response.id, "response_id"), (response.model, "model")):
         if isinstance(value, str) and value:
             metadata[target] = value[:256]
     return metadata

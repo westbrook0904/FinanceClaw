@@ -24,11 +24,12 @@ from .contracts import GenerateRequest
 
 @dataclass(frozen=True, slots=True)
 class PreparedStructuredOutput:
-    """Provider adapter 本地编译的 opaque strict-schema 配置。"""
+    """Provider adapter 本地编译的输出配置及其强制层级。"""
 
     provider_id: str
     schema_hash: str
     semantics_preserved: bool
+    provider_enforced: bool = True
     payload: object | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
@@ -38,6 +39,8 @@ class PreparedStructuredOutput:
             raise TypeError("schema_hash must be a non-empty string")
         if not isinstance(self.semantics_preserved, bool):
             raise TypeError("semantics_preserved must be bool")
+        if not isinstance(self.provider_enforced, bool):
+            raise TypeError("provider_enforced must be bool")
 
 
 class ModelAttemptPolicy(ContractModel):
