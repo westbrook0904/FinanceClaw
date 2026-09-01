@@ -266,12 +266,20 @@ strict model decision
 `StructuredGenerationAdapter` 执行 REQUIRED structured generation。显式 target、固定 PLAN、
 确定性 rule 与单一 PLAN Policy 都保持零模型调用。
 
-### Foundation 2 — Context Engineering
+### Foundation 2 — Context Engineering（已完成，2026-09-01）
 
 - Context Contracts；
 - source / assembler / policy / projector；
 - Router / Planner 接入；
 - redaction 与 deterministic projection tests。
+
+完成证据：新增 `harness-context` 与 Context Contracts；默认 Pipeline 按
+`source → normalize/deduplicate/order → PRE_CONTEXT/base guards → Snapshot → consumer
+Projection → PromptBuilder` 执行。Router 与 Planner 的模型 Prompt 只消费各自 Projection，
+Route/Plan Capability view 分离；Secret、过期项、非法 trust/source 组合及 Policy DENY 在
+Snapshot 前移除，PRE_CONTEXT REQUIRE_APPROVAL fail-closed。Snapshot/Projection hash 排除
+随机运行身份与收集时间，Trace 只保存 hash、included/omitted 数量和有界 use record。稳定性、
+注入隔离、redaction、确定性裁剪与全仓回归均已覆盖。
 
 ### Foundation 3 — Memory
 

@@ -4,7 +4,13 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from harness_contracts import ExecutionMode, InvocationContext, JsonValue
+from harness_contracts import (
+    ContextConsumer,
+    ContextItem,
+    ExecutionMode,
+    InvocationContext,
+    JsonValue,
+)
 
 from .models import PolicyContext, PolicyDecision, PolicyEffect, PolicyPhase
 from .policy import Policy
@@ -90,6 +96,23 @@ class PolicyEngine:
             requested_mode=requested_mode,
         )
         return resolve_pre_route_policy(self.evaluate(context), requested_mode)
+
+    def evaluate_context(
+        self,
+        invocation: InvocationContext,
+        item: ContextItem,
+        consumer: ContextConsumer,
+    ) -> PolicyDecision:
+        """运行 PRE_CONTEXT 类型化 Policy；effect 解释由 ContextPolicy 负责。"""
+
+        return self.evaluate(
+            PolicyContext(
+                invocation=invocation,
+                phase=PolicyPhase.PRE_CONTEXT,
+                context_item=item,
+                context_consumer=consumer,
+            )
+        )
 
     def _default_decision(self, context: PolicyContext) -> PolicyDecision:
         reason = f"no policies configured for {context.phase.value}"

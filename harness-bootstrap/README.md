@@ -10,6 +10,7 @@ build_harness()
 ├── InMemoryCapabilityRegistry
 │   └── RegistryCapabilityCatalog
 ├── PolicyEngine(AllowAllPolicy)
+├── ContextPipeline(ContextPolicy，共用 PolicyEngine)
 ├── InMemoryTracer
 ├── DefaultInvocationContextFactory
 │   └── InvocationLifecycle
@@ -31,11 +32,12 @@ build_harness()
 ```
 
 `build_harness()` 只创建和连接对象，不发现或初始化插件，也不创建数据库文件。可注入
-Registry、PolicyEngine/Policies、Tracer、ProviderSelector、ContextFactory、CapabilityCatalog、
+Registry、PolicyEngine/Policies、ContextPipeline、Tracer、ProviderSelector、ContextFactory、CapabilityCatalog、
 PlanValidator、StateStore、EventPublisher、Router、Planners、Default Planner、
 PlanIdentityFactory、RequestProjector 或 LocalPluginProvider。
 
-自定义组件必须共享一致边界，例如自定义 Catalog 与 PlanValidator.catalog 必须相同；
+自定义组件必须共享一致边界，例如自定义 Catalog 与 PlanValidator.catalog 必须相同，
+自定义 ContextPipeline 与 Harness 必须使用同一个 PolicyEngine；
 `policies` 与 `policy_engine`、`plugins` 与 `plugin_provider` 不能同时配置。
 
 ## HarnessApplication API
@@ -45,6 +47,7 @@ PlanIdentityFactory、RequestProjector 或 LocalPluginProvider。
   调用或 PLAN 规划执行。
 - `invoke(request)`：Direct Invocation。
 - `model_gateway`：供现有 Router/Planner 与 Agent Foundation Minimal Explorer 使用的模型生成入口。
+- `context_pipeline`：Router/Planner 共用的 Context Engineering Pipeline。
 - `execute_plan(request, plan)`：advanced API；验证并执行带具体 identity 的 Plan，绕过 fresh
   materialization，重复 `plan_id` 明确冲突。
 - `resume_plan(plan_id)`：从 StateStore 恢复并继续相同 Plan。
@@ -131,7 +134,7 @@ result = await app.complete_async_node(
 
 ## Policy / Trace / Events
 
-默认 AllowAllPolicy 同时参与 PRE_ROUTE/PRE_PLAN/PRE_EXECUTE。可配置
+默认 AllowAllPolicy 同时参与 PRE_CONTEXT/PRE_ROUTE/PRE_PLAN/PRE_EXECUTE。可配置
 `RequireApprovalPolicy`；批准后的节点携带结构化 ApprovalGrant 再次经过 PRE_EXECUTE。
 
 默认 InMemoryEventBus 不产生磁盘或网络副作用，并可通过
@@ -140,8 +143,8 @@ Composition Root 决定。
 
 RequestCoordinator 为每次已进入 Router 的调用创建 ROUTE span，并发布
 `route.decided/mode.selected/route.failed`；PLAN 路径发布
-`planner.started/repairing/completed/failed`。RequestSummary 与 Catalog 只以稳定 SHA-256
-hash 进入 Trace，自由文本 reason/validation code 会被拒绝或替换，Event Publisher 失败保持
+`planner.started/repairing/completed/failed`。RequestSummary、Catalog 与 Context
+snapshot/projection 只以稳定 SHA-256 hash 和有界数量进入 Trace，自由文本 reason/validation code 会被拒绝或替换，Event Publisher 失败保持
 best-effort，不覆盖路由、规划或执行结果。
 
 ## 依赖边界与当前范围

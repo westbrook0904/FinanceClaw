@@ -6,6 +6,8 @@ Harness 模块或插件。Stage 2 在 Request/Context/Capability/Result 基线�
 Selection、ProviderAttempt 和安全恢复协议；Stage 3B 冻结请求级 ExecutionMode 与
 RouteDecision 协议；Stage 3C Step 2 下沉 provider-neutral 模型 usage 遥测、strict structured
 output 与 generation reservation/receipt 契约，避免 `harness-contracts` 反向依赖模型实现层。
+Agent Foundation F2 新增 `ContextItem`、`ContextSnapshot`、`ContextProjection`、
+`ContextUseRecord` 及固定来源、信任、敏感级别与 omission reason 枚举。
 
 Agent Foundation 重基线将未发布的 `NormalizedCost*`、token/cost reservation 上界与相关
 ModelAttemptPolicy 字段作为 pre-release corrective break 删除；仓库没有旧 reservation 的生产
@@ -20,7 +22,8 @@ ModelAttemptPolicy 字段作为 pre-release corrective break 删除；仓库没�
 | 计划 | `ExecutionPlan`、`PlanNode`、`PlanEdge`、Binding、Condition、Budget、Retry / Failure Policy |
 | 执行状态 | `PlanExecutionState`、`NodeExecutionState` 及状态枚举 |
 | 持久化 | `PlanExecutionRecord`，包含 Plan、可恢复 Context 和完整 State |
-| 上下文 | `InvocationContext`、Identity、Tenant、Trace、Cancellation Context |
+| 调用上下文 | `InvocationContext`、Identity、Tenant、Trace、Cancellation Context |
+| 模型 Context | `ContextItem`、`ContextSnapshot`、`ContextProjection`、`ContextUseRecord`、`ContextProjectionLimits` |
 | 能力 | `CapabilityDescriptor`、`CapabilityType`、`CapabilityExecutionProfile` |
 | Provider Fabric | `ProviderDescriptor`、`ProviderHealthSnapshot`、`ProviderAttempt`、`ProviderPin`、Selection 契约 |
 | 模型生成 | `StructuredOutputSpec`、`ModelProviderFeatures`、`ModelUsage`、`ModelGenerationAccounting`、`ModelGenerationReservation`、`ModelReservationReceipt` |
@@ -93,6 +96,8 @@ execution 内的 Plan 定义版本，fresh execution 从 1 开始。未来 Workf
 - 旧 Request 未指定 `execution_mode` 时默认为 `AUTO`；最终 `RouteDecision` 不允许保留
   `AUTO`，且模式、路由类型与目标字段必须形成合法组合。
 - Request 中的 `user_id`、`tenant_id` 不能直接视为可信 Identity/Tenant。
+- Context hash 使用 64 位小写 SHA-256；时间必须含时区，Projection included/omitted item ID
+  必须唯一且互斥。
 - Capability 执行画像用 `side_effect`、`egress`、`idempotency` 支持重试、
   恢复与审批判断。
 - `CapabilityType.MODEL` 只表达 Registry 中的稳定模型能力语义；模型原生生成协议位于

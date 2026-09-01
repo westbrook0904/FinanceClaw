@@ -816,6 +816,14 @@ Provider、Plugin 或 metadata。LLMRouter 与 LLMPlanner 均通过同一
 - 先接入 Router 与 Planner；
 - 完成稳定 hash、Policy 后 Snapshot、信任优先级、redaction 和 deterministic truncation tests。
 
+**实施状态：已完成（2026-09-01）。** 已新增 Context Contracts 与 `harness-context`；默认
+ContextPipeline 收集 Request/Capability Catalog，经固定排序、去重、基础 trust/sensitivity/expiry
+guard 和共享 `PolicyEngine.PRE_CONTEXT` 后才物化 Snapshot，再生成 ROUTE/PLAN 最小 Projection。
+LLMRouter/LLMPlanner 缺少对应 Projection 时在 ModelGateway 调用前 fail-closed；模型 Prompt
+不携带 request/use/snapshot/trace/provider/plugin identity，只有受信 SYSTEM instruction 可进入
+system message，用户与数据文本不能自我提升。ROUTE/PLANNER Trace 只记录稳定 hash 与有界数量；
+确定性 hash、redaction、Policy-before-Snapshot、consumer view、truncation 和全仓回归已通过。
+
 ### Step F3 — Memory Foundation
 
 - 新增 memory contracts、SPI、Gateway；

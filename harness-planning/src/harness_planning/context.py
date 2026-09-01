@@ -5,7 +5,14 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Self
 
-from harness_contracts import CapabilityDescriptor, ContractModel, InvocationContext
+from harness_contracts import (
+    CapabilityDescriptor,
+    ContextConsumer,
+    ContextProjection,
+    ContextUseRecord,
+    ContractModel,
+    InvocationContext,
+)
 from harness_contracts.base import NonEmptyString
 from harness_routing import RequestSummary
 from pydantic import Field, field_validator, model_validator
@@ -34,6 +41,8 @@ class PlanningContext(ContractModel):
     goal: RequestSummary
     catalog_snapshot: tuple[CapabilityDescriptor, ...]
     constraints: PlanningConstraints = Field(default_factory=PlanningConstraints)
+    projection: ContextProjection | None = None
+    context_use: ContextUseRecord | None = None
 
     @model_validator(mode="after")
     def validate_goal_and_catalog(self) -> Self:
@@ -50,4 +59,22 @@ class PlanningContext(ContractModel):
         capability_ids = [descriptor.id for descriptor in self.catalog_snapshot]
         if len(capability_ids) != len(set(capability_ids)):
             raise ValueError("catalog_snapshot must not contain duplicate capability IDs")
+
+        if (self.projection is None) != (self.context_use is None):
+            raise ValueError("planning projection and context_use must be supplied together")
+        if self.projection is not None and self.context_use is not None:
+            if self.projection.consumer is not ContextConsumer.PLAN:
+                raise ValueError("planning context requires a plan projection")
+            if self.context_use.consumer is not ContextConsumer.PLAN:
+                raise ValueError("planning context requires a plan context use record")
+            if self.context_use.snapshot_id != self.projection.snapshot_id:
+                raise ValueError("planning projection and context_use snapshot IDs must match")
+            if self.context_use.projection_hash != self.projection.projection_hash:
+                raise ValueError("planning projection and context_use hashes must match")
+            if self.context_use.included_item_ids != tuple(
+                item.item_id for item in self.projection.items
+            ):
+                raise ValueError("planning projection and context_use items must match")
+            if self.context_use.omitted != self.projection.omitted:
+                raise ValueError("planning projection and context_use omissions must match")
         return self

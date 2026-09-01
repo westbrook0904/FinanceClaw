@@ -3,10 +3,20 @@
 from __future__ import annotations
 
 import unittest
+from datetime import UTC, datetime
 
 from harness_contracts import (
     CapabilityDescriptor,
     CapabilityType,
+    ContextConsumer,
+    ContextFreshness,
+    ContextItem,
+    ContextProvenance,
+    ContextSensitivity,
+    ContextSourceKind,
+    ContextSourceRef,
+    ContextTrustTier,
+    ExecutionMode,
     IdentityContext,
     InvocationContext,
     Request,
@@ -22,6 +32,7 @@ from harness_policy import (
     PolicyDecision,
     PolicyEffect,
     PolicyEngine,
+    PolicyPhase,
     TenantPolicy,
 )
 from pydantic import ValidationError
@@ -99,6 +110,40 @@ class PolicyModelTests(unittest.TestCase):
         decision = PolicyDecision.allow("test")
         with self.assertRaises(ValidationError):
             decision.effect = PolicyEffect.DENY  # type: ignore[misc]
+
+    def test_pre_context_shape_is_strict_and_typed(self) -> None:
+        now = datetime.now(UTC)
+        context_item = ContextItem(
+            item_id="request-item",
+            kind="request",
+            content={"goal": "compare"},
+            source=ContextSourceRef(
+                source_kind=ContextSourceKind.REQUEST,
+                source_id="request",
+            ),
+            provenance=ContextProvenance(producer="policy-test"),
+            freshness=ContextFreshness(source_version="v1", observed_at=now),
+            trust_tier=ContextTrustTier.USER,
+            sensitivity=ContextSensitivity.CONFIDENTIAL,
+            created_at=now,
+        )
+        invocation = make_context().invocation
+
+        decision = PolicyEngine((AllowAllPolicy(),)).evaluate_context(
+            invocation,
+            context_item,
+            ContextConsumer.ROUTE,
+        )
+
+        self.assertEqual(decision.effect, PolicyEffect.ALLOW)
+        with self.assertRaises(ValidationError):
+            PolicyContext(
+                invocation=invocation,
+                phase=PolicyPhase.PRE_CONTEXT,
+                context_item=context_item,
+                context_consumer=ContextConsumer.ROUTE,
+                requested_mode=ExecutionMode.AUTO,
+            )
 
 
 class EngineTests(unittest.TestCase):

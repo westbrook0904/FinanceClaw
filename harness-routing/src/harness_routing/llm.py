@@ -6,9 +6,11 @@ import json
 from collections.abc import Mapping
 from typing import Literal
 
+from harness_context import ContextPrompt, PromptBuilder
 from harness_contracts import (
-    CapabilityDescriptor,
     CapabilityType,
+    ContextError,
+    ContextSourceKind,
     ContractModel,
     ErrorCode,
     ExecutionMode,
@@ -95,6 +97,7 @@ class LLMRouter(Router):
         router_id: str = "llm-router",
         prompt_version: str = "route-v2",
         max_output_tokens: int | None = None,
+        prompt_builder: PromptBuilder | None = None,
     ) -> None:
         if isinstance(model_gateway, StructuredGenerationAdapter):
             generation_adapter = model_gateway
@@ -113,6 +116,8 @@ class LLMRouter(Router):
                 raise ValueError(f"{field_name} must not include surrounding whitespace")
         if not isinstance(decision_validator, RouteDecisionValidator):
             raise TypeError("decision_validator must be RouteDecisionValidator")
+        if prompt_builder is not None and not isinstance(prompt_builder, PromptBuilder):
+            raise TypeError("prompt_builder must be PromptBuilder")
         if max_output_tokens is not None and (
             not isinstance(max_output_tokens, int)
             or isinstance(max_output_tokens, bool)
@@ -127,6 +132,7 @@ class LLMRouter(Router):
         self._router_id = router_id
         self._prompt_version = prompt_version
         self._max_output_tokens = max_output_tokens
+        self._prompt_builder = prompt_builder or PromptBuilder()
         self._intent_schema = _RouteIntentDraft.model_json_schema()
         self._fast_capability_schema = _FastCapabilityDraft.model_json_schema()
 
@@ -154,6 +160,10 @@ class LLMRouter(Router):
     def prompt_version(self) -> str:
         return self._prompt_version
 
+    @property
+    def prompt_builder(self) -> PromptBuilder:
+        return self._prompt_builder
+
     async def route(self, context: RoutingContext) -> RouteDecision:
         if not isinstance(context, RoutingContext):
             raise TypeError("context must be RoutingContext")
@@ -171,15 +181,21 @@ class LLMRouter(Router):
             return self._decision_validator.validate(deterministic, context)
 
         draft_type, schema, schema_name, unknown_fields = self._completion_contract(allowed_modes)
+        context_prompt = self._context_prompt(context)
         request = GenerateRequest(
             model=self._route_model_capability_id,
             messages=(
                 ModelMessage(role=ModelRole.SYSTEM, content=_SYSTEM_PROMPT),
+                *(
+                    ModelMessage(role=ModelRole.SYSTEM, content=instruction)
+                    for instruction in context_prompt.system_instructions
+                ),
                 ModelMessage(
                     role=ModelRole.USER,
                     content=json.dumps(
                         self._prompt_payload(
                             context,
+                            context_prompt=context_prompt,
                             allowed_modes=allowed_modes,
                             unknown_fields=unknown_fields,
                         ),
@@ -218,6 +234,7 @@ class LLMRouter(Router):
         self,
         context: RoutingContext,
         *,
+        context_prompt: ContextPrompt,
         allowed_modes: frozenset[ExecutionMode],
         unknown_fields: tuple[str, ...],
     ) -> dict[str, object]:
@@ -230,25 +247,30 @@ class LLMRouter(Router):
         allowed_capabilities = set(catalog_ids)
         if context.constraints.allowed_capability_ids is not None:
             allowed_capabilities.intersection_update(context.constraints.allowed_capability_ids)
+        allowed_capabilities.intersection_update(_projected_capability_ids(context_prompt))
 
         payload: dict[str, object] = {
-            "request_summary": context.request_summary.model_dump(mode="json"),
+            "context": context_prompt.payload,
             "routing_task": (
                 "choose_execution_path"
                 if ExecutionMode.PLAN in allowed_modes
                 else "select_direct_capability"
             ),
             "unknown_fields": unknown_fields,
-            "capability_catalog": [
-                _safe_descriptor_projection(descriptor)
-                for descriptor in routable_catalog
-                if descriptor.id in allowed_capabilities
-            ],
             "allowed_capability_ids": sorted(allowed_capabilities),
         }
         if len(allowed_modes) > 1:
             payload["allowed_modes"] = sorted(mode.value for mode in allowed_modes)
         return payload
+
+    def _context_prompt(self, context: RoutingContext) -> ContextPrompt:
+        if context.projection is None:
+            raise ContextError(
+                "LLMRouter requires a route ContextProjection",
+                code=ErrorCode.CONTEXT_PROJECTION_REQUIRED,
+                details={"consumer": "route", "router_id": self.router_id},
+            )
+        return self._prompt_builder.build(context.projection)
 
     def _parse_result(
         self,
@@ -421,15 +443,20 @@ class LLMRouter(Router):
         )
 
 
-def _safe_descriptor_projection(descriptor: CapabilityDescriptor) -> dict[str, object]:
-    payload = descriptor.model_dump(mode="json")
-    return {
-        "id": payload["id"],
-        "name": payload["name"],
-        "type": payload["type"],
-        "version": payload["version"],
-        "input_schema": payload["input_schema"],
-        "output_schema": payload["output_schema"],
-        "execution_profile": payload["execution_profile"],
-        "tags": sorted(payload["tags"]),
-    }
+def _projected_capability_ids(prompt: ContextPrompt) -> frozenset[str]:
+    capability_ids: set[str] = set()
+    items = prompt.payload.get("items", [])
+    if not isinstance(items, list):
+        return frozenset()
+    for item in items:
+        if not isinstance(item, Mapping):
+            continue
+        if item.get("source_kind") != ContextSourceKind.CAPABILITY_CATALOG.value:
+            continue
+        content = item.get("content")
+        if not isinstance(content, Mapping):
+            continue
+        capability_id = content.get("id")
+        if isinstance(capability_id, str):
+            capability_ids.add(capability_id)
+    return frozenset(capability_ids)

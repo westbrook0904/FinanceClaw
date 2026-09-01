@@ -17,6 +17,7 @@ class AllowAllPolicy(Policy):
     def phases(self) -> frozenset[PolicyPhase]:
         return frozenset(
             {
+                PolicyPhase.PRE_CONTEXT,
                 PolicyPhase.PRE_ROUTE,
                 PolicyPhase.PRE_PLAN,
                 PolicyPhase.PRE_EXECUTE,
@@ -43,6 +44,7 @@ class TenantPolicy(Policy):
     def phases(self) -> frozenset[PolicyPhase]:
         return frozenset(
             {
+                PolicyPhase.PRE_CONTEXT,
                 PolicyPhase.PRE_ROUTE,
                 PolicyPhase.PRE_PLAN,
                 PolicyPhase.PRE_EXECUTE,

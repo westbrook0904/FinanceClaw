@@ -7,9 +7,11 @@ import json
 from collections.abc import Callable, Iterable, Mapping
 from datetime import UTC, datetime
 
+from harness_context import ContextPrompt, PromptBuilder
 from harness_contracts import (
-    CapabilityDescriptor,
     CapabilityType,
+    ContextError,
+    ContextSourceKind,
     ErrorCode,
     ExecutionPlan,
     PlanningError,
@@ -72,6 +74,7 @@ class LLMPlanner(Planner):
         allowed_capability_ids: Iterable[str] | None = None,
         attempt_observer: PlanningAttemptObserver | None = None,
         clock: Clock | None = None,
+        prompt_builder: PromptBuilder | None = None,
     ) -> None:
         if isinstance(model_gateway, StructuredGenerationAdapter):
             generation_adapter = model_gateway
@@ -102,6 +105,8 @@ class LLMPlanner(Planner):
             raise TypeError("attempt_observer must be callable")
         if clock is not None and not callable(clock):
             raise TypeError("clock must be callable")
+        if prompt_builder is not None and not isinstance(prompt_builder, PromptBuilder):
+            raise TypeError("prompt_builder must be PromptBuilder")
         self._configured_capability_ids = _validate_capability_scope(allowed_capability_ids)
 
         self._generation_adapter = generation_adapter
@@ -111,6 +116,7 @@ class LLMPlanner(Planner):
         self._compatibility_materializer = PlanMaterializer(PlanIdentityFactory(plan_id_factory))
         self._attempt_observer = attempt_observer
         self._clock = clock or (lambda: datetime.now(UTC))
+        self._prompt_builder = prompt_builder or PromptBuilder()
         self._response_schema = PlanDraft.model_json_schema()
 
     @property
@@ -140,6 +146,10 @@ class LLMPlanner(Planner):
     @property
     def configured_capability_ids(self) -> frozenset[str] | None:
         return self._configured_capability_ids
+
+    @property
+    def prompt_builder(self) -> PromptBuilder:
+        return self._prompt_builder
 
     async def plan(self, context: PlanningContext) -> ExecutionPlan:
         return await self.plan_with_observer(context)
@@ -182,9 +192,11 @@ class LLMPlanner(Planner):
 
         deadline_at = _effective_deadline(context)
         allowed_capability_ids = self._allowed_capability_ids(context)
+        context_prompt = self._context_prompt(context)
         base_payload = self._prompt_payload(
             context,
-            allowed_capability_ids,
+            context_prompt=context_prompt,
+            allowed_capability_ids=allowed_capability_ids,
             effective_deadline_at=deadline_at,
         )
         previous_output: object | None = None
@@ -195,6 +207,7 @@ class LLMPlanner(Planner):
             kind = "initial" if attempt == 1 else "repair"
             request = self._generation_request(
                 base_payload,
+                system_instructions=context_prompt.system_instructions,
                 attempt=attempt,
                 previous_output=previous_output,
                 repair_feedback=repair_feedback,
@@ -280,6 +293,7 @@ class LLMPlanner(Planner):
         self,
         base_payload: dict[str, object],
         *,
+        system_instructions: tuple[str, ...],
         attempt: int,
         previous_output: object | None,
         repair_feedback: RepairFeedback | None,
@@ -299,6 +313,10 @@ class LLMPlanner(Planner):
             model=self._planner_model_capability_id,
             messages=(
                 ModelMessage(role=ModelRole.SYSTEM, content=_SYSTEM_PROMPT),
+                *(
+                    ModelMessage(role=ModelRole.SYSTEM, content=instruction)
+                    for instruction in system_instructions
+                ),
                 ModelMessage(
                     role=ModelRole.USER,
                     content=json.dumps(
@@ -324,18 +342,13 @@ class LLMPlanner(Planner):
     def _prompt_payload(
         self,
         context: PlanningContext,
+        context_prompt: ContextPrompt,
         allowed_capability_ids: frozenset[str],
         *,
         effective_deadline_at: datetime | None,
     ) -> dict[str, object]:
-        catalog = tuple(
-            _safe_descriptor_projection(descriptor)
-            for descriptor in context.catalog_snapshot
-            if descriptor.id in allowed_capability_ids
-        )
         return {
-            "goal": context.goal.model_dump(mode="json"),
-            "capability_catalog": catalog,
+            "context": context_prompt.payload,
             "allowed_capability_ids": sorted(allowed_capability_ids),
             "planning_constraints": {
                 "max_plan_nodes": context.constraints.max_plan_nodes,
@@ -344,6 +357,15 @@ class LLMPlanner(Planner):
                 ),
             },
         }
+
+    def _context_prompt(self, context: PlanningContext) -> ContextPrompt:
+        if context.projection is None:
+            raise ContextError(
+                "LLMPlanner requires a plan ContextProjection",
+                code=ErrorCode.CONTEXT_PROJECTION_REQUIRED,
+                details={"consumer": "plan", "planner_id": self.planner_id},
+            )
+        return self._prompt_builder.build(context.projection)
 
     def _allowed_capability_ids(self, context: PlanningContext) -> frozenset[str]:
         allowed = {
@@ -355,6 +377,14 @@ class LLMPlanner(Planner):
             allowed.intersection_update(context.constraints.allowed_capability_ids)
         if self._configured_capability_ids is not None:
             allowed.intersection_update(self._configured_capability_ids)
+        if context.projection is not None:
+            allowed.intersection_update(
+                item.content["id"]
+                for item in context.projection.items
+                if item.source.source_kind is ContextSourceKind.CAPABILITY_CATALOG
+                and isinstance(item.content, Mapping)
+                and isinstance(item.content.get("id"), str)
+            )
         return frozenset(allowed)
 
     def _require_generation_output(
@@ -675,19 +705,6 @@ def _effective_deadline(context: PlanningContext) -> datetime | None:
         if value is not None
     )
     return min(values) if values else None
-
-
-def _safe_descriptor_projection(descriptor: CapabilityDescriptor) -> dict[str, object]:
-    return {
-        "id": descriptor.id,
-        "name": descriptor.name,
-        "type": descriptor.type.value,
-        "version": descriptor.version,
-        "input_schema": descriptor.model_dump(mode="json")["input_schema"],
-        "output_schema": descriptor.model_dump(mode="json")["output_schema"],
-        "execution_profile": descriptor.execution_profile.model_dump(mode="json"),
-        "tags": sorted(descriptor.tags),
-    }
 
 
 def _validate_non_empty_string(field_name: str, value: str) -> str:

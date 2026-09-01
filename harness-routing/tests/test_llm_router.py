@@ -4,10 +4,20 @@ from __future__ import annotations
 
 import json
 import unittest
+from datetime import UTC, datetime
 
+from harness_context import (
+    CapabilityCatalogContextSource,
+    ContextCollection,
+    ContextPipeline,
+    ContextPolicy,
+    RequestContextSource,
+)
 from harness_contracts import (
     CapabilityDescriptor,
     CapabilityType,
+    ContextConsumer,
+    ContextError,
     ErrorCode,
     ExecutionMode,
     IdentityContext,
@@ -38,6 +48,7 @@ from harness_model import (
     StructuredGenerationAdapter,
 )
 from harness_model.schema import structured_schema_hash
+from harness_policy import PolicyEngine
 from harness_registry import InMemoryCapabilityRegistry
 from harness_routing import (
     LLMRouter,
@@ -233,12 +244,42 @@ def make_context(
     catalog = [descriptor(TOOL_ID)]
     if include_model_descriptor:
         catalog.append(descriptor(MODEL_ID, CapabilityType.MODEL))
+    summary = SafeRequestProjector(metadata_allowlist=("locale",)).project(request)
+    model_catalog = tuple(
+        item for item in catalog if item.type in {CapabilityType.AGENT, CapabilityType.TOOL}
+    )
+    collection = ContextCollection(
+        invocation=invocation,
+        request_projection=summary.model_dump(mode="json", exclude={"request_id"}),
+        capability_catalog=model_catalog,
+    )
+    now = datetime.now(UTC)
+    candidates = (
+        *RequestContextSource().collect(
+            collection,
+            ContextConsumer.ROUTE,
+            observed_at=now,
+        ),
+        *CapabilityCatalogContextSource().collect(
+            collection,
+            ContextConsumer.ROUTE,
+            observed_at=now,
+        ),
+    )
+    bundle = ContextPipeline(ContextPolicy(PolicyEngine())).materialize(
+        invocation,
+        ContextConsumer.ROUTE,
+        candidates,
+        assembled_at=now,
+    )
     return RoutingContext(
         invocation=invocation,
-        request_summary=SafeRequestProjector(metadata_allowlist=("locale",)).project(request),
+        request_summary=summary,
         requested_mode=mode,
         catalog_snapshot=tuple(catalog),
         constraints=constraints or RoutePolicyConstraints(),
+        projection=bundle.projection,
+        context_use=bundle.use_record,
     )
 
 
@@ -259,6 +300,17 @@ def make_router(
 
 
 class LLMRouterTests(unittest.IsolatedAsyncioTestCase):
+    async def test_model_route_requires_context_projection_before_gateway_call(self) -> None:
+        model = ScriptedRouteModel(fast_decision())
+        router, _ = make_router(model)
+        context = make_context().model_copy(update={"projection": None, "context_use": None})
+
+        with self.assertRaises(ContextError) as raised:
+            await router.route(context)
+
+        self.assertEqual(raised.exception.code, ErrorCode.CONTEXT_PROJECTION_REQUIRED)
+        self.assertEqual(model.calls, 0)
+
     async def test_accepts_shared_strict_generation_adapter(self) -> None:
         model = ScriptedRouteModel(fast_decision())
         registry = InMemoryCapabilityRegistry()
@@ -341,11 +393,16 @@ class LLMRouterTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(prompt["allowed_capability_ids"], [TOOL_ID])
         self.assertNotIn("available_planner_ids", prompt)
-        self.assertEqual(
-            [item["id"] for item in prompt["capability_catalog"]],
-            [TOOL_ID],
+        context_items = prompt["context"]["items"]
+        capabilities = [
+            item["content"] for item in context_items if item["source_kind"] == "capability_catalog"
+        ]
+        request_item = next(
+            item["content"] for item in context_items if item["source_kind"] == "request"
         )
-        self.assertEqual(prompt["request_summary"]["metadata"], {"locale": "zh-CN"})
+        self.assertEqual([item["id"] for item in capabilities], [TOOL_ID])
+        self.assertEqual(request_item["metadata"], {"locale": "zh-CN"})
+        self.assertNotIn("request_id", request_item)
         serialized = request.messages[-1].content
         for secret in (
             "secret-plugin-pin",

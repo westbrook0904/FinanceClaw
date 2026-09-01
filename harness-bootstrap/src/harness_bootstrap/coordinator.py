@@ -4,7 +4,12 @@ from __future__ import annotations
 
 import asyncio
 
+from harness_context import ContextPipeline
 from harness_contracts import (
+    CapabilityDescriptor,
+    CapabilityType,
+    ContextConsumer,
+    ContextUseRecord,
     ErrorCode,
     ExecutionMode,
     HarnessError,
@@ -34,6 +39,7 @@ from harness_policy import PolicyEngine, PreRoutePolicyResult
 from harness_registry import CapabilityCatalog
 from harness_routing import (
     RequestProjector,
+    RequestSummary,
     RouteDecisionValidator,
     Router,
     RoutingContext,
@@ -99,6 +105,7 @@ class RequestCoordinator:
         decision_validator: RouteDecisionValidator,
         request_projector: RequestProjector,
         policy_engine: PolicyEngine,
+        context_pipeline: ContextPipeline,
         capability_catalog: CapabilityCatalog,
         invoker: CapabilityInvoker,
         execution_engine: ExecutionEngine,
@@ -118,6 +125,8 @@ class RequestCoordinator:
             raise TypeError("request_projector must implement RequestProjector")
         if not isinstance(policy_engine, PolicyEngine):
             raise TypeError("policy_engine must be PolicyEngine")
+        if not isinstance(context_pipeline, ContextPipeline):
+            raise TypeError("context_pipeline must be ContextPipeline")
         if not isinstance(capability_catalog, CapabilityCatalog):
             raise TypeError("capability_catalog must implement CapabilityCatalog")
         if not isinstance(invoker, CapabilityInvoker):
@@ -147,6 +156,8 @@ class RequestCoordinator:
             raise ValueError("invoker and coordinator must use the same lifecycle")
         if invoker.policy_engine is not policy_engine:
             raise ValueError("invoker and coordinator must use the same policy_engine")
+        if context_pipeline.policy.policy_engine is not policy_engine:
+            raise ValueError("context_pipeline and coordinator must use the same policy_engine")
         if invoker.tracer is not tracer:
             raise ValueError("invoker and coordinator must use the same tracer")
         if invoker.event_publisher is not event_publisher:
@@ -158,6 +169,7 @@ class RequestCoordinator:
         self._decision_validator = decision_validator
         self._request_projector = request_projector
         self._policy_engine = policy_engine
+        self._context_pipeline = context_pipeline
         self._capability_catalog = capability_catalog
         self._invoker = invoker
         self._execution_engine = execution_engine
@@ -166,9 +178,7 @@ class RequestCoordinator:
         self._events = RequestEventEmitter(event_publisher)
         self._planner_registry = planner_registry
         self._default_planner_id = default_planner_id
-        self._planner_output_normalizer = (
-            planner_output_normalizer or PlannerOutputNormalizer()
-        )
+        self._planner_output_normalizer = planner_output_normalizer or PlannerOutputNormalizer()
         self._plan_materializer = plan_materializer or PlanMaterializer()
 
     @property
@@ -186,6 +196,10 @@ class RequestCoordinator:
     @property
     def policy_engine(self) -> PolicyEngine:
         return self._policy_engine
+
+    @property
+    def context_pipeline(self) -> ContextPipeline:
+        return self._context_pipeline
 
     @property
     def capability_catalog(self) -> CapabilityCatalog:
@@ -263,12 +277,25 @@ class RequestCoordinator:
                 parent=runtime_span,
                 trace_enabled=trace_enabled,
             )
+            request_summary = self._request_projector.project(request)
+            catalog_snapshot = self._capability_catalog.list()
+            route_bundle = await self._context_pipeline.build(
+                context,
+                ContextConsumer.ROUTE,
+                request_projection=_model_request_projection(request_summary),
+                capability_catalog=_model_catalog(
+                    catalog_snapshot,
+                    pre_route.constraints.allowed_capability_ids,
+                ),
+            )
             routing_context = RoutingContext(
                 invocation=context,
-                request_summary=self._request_projector.project(request),
+                request_summary=request_summary,
                 requested_mode=pre_route.effective_mode,
-                catalog_snapshot=self._capability_catalog.list(),
+                catalog_snapshot=catalog_snapshot,
                 constraints=pre_route.constraints,
+                projection=route_bundle.projection,
+                context_use=route_bundle.use_record,
             )
             decision = await self._route(
                 routing_context,
@@ -401,6 +428,7 @@ class RequestCoordinator:
         summary_hash = stable_observation_hash(
             routing_context.request_summary.model_dump(mode="json")
         )
+        context_attributes = _context_trace_attributes(routing_context.context_use)
         route_span = (
             self._tracer.start_span(
                 f"route.{self._router.router_id}",
@@ -412,6 +440,7 @@ class RequestCoordinator:
                     "effective_mode": effective_mode.value,
                     "catalog_snapshot_hash": catalog_hash,
                     "request_summary_hash": summary_hash,
+                    **context_attributes,
                 },
             )
             if trace_enabled
@@ -575,6 +604,16 @@ class RequestCoordinator:
         trace_enabled: bool,
     ) -> ResultEnvelope:
         prompt_version = self._planner_prompt_version(planner)
+        route_constraints = routing_context.constraints
+        plan_bundle = await self._context_pipeline.build(
+            context,
+            ContextConsumer.PLAN,
+            request_projection=_model_request_projection(routing_context.request_summary),
+            capability_catalog=_model_catalog(
+                routing_context.catalog_snapshot,
+                route_constraints.allowed_capability_ids,
+            ),
+        )
         catalog_hash = stable_observation_hash(
             [descriptor.model_dump(mode="json") for descriptor in routing_context.catalog_snapshot]
         )
@@ -587,6 +626,7 @@ class RequestCoordinator:
                     "planner_id": planner.planner_id,
                     "prompt_version": prompt_version,
                     "catalog_snapshot_hash": catalog_hash,
+                    **_context_trace_attributes(plan_bundle.use_record),
                 },
             )
             if trace_enabled
@@ -597,7 +637,6 @@ class RequestCoordinator:
             if planner_span is not None
             else context
         )
-        route_constraints = routing_context.constraints
         planning_context = PlanningContext(
             invocation=planner_invocation,
             goal=routing_context.request_summary,
@@ -608,6 +647,8 @@ class RequestCoordinator:
                 allowed_capability_ids=route_constraints.allowed_capability_ids,
                 deadline_at=context.deadline_at,
             ),
+            projection=plan_bundle.projection,
+            context_use=plan_bundle.use_record,
         )
         attempts: list[PlanningAttempt] = []
 
@@ -677,9 +718,7 @@ class RequestCoordinator:
                     details={
                         "planner_id": planner.planner_id,
                         "issue_count": len(exc.issues),
-                        "validation_codes": sorted(
-                            {issue.code.value for issue in exc.issues}
-                        ),
+                        "validation_codes": sorted({issue.code.value for issue in exc.issues}),
                     },
                 ) from exc
         except asyncio.CancelledError:
@@ -889,3 +928,33 @@ class RequestCoordinator:
             metadata["planner_id"] = planner_id
         payload["metadata"] = metadata
         return ResultEnvelope.model_validate(payload)
+
+
+def _model_request_projection(summary: RequestSummary) -> dict[str, JsonValue]:
+    payload = summary.model_dump(mode="json", exclude={"request_id"})
+    return {key: value for key, value in payload.items()}
+
+
+def _model_catalog(
+    catalog: tuple[CapabilityDescriptor, ...],
+    allowed_capability_ids: frozenset[str] | None,
+) -> tuple[CapabilityDescriptor, ...]:
+    return tuple(
+        descriptor
+        for descriptor in catalog
+        if descriptor.type in {CapabilityType.AGENT, CapabilityType.TOOL}
+        and (allowed_capability_ids is None or descriptor.id in allowed_capability_ids)
+    )
+
+
+def _context_trace_attributes(
+    use_record: ContextUseRecord | None,
+) -> dict[str, JsonValue]:
+    if use_record is None:
+        return {}
+    return {
+        "context_snapshot_hash": use_record.snapshot_hash,
+        "context_projection_hash": use_record.projection_hash,
+        "context_included_count": len(use_record.included_item_ids),
+        "context_omitted_count": len(use_record.omitted),
+    }

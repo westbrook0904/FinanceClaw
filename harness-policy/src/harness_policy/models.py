@@ -7,6 +7,8 @@ from enum import StrEnum
 from harness_contracts import (
     ApprovalGrant,
     CapabilityDescriptor,
+    ContextConsumer,
+    ContextItem,
     ContractModel,
     ExecutionMode,
     ExecutionPlan,
@@ -20,6 +22,7 @@ from pydantic import Field, model_validator
 class PolicyPhase(StrEnum):
     """Harness 当前支持的治理边界。"""
 
+    PRE_CONTEXT = "pre_context"
     PRE_ROUTE = "pre_route"
     PRE_PLAN = "pre_plan"
     PRE_EXECUTE = "pre_execute"
@@ -43,9 +46,31 @@ class PolicyContext(ContractModel):
     plan: ExecutionPlan | None = None
     approval_grant: ApprovalGrant | None = None
     requested_mode: ExecutionMode | None = None
+    context_item: ContextItem | None = None
+    context_consumer: ContextConsumer | None = None
 
     @model_validator(mode="after")
     def validate_phase_payload(self) -> PolicyContext:
+        if self.phase is PolicyPhase.PRE_CONTEXT:
+            if self.context_item is None or self.context_consumer is None:
+                raise ValueError(
+                    "pre_context policy context requires context_item and context_consumer"
+                )
+            if (
+                self.requested_mode is not None
+                or self.plan is not None
+                or self.capability is not None
+                or self.provider is not None
+                or self.approval_grant is not None
+            ):
+                raise ValueError(
+                    "pre_context policy context forbids route, plan, capability, "
+                    "provider and approval fields"
+                )
+            return self
+
+        if self.context_item is not None or self.context_consumer is not None:
+            raise ValueError("context_item and context_consumer are only valid for pre_context")
         if self.phase is PolicyPhase.PRE_ROUTE:
             if self.requested_mode is None:
                 raise ValueError("pre_route policy context requires requested_mode")

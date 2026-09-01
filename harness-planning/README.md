@@ -8,8 +8,8 @@ Capability，也不能访问 Provider 实例；Planner 输出统一交给 `PlanV
 
 - `Planner`：无执行权 SPI；legacy `plan()` 仍返回 `ExecutionPlan` candidate，新增的 concrete-default
   `plan_artifact()` 可返回 identity-free `PlanTemplate`。
-- `PlanningContext` / `PlanningConstraints`：受限 Goal、Capability-only Catalog、大小范围
-  与 Deadline 快照。
+- `PlanningContext` / `PlanningConstraints`：受限 Goal、Capability-only Catalog、PLAN
+  ContextProjection / ContextUseRecord、大小范围与 Deadline 快照。
 - `PlannerRegistry`：Composition Root 构造期冻结的本地只读 Planner 映射。
 - `StaticPlanner`：按 request route key 选择不可变 Plan 模板或同步/异步 factory。
 - `HybridPlanner`：仅在 primary 抛出 `PlannerNotApplicableError` 时调用 fallback。
@@ -21,7 +21,7 @@ Capability，也不能访问 Provider 实例；Planner 输出统一交给 `PlanV
   模板，并丢弃 candidate identity 与 runtime metadata。
 - `PlanIdentityFactory` / `PlanMaterializer`：只在 fresh handle execution 信任边界分配新的
   `plan_id`，并固定 `revision=1`。
-- `LLMPlanner`：通过公共 `StructuredGenerationAdapter` 从 Goal + capability-only Catalog 自主
+- `LLMPlanner`：通过公共 `StructuredGenerationAdapter` 从统一 PLAN ContextProjection 自主
   生成 PlanDraft，
   由 Harness 分配计划身份并执行 planning guards 与 PlanValidator。
 - `PlanningAttempt` / `PlanningAttemptObserver`：仅输出 attempt 序号、类型、Provider、输出哈希、
@@ -90,7 +90,8 @@ Normalizer/Materializer；相同 `plan_id` 重复创建返回
 
 LLMPlanner-v2 与 LLMRouter-v2 共用 `StructuredGenerationAdapter`，通过 REQUIRED
 `StructuredOutputSpec` 生成 PlanDraft，只产生节点意图、边、绑定
-与预算。Gateway 在 Draft parser 前完成 Schema 与 finish reason 校验。`plan_id`、`revision=1` 和
+与预算。模型路径缺少 PLAN ContextProjection 时在 Gateway 调用前 fail-closed。Gateway 在 Draft
+parser 前完成 Schema 与 finish reason 校验。`plan_id`、`revision=1` 和
 `planner_id/prompt_version/request_id` metadata 均由 RequestCoordinator 的 Materializer 写入；模型注入这些字段、引用
 超出 Catalog/Policy/Planner 交集的 Capability、超过节点上限或扩大 Request Deadline时都会
 fail-closed。`PlanNodeDraft` 由 Harness 端转换为采用服务端 retry/idempotency/timeout 默认值的
@@ -103,7 +104,7 @@ fail-closed。`PlanNodeDraft` 由 Harness 端转换为采用服务端 retry/idem
 返回、但 JSON/PlanDraft 解析、planning guard 或 PlanValidator 校验失败时才进入 repair；
 ModelGateway failure、Harness identity failure 与 Deadline 到期直接保留各自错误语义。
 
-Repair 始终复用同一份 Goal、Capability Catalog、允许范围、Deadline 和 PlanDraft schema，
+Repair 始终复用同一份 ContextProjection、允许范围、Deadline 和 PlanDraft schema，
 并额外携带有界的上一轮 JSON、无异常 message/input 的 parse type/location，以及不含 message
 的 PlanValidation issue。上一轮 JSON 限制深度、集合大小、字符串长度和总值数量。每次调用前
 重新检查 Deadline；达到上限后统一返回 `HARNESS.PLANNER.REPAIR_EXHAUSTED`。整个循环不创建
@@ -114,7 +115,7 @@ generation 仍由 ModelGateway 创建独立 MODEL span，不为 attempt 增加�
 
 ## 依赖边界与当前范围
 
-本模块依赖 `harness-contracts`、`harness-routing` 的安全 RequestSummary 和只读
+本模块依赖 `harness-contracts`、`harness-context`、`harness-routing` 的安全 RequestSummary 和只读
 `CapabilityCatalog`。Catalog 只返回
 `CapabilityDescriptor`，即使 Registry 中同一 Capability 存在多个 Provider 也只暴露
 一条 capability-only 记录，不会泄露 Provider 身份或实例。

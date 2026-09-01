@@ -18,6 +18,7 @@ class ErrorCategory(StrEnum):
     PROVIDER = "provider"
     SELECTION = "selection"
     ROUTE = "route"
+    CONTEXT = "context"
     PLANNER = "planner"
     TIMEOUT = "timeout"
 
@@ -54,6 +55,10 @@ class ErrorCode(StrEnum):
     ROUTE_PLANNER_NOT_ALLOWED = "HARNESS.ROUTE.PLANNER_NOT_ALLOWED"
     ROUTE_MODEL_FAILED = "HARNESS.ROUTE.MODEL_FAILED"
     ROUTE_APPROVAL_NOT_SUPPORTED = "HARNESS.ROUTE.APPROVAL_NOT_SUPPORTED"
+
+    CONTEXT_INVALID = "HARNESS.CONTEXT.INVALID"
+    CONTEXT_POLICY_UNSUPPORTED = "HARNESS.CONTEXT.POLICY_UNSUPPORTED"
+    CONTEXT_PROJECTION_REQUIRED = "HARNESS.CONTEXT.PROJECTION_REQUIRED"
 
     PLANNER_NOT_CONFIGURED = "HARNESS.PLANNER.NOT_CONFIGURED"
     PLANNER_NOT_APPLICABLE = "HARNESS.PLANNER.NOT_APPLICABLE"
@@ -169,6 +174,11 @@ class SelectionError(HarnessError):
 class RoutingError(HarnessError):
     default_code = ErrorCode.ROUTE_INVALID_DECISION
     default_category = ErrorCategory.ROUTE
+
+
+class ContextError(HarnessError):
+    default_code = ErrorCode.CONTEXT_INVALID
+    default_category = ErrorCategory.CONTEXT
 
 
 class PlanningError(HarnessError):

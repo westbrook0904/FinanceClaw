@@ -7,9 +7,18 @@ import unittest
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+from harness_context import (
+    CapabilityCatalogContextSource,
+    ContextCollection,
+    ContextPipeline,
+    ContextPolicy,
+    RequestContextSource,
+)
 from harness_contracts import (
     CapabilityDescriptor,
     CapabilityType,
+    ContextConsumer,
+    ContextError,
     ErrorCode,
     IdentityContext,
     InvocationContext,
@@ -42,6 +51,7 @@ from harness_planning import (
     PlanningContext,
     PlanValidator,
 )
+from harness_policy import PolicyEngine
 from harness_registry import InMemoryCapabilityRegistry, RegistryCapabilityCatalog
 from harness_routing import SafeRequestProjector
 from harness_spi import ToolRequest, ToolSPI
@@ -235,10 +245,41 @@ def make_context(
             baggage={"secret": "trace-secret"},
         ),
     )
+    goal = SafeRequestProjector(metadata_allowlist=("locale",)).project(request)
+    catalog_snapshot = catalog.list()
+    model_catalog = tuple(
+        item
+        for item in catalog_snapshot
+        if item.type in {CapabilityType.AGENT, CapabilityType.TOOL}
+    )
+    collection = ContextCollection(
+        invocation=invocation,
+        request_projection=goal.model_dump(mode="json", exclude={"request_id"}),
+        capability_catalog=model_catalog,
+    )
+    now = datetime.now(UTC)
+    candidates = (
+        *RequestContextSource().collect(
+            collection,
+            ContextConsumer.PLAN,
+            observed_at=now,
+        ),
+        *CapabilityCatalogContextSource().collect(
+            collection,
+            ContextConsumer.PLAN,
+            observed_at=now,
+        ),
+    )
+    bundle = ContextPipeline(ContextPolicy(PolicyEngine())).materialize(
+        invocation,
+        ContextConsumer.PLAN,
+        candidates,
+        assembled_at=now,
+    )
     return PlanningContext(
         invocation=invocation,
-        goal=SafeRequestProjector(metadata_allowlist=("locale",)).project(request),
-        catalog_snapshot=catalog.list(),
+        goal=goal,
+        catalog_snapshot=catalog_snapshot,
         constraints=PlanningConstraints(
             max_plan_attempts=max_plan_attempts,
             max_plan_nodes=max_plan_nodes,
@@ -249,6 +290,8 @@ def make_context(
             ),
             deadline_at=effective_deadline,
         ),
+        projection=bundle.projection,
+        context_use=bundle.use_record,
     )
 
 
@@ -285,6 +328,16 @@ class PlanDraftTests(unittest.TestCase):
 
 
 class LLMPlannerTests(unittest.IsolatedAsyncioTestCase):
+    async def test_planner_requires_context_projection_before_gateway_call(self) -> None:
+        planner, model, _, catalog = make_planner(valid_draft())
+        context = make_context(catalog).model_copy(update={"projection": None, "context_use": None})
+
+        with self.assertRaises(ContextError) as raised:
+            await planner.plan(context)
+
+        self.assertEqual(raised.exception.code, ErrorCode.CONTEXT_PROJECTION_REQUIRED)
+        self.assertEqual(model.calls, 0)
+
     async def test_valid_first_response_builds_a_harness_owned_execution_plan(self) -> None:
         planner, model, tools, catalog = make_planner(valid_draft())
         context = make_context(catalog)
@@ -321,10 +374,12 @@ class LLMPlannerTests(unittest.IsolatedAsyncioTestCase):
         )
         prompt = json.loads(request.messages[-1].content)
         self.assertEqual(prompt["allowed_capability_ids"], [FETCH_ID, RANK_ID])
-        self.assertEqual(
-            [item["id"] for item in prompt["capability_catalog"]],
-            [FETCH_ID, RANK_ID],
-        )
+        capabilities = [
+            item["content"]
+            for item in prompt["context"]["items"]
+            if item["source_kind"] == "capability_catalog"
+        ]
+        self.assertEqual([item["id"] for item in capabilities], [FETCH_ID, RANK_ID])
         serialized = request.messages[-1].content
         for secret in (
             "secret-provider",
@@ -371,11 +426,7 @@ class LLMPlannerTests(unittest.IsolatedAsyncioTestCase):
         initial_payload = json.loads(model.requests[0].messages[-1].content)
         repair_payload = json.loads(model.requests[1].messages[-1].content)
         self.assertNotIn("repair", initial_payload)
-        self.assertEqual(
-            repair_payload["capability_catalog"],
-            initial_payload["capability_catalog"],
-        )
-        self.assertEqual(repair_payload["goal"], initial_payload["goal"])
+        self.assertEqual(repair_payload["context"], initial_payload["context"])
         repair = repair_payload["repair"]
         self.assertEqual(repair["attempt"], 2)
         self.assertEqual(repair["kind"], "repair")

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
+from harness_context import ContextPipeline, ContextPolicy
 from harness_events import EventPublisher, InMemoryEventBus
 from harness_execution import BasicScheduler, ExecutionEngine
 from harness_model import ModelGateway
@@ -52,6 +53,7 @@ def build_harness(
     policies: Iterable[Policy] | None = None,
     registry: CapabilityRegistry | None = None,
     policy_engine: PolicyEngine | None = None,
+    context_pipeline: ContextPipeline | None = None,
     tracer: Tracer | None = None,
     provider_selector: ProviderSelector | None = None,
     context_factory: InvocationContextFactory | None = None,
@@ -80,6 +82,8 @@ def build_harness(
         raise ValueError("plugins and plugin_provider cannot be configured together")
     if policy_engine is not None and policies is not None:
         raise ValueError("policies and policy_engine cannot be configured together")
+    if context_pipeline is not None and not isinstance(context_pipeline, ContextPipeline):
+        raise TypeError("context_pipeline must be ContextPipeline")
     if provider_selector is not None and not isinstance(provider_selector, ProviderSelector):
         raise TypeError("provider_selector must implement ProviderSelector")
     if capability_catalog is not None and not isinstance(capability_catalog, CapabilityCatalog):
@@ -112,6 +116,13 @@ def build_harness(
         if policy_engine is not None
         else PolicyEngine(tuple(policies) if policies is not None else (AllowAllPolicy(),))
     )
+    effective_context_pipeline = (
+        context_pipeline
+        if context_pipeline is not None
+        else ContextPipeline(ContextPolicy(effective_policy_engine))
+    )
+    if effective_context_pipeline.policy.policy_engine is not effective_policy_engine:
+        raise ValueError("context_pipeline and harness must use the same policy_engine")
     effective_tracer = tracer if tracer is not None else InMemoryTracer()
     effective_provider_selector = (
         provider_selector if provider_selector is not None else PrioritySelector()
@@ -199,6 +210,7 @@ def build_harness(
         route_decision_validator,
         effective_request_projector,
         effective_policy_engine,
+        effective_context_pipeline,
         effective_catalog,
         invoker,
         execution_engine,
@@ -215,6 +227,7 @@ def build_harness(
         HarnessComponents(
             registry=effective_registry,
             policy_engine=effective_policy_engine,
+            context_pipeline=effective_context_pipeline,
             tracer=effective_tracer,
             provider_selector=effective_provider_selector,
             plugin_loader=plugin_loader,

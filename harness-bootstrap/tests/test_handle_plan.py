@@ -315,6 +315,8 @@ class HandlePlanTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(planning.constraints.max_plan_attempts, 2)
         self.assertEqual(planning.constraints.max_plan_nodes, 4)
         self.assertEqual(planning.constraints.allowed_capability_ids, frozenset({TOOL_ID}))
+        self.assertIsNotNone(planning.projection)
+        self.assertIsNotNone(planning.context_use)
         self.assertIn(PolicyPhase.PRE_PLAN, policy.calls)
         self.assertIn(PolicyPhase.PRE_EXECUTE, policy.calls)
 
@@ -334,6 +336,12 @@ class HandlePlanTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(planner_spans[0].parent_span_id, runtime_spans[0].span_id)
         self.assertEqual(plan_spans[0].parent_span_id, runtime_spans[0].span_id)
         planner_attributes = planner_spans[0].attributes
+        route_attributes = route_spans[0].attributes
+        for attributes in (route_attributes, planner_attributes):
+            self.assertEqual(len(attributes["context_snapshot_hash"]), 64)
+            self.assertEqual(len(attributes["context_projection_hash"]), 64)
+            self.assertGreater(attributes["context_included_count"], 0)
+            self.assertEqual(attributes["context_omitted_count"], 0)
         self.assertEqual(planner_attributes["planner_id"], planner.planner_id)
         self.assertEqual(planner_attributes["prompt_version"], "not_applicable")
         self.assertEqual(planner_attributes["attempt_count"], 1)

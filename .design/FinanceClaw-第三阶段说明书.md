@@ -2,8 +2,8 @@
 
 > **文档性质**：阶段实施设计 / Architecture Decision Baseline  
 > **阶段名称**：Stage 3 — Adaptive Multi-Provider & Agentic Orchestration  
-> **版本**：V1.2（Agent Foundation 优先级调整）
-> **日期**：2026-08-31
+> **版本**：V1.3（Foundation F2 完成状态）
+> **日期**：2026-09-01
 > **前置基线**：Stage 1 Minimal Harness + Stage 2 Reliable Plan Execution Engine  
 > **依据文档**：`.design/Harness-Agent_通用可插拔智能体平台架构设计_修订版.md`、`.design/第一阶段.md`、`.design/FinanceClaw-第二阶段说明书.md`
 > **Foundation 实施基线**：`.design/FinanceClaw-Agent-Foundation-一期实施说明书.md`
@@ -19,8 +19,8 @@
 |---|---|---|
 | Stage 3A — Provider Fabric | 已完成 | Registry 1:N、Selection/Minimal Health、Retry/Fallback、Provider-safe Resume、ModelGateway、Observability |
 | Stage 3B — Routing & Planning | 已完成 | ExecutionMode、handle、Rule/LLM Router、PRE_ROUTE、Static/Hybrid/LLM Planner、bounded repair、Acceptance Gate |
-| Agent Foundation F0–F1 | 进行中 | Plan identity 与 Strict Output 已完成；下一步收口 routing correctness |
-| Agent Foundation F2–F3 | 待实施 | 先完成 Context Engineering、MemoryProvider/Gateway 与 SQLite 持久化 |
+| Agent Foundation F0–F2 | 已完成 | Plan identity、Strict Output、Routing correctness 与统一 Context Engineering |
+| Agent Foundation F3 | 待实施 | MemoryProvider/Gateway、InMemory/SQLite、Policy 与 Context 接入 |
 | Agent Foundation F4–F5 | 待实施 | 再实现最小 standalone EXPLORE，并进入真实业务试用 Gate |
 | Post-Foundation Advanced | 设计储备 | HYBRID、PlanPatch、高阶预算、复杂恢复与大规模 Replay，待一期投产后重新 ADR |
 
@@ -127,33 +127,32 @@ Route / Plan Eval 稳定事实
 
 ## Agent Foundation F0–F1 — 已完成前置与 Routing Correctness
 
-已完成：
-
 ```text
 fresh Plan identity
 Strict Structured Output
-```
-
-当前先收口：
-
-```text
 RoutingPipeline deterministic-first
 模型只生成未知字段的 Draft / Proposal
 requested_mode / effective_mode 不进入模型 Prompt
 Router / Planner 共用 strict structured generation adapter
 ```
 
-## Agent Foundation F2–F3 — Context Engineering & Memory
+## Agent Foundation F2 — Context Engineering（已完成）
 
 ```text
 ContextItem / ContextSnapshot / ContextProjection
 ContextSource / ContextAssembler / ContextProjector
 Context Policy / provenance / deterministic trimming
+Router / Planner ContextProjection integration
+```
+
+## Agent Foundation F3 — Memory
+
+```text
 MemoryProvider
 MemoryGateway
 InMemory / SQLite MemoryProvider
 Memory read / write Policy
-Router / Planner / Explorer context integration
+MemorySlice → ContextAssembler integration
 ```
 
 Context 与 Memory 必须在 Explore 之前形成公共能力，不能作为 Explore 内部临时 Prompt 拼装逻辑。
@@ -1721,10 +1720,13 @@ Stage 3B — Routing & Planning
   已完成；以 Stage 3B 实施说明书和验收集为准
 
 Agent Foundation F1 — Routing Correctness
-  收口 deterministic-first 与模型只填写未知字段
+  已完成 deterministic-first 与模型只填写未知字段
 
-Agent Foundation F2–F3 — Context Engineering & Memory
-  先完成 Context pipeline、MemoryProvider / Gateway 与 SQLite 持久化
+Agent Foundation F2 — Context Engineering
+  已完成 Context pipeline、Router/Planner Projection、稳定 hash 与安全裁剪
+
+Agent Foundation F3 — Memory
+  下一步完成 MemoryProvider / Gateway、InMemory / SQLite 与 Context 接入
 
 Agent Foundation F4–F5 — Minimal Explore & Real-use Gate
   再实施最小 standalone EXPLORE、安全 Action、基础次数限制与真实试用

@@ -10,6 +10,7 @@ from harness_bootstrap import (
     HarnessApplication,
     build_harness,
 )
+from harness_context import ContextPipeline, ContextPolicy
 from harness_contracts import (
     CapabilityDescriptor,
     CapabilityType,
@@ -135,6 +136,11 @@ class BootstrapFactoryTests(unittest.TestCase):
         self.assertIs(app.execution_engine.validator, app.plan_validator)
         self.assertIs(app.execution_engine.scheduler, app.components.scheduler)
         self.assertIsInstance(app.state_store, InMemoryStateStore)
+        self.assertIsInstance(app.context_pipeline, ContextPipeline)
+        self.assertIs(
+            app.context_pipeline.policy.policy_engine,
+            app.policy_engine,
+        )
         self.assertIs(app.execution_engine.state_store, app.state_store)
         self.assertEqual(len(app.policy_engine.policies), 1)
         self.assertIsInstance(app.policy_engine.policies[0], AllowAllPolicy)
@@ -174,6 +180,14 @@ class BootstrapFactoryTests(unittest.TestCase):
             build_harness(
                 policies=(AllowAllPolicy(),),
                 policy_engine=PolicyEngine(),
+                entry_point_group=None,
+            )
+
+    def test_rejects_context_pipeline_with_a_different_policy_engine(self) -> None:
+        with self.assertRaises(ValueError):
+            build_harness(
+                policy_engine=PolicyEngine((AllowAllPolicy(),)),
+                context_pipeline=ContextPipeline(ContextPolicy(PolicyEngine((AllowAllPolicy(),)))),
                 entry_point_group=None,
             )
 

@@ -6,6 +6,7 @@ import asyncio
 from dataclasses import dataclass
 from enum import StrEnum
 
+from harness_context import ContextPipeline
 from harness_contracts import (
     ApprovalDecision,
     ExecutionMode,
@@ -58,6 +59,7 @@ class HarnessComponents:
 
     registry: CapabilityRegistry
     policy_engine: PolicyEngine
+    context_pipeline: ContextPipeline
     tracer: Tracer
     provider_selector: ProviderSelector
     plugin_loader: LocalPluginLoader
@@ -146,6 +148,10 @@ class HarnessApplication:
     @property
     def policy_engine(self) -> PolicyEngine:
         return self._components.policy_engine
+
+    @property
+    def context_pipeline(self) -> ContextPipeline:
+        return self._components.context_pipeline
 
     @property
     def tracer(self) -> Tracer:
