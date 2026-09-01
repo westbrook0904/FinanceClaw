@@ -47,4 +47,19 @@ Foundation F2 Context Engineering 与 F3 Memory 的 Gate 分布在 `harness-cont
 - 跨请求 write→read 命中 ContextProjection，Memory 指令文本保持 DATA tier；
 - 缺少 MemoryProvider 时默认 FAST/PLAN Context 组装不回归。
 
+Foundation F4a Minimal Explore Contracts 的 Gate 分布在 `harness-contracts/tests`、
+`harness-agentic/tests`、`harness-planning/tests` 与 `harness-context/tests`：
+
+- Capability completion 默认 UNKNOWN，只有显式 SYNC 且满足类型/side-effect/egress 约束才能进入
+  Explore scope；
+- Exploration node/spec 与普通 Capability/Approval 字段双向互斥，standalone wrapper 恰好一个
+  node、零 edge、唯一 `/output`；
+- ProfileSnapshot 随 Plan 保存，nested child state 与 outer node/plan 的身份、状态、结果和时间一致；
+- Turn Draft 拒绝运行身份、Provider/Plugin、idempotency 与 Patch 字段，PlanDraft 不暴露
+  EXPLORATION kind；
+- Profile/scope/proposal/result hash、基础计数和 Action/Observation 引用可重验，损坏统一归类为
+  `HARNESS.EXPLORATION.CHECKPOINT_CORRUPT`；
+- 默认 Plan 可执行性校验继续返回 `PLAN.EXPLORATION_NOT_AVAILABLE`，F4a 不产生模型或 Capability
+  outbound。
+
 测试只使用本地确定性 Provider、内存 StateStore，不访问网络。

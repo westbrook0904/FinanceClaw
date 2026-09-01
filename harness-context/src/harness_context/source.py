@@ -208,11 +208,16 @@ def _project_descriptor(
         "tags": sorted(payload["tags"]),
     }
     if consumer in {ContextConsumer.PLAN, ContextConsumer.EXPLORE}:
+        execution_profile = dict(payload["execution_profile"])
+        if consumer is ContextConsumer.PLAN:
+            # PLAN supports both sync and async nodes; Explore completion eligibility is a
+            # Harness-owned scope guard and must not perturb the established PLAN projection.
+            execution_profile.pop("completion_mode", None)
         projected.update(
             {
                 "input_schema": payload["input_schema"],
                 "output_schema": payload["output_schema"],
-                "execution_profile": payload["execution_profile"],
+                "execution_profile": execution_profile,
             }
         )
     return projected

@@ -29,6 +29,7 @@ from .base import (
     NonEmptyString,
 )
 from .context import _require_timezone
+from .exploration import ExplorationProfileSnapshot
 
 
 class PlanNodeKind(StrEnum):
@@ -42,6 +43,8 @@ class PlanNodeKind(StrEnum):
     CAPABILITY = "capability"
     # 人工审批节点；到达后 Plan 进入 WAITING，等待外部审批结果再恢复。
     APPROVAL = "approval"
+    # Harness-owned 最小探索节点；模型 PlanDraft 不能创建。
+    EXPLORATION = "exploration"
 
 
 class EdgeTrigger(StrEnum):
@@ -164,6 +167,20 @@ FrozenBindingMapping = Annotated[
     AfterValidator(_freeze_bindings),
     PlainSerializer(dict, return_type=dict[str, InputBinding]),
 ]
+
+
+class ExplorationNodeSpec(ContractModel):
+    """随 Plan 持久化的 standalone Exploration 可信配置快照。"""
+
+    exploration_id: NonEmptyString
+    goal_bindings: FrozenBindingMapping
+    profile: ExplorationProfileSnapshot
+
+    @model_validator(mode="after")
+    def validate_goal(self) -> ExplorationNodeSpec:
+        if not self.goal_bindings:
+            raise ValueError("exploration node requires goal_bindings")
+        return self
 
 
 def _freeze_outputs(value: dict[str, OutputBinding]) -> Any:
@@ -315,17 +332,19 @@ class PlanNode(ContractModel):
     """ExecutionPlan 中一个可调度、可持久化状态的执行单元。
 
     CAPABILITY 节点描述一次 Agent/Tool 调用；APPROVAL 节点描述一个不占用 asyncio
-    Task 的人工等待点。节点只通过 input_mapping 接收数据，禁止依赖跨节点
-    共享的
-    可变对象。节点执行结果由 NodeExecutionState 单独保存，不回写本模型。
+    Task 的人工等待点；EXPLORATION 节点是 Harness-owned standalone Explore wrapper。
+    普通节点只通过 input_mapping 接收数据，Exploration 使用 typed goal_bindings；两者都
+    禁止依赖跨节点共享的可变对象。节点执行结果由 NodeExecutionState 单独保存，不回写本模型。
     """
 
     # Plan 内唯一且跨 checkpoint 稳定的节点 ID。
     node_id: NonEmptyString
     # 节点执行类型；默认为普通 Capability 调用。
     kind: PlanNodeKind = PlanNodeKind.CAPABILITY
-    # Registry 使用的 Capability ID；CAPABILITY 必填，APPROVAL 禁止填写。
+    # Registry 使用的 Capability ID；CAPABILITY 必填，其他 kind 禁止填写。
     capability: NonEmptyString | None = None
+    # 仅 EXPLORATION 节点携带；完整 ProfileSnapshot 不得放入 metadata。
+    exploration: ExplorationNodeSpec | None = None
     # 目标输入字段名到结构化 Binding 的只读映射。
     input_mapping: FrozenBindingMapping = Field(default_factory=dict)
     # 单节点相对超时预算；有效 Deadline 仍不能超过 Request/Plan 的
@@ -345,10 +364,13 @@ class PlanNode(ContractModel):
 
     @model_validator(mode="after")
     def validate_kind_fields(self) -> PlanNode:
-        """校验 CAPABILITY/APPROVAL 两种节点最基本的字段互斥关系。"""
+        """校验三种 node kind 的 typed 字段互斥关系。"""
 
-        if self.kind is PlanNodeKind.CAPABILITY and self.capability is None:
-            raise ValueError("capability node requires capability")
+        if self.kind is PlanNodeKind.CAPABILITY:
+            if self.capability is None:
+                raise ValueError("capability node requires capability")
+            if self.exploration is not None:
+                raise ValueError("capability node forbids exploration spec")
         if self.kind is PlanNodeKind.APPROVAL:
             if self.capability is not None:
                 raise ValueError("approval node forbids capability")
@@ -356,6 +378,21 @@ class PlanNode(ContractModel):
                 raise ValueError("approval node forbids input_mapping")
             if self.idempotency_key is not None:
                 raise ValueError("approval node forbids idempotency_key")
+            if self.exploration is not None:
+                raise ValueError("approval node forbids exploration spec")
+        if self.kind is PlanNodeKind.EXPLORATION:
+            if self.exploration is None:
+                raise ValueError("exploration node requires exploration spec")
+            if self.capability is not None:
+                raise ValueError("exploration node forbids capability")
+            if self.input_mapping:
+                raise ValueError("exploration node uses goal_bindings, not input_mapping")
+            if self.idempotency_key is not None:
+                raise ValueError("exploration node forbids idempotency_key")
+            if self.retry_policy.max_attempts != 1:
+                raise ValueError("exploration node requires scheduler max_attempts=1")
+            if self.metadata:
+                raise ValueError("exploration node forbids free metadata")
         return self
 
 

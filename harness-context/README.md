@@ -26,7 +26,9 @@ PromptBuilder
 
 默认 `ContextPipeline` 提供 `RequestContextSource` 与
 `CapabilityCatalogContextSource`。Route 目录只包含 Capability 的
-id/name/type/version/tags；Plan/Explore 才增加 input/output schema 与 execution profile。
+id/name/type/version/tags；Plan/Explore 才增加 input/output schema 与 execution profile。F4a 的
+`completion_mode` 只进入 EXPLORE 视图；PLAN 继续使用原有执行画像投影，Explore eligibility 则由
+Harness 在模型调用外强制执行。
 Descriptor metadata、Provider、Plugin、Identity、Tenant attributes 与 Trace baggage 不进入
 模型 Prompt。
 

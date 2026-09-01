@@ -20,6 +20,7 @@ class ErrorCategory(StrEnum):
     ROUTE = "route"
     CONTEXT = "context"
     MEMORY = "memory"
+    EXPLORATION = "exploration"
     PLANNER = "planner"
     TIMEOUT = "timeout"
 
@@ -72,6 +73,10 @@ class ErrorCode(StrEnum):
     MEMORY_PROPOSAL_CONFLICT = "HARNESS.MEMORY.PROPOSAL_CONFLICT"
     MEMORY_PROVIDER_FAILED = "HARNESS.MEMORY.PROVIDER_FAILED"
     MEMORY_PROVIDER_INVALID = "HARNESS.MEMORY.PROVIDER_INVALID"
+
+    EXPLORATION_INVALID_PROFILE = "HARNESS.EXPLORATION.INVALID_PROFILE"
+    EXPLORATION_CAPABILITY_INELIGIBLE = "HARNESS.EXPLORATION.CAPABILITY_INELIGIBLE"
+    EXPLORATION_CHECKPOINT_CORRUPT = "HARNESS.EXPLORATION.CHECKPOINT_CORRUPT"
 
     PLANNER_NOT_CONFIGURED = "HARNESS.PLANNER.NOT_CONFIGURED"
     PLANNER_NOT_APPLICABLE = "HARNESS.PLANNER.NOT_APPLICABLE"
@@ -197,6 +202,11 @@ class ContextError(HarnessError):
 class MemoryAccessError(HarnessError):
     default_code = ErrorCode.MEMORY_INVALID
     default_category = ErrorCategory.MEMORY
+
+
+class ExplorationError(HarnessError):
+    default_code = ErrorCode.EXPLORATION_CHECKPOINT_CORRUPT
+    default_category = ErrorCategory.EXPLORATION
 
 
 class PlanningError(HarnessError):

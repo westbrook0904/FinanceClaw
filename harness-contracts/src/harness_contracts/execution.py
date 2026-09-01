@@ -11,6 +11,7 @@ from .approval import ApprovalRequest
 from .base import JsonValue, MutableContractModel, NonEmptyString
 from .context import _require_timezone
 from .errors import ErrorDetail
+from .exploration import ExplorationState
 from .provider import ProviderAttempt
 from .result import Continuation, ResultEnvelope, ResultIssue
 
@@ -66,6 +67,7 @@ class PlanExecutionState(MutableContractModel):
     state_version: int = Field(default=1, ge=1)
     status: PlanExecutionStatus = PlanExecutionStatus.CREATED
     nodes: dict[str, NodeExecutionState] = Field(default_factory=dict)
+    explorations: dict[str, ExplorationState] = Field(default_factory=dict)
     issues: list[ResultIssue] = Field(default_factory=list)
     pending_approvals: list[ApprovalRequest] = Field(default_factory=list)
     pending_jobs: list[Continuation] = Field(default_factory=list)

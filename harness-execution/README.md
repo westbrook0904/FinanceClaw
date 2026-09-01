@@ -141,6 +141,10 @@ best-effort 观察面，Publisher/Subscriber 失败不会覆盖 StateStore 中�
 server、轮询框架或外部 Event Broker。ModelProvider 由独立 ModelGateway 调用，不作为
 DAG Agent/Tool Node 直接执行。
 
+Agent Foundation F4a 只在公共 Plan/State Contract 中加入 typed `EXPLORATION` node 与 nested
+state。`PlanValidator` 的默认执行校验仍拒绝该 node，BasicScheduler 没有 Exploration 分支；
+`ExplorationEngine`、Action outbound 与 Observation-boundary resume 由 F4b 接入。
+
 ## 测试
 
 ```bash

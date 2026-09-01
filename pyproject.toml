@@ -40,6 +40,7 @@ select = ["E", "F", "I", "UP", "B"]
 py-modules = ["main"]
 packages = [
     "harness_bootstrap",
+    "harness_agentic",
     "harness_contracts",
     "harness_context",
     "harness_execution",
@@ -62,6 +63,7 @@ packages = [
 ]
 
 [tool.setuptools.package-dir]
+harness_agentic = "harness-agentic/src/harness_agentic"
 harness_bootstrap = "harness-bootstrap/src/harness_bootstrap"
 harness_contracts = "harness-contracts/src/harness_contracts"
 harness_context = "harness-context/src/harness_context"
@@ -84,6 +86,7 @@ echo_agent = "plugins/echo-agent/src/echo_agent"
 mock_finance_agent = "plugins/mock-finance-agent/src/mock_finance_agent"
 
 [tool.setuptools.package-data]
+harness_agentic = ["py.typed"]
 harness_contracts = ["py.typed"]
 harness_context = ["py.typed"]
 harness_execution = ["py.typed"]

@@ -10,6 +10,9 @@ Agent Foundation F2 新增 `ContextItem`、`ContextSnapshot`、`ContextProjectio
 `ContextUseRecord` 及固定来源、信任、敏感级别与 omission reason 枚举。
 Agent Foundation F3 新增 `MemorySubjectScope`、`MemoryRecord/Query/Slice`、模型安全的
 `MemoryWriteDraft`、可信 `MemoryWriteProposal` 及 Memory 错误分类。
+Agent Foundation F4a 新增兼容默认 `UNKNOWN` 的 `CapabilityCompletionMode`、
+`ExplorationBudget/Profile/ProfileSnapshot/TurnDraft/Action/Observation/State`、typed
+`ExplorationNodeSpec` 与 `PlanExecutionState.explorations`。
 
 Agent Foundation 重基线将未发布的 `NormalizedCost*`、token/cost reservation 上界与相关
 ModelAttemptPolicy 字段作为 pre-release corrective break 删除；仓库没有旧 reservation 的生产
@@ -21,13 +24,14 @@ ModelAttemptPolicy 字段作为 pre-release corrective break 删除；仓库没�
 |---|---|
 | 请求 | `Request`、`RequestInput`、`RequestTarget`、`RequestOptions` |
 | 路由 | `ExecutionMode`、`RouteType`、`RouteSource`、`RouteDecision` |
-| 计划 | `ExecutionPlan`、`PlanNode`、`PlanEdge`、Binding、Condition、Budget、Retry / Failure Policy |
-| 执行状态 | `PlanExecutionState`、`NodeExecutionState` 及状态枚举 |
+| 计划 | `ExecutionPlan`、`PlanNode`、`ExplorationNodeSpec`、`PlanEdge`、Binding、Condition、Budget、Retry / Failure Policy |
+| 执行状态 | `PlanExecutionState`、`NodeExecutionState`、`ExplorationState`、Action/Observation 及状态枚举 |
 | 持久化 | `PlanExecutionRecord`，包含 Plan、可恢复 Context 和完整 State |
 | 调用上下文 | `InvocationContext`、Identity、Tenant、Trace、Cancellation Context |
 | 模型 Context | `ContextItem`、`ContextSnapshot`、`ContextProjection`、`ContextUseRecord`、`ContextProjectionLimits` |
 | 长期 Memory | `MemorySubjectScope`、`MemoryRecord`、`MemoryQuery`、`MemorySlice`、`MemoryWriteDraft/Proposal` |
-| 能力 | `CapabilityDescriptor`、`CapabilityType`、`CapabilityExecutionProfile` |
+| 能力 | `CapabilityDescriptor`、`CapabilityType`、`CapabilityExecutionProfile`、`CapabilityCompletionMode` |
+| 最小探索 | `ExplorationProfile/Snapshot`、`ExplorationBudget/Usage`、`ExplorationTurnDraft`、`ActionProposal`、`Observation` |
 | Provider Fabric | `ProviderDescriptor`、`ProviderHealthSnapshot`、`ProviderAttempt`、`ProviderPin`、Selection 契约 |
 | 模型生成 | `StructuredOutputSpec`、`ModelProviderFeatures`、`ModelUsage`、`ModelGenerationAccounting`、`ModelGenerationReservation`、`ModelReservationReceipt` |
 | 审批 | `ApprovalRequest`、`ApprovalDecision`、`ApprovalGrant` |
@@ -49,7 +53,9 @@ request = Request(
 ## ExecutionPlan
 
 `ExecutionPlan` 是不可变 DAG 定义。Capability Node 通过 Registry 调用 Agent/Tool；
-Approval Node 是 ExecutionEngine 原生等待点，不注册为 Capability。
+Approval Node 是 ExecutionEngine 原生等待点，不注册为 Capability。F4a 还冻结了 Harness-owned
+`EXPLORATION` node：它必须携带完整 `ExplorationNodeSpec/ProfileSnapshot`，与 capability、普通
+input mapping、idempotency 和自由 metadata 互斥，Scheduler retry 固定为一次。
 
 - Input Binding 显式读取 literal、原始 Request 或上游 `ResultEnvelope`。
 - Output Binding 显式从节点结果组合最终 Plan 输出。
@@ -85,6 +91,11 @@ Provider，禁止重新自由选择可能改变 WRITE 副作用目标的实现�
 `PlanExecutionRecord` 原子保存 `ExecutionPlan + InvocationContext +
 PlanExecutionState`，并校验三者的 `plan_id/revision` 一致性。
 
+当 Plan 含 `EXPLORATION` node 时，`PlanExecutionRecord` 还校验 map key、plan/node/exploration
+identity、ProfileSnapshot，以及 inner Exploration 与 outer Node/Plan 的 status、result 和
+`completed_at` 一致性。Profile/scope/action/result canonical hash 的重验位于
+`harness-agentic`；Execution loop 在 F4b 前保持不可用。
+
 `plan_id` 是一次 fresh execution lineage 的稳定身份，resume 保持不变；`revision` 是同一
 execution 内的 Plan 定义版本，fresh execution 从 1 开始。未来 Workflow 定义使用独立的
 `workflow_id/workflow_version`，不能复用 `plan_id`。
@@ -104,7 +115,8 @@ execution 内的 Plan 定义版本，fresh execution 从 1 开始。未来 Workf
 - Memory hash 使用 64 位小写 SHA-256；Record 是 create-only，Proposal provenance/evidence 必须
   一致，Draft 不含可信身份或存储控制字段。
 - Capability 执行画像用 `side_effect`、`egress`、`idempotency` 支持重试、
-  恢复与审批判断。
+  恢复与审批判断；`completion_mode` 默认 UNKNOWN，只有显式 SYNC 才具备 Minimal Explore
+  eligibility，既有 FAST/PLAN 不受影响。
 - `CapabilityType.MODEL` 只表达 Registry 中的稳定模型能力语义；模型原生生成协议位于
   `harness-model`，不进入 Agent/Tool 调用协议。
 - `HarnessError.to_detail()` 把内部异常转换为可安全传播的结构化错误。

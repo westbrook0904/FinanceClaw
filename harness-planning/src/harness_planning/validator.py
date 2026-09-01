@@ -112,6 +112,7 @@ class PlanValidator:
             issues,
             validate_identity=validate_identity,
         )
+        self._validate_exploration_plan_shape(plan, nodes, issues, executable=executable)
 
         node_index: dict[str, PlanNode] = {}
         for node in nodes:
@@ -269,16 +270,44 @@ class PlanValidator:
                         field="capability",
                     )
                 )
+            if node.exploration is not None:
+                issues.append(
+                    _issue(
+                        PlanValidationCode.INVALID_CAPABILITY_NODE,
+                        "capability node forbids exploration spec",
+                        node_id=node.node_id,
+                        field="exploration",
+                    )
+                )
         elif node.kind is PlanNodeKind.APPROVAL:
             if (
                 node.capability is not None
                 or node.input_mapping
                 or node.idempotency_key is not None
+                or node.exploration is not None
             ):
                 issues.append(
                     _issue(
                         PlanValidationCode.INVALID_APPROVAL_NODE,
-                        "approval node forbids capability, input_mapping, and idempotency_key",
+                        "approval node forbids capability, input_mapping, idempotency_key, "
+                        "and exploration spec",
+                        node_id=node.node_id,
+                    )
+                )
+        elif node.kind is PlanNodeKind.EXPLORATION:
+            if (
+                node.exploration is None
+                or node.capability is not None
+                or node.input_mapping
+                or node.idempotency_key is not None
+                or node.metadata
+                or node.retry_policy.max_attempts != 1
+            ):
+                issues.append(
+                    _issue(
+                        PlanValidationCode.INVALID_EXPLORATION_NODE,
+                        "exploration node requires typed spec, no capability/input/idempotency/"
+                        "metadata, and max_attempts=1",
                         node_id=node.node_id,
                     )
                 )
@@ -334,8 +363,18 @@ class PlanValidator:
         request_roots = frozenset(Request.model_fields)
         result_roots = frozenset(ResultEnvelope.model_fields)
         for node in plan.nodes:
-            for input_name, binding in node.input_mapping.items():
-                field = f"input_mapping.{input_name}"
+            bindings = (
+                node.exploration.goal_bindings
+                if node.kind is PlanNodeKind.EXPLORATION and node.exploration is not None
+                else node.input_mapping
+            )
+            field_prefix = (
+                "exploration.goal_bindings"
+                if node.kind is PlanNodeKind.EXPLORATION
+                else "input_mapping"
+            )
+            for input_name, binding in bindings.items():
+                field = f"{field_prefix}.{input_name}"
                 if not input_name.strip():
                     issues.append(
                         _issue(
@@ -400,6 +439,45 @@ class PlanValidator:
                         field=field,
                     )
                 )
+
+    def _validate_exploration_plan_shape(
+        self,
+        plan: PlanShape,
+        nodes: tuple[PlanNode, ...],
+        issues: list[PlanValidationIssue],
+        *,
+        executable: bool,
+    ) -> None:
+        exploration_nodes = tuple(node for node in nodes if node.kind is PlanNodeKind.EXPLORATION)
+        if not exploration_nodes:
+            return
+        if executable:
+            issues.append(
+                _issue(
+                    PlanValidationCode.EXPLORATION_NOT_AVAILABLE,
+                    "exploration execution is not enabled until Foundation F4b",
+                    field="nodes",
+                )
+            )
+        valid_wrapper = (
+            len(nodes) == 1
+            and len(exploration_nodes) == 1
+            and not plan.edges
+            and len(plan.outputs) == 1
+        )
+        if valid_wrapper:
+            node = exploration_nodes[0]
+            output = next(iter(plan.outputs.values()))
+            valid_wrapper = output.node_id == node.node_id and output.pointer == "/output"
+        if not valid_wrapper:
+            issues.append(
+                _issue(
+                    PlanValidationCode.INVALID_EXPLORATION_PLAN,
+                    "minimal exploration must be a single-node, zero-edge wrapper whose "
+                    "only output binds /output",
+                    field="nodes",
+                )
+            )
 
     def _validate_outputs(
         self,

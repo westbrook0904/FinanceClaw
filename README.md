@@ -7,10 +7,10 @@ Selection、Retry/Fallback、Provider-safe Checkpoint/Resume、ModelGateway，�
 继续保持兼容。
 
 Stage 3C 的 Plan Identity、Strict Structured Output、Agent Foundation F1 Routing
-correctness、F2 Context Engineering 与 F3 Memory 已实现。当前路线已调整为 Agent Foundation
-优先：下一步完成 Minimal Explore Contracts，随后实现最小 standalone EXPLORE，并在
-真实业务中验证；`HYBRID`、PlanPatch 和高阶资源预算延后。当前 `EXPLORE` / `HYBRID` 仍按
-Stage 3B 语义 fail-closed。当前优先级见
+correctness、F2 Context Engineering、F3 Memory 与 F4a Minimal Explore Contracts 已实现。
+下一步是 F4b 最小 standalone EXPLORE loop，随后进入真实业务验证；`HYBRID`、PlanPatch 和高阶
+资源预算延后。F4a 已冻结 Profile/Turn/Action/Observation/Checkpoint 契约和单节点 wrapper
+结构，但尚未接入执行，当前 `EXPLORE` / `HYBRID` 仍按 Stage 3B 语义 fail-closed。当前优先级见
 `.design/FinanceClaw-Agent-Foundation-一期路线图.md`，当前 Context、Memory 与 Minimal Explore
 契约见 `.design/FinanceClaw-Agent-Foundation-一期实施说明书.md`。旧 Stage 3C 完整编排文档已
 整体降级为高阶设计储备。
@@ -75,9 +75,10 @@ GenerateResult + Usage + Provider Identity + Trace / Events
 
 | 模块 | 职责 |
 |---|---|
-| `harness-contracts` | Request、Plan、Context、Memory、状态、审批、Continuation、Result 与执行画像协议 |
+| `harness-contracts` | Request、Plan、Context、Memory、Explore、状态、审批、Continuation、Result 与执行画像协议 |
 | `harness-context` | ContextSource、Assembler、PRE_CONTEXT Policy、Snapshot、Projection 与安全 Prompt Builder |
 | `harness-memory` | MemoryProvider/Gateway、InMemory/SQLite、Policy、scope/namespace、TTL 与有界检索 |
+| `harness-agentic` | Minimal Explore Profile eligibility、canonical facts、standalone wrapper 与 checkpoint guard；F4a 不执行 loop |
 | `harness-spi` | 业务无关的 Agent、Tool、Plugin 扩展接口 |
 | `harness-registry` | 单 Capability 多 Provider 注册/解析，以及不暴露 Provider instance 的只读 Catalog |
 | `harness-routing` | deterministic-first RoutingPipeline、安全 Request 投影、Rule/LLM Router 与决策校验 |
@@ -96,7 +97,7 @@ GenerateResult + Usage + Provider Identity + Trace / Events
 | `tests/stage2` | 第二阶段端到端、故障注入与跨进程恢复验收 |
 | `tests/stage3a` | Provider Fabric、WRITE safety、Provider Resume 与 ModelGateway 阻断验收 |
 | `tests/stage3b` | ExecutionMode、Rule/LLM Route、LLM Plan/Repair、Policy、Lifecycle 与回归 Gate |
-| `tests/stage3c` | Agent Foundation 前置验收；F0–F3 由其与 Context/Memory/Router/Planner/Policy/Bootstrap 回归共同阻断 |
+| `tests/stage3c` | Agent Foundation 验收索引；F0–F4a 由其与 Agentic/Contracts/Context/Memory/Planning 等模块回归共同阻断 |
 
 ## Direct Invocation
 
@@ -174,7 +175,7 @@ Planner 输出视为 candidate，经 `PlannerOutputNormalizer -> PlanMaterialize
 ```bash
 .venv/bin/python -m pytest \
   harness-contracts/tests harness-spi/tests harness-registry/tests \
-  harness-context/tests harness-memory/tests \
+  harness-context/tests harness-memory/tests harness-agentic/tests \
   harness-plugin-local/tests harness-selection/tests harness-routing/tests \
   harness-planning/tests \
   harness-policy/tests harness-model/tests \
@@ -223,8 +224,9 @@ Planner 输出视为 candidate，经 `PlannerOutputNormalizer -> PlanMaterialize
   ExecutionEngine 二次验证后执行。
   WAITING / crash resume 复用持久化 Plan，不重新路由或规划。动态 Plan Patch、远程插件、
   MCP、分布式 Scheduler/锁和外部 Event Broker 尚未实现。
-- `EXPLORE` / `HYBRID` 已冻结为协议值并继续 fail-closed；一期只实现最小 standalone
-  `EXPLORE`。`HYBRID`、PlanPatch 与完整 Replay Eval 均需在一期真实使用后重新评审。
+- `EXPLORE` / `HYBRID` 已冻结为协议值并继续 fail-closed。F4a 只允许结构校验单节点 wrapper，
+  默认可执行性校验仍拒绝它；F4b 才接入 standalone `EXPLORE` loop。`HYBRID`、PlanPatch 与完整
+  Replay Eval 均需在一期真实使用后重新评审。
 - Route / Planner 已接入同一 handle trace：ROUTE 包含安全的 RequestSummary/Catalog hash，
   ROUTE / PLANNER 同时记录 Context snapshot/projection hash 与 item 数量，PLANNER 记录 attempt
   与验证摘要，repair 使用瞬时 Event 表示；观察面不保存 Context 原文、完整输入、Prompt、模型响应、

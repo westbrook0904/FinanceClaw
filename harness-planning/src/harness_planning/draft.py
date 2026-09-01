@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from harness_contracts import (
     ContractModel,
     FailurePolicy,
@@ -19,7 +21,7 @@ class PlanNodeDraft(ContractModel):
     """模型可填写的最小节点意图，不含重试、幂等键、超时或元数据。"""
 
     node_id: NonEmptyString
-    kind: PlanNodeKind = PlanNodeKind.CAPABILITY
+    kind: Literal[PlanNodeKind.CAPABILITY, PlanNodeKind.APPROVAL] = PlanNodeKind.CAPABILITY
     capability_id: NonEmptyString | None = None
     input_mapping: FrozenBindingMapping = Field(default_factory=dict)
     failure_intent: FailurePolicy = FailurePolicy.FAIL_PLAN

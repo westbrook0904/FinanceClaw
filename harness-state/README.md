@@ -30,6 +30,11 @@ plan_id / state_version / payload_json / created_at / updated_at
 可在 Application/Engine 重建后继续加载，`:memory:` 模式通过 keeper connection 保持
 同一 Store 实例内的数据。
 
+F4a 起 Snapshot Contract 可包含 `PlanExecutionState.explorations[node_id]`。Store 仍不解释
+探索状态机，只执行完整 `PlanExecutionRecord` JSON round-trip；outer/inner identity、Profile、
+terminal status/result/time 一致性由 Contract 校验，更深的 canonical hash guard 位于
+`harness-agentic`。
+
 ```python
 from harness_state import SQLiteStateStore
 

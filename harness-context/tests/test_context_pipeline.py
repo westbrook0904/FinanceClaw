@@ -333,9 +333,15 @@ class ContextPipelineTests(unittest.TestCase):
 
         route = source.collect(collection, ContextConsumer.ROUTE, observed_at=NOW)[0]
         plan = source.collect(collection, ContextConsumer.PLAN, observed_at=NOW)[0]
+        explore = source.collect(collection, ContextConsumer.EXPLORE, observed_at=NOW)[0]
 
         self.assertNotIn("input_schema", route.content)
         self.assertIn("input_schema", plan.content)
+        self.assertNotIn("completion_mode", plan.content["execution_profile"])
+        self.assertEqual(
+            explore.content["execution_profile"]["completion_mode"],
+            "unknown",
+        )
         self.assertNotIn("metadata", route.content)
         self.assertNotIn("metadata", plan.content)
 

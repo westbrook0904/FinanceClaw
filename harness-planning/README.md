@@ -35,6 +35,9 @@ Capability，也不能访问 Provider 实例；Planner 输出统一交给 `PlanV
   `PlanValidationIssue`，适合 API/UI 展示。
 - `PlanValidationCode`：稳定的问题分类枚举。
 - `PlanValidationError.issues`：聚合后的结构化问题快照。
+- F4a standalone Exploration：`executable=False` 只接受单 `EXPLORATION` node、零 edge、唯一
+  `/output` 绑定的 Harness-owned wrapper；默认 `executable=True` 返回
+  `PLAN.EXPLORATION_NOT_AVAILABLE`，直到 F4b 接入专用执行器。
 
 注入 `CapabilityCatalog` 后，默认还会校验 Capability 是否存在、Descriptor 是否与
 Node 类型兼容；`executable=False` 只进行结构校验。
@@ -44,7 +47,7 @@ Node 类型兼容；`executable=False` 只进行结构校验。
 `PlanValidator` 覆盖：
 
 - Plan ID、revision、非空节点集合、Deadline 与阶段二 Plan FailurePolicy；
-- Node kind、Capability/Approval 字段互斥、timeout、retry 与 node FailurePolicy；
+- Node kind、Capability/Approval/Exploration 字段互斥、timeout、retry 与 node FailurePolicy；
 - Edge 端点、自环、root 与 DAG cycle；
 - Input/Output Binding 的 JSON Pointer、引用存在性和上游可用性；
 - Condition 结构、引用存在性和可用性；
@@ -97,6 +100,9 @@ parser 前完成 Schema 与 finish reason 校验。`plan_id`、`revision=1` 和
 fail-closed。`PlanNodeDraft` 由 Harness 端转换为采用服务端 retry/idempotency/timeout 默认值的
 最终 `PlanNode`。Catalog 投影不包含 Provider、Plugin 或 Descriptor metadata，
 规划期间不会调用任何业务 Capability。
+
+`PlanNodeDraft.kind` 显式限制为 CAPABILITY / APPROVAL，不会因为正式 Plan Contract 新增
+`EXPLORATION` 枚举就扩大模型权限。Exploration wrapper 只能由 `harness-agentic` 的可信工厂创建。
 
 ## Bounded Plan Repair
 

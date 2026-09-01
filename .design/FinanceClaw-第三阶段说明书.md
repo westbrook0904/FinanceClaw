@@ -2,7 +2,7 @@
 
 > **文档性质**：阶段实施设计 / Architecture Decision Baseline  
 > **阶段名称**：Stage 3 — Adaptive Multi-Provider & Agentic Orchestration  
-> **版本**：V1.4（Foundation F3 完成状态）
+> **版本**：V1.5（Foundation F4a 完成状态）
 > **日期**：2026-09-01
 > **前置基线**：Stage 1 Minimal Harness + Stage 2 Reliable Plan Execution Engine  
 > **依据文档**：`.design/Harness-Agent_通用可插拔智能体平台架构设计_修订版.md`、`.design/第一阶段.md`、`.design/FinanceClaw-第二阶段说明书.md`
@@ -19,8 +19,8 @@
 |---|---|---|
 | Stage 3A — Provider Fabric | 已完成 | Registry 1:N、Selection/Minimal Health、Retry/Fallback、Provider-safe Resume、ModelGateway、Observability |
 | Stage 3B — Routing & Planning | 已完成 | ExecutionMode、handle、Rule/LLM Router、PRE_ROUTE、Static/Hybrid/LLM Planner、bounded repair、Acceptance Gate |
-| Agent Foundation F0–F3 | 已完成 | Plan identity、Strict Output、Routing correctness、统一 Context Engineering 与受治理 Memory |
-| Agent Foundation F4–F5 | 待实施 | 再实现最小 standalone EXPLORE，并进入真实业务试用 Gate |
+| Agent Foundation F0–F4a | 已完成 | Plan identity、Strict Output、Routing correctness、统一 Context/Memory、Minimal Explore Contract 与 checkpoint guard |
+| Agent Foundation F4b–F5 | 待实施 | 接入最小 standalone EXPLORE loop，并进入真实业务试用 Gate |
 | Post-Foundation Advanced | 设计储备 | HYBRID、PlanPatch、高阶预算、复杂恢复与大规模 Replay，待一期投产后重新 ADR |
 
 第三阶段的目标不是“加一个会自由调用所有工具的 MainAgent”。
@@ -177,6 +177,10 @@ standalone EXPLORE mode
 一期只实现串行、单 Action turn、无 Patch 的 standalone EXPLORE。唯一当前实施契约是
 `.design/FinanceClaw-Agent-Foundation-一期实施说明书.md`。旧 Stage 3C Agentic Exploration
 文档整体作为高阶设计参考，不直接生成编码任务。
+
+F4a 已完成 Profile/Budget/Turn/Action/Observation Contract、单节点 wrapper 结构、completion
+eligibility 与 nested checkpoint guard；默认可执行性校验仍拒绝 EXPLORATION node。F4b 才接入
+ExplorationEngine、ScopedActionExecutor、completed-Observation resume 与全链路 Trace。
 
 Minimal Explore 使用已完成的前置能力：
 
@@ -346,7 +350,7 @@ HYBRID
 高级调用方可以固定模式；普通用户默认 AUTO。
 
 已在 Stage 3B 落地到 `RequestOptions.execution_mode`；`handle(..., mode=...)` 仅为 sugar。
-AUTO/FAST/PLAN 可执行；EXPLORE 在 Foundation F4 完成前 fail-closed，HYBRID 在一期投产后重新
+AUTO/FAST/PLAN 可执行；EXPLORE 在 Foundation F4b 完成前 fail-closed，HYBRID 在一期投产后重新
 ADR 之前始终 fail-closed。
 
 ---
@@ -702,13 +706,18 @@ PlanPatch validation 不进入一期 planning 模块。
 
 ---
 
-## 6.7 `harness-agentic`（建议新增）
+## 6.7 `harness-agentic`（F4a 已新增）
 
 ```text
-ExplorationEngine
-ScopedActionExecutor
-ExplorationBudgetGuard
-ActionValidator
+F4a 已实现：
+ExplorationProfileMaterializer
+ExplorationPlanFactory（structural-only）
+ExplorationCheckpointValidator
+canonical Profile / Scope / Action / Result facts
+
+F4b 待实现：
+ExplorationEngine / ExplorationBudgetGuard
+ScopedActionExecutor / ActionValidator
 ExplorationNodeExecutor
 ```
 
@@ -719,10 +728,10 @@ ExplorationNodeExecutor
 ## 6.8 `harness-execution` / `harness-state`
 
 ```text
-EXPLORATION node dispatch
-minimal ExplorationState
-completed Observation boundary recovery
-non-completed exploration state fail-closed
+F4a 已实现：minimal ExplorationState / PlanExecutionRecord wire invariant
+F4b 待实现：EXPLORATION node dispatch
+F4b 待实现：completed Observation boundary recovery
+F4b 待实现：non-completed exploration state fail-closed
 ```
 
 Exploration 不建立第二个 StateStore；所有 child state 进入同一 PlanExecutionRecord。
@@ -1734,10 +1743,10 @@ Agent Foundation F3 — Memory
   已完成 MemoryProvider / Gateway、InMemory / SQLite、Policy 与 Context 接入
 
 Agent Foundation F4a — Minimal Explore Contracts
-  下一步完成最小 Contract、node kind 互斥、profile snapshot 与 completion eligibility
+  已完成最小 Contract、node kind 互斥、profile snapshot、completion eligibility 与 checkpoint guard
 
 Agent Foundation F4b–F5 — Minimal Explore Loop & Real-use Gate
-  再实施 standalone EXPLORE、安全 Action、基础次数限制、恢复与真实试用
+  下一步实施 standalone EXPLORE、安全 Action、基础次数限制、恢复与真实试用
 
 Post-Foundation Advanced
   一期投产后根据真实问题重新评审 HYBRID、PlanPatch、高阶预算与 Replay

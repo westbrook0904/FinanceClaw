@@ -1,8 +1,8 @@
 # FinanceClaw Agent Foundation 一期路线图
 
 > **文档性质**：当前实施优先级 / Phase 1 Delivery Baseline
-> **版本**：V1.0
-> **日期**：2026-08-31
+> **版本**：V1.1（Foundation F4a 完成状态）
+> **日期**：2026-09-01
 > **适用范围**：Stage 3C 后续实施、Context Engineering、Memory 以及一期投产验证
 > **优先级**：高于旧设计文档中的未来阶段清单
 
@@ -298,13 +298,29 @@ proposal identity/hash 幂等和 hash 冲突；get/delete 先加载记录再校�
 默认 FAST/PLAN 不增加依赖。隔离、持久化、删除、过期、Policy、注入隔离与跨请求
 write→read→ContextProjection 已通过全仓回归。
 
-### Foundation 4 — Minimal Explore
+### Foundation 4a — Minimal Explore Contracts（已完成，2026-09-01）
 
-- ExplorationProfile 与基础次数 Budget；
-- strict turn draft；
+- ExplorationProfile、ProfileSnapshot 与基础次数 Budget；
+- strict turn draft、ActionProposal、Observation 与 nested checkpoint contract；
+- `CapabilityCompletionMode` 兼容扩展与 Explore scope eligibility；
+- Harness-owned 单 `EXPLORATION` node wrapper 的结构工厂；
+- outer/inner 状态一致性与 checkpoint corruption guard；
+- 默认执行校验继续 fail-closed，不启用 Explore loop。
+
+完成证据：新增 `harness-agentic` 的 Profile Materializer、canonical hash、结构工厂与 checkpoint
+validator；PlanNode kind/spec 互斥、ProfileSnapshot 持久化、模型 Draft 禁止运行身份/Provider/Patch
+字段、旧 Descriptor `completion_mode=UNKNOWN` 兼容、仅 `NONE/READ + NONE/INTERNAL + SYNC`
+Capability eligibility、wire round-trip 与损坏状态均已有确定性测试。`PlanValidator` 只在
+`executable=False` 时接受该 standalone wrapper，默认执行仍返回
+`PLAN.EXPLORATION_NOT_AVAILABLE`。
+
+### Foundation 4b — Minimal Explore Loop（下一步）
+
+- 将 standalone wrapper 接入 EXPLORE handle / fresh Plan materialization；
 - ScopedActionExecutor；
-- standalone EXPLORE；
+- ExplorationEngine 与 bounded Observation；
 - Observation-boundary resume；
+- Context / Memory / Action Trace；
 - 不实现 HYBRID / Patch。
 
 ### Foundation 5 — Real-use Gate

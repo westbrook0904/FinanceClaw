@@ -1,8 +1,8 @@
 # FinanceClaw Agent Foundation 一期实施说明书
 
 > **文档性质**：当前实施基线
-> **版本**：V1.0
-> **日期**：2026-08-31
+> **版本**：V1.1（Foundation F4a 完成状态）
+> **日期**：2026-09-01
 > **优先级**：低于已冻结的 Stage 1 / 2 / 3A / 3B 运行契约，高于旧 Stage 3C 高阶草案
 > **路线图**：`FinanceClaw-Agent-Foundation-一期路线图.md`
 
@@ -847,9 +847,21 @@ outbound 前验证。get/delete 先加载记录再进行 scope/namespace 与 PRE
 - 不从旧高阶草案复制 Patch、Approval、Async 或 lease 字段；
 - 完成 node kind 互斥、profile snapshot、completion eligibility、wire round-trip 与非法字段拒绝测试。
 
+**实施状态：已完成（2026-09-01）。** 已新增 `CapabilityCompletionMode` 兼容字段、Minimal
+Explore Contracts、`PlanNodeKind.EXPLORATION` / `ExplorationNodeSpec` 与
+`PlanExecutionState.explorations`。`harness-agentic` 已实现可信 ProfileSnapshot 物化、canonical
+profile/scope/action/result hash、repeated-action fingerprint、standalone wrapper 结构工厂和
+checkpoint integrity validator。Explore allowlist 只接受 AGENT/TOOL 且
+`side_effect ∈ {NONE, READ}`、`egress ∈ {NONE, INTERNAL}`、显式 `completion_mode=SYNC`；旧
+Descriptor 默认 UNKNOWN，只从 Explore 排除。Turn Draft 不能携带运行身份、Provider/Plugin、
+idempotency 或 Patch 字段；outer/inner profile/status/result/completed_at 不一致统一归类为
+`HARNESS.EXPLORATION.CHECKPOINT_CORRUPT`。模型 PlanDraft 不暴露 EXPLORATION kind；默认
+PlanValidator 仍以 `PLAN.EXPLORATION_NOT_AVAILABLE` 阻断执行，因此本步没有启用模型循环、Action
+outbound、Approval/Async 或 HYBRID。
+
 ### Step F4b — Minimal Explore Loop
 
-- ExplorationPlanFactory 与单 `EXPLORATION` 节点；
+- 将已验证的 ExplorationPlanFactory 与单 `EXPLORATION` 节点接入 EXPLORE handle；
 - ExplorationEngine、ScopedActionExecutor、Observation；
 - completed-Observation resume；
 - outer/inner atomic terminal 与 unexpected ACCEPTED orphan tests；

@@ -13,8 +13,9 @@
 | `FinanceClaw-第三阶段待讨论ADR.md` | 已决议与延期项摘要 | **当前 ADR 摘要** |
 
 当前进度：Foundation 0 前置收口、Foundation 1 Routing correctness、Foundation 2 Context
-Engineering 与 Foundation 3 Memory 已完成；下一推荐步骤为 Foundation 4a Minimal Explore
-Contracts。
+Engineering、Foundation 3 Memory 与 Foundation 4a Minimal Explore Contracts 已完成；下一推荐
+步骤为 Foundation 4b Minimal Explore Loop。F4a 只冻结 Contract、eligibility、standalone wrapper
+结构和 checkpoint invariant，默认 EXPLORE 执行仍 fail-closed。
 
 ## 已完成阶段的历史实施基线
 

@@ -35,12 +35,21 @@ class IdempotencyType(StrEnum):
     REQUIRED = "required"
 
 
+class CapabilityCompletionMode(StrEnum):
+    """Capability outbound 是否在当前调用内同步终结。"""
+
+    UNKNOWN = "unknown"
+    SYNC = "sync"
+    ASYNC = "async"
+
+
 class CapabilityExecutionProfile(ContractModel):
     """Scheduler 判断重试安全性所需的通用能力语义。"""
 
     side_effect: SideEffectType = SideEffectType.NONE
     egress: EgressType = EgressType.NONE
     idempotency: IdempotencyType = IdempotencyType.NONE
+    completion_mode: CapabilityCompletionMode = CapabilityCompletionMode.UNKNOWN
 
 
 class CapabilityDescriptor(ContractModel):
