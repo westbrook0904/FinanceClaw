@@ -42,7 +42,12 @@ from harness_model import (
     ModelRole,
     PreparedStructuredOutput,
 )
-from harness_model.schema import structured_schema_hash
+from harness_model.schema import (
+    SchemaValidationFailure,
+    structured_schema_hash,
+    validate_schema_definition,
+    validate_structured_value,
+)
 from harness_registry import InMemoryCapabilityRegistry
 from harness_runtime import DefaultInvocationContextFactory
 from harness_trace import InMemoryTracer, SpanType
@@ -276,6 +281,101 @@ def receipt_for(prepared) -> ModelReservationReceipt:
 
 
 class StructuredOutputContractTests(unittest.TestCase):
+    def test_frozen_model_output_validates_as_json_object_and_arrays(self) -> None:
+        spec = StructuredOutputSpec(
+            name="frozen_portfolio_plan",
+            schema={
+                "type": "object",
+                "properties": {
+                    "goal": {"type": "string"},
+                    "nodes": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {"type": "string"},
+                                "input": {
+                                    "type": "object",
+                                    "properties": {
+                                        "positions": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "symbol": {"type": "string"},
+                                                    "quantity": {"type": "string"},
+                                                },
+                                                "required": ["symbol", "quantity"],
+                                                "additionalProperties": False,
+                                            },
+                                        }
+                                    },
+                                    "required": ["positions"],
+                                    "additionalProperties": False,
+                                },
+                            },
+                            "required": ["id", "input"],
+                            "additionalProperties": False,
+                        },
+                    },
+                },
+                "required": ["goal", "nodes"],
+                "additionalProperties": False,
+            },
+        )
+        output = ModelOutput(
+            type=ModelResponseFormat.JSON,
+            data={
+                "goal": "Perform portfolio risk review.",
+                "nodes": [
+                    {
+                        "id": "portfolio-risk-review",
+                        "input": {
+                            "positions": [
+                                {"symbol": "AAA", "quantity": "10"},
+                                {"symbol": "BBB", "quantity": "20"},
+                            ]
+                        },
+                    }
+                ],
+            },
+        )
+
+        self.assertNotIsInstance(output.data, dict)
+        self.assertIsInstance(output.data["nodes"], tuple)
+        validate_structured_value(validate_schema_definition(spec), output.data)
+
+    def test_frozen_model_output_still_rejects_real_schema_mismatches(self) -> None:
+        spec = StructuredOutputSpec(
+            name="node_contract",
+            schema={
+                "type": "object",
+                "properties": {
+                    "nodes": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {"node_id": {"type": "string"}},
+                            "required": ["node_id"],
+                            "additionalProperties": False,
+                        },
+                    }
+                },
+                "required": ["nodes"],
+                "additionalProperties": False,
+            },
+        )
+        output = ModelOutput(
+            type=ModelResponseFormat.JSON,
+            data={"nodes": [{"id": "portfolio-risk-review"}]},
+        )
+
+        with self.assertRaises(SchemaValidationFailure) as raised:
+            validate_structured_value(validate_schema_definition(spec), output.data)
+
+        self.assertEqual(raised.exception.kind, "invalid_output")
+        self.assertEqual(raised.exception.path, ("nodes", "0"))
+
     def test_request_exclusivity_and_required_fail_closed_are_enforced(self) -> None:
         with self.assertRaises(ValidationError):
             StructuredOutputSpec(

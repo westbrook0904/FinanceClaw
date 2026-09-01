@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 from harness_contracts import StructuredOutputSpec
@@ -54,16 +55,35 @@ def validate_structured_value(
     validator: Draft202012Validator,
     value: object,
 ) -> None:
+    """Validate JSON data, including Harness immutable JSON containers.
+
+    Contract models freeze JSON objects as ``MappingProxyType`` and arrays as
+    tuples. ``jsonschema`` intentionally recognizes only ``dict`` and ``list``
+    for the corresponding JSON types, so validation must use a transient plain
+    JSON view without changing the immutable value returned to callers.
+    """
+
     if not isinstance(validator, Draft202012Validator):
         raise TypeError("validator must be Draft202012Validator")
     try:
-        validator.validate(value)
+        validator.validate(_plain_json_containers(value))
     except ValidationError as exc:
         raise SchemaValidationFailure(
             "invalid_output",
             validator=(str(exc.validator)[:80] if exc.validator is not None else None),
             path=tuple(str(part)[:80] for part in list(exc.absolute_path)[:16]),
         ) from exc
+
+
+def _plain_json_containers(value: object) -> object:
+    if isinstance(value, Mapping):
+        return {
+            key: _plain_json_containers(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, tuple | list):
+        return [_plain_json_containers(item) for item in value]
+    return value
 
 
 def stable_request_fingerprint(value: object) -> str:
@@ -78,4 +98,3 @@ def _stable_hash(value: object) -> str:
         sort_keys=True,
     ).encode("utf-8")
     return hashlib.sha256(payload).hexdigest()
-

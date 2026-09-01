@@ -906,7 +906,7 @@ class ModelGateway:
                 "structured output validator is unavailable",
                 code=ErrorCode.MODEL_STRUCTURED_OUTPUT_SCHEMA_INVALID,
             )
-        data = result.output.model_dump(mode="json")["data"]
+        data = result.output.data
         try:
             validate_structured_value(structured.validator, data)
         except SchemaValidationFailure as exc:
