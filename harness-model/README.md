@@ -1,13 +1,16 @@
 # harness-model
 
 `harness-model` 是 Stage 3A 建立、并由 Stage 3B Router/Planner 使用的模型 Provider 边界。
-LLMRouter、LLMPlanner 和未来 Explorer 只依赖 `ModelGateway` 与模型原生协议，不直接依赖
+LLMRouter、LLMPlanner 和未来 Explorer 通过 `StructuredGenerationAdapter` 使用
+`ModelGateway` 与模型原生协议，不直接依赖
 厂商 SDK，也不把模型请求伪装成 Agent/Tool。
 
 ## 调用边界
 
 ```text
 LLMRouter / LLMPlanner / ExplorationEngine
+                    ↓
+        StructuredGenerationAdapter（strict-only）
                     ↓
                ModelGateway
                     ↓
@@ -98,9 +101,10 @@ reservation 只冻结 Provider attempt slots，不承担 token、成本或耗时
 观察面只记录 `schema_hash`，不记录完整 Schema、Prompt 或原始响应。
 
 Legacy `response_schema` 继续保持 Stage 3A/3B best-effort 语义；REQUIRED 请求不能降级到
-legacy `generate()`。LLMPlanner-v2 已迁移到 strict `PlanDraft`；ExplorationEngine 属于当前
-Agent Foundation 的 Minimal Explore 后续步骤。Streaming、vision、embedding、rerank 和真实
-厂商 SDK adapter 暂缓。
+legacy `generate()`。LLMRouter-v2 已迁移到最小 route completion Draft，LLMPlanner-v2 已迁移到
+strict `PlanDraft`，两者共用 strict-only adapter；ExplorationEngine 属于当前 Agent Foundation
+的 Minimal Explore 后续步骤。Streaming、vision、embedding、rerank 和真实厂商 SDK adapter
+暂缓。
 
 ## 测试
 

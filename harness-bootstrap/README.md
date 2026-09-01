@@ -149,8 +149,10 @@ best-effort，不覆盖路由、规划或执行结果。
 Bootstrap 可以依赖全部 Harness 基础设施，其他核心模块不得反向依赖 Bootstrap。
 基础设施类不实现全局单例，实例数量与共享关系由组装决定。
 
-ModelGateway 已组装但不经 CapabilityInvoker。LLMRouter 可作为显式 Router 或 RuleRouter
-fallback 注入，默认组装仍保持无模型的 RuleRouter。Router 只决定 FAST/PLAN，不接收
+ModelGateway 已组装但不经 CapabilityInvoker。LLMRouter 可作为显式 Router 注入；需要模型
+fallback 时，规范装配是 `RoutingPipeline(RuleRouter(), LLMRouter(...))`，只有
+`HARNESS.ROUTE.NO_MATCH` 才调用模型。`RuleRouter(fallback=...)` 仅作为 Stage 3B 兼容入口
+保留，默认组装仍保持无模型的 RuleRouter。Router 只决定 FAST/PLAN，不接收
 PlannerRegistry；RequestCoordinator 使用受信任的 `default_planner_id` 和 PRE_ROUTE
 `allowed_planner_ids` 选择本地 Planner，并把约束、Catalog snapshot 与现有 Deadline 组成
 PlanningContext。Planner 输出通过 ExecutionEngine 的 context-aware 入口复用同一 Request

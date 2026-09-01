@@ -17,7 +17,12 @@ from harness_contracts import (
 from harness_model import ModelGateway
 from harness_planning import LLMPlanner, PlanValidator
 from harness_registry import InMemoryCapabilityRegistry, RegistryCapabilityCatalog
-from harness_routing import LLMRouter, RouteDecisionValidator, RuleRouter
+from harness_routing import (
+    LLMRouter,
+    RouteDecisionValidator,
+    RoutingPipeline,
+    RuleRouter,
+)
 from harness_state import SQLiteStateStore
 from harness_trace import InMemoryTracer, SpanStatus, SpanType
 
@@ -77,12 +82,13 @@ def llm_waiting_app(
     catalog = RegistryCapabilityCatalog(registry)
     validator = PlanValidator(catalog)
     gateway = ModelGateway(registry, tracer)
-    router = RuleRouter(
-        fallback=LLMRouter(
+    router = RoutingPipeline(
+        RuleRouter(),
+        LLMRouter(
             gateway,
             route_model_capability_id=ROUTE_MODEL_ID,
             decision_validator=RouteDecisionValidator(),
-        )
+        ),
     )
     planner = LLMPlanner(
         gateway,
@@ -157,8 +163,6 @@ class HandleLifecycleAcceptanceTests(unittest.IsolatedAsyncioTestCase):
     async def test_waiting_and_cross_application_resume_never_reroute_or_replan(self) -> None:
         route_output = {
             "mode": "plan",
-            "route_type": "generated_plan",
-            "source": "model",
             "confidence": 0.9,
             "reason_code": "STAGE3B_MODEL_PLAN",
         }

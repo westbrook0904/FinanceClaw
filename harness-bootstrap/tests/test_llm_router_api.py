@@ -10,11 +10,13 @@ from harness_contracts import (
     CapabilityDescriptor,
     CapabilityType,
     InvocationContext,
+    ModelProviderFeatures,
     Request,
     RequestInput,
     ResultEnvelope,
     ResultOutput,
     ResultStatus,
+    StructuredOutputSpec,
 )
 from harness_events import ExecutionEventName
 from harness_model import (
@@ -26,9 +28,16 @@ from harness_model import (
     ModelProvider,
     ModelResponseFormat,
     ModelUsage,
+    PreparedStructuredOutput,
 )
+from harness_model.schema import structured_schema_hash
 from harness_registry import InMemoryCapabilityRegistry
-from harness_routing import LLMRouter, RouteDecisionValidator, RuleRouter
+from harness_routing import (
+    LLMRouter,
+    RouteDecisionValidator,
+    RoutingPipeline,
+    RuleRouter,
+)
 from harness_spi import Capability, PluginManifest, PluginSPI, ToolRequest, ToolSPI
 from harness_trace import InMemoryTracer, SpanType
 
@@ -59,8 +68,6 @@ class RouteModel(ModelProvider):
                 type=ModelResponseFormat.JSON,
                 data={
                     "mode": "fast",
-                    "route_type": "direct_capability",
-                    "source": "model",
                     "capability_id": TOOL_ID,
                     "confidence": 1.0,
                     "reason_code": "MODEL_ECHO",
@@ -69,6 +76,32 @@ class RouteModel(ModelProvider):
             ModelUsage(input_tokens=8, output_tokens=6, total_tokens=14),
             finish_reason=ModelFinishReason.STOP,
         )
+
+    @property
+    def features(self) -> ModelProviderFeatures:
+        return ModelProviderFeatures(
+            json_object=True,
+            json_schema=True,
+            json_schema_strict=True,
+        )
+
+    def prepare_structured_output(
+        self,
+        spec: StructuredOutputSpec,
+    ) -> PreparedStructuredOutput:
+        return PreparedStructuredOutput(
+            provider_id=f"route-models:{MODEL_ID}",
+            schema_hash=structured_schema_hash(spec),
+            semantics_preserved=True,
+        )
+
+    async def generate_prepared(
+        self,
+        request: GenerateRequest,
+        prepared: PreparedStructuredOutput,
+        context: InvocationContext,
+    ) -> GenerateResult:
+        return await self.generate(request, context)
 
 
 class EchoTool(ToolSPI):
@@ -167,7 +200,7 @@ class LLMRouterHandleTests(unittest.IsolatedAsyncioTestCase):
         app = build_harness(
             registry=registry,
             tracer=tracer,
-            router=RuleRouter(fallback=llm_router),
+            router=RoutingPipeline(RuleRouter(), llm_router),
             plugins=(ToolPlugin(tool),),
             entry_point_group=None,
         )
@@ -193,7 +226,7 @@ class LLMRouterHandleTests(unittest.IsolatedAsyncioTestCase):
         while ancestor_id is not None and ancestor_id != route_span.span_id:
             ancestor_id = parents.get(ancestor_id)
         self.assertEqual(ancestor_id, route_span.span_id)
-        self.assertEqual(route_span.attributes["router_id"], "rule-router")
+        self.assertEqual(route_span.attributes["router_id"], "routing-pipeline")
         self.assertEqual(route_span.attributes["requested_mode"], "auto")
         self.assertEqual(route_span.attributes["effective_mode"], "auto")
         self.assertEqual(route_span.attributes["route_type"], "direct_capability")

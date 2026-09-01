@@ -254,11 +254,17 @@ strict model decision
 - retry/fallback slot reservation 与 outbound fencing；
 - token usage 仅作遥测。
 
-### Foundation 1 — Routing correctness
+### Foundation 1 — Routing correctness（已完成，2026-09-01）
 
 - deterministic-first RoutingPipeline；
 - 模型只填写未知字段；
 - Router / Planner 使用统一 structured generation adapter。
+
+完成证据：显式 `RoutingPipeline` 仅在确定性 Router 返回 `HARNESS.ROUTE.NO_MATCH` 时调用
+模型；route-v2 按可信约束动态选择最小 Draft Schema，Harness 自行物化 `source`、
+`route_type` 与已知 `mode`；LLMRouter / LLMPlanner 均通过
+`StructuredGenerationAdapter` 执行 REQUIRED structured generation。显式 target、固定 PLAN、
+确定性 rule 与单一 PLAN Policy 都保持零模型调用。
 
 ### Foundation 2 — Context Engineering
 

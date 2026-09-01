@@ -800,6 +800,16 @@ Memory 变成所有既有 FAST / PLAN 请求的强依赖。
 - Router / Planner 共用 strict structured generation adapter；
 - `HYBRID` 和未配置 `EXPLORE` 继续 fail-closed。
 
+**实施状态：已完成（2026-09-01）。** 当前 `RoutingPipeline` 只把类型化
+`HARNESS.ROUTE.NO_MATCH` 解释为模型 fallback 条件，其他静态错误原样传播。Pipeline 构造时
+拒绝带内部 fallback 的确定性 Router，避免双重或隐藏降级。LLMRouter route-v2
+不再让模型返回完整 `RouteDecision`：AUTO 模糊时使用 route-intent Draft；FAST 已知时使用仅含
+Capability 的 Draft；显式 target、固定 PLAN 与单一 PLAN Policy 由 Harness 直接物化。模型
+Prompt 不包含 requested/effective mode，输出 Schema 不包含 `source`、`route_type`、Planner、
+Provider、Plugin 或 metadata。LLMRouter 与 LLMPlanner 均通过同一
+`StructuredGenerationAdapter` 进入 REQUIRED structured generation；`EXPLORE` / `HYBRID`
+可用性边界未改变。
+
 ### Step F2 — Context Contracts 与 Pipeline
 
 - 新增 context contracts、source、assembler、policy、projector；

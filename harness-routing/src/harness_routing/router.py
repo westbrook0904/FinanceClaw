@@ -17,6 +17,12 @@ class Router(ABC):
     def router_id(self) -> str:
         """返回用于配置和可观测性的稳定 Router ID。"""
 
+    @property
+    def has_internal_fallback(self) -> bool:
+        """声明 Router 是否会在内部委托另一个 Router。"""
+
+        return False
+
     @abstractmethod
     async def route(self, context: RoutingContext) -> RouteDecision:
         """根据受限上下文产生一个结构化路由决策。"""

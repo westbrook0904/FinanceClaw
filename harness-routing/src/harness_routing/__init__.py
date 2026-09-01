@@ -3,6 +3,7 @@
 from typing import TYPE_CHECKING, Any
 
 from .models import RequestSummary, RoutePolicyConstraints, RoutingContext
+from .pipeline import RoutingPipeline
 from .projection import RequestProjector, SafeRequestProjector
 from .router import Router
 from .rules import InputTypeRouteRule, RuleRouter
@@ -20,6 +21,7 @@ __all__ = [
     "RoutePolicyConstraints",
     "Router",
     "RoutingContext",
+    "RoutingPipeline",
     "RuleRouter",
     "SafeRequestProjector",
 ]

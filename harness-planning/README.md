@@ -21,7 +21,8 @@ Capability，也不能访问 Provider 实例；Planner 输出统一交给 `PlanV
   模板，并丢弃 candidate identity 与 runtime metadata。
 - `PlanIdentityFactory` / `PlanMaterializer`：只在 fresh handle execution 信任边界分配新的
   `plan_id`，并固定 `revision=1`。
-- `LLMPlanner`：通过 ModelGateway 从 Goal + capability-only Catalog 自主生成 PlanDraft，
+- `LLMPlanner`：通过公共 `StructuredGenerationAdapter` 从 Goal + capability-only Catalog 自主
+  生成 PlanDraft，
   由 Harness 分配计划身份并执行 planning guards 与 PlanValidator。
 - `PlanningAttempt` / `PlanningAttemptObserver`：仅输出 attempt 序号、类型、Provider、输出哈希、
   token、结构化 validation codes 和是否安排 repair 的安全观察边界，不保存 prompt、原始输出
@@ -87,7 +88,8 @@ Normalizer/Materializer；相同 `plan_id` 重复创建返回
 
 ## LLMPlanner 安全边界
 
-LLMPlanner-v2 通过 REQUIRED `StructuredOutputSpec` 生成 PlanDraft，只产生节点意图、边、绑定
+LLMPlanner-v2 与 LLMRouter-v2 共用 `StructuredGenerationAdapter`，通过 REQUIRED
+`StructuredOutputSpec` 生成 PlanDraft，只产生节点意图、边、绑定
 与预算。Gateway 在 Draft parser 前完成 Schema 与 finish reason 校验。`plan_id`、`revision=1` 和
 `planner_id/prompt_version/request_id` metadata 均由 RequestCoordinator 的 Materializer 写入；模型注入这些字段、引用
 超出 Catalog/Policy/Planner 交集的 Capability、超过节点上限或扩大 Request Deadline时都会

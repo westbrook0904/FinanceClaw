@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from harness_contracts import InvocationContext, ModelReservationReceipt, RetryPolicy
 
 from .contracts import GenerateRequest, GenerateResult
@@ -31,6 +33,8 @@ class StructuredGenerationAdapter:
         context: InvocationContext,
         *,
         retry_policy: RetryPolicy | None = None,
+        timeout_ms: int | None = None,
+        deadline_at: datetime | None = None,
         parent: ModelInvocationParent = None,
         trace_enabled: bool = True,
     ) -> GenerateResult:
@@ -39,6 +43,8 @@ class StructuredGenerationAdapter:
             request,
             context,
             retry_policy=retry_policy,
+            timeout_ms=timeout_ms,
+            deadline_at=deadline_at,
             parent=parent,
             trace_enabled=trace_enabled,
         )

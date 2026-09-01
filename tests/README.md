@@ -14,7 +14,7 @@ Stage 3A Provider Fabric、Stage 3B Routing & Planning，以及 Agent Foundation
 | Registry | `harness-registry/tests` | 注册、过滤、唯一解析、所有权和只读 Catalog |
 | Selection | `harness-selection/tests` | Eligibility、Health 排序、拒绝原因和稳定 Selection |
 | Local Plugin | `harness-plugin-local/tests` | 发现、生命周期和事务回滚 |
-| Routing | `harness-routing/tests` | 安全投影、Rule/LLM Router、RouteDecisionValidator 与依赖边界 |
+| Routing | `harness-routing/tests` | RoutingPipeline、未知字段补全、安全投影、Rule/LLM Router、Validator 与依赖边界 |
 | Planning | `harness-planning/tests` | DAG 校验、Static/Hybrid/LLM Planner、PlanDraft 与 bounded repair |
 | Policy | `harness-policy/tests` | PRE_ROUTE/PRE_PLAN/PRE_EXECUTE、约束收紧、决策聚合与 Approval |
 | Trace | `harness-trace/tests` | Span 生命周期、层级、续接和 Console 输出 |
@@ -28,7 +28,7 @@ Stage 3A Provider Fabric、Stage 3B Routing & Planning，以及 Agent Foundation
 | Stage 2 acceptance | `tests/stage2` | E2E、fault injection、SQLite restart 与 fail-closed |
 | Stage 3A acceptance | `tests/stage3a` | Multi-provider E2E、WRITE safety、Provider restart、Model Fabric 与旧插件回归 |
 | Stage 3B acceptance | `tests/stage3b` | ExecutionMode、Rule/LLM Route、LLM Plan/Repair、Policy、Lifecycle/Resume 与全阶段兼容性 |
-| Foundation acceptance | `tests/stage3c` | fresh Plan identity；strict Schema/Provider eligibility；usage telemetry；reservation receipt/context/incarnation/slot fencing |
+| Foundation acceptance | `tests/stage3c` | F0 fresh identity/strict reservation；F1 Routing correctness 由 routing、bootstrap 与 Stage 3B 回归共同阻断 |
 
 ## 运行完整回归
 

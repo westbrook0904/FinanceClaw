@@ -6,8 +6,9 @@ Selection、Retry/Fallback、Provider-safe Checkpoint/Resume、ModelGateway，�
 `handle()` AUTO / FAST / PLAN 路径；阶段一 Direct Invocation API 和阶段二低层 Plan API
 继续保持兼容。
 
-Stage 3C 的 Plan Identity 与 Strict Structured Output 两个基础步骤已经实现。当前路线已调整为
-Agent Foundation 优先：先完成 Context Engineering、Memory 与最小 standalone EXPLORE，并在
+Stage 3C 的 Plan Identity、Strict Structured Output 与 Agent Foundation F1 Routing
+correctness 已实现。当前路线已调整为 Agent Foundation 优先：下一步完成 Context
+Engineering，随后实现 Memory 与最小 standalone EXPLORE，并在
 真实业务中验证；`HYBRID`、PlanPatch 和高阶资源预算延后。当前 `EXPLORE` / `HYBRID` 仍按
 Stage 3B 语义 fail-closed。当前优先级见
 `.design/FinanceClaw-Agent-Foundation-一期路线图.md`，当前 Context、Memory 与 Minimal Explore
@@ -77,7 +78,7 @@ GenerateResult + Usage + Provider Identity + Trace / Events
 | `harness-contracts` | Request、Plan、状态、审批、Continuation、Result、能力执行画像与持久化协议 |
 | `harness-spi` | 业务无关的 Agent、Tool、Plugin 扩展接口 |
 | `harness-registry` | 单 Capability 多 Provider 注册/解析，以及不暴露 Provider instance 的只读 Catalog |
-| `harness-routing` | Router SPI、安全 Request 投影、Rule/LLM Router 与决策校验 |
+| `harness-routing` | deterministic-first RoutingPipeline、安全 Request 投影、Rule/LLM Router 与决策校验 |
 | `harness-selection` | Eligibility、最小 Health 和确定性 Priority Selection |
 | `harness-plugin-local` | 本地集合/entry point 发现、插件生命周期和事务回滚 |
 | `harness-planning` | Planner SPI/Registry、Static/Hybrid/LLM 策略、PlanTemplate/Materializer、PlanDraft 及可执行性校验 |
@@ -210,7 +211,8 @@ Planner 输出视为 candidate，经 `PlannerOutputNormalizer -> PlanMaterialize
 - `handle()` 分派经过独立校验的 FAST / PLAN Decision。Router 产出经验证的
   `RouteDecision`（mode / route type / direct capability），不选择 Provider；服务端配置和
   Policy 选择 Planner。RoutingPipeline 先做 deterministic 匹配，只有类型化
-  NOT_APPLICABLE 才进入可选模型 fallback。LLMPlanner 可自主生成受限 PlanDraft、
+  `HARNESS.ROUTE.NO_MATCH` 才进入可选模型 fallback；模型只补全未知路由字段。LLMPlanner
+  可自主生成受限 PlanDraft、
   执行 bounded repair，再经 Coordinator/PlanMaterializer 统一物化和
   ExecutionEngine 二次验证后执行。
   WAITING / crash resume 复用持久化 Plan，不重新路由或规划。动态 Plan Patch、远程插件、

@@ -95,6 +95,10 @@ class RuleRouter(Router):
     def router_id(self) -> str:
         return self._router_id
 
+    @property
+    def has_internal_fallback(self) -> bool:
+        return self._fallback is not None
+
     async def route(self, context: RoutingContext) -> RouteDecision:
         if not isinstance(context, RoutingContext):
             raise TypeError("context must be RoutingContext")
@@ -137,6 +141,17 @@ class RuleRouter(Router):
                 source=RouteSource.REQUEST,
                 confidence=1.0,
                 reason_code="REQUEST_MODE_PLAN",
+            )
+
+        if requested_mode is ExecutionMode.AUTO and context.constraints.allowed_modes == {
+            ExecutionMode.PLAN
+        }:
+            return RouteDecision(
+                mode=ExecutionMode.PLAN,
+                route_type=RouteType.GENERATED_PLAN,
+                source=RouteSource.POLICY,
+                confidence=1.0,
+                reason_code="POLICY_SINGLE_MODE",
             )
 
         rule = self._rules.get(context.request_summary.input_type)

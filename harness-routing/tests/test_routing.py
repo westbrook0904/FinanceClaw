@@ -29,6 +29,7 @@ from harness_routing import (
     RoutePolicyConstraints,
     Router,
     RoutingContext,
+    RoutingPipeline,
     RuleRouter,
     SafeRequestProjector,
 )
@@ -276,6 +277,29 @@ class RuleRouterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(decision.mode, ExecutionMode.PLAN)
         self.assertFalse(hasattr(decision, "planner_id"))
 
+    async def test_single_policy_mode_is_resolved_before_model_fallback(self) -> None:
+        fallback = StubFallbackRouter(
+            decision=RouteDecision(
+                mode=ExecutionMode.FAST,
+                route_type=RouteType.DIRECT_CAPABILITY,
+                source=RouteSource.MODEL,
+                capability_id="echo.reply/v1",
+                reason_code="MUST_NOT_RUN",
+            )
+        )
+        router = RuleRouter(fallback=fallback)
+
+        decision = await router.route(
+            make_context(
+                constraints=RoutePolicyConstraints(allowed_modes=frozenset({ExecutionMode.PLAN}))
+            )
+        )
+
+        self.assertEqual(decision.mode, ExecutionMode.PLAN)
+        self.assertEqual(decision.source, RouteSource.POLICY)
+        self.assertEqual(decision.reason_code, "POLICY_SINGLE_MODE")
+        self.assertEqual(fallback.calls, 0)
+
     async def test_no_match_is_explicit_and_does_not_guess_capability(self) -> None:
         with self.assertRaises(RoutingError) as raised:
             await RuleRouter().route(make_context())
@@ -325,6 +349,72 @@ class RuleRouterTests(unittest.IsolatedAsyncioTestCase):
                 with self.assertRaises(RoutingError) as raised:
                     validator.validate(decision, context)
                 self.assertEqual(raised.exception.code, ErrorCode.ROUTE_MODE_NOT_AVAILABLE)
+
+
+class RoutingPipelineTests(unittest.IsolatedAsyncioTestCase):
+    def test_rejects_deterministic_router_with_internal_fallback(self) -> None:
+        fallback = StubFallbackRouter(
+            decision=RouteDecision(
+                mode=ExecutionMode.PLAN,
+                route_type=RouteType.GENERATED_PLAN,
+                source=RouteSource.MODEL,
+                reason_code="MODEL_ROUTE",
+            )
+        )
+
+        with self.assertRaisesRegex(ValueError, "must not own an internal fallback"):
+            RoutingPipeline(RuleRouter(fallback=fallback), fallback)
+
+    async def test_deterministic_hit_skips_model_router(self) -> None:
+        model_router = StubFallbackRouter(
+            decision=RouteDecision(
+                mode=ExecutionMode.PLAN,
+                route_type=RouteType.GENERATED_PLAN,
+                source=RouteSource.MODEL,
+                reason_code="MUST_NOT_RUN",
+            )
+        )
+        pipeline = RoutingPipeline(RuleRouter(), model_router)
+
+        decision = await pipeline.route(make_context(target="echo.reply/v1"))
+
+        self.assertEqual(decision.source, RouteSource.REQUEST)
+        self.assertEqual(decision.capability_id, "echo.reply/v1")
+        self.assertEqual(model_router.calls, 0)
+
+    async def test_only_explicit_no_match_reaches_model_router(self) -> None:
+        model_decision = RouteDecision(
+            mode=ExecutionMode.PLAN,
+            route_type=RouteType.GENERATED_PLAN,
+            source=RouteSource.MODEL,
+            reason_code="MODEL_ROUTE",
+        )
+        model_router = StubFallbackRouter(decision=model_decision)
+        pipeline = RoutingPipeline(RuleRouter(), model_router)
+
+        decision = await pipeline.route(make_context())
+
+        self.assertIs(decision, model_decision)
+        self.assertEqual(model_router.calls, 1)
+
+    async def test_deterministic_failure_is_not_reinterpreted_as_no_match(self) -> None:
+        failure = RoutingError("static failure", code=ErrorCode.ROUTE_MODE_NOT_ALLOWED)
+        deterministic = StubFallbackRouter(error=failure)
+        model_router = StubFallbackRouter(
+            decision=RouteDecision(
+                mode=ExecutionMode.PLAN,
+                route_type=RouteType.GENERATED_PLAN,
+                source=RouteSource.MODEL,
+                reason_code="MUST_NOT_RUN",
+            )
+        )
+        pipeline = RoutingPipeline(deterministic, model_router)
+
+        with self.assertRaises(RoutingError) as raised:
+            await pipeline.route(make_context())
+
+        self.assertIs(raised.exception, failure)
+        self.assertEqual(model_router.calls, 0)
 
 
 class RouteDecisionValidatorTests(unittest.TestCase):

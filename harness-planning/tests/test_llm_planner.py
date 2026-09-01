@@ -31,6 +31,7 @@ from harness_model import (
     ModelResponseFormat,
     ModelUsage,
     PreparedStructuredOutput,
+    StructuredGenerationAdapter,
 )
 from harness_model.schema import structured_schema_hash
 from harness_planning import (
@@ -303,6 +304,8 @@ class LLMPlannerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([node.node_id for node in plan.nodes], ["fetch", "rank"])
         self.assertEqual(model.calls, 1)
         self.assertEqual([tool.calls for tool in tools], [0, 0])
+        self.assertIsInstance(planner.generation_adapter, StructuredGenerationAdapter)
+        self.assertIs(planner.generation_adapter.gateway, planner.model_gateway)
 
         request = model.requests[0]
         self.assertEqual(request.model, MODEL_ID)

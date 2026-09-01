@@ -28,4 +28,13 @@ standalone EXPLORE；HYBRID、PlanPatch、复杂恢复和高阶预算不进入�
 - LLMPlanner-v2 的 `PlanNodeDraft` 拒绝身份、retry、idempotency、timeout 和 metadata 注入；
 - legacy JSON best-effort 路径保持兼容。
 
+Foundation F1 Routing correctness 的 Gate 分布在 `harness-routing/tests`、
+`harness-bootstrap/tests/test_llm_router_api.py` 与 `tests/stage3b` 回归套件：
+
+- RoutingPipeline 只在 `HARNESS.ROUTE.NO_MATCH` 时进入模型 fallback；
+- 显式 target、固定 PLAN、确定性 rule 与单一 PLAN Policy 均保持零模型调用；
+- route-v2 的最小 strict Schema 拒绝模型覆盖 mode/source/route_type 或注入运行身份；
+- Prompt 不携带 requested/effective mode，也不投影 Capability metadata；
+- LLMRouter 与 LLMPlanner 共用 StructuredGenerationAdapter。
+
 测试只使用本地确定性 Provider、内存 StateStore，不访问网络。

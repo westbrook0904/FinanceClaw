@@ -12,6 +12,7 @@ from harness_contracts import (
     ExecutionMode,
     IdentityContext,
     InvocationContext,
+    ModelProviderFeatures,
     ProviderDescriptor,
     ProviderError,
     Request,
@@ -21,6 +22,7 @@ from harness_contracts import (
     ResultEnvelope,
     RouteSource,
     RoutingError,
+    StructuredOutputSpec,
     TraceContext,
 )
 from harness_model import (
@@ -32,13 +34,17 @@ from harness_model import (
     ModelProvider,
     ModelResponseFormat,
     ModelUsage,
+    PreparedStructuredOutput,
+    StructuredGenerationAdapter,
 )
+from harness_model.schema import structured_schema_hash
 from harness_registry import InMemoryCapabilityRegistry
 from harness_routing import (
     LLMRouter,
     RouteDecisionValidator,
     RoutePolicyConstraints,
     RoutingContext,
+    RoutingPipeline,
     RuleRouter,
     SafeRequestProjector,
 )
@@ -58,7 +64,7 @@ def descriptor(
         name=capability_id,
         type=capability_type,
         version="1.0.0",
-        metadata={"public": True},
+        metadata={"public": True, "provider_id": "catalog-provider-secret"},
     )
 
 
@@ -70,11 +76,10 @@ def fast_decision(
 ) -> dict[str, object]:
     return {
         "mode": "fast",
-        "route_type": "direct_capability",
-        "source": source,
         "capability_id": capability_id,
         "confidence": 0.91,
         "reason_code": "MODEL_FAST",
+        **({"source": source} if source != "model" else {}),
         **extra,
     }
 
@@ -82,10 +87,20 @@ def fast_decision(
 def plan_decision(**extra: object) -> dict[str, object]:
     return {
         "mode": "plan",
-        "route_type": "generated_plan",
-        "source": "model",
         "confidence": 0.82,
         "reason_code": "MODEL_PLAN",
+        **extra,
+    }
+
+
+def fast_capability(
+    capability_id: str = TOOL_ID,
+    **extra: object,
+) -> dict[str, object]:
+    return {
+        "capability_id": capability_id,
+        "confidence": 0.91,
+        "reason_code": "MODEL_FAST",
         **extra,
     }
 
@@ -102,6 +117,7 @@ class ScriptedRouteModel(ModelProvider):
         self.calls = 0
         self.requests: list[GenerateRequest] = []
         self.contexts: list[InvocationContext] = []
+        self.provider_id = "route-provider"
 
     def descriptor(self) -> CapabilityDescriptor:
         return self._descriptor
@@ -121,6 +137,32 @@ class ScriptedRouteModel(ModelProvider):
             ModelUsage(input_tokens=10, output_tokens=5, total_tokens=15),
             finish_reason=ModelFinishReason.STOP,
         )
+
+    @property
+    def features(self) -> ModelProviderFeatures:
+        return ModelProviderFeatures(
+            json_object=True,
+            json_schema=True,
+            json_schema_strict=True,
+        )
+
+    def prepare_structured_output(
+        self,
+        spec: StructuredOutputSpec,
+    ) -> PreparedStructuredOutput:
+        return PreparedStructuredOutput(
+            provider_id=self.provider_id,
+            schema_hash=structured_schema_hash(spec),
+            semantics_preserved=True,
+        )
+
+    async def generate_prepared(
+        self,
+        request: GenerateRequest,
+        prepared: PreparedStructuredOutput,
+        context: InvocationContext,
+    ) -> GenerateResult:
+        return await self.generate(request, context)
 
 
 class CountingTool(ToolSPI):
@@ -146,6 +188,7 @@ def register_model(
     *,
     priority: int = 100,
 ) -> None:
+    model.provider_id = provider_id
     registry.register_provider(
         model,
         descriptor=ProviderDescriptor(
@@ -216,11 +259,53 @@ def make_router(
 
 
 class LLMRouterTests(unittest.IsolatedAsyncioTestCase):
-    async def test_valid_decision_uses_safe_structured_prompt(self) -> None:
+    async def test_accepts_shared_strict_generation_adapter(self) -> None:
+        model = ScriptedRouteModel(fast_decision())
+        registry = InMemoryCapabilityRegistry()
+        register_model(registry, model, "route-provider")
+        adapter = StructuredGenerationAdapter(ModelGateway(registry, InMemoryTracer()))
+        router = LLMRouter(
+            adapter,
+            route_model_capability_id=MODEL_ID,
+            decision_validator=RouteDecisionValidator(),
+        )
+
+        decision = await router.route(make_context())
+
+        self.assertEqual(decision.source, RouteSource.MODEL)
+        self.assertIs(router.generation_adapter, adapter)
+        self.assertIs(router.model_gateway, adapter.gateway)
+
+    async def test_explicit_target_is_materialized_without_model_call(self) -> None:
+        model = ScriptedRouteModel(plan_decision())
+        router, _ = make_router(model)
+
+        decision = await router.route(make_context(target=True))
+
+        self.assertEqual(decision.mode, ExecutionMode.FAST)
+        self.assertEqual(decision.capability_id, TOOL_ID)
+        self.assertEqual(decision.source, RouteSource.REQUEST)
+        self.assertEqual(model.calls, 0)
+
+    async def test_policy_fixed_fast_schema_rejects_mode_overwrite(self) -> None:
         model = ScriptedRouteModel(fast_decision())
         router, _ = make_router(model)
         context = make_context(
-            target=True,
+            constraints=RoutePolicyConstraints(allowed_modes=frozenset({ExecutionMode.FAST}))
+        )
+
+        with self.assertRaises(RoutingError) as raised:
+            await router.route(context)
+
+        self.assertEqual(raised.exception.code, ErrorCode.ROUTE_INVALID_DECISION)
+        self.assertEqual(raised.exception.details["reason"], "invalid_model_output")
+        self.assertEqual(model.calls, 1)
+
+    async def test_valid_decision_uses_safe_structured_prompt(self) -> None:
+        model = ScriptedRouteModel(fast_capability())
+        router, _ = make_router(model)
+        context = make_context(
+            mode=ExecutionMode.FAST,
             include_model_descriptor=True,
             constraints=RoutePolicyConstraints(
                 allowed_modes=frozenset({ExecutionMode.FAST}),
@@ -240,16 +325,20 @@ class LLMRouterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(request.temperature, 0.0)
         self.assertEqual(
             dict(request.metadata),
-            {"purpose": "route", "prompt_version": "route-v1"},
+            {"purpose": "route", "prompt_version": "route-v2"},
         )
         self.assertEqual(
-            request.model_dump(mode="json")["response_schema"],
-            router._response_schema,  # noqa: SLF001
+            request.model_dump(mode="json")["structured_output"]["schema"],
+            router._fast_capability_schema,  # noqa: SLF001
         )
 
         prompt = json.loads(request.messages[-1].content)
-        self.assertEqual(prompt["requested_mode"], "auto")
-        self.assertEqual(prompt["allowed_modes"], ["fast"])
+        self.assertNotIn("requested_mode", prompt)
+        self.assertNotIn("allowed_modes", prompt)
+        self.assertEqual(
+            prompt["unknown_fields"],
+            ["capability_id", "confidence", "reason_code"],
+        )
         self.assertEqual(prompt["allowed_capability_ids"], [TOOL_ID])
         self.assertNotIn("available_planner_ids", prompt)
         self.assertEqual(
@@ -265,6 +354,7 @@ class LLMRouterTests(unittest.IsolatedAsyncioTestCase):
             "identity-secret",
             "context-secret",
             "trace-secret",
+            "catalog-provider-secret",
         ):
             self.assertNotIn(secret, serialized)
 
@@ -273,7 +363,7 @@ class LLMRouterTests(unittest.IsolatedAsyncioTestCase):
         llm_router, registry = make_router(model)
         tool = CountingTool()
         registry.register(tool, plugin_id="business-tools")
-        router = RuleRouter(fallback=llm_router)
+        router = RoutingPipeline(RuleRouter(), llm_router)
 
         decision = await router.route(make_context())
 
@@ -296,15 +386,15 @@ class LLMRouterTests(unittest.IsolatedAsyncioTestCase):
 
                 self.assertEqual(raised.exception.code, ErrorCode.ROUTE_INVALID_DECISION)
 
-    async def test_fixed_plan_cannot_be_changed_to_fast(self) -> None:
+    async def test_fixed_plan_is_materialized_without_model_call(self) -> None:
         model = ScriptedRouteModel(fast_decision())
         router, _ = make_router(model)
 
-        with self.assertRaises(RoutingError) as raised:
-            await router.route(make_context(mode=ExecutionMode.PLAN))
+        decision = await router.route(make_context(mode=ExecutionMode.PLAN))
 
-        self.assertEqual(raised.exception.code, ErrorCode.ROUTE_INVALID_DECISION)
-        self.assertEqual(raised.exception.details["requested_mode"], "plan")
+        self.assertEqual(decision.mode, ExecutionMode.PLAN)
+        self.assertEqual(decision.source, RouteSource.REQUEST)
+        self.assertEqual(model.calls, 0)
 
     async def test_model_cannot_select_a_planner(self) -> None:
         model = ScriptedRouteModel(plan_decision(planner_id="model-injected"))
@@ -332,7 +422,7 @@ class LLMRouterTests(unittest.IsolatedAsyncioTestCase):
                 )
                 self.assertNotIn("secret-model-pin", str(raised.exception.details))
 
-    async def test_non_model_source_is_rejected(self) -> None:
+    async def test_model_cannot_overwrite_known_source(self) -> None:
         model = ScriptedRouteModel(fast_decision(source="rule"))
         router, _ = make_router(model)
 
@@ -342,7 +432,7 @@ class LLMRouterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(raised.exception.code, ErrorCode.ROUTE_INVALID_DECISION)
         self.assertEqual(
             raised.exception.details["reason"],
-            "invalid_decision_source",
+            "invalid_model_output",
         )
 
     async def test_gateway_failure_maps_only_safe_cause_code(self) -> None:

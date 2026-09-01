@@ -27,6 +27,7 @@ from harness_model import (
     ModelMessage,
     ModelResponseFormat,
     ModelRole,
+    StructuredGenerationAdapter,
 )
 from pydantic import ValidationError
 
@@ -54,12 +55,13 @@ Create a concrete DAG that achieves the supplied goal using only allowed capabil
 Never output plan_id, revision, plan metadata, provider IDs, plugin IDs, credentials, or state.
 Do not call tools or execute capabilities. Planning is your only responsibility."""
 
+
 class LLMPlanner(Planner):
     """使用逻辑 Model Capability 自主生成并验证一次 ExecutionPlan。"""
 
     def __init__(
         self,
-        model_gateway: ModelGateway,
+        model_gateway: ModelGateway | StructuredGenerationAdapter,
         *,
         planner_model_capability_id: str,
         validator: PlanValidator,
@@ -71,8 +73,12 @@ class LLMPlanner(Planner):
         attempt_observer: PlanningAttemptObserver | None = None,
         clock: Clock | None = None,
     ) -> None:
-        if not isinstance(model_gateway, ModelGateway):
-            raise TypeError("model_gateway must be ModelGateway")
+        if isinstance(model_gateway, StructuredGenerationAdapter):
+            generation_adapter = model_gateway
+        elif isinstance(model_gateway, ModelGateway):
+            generation_adapter = StructuredGenerationAdapter(model_gateway)
+        else:
+            raise TypeError("model_gateway must be ModelGateway or StructuredGenerationAdapter")
         self._planner_id = validate_planner_id(planner_id)
         self._planner_model_capability_id = _validate_non_empty_string(
             "planner_model_capability_id",
@@ -98,12 +104,11 @@ class LLMPlanner(Planner):
             raise TypeError("clock must be callable")
         self._configured_capability_ids = _validate_capability_scope(allowed_capability_ids)
 
-        self._model_gateway = model_gateway
+        self._generation_adapter = generation_adapter
+        self._model_gateway = generation_adapter.gateway
         self._validator = validator
         self._max_output_tokens = max_output_tokens
-        self._compatibility_materializer = PlanMaterializer(
-            PlanIdentityFactory(plan_id_factory)
-        )
+        self._compatibility_materializer = PlanMaterializer(PlanIdentityFactory(plan_id_factory))
         self._attempt_observer = attempt_observer
         self._clock = clock or (lambda: datetime.now(UTC))
         self._response_schema = PlanDraft.model_json_schema()
@@ -115,6 +120,10 @@ class LLMPlanner(Planner):
     @property
     def model_gateway(self) -> ModelGateway:
         return self._model_gateway
+
+    @property
+    def generation_adapter(self) -> StructuredGenerationAdapter:
+        return self._generation_adapter
 
     @property
     def planner_model_capability_id(self) -> str:
@@ -190,7 +199,7 @@ class LLMPlanner(Planner):
                 previous_output=previous_output,
                 repair_feedback=repair_feedback,
             )
-            result = await self._model_gateway.generate(
+            result = await self._generation_adapter.generate(
                 request,
                 context.invocation,
                 deadline_at=deadline_at,

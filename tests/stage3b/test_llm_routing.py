@@ -10,7 +10,12 @@ from harness_contracts import ProviderError, ResultStatus
 from harness_events import ExecutionEventName
 from harness_model import GenerateResult, ModelGateway
 from harness_registry import InMemoryCapabilityRegistry
-from harness_routing import LLMRouter, RouteDecisionValidator, RuleRouter
+from harness_routing import (
+    LLMRouter,
+    RouteDecisionValidator,
+    RoutingPipeline,
+    RuleRouter,
+)
 from harness_trace import InMemoryTracer, SpanType
 
 from .support import (
@@ -26,8 +31,6 @@ from .support import (
 def route_output(*, capability_id: str = ECHO_TOOL_ID) -> dict[str, object]:
     return {
         "mode": "fast",
-        "route_type": "direct_capability",
-        "source": "model",
         "capability_id": capability_id,
         "confidence": 0.9,
         "reason_code": "STAGE3B_MODEL_FAST",
@@ -52,7 +55,7 @@ class LLMRoutingAcceptanceTests(unittest.IsolatedAsyncioTestCase):
         app = build_harness(
             registry=registry,
             tracer=tracer,
-            router=RuleRouter(fallback=llm_router),
+            router=RoutingPipeline(RuleRouter(), llm_router),
             plugins=(AcceptancePlugin((tool,)),),
             entry_point_group=None,
         )

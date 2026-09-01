@@ -11,7 +11,7 @@ ModelGateway、ExecutionEngine、StateStore、Trace 与 Events；所有模型和
 |---|---|
 | `test_execution_mode.py` | 旧 Request 默认 AUTO、模式 round-trip、AUTO explicit target、forced FAST/PLAN、EXPLORE/HYBRID fail-closed |
 | `test_rule_routing.py` | deterministic-first、input-type rule、no-match、未知 Capability 零执行 |
-| `test_llm_routing.py` | LLMRouter valid/invalid/model failure、ROUTE→MODEL Trace、敏感信息不进入观察面 |
+| `test_llm_routing.py` | Foundation F1 route-v2 最小 Draft、strict generation、MODEL Trace、失败归一化与零越权执行 |
 | `test_llm_planning.py` | 首次有效、invalid→repair→valid、repair exhausted、unknown/cycle/oversized Plan、HybridPlanner 唯一 fallback 条件 |
 | `test_handle_lifecycle.py` | 单 Context/Deadline/Trace、完整 Route→Planner→Plan→Provider 关联、WAITING 与跨 Application Resume 不重新 Route/Plan |
 | `test_policy.py` | PRE_ROUTE deny、forced mode、Capability/Planner scope 与恶意 Router fail-closed |
@@ -44,3 +44,7 @@ StateStore 未创建 checkpoint。Resume Gate 使用临时 SQLite 文件重建 A
 验收还要求对变更文件运行 Ruff check/format，并执行 `git diff --check`。按 Stage 3B 当时边界，
 EXPLORE/HYBRID 实际执行与 Plan Patch 属于后续 Agentic 阶段，完整 Replay Eval 属于扩展阶段，
 均不属于 3B；当前优先级另以 Agent Foundation 一期路线图为准。
+
+Foundation F1 延续本套件作为回归 Gate，但当前规范装配已从内嵌 fallback 收口为
+`RoutingPipeline(RuleRouter(), LLMRouter(...))`，且模型输出是最小 route completion Draft，
+不再是完整 `RouteDecision`。
