@@ -93,6 +93,7 @@ async def run_live_gate(
     api_key: str,
     openai_model: str,
     base_url: str = "https://api.deepseek.com",
+    reasoning_effort: str | None = "high",
     allow_insecure_http: bool = False,
     human_corrections: int = 0,
     client: AsyncOpenAI | None = None,
@@ -128,6 +129,7 @@ async def run_live_gate(
         model_capability_id=_MODEL_CAPABILITY_ID,
         provider_id=_MODEL_PROVIDER_ID,
         base_url=base_url,
+        reasoning_effort=reasoning_effort,
         allow_insecure_http=allow_insecure_http,
         client=client,
     )
@@ -137,7 +139,7 @@ async def run_live_gate(
             provider_id=_MODEL_PROVIDER_ID,
             capability_id=_MODEL_CAPABILITY_ID,
             plugin_id="openai-responses",
-            implementation_version="1.1.0",
+            implementation_version="1.2.0",
             priority=100,
             tags=frozenset({"real-provider", "f5-gate"}),
             metadata={"api": "responses"},
@@ -249,6 +251,7 @@ async def run_live_gate(
             "provider_id": _MODEL_PROVIDER_ID,
             "model": openai_model,
             "api": "responses",
+            "reasoning_effort": reasoning_effort or "provider_default",
         },
         "scenario": {
             "id": "portfolio-risk-review",
@@ -467,6 +470,12 @@ def main() -> None:
         "--base-url",
         default=os.environ.get("OPENAI_BASE_URL", "https://api.deepseek.com"),
     )
+    parser.add_argument(
+        "--reasoning-effort",
+        choices=("none", "minimal", "low", "medium", "high", "xhigh", "max"),
+        default=os.environ.get("OPENAI_REASONING_EFFORT", "high"),
+        help="Responses reasoning effort; DeepSeek thinking mode normally uses high",
+    )
     parser.add_argument("--allow-insecure-http", action="store_true")
     parser.add_argument("--human-corrections", type=int, default=0)
     args = parser.parse_args()
@@ -483,6 +492,7 @@ def main() -> None:
             api_key=api_key,
             openai_model=args.openai_model,
             base_url=args.base_url,
+            reasoning_effort=args.reasoning_effort,
             allow_insecure_http=args.allow_insecure_http,
             human_corrections=args.human_corrections,
         )

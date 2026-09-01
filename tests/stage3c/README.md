@@ -78,7 +78,9 @@ Foundation F5 Gate wiring 由 `test_real_model_provider.py`、`test_real_finance
 
 - OpenAI Responses adapter 通过官方 `AsyncOpenAI` 发送 `store=false` 请求，兼容 Schema 使用
   strict JSON Schema，map-valued `additionalProperties` 使用 JSON mode 并由 Gateway 执行完整本地
-  Schema 校验，同时解析 token usage/refusal 并脱敏分类 429/5xx；
+  Schema 校验；adapter 始终省略 `max_output_tokens`，DeepSeek 风格思考请求发送
+  `reasoning.effort` 并省略 `temperature`，只提取最终 output text 和 reasoning token 计量，不暴露
+  reasoning 内容；同时解析 token usage/refusal 并脱敏分类 429/5xx；
 - `finance.portfolio-risk/v1` 对真实持仓快照执行 Decimal 估值、日损益、集中度和限额检查；
 - FAST/PLAN/EXPLORE、Memory write→read→ContextUse、Action Trace、groundedness、重复动作、
   human correction 与错误分类汇总为版本化报告；

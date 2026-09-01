@@ -164,9 +164,14 @@ class RealUseGateTests(unittest.IsolatedAsyncioTestCase):
         self.assertGreaterEqual(report["runs"]["plan"]["model_span_count"], 1)
         self.assertEqual(report["runs"]["explore"]["action_span_count"], 1)
         self.assertEqual(persisted["schema_version"], "financeclaw-real-use-gate-v1")
+        self.assertEqual(persisted["provider"]["reasoning_effort"], "high")
         self.assertNotIn("offline-test-secret", json.dumps(persisted))
         self.assertEqual(endpoint.calls[0]["text"]["format"], {"type": "json_object"})
         self.assertEqual(endpoint.calls[1]["text"]["format"], {"type": "json_object"})
+        for payload in endpoint.calls:
+            self.assertEqual(payload["reasoning"], {"effort": "high"})
+            self.assertNotIn("temperature", payload)
+            self.assertNotIn("max_output_tokens", payload)
 
     async def test_non_live_run_requires_explicit_sdk_client(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

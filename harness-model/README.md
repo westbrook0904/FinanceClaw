@@ -47,6 +47,10 @@ structured output、usage、token count 和 finish reason。
 - `OpenAIResponsesModelProvider`：Foundation F5 的真实非流式 adapter，通过官方
   `openai.AsyncOpenAI.responses.create()` 调用 Responses API；SDK 负责 HTTP、认证、响应解码和
   OpenAI-compatible 异常，Harness 继续负责 retry/fallback、usage 与安全错误归一化。
+- 该 adapter 不向服务端发送 `max_output_tokens`。可通过构造参数或
+  `OPENAI_REASONING_EFFORT` 设置 `reasoning.effort`；启用思考时不发送 `temperature`，显式
+  `none` 关闭思考后才保留 temperature。响应只消费 SDK 汇总的最终 `output_text`，不把
+  reasoning item/思维链写入 Result、Trace 或报告；仅将 `reasoning_tokens` 作为安全计量 metadata。
 - Provider 默认 `store=false`。无 map-valued `additionalProperties` 的 Schema 使用
   `text.format=json_schema`；存在该类跨 Provider 不兼容字段时使用 `json_object`，完整原始 Schema
   仍由 ModelGateway 在结果进入 Router/Planner/Explorer 前强制校验。
@@ -111,7 +115,11 @@ legacy `generate()`。LLMRouter-v2 已迁移到最小 route completion Draft，L
 strict `PlanDraft`，两者与 ExplorationEngine 共用 strict-only adapter。F5 的
 `OpenAIResponsesModelProvider` 直接依赖官方 OpenAI Python SDK；协议映射依据 OpenAI Responses API 的
 [`POST /responses`](https://developers.openai.com/api/reference/cli/resources/responses/methods/create)
-以及 SDK 的 `responses.create()`。Streaming、vision、embedding、rerank 和其他厂商 adapter 暂缓。
+以及 SDK 的 `responses.create()`；DeepSeek 思考模式兼容行为依据
+[`reasoning.effort` 与 reasoning output](https://api-docs.deepseek.com/zh-cn/guides/thinking_mode/)。
+当前调用不使用 Responses tool call，因此无需跨轮回传 provider reasoning；未来若在单次 Responses
+会话中开放工具调用，必须先补齐 reasoning replay contract。Streaming、vision、embedding、rerank
+和其他厂商 adapter 暂缓。
 
 ## 测试
 

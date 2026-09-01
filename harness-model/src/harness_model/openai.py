@@ -6,6 +6,7 @@ import asyncio
 import json
 import os
 from collections.abc import Mapping
+from typing import Literal
 from urllib.parse import urlparse
 
 from harness_contracts import (
@@ -44,6 +45,8 @@ from .schema import structured_schema_hash, validate_schema_definition
 
 OPENAI_RESPONSES_MODEL_CAPABILITY_ID = "model.openai-responses/v1"
 OPENAI_RESPONSES_PROVIDER_ID = "openai:responses"
+ReasoningEffort = Literal["none", "minimal", "low", "medium", "high", "xhigh", "max"]
+_REASONING_EFFORTS = frozenset({"none", "minimal", "low", "medium", "high", "xhigh", "max"})
 
 
 class OpenAIResponsesModelProvider(ModelProvider):
@@ -62,9 +65,10 @@ class OpenAIResponsesModelProvider(ModelProvider):
         model_capability_id: str = OPENAI_RESPONSES_MODEL_CAPABILITY_ID,
         provider_id: str = OPENAI_RESPONSES_PROVIDER_ID,
         base_url: str = "https://api.openai.com/v1",
-        timeout_seconds: float = 60.0,
+        timeout_seconds: float = 600.0,
         organization: str | None = None,
         project: str | None = None,
+        reasoning_effort: ReasoningEffort | None = None,
         client: AsyncOpenAI | None = None,
         allow_insecure_http: bool = False,
     ) -> None:
@@ -77,24 +81,27 @@ class OpenAIResponsesModelProvider(ModelProvider):
             not isinstance(timeout_seconds, int | float)
             or isinstance(timeout_seconds, bool)
             or timeout_seconds <= 0
-            or timeout_seconds > 300
+            or timeout_seconds > 1000
         ):
-            raise ValueError("timeout_seconds must be greater than zero and at most 300")
+            raise ValueError("timeout_seconds must be greater than zero and at most 1000")
         if organization is not None:
             organization = _non_empty("organization", organization)
         if project is not None:
             project = _non_empty("project", project)
+        if reasoning_effort is not None:
+            reasoning_effort = _reasoning_effort(reasoning_effort)
         if client is not None and not isinstance(client, AsyncOpenAI):
             raise TypeError("client must be openai.AsyncOpenAI")
         self._timeout_seconds = float(timeout_seconds)
         self._organization = organization
         self._project = project
+        self._reasoning_effort = reasoning_effort
         self._client = client
         self._descriptor = CapabilityDescriptor(
             id=model_capability_id,
             name="OpenAI-compatible Responses model generation",
             type=CapabilityType.MODEL,
-            version="1.1.0",
+            version="1.2.0",
             input_schema={"type": "object"},
             output_schema={"type": "object"},
             execution_profile=CapabilityExecutionProfile(
@@ -106,6 +113,7 @@ class OpenAIResponsesModelProvider(ModelProvider):
                 "api": "responses",
                 "sdk": "openai-python",
                 "store": False,
+                "reasoning_effort": reasoning_effort or "provider_default",
                 "schema_compatibility": "json-schema-or-local-validation",
             },
         )
@@ -126,6 +134,9 @@ class OpenAIResponsesModelProvider(ModelProvider):
         base_url = os.environ.get("OPENAI_BASE_URL")
         if base_url is not None and "base_url" not in kwargs:
             kwargs["base_url"] = base_url
+        reasoning_effort = os.environ.get("OPENAI_REASONING_EFFORT")
+        if reasoning_effort is not None and "reasoning_effort" not in kwargs:
+            kwargs["reasoning_effort"] = reasoning_effort
         return cls(api_key=api_key, openai_model=model, **kwargs)
 
     def descriptor(self) -> CapabilityDescriptor:
@@ -230,12 +241,13 @@ class OpenAIResponsesModelProvider(ModelProvider):
                 for message in request.messages
             ],
             "store": False,
-            "temperature": request.temperature,
         }
+        if self._reasoning_effort is not None:
+            create_params["reasoning"] = {"effort": self._reasoning_effort}
+        if self._reasoning_effort in {None, "none"}:
+            create_params["temperature"] = request.temperature
         if response_format is not None:
             create_params["text"] = {"format": dict(response_format)}
-        if request.max_output_tokens is not None:
-            create_params["max_output_tokens"] = request.max_output_tokens
 
         try:
             response = await self._create_response(create_params)
@@ -417,6 +429,14 @@ def _non_empty(field_name: str, value: object) -> str:
     return value
 
 
+def _reasoning_effort(value: object) -> ReasoningEffort:
+    value = _non_empty("reasoning_effort", value)
+    if value not in _REASONING_EFFORTS:
+        allowed = ", ".join(sorted(_REASONING_EFFORTS))
+        raise ValueError(f"reasoning_effort must be one of: {allowed}")
+    return value  # type: ignore[return-value]
+
+
 def _api_error_code(body: object) -> str | None:
     if not isinstance(body, Mapping):
         return None
@@ -480,4 +500,12 @@ def _response_metadata(response: Response) -> dict[str, object]:
     for value, target in ((response.id, "response_id"), (response.model, "model")):
         if isinstance(value, str) and value:
             metadata[target] = value[:256]
+    usage = response.usage
+    output_details = usage.output_tokens_details if usage is not None else None
+    reasoning_tokens = (
+        output_details.reasoning_tokens if output_details is not None else None
+    )
+    if isinstance(reasoning_tokens, int) and not isinstance(reasoning_tokens, bool):
+        if reasoning_tokens >= 0:
+            metadata["reasoning_tokens"] = reasoning_tokens
     return metadata
