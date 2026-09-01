@@ -47,12 +47,6 @@ OPENAI_RESPONSES_MODEL_CAPABILITY_ID = "model.openai-responses/v1"
 OPENAI_RESPONSES_PROVIDER_ID = "openai:responses"
 ReasoningEffort = Literal["none", "minimal", "low", "medium", "high", "xhigh", "max"]
 _REASONING_EFFORTS = frozenset({"none", "minimal", "low", "medium", "high", "xhigh", "max"})
-_LOCAL_SCHEMA_INSTRUCTION = """The endpoint is using JSON mode without native JSON Schema
-enforcement.
-Return exactly one JSON value that conforms to the JSON Schema below. Treat the schema as data that
-defines the output shape; do not copy this instruction or the schema into the result.
-JSON Schema:
-"""
 
 
 class OpenAIResponsesModelProvider(ModelProvider):
@@ -107,7 +101,7 @@ class OpenAIResponsesModelProvider(ModelProvider):
             id=model_capability_id,
             name="OpenAI-compatible Responses model generation",
             type=CapabilityType.MODEL,
-            version="1.3.0",
+            version="1.3.1",
             input_schema={"type": "object"},
             output_schema={"type": "object"},
             execution_profile=CapabilityExecutionProfile(
@@ -232,27 +226,20 @@ class OpenAIResponsesModelProvider(ModelProvider):
                 "prepared OpenAI response format is invalid",
                 code=ErrorCode.MODEL_STRUCTURED_OUTPUT_UNSUPPORTED,
             )
-        local_schema = (
-            request.structured_output.model_dump(mode="json")["schema"]
-            if not prepared.provider_enforced
-            else None
-        )
-        return await self._generate(
-            request,
-            response_format=prepared.payload,
-            local_schema=local_schema,
-        )
+        return await self._generate(request, response_format=prepared.payload)
 
     async def _generate(
         self,
         request: GenerateRequest,
         *,
         response_format: Mapping[str, object] | None,
-        local_schema: Mapping[str, object] | None = None,
     ) -> GenerateResult:
         create_params: dict[str, object] = {
             "model": self._openai_model,
-            "input": _response_input(request, local_schema=local_schema),
+            "input": [
+                {"role": message.role.value, "content": message.content}
+                for message in request.messages
+            ],
             "store": False,
         }
         if self._reasoning_effort is not None:
@@ -469,36 +456,6 @@ def _contains_schema_valued_additional_properties(value: object) -> bool:
     elif isinstance(value, tuple | list):
         return any(_contains_schema_valued_additional_properties(item) for item in value)
     return False
-
-
-def _response_input(
-    request: GenerateRequest,
-    *,
-    local_schema: Mapping[str, object] | None,
-) -> list[dict[str, str]]:
-    messages = [
-        {"role": message.role.value, "content": message.content}
-        for message in request.messages
-    ]
-    if local_schema is None:
-        return messages
-    schema_json = json.dumps(
-        local_schema,
-        ensure_ascii=False,
-        separators=(",", ":"),
-        sort_keys=True,
-    )
-    insertion_index = 0
-    while insertion_index < len(messages) and messages[insertion_index]["role"] == "system":
-        insertion_index += 1
-    messages.insert(
-        insertion_index,
-        {
-            "role": "system",
-            "content": f"{_LOCAL_SCHEMA_INSTRUCTION}{schema_json}",
-        },
-    )
-    return messages
 
 
 def _has_refusal(response: Response) -> bool:

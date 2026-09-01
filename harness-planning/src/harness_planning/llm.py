@@ -52,7 +52,13 @@ from .validator import PlanValidator
 type Clock = Callable[[], datetime]
 
 _SYSTEM_PROMPT = """You are a planning component inside a controlled Harness.
-Return exactly one JSON object matching the supplied PlanDraft schema.
+Return exactly one JSON object using this compact PlanDraft contract:
+- Top-level fields: nodes (required), budget, failure_policy, edges, outputs. No other fields.
+- A capability node uses node_id, kind, capability_id, input_mapping, failure_intent.
+- input_mapping maps each capability input field to a request, literal, or node_output binding.
+- Dependencies use edges with from_node, to_node, trigger, and optional condition.
+- outputs maps result names to node_output bindings with node_id and a JSON pointer.
+Never use the aliases goal, id, input, or depends_on in the PlanDraft.
 Create a concrete DAG that achieves the supplied goal using only allowed capability IDs.
 Never output plan_id, revision, plan metadata, provider IDs, plugin IDs, credentials, or state.
 Do not call tools or execute capabilities. Planning is your only responsibility."""

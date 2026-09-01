@@ -53,9 +53,10 @@ structured output、usage、token count 和 finish reason。
   reasoning item/思维链写入 Result、Trace 或报告；仅将 `reasoning_tokens` 作为安全计量 metadata。
 - Provider 默认 `store=false`。无 map-valued `additionalProperties` 的 Schema 使用
   `text.format=json_schema`；存在该类跨 Provider 不兼容字段时使用 `json_object`，完整原始 Schema
-  会作为受控 system instruction 提供给模型，并仍由 ModelGateway 在结果进入
-  Router/Planner/Explorer 前强制校验。Harness Contract 冻结产生的 `mappingproxy` / `tuple` 会在
-  校验时转换为临时 `dict` / `list` 视图，不改变 Result 的不可变性。
+  仍由 ModelGateway 在结果进入 Router/Planner/Explorer 前强制校验。Provider adapter 不改写调用方
+  messages；JSON mode 下所需的紧凑输出契约由 Router/Planner/Explorer 各自拥有的 system prompt
+  提供。Harness Contract 冻结产生的 `mappingproxy` / `tuple` 会在校验时转换为临时 `dict` / `list`
+  视图，不改变 Result 的不可变性。
 
 ## 注册和调用
 

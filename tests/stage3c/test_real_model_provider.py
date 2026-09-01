@@ -248,12 +248,7 @@ class OpenAIResponsesProviderTests(unittest.IsolatedAsyncioTestCase):
         payload = endpoint.calls[0]["payload"]
         self.assertEqual(payload["text"]["format"], {"type": "json_object"})
         messages = payload["input"]
-        self.assertEqual(messages[0]["role"], "system")
-        self.assertIn(
-            '"additionalProperties":{"type":"integer"}',
-            messages[0]["content"],
-        )
-        self.assertEqual(messages[1]["content"], "Return JSON.")
+        self.assertEqual(messages, [{"role": "user", "content": "Return JSON."}])
 
     async def test_http_error_is_sanitized_and_retry_classified(self) -> None:
         endpoint = RecordingResponsesEndpoint(

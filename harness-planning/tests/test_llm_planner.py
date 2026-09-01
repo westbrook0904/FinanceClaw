@@ -372,6 +372,12 @@ class LLMPlannerTests(unittest.IsolatedAsyncioTestCase):
             request.model_dump(mode="json")["structured_output"]["schema"],
             planner._response_schema,  # noqa: SLF001
         )
+        system_prompt = request.messages[0].content
+        for required_term in ("node_id", "input_mapping", "from_node", "node_output"):
+            self.assertIn(required_term, system_prompt)
+        self.assertIn("goal, id, input, or depends_on", system_prompt)
+        self.assertNotIn('"$defs"', system_prompt)
+        self.assertLess(len(system_prompt), 1_500)
         prompt = json.loads(request.messages[-1].content)
         self.assertEqual(prompt["allowed_capability_ids"], [FETCH_ID, RANK_ID])
         capabilities = [

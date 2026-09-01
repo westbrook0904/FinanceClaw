@@ -898,10 +898,11 @@ PlanPatch、Approval waiting、Async waiting 和分布式 lease 仍未开放。
 `OpenAIResponsesModelProvider`，通过官方 `openai.AsyncOpenAI.responses.create()` 映射
 provider-neutral messages、`store=false`、usage/refusal 与安全错误分类。兼容 Schema 使用 strict
 `text.format=json_schema`；含 map-valued `additionalProperties` 的跨 Provider Schema 使用
-`json_object`，并把精确 Schema 作为受控 system instruction 提供给模型；完整原始 Schema 仍由
-ModelGateway 在结果进入调用方前强制校验。Contract 冻结后的 `mappingproxy` / `tuple` 通过临时
-JSON container view 校验，不改变 Result 不可变性。API key 只存在于 SDK client 内存和
-Authorization header，不进入 Descriptor、Trace、Result 或报告。
+`json_object`，完整原始 Schema 仍由 ModelGateway 在结果进入调用方前强制校验。Provider adapter
+不改写调用方 messages；LLMPlanner 的 system prompt 自己维护紧凑 PlanDraft 字段契约，避免把完整
+Pydantic `$defs` 注入提示词。Contract 冻结后的 `mappingproxy` / `tuple` 通过临时 JSON container
+view 校验，不改变 Result 不可变性。API key 只存在于 SDK client 内存和 Authorization header，
+不进入 Descriptor、Trace、Result 或报告。
 Provider 不下发 `max_output_tokens`；DeepSeek Gate 显式配置 `reasoning.effort=high`，思考模式下
 省略不受支持的 `temperature`。SDK 可能解析出 reasoning item，但 Harness 只消费最终
 `output_text`，不保存或回显思维链，只记录 `reasoning_tokens` 作为计量 metadata。当前没有在单次

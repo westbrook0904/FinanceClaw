@@ -139,7 +139,7 @@ async def run_live_gate(
             provider_id=_MODEL_PROVIDER_ID,
             capability_id=_MODEL_CAPABILITY_ID,
             plugin_id="openai-responses",
-            implementation_version="1.3.0",
+            implementation_version="1.3.1",
             priority=100,
             tags=frozenset({"real-provider", "f5-gate"}),
             metadata={"api": "responses"},
