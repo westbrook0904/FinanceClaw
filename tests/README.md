@@ -1,7 +1,8 @@
 # tests
 
 测试体系覆盖阶段一 Direct Invocation 兼容性、第二阶段 Reliable Plan Execution Engine、
-Stage 3A Provider Fabric、Stage 3B Routing & Planning，以及 Agent Foundation F0–F4b。模块测试
+Stage 3A Provider Fabric、Stage 3B Routing & Planning，以及 Agent Foundation F0–F5 Gate
+wiring。模块测试
 与源码模块同目录；顶层 `tests/stage2`、`tests/stage3a`、`tests/stage3b`、`tests/stage3c`
 分别提供跨模块仓库级阻断验收。
 
@@ -27,11 +28,11 @@ Stage 3A Provider Fabric、Stage 3B Routing & Planning，以及 Agent Foundation
 | Events | `harness-events/tests` | 内存总线、订阅与 NoOp Publisher |
 | Execution | `harness-execution/tests` | DAG、Retry、Resume、Approval、Async、Trace 和 Events |
 | Bootstrap | `harness-bootstrap/tests` | 依赖组装、Application API 和生命周期 |
-| Plugins | `plugins/tests` | 三个示例插件行为、打包和集成 |
+| Plugins | `plugins/tests` | 四个示例/业务插件行为、打包和集成 |
 | Stage 2 acceptance | `tests/stage2` | E2E、fault injection、SQLite restart 与 fail-closed |
 | Stage 3A acceptance | `tests/stage3a` | Multi-provider E2E、WRITE safety、Provider restart、Model Fabric 与旧插件回归 |
 | Stage 3B acceptance | `tests/stage3b` | ExecutionMode、Rule/LLM Route、LLM Plan/Repair、Policy、Lifecycle/Resume 与全阶段兼容性 |
-| Foundation acceptance | `tests/stage3c` | F0–F4b 验收索引；由 Context、Memory、Agentic、Contracts、Planning、Policy、Bootstrap 与 Stage 3B 回归共同阻断 |
+| Foundation acceptance | `tests/stage3c` | F0–F4b 与 F5 adapter/业务/Gate wiring；由相关模块和 Stage 3B 回归共同阻断 |
 
 ## 运行完整回归
 
@@ -71,5 +72,6 @@ Stage 3A Provider Fabric、Stage 3B Routing & Planning，以及 Agent Foundation
 .venv/bin/python -m pytest tests/stage3c -v
 ```
 
-测试不依赖真实网络、行情、LLM 或外部数据库；ModelGateway 使用确定性 Mock Providers，
-跨进程语义使用临时 SQLite 文件验证。
+默认测试不依赖真实网络、行情、LLM 或外部数据库；OpenAI adapter 使用记录型 HTTP transport，
+其他 ModelGateway 路径使用确定性 Mock Providers，跨进程语义使用临时 SQLite 文件验证。F5
+live Gate 只在显式 `--live` 且配置 API key 后运行，不属于默认 pytest。

@@ -8,7 +8,9 @@ Selection、Retry/Fallback、Provider-safe Checkpoint/Resume、ModelGateway，�
 
 Stage 3C 的 Plan Identity、Strict Structured Output、Agent Foundation F1 Routing
 correctness、F2 Context Engineering、F3 Memory 与 F4b Minimal Explore Loop 已实现。
-下一步是 F5 真实业务验证；`HYBRID`、PlanPatch 和高阶资源预算延后。F4b 已把
+F5 Real-use Gate 的真实 OpenAI Responses Provider adapter、组合风险 Agent、脱敏评测报告与
+显式 live runner 已就绪；当前环境缺少真实 API 凭证，因此一期 Gate 尚未宣告通过。
+`HYBRID`、PlanPatch 和高阶资源预算继续延后。F4b 已把
 Profile/Turn/Action/Observation/Checkpoint 契约和单节点 wrapper 接入 standalone
 `EXPLORE`；未配置 Profile/单写者保证时 EXPLORE 仍 fail-closed，HYBRID 始终不可用。当前优先级见
 `.design/FinanceClaw-Agent-Foundation-一期路线图.md`，当前 Context、Memory 与 Minimal Explore
@@ -93,11 +95,12 @@ GenerateResult + Usage + Provider Identity + Trace / Events
 | `harness-trace` | Request/Route/Planner/Model/Plan/Node/Provider Span 与瞬时事件 |
 | `harness-events` | 最小进程内执行事件协议、发布/订阅和内存事件总线 |
 | `harness-bootstrap` | 默认依赖组装、应用 API 与插件生命周期 |
-| `plugins/*` | Echo Agent、Calculator Tool 和模拟财经 Agent |
+| `plugins/*` | Echo Agent、Calculator Tool、模拟财经 Agent 与真实组合风险检查 Agent |
+| `real-use` | F5 真实 Provider + 财经场景组合、SQLite 证据与脱敏 Gate 报告 |
 | `tests/stage2` | 第二阶段端到端、故障注入与跨进程恢复验收 |
 | `tests/stage3a` | Provider Fabric、WRITE safety、Provider Resume 与 ModelGateway 阻断验收 |
 | `tests/stage3b` | ExecutionMode、Rule/LLM Route、LLM Plan/Repair、Policy、Lifecycle 与回归 Gate |
-| `tests/stage3c` | Agent Foundation 验收索引；F0–F4b 由其与 Agentic/Contracts/Context/Memory/Planning 等模块回归共同阻断 |
+| `tests/stage3c` | Agent Foundation 验收索引；F0–F4b 与 F5 Gate wiring 由其及相关模块回归共同阻断 |
 
 ## Direct Invocation
 

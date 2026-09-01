@@ -5,11 +5,12 @@
 - Echo Agent 原样回显；
 - Calculator Tool 四则运算及结构化错误；
 - Mock Finance Agent 的显式 mock 输出；
+- Portfolio Risk Agent 的真实 Decimal 估值、日损益和限额检查；
 - Plugin 生命周期幂等；
 - Manifest 与 Provider Descriptor 一致；
 - `financeclaw.plugins` entry point 打包配置；
 - 自动/显式发现、注册、注销和失败回滚；
-- 三个插件通过 Bootstrap 与 Direct Runtime 的完整调用；
+- 四个插件通过 Bootstrap 与 Direct Runtime 的完整调用；
 - 示例 Capability 参与第二阶段 finance-review-plan 的并行、Join、Approval 和 Resume。
 - 旧 Plugin 在 Stage 3A 下自动获得稳定 Provider ID，加载/卸载按 Provider 精确执行。
 - Stage 3B `handle()` 的 FAST/PLAN 路径继续只通过 CapabilityInvoker 调用插件；Router 和

@@ -41,6 +41,8 @@ provenance、freshness/expiry，并固定映射为 DATA tier。未配置 Provide
 ## 安全与确定性
 
 - `ContextItem.item_id` 由稳定 source identity、source version 与 kind 派生。
+- `memory_context_item_id(record)` 可在不读取 Prompt 的情况下，把持久化 MemoryRecord 对应到
+  ContextUseRecord 的 included item，用于 F5 memory-hit 审计。
 - Snapshot hash 排除 snapshot ID、收集时间与 Trace identity；Projection hash 还包含 consumer
   与固定 omission reason。
 - Policy 在 Snapshot 物化前执行；Secret、过期项和非法 trust/source 组合直接丢弃。

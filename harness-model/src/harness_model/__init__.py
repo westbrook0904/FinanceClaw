@@ -20,6 +20,14 @@ from .mocks import (
     MockQualityModel,
     MockStrictModelProvider,
 )
+from .openai import (
+    OPENAI_RESPONSES_MODEL_CAPABILITY_ID,
+    OPENAI_RESPONSES_PROVIDER_ID,
+    HttpxJsonTransport,
+    JsonHttpResponse,
+    JsonHttpTransport,
+    OpenAIResponsesModelProvider,
+)
 from .preparation import (
     ModelAttemptPolicy,
     ModelGenerationCheckpointSink,
@@ -49,6 +57,12 @@ __all__ = [
     "MockModelProvider",
     "MockQualityModel",
     "MockStrictModelProvider",
+    "HttpxJsonTransport",
+    "OPENAI_RESPONSES_MODEL_CAPABILITY_ID",
+    "OPENAI_RESPONSES_PROVIDER_ID",
+    "JsonHttpResponse",
+    "JsonHttpTransport",
+    "OpenAIResponsesModelProvider",
     "PreparedModelGeneration",
     "PreparedStructuredOutput",
     "StructuredGenerationAdapter",

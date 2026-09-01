@@ -314,7 +314,7 @@ Capability eligibility、wire round-trip 与损坏状态均已有确定性测试
 `executable=False` 时接受该 standalone wrapper，默认执行仍返回
 `PLAN.EXPLORATION_NOT_AVAILABLE`。
 
-### Foundation 4b — Minimal Explore Loop（下一步）
+### Foundation 4b — Minimal Explore Loop（已完成，2026-09-01）
 
 - 将 standalone wrapper 接入 EXPLORE handle / fresh Plan materialization；
 - ScopedActionExecutor；
@@ -323,13 +323,23 @@ Capability eligibility、wire round-trip 与损坏状态均已有确定性测试
 - Context / Memory / Action Trace；
 - 不实现 HYBRID / Patch。
 
-### Foundation 5 — Real-use Gate
+完成证据：EXPLORE 仅在可信 Profile 与显式单写者保证下启用；Harness-owned standalone wrapper
+不经过 Planner。ExplorationEngine 已完成 strict turn、ScopedActionExecutor、基本次数限制、
+repeated-action guard、bounded Observation、completed-Observation resume、取消与 unexpected
+ACCEPTED orphan fail-closed；所有 Action 只经 CapabilityInvoker，HYBRID / Patch 仍不可用。
+
+### Foundation 5 — Real-use Gate（Gate 已就绪，live evidence 待执行）
 
 - 至少一个真实财经 Agent 场景；
 - 使用真实 ModelProvider adapter；
 - Context / Memory / Action 全链路 Trace；
 - 建立质量、失败、重复动作、memory hit 与人工修正基线；
 - 收集实际任务中无法由 FAST / PLAN / standalone EXPLORE 解决的案例。
+
+当前状态（2026-09-01）：已新增真实 `finance.portfolio-risk/v1` 业务 Agent、OpenAI Responses
+ModelProvider adapter、FAST/PLAN/EXPLORE + 跨请求 Memory 的版本化脱敏报告和显式 `--live`
+runner。离线记录型 transport 已验证完整 wiring，但当前执行环境没有 `OPENAI_API_KEY`，因此尚未
+产生可计入一期投产 Gate 的真实 ModelProvider 调用记录，也不据此宣告 F5 完成。
 
 ## 8. 一期投产 Gate
 

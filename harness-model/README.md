@@ -44,6 +44,11 @@ structured output、usage、token count 和 finish reason。
 - `StructuredGenerationAdapter`：Router/Planner/Explorer 共用的 strict-only 助手，不是新的 SPI。
 - `MockFastModel`、`MockQualityModel`、`MockBackupModel`：确定性测试 Provider，支持延迟和
   瞬时失败注入；`MockStrictModelProvider` 额外支持 strict Schema。
+- `OpenAIResponsesModelProvider`：Foundation F5 的真实非流式 adapter，直接调用 Responses
+  API；默认 `store=false`，支持 strict JSON Schema、refusal、usage 与安全 HTTP 错误归一化，
+  API key 不进入 Descriptor、Result、Trace 或报告。
+- `HttpxJsonTransport`：默认异步、可取消 transport；不在线程中遗留已取消的模型请求，HTTP
+  retry/fallback 仍统一由 ModelGateway/ProviderExecutionCoordinator 决定。
 
 ## 注册和调用
 
@@ -102,9 +107,10 @@ reservation 只冻结 Provider attempt slots，不承担 token、成本或耗时
 
 Legacy `response_schema` 继续保持 Stage 3A/3B best-effort 语义；REQUIRED 请求不能降级到
 legacy `generate()`。LLMRouter-v2 已迁移到最小 route completion Draft，LLMPlanner-v2 已迁移到
-strict `PlanDraft`，两者共用 strict-only adapter；ExplorationEngine 属于当前 Agent Foundation
-的 Minimal Explore 后续步骤。Streaming、vision、embedding、rerank 和真实厂商 SDK adapter
-暂缓。
+strict `PlanDraft`，两者与 ExplorationEngine 共用 strict-only adapter。F5 新增无额外 SDK
+依赖的 `OpenAIResponsesModelProvider`；协议映射依据 OpenAI Responses API 的
+[`POST /responses`](https://developers.openai.com/api/reference/cli/resources/responses/methods/create)
+与 `text.format=json_schema`。Streaming、vision、embedding、rerank 和其他厂商 adapter 暂缓。
 
 ## 测试
 

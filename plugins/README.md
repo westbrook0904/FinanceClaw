@@ -12,8 +12,9 @@ Policy、Trace、Checkpoint 或 Resume。
 | `echo-agent` | `EchoAgentPlugin` | `EchoAgent` | `echo.reply/v1` |
 | `calculator-tool` | `CalculatorToolPlugin` | `CalculatorTool` | `math.calculate/v1` |
 | `mock-finance-agent` | `MockFinanceAgentPlugin` | `MockFinanceAgent` | `finance.mock-query/v1` |
+| `portfolio-risk-agent` | `PortfolioRiskAgentPlugin` | `PortfolioRiskAgent` | `finance.portfolio-risk/v1` |
 
-三个插件均有稳定 Manifest、Provider 集合和幂等 `initialize()/shutdown()`。安装项目后，
+四个插件均有稳定 Manifest、Provider 集合和幂等 `initialize()/shutdown()`。安装项目后，
 它们通过 `pyproject.toml` 中的 `financeclaw.plugins` entry point 被
 `LocalPluginProvider` 自动发现。
 
@@ -39,6 +40,8 @@ app = build_harness(
   Capability Descriptor，不接触插件或 Provider instance。
 - `finance-review-plan` 验收组合 Mock Finance Agent、Calculator Tool、Approval 和
   Echo Agent，验证并行、Join、重启和 Resume。
+- `portfolio-risk-agent` 是 F5 真实业务场景：使用 Decimal 对调用方时点持仓执行净资产、
+  日损益、集中度与限额检查，并提供显式的 FAST/PLAN/EXPLORE/Memory live Gate。
 - Descriptor 的 `execution_profile` 使用安全默认值
   `side_effect=none/egress=none/idempotency=none`；如真实插件具有读写、外连或幂等
   语义，必须显式声明，以便 Scheduler 和 Policy 正确判断。

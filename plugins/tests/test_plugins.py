@@ -19,6 +19,7 @@ from harness_contracts import (
 )
 from harness_spi import AgentRequest, ToolRequest
 from mock_finance_agent import MockFinanceAgent, MockFinanceAgentPlugin
+from portfolio_risk_agent import PortfolioRiskAgentPlugin
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -128,7 +129,12 @@ class MockFinanceAgentTests(unittest.IsolatedAsyncioTestCase):
 
 class PluginLifecycleTests(unittest.IsolatedAsyncioTestCase):
     async def test_plugin_lifecycle_is_idempotent_and_capabilities_are_stable(self) -> None:
-        plugins = (EchoAgentPlugin(), CalculatorToolPlugin(), MockFinanceAgentPlugin())
+        plugins = (
+            EchoAgentPlugin(),
+            CalculatorToolPlugin(),
+            MockFinanceAgentPlugin(),
+            PortfolioRiskAgentPlugin(),
+        )
 
         for plugin in plugins:
             with self.subTest(plugin=plugin.manifest().plugin_id):
@@ -143,7 +149,12 @@ class PluginLifecycleTests(unittest.IsolatedAsyncioTestCase):
                 self.assertFalse(plugin.initialized)
 
     def test_manifests_match_provider_descriptors(self) -> None:
-        plugins = (EchoAgentPlugin(), CalculatorToolPlugin(), MockFinanceAgentPlugin())
+        plugins = (
+            EchoAgentPlugin(),
+            CalculatorToolPlugin(),
+            MockFinanceAgentPlugin(),
+            PortfolioRiskAgentPlugin(),
+        )
 
         for plugin in plugins:
             with self.subTest(plugin=plugin.manifest().plugin_id):
@@ -153,14 +164,24 @@ class PluginLifecycleTests(unittest.IsolatedAsyncioTestCase):
 
 class PluginBootstrapIntegrationTests(unittest.IsolatedAsyncioTestCase):
     async def test_all_example_plugins_work_through_bootstrap_and_runtime(self) -> None:
-        plugins = (EchoAgentPlugin(), CalculatorToolPlugin(), MockFinanceAgentPlugin())
+        plugins = (
+            EchoAgentPlugin(),
+            CalculatorToolPlugin(),
+            MockFinanceAgentPlugin(),
+            PortfolioRiskAgentPlugin(),
+        )
         app = build_harness(plugins=plugins, entry_point_group=None)
 
         async with app:
             capability_ids = tuple(item.descriptor.id for item in app.registry.list())
             self.assertEqual(
                 capability_ids,
-                ("echo.reply/v1", "finance.mock-query/v1", "math.calculate/v1"),
+                (
+                    "echo.reply/v1",
+                    "finance.mock-query/v1",
+                    "finance.portfolio-risk/v1",
+                    "math.calculate/v1",
+                ),
             )
 
             echo = await app.invoke(
@@ -184,13 +205,36 @@ class PluginBootstrapIntegrationTests(unittest.IsolatedAsyncioTestCase):
                     target=RequestTarget(capability="finance.mock-query/v1"),
                 )
             )
+            portfolio = await app.invoke(
+                Request(
+                    input=RequestInput(
+                        type="portfolio_snapshot",
+                        content={
+                            "portfolio_id": "plugin-test",
+                            "as_of": "2026-08-31",
+                            "base_currency": "CNY",
+                            "positions": [
+                                {
+                                    "symbol": "AAA",
+                                    "quantity": "1",
+                                    "current_price": "100",
+                                    "previous_close": "99",
+                                }
+                            ],
+                        },
+                    ),
+                    target=RequestTarget(capability="finance.portfolio-risk/v1"),
+                )
+            )
 
             self.assertEqual(echo.output.data, "hello")
             self.assertEqual(calculate.output.data, 42)
             self.assertTrue(finance.output.data["mock"])
+            self.assertEqual(portfolio.output.data["valuation"]["net_asset_value"], "100.00")
             self.assertIsNotNone(echo.trace_id)
             self.assertIsNotNone(calculate.trace_id)
             self.assertIsNotNone(finance.trace_id)
+            self.assertIsNotNone(portfolio.trace_id)
 
         self.assertEqual(app.registry.list(), ())
 
@@ -227,6 +271,7 @@ class PluginPackagingTests(unittest.TestCase):
                 "calculator-tool": "calculator_tool:CalculatorToolPlugin",
                 "echo-agent": "echo_agent:EchoAgentPlugin",
                 "mock-finance-agent": "mock_finance_agent:MockFinanceAgentPlugin",
+                "portfolio-risk-agent": "portfolio_risk_agent:PortfolioRiskAgentPlugin",
             },
         )
 

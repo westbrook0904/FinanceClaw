@@ -103,9 +103,7 @@ def _record_to_context_item(
     *,
     observed_at: datetime,
 ) -> ContextItem:
-    record_facts = record.model_dump(mode="json")
-    record_facts["tags"] = sorted(record.tags)
-    source_version = canonical_hash(record_facts)
+    source_version = _memory_source_version(record)
     content = {
         "kind": record.kind.value,
         "namespace": record.namespace,
@@ -114,12 +112,7 @@ def _record_to_context_item(
         "value": record.content,
     }
     return ContextItem(
-        item_id=stable_item_id(
-            source_kind=ContextSourceKind.MEMORY.value,
-            source_id=record.memory_id,
-            source_version=source_version,
-            kind=f"memory:{record.kind.value}",
-        ),
+        item_id=memory_context_item_id(record),
         kind=f"memory:{record.kind.value}",
         content=content,
         source=ContextSourceRef(
@@ -139,6 +132,25 @@ def _record_to_context_item(
         created_at=record.created_at,
         expires_at=record.expires_at,
     )
+
+
+def memory_context_item_id(record: MemoryRecord) -> str:
+    """返回 MemoryRecord 在 ContextProjection 中使用的稳定、不含内容的 item ID。"""
+
+    if not isinstance(record, MemoryRecord):
+        raise TypeError("record must be MemoryRecord")
+    return stable_item_id(
+        source_kind=ContextSourceKind.MEMORY.value,
+        source_id=record.memory_id,
+        source_version=_memory_source_version(record),
+        kind=f"memory:{record.kind.value}",
+    )
+
+
+def _memory_source_version(record: MemoryRecord) -> str:
+    record_facts = record.model_dump(mode="json")
+    record_facts["tags"] = sorted(record.tags)
+    return canonical_hash(record_facts)
 
 
 def _validated_values(

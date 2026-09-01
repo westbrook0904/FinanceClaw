@@ -1,7 +1,7 @@
 # FinanceClaw Agent Foundation 一期实施说明书
 
 > **文档性质**：当前实施基线
-> **版本**：V1.2（Foundation F4b 完成状态）
+> **版本**：V1.3（Foundation F5 Gate 就绪状态）
 > **日期**：2026-09-01
 > **优先级**：低于已冻结的 Stage 1 / 2 / 3A / 3B 运行契约，高于旧 Stage 3C 高阶草案
 > **路线图**：`FinanceClaw-Agent-Foundation-一期路线图.md`
@@ -893,6 +893,23 @@ PlanPatch、Approval waiting、Async waiting 和分布式 lease 仍未开放。
 - 完成一次跨请求 Memory write → 新请求 read → ContextProjection 命中的真实场景；
 - 记录 groundedness、重复动作、memory hit、人工修正和错误分类；
 - 根据实际失败归因决定继续优化 Context/Memory，还是提出某个高阶 ADR。
+
+**实施状态：Gate 已就绪，真实调用证据待执行（2026-09-01）。** 已新增
+`OpenAIResponsesModelProvider`，按 Responses API `POST /responses` 映射 provider-neutral
+messages、`store=false`、strict `text.format=json_schema`、usage/refusal 与安全错误分类；API key
+只存在于 adapter 内存和 Authorization header，不进入 Descriptor、Trace、Result 或报告。
+
+真实财经场景由业务插件 `finance.portfolio-risk/v1` 承担：使用 Decimal 对调用方时点持仓计算
+净资产、日损益、持仓权重、集中度及日亏损限额，不访问行情网络、不提供投资建议，执行画像为
+`NONE + NONE + SYNC`。`financeclaw_real_use.gate` 会在同一次评测中执行 FAST、真实模型 PLAN、
+standalone EXPLORE，并先完成 Memory write，再在新 EXPLORE 请求中审计
+MemoryRecord → ContextUseRecord 命中及 Action 对风险偏好的实际应用。
+
+版本化报告记录各模式 status、groundedness、模型/Action Span 数、repeated action、memory hit、
+human correction 和错误分类，不保存 Prompt 或原始响应。默认 pytest 使用记录型 HTTP transport，
+报告强制标记 `live=false` / `gate_passed=false`；只有显式 `--live`、真实 API key/model 且报告
+`gate_passed=true` 的运行才能作为本步骤完成证据。当前环境未配置 `OPENAI_API_KEY`，所以 F5
+不标记为完成。
 
 ## 9. 一期验收
 
