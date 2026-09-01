@@ -831,6 +831,16 @@ system message，用户与数据文本不能自我提升。ROUTE/PLANNER Trace �
 - 接入 ContextAssembler；
 - 完成隔离、TTL、scope-checked get/delete、幂等 create、来源和 write-policy tests。
 
+**实施状态：已完成（2026-09-01）。** 已新增 Memory Contracts、Provider SPI、MemoryGateway、
+MemoryPolicy、Request evidence resolver，以及 InMemory / SQLite Provider。Gateway 只从可信
+InvocationContext 派生 tenant/subject，模型 Draft 不能携带 identity、namespace、sensitivity、
+retention 或持久化 ID；Proposal canonical hash、evidence、Secret、TTL 和硬字节上限均在 Provider
+outbound 前验证。get/delete 先加载记录再进行 scope/namespace 与 PRE_MEMORY Policy 检查；search
+由 Gateway 对 Provider 结果重新过滤、稳定排序、按 query.limit/128 KiB 裁剪并标记 truncated。
+`MemoryContextSource` 经 Gateway 获取 MemorySlice，只生成 DATA tier ContextItem，Router/Planner
+仍只消费 Projection。默认装配不配置 MemoryProvider，FAST/PLAN 保持可用；SQLite 跨实例持久化、
+隔离、删除、TTL、幂等/冲突、Policy、大小边界和跨请求 Context 命中均已有测试。
+
 ### Step F4a — Minimal Explore Contracts
 
 - 只实现本说明书 6.1–6.4 的最小集合；

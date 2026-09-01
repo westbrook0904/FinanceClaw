@@ -2,7 +2,7 @@
 
 > **文档性质**：阶段实施设计 / Architecture Decision Baseline  
 > **阶段名称**：Stage 3 — Adaptive Multi-Provider & Agentic Orchestration  
-> **版本**：V1.3（Foundation F2 完成状态）
+> **版本**：V1.4（Foundation F3 完成状态）
 > **日期**：2026-09-01
 > **前置基线**：Stage 1 Minimal Harness + Stage 2 Reliable Plan Execution Engine  
 > **依据文档**：`.design/Harness-Agent_通用可插拔智能体平台架构设计_修订版.md`、`.design/第一阶段.md`、`.design/FinanceClaw-第二阶段说明书.md`
@@ -19,8 +19,7 @@
 |---|---|---|
 | Stage 3A — Provider Fabric | 已完成 | Registry 1:N、Selection/Minimal Health、Retry/Fallback、Provider-safe Resume、ModelGateway、Observability |
 | Stage 3B — Routing & Planning | 已完成 | ExecutionMode、handle、Rule/LLM Router、PRE_ROUTE、Static/Hybrid/LLM Planner、bounded repair、Acceptance Gate |
-| Agent Foundation F0–F2 | 已完成 | Plan identity、Strict Output、Routing correctness 与统一 Context Engineering |
-| Agent Foundation F3 | 待实施 | MemoryProvider/Gateway、InMemory/SQLite、Policy 与 Context 接入 |
+| Agent Foundation F0–F3 | 已完成 | Plan identity、Strict Output、Routing correctness、统一 Context Engineering 与受治理 Memory |
 | Agent Foundation F4–F5 | 待实施 | 再实现最小 standalone EXPLORE，并进入真实业务试用 Gate |
 | Post-Foundation Advanced | 设计储备 | HYBRID、PlanPatch、高阶预算、复杂恢复与大规模 Replay，待一期投产后重新 ADR |
 
@@ -145,7 +144,7 @@ Context Policy / provenance / deterministic trimming
 Router / Planner ContextProjection integration
 ```
 
-## Agent Foundation F3 — Memory
+## Agent Foundation F3 — Memory（已完成）
 
 ```text
 MemoryProvider
@@ -154,6 +153,12 @@ InMemory / SQLite MemoryProvider
 Memory read / write Policy
 MemorySlice → ContextAssembler integration
 ```
+
+当前实现由 `MemoryGateway` 绑定可信 tenant/subject，执行 namespace、evidence、sensitivity、TTL、
+canonical proposal hash、Policy 与硬大小边界；Provider 只保留 ID-only 存储 SPI。InMemory 与
+SQLite 均实现确定性检索和 create-only 幂等语义，`MemoryContextSource` 只把 Gateway 返回的有界
+MemorySlice 映射为 DATA tier ContextItem。默认 Bootstrap 不配置 MemoryProvider，既有 FAST/PLAN
+路径继续可用。
 
 Context 与 Memory 必须在 Explore 之前形成公共能力，不能作为 Explore 内部临时 Prompt 拼装逻辑。
 
@@ -1726,10 +1731,13 @@ Agent Foundation F2 — Context Engineering
   已完成 Context pipeline、Router/Planner Projection、稳定 hash 与安全裁剪
 
 Agent Foundation F3 — Memory
-  下一步完成 MemoryProvider / Gateway、InMemory / SQLite 与 Context 接入
+  已完成 MemoryProvider / Gateway、InMemory / SQLite、Policy 与 Context 接入
 
-Agent Foundation F4–F5 — Minimal Explore & Real-use Gate
-  再实施最小 standalone EXPLORE、安全 Action、基础次数限制与真实试用
+Agent Foundation F4a — Minimal Explore Contracts
+  下一步完成最小 Contract、node kind 互斥、profile snapshot 与 completion eligibility
+
+Agent Foundation F4b–F5 — Minimal Explore Loop & Real-use Gate
+  再实施 standalone EXPLORE、安全 Action、基础次数限制、恢复与真实试用
 
 Post-Foundation Advanced
   一期投产后根据真实问题重新评审 HYBRID、PlanPatch、高阶预算与 Replay

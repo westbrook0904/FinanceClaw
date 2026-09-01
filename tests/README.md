@@ -1,7 +1,7 @@
 # tests
 
 测试体系覆盖阶段一 Direct Invocation 兼容性、第二阶段 Reliable Plan Execution Engine、
-Stage 3A Provider Fabric、Stage 3B Routing & Planning，以及 Agent Foundation F0–F2。模块测试
+Stage 3A Provider Fabric、Stage 3B Routing & Planning，以及 Agent Foundation F0–F3。模块测试
 与源码模块同目录；顶层 `tests/stage2`、`tests/stage3a`、`tests/stage3b`、`tests/stage3c`
 分别提供跨模块仓库级阻断验收。
 
@@ -11,13 +11,14 @@ Stage 3A Provider Fabric、Stage 3B Routing & Planning，以及 Agent Foundation
 |---|---|---|
 | Contracts | `harness-contracts/tests` | Plan/State/Approval/Result 构造、冻结、校验和 JSON round-trip |
 | Context | `harness-context/tests` | 稳定 hash、Policy-before-Snapshot、trust/redaction、consumer projection 与 deterministic truncation |
+| Memory | `harness-memory/tests` | scope/namespace、TTL、Policy、大小、幂等冲突、InMemory/SQLite 与持久化 |
 | SPI | `harness-spi/tests` | Agent/Tool 语义分离和 Manifest 一致性 |
 | Registry | `harness-registry/tests` | 注册、过滤、唯一解析、所有权和只读 Catalog |
 | Selection | `harness-selection/tests` | Eligibility、Health 排序、拒绝原因和稳定 Selection |
 | Local Plugin | `harness-plugin-local/tests` | 发现、生命周期和事务回滚 |
 | Routing | `harness-routing/tests` | RoutingPipeline、未知字段补全、安全投影、Rule/LLM Router、Validator 与依赖边界 |
 | Planning | `harness-planning/tests` | DAG 校验、Static/Hybrid/LLM Planner、PlanDraft 与 bounded repair |
-| Policy | `harness-policy/tests` | PRE_CONTEXT/PRE_ROUTE/PRE_PLAN/PRE_EXECUTE、约束收紧、决策聚合与 Approval |
+| Policy | `harness-policy/tests` | Context/Memory/Route/Plan/Execute phase、约束收紧、决策聚合与 Approval |
 | Trace | `harness-trace/tests` | Span 生命周期、层级、续接和 Console 输出 |
 | Runtime | `harness-runtime/tests` | Direct Invocation、Invoker、timeout、取消和错误归一化 |
 | Model | `harness-model/tests` | Quality Selection、timeout、Retry/Fallback、structured output、usage 和 trace |
@@ -29,14 +30,14 @@ Stage 3A Provider Fabric、Stage 3B Routing & Planning，以及 Agent Foundation
 | Stage 2 acceptance | `tests/stage2` | E2E、fault injection、SQLite restart 与 fail-closed |
 | Stage 3A acceptance | `tests/stage3a` | Multi-provider E2E、WRITE safety、Provider restart、Model Fabric 与旧插件回归 |
 | Stage 3B acceptance | `tests/stage3b` | ExecutionMode、Rule/LLM Route、LLM Plan/Repair、Policy、Lifecycle/Resume 与全阶段兼容性 |
-| Foundation acceptance | `tests/stage3c` | F0–F1 前置验收；F2 由 Context、Router、Planner、Policy、Bootstrap 与 Stage 3B 回归共同阻断 |
+| Foundation acceptance | `tests/stage3c` | F0–F1 前置验收；F2–F3 由 Context、Memory、Router、Planner、Policy、Bootstrap 与 Stage 3B 回归共同阻断 |
 
 ## 运行完整回归
 
 ```bash
 .venv/bin/python -m pytest \
   harness-contracts/tests harness-spi/tests harness-registry/tests \
-  harness-context/tests \
+  harness-context/tests harness-memory/tests \
   harness-plugin-local/tests harness-selection/tests harness-routing/tests \
   harness-planning/tests \
   harness-policy/tests harness-model/tests \

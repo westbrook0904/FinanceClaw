@@ -2,6 +2,7 @@
 
 from .assembler import ContextAssembler
 from .canonical import canonical_hash, canonical_json, context_item_facts, stable_item_id
+from .memory import MemoryContextSource
 from .models import ContextBundle, ContextCollection
 from .pipeline import ContextPipeline
 from .policy import ContextPolicy
@@ -25,6 +26,7 @@ __all__ = [
     "ContextProjector",
     "ContextPrompt",
     "ContextSource",
+    "MemoryContextSource",
     "PromptBuilder",
     "RequestContextSource",
     "StaticContextEntry",

@@ -10,6 +10,10 @@ from harness_contracts import (
     ExecutionMode,
     InvocationContext,
     JsonValue,
+    MemoryQuery,
+    MemoryRecord,
+    MemorySubjectScope,
+    MemoryWriteProposal,
 )
 
 from .models import PolicyContext, PolicyDecision, PolicyEffect, PolicyPhase
@@ -111,6 +115,54 @@ class PolicyEngine:
                 phase=PolicyPhase.PRE_CONTEXT,
                 context_item=item,
                 context_consumer=consumer,
+            )
+        )
+
+    def evaluate_memory_read(
+        self,
+        invocation: InvocationContext,
+        scope: MemorySubjectScope,
+        *,
+        query: MemoryQuery | None = None,
+        record: MemoryRecord | None = None,
+    ) -> PolicyDecision:
+        return self.evaluate(
+            PolicyContext(
+                invocation=invocation,
+                phase=PolicyPhase.PRE_MEMORY_READ,
+                memory_scope=scope,
+                memory_query=query,
+                memory_record=record,
+            )
+        )
+
+    def evaluate_memory_write(
+        self,
+        invocation: InvocationContext,
+        scope: MemorySubjectScope,
+        proposal: MemoryWriteProposal,
+    ) -> PolicyDecision:
+        return self.evaluate(
+            PolicyContext(
+                invocation=invocation,
+                phase=PolicyPhase.PRE_MEMORY_WRITE,
+                memory_scope=scope,
+                memory_proposal=proposal,
+            )
+        )
+
+    def evaluate_memory_delete(
+        self,
+        invocation: InvocationContext,
+        scope: MemorySubjectScope,
+        record: MemoryRecord,
+    ) -> PolicyDecision:
+        return self.evaluate(
+            PolicyContext(
+                invocation=invocation,
+                phase=PolicyPhase.PRE_MEMORY_DELETE,
+                memory_scope=scope,
+                memory_record=record,
             )
         )
 

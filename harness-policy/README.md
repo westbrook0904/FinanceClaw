@@ -1,6 +1,6 @@
 # harness-policy
 
-`harness-policy` 在 Context、Route、Plan 和 Capability 四个受控边界运行独立策略链，产生结构化
+`harness-policy` 在 Context、Memory、Route、Plan 和 Capability 受控边界运行独立策略链，产生结构化
 `ALLOW`、`DENY` 或 `REQUIRE_APPROVAL` 决策。Policy 只做判断，不调用 Provider，
 也不自行等待人工审批。
 
@@ -9,12 +9,13 @@
 - `Policy.evaluate(PolicyContext) -> PolicyDecision`：同步扩展接口。
 - `Policy.phases`：声明策略参与的阶段；为兼容阶段一策略，默认仅
   `PRE_EXECUTE`。
-- `PolicyContext`：可信 InvocationContext，以及当前 ContextItem/consumer、Plan 或已解析
+- `PolicyContext`：可信 InvocationContext，以及当前 ContextItem/consumer、Memory scope/target、Plan 或已解析
   CapabilityDescriptor/ProviderDescriptor；PRE_ROUTE 携带请求模式，PRE_EXECUTE 可携带
   持久化 `ApprovalGrant`。
 - `PolicyDecision`：effect、策略名、原因和不可变 constraints。
 - `PolicyEngine`：按当前 phase 顺序执行并聚合决策。
-- `PolicyPhase`：`PRE_CONTEXT`、`PRE_ROUTE`、`PRE_PLAN`、`PRE_EXECUTE`。
+- `PolicyPhase`：`PRE_CONTEXT`、`PRE_MEMORY_READ/WRITE/DELETE`、`PRE_ROUTE`、`PRE_PLAN`、
+  `PRE_EXECUTE`。
 - `PolicyEffect`：`ALLOW`、`DENY`、`REQUIRE_APPROVAL`。
 - `RoutePolicyConstraintReducer`：对 allowed 集合取交集、planning 上限取较小值，并拒绝
   forced mode 冲突。
@@ -22,6 +23,8 @@
   `RoutePolicyConstraints`。
 - `PolicyEngine.evaluate_context(...)`：执行类型化 PRE_CONTEXT 链；`harness-context` 负责在
   Snapshot 前解释结果。
+- `PolicyEngine.evaluate_memory_read/write/delete(...)`：执行类型化 Memory 链；Memory target
+  必须与可信 scope 一致。
 
 PRE_ROUTE 只接受 `forced_mode`、`allowed_modes`、`allowed_capability_ids`、
 `allowed_planner_ids`、`max_plan_attempts` 和 `max_plan_nodes`；未知字段或非法值会
@@ -29,7 +32,7 @@ fail-closed。
 
 ## 内置策略
 
-- `AllowAllPolicy`：显式允许 PRE_CONTEXT、PRE_ROUTE、PRE_PLAN 和 PRE_EXECUTE，默认用于开发与组合测试。
+- `AllowAllPolicy`：显式允许 Context、Memory、Route、Plan 和 Execute 阶段，默认用于开发与组合测试。
 - `TenantPolicy`：校验 Request tenant 与 Runtime 注入的可信 TenantContext，支持
   必填和允许列表。
 - `CapabilityPermissionPolicy`：按 Capability ID 或 `*` 规则检查可信 Identity
@@ -60,6 +63,8 @@ PRE_PLAN/PRE_EXECUTE 的同名 constraint 以后出现的值为准。PRE_ROUTE �
 
 - PRE_CONTEXT DENY 只过滤当前 candidate；REQUIRE_APPROVAL 不具备可恢复等待点，由
   ContextPolicy fail-closed 为 `HARNESS.CONTEXT.POLICY_UNSUPPORTED`。
+- PRE_MEMORY query DENY 阻止检索，record DENY 可过滤结果；write/delete DENY 阻止 Provider
+  操作。Memory Approval 一期不建立等待点，统一 fail-closed。
 - PRE_ROUTE REQUIRE_APPROVAL 返回 `HARNESS.ROUTE.APPROVAL_NOT_SUPPORTED`，不创建无法恢复的
   Request-level waiting 状态。
 - PRE_ROUTE forced mode、allowed mode、Capability scope 和 Planner scope 在

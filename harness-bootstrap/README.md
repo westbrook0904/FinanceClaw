@@ -11,6 +11,7 @@ build_harness()
 │   └── RegistryCapabilityCatalog
 ├── PolicyEngine(AllowAllPolicy)
 ├── ContextPipeline(ContextPolicy，共用 PolicyEngine)
+├── 可选 MemoryGateway / MemoryProvider / MemoryContextSource
 ├── InMemoryTracer
 ├── DefaultInvocationContextFactory
 │   └── InvocationLifecycle
@@ -32,12 +33,13 @@ build_harness()
 ```
 
 `build_harness()` 只创建和连接对象，不发现或初始化插件，也不创建数据库文件。可注入
-Registry、PolicyEngine/Policies、ContextPipeline、Tracer、ProviderSelector、ContextFactory、CapabilityCatalog、
+Registry、PolicyEngine/Policies、ContextPipeline、MemoryProvider/Gateway/Namespaces、Tracer、ProviderSelector、ContextFactory、CapabilityCatalog、
 PlanValidator、StateStore、EventPublisher、Router、Planners、Default Planner、
 PlanIdentityFactory、RequestProjector 或 LocalPluginProvider。
 
 自定义组件必须共享一致边界，例如自定义 Catalog 与 PlanValidator.catalog 必须相同，
 自定义 ContextPipeline 与 Harness 必须使用同一个 PolicyEngine；
+自定义 MemoryGateway 也必须共享该 PolicyEngine，且自定义 ContextPipeline 必须包含同一 Gateway；
 `policies` 与 `policy_engine`、`plugins` 与 `plugin_provider` 不能同时配置。
 
 ## HarnessApplication API
@@ -48,6 +50,7 @@ PlanIdentityFactory、RequestProjector 或 LocalPluginProvider。
 - `invoke(request)`：Direct Invocation。
 - `model_gateway`：供现有 Router/Planner 与 Agent Foundation Minimal Explorer 使用的模型生成入口。
 - `context_pipeline`：Router/Planner 共用的 Context Engineering Pipeline。
+- `memory_provider` / `memory_gateway`：可选的长期 Memory 存储与唯一受治理访问边界。
 - `execute_plan(request, plan)`：advanced API；验证并执行带具体 identity 的 Plan，绕过 fresh
   materialization，重复 `plan_id` 明确冲突。
 - `resume_plan(plan_id)`：从 StateStore 恢复并继续相同 Plan。
@@ -134,7 +137,7 @@ result = await app.complete_async_node(
 
 ## Policy / Trace / Events
 
-默认 AllowAllPolicy 同时参与 PRE_CONTEXT/PRE_ROUTE/PRE_PLAN/PRE_EXECUTE。可配置
+默认 AllowAllPolicy 同时参与 Context/Memory/Route/Plan/Execute。可配置
 `RequireApprovalPolicy`；批准后的节点携带结构化 ApprovalGrant 再次经过 PRE_EXECUTE。
 
 默认 InMemoryEventBus 不产生磁盘或网络副作用，并可通过

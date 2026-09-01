@@ -7,8 +7,8 @@ Selection、Retry/Fallback、Provider-safe Checkpoint/Resume、ModelGateway，�
 继续保持兼容。
 
 Stage 3C 的 Plan Identity、Strict Structured Output、Agent Foundation F1 Routing
-correctness 与 F2 Context Engineering 已实现。当前路线已调整为 Agent Foundation 优先：
-下一步实现 Memory Foundation，随后完成最小 standalone EXPLORE，并在
+correctness、F2 Context Engineering 与 F3 Memory 已实现。当前路线已调整为 Agent Foundation
+优先：下一步完成 Minimal Explore Contracts，随后实现最小 standalone EXPLORE，并在
 真实业务中验证；`HYBRID`、PlanPatch 和高阶资源预算延后。当前 `EXPLORE` / `HYBRID` 仍按
 Stage 3B 语义 fail-closed。当前优先级见
 `.design/FinanceClaw-Agent-Foundation-一期路线图.md`，当前 Context、Memory 与 Minimal Explore
@@ -75,15 +75,16 @@ GenerateResult + Usage + Provider Identity + Trace / Events
 
 | 模块 | 职责 |
 |---|---|
-| `harness-contracts` | Request、Plan、Context、状态、审批、Continuation、Result、能力执行画像与持久化协议 |
+| `harness-contracts` | Request、Plan、Context、Memory、状态、审批、Continuation、Result 与执行画像协议 |
 | `harness-context` | ContextSource、Assembler、PRE_CONTEXT Policy、Snapshot、Projection 与安全 Prompt Builder |
+| `harness-memory` | MemoryProvider/Gateway、InMemory/SQLite、Policy、scope/namespace、TTL 与有界检索 |
 | `harness-spi` | 业务无关的 Agent、Tool、Plugin 扩展接口 |
 | `harness-registry` | 单 Capability 多 Provider 注册/解析，以及不暴露 Provider instance 的只读 Catalog |
 | `harness-routing` | deterministic-first RoutingPipeline、安全 Request 投影、Rule/LLM Router 与决策校验 |
 | `harness-selection` | Eligibility、最小 Health 和确定性 Priority Selection |
 | `harness-plugin-local` | 本地集合/entry point 发现、插件生命周期和事务回滚 |
 | `harness-planning` | Planner SPI/Registry、Static/Hybrid/LLM 策略、PlanTemplate/Materializer、PlanDraft 及可执行性校验 |
-| `harness-policy` | `PRE_CONTEXT` / `PRE_ROUTE` / `PRE_PLAN` / `PRE_EXECUTE` 策略链与类型化约束 |
+| `harness-policy` | Context / Memory / Route / Plan / Execute 的类型化策略链与约束 |
 | `harness-runtime` | Direct Invocation 与 Plan 共用的受控 Capability 调用边界 |
 | `harness-model` | 模型原生协议、strict structured output、两阶段 reservation、ModelGateway 与确定性 Mock Models |
 | `harness-execution` | DAG 调度、重试、取消、Checkpoint/Resume、Approval、Async completion 和结果组合 |
@@ -95,7 +96,7 @@ GenerateResult + Usage + Provider Identity + Trace / Events
 | `tests/stage2` | 第二阶段端到端、故障注入与跨进程恢复验收 |
 | `tests/stage3a` | Provider Fabric、WRITE safety、Provider Resume 与 ModelGateway 阻断验收 |
 | `tests/stage3b` | ExecutionMode、Rule/LLM Route、LLM Plan/Repair、Policy、Lifecycle 与回归 Gate |
-| `tests/stage3c` | Agent Foundation 前置验收；F0–F2 由其与 Context/Router/Planner/Bootstrap 回归共同阻断 |
+| `tests/stage3c` | Agent Foundation 前置验收；F0–F3 由其与 Context/Memory/Router/Planner/Policy/Bootstrap 回归共同阻断 |
 
 ## Direct Invocation
 
@@ -173,7 +174,7 @@ Planner 输出视为 candidate，经 `PlannerOutputNormalizer -> PlanMaterialize
 ```bash
 .venv/bin/python -m pytest \
   harness-contracts/tests harness-spi/tests harness-registry/tests \
-  harness-context/tests \
+  harness-context/tests harness-memory/tests \
   harness-plugin-local/tests harness-selection/tests harness-routing/tests \
   harness-planning/tests \
   harness-policy/tests harness-model/tests \
@@ -208,6 +209,9 @@ Planner 输出视为 candidate，经 `PlannerOutputNormalizer -> PlanMaterialize
 - 模型生成只通过 `ModelGateway`；它复用 Provider Fabric，但不经过
   `CapabilityInvoker`，也不作为 DAG Agent/Tool 节点直接执行。
 - StateStore 是恢复事实来源；Execution Events 是 best-effort 观察面，不替代 Checkpoint。
+- MemoryProvider 只保存获准跨请求复用的事实，不保存执行状态；公开读写必须经过
+  MemoryGateway 的可信 scope、namespace、evidence、Policy、TTL 与大小治理。Router/Planner
+  只从 ContextProjection 消费 DATA tier Memory，不直接查询 Provider。
 - Registry 支持单 Capability 多 Provider，并通过最小 Health-aware PrioritySelector 选择；
   Provider Pin 外部入口、Weighted Canary 和 Passive Health 暂缓。
 - `handle()` 分派经过独立校验的 FAST / PLAN Decision。Router 产出经验证的

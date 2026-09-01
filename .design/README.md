@@ -12,8 +12,9 @@
 | `FinanceClaw-第三阶段说明书.md` | 第三阶段上位架构与阶段边界 | **按一期路线图修订后有效** |
 | `FinanceClaw-第三阶段待讨论ADR.md` | 已决议与延期项摘要 | **当前 ADR 摘要** |
 
-当前进度：Foundation 0 前置收口、Foundation 1 Routing correctness 与 Foundation 2 Context
-Engineering 已完成；下一推荐步骤为 Foundation 3 Memory。
+当前进度：Foundation 0 前置收口、Foundation 1 Routing correctness、Foundation 2 Context
+Engineering 与 Foundation 3 Memory 已完成；下一推荐步骤为 Foundation 4a Minimal Explore
+Contracts。
 
 ## 已完成阶段的历史实施基线
 

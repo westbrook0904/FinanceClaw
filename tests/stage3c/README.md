@@ -37,4 +37,14 @@ Foundation F1 Routing correctness 的 Gate 分布在 `harness-routing/tests`、
 - Prompt 不携带 requested/effective mode，也不投影 Capability metadata；
 - LLMRouter 与 LLMPlanner 共用 StructuredGenerationAdapter。
 
+Foundation F2 Context Engineering 与 F3 Memory 的 Gate 分布在 `harness-context/tests`、
+`harness-memory/tests`、`harness-contracts/tests`、`harness-policy/tests` 与
+`harness-bootstrap/tests`：
+
+- Memory Draft 拒绝可信身份、namespace、sensitivity、retention 与存储 ID；
+- Gateway 强制 trusted scope、namespace、evidence、Policy、TTL 和硬大小边界；
+- InMemory/SQLite 均验证确定性检索、create-only 幂等/冲突、删除与跨实例持久化；
+- 跨请求 write→read 命中 ContextProjection，Memory 指令文本保持 DATA tier；
+- 缺少 MemoryProvider 时默认 FAST/PLAN Context 组装不回归。
+
 测试只使用本地确定性 Provider、内存 StateStore，不访问网络。

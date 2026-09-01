@@ -1,4 +1,4 @@
-"""Harness 的 PRE_CONTEXT / PRE_ROUTE / PRE_PLAN / PRE_EXECUTE 治理边界。"""
+"""Harness 的 Context / Memory / Route / Plan / Execute 治理边界。"""
 
 from harness_routing import RoutePolicyConstraints
 

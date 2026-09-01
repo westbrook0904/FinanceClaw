@@ -17,6 +17,7 @@ from harness_contracts import (
 )
 from harness_events import EventPublisher
 from harness_execution import BasicScheduler, ExecutionEngine
+from harness_memory import MemoryGateway, MemoryProvider
 from harness_model import ModelGateway
 from harness_planning import (
     PlanMaterializer,
@@ -60,6 +61,8 @@ class HarnessComponents:
     registry: CapabilityRegistry
     policy_engine: PolicyEngine
     context_pipeline: ContextPipeline
+    memory_provider: MemoryProvider | None
+    memory_gateway: MemoryGateway | None
     tracer: Tracer
     provider_selector: ProviderSelector
     plugin_loader: LocalPluginLoader
@@ -152,6 +155,14 @@ class HarnessApplication:
     @property
     def context_pipeline(self) -> ContextPipeline:
         return self._components.context_pipeline
+
+    @property
+    def memory_provider(self) -> MemoryProvider | None:
+        return self._components.memory_provider
+
+    @property
+    def memory_gateway(self) -> MemoryGateway | None:
+        return self._components.memory_gateway
 
     @property
     def tracer(self) -> Tracer:

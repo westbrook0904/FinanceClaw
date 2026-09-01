@@ -4,9 +4,16 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from harness_context import ContextPipeline, ContextPolicy
+from harness_context import (
+    CapabilityCatalogContextSource,
+    ContextPipeline,
+    ContextPolicy,
+    MemoryContextSource,
+    RequestContextSource,
+)
 from harness_events import EventPublisher, InMemoryEventBus
 from harness_execution import BasicScheduler, ExecutionEngine
+from harness_memory import MemoryGateway, MemoryPolicy, MemoryProvider
 from harness_model import ModelGateway
 from harness_planning import (
     PlanIdentityFactory,
@@ -54,6 +61,9 @@ def build_harness(
     registry: CapabilityRegistry | None = None,
     policy_engine: PolicyEngine | None = None,
     context_pipeline: ContextPipeline | None = None,
+    memory_provider: MemoryProvider | None = None,
+    memory_gateway: MemoryGateway | None = None,
+    memory_namespaces: Iterable[str] = (),
     tracer: Tracer | None = None,
     provider_selector: ProviderSelector | None = None,
     context_factory: InvocationContextFactory | None = None,
@@ -84,6 +94,13 @@ def build_harness(
         raise ValueError("policies and policy_engine cannot be configured together")
     if context_pipeline is not None and not isinstance(context_pipeline, ContextPipeline):
         raise TypeError("context_pipeline must be ContextPipeline")
+    if memory_provider is not None and not isinstance(memory_provider, MemoryProvider):
+        raise TypeError("memory_provider must implement MemoryProvider")
+    if memory_gateway is not None and not isinstance(memory_gateway, MemoryGateway):
+        raise TypeError("memory_gateway must be MemoryGateway")
+    if memory_provider is not None and memory_gateway is not None:
+        raise ValueError("memory_provider and memory_gateway cannot be configured together")
+    configured_memory_namespaces = _memory_namespaces(memory_namespaces)
     if provider_selector is not None and not isinstance(provider_selector, ProviderSelector):
         raise TypeError("provider_selector must implement ProviderSelector")
     if capability_catalog is not None and not isinstance(capability_catalog, CapabilityCatalog):
@@ -116,11 +133,49 @@ def build_harness(
         if policy_engine is not None
         else PolicyEngine(tuple(policies) if policies is not None else (AllowAllPolicy(),))
     )
-    effective_context_pipeline = (
-        context_pipeline
-        if context_pipeline is not None
-        else ContextPipeline(ContextPolicy(effective_policy_engine))
-    )
+    if memory_provider is not None:
+        if not configured_memory_namespaces:
+            raise ValueError("memory_namespaces are required with memory_provider")
+        effective_memory_gateway = MemoryGateway(
+            memory_provider,
+            MemoryPolicy(effective_policy_engine),
+            allowed_namespaces=configured_memory_namespaces,
+        )
+    else:
+        effective_memory_gateway = memory_gateway
+    if effective_memory_gateway is None:
+        if configured_memory_namespaces:
+            raise ValueError("memory_namespaces require memory_provider or memory_gateway")
+        memory_context_namespaces = frozenset()
+    else:
+        if effective_memory_gateway.policy.policy_engine is not effective_policy_engine:
+            raise ValueError("memory_gateway and harness must use the same policy_engine")
+        memory_context_namespaces = (
+            configured_memory_namespaces or effective_memory_gateway.allowed_namespaces
+        )
+        if not memory_context_namespaces.issubset(effective_memory_gateway.allowed_namespaces):
+            raise ValueError("memory_namespaces must be allowed by memory_gateway")
+
+    if context_pipeline is None:
+        context_sources = [RequestContextSource(), CapabilityCatalogContextSource()]
+        if effective_memory_gateway is not None:
+            context_sources.append(
+                MemoryContextSource(
+                    effective_memory_gateway,
+                    namespaces=memory_context_namespaces,
+                )
+            )
+        effective_context_pipeline = ContextPipeline(
+            ContextPolicy(effective_policy_engine),
+            sources=context_sources,
+        )
+    else:
+        effective_context_pipeline = context_pipeline
+        if effective_memory_gateway is not None and not any(
+            isinstance(source, MemoryContextSource) and source.gateway is effective_memory_gateway
+            for source in context_pipeline.sources
+        ):
+            raise ValueError("custom context_pipeline must include the configured memory_gateway")
     if effective_context_pipeline.policy.policy_engine is not effective_policy_engine:
         raise ValueError("context_pipeline and harness must use the same policy_engine")
     effective_tracer = tracer if tracer is not None else InMemoryTracer()
@@ -228,6 +283,10 @@ def build_harness(
             registry=effective_registry,
             policy_engine=effective_policy_engine,
             context_pipeline=effective_context_pipeline,
+            memory_provider=(
+                effective_memory_gateway.provider if effective_memory_gateway is not None else None
+            ),
+            memory_gateway=effective_memory_gateway,
             tracer=effective_tracer,
             provider_selector=effective_provider_selector,
             plugin_loader=plugin_loader,
@@ -251,3 +310,15 @@ def build_harness(
             plan_materializer=plan_materializer,
         )
     )
+
+
+def _memory_namespaces(values: Iterable[str]) -> frozenset[str]:
+    if isinstance(values, str):
+        raise TypeError("memory_namespaces must be an iterable of strings")
+    namespaces = frozenset(values)
+    if any(
+        not isinstance(value, str) or not value.strip() or value != value.strip()
+        for value in namespaces
+    ):
+        raise TypeError("memory_namespaces must contain non-empty trimmed strings")
+    return namespaces

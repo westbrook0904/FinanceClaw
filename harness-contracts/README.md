@@ -8,6 +8,8 @@ RouteDecision 协议；Stage 3C Step 2 下沉 provider-neutral 模型 usage 遥�
 output 与 generation reservation/receipt 契约，避免 `harness-contracts` 反向依赖模型实现层。
 Agent Foundation F2 新增 `ContextItem`、`ContextSnapshot`、`ContextProjection`、
 `ContextUseRecord` 及固定来源、信任、敏感级别与 omission reason 枚举。
+Agent Foundation F3 新增 `MemorySubjectScope`、`MemoryRecord/Query/Slice`、模型安全的
+`MemoryWriteDraft`、可信 `MemoryWriteProposal` 及 Memory 错误分类。
 
 Agent Foundation 重基线将未发布的 `NormalizedCost*`、token/cost reservation 上界与相关
 ModelAttemptPolicy 字段作为 pre-release corrective break 删除；仓库没有旧 reservation 的生产
@@ -24,6 +26,7 @@ ModelAttemptPolicy 字段作为 pre-release corrective break 删除；仓库没�
 | 持久化 | `PlanExecutionRecord`，包含 Plan、可恢复 Context 和完整 State |
 | 调用上下文 | `InvocationContext`、Identity、Tenant、Trace、Cancellation Context |
 | 模型 Context | `ContextItem`、`ContextSnapshot`、`ContextProjection`、`ContextUseRecord`、`ContextProjectionLimits` |
+| 长期 Memory | `MemorySubjectScope`、`MemoryRecord`、`MemoryQuery`、`MemorySlice`、`MemoryWriteDraft/Proposal` |
 | 能力 | `CapabilityDescriptor`、`CapabilityType`、`CapabilityExecutionProfile` |
 | Provider Fabric | `ProviderDescriptor`、`ProviderHealthSnapshot`、`ProviderAttempt`、`ProviderPin`、Selection 契约 |
 | 模型生成 | `StructuredOutputSpec`、`ModelProviderFeatures`、`ModelUsage`、`ModelGenerationAccounting`、`ModelGenerationReservation`、`ModelReservationReceipt` |
@@ -98,6 +101,8 @@ execution 内的 Plan 定义版本，fresh execution 从 1 开始。未来 Workf
 - Request 中的 `user_id`、`tenant_id` 不能直接视为可信 Identity/Tenant。
 - Context hash 使用 64 位小写 SHA-256；时间必须含时区，Projection included/omitted item ID
   必须唯一且互斥。
+- Memory hash 使用 64 位小写 SHA-256；Record 是 create-only，Proposal provenance/evidence 必须
+  一致，Draft 不含可信身份或存储控制字段。
 - Capability 执行画像用 `side_effect`、`egress`、`idempotency` 支持重试、
   恢复与审批判断。
 - `CapabilityType.MODEL` 只表达 Registry 中的稳定模型能力语义；模型原生生成协议位于

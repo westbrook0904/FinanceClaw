@@ -58,7 +58,7 @@ class ContextSourceRef(ContractModel):
 
 class ContextProvenance(ContractModel):
     producer: NonEmptyString
-    evidence_refs: tuple[NonEmptyString, ...] = Field(default_factory=tuple, max_length=16)
+    evidence_refs: tuple[NonEmptyString, ...] = Field(default_factory=tuple, max_length=32)
 
 
 class ContextFreshness(ContractModel):

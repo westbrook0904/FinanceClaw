@@ -18,6 +18,9 @@ class AllowAllPolicy(Policy):
         return frozenset(
             {
                 PolicyPhase.PRE_CONTEXT,
+                PolicyPhase.PRE_MEMORY_READ,
+                PolicyPhase.PRE_MEMORY_WRITE,
+                PolicyPhase.PRE_MEMORY_DELETE,
                 PolicyPhase.PRE_ROUTE,
                 PolicyPhase.PRE_PLAN,
                 PolicyPhase.PRE_EXECUTE,
@@ -45,6 +48,9 @@ class TenantPolicy(Policy):
         return frozenset(
             {
                 PolicyPhase.PRE_CONTEXT,
+                PolicyPhase.PRE_MEMORY_READ,
+                PolicyPhase.PRE_MEMORY_WRITE,
+                PolicyPhase.PRE_MEMORY_DELETE,
                 PolicyPhase.PRE_ROUTE,
                 PolicyPhase.PRE_PLAN,
                 PolicyPhase.PRE_EXECUTE,

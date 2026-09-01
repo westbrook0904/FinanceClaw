@@ -281,13 +281,22 @@ Snapshot 前移除，PRE_CONTEXT REQUIRE_APPROVAL fail-closed。Snapshot/Project
 随机运行身份与收集时间，Trace 只保存 hash、included/omitted 数量和有界 use record。稳定性、
 注入隔离、redaction、确定性裁剪与全仓回归均已覆盖。
 
-### Foundation 3 — Memory
+### Foundation 3 — Memory（已完成，2026-09-01）
 
 - Memory Contracts / SPI / Gateway；
 - InMemory 与 SQLite 实现；
 - read / write Policy；
 - ContextAssembler 接入 MemorySlice；
 - namespace、retention、delete tests。
+
+完成证据：新增 Memory Contracts 与 `harness-memory`；`MemoryGateway` 从可信
+`InvocationContext` 绑定 tenant/subject，统一执行 namespace、evidence、sensitivity、TTL、
+32 KiB record/proposal 与 128 KiB slice 上限，并在 `PRE_MEMORY_READ/WRITE/DELETE` 复用同一
+PolicyEngine。InMemory/SQLite Provider 均实现 create-only、稳定 filter/tag/text search、同
+proposal identity/hash 幂等和 hash 冲突；get/delete 先加载记录再校验 scope。可选
+`MemoryContextSource` 只把受裁剪 MemorySlice 映射为 DATA tier ContextItem；未配置 Provider 时
+默认 FAST/PLAN 不增加依赖。隔离、持久化、删除、过期、Policy、注入隔离与跨请求
+write→read→ContextProjection 已通过全仓回归。
 
 ### Foundation 4 — Minimal Explore
 
