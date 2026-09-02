@@ -2,8 +2,8 @@
   "$schema": "https://langgra.ph/schema.json",
   "dependencies": ["."],
   "graphs": {
-    "finance_agent": "./financeclaw/graphs/finance_agent.py:make_finance_agent",
-    "direct_tool": "./financeclaw/graphs/finance_agent.py:make_direct_tool_graph"
+    "finance_agent": "./financeclaw/graphs/server_graphs.py:finance_agent",
+    "direct_tool": "./financeclaw/graphs/server_graphs.py:direct_tool"
   },
   "env": ".env",
   "python_version": "3.13"

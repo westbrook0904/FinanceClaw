@@ -15,8 +15,8 @@ MemoryProvider.put_if_absent
 MemoryQuery
   ↓ MemoryGateway：trusted scope / namespace / PRE_MEMORY_READ / stable trim
 MemorySlice
-  ↓ MemoryContextSource
-DATA tier ContextItem → ContextSnapshot / ContextProjection
+  ↓ Stage 3 Model Context 选择器（待接入）
+稳定 Memory Slice → 每次模型调用的 ContextManifest
 ```
 
 - `MemoryProvider`：ID-only 存储 SPI，提供 get/search/put_if_absent/delete；不是公开授权入口。
@@ -31,7 +31,7 @@ DATA tier ContextItem → ContextSnapshot / ContextProjection
 
 - 模型 Draft 不能设置 tenant、subject、namespace、sensitivity、retention、proposal hash 或
   memory ID；未知字段由契约拒绝。
-- 默认只解析当前 `request:<request_id>` evidence；F4 可注入 completed Observation/Result
+- 默认只解析当前 `request:<request_id>` evidence；Stage 3 可注入持久化结果 evidence
   resolver，但不能接受任意字符串引用。
 - 单条 Proposal/Record 默认最多 32 KiB，单次 MemorySlice 默认最多 128 KiB；配置只能收紧。
 - `proposal_id` 在 tenant/subject/namespace 内形成确定性 memory identity；相同 canonical hash

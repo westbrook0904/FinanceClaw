@@ -13,6 +13,8 @@ build/
 .env.*
 !.env.stage0.example
 !.env.stage1.example
+!.env.stage2.example
 .langgraph_api/
+.financeclaw/
 .idea/
 .real-use/

@@ -5,8 +5,6 @@ from __future__ import annotations
 from enum import StrEnum
 
 from harness_contracts import (
-    ContextConsumer,
-    ContextItem,
     ContractModel,
     InvocationContext,
     MemoryQuery,
@@ -21,7 +19,6 @@ from pydantic import Field, model_validator
 class PolicyPhase(StrEnum):
     """FinanceClaw 自己负责的治理边界。"""
 
-    PRE_CONTEXT = "pre_context"
     PRE_MEMORY_READ = "pre_memory_read"
     PRE_MEMORY_WRITE = "pre_memory_write"
     PRE_MEMORY_DELETE = "pre_memory_delete"
@@ -35,9 +32,7 @@ class PolicyEffect(StrEnum):
 
 class PolicyContext(ContractModel):
     invocation: InvocationContext
-    phase: PolicyPhase = PolicyPhase.PRE_CONTEXT
-    context_item: ContextItem | None = None
-    context_consumer: ContextConsumer | None = None
+    phase: PolicyPhase
     memory_scope: MemorySubjectScope | None = None
     memory_query: MemoryQuery | None = None
     memory_record: MemoryRecord | None = None
@@ -45,46 +40,11 @@ class PolicyContext(ContractModel):
 
     @model_validator(mode="after")
     def validate_phase_payload(self) -> PolicyContext:
-        memory_phases = {
-            PolicyPhase.PRE_MEMORY_READ,
-            PolicyPhase.PRE_MEMORY_WRITE,
-            PolicyPhase.PRE_MEMORY_DELETE,
-        }
-        if self.phase in memory_phases:
-            return self._validate_memory_payload()
-
-        if any(
-            value is not None
-            for value in (
-                self.memory_scope,
-                self.memory_query,
-                self.memory_record,
-                self.memory_proposal,
-            )
-        ):
-            raise ValueError("memory fields are only valid for pre_memory phases")
-
-        if self.phase is PolicyPhase.PRE_CONTEXT:
-            if self.context_item is None or self.context_consumer is None:
-                raise ValueError(
-                    "pre_context policy context requires context_item and context_consumer"
-                )
-            return self
-
-        raise ValueError("unsupported retained policy phase")
+        return self._validate_memory_payload()
 
     def _validate_memory_payload(self) -> PolicyContext:
         if self.memory_scope is None:
             raise ValueError("pre_memory policy context requires memory_scope")
-        if any(
-            value is not None
-            for value in (
-                self.context_item,
-                self.context_consumer,
-            )
-        ):
-            raise ValueError("pre_memory policy context forbids non-memory fields")
-
         if self.phase is PolicyPhase.PRE_MEMORY_READ:
             if (self.memory_query is None) == (self.memory_record is None):
                 raise ValueError("pre_memory_read requires exactly one query or record")

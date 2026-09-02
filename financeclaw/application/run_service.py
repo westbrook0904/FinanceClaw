@@ -102,7 +102,7 @@ class RunService:
         fingerprint: str,
     ) -> RunRecord:
         run_id = f"run-{uuid4().hex}"
-        thread_id = f"thread-{uuid4().hex}"
+        thread_id = str(uuid4())
         context = ExecutionContext(
             tenant_id=tenant_id,
             subject_id=subject_id,
@@ -117,6 +117,7 @@ class RunService:
             "target_id": target.target_id,
             "target_version": target.target_version,
         }
+        metadata["application_run_id"] = metadata.pop("run_id")
         await self.client.create_thread(thread_id)
         server_run = await self.client.create_run(
             thread_id=thread_id,
@@ -182,7 +183,15 @@ class RunService:
             assistant_id=record.assistant_id,
             command={"resume": {"decisions": [mapped]}},
             context=record.context.model_dump(mode="json"),
-            metadata={**record.context.trace_metadata(), "stage": "1"},
+            metadata={
+                **{
+                    key: value
+                    for key, value in record.context.trace_metadata().items()
+                    if key != "run_id"
+                },
+                "application_run_id": record.context.run_id,
+                "stage": "1",
+            },
         )
         interrupted = bool(result.get("__interrupt__"))
         status = "interrupted" if interrupted else "completed"
@@ -215,6 +224,9 @@ class RunService:
         if record is None or record.tenant_id != tenant_id or record.subject_id != subject_id:
             raise RunNotFound("run was not found for authenticated owner")
         return record
+
+    def assert_owned(self, run_id: str, *, tenant_id: str, subject_id: str) -> None:
+        self._owned_record(run_id, tenant_id=tenant_id, subject_id=subject_id)
 
     @staticmethod
     def _accepted(record: RunRecord, *, replay: bool) -> RunAccepted:

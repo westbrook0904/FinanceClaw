@@ -15,8 +15,10 @@ from langchain.agents.middleware import (
 from langchain_core.language_models.chat_models import BaseChatModel
 from langgraph.checkpoint.memory import InMemorySaver
 
+from financeclaw.artifacts import ArtifactService, ToolResultArtifactMiddleware
 from financeclaw.audit import AuditRepository
 from financeclaw.contracts import ExecutionContext
+from financeclaw.conversation import ConversationContextBuilder, ConversationRepository
 from financeclaw.models import ModelFactory
 from financeclaw.tools import (
     ApprovalMode,
@@ -27,6 +29,7 @@ from financeclaw.tools import (
     TransientToolError,
 )
 
+from .context_middleware import ConversationContextMiddleware
 from .middleware import ContextTraceMiddleware, FullIODebugMiddleware, ToolGovernanceMiddleware
 from .profiles import AgentProfile
 
@@ -43,6 +46,9 @@ class AgentFactory:
         audit: AuditRepository,
         debug_full_io: bool,
         model_max_retries: int = 2,
+        context_builder: ConversationContextBuilder | None = None,
+        conversation_repository: ConversationRepository | None = None,
+        artifact_service: ArtifactService | None = None,
     ) -> None:
         self.model_factory = model_factory
         self.tool_catalog = tool_catalog
@@ -50,6 +56,9 @@ class AgentFactory:
         self.audit = audit
         self.debug_full_io = debug_full_io
         self.model_max_retries = model_max_retries
+        self.context_builder = context_builder
+        self.conversation_repository = conversation_repository
+        self.artifact_service = artifact_service
 
     def build(
         self,
@@ -121,6 +130,24 @@ class AgentFactory:
                     self.audit,
                     allowed_keys=allowed_keys,
                 ),
+            ]
+        )
+        if self.artifact_service is not None:
+            middleware.append(ToolResultArtifactMiddleware(self.artifact_service))
+        if self.context_builder is not None and self.conversation_repository is not None:
+            middleware.append(
+                ConversationContextMiddleware(
+                    builder=self.context_builder,
+                    repository=self.conversation_repository,
+                    tool_catalog=self.tool_catalog,
+                    agent_profile_version=profile.version,
+                    model_profile_version=model_profile.version,
+                    prompt_template_version="finance-agent-system/1.0.0",
+                    debug_full_io=self.debug_full_io,
+                )
+            )
+        middleware.extend(
+            [
                 ContextTraceMiddleware(),
                 FullIODebugMiddleware(enabled=self.debug_full_io),
             ]

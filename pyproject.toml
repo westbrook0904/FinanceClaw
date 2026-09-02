@@ -9,6 +9,7 @@ description = "A financial agent platform built on LangChain and LangGraph."
 readme = "README.md"
 requires-python = ">=3.13,<3.14"
 dependencies = [
+    "alembic>=1.17,<2",
     "fastapi>=0.141,<1",
     "httpx>=0.28,<1",
     "langchain>=1.3.16,<2",
@@ -23,6 +24,7 @@ dependencies = [
     "psycopg[binary,pool]>=3.2,<4",
     "pydantic-settings>=2.10,<3",
     "redis>=6,<8",
+    "sqlalchemy>=2.0,<3",
     "uvicorn>=0.52,<1",
 ]
 
@@ -54,14 +56,15 @@ packages = [
     "financeclaw.agents",
     "financeclaw.api",
     "financeclaw.application",
+    "financeclaw.artifacts",
     "financeclaw.audit",
+    "financeclaw.conversation",
     "financeclaw.contracts",
     "financeclaw.graphs",
     "financeclaw.infrastructure",
     "financeclaw.models",
     "financeclaw.tools",
     "harness_contracts",
-    "harness_context",
     "harness_events",
     "harness_memory",
     "harness_policy",
@@ -73,23 +76,28 @@ financeclaw = "financeclaw"
 "financeclaw.agents" = "financeclaw/agents"
 "financeclaw.api" = "financeclaw/api"
 "financeclaw.application" = "financeclaw/application"
+"financeclaw.artifacts" = "financeclaw/artifacts"
 "financeclaw.audit" = "financeclaw/audit"
+"financeclaw.conversation" = "financeclaw/conversation"
 "financeclaw.contracts" = "financeclaw/contracts"
 "financeclaw.graphs" = "financeclaw/graphs"
 "financeclaw.infrastructure" = "financeclaw/infrastructure"
 "financeclaw.models" = "financeclaw/models"
 "financeclaw.tools" = "financeclaw/tools"
 harness_contracts = "harness-contracts/src/harness_contracts"
-harness_context = "harness-context/src/harness_context"
 harness_events = "harness-events/src/harness_events"
 harness_memory = "harness-memory/src/harness_memory"
 harness_policy = "harness-policy/src/harness_policy"
 harness_trace = "harness-trace/src/harness_trace"
 
 [tool.setuptools.package-data]
-financeclaw = ["py.typed"]
+financeclaw = [
+    "py.typed",
+    "infrastructure/migrations/*.py",
+    "infrastructure/migrations/*.mako",
+    "infrastructure/migrations/versions/*.py",
+]
 harness_contracts = ["py.typed"]
-harness_context = ["py.typed"]
 harness_events = ["py.typed"]
 harness_memory = ["py.typed"]
 harness_policy = ["py.typed"]

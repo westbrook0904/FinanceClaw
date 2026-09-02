@@ -1,4 +1,4 @@
-"""Agent Server graph factories for Stage-1 production entry points."""
+"""Agent Server graph factories with Stage-2 persistent context support."""
 
 from typing import Any
 
@@ -15,7 +15,7 @@ def make_finance_agent(config: RunnableConfig) -> Any:
 
     del config
     settings = FinanceClawSettings()
-    components = build_components(settings)
+    components = build_components(settings, enable_persistence=True)
     model = OfflineFinanceModel() if settings.offline_model else None
     return components.agent_factory.build(
         components.default_agent_profile,
@@ -29,11 +29,12 @@ def make_direct_tool_graph(config: RunnableConfig) -> Any:
 
     del config
     settings = FinanceClawSettings()
-    components = build_components(settings)
+    components = build_components(settings, enable_persistence=True)
     return build_direct_tool_graph(
         catalog=components.tool_catalog,
         policy=components.tool_policy,
         audit=components.audit,
         checkpointer=None,
         read_max_attempts=settings.read_max_attempts,
+        artifact_service=components.artifact_service,
     )

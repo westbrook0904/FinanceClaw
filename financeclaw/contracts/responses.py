@@ -15,6 +15,7 @@ class ContractModel(BaseModel):
 class RunRequest(ContractModel):
     message: Annotated[str, Field(min_length=1, max_length=32_000)]
     target: RunTarget | None = None
+    conversation_id: Annotated[str, Field(min_length=1, max_length=128)] | None = None
 
 
 class ToolInvokeRequest(ContractModel):
@@ -28,6 +29,36 @@ class RunAccepted(ContractModel):
     status: str
     target_kind: str
     idempotent_replay: bool = False
+    conversation_id: str | None = None
+    turn_id: str | None = None
+
+
+class CreateConversationRequest(ContractModel):
+    agent_id: Annotated[str, Field(min_length=1, max_length=128)] = "finance_agent"
+    agent_profile_version: Annotated[str, Field(pattern=r"^\d+\.\d+\.\d+$")] | None = None
+
+
+class ConversationResponse(ContractModel):
+    conversation_id: str
+    agent_id: str
+    agent_profile_version: str
+    status: str
+    created_at: str
+
+
+class ConversationMessageResponse(ContractModel):
+    message_id: str
+    turn_id: str
+    sequence: int
+    parent_message_id: str | None = None
+    role: Literal["user", "assistant"]
+    content: str
+    created_at: str
+
+
+class ConversationMessagesResponse(ContractModel):
+    conversation_id: str
+    messages: tuple[ConversationMessageResponse, ...]
 
 
 class RunStatusResponse(ContractModel):

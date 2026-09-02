@@ -15,7 +15,6 @@ class AllowAllPolicy(Policy):
     def phases(self) -> frozenset[PolicyPhase]:
         return frozenset(
             {
-                PolicyPhase.PRE_CONTEXT,
                 PolicyPhase.PRE_MEMORY_READ,
                 PolicyPhase.PRE_MEMORY_WRITE,
                 PolicyPhase.PRE_MEMORY_DELETE,
@@ -42,7 +41,6 @@ class TenantPolicy(Policy):
     def phases(self) -> frozenset[PolicyPhase]:
         return frozenset(
             {
-                PolicyPhase.PRE_CONTEXT,
                 PolicyPhase.PRE_MEMORY_READ,
                 PolicyPhase.PRE_MEMORY_WRITE,
                 PolicyPhase.PRE_MEMORY_DELETE,

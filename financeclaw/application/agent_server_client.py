@@ -29,6 +29,10 @@ class AgentServerClient(Protocol):
 
     async def get_run(self, *, thread_id: str, run_id: str) -> Mapping[str, Any]: ...
 
+    async def join_run(self, *, thread_id: str, run_id: str) -> Mapping[str, Any]: ...
+
+    async def find_run(self, *, thread_id: str, application_run_id: str) -> ServerRun | None: ...
+
     async def resume_run(
         self,
         *,
@@ -74,6 +78,23 @@ class LangGraphAgentServerClient:
 
     async def get_run(self, *, thread_id: str, run_id: str) -> Mapping[str, Any]:
         return await self._client.runs.get(thread_id, run_id)
+
+    async def join_run(self, *, thread_id: str, run_id: str) -> Mapping[str, Any]:
+        return await self._client.runs.join(thread_id, run_id)
+
+    async def find_run(self, *, thread_id: str, application_run_id: str) -> ServerRun | None:
+        runs = await self._client.runs.list(thread_id, limit=100)
+        for run in runs:
+            metadata = run.get("metadata", {})
+            if (
+                isinstance(metadata, Mapping)
+                and metadata.get("application_run_id") == application_run_id
+            ):
+                return ServerRun(
+                    run_id=str(run["run_id"]),
+                    status=str(run.get("status", "pending")),
+                )
+        return None
 
     async def resume_run(
         self,

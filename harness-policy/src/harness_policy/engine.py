@@ -5,8 +5,6 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 from harness_contracts import (
-    ContextConsumer,
-    ContextItem,
     InvocationContext,
     JsonValue,
     MemoryQuery,
@@ -73,21 +71,6 @@ class PolicyEngine:
             "policy-engine",
             reason="all applicable policies allowed the operation",
             constraints=constraints,
-        )
-
-    def evaluate_context(
-        self,
-        invocation: InvocationContext,
-        item: ContextItem,
-        consumer: ContextConsumer,
-    ) -> PolicyDecision:
-        return self.evaluate(
-            PolicyContext(
-                invocation=invocation,
-                phase=PolicyPhase.PRE_CONTEXT,
-                context_item=item,
-                context_consumer=consumer,
-            )
         )
 
     def evaluate_memory_read(

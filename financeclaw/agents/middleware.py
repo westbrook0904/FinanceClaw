@@ -18,7 +18,7 @@ from financeclaw.tools import ToolCatalog, ToolDecisionType, ToolPolicy
 LOGGER = logging.getLogger("financeclaw.model_io")
 
 _SENSITIVE_KEYS = re.compile(
-    r"(?:authorization|cookie|api[_-]?key|access[_-]?token|refresh[_-]?token|password|dsn|credential)",
+    r"(?:authorization|cookie|api[_-]?key|access[_-]?token|refresh[_-]?token|password|dsn|credential|reasoning|thinking|hidden)",
     re.IGNORECASE,
 )
 _SECRET_VALUES = (

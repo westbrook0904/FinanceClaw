@@ -18,7 +18,7 @@ class MemoryEvidenceResolver(ABC):
 
 
 class RequestEvidenceResolver(MemoryEvidenceResolver):
-    """F3 默认只承认当前 Request；F4 可组合 completed Observation/Result resolver。"""
+    """默认只承认当前 Request；Stage 3 可组合持久化 Result resolver。"""
 
     def resolves(
         self,

@@ -13,7 +13,6 @@ class ErrorCategory(StrEnum):
     REQUEST = "request"
     APPLICATION = "application"
     POLICY = "policy"
-    CONTEXT = "context"
     MEMORY = "memory"
     TIMEOUT = "timeout"
 
@@ -22,10 +21,6 @@ class ErrorCode(StrEnum):
     REQUEST_INVALID = "HARNESS.REQUEST.INVALID"
     APPLICATION_FAILED = "HARNESS.APPLICATION.FAILED"
     POLICY_DENIED = "HARNESS.POLICY.DENIED"
-
-    CONTEXT_INVALID = "HARNESS.CONTEXT.INVALID"
-    CONTEXT_POLICY_UNSUPPORTED = "HARNESS.CONTEXT.POLICY_UNSUPPORTED"
-    CONTEXT_PROJECTION_REQUIRED = "HARNESS.CONTEXT.PROJECTION_REQUIRED"
 
     MEMORY_INVALID = "HARNESS.MEMORY.INVALID"
     MEMORY_TRUSTED_SCOPE_REQUIRED = "HARNESS.MEMORY.TRUSTED_SCOPE_REQUIRED"
@@ -97,11 +92,6 @@ class RequestError(HarnessError):
 class PolicyError(HarnessError):
     default_code = ErrorCode.POLICY_DENIED
     default_category = ErrorCategory.POLICY
-
-
-class ContextError(HarnessError):
-    default_code = ErrorCode.CONTEXT_INVALID
-    default_category = ErrorCategory.CONTEXT
 
 
 class MemoryAccessError(HarnessError):

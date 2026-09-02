@@ -1,4 +1,4 @@
-"""Retained Conversation/Context/Memory contracts pending Stage 2 and Stage 3."""
+"""Retained runtime and Memory contracts pending Stage 3 migration."""
 
 from .base import ContractModel, JsonPrimitive, JsonValue, MutableContractModel
 from .context import (
@@ -10,24 +10,7 @@ from .context import (
     TenantContext,
     TraceContext,
 )
-from .context_engineering import (
-    ContextConsumer,
-    ContextFreshness,
-    ContextItem,
-    ContextOmission,
-    ContextOmissionReason,
-    ContextProjection,
-    ContextProjectionLimits,
-    ContextProvenance,
-    ContextSensitivity,
-    ContextSnapshot,
-    ContextSourceKind,
-    ContextSourceRef,
-    ContextTrustTier,
-    ContextUseRecord,
-)
 from .errors import (
-    ContextError,
     ErrorCategory,
     ErrorCode,
     ErrorDetail,
@@ -48,26 +31,10 @@ from .memory import (
     MemoryWriteDraft,
     MemoryWriteProposal,
 )
-from .observation import Observation, ObservationStatus
 from .request import Request, RequestInput, RequestOptions
 
 __all__ = [
     "CancellationContext",
-    "ContextConsumer",
-    "ContextError",
-    "ContextFreshness",
-    "ContextItem",
-    "ContextOmission",
-    "ContextOmissionReason",
-    "ContextProjection",
-    "ContextProjectionLimits",
-    "ContextProvenance",
-    "ContextSensitivity",
-    "ContextSnapshot",
-    "ContextSourceKind",
-    "ContextSourceRef",
-    "ContextTrustTier",
-    "ContextUseRecord",
     "ContractModel",
     "ErrorCategory",
     "ErrorCode",
@@ -91,8 +58,6 @@ __all__ = [
     "MemoryWriteDraft",
     "MemoryWriteProposal",
     "MutableContractModel",
-    "Observation",
-    "ObservationStatus",
     "PolicyError",
     "Request",
     "RequestError",

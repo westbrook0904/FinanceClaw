@@ -8,6 +8,7 @@ from langgraph.runtime import Runtime
 from langgraph.types import RetryPolicy, interrupt
 
 from financeclaw.agents.middleware import canonical_arguments_hash, trace_tool_authorization
+from financeclaw.artifacts import ArtifactService
 from financeclaw.audit import AuditEventType, AuditRecord, AuditRepository
 from financeclaw.contracts import DirectToolResponse, ExecutionContext
 from financeclaw.tools import (
@@ -36,6 +37,7 @@ class DirectToolState(DirectToolInput, total=False):
     result: Any
     error: str
     response: dict[str, Any]
+    artifact: dict[str, Any]
 
 
 class DirectToolOutput(TypedDict):
@@ -67,6 +69,7 @@ def build_direct_tool_graph(
     audit: AuditRepository,
     checkpointer: Any = None,
     read_max_attempts: int = 3,
+    artifact_service: ArtifactService | None = None,
 ) -> Any:
     """Compile the deterministic graph; only the READ node has a retry policy."""
 
@@ -94,6 +97,9 @@ def build_direct_tool_graph(
                 decision=decision,
                 policy_version=policy.version,
                 payload_hash=state["arguments_hash"],
+                artifact_refs=(
+                    (str(state["artifact"]["artifact_id"]),) if state.get("artifact") else ()
+                ),
                 metadata={
                     "risk_level": managed.governance.risk_level.value,
                     "approval_id": state.get("approval_id"),
@@ -255,14 +261,37 @@ def build_direct_tool_graph(
                 tool_call_id=f"direct-{uuid4().hex}",
             )
             raise
+        artifact = None
+        if artifact_service is not None:
+            result, metadata = artifact_service.offload(
+                result,
+                context=runtime.context,
+                source_type="direct_tool_result",
+                source_id=managed.governance.tool_id,
+            )
+            if metadata is not None:
+                artifact = {
+                    "artifact_id": metadata.artifact_id,
+                    "content_type": metadata.content_type,
+                    "content_hash": metadata.content_hash,
+                    "size_bytes": metadata.size_bytes,
+                }
+        audit_state: DirectToolState = dict(state)
+        if artifact is not None:
+            audit_state["artifact"] = artifact
         append_audit(
             runtime.context,
-            state,
+            audit_state,
             event=AuditEventType.FINANCIAL_TOOL_EXECUTED,
             decision="executed",
             tool_call_id=f"direct-{uuid4().hex}",
         )
-        return {"result": result, "decision": decision.model_dump(mode="json"), "error": ""}
+        return {
+            "result": result,
+            "artifact": artifact,
+            "decision": decision.model_dump(mode="json"),
+            "error": "",
+        }
 
     def project_response(
         state: DirectToolState, runtime: Runtime[ExecutionContext]
@@ -285,6 +314,7 @@ def build_direct_tool_graph(
             status=status,
             result=state.get("result"),
             error=state.get("error") or (decision.get("reason") if status == "denied" else None),
+            artifact=state.get("artifact"),
             arguments_hash=state.get("arguments_hash"),
         )
         return {"response": response.model_dump(mode="json")}

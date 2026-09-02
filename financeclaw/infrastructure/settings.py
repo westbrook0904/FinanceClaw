@@ -39,9 +39,22 @@ class FinanceClawSettings(BaseSettings):
     bff_tenant_id: str = "development"
     bff_subject_id: str = "developer"
     bff_scopes: frozenset[str] = Field(
-        default_factory=lambda: frozenset({"market:read", "tools:read", "watchlist:write"})
+        default_factory=lambda: frozenset(
+            {"market:read", "tools:read", "watchlist:write", "artifacts:read"}
+        )
     )
-    langsmith_project: str = "financeclaw-stage1-development"
+    langsmith_project: str = "financeclaw-stage2-development"
+    database_url: SecretStr = SecretStr("sqlite+pysqlite:///./.financeclaw/financeclaw.db")
+    database_auto_create_schema: bool = True
+    artifact_root: str = ".financeclaw/artifacts"
+    artifact_inline_bytes: int = Field(default=16_384, ge=256, le=10_000_000)
+    context_input_limit: int = Field(default=32_768, ge=1_024)
+    context_reserved_output: int = Field(default=4_096, ge=64)
+    context_system_policy_reserve: int = Field(default=2_048, ge=0)
+    context_tool_schema_reserve: int = Field(default=4_096, ge=0)
+    context_safety_margin: int = Field(default=1_024, ge=0)
+    summary_segment_messages: int = Field(default=12, ge=2, le=1_000)
+    summary_hierarchy_segments: int = Field(default=8, ge=2, le=1_000)
 
     @model_validator(mode="after")
     def protect_production(self) -> "FinanceClawSettings":
@@ -51,4 +64,10 @@ class FinanceClawSettings(BaseSettings):
             raise ValueError("offline_model is only valid for development and tests")
         if self.environment is Environment.PRODUCTION and self.bff_auth_token is None:
             raise ValueError("bff_auth_token is required in production")
+        if self.environment is Environment.PRODUCTION:
+            database_url = self.database_url.get_secret_value()
+            if not database_url.startswith(("postgresql+psycopg://", "postgresql://")):
+                raise ValueError("production database_url must use PostgreSQL")
+            if self.database_auto_create_schema:
+                raise ValueError("database_auto_create_schema must be disabled in production")
         return self

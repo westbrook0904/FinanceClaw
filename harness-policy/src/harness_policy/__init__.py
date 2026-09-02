@@ -1,4 +1,4 @@
-"""Retained Context and Memory policy boundary pending later-stage migration."""
+"""Retained Memory policy boundary pending later-stage migration."""
 
 from .engine import PolicyEngine
 from .models import PolicyContext, PolicyDecision, PolicyEffect, PolicyPhase

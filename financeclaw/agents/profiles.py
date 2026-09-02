@@ -24,7 +24,7 @@ class AgentProfile(BaseModel):
     system_prompt_template: str
     allowed_tools: tuple[ToolRef, ...]
     middleware_profile: str = "governed-v1"
-    context_policy: str = "stage1-bounded-v1"
+    context_policy: str = "stage2-journal-v1"
     memory_policy: str = "none"
     max_model_calls: int = Field(default=8, ge=1, le=64)
     max_tool_calls: int = Field(default=12, ge=1, le=128)

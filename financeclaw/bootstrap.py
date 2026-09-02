@@ -1,10 +1,22 @@
-"""Stage-1 composition root with immutable catalogs and no legacy Runtime."""
+"""FinanceClaw composition root with immutable catalogs and Stage-2 persistence."""
 
 from dataclasses import dataclass
 
 from financeclaw.agents import AgentFactory, AgentProfile, AgentProfileCatalog, ToolRef
+from financeclaw.artifacts import (
+    ArtifactService,
+    LocalArtifactStore,
+    SqlAlchemyArtifactRepository,
+)
 from financeclaw.audit import AuditRepository, InMemoryAuditRepository
-from financeclaw.infrastructure import FinanceClawSettings
+from financeclaw.conversation import (
+    ContextBudget,
+    ConversationContextBuilder,
+    ConversationRepository,
+    SqlAlchemyConversationRepository,
+    SummaryService,
+)
+from financeclaw.infrastructure import ApplicationDatabase, FinanceClawSettings
 from financeclaw.models import ModelFactory, ModelProfile, ModelProfileCatalog, ModelProfileRef
 from financeclaw.tools import ToolCatalog, ToolPolicy, default_local_tools, managed_mcp_quote_tool
 
@@ -19,6 +31,11 @@ class FinanceClawComponents:
     agent_profiles: AgentProfileCatalog
     model_factory: ModelFactory
     agent_factory: AgentFactory
+    database: ApplicationDatabase | None = None
+    conversation_repository: ConversationRepository | None = None
+    context_builder: ConversationContextBuilder | None = None
+    summary_service: SummaryService | None = None
+    artifact_service: ArtifactService | None = None
 
     @property
     def default_agent_profile(self) -> AgentProfile:
@@ -30,6 +47,7 @@ def build_components(
     *,
     tool_catalog: ToolCatalog | None = None,
     audit: AuditRepository | None = None,
+    enable_persistence: bool = False,
 ) -> FinanceClawComponents:
     settings = settings or FinanceClawSettings()
     if tool_catalog is None:
@@ -86,6 +104,38 @@ def build_components(
         ),
     )
     agent_profiles = AgentProfileCatalog((agent_profile,))
+
+    database: ApplicationDatabase | None = None
+    conversation_repository: ConversationRepository | None = None
+    context_builder: ConversationContextBuilder | None = None
+    summary_service: SummaryService | None = None
+    artifact_service: ArtifactService | None = None
+    if enable_persistence:
+        database = ApplicationDatabase(settings.database_url.get_secret_value())
+        if settings.database_auto_create_schema:
+            database.initialize_schema()
+        concrete_repository = SqlAlchemyConversationRepository(database.session_factory)
+        conversation_repository = concrete_repository
+        context_builder = ConversationContextBuilder(
+            concrete_repository,
+            ContextBudget(
+                model_input_limit=settings.context_input_limit,
+                reserved_output_tokens=settings.context_reserved_output,
+                system_policy_reserve=settings.context_system_policy_reserve,
+                tool_schema_reserve=settings.context_tool_schema_reserve,
+                safety_margin=settings.context_safety_margin,
+            ),
+        )
+        summary_service = SummaryService(
+            concrete_repository,
+            segment_messages=settings.summary_segment_messages,
+            hierarchy_segments=settings.summary_hierarchy_segments,
+        )
+        artifact_service = ArtifactService(
+            SqlAlchemyArtifactRepository(database.session_factory),
+            LocalArtifactStore(settings.artifact_root),
+            inline_bytes=settings.artifact_inline_bytes,
+        )
     agent_factory = AgentFactory(
         model_factory=model_factory,
         tool_catalog=tool_catalog,
@@ -93,6 +143,9 @@ def build_components(
         audit=effective_audit,
         debug_full_io=settings.debug_full_io,
         model_max_retries=settings.model_max_retries,
+        context_builder=context_builder,
+        conversation_repository=conversation_repository,
+        artifact_service=artifact_service,
     )
     return FinanceClawComponents(
         settings=settings,
@@ -103,4 +156,9 @@ def build_components(
         agent_profiles=agent_profiles,
         model_factory=model_factory,
         agent_factory=agent_factory,
+        database=database,
+        conversation_repository=conversation_repository,
+        context_builder=context_builder,
+        summary_service=summary_service,
+        artifact_service=artifact_service,
     )

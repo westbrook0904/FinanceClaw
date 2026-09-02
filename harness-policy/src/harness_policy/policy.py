@@ -1,4 +1,4 @@
-"""Retained Context and Memory policy extension interface."""
+"""Retained Memory policy extension interface."""
 
 from __future__ import annotations
 
@@ -16,9 +16,9 @@ class Policy(ABC):
 
     @property
     def phases(self) -> frozenset[PolicyPhase]:
-        """Default to the retained context boundary during staged migration."""
+        """Apply to each retained memory boundary unless narrowed by a policy."""
 
-        return frozenset({PolicyPhase.PRE_CONTEXT})
+        return frozenset(PolicyPhase)
 
     @abstractmethod
     def evaluate(self, context: PolicyContext) -> PolicyDecision:

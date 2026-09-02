@@ -1,4 +1,4 @@
-"""FinanceClaw Stage-1 product BFF entry point."""
+"""FinanceClaw Stage-2 product BFF entry point."""
 
 from financeclaw.api import create_default_app
 
