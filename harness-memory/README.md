@@ -1,7 +1,7 @@
 # harness-memory
 
 `harness-memory` 是 Agent Foundation F3 的长期事实边界。Memory 回答“跨请求已经获准记住什么”，
-不保存当前 Plan/Node/Action 的执行状态，也不替代 `StateStore`。
+不保存当前 Agent/Workflow 的运行状态，也不替代 LangGraph checkpointer。
 
 ## 组件
 

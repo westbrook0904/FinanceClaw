@@ -4,7 +4,7 @@
 指令、请求投影、受治理 MemorySlice 与 Capability Catalog 等来源组装成不可变
 `ContextSnapshot`，再按
 Router、Planner 或 Explorer 生成最小 `ContextProjection`；它不保存 Prompt、不写
-StateStore，也不把原始 Context 写入 Trace。
+LangGraph checkpoint，也不把原始 Context 写入 Trace。
 
 ## Pipeline
 

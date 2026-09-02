@@ -1,54 +1,46 @@
 # FinanceClaw 设计文档索引
 
-> **当前实施原则**：先完成并真实使用单 Agent 基础闭环，再讨论 HYBRID、PlanPatch、
-> 高阶资源预算和复杂分布式恢复。
+> **当前原则**：运行机制优先复用 LangChain/LangGraph；FinanceClaw 自研重心是 Agent 记忆、
+> 上下文、工具管理和受控调用。
 
 ## 当前有效基线
 
-| 文档 | 定位 | 当前状态 |
+| 文档 | 定位 | 状态 |
 |---|---|---|
-| `FinanceClaw-Agent-Foundation-一期路线图.md` | 一期范围、优先级与验收入口 | **当前路线图** |
-| `FinanceClaw-Agent-Foundation-一期实施说明书.md` | Context、Memory、最小 Explore 的唯一实施契约 | **当前实施基线** |
-| `FinanceClaw-第三阶段说明书.md` | 第三阶段上位架构与阶段边界 | **按一期路线图修订后有效** |
-| `FinanceClaw-第三阶段待讨论ADR.md` | 已决议与延期项摘要 | **当前 ADR 摘要** |
+| `FinanceClaw-LemonClaw-架构对齐分析.md` | LemonClaw 模块、框架复用与 FinanceClaw 边界 | 参考基线 |
+| `FinanceClaw-顶层Agent与确定性Workflow-ADR讨论稿.md` | DIRECT/WORKFLOW/AGENT 与顶层 ReAct | **ACCEPTED** |
+| `FinanceClaw-LangChain模型运行时复用-ADR讨论稿.md` | 用 LangChain 替代自研模型运行时 | **ACCEPTED** |
+| `FinanceClaw-LangGraph编排运行时复用-ADR讨论稿.md` | 用 LangGraph 替代自研 DAG/State runtime | **ACCEPTED** |
+| `FinanceClaw-第三阶段待讨论ADR.md` | 当前 ADR 状态、删除边界与下一轮问题 | 当前摘要 |
+| `FinanceClaw-Agent-Foundation-一期实施说明书.md` | Context/Memory/Agent 治理语义来源 | 保留有效部分 |
 
-当前进度：Foundation 0 前置收口、Foundation 1 Routing correctness、Foundation 2 Context
-Engineering、Foundation 3 Memory 与 Foundation 4a Minimal Explore Contracts 已完成；下一推荐
-步骤为 Foundation 4b Minimal Explore Loop。F4a 只冻结 Contract、eligibility、standalone wrapper
-结构和 checkpoint invariant，默认 EXPLORE 执行仍 fail-closed。
+## 当前代码状态
 
-## 已完成阶段的历史实施基线
+旧 Router、Planner/PlanDraft、ModelGateway/model provider adapter、ExplorationEngine、
+ExecutionEngine/Scheduler/StateStore 已从 `main` 删除。删除前代码保存在本地历史分支
+`codex/history-before-framework-reuse-20260902`。
 
-以下文档记录当时的实施边界，不作为当前优先级来源：
+当前代码只提供 DIRECT 领域核心；LangChain/LangGraph 适配尚未实现。下一步必须先冻结薄接口
+与兼容性 spike，再新增依赖和运行时，不把旧内核换一个名字重写。
+
+## 历史设计资料
+
+以下文档记录已经完成或被取代的阶段，不再直接驱动编码：
 
 - `第一阶段.md`
 - `FinanceClaw-第二阶段说明书.md`
-- `FinanceClaw-Stage3A-Provider-Fabric-实施说明书.md`
-- `FinanceClaw-Stage3B-Routing-Planning-实施说明书.md`
+- `FinanceClaw-Stage3A-Provider-Fabric-实施说明书.md`（Provider Fabric 保留）
+- `FinanceClaw-Stage3B-Routing-Planning-实施说明书.md`（Routing/Planning 已被取代）
+- `FinanceClaw-Stage3C-Agentic-Exploration-实施说明书.md`（自研 Agent/DAG runtime 已被取代）
+- `FinanceClaw-第三阶段说明书.md`（仅作历史上位设计）
 
-它们包含的“未来阶段”描述若与一期路线图不同，以一期路线图为准。
-
-## 目标架构与设计储备
-
-`FinanceClaw-Stage3C-Agentic-Exploration-实施说明书.md` 是旧版完整 Agentic Orchestration 草案。
-它保留 HYBRID、PlanPatch、Approval/Async 和复杂恢复细节，整体不作为当前编码任务来源。
-
-`Harness-Agent_通用可插拔智能体平台架构设计_修订版.md` 描述长期目标架构，不等于当前
-实施清单。其中 HYBRID、PlanPatch、多 Agent、自动 Workflow、高阶预算等内容均属于设计储备。
-
-`Fo-Finance-Agent 系统架构图.png` 同样是旧版目标态示意图，其中中心 Agent、多 Agent、
-长期记忆和成本/Token 观测不能被解释为一期已经实现或必须同时交付的组件。
-
-## 阅读顺序
+## 建议阅读顺序
 
 ```text
-一期路线图
-  ↓
-第三阶段说明书
-  ↓
-Agent Foundation 一期实施说明书
-  ↓
-需要追溯时再阅读历史实施基线或高阶设计储备
+LemonClaw 对齐分析
+  → 顶层 Agent / Workflow ADR
+  → LangChain ADR
+  → LangGraph ADR
+  → Stage 3 ADR 状态摘要
+  → Context / Memory 的历史实施说明（需要细化领域语义时）
 ```
-
-不得仅因为某个 Contract、ExecutionMode 或章节已经存在，就把对应能力视为当前应实现范围。
