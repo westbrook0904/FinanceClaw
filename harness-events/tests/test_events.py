@@ -27,9 +27,8 @@ class EventBusTests(unittest.IsolatedAsyncioTestCase):
         collector = Collector()
         bus.subscribe(collector)
         event = ExecutionEvent(
-            name=ExecutionEventName.PLAN_CREATED,
-            plan_id="plan-1",
-            state_version=1,
+            name=ExecutionEventName.PROVIDER_SELECTED,
+            request_id="request-1",
         )
 
         await bus.publish(event)
@@ -40,7 +39,10 @@ class EventBusTests(unittest.IsolatedAsyncioTestCase):
     async def test_noop_publisher_accepts_execution_event(self) -> None:
         publisher = NoOpEventPublisher()
         await publisher.publish(
-            ExecutionEvent(name=ExecutionEventName.PLAN_STARTED, plan_id="plan-1")
+            ExecutionEvent(
+                name=ExecutionEventName.PROVIDER_CANDIDATES,
+                request_id="request-1",
+            )
         )
 
     async def test_provider_event_can_use_request_reference_without_plan(self) -> None:

@@ -10,7 +10,7 @@ from .registry import CapabilityRegistry
 
 
 class CapabilityCatalog(ABC):
-    """Planner 和 PlanValidator 可见的最小只读能力目录。"""
+    """顶层 Agent、Workflow 与工具管理层可见的最小只读能力目录。"""
 
     @abstractmethod
     def get(self, capability_id: str) -> CapabilityDescriptor | None:

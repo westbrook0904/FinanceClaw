@@ -7,7 +7,6 @@ from uuid import uuid4
 from pydantic import Field
 
 from .base import ContractModel, FrozenJsonMapping, FrozenJsonValue, NonEmptyString
-from .routing import ExecutionMode
 
 
 class RequestInput(ContractModel):
@@ -33,11 +32,13 @@ class RequestOptions(ContractModel):
 
     timeout_ms: int | None = Field(default=None, gt=0)
     trace: bool = True
-    execution_mode: ExecutionMode = ExecutionMode.AUTO
 
 
 class Request(ContractModel):
-    """Harness 的标准请求入口；Plan 请求可以不指定直接调用目标。"""
+    """Harness 的标准请求入口。
+
+    ``target`` 为空时由未来的顶层 Agent 解释；当前 Direct Invocation 入口仍要求显式目标。
+    """
 
     request_id: NonEmptyString = Field(default_factory=lambda: uuid4().hex)
     session_id: NonEmptyString | None = None

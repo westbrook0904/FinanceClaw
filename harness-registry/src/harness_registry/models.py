@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
 from dataclasses import dataclass
-from dataclasses import field as dataclass_field
 from typing import Annotated
 from urllib.parse import quote
 
@@ -13,7 +10,6 @@ from harness_contracts import (
     CapabilityDescriptor,
     CapabilityType,
     ContractModel,
-    ModelProviderFeatures,
     ProviderDescriptor,
 )
 from harness_spi import Capability
@@ -51,34 +47,6 @@ class ProviderRegistration:
     descriptor: ProviderDescriptor
     capability: CapabilityDescriptor
     provider: Capability
-    model_features: ModelProviderFeatures = dataclass_field(default_factory=ModelProviderFeatures)
-    model_features_hash: str = ""
-    registration_version: str = ""
-    provider_incarnation: str = dataclass_field(init=False, default="")
-
-    def __post_init__(self) -> None:
-        features = self.model_features
-        if self.capability.type is CapabilityType.MODEL:
-            candidate = getattr(self.provider, "features", features)
-            if not isinstance(candidate, ModelProviderFeatures):
-                raise TypeError("model provider features must be ModelProviderFeatures")
-            features = candidate.model_copy(deep=True)
-        feature_hash = _stable_hash(features.model_dump(mode="json"))
-        version = _stable_hash(
-            {
-                "descriptor": self.descriptor.model_dump(mode="json"),
-                "capability": self.capability.model_dump(mode="json"),
-                "model_features_hash": feature_hash,
-            }
-        )
-        object.__setattr__(self, "model_features", features)
-        object.__setattr__(self, "model_features_hash", feature_hash)
-        object.__setattr__(self, "registration_version", version)
-        object.__setattr__(
-            self,
-            "provider_incarnation",
-            _stable_hash({"process_provider_object_id": id(self.provider)}),
-        )
 
     @property
     def provider_id(self) -> str:
@@ -109,13 +77,3 @@ def legacy_provider_id(plugin_id: str, capability_id: str) -> str:
     encoded_plugin = quote(plugin_id.strip(), safe="")
     encoded_capability = quote(capability_id.strip(), safe="/")
     return f"{encoded_plugin}:{encoded_capability}"
-
-
-def _stable_hash(value: object) -> str:
-    payload = json.dumps(
-        value,
-        ensure_ascii=False,
-        separators=(",", ":"),
-        sort_keys=True,
-    ).encode("utf-8")
-    return hashlib.sha256(payload).hexdigest()

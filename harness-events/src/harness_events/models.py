@@ -1,4 +1,4 @@
-"""阶段二最小执行事件协议。"""
+"""Capability Provider 调用事件协议。"""
 
 from __future__ import annotations
 
@@ -13,34 +13,6 @@ from pydantic import Field, field_validator, model_validator
 
 
 class ExecutionEventName(StrEnum):
-    ROUTE_DECIDED = "route.decided"
-    MODE_SELECTED = "mode.selected"
-    ROUTE_FAILED = "route.failed"
-    PLANNER_STARTED = "planner.started"
-    PLANNER_REPAIRING = "planner.repairing"
-    PLANNER_COMPLETED = "planner.completed"
-    PLANNER_FAILED = "planner.failed"
-    PLAN_CREATED = "plan.created"
-    PLAN_STARTED = "plan.started"
-    PLAN_WAITING = "plan.waiting"
-    PLAN_RESUMED = "plan.resumed"
-    PLAN_COMPLETED = "plan.completed"
-    PLAN_FAILED = "plan.failed"
-    PLAN_CANCELLED = "plan.cancelled"
-    NODE_READY = "node.ready"
-    NODE_STARTED = "node.started"
-    NODE_RETRYING = "node.retrying"
-    NODE_WAITING = "node.waiting"
-    NODE_RESUMED = "node.resumed"
-    NODE_COMPLETED = "node.completed"
-    NODE_FAILED = "node.failed"
-    NODE_DENIED = "node.denied"
-    NODE_CANCELLED = "node.cancelled"
-    APPROVAL_REQUESTED = "approval.requested"
-    APPROVAL_RESOLVED = "approval.resolved"
-    ASYNC_ACCEPTED = "async.accepted"
-    ASYNC_COMPLETED = "async.completed"
-    CHECKPOINT_SAVED = "checkpoint.saved"
     PROVIDER_CANDIDATES = "provider.candidates"
     PROVIDER_SELECTED = "provider.selected"
     PROVIDER_RETRYING = "provider.retrying"
@@ -49,7 +21,7 @@ class ExecutionEventName(StrEnum):
 
 
 class ExecutionEvent(ContractModel):
-    """与业务 Provider 解耦、可供 Audit/Metrics/UI 消费的执行事实。"""
+    """与 Provider 实例解耦、可供 Audit/Metrics/UI 消费的调用事实。"""
 
     event_id: NonEmptyString = Field(default_factory=lambda: uuid4().hex)
     name: ExecutionEventName

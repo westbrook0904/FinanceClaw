@@ -16,7 +16,6 @@ from harness_contracts import (
     ContextSourceKind,
     ContextSourceRef,
     ContextTrustTier,
-    ExecutionMode,
     IdentityContext,
     InvocationContext,
     Request,
@@ -142,7 +141,7 @@ class PolicyModelTests(unittest.TestCase):
                 phase=PolicyPhase.PRE_CONTEXT,
                 context_item=context_item,
                 context_consumer=ContextConsumer.ROUTE,
-                requested_mode=ExecutionMode.AUTO,
+                capability=make_context().capability,
             )
 
 

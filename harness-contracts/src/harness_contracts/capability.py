@@ -10,11 +10,10 @@ from .base import ContractModel, FrozenJsonMapping, NonEmptyString
 
 
 class CapabilityType(StrEnum):
-    """阶段一支持的本地能力类型。"""
+    """FinanceClaw Registry 中可被 Agent 调用的能力类型。"""
 
     AGENT = "agent"
     TOOL = "tool"
-    MODEL = "model"
 
 
 class SideEffectType(StrEnum):

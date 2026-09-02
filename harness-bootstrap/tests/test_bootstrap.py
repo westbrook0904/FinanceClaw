@@ -1,4 +1,4 @@
-"""harness-bootstrap 阶段一 Composition Root 测试。"""
+"""FinanceClaw 核心 Composition Root 测试。"""
 
 from __future__ import annotations
 
@@ -14,11 +14,7 @@ from harness_context import ContextPipeline, ContextPolicy
 from harness_contracts import (
     CapabilityDescriptor,
     CapabilityType,
-    ExecutionPlan,
     InvocationContext,
-    LiteralBinding,
-    NodeOutputBinding,
-    PlanNode,
     PluginError,
     Request,
     RequestInput,
@@ -28,24 +24,16 @@ from harness_contracts import (
     ResultStatus,
 )
 from harness_events import ExecutionEventName, InMemoryEventBus
-from harness_model import ModelGateway
-from harness_planning import PlanValidator
 from harness_plugin_local import LocalPluginProvider
 from harness_policy import AllowAllPolicy, Policy, PolicyContext, PolicyDecision, PolicyEngine
 from harness_registry import InMemoryCapabilityRegistry, RegistryCapabilityCatalog
 from harness_runtime import CapabilityInvoker, DefaultInvocationContextFactory
 from harness_spi import PluginManifest, PluginSPI, ToolRequest, ToolSPI
-from harness_state import InMemoryStateStore
 from harness_trace import InMemoryTracer
 
 
 class EchoTool(ToolSPI):
-    def __init__(
-        self,
-        capability_id: str = "echo.tool/v1",
-        *,
-        version: str = "1.0.0",
-    ) -> None:
+    def __init__(self, capability_id: str = "echo.tool/v1", *, version: str = "1.0.0") -> None:
         self._descriptor = CapabilityDescriptor(
             id=capability_id,
             name=capability_id,
@@ -57,17 +45,10 @@ class EchoTool(ToolSPI):
     def descriptor(self) -> CapabilityDescriptor:
         return self._descriptor
 
-    async def execute(
-        self,
-        request: ToolRequest,
-        context: InvocationContext,
-    ) -> ResultEnvelope:
+    async def execute(self, request: ToolRequest, context: InvocationContext) -> ResultEnvelope:
         self.calls += 1
         return ResultEnvelope.success(
-            ResultOutput(
-                type="json",
-                data=request.model_dump(mode="json")["arguments"],
-            )
+            ResultOutput(type="json", data=request.model_dump(mode="json")["arguments"])
         )
 
 
@@ -110,60 +91,44 @@ def make_request(capability_id: str = "echo.tool/v1") -> Request:
 
 
 class BootstrapFactoryTests(unittest.TestCase):
-    def test_default_build_has_no_startup_side_effects(self) -> None:
+    def test_default_build_contains_only_domain_core(self) -> None:
         app = build_harness(entry_point_group=None)
 
         self.assertIsInstance(app, HarnessApplication)
         self.assertEqual(app.state, BootstrapState.CREATED)
         self.assertIsInstance(app.registry, InMemoryCapabilityRegistry)
         self.assertIsInstance(app.tracer, InMemoryTracer)
-        self.assertIsInstance(
-            app.components.context_factory,
-            DefaultInvocationContextFactory,
-        )
+        self.assertIsInstance(app.components.context_factory, DefaultInvocationContextFactory)
         self.assertIsInstance(app.invoker, CapabilityInvoker)
-        self.assertIsInstance(app.model_gateway, ModelGateway)
-        self.assertIs(app.model_gateway.registry, app.registry)
-        self.assertIs(app.model_gateway.tracer, app.tracer)
-        self.assertIs(app.model_gateway.lifecycle, app.components.lifecycle)
-        self.assertIs(app.model_gateway.provider_selector, app.provider_selector)
-        self.assertIs(app.model_gateway.provider_execution, app.invoker.provider_execution)
-        self.assertIsInstance(app.capability_catalog, RegistryCapabilityCatalog)
-        self.assertIsInstance(app.plan_validator, PlanValidator)
-        self.assertIs(app.plan_validator.catalog, app.capability_catalog)
         self.assertIs(app.runtime.invoker, app.invoker)
         self.assertIs(app.runtime.lifecycle, app.components.lifecycle)
-        self.assertIs(app.execution_engine.validator, app.plan_validator)
-        self.assertIs(app.execution_engine.scheduler, app.components.scheduler)
-        self.assertIsInstance(app.state_store, InMemoryStateStore)
+        self.assertIsInstance(app.capability_catalog, RegistryCapabilityCatalog)
         self.assertIsInstance(app.context_pipeline, ContextPipeline)
-        self.assertIs(
-            app.context_pipeline.policy.policy_engine,
-            app.policy_engine,
-        )
-        self.assertIs(app.execution_engine.state_store, app.state_store)
+        self.assertIs(app.context_pipeline.policy.policy_engine, app.policy_engine)
         self.assertEqual(len(app.policy_engine.policies), 1)
         self.assertIsInstance(app.policy_engine.policies[0], AllowAllPolicy)
-        self.assertEqual(app.registry.list(), ())
-        self.assertEqual(app.loaded_plugins, ())
+        for removed in (
+            "model_gateway",
+            "router",
+            "planner_registry",
+            "execution_engine",
+            "state_store",
+        ):
+            self.assertFalse(hasattr(app, removed))
 
-    def test_custom_components_are_wired_by_identity(self) -> None:
+    def test_custom_core_components_are_wired_by_identity(self) -> None:
         registry = InMemoryCapabilityRegistry()
         policy_engine = PolicyEngine((AllowAllPolicy(),))
         tracer = InMemoryTracer()
         context_factory = DefaultInvocationContextFactory()
-        capability_catalog = RegistryCapabilityCatalog(registry)
-        plan_validator = PlanValidator(capability_catalog)
-        state_store = InMemoryStateStore()
+        catalog = RegistryCapabilityCatalog(registry)
 
         app = build_harness(
             registry=registry,
             policy_engine=policy_engine,
             tracer=tracer,
             context_factory=context_factory,
-            capability_catalog=capability_catalog,
-            plan_validator=plan_validator,
-            state_store=state_store,
+            capability_catalog=catalog,
             entry_point_group=None,
         )
 
@@ -171,82 +136,31 @@ class BootstrapFactoryTests(unittest.TestCase):
         self.assertIs(app.policy_engine, policy_engine)
         self.assertIs(app.tracer, tracer)
         self.assertIs(app.components.context_factory, context_factory)
-        self.assertIs(app.capability_catalog, capability_catalog)
-        self.assertIs(app.plan_validator, plan_validator)
-        self.assertIs(app.state_store, state_store)
+        self.assertIs(app.capability_catalog, catalog)
 
-    def test_rejects_ambiguous_policy_configuration(self) -> None:
+    def test_rejects_ambiguous_or_mismatched_composition(self) -> None:
         with self.assertRaises(ValueError):
             build_harness(
                 policies=(AllowAllPolicy(),),
                 policy_engine=PolicyEngine(),
                 entry_point_group=None,
             )
-
-    def test_rejects_context_pipeline_with_a_different_policy_engine(self) -> None:
         with self.assertRaises(ValueError):
             build_harness(
                 policy_engine=PolicyEngine((AllowAllPolicy(),)),
-                context_pipeline=ContextPipeline(ContextPolicy(PolicyEngine((AllowAllPolicy(),)))),
+                context_pipeline=ContextPipeline(ContextPolicy(PolicyEngine())),
                 entry_point_group=None,
             )
-
-    def test_rejects_mismatched_catalog_and_validator(self) -> None:
-        first = RegistryCapabilityCatalog(InMemoryCapabilityRegistry())
-        second = RegistryCapabilityCatalog(InMemoryCapabilityRegistry())
-
         with self.assertRaises(ValueError):
             build_harness(
-                capability_catalog=first,
-                plan_validator=PlanValidator(second),
-                entry_point_group=None,
-            )
-
-    def test_rejects_plugins_with_custom_plugin_provider(self) -> None:
-        plugin = StubPlugin("echo", (EchoTool(),))
-
-        with self.assertRaises(ValueError):
-            build_harness(
-                plugins=(plugin,),
+                plugins=(StubPlugin("echo", (EchoTool(),)),),
                 plugin_provider=LocalPluginProvider(entry_point_group=None),
                 entry_point_group=None,
             )
 
 
 class BootstrapLifecycleTests(unittest.IsolatedAsyncioTestCase):
-    async def test_execute_plan_uses_bootstrapped_engine_and_invoker(self) -> None:
-        tool = EchoTool()
-        app = build_harness(
-            plugins=(StubPlugin("echo-plugin", (tool,)),),
-            entry_point_group=None,
-        )
-        await app.start()
-        request = Request(input=RequestInput(type="json", content={}))
-        plan = ExecutionPlan(
-            plan_id="bootstrap-plan",
-            nodes=(
-                PlanNode(
-                    node_id="echo",
-                    capability="echo.tool/v1",
-                    input_mapping={"message": LiteralBinding(value="from plan")},
-                ),
-            ),
-            outputs={
-                "message": NodeOutputBinding(
-                    node_id="echo",
-                    pointer="/output/data/message",
-                )
-            },
-        )
-
-        result = await app.execute_plan(request, plan)
-
-        self.assertEqual(result.status, ResultStatus.SUCCESS)
-        self.assertEqual(result.output.data["message"], "from plan")
-        self.assertIsNotNone(app.execution_engine.state("bootstrap-plan"))
-        await app.shutdown()
-
-    async def test_start_loads_plugin_and_runtime_can_invoke_it(self) -> None:
+    async def test_start_loads_plugin_and_direct_runtime_invokes_it(self) -> None:
         tool = EchoTool()
         plugin = StubPlugin("echo-plugin", (tool,))
         app = build_harness(plugins=(plugin,), entry_point_group=None)
@@ -256,19 +170,12 @@ class BootstrapLifecycleTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(app.state, BootstrapState.STARTED)
         self.assertEqual(len(loaded), 1)
-        self.assertEqual(plugin.initialize_count, 1)
-        self.assertIsNotNone(app.registry.get("echo.tool/v1"))
         self.assertEqual(result.status, ResultStatus.SUCCESS)
         self.assertEqual(result.output.data["message"], "hello")
         self.assertEqual(tool.calls, 1)
         self.assertIsInstance(app.event_publisher, InMemoryEventBus)
-        provider_events = [
-            event.name
-            for event in app.event_publisher.events()
-            if event.name.value.startswith("provider.")
-        ]
         self.assertEqual(
-            provider_events,
+            [event.name for event in app.event_publisher.events()],
             [
                 ExecutionEventName.PROVIDER_CANDIDATES,
                 ExecutionEventName.PROVIDER_SELECTED,
@@ -276,15 +183,13 @@ class BootstrapLifecycleTests(unittest.IsolatedAsyncioTestCase):
         )
 
         await app.shutdown()
-
         self.assertEqual(app.state, BootstrapState.STOPPED)
         self.assertEqual(plugin.shutdown_count, 1)
         self.assertIsNone(app.registry.get("echo.tool/v1"))
 
-    async def test_start_and_shutdown_are_idempotent(self) -> None:
+    async def test_lifecycle_is_idempotent_and_stopped_app_cannot_restart(self) -> None:
         plugin = StubPlugin("echo-plugin", (EchoTool(),))
         app = build_harness(plugins=(plugin,), entry_point_group=None)
-
         first = await app.start()
         second = await app.start()
         await app.shutdown()
@@ -293,82 +198,39 @@ class BootstrapLifecycleTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(first, second)
         self.assertEqual(plugin.initialize_count, 1)
         self.assertEqual(plugin.shutdown_count, 1)
-
-    async def test_invoke_requires_started_application(self) -> None:
-        app = build_harness(entry_point_group=None)
-
-        with self.assertRaises(BootstrapStateError):
-            await app.invoke(make_request())
-
-        await app.start()
-        await app.shutdown()
-
-        with self.assertRaises(BootstrapStateError):
-            await app.invoke(make_request())
-
-    async def test_cancel_plan_requires_started_application_and_delegates(self) -> None:
-        app = build_harness(entry_point_group=None)
-
-        with self.assertRaises(BootstrapStateError):
-            await app.cancel_plan("missing")
-
-        await app.start()
-        self.assertIs(await app.cancel_plan("missing"), False)
-        await app.shutdown()
-
-    async def test_stopped_application_cannot_restart(self) -> None:
-        app = build_harness(entry_point_group=None)
-        await app.start()
-        await app.shutdown()
-
         with self.assertRaises(BootstrapStateError):
             await app.start()
+        with self.assertRaises(BootstrapStateError):
+            await app.invoke(make_request())
 
-    async def test_async_context_manager_starts_and_shuts_down(self) -> None:
-        plugin = StubPlugin("echo-plugin", (EchoTool(),))
-        app = build_harness(plugins=(plugin,), entry_point_group=None)
-
-        async with app as running:
-            self.assertIs(running, app)
-            self.assertEqual(app.state, BootstrapState.STARTED)
-            self.assertIsNotNone(app.registry.get("echo.tool/v1"))
-
-        self.assertEqual(app.state, BootstrapState.STOPPED)
-        self.assertEqual(plugin.shutdown_count, 1)
-        self.assertIsNone(app.registry.get("echo.tool/v1"))
-
-    async def test_startup_failure_rolls_back_batch_and_keeps_created_state(self) -> None:
+    async def test_startup_failure_rolls_back_batch(self) -> None:
         first = StubPlugin("first", (EchoTool("shared.tool/v1"),))
         second = StubPlugin("second", (EchoTool("shared.tool/v1", version="2.0.0"),))
-        app = build_harness(
-            plugins=(first, second),
-            entry_point_group=None,
-        )
+        app = build_harness(plugins=(first, second), entry_point_group=None)
 
         with self.assertRaises(PluginError):
             await app.start()
 
         self.assertEqual(app.state, BootstrapState.CREATED)
         self.assertEqual(app.registry.list(), ())
-        self.assertEqual(app.loaded_plugins, ())
         self.assertEqual(first.shutdown_count, 1)
         self.assertEqual(second.shutdown_count, 1)
 
-    async def test_injected_policy_controls_runtime_without_plugin_awareness(self) -> None:
+    async def test_injected_policy_controls_runtime(self) -> None:
         tool = EchoTool()
-        plugin = StubPlugin("echo-plugin", (tool,))
         app = build_harness(
-            plugins=(plugin,),
+            plugins=(StubPlugin("echo-plugin", (tool,)),),
             policies=(DenyAllPolicy(),),
             entry_point_group=None,
         )
         await app.start()
-
-        result = await app.invoke(make_request())
+        try:
+            result = await app.invoke(make_request())
+        finally:
+            await app.shutdown()
 
         self.assertEqual(result.status, ResultStatus.DENIED)
         self.assertEqual(tool.calls, 0)
-        await app.shutdown()
 
 
 if __name__ == "__main__":

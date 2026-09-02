@@ -21,8 +21,6 @@ class AllowAllPolicy(Policy):
                 PolicyPhase.PRE_MEMORY_READ,
                 PolicyPhase.PRE_MEMORY_WRITE,
                 PolicyPhase.PRE_MEMORY_DELETE,
-                PolicyPhase.PRE_ROUTE,
-                PolicyPhase.PRE_PLAN,
                 PolicyPhase.PRE_EXECUTE,
             }
         )
@@ -51,8 +49,6 @@ class TenantPolicy(Policy):
                 PolicyPhase.PRE_MEMORY_READ,
                 PolicyPhase.PRE_MEMORY_WRITE,
                 PolicyPhase.PRE_MEMORY_DELETE,
-                PolicyPhase.PRE_ROUTE,
-                PolicyPhase.PRE_PLAN,
                 PolicyPhase.PRE_EXECUTE,
             }
         )
@@ -78,11 +74,7 @@ class TenantPolicy(Policy):
         ):
             return PolicyDecision.deny(self.name, reason="tenant is not allowed")
 
-        constraints = (
-            {"tenant_id": resolved}
-            if resolved is not None and context.phase is not PolicyPhase.PRE_ROUTE
-            else {}
-        )
+        constraints = {"tenant_id": resolved} if resolved is not None else {}
         return PolicyDecision.allow(
             self.name,
             reason="tenant allowed",
