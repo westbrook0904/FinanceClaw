@@ -6,17 +6,13 @@ import unittest
 from datetime import UTC, datetime, timedelta
 
 from harness_context import (
-    CapabilityCatalogContextSource,
     ContextAssembler,
-    ContextCollection,
     ContextPipeline,
     ContextPolicy,
     ContextProjector,
     PromptBuilder,
 )
 from harness_contracts import (
-    CapabilityDescriptor,
-    CapabilityType,
     ContextConsumer,
     ContextError,
     ContextFreshness,
@@ -128,7 +124,7 @@ class ContextPipelineTests(unittest.TestCase):
         request_item = item("request", ContextSourceKind.REQUEST, ContextTrustTier.USER)
         catalog_item = item(
             "catalog",
-            ContextSourceKind.CAPABILITY_CATALOG,
+            ContextSourceKind.SYSTEM_INSTRUCTION,
             ContextTrustTier.APPLICATION,
         )
 
@@ -313,37 +309,6 @@ class ContextPipelineTests(unittest.TestCase):
             ),
         )
         self.assertEqual(item_limited.omitted[0].reason, ContextOmissionReason.MAX_ITEMS)
-
-    def test_capability_source_uses_consumer_specific_minimal_views(self) -> None:
-        descriptor = CapabilityDescriptor(
-            id="finance.query/v1",
-            name="Finance Query",
-            type=CapabilityType.TOOL,
-            version="1.0.0",
-            input_schema={"type": "object"},
-            output_schema={"type": "object"},
-            metadata={"provider_id": "must-not-leak"},
-        )
-        collection = ContextCollection(
-            invocation=invocation(),
-            request_projection={"input_type": "goal"},
-            capability_catalog=(descriptor,),
-        )
-        source = CapabilityCatalogContextSource()
-
-        route = source.collect(collection, ContextConsumer.ROUTE, observed_at=NOW)[0]
-        plan = source.collect(collection, ContextConsumer.PLAN, observed_at=NOW)[0]
-        explore = source.collect(collection, ContextConsumer.EXPLORE, observed_at=NOW)[0]
-
-        self.assertNotIn("input_schema", route.content)
-        self.assertIn("input_schema", plan.content)
-        self.assertNotIn("completion_mode", plan.content["execution_profile"])
-        self.assertEqual(
-            explore.content["execution_profile"]["completion_mode"],
-            "unknown",
-        )
-        self.assertNotIn("metadata", route.content)
-        self.assertNotIn("metadata", plan.content)
 
 
 if __name__ == "__main__":

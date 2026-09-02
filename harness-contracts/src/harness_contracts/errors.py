@@ -11,12 +11,8 @@ from .base import ContractModel, FrozenJsonMapping, JsonValue, NonEmptyString
 
 class ErrorCategory(StrEnum):
     REQUEST = "request"
-    REGISTRY = "registry"
+    APPLICATION = "application"
     POLICY = "policy"
-    PLUGIN = "plugin"
-    CAPABILITY = "capability"
-    PROVIDER = "provider"
-    SELECTION = "selection"
     CONTEXT = "context"
     MEMORY = "memory"
     TIMEOUT = "timeout"
@@ -24,26 +20,8 @@ class ErrorCategory(StrEnum):
 
 class ErrorCode(StrEnum):
     REQUEST_INVALID = "HARNESS.REQUEST.INVALID"
-    REQUEST_TARGET_REQUIRED = "HARNESS.REQUEST.TARGET_REQUIRED"
-    REGISTRY_NOT_FOUND = "HARNESS.REGISTRY.NOT_FOUND"
+    APPLICATION_FAILED = "HARNESS.APPLICATION.FAILED"
     POLICY_DENIED = "HARNESS.POLICY.DENIED"
-    PLUGIN_LOAD_FAILED = "HARNESS.PLUGIN.LOAD_FAILED"
-    CAPABILITY_EXECUTION_FAILED = "HARNESS.CAPABILITY.EXECUTION_FAILED"
-
-    PROVIDER_NOT_FOUND = "HARNESS.PROVIDER.NOT_FOUND"
-    PROVIDER_DUPLICATE = "HARNESS.PROVIDER.DUPLICATE"
-    PROVIDER_CAPABILITY_MISMATCH = "HARNESS.PROVIDER.CAPABILITY_MISMATCH"
-    PROVIDER_NO_ELIGIBLE_CANDIDATE = "HARNESS.PROVIDER.NO_ELIGIBLE_CANDIDATE"
-    PROVIDER_PIN_NOT_ALLOWED = "HARNESS.PROVIDER.PIN_NOT_ALLOWED"
-    PROVIDER_PIN_NOT_FOUND = "HARNESS.PROVIDER.PIN_NOT_FOUND"
-    PROVIDER_FALLBACK_UNSAFE = "HARNESS.PROVIDER.FALLBACK_UNSAFE"
-    PROVIDER_SELECTION_FAILED = "HARNESS.PROVIDER.SELECTION_FAILED"
-    PROVIDER_HEALTH_UNAVAILABLE = "HARNESS.PROVIDER.HEALTH_UNAVAILABLE"
-    PROVIDER_EXECUTION_FAILED = "HARNESS.PROVIDER.EXECUTION_FAILED"
-    PROVIDER_RESUME_UNSAFE = "HARNESS.PROVIDER.RESUME_UNSAFE"
-
-    SELECTION_INVALID_CONTEXT = "HARNESS.SELECTION.INVALID_CONTEXT"
-    SELECTION_INVALID_DECISION = "HARNESS.SELECTION.INVALID_DECISION"
 
     CONTEXT_INVALID = "HARNESS.CONTEXT.INVALID"
     CONTEXT_POLICY_UNSUPPORTED = "HARNESS.CONTEXT.POLICY_UNSUPPORTED"
@@ -65,7 +43,7 @@ class ErrorCode(StrEnum):
 
 
 class ErrorDetail(ContractModel):
-    """可安全放入 ResultEnvelope 的结构化错误。"""
+    """Bounded structured error safe for retained domain boundaries."""
 
     code: NonEmptyString
     category: ErrorCategory
@@ -78,8 +56,8 @@ class ErrorDetail(ContractModel):
 class HarnessError(Exception):
     """FinanceClaw 内部异常的公共基类。"""
 
-    default_code = ErrorCode.CAPABILITY_EXECUTION_FAILED
-    default_category = ErrorCategory.CAPABILITY
+    default_code = ErrorCode.APPLICATION_FAILED
+    default_category = ErrorCategory.APPLICATION
     default_retryable = False
     default_fallbackable = False
 
@@ -116,34 +94,9 @@ class RequestError(HarnessError):
     default_category = ErrorCategory.REQUEST
 
 
-class RegistryError(HarnessError):
-    default_code = ErrorCode.REGISTRY_NOT_FOUND
-    default_category = ErrorCategory.REGISTRY
-
-
 class PolicyError(HarnessError):
     default_code = ErrorCode.POLICY_DENIED
     default_category = ErrorCategory.POLICY
-
-
-class PluginError(HarnessError):
-    default_code = ErrorCode.PLUGIN_LOAD_FAILED
-    default_category = ErrorCategory.PLUGIN
-
-
-class CapabilityError(HarnessError):
-    default_code = ErrorCode.CAPABILITY_EXECUTION_FAILED
-    default_category = ErrorCategory.CAPABILITY
-
-
-class ProviderError(HarnessError):
-    default_code = ErrorCode.PROVIDER_EXECUTION_FAILED
-    default_category = ErrorCategory.PROVIDER
-
-
-class SelectionError(HarnessError):
-    default_code = ErrorCode.SELECTION_INVALID_DECISION
-    default_category = ErrorCategory.SELECTION
 
 
 class ContextError(HarnessError):

@@ -1,30 +1,29 @@
 # FinanceClaw
 
 FinanceClaw 正在按 [`.redesign/`](.redesign/README.md) 从自研通用 Agent Harness 收敛为
-“LangChain/LangGraph/LangSmith + 金融领域核心”。`.redesign/` 是当前唯一目标架构基线；
-旧 Harness 代码在 Stage 0 保留，仅用于回归，不被新 Spike 引用。
+“LangChain/LangGraph/LangSmith + 金融领域核心”。`.redesign/` 是当前唯一目标架构基线。
 
 ## 当前阶段
 
-Stage 0 Framework Compatibility Spike 已实现以下隔离切片：
+Stage 1 Execution Spine 已成为默认入口，主要能力包括：
 
-- Python 3.13 + `uv.lock`；
-- LangChain `create_agent` 与 OpenAI Provider Integration；
-- READ `BaseTool` + `ToolRetryMiddleware`；
-- WRITE `BaseTool` + `HumanInTheLoopMiddleware` + interrupt/resume；
-- trusted runtime context 下的动态 Tool 过滤；
-- LangGraph thread/checkpoint/stream 与 Agent Server graph；
-- stateless MCP server、MCP → `BaseTool` 转换与本地治理覆盖；
-- LangSmith 自动调用链、自定义 context run、完整开发 I/O 日志与凭证脱敏；
-- PostgreSQL checkpointer、Redis Store 与 worker/graph 重建恢复探针。
+- FastAPI BFF：默认 Agent、Direct Tool、run status、resume、SSE、health/readiness；
+- LangGraph Agent Server：`finance_agent` 与固定拓扑 `direct_tool`；
+- 不可变 ModelProfile、AgentProfile 与 `(tool_id, version)` ToolCatalog；
+- local/MCP `BaseTool` 以及本地 `ToolGovernance` 覆盖；
+- 模型可见性过滤、执行时二次鉴权、WRITE interrupt/approve/reject/edit；
+- READ-only retry、模型 retry/fallback、调用次数上限；
+- LangSmith Agent/Model/Tool/authorization trace 与结构化金融 Audit；
+- DeepSeek OpenAI 兼容协议配置及在线验收探针。
 
-实现位于 `financeclaw_spike/`，不依赖 `harness-runtime`、`harness-registry`、
-`harness-spi` 或其他旧执行抽象。验证状态和版本差异见
-[Stage-0 验证记录](.redesign/stages/Stage-0-验证记录.md)。
+旧 `harness-runtime`、`harness-registry`、`harness-selection`、`harness-spi`、
+`harness-plugin-local`、通用 Provider/Capability contracts 和示例 plugins 已删除。验证证据见
+[Stage-1 验证记录](.redesign/stages/Stage-1-验证记录.md)。Stage-0 Spike 仅作为框架兼容性历史
+切片保留，不再是产品入口。
 
-## Conda 环境
+## 环境
 
-推荐用 Miniforge/conda 管理解释器，用 uv 把项目锁定依赖安装进同一个 conda 环境：
+推荐用 conda 管理解释器，用 uv 把锁定依赖安装到同一个项目内环境：
 
 ```bash
 conda create --yes --prefix .conda/envs/stage0 python=3.13 pip uv=0.12.9
@@ -35,47 +34,57 @@ UV_PROJECT_ENVIRONMENT="$PWD/.conda/envs/stage0" \
   --python .conda/envs/stage0/bin/python
 ```
 
-也可使用 `environment.stage0.yml` 创建等价的命名环境。conda 环境、`.env`、IDE 文件和
-Agent Server 本地状态均已从 Git 与 Docker build context 排除。
+复制 `.env.stage1.example` 为 `.env`。DeepSeek 通过 OpenAI 协议接入时，核心配置为：
+
+```dotenv
+FINANCECLAW_MODEL=openai:deepseek-v4-pro
+FINANCECLAW_PROVIDER_BASE_URL=https://api.deepseek.com
+FINANCECLAW_PROVIDER_API_KEY=your-deepseek-api-key
+```
+
+Secret 只放 `.env` 或部署平台 Secret Manager，不要写入 Git 跟踪的 example 文件。
+
+## 运行
+
+先启动内部 Agent Server：
+
+```bash
+.conda/envs/stage0/bin/langgraph dev --no-browser --no-reload --port 2024
+```
+
+再启动唯一产品入口 BFF：
+
+```bash
+.conda/envs/stage0/bin/uvicorn main:app --host 127.0.0.1 --port 8000
+```
+
+本地离线 Agent Server 冒烟：
+
+```bash
+FINANCECLAW_OFFLINE_MODEL=true \
+FINANCECLAW_DEBUG_FULL_IO=false \
+FINANCECLAW_ENVIRONMENT=test \
+LANGSMITH_TRACING=false \
+  .conda/envs/stage0/bin/langgraph dev --no-browser --no-reload --port 2024
+
+.conda/envs/stage0/bin/python -m financeclaw.application.server_smoke
+```
+
+配置真实 Provider 与 LangSmith 后执行在线门禁：
+
+```bash
+.conda/envs/stage0/bin/python -m financeclaw.application.provider_probe
+```
+
+DeepSeek thinking 模型目前用 JSON mode 完成 structured output；默认原生 JSON Schema
+`response_format` 和强制 `tool_choice` 在该兼容端点上可能返回 HTTP 400。
 
 ## 测试
 
-不依赖外部凭证的确定性测试：
-
 ```bash
 .conda/envs/stage0/bin/python -m pytest -q
-.conda/envs/stage0/bin/ruff check financeclaw_spike tests/stage0 pyproject.toml
-.conda/envs/stage0/bin/ruff format --check financeclaw_spike tests/stage0
-```
-
-本地 Agent Server：
-
-```bash
-FINANCECLAW_SPIKE_OFFLINE_MODEL=true \
-FINANCECLAW_SPIKE_DEBUG_FULL_IO=false \
-FINANCECLAW_SPIKE_ENVIRONMENT=test \
-LANGSMITH_TRACING=false \
-  .conda/envs/stage0/bin/langgraph dev --no-browser --no-reload
-
-.conda/envs/stage0/bin/python -m financeclaw_spike.server_smoke
-```
-
-真实 Provider、LangSmith、PostgreSQL 与 Redis 验证前，复制 `.env.stage0.example` 为 `.env`
-并填写本地 Secret。不要提交 `.env`：
-
-```bash
-.conda/envs/stage0/bin/python -m financeclaw_spike.probe provider
-.conda/envs/stage0/bin/python -m financeclaw_spike.probe mcp
-
-docker compose -p financeclaw-stage0 -f compose.stage0.yml up -d --wait
-.conda/envs/stage0/bin/python -m financeclaw_spike.probe services
-docker compose -p financeclaw-stage0 -f compose.stage0.yml down
-```
-
-Agent Server 镜像构建：
-
-```bash
-.conda/envs/stage0/bin/langgraph build -t financeclaw-stage0:spike
+.conda/envs/stage0/bin/ruff check financeclaw financeclaw_spike tests pyproject.toml
+.conda/envs/stage0/bin/ruff format --check financeclaw financeclaw_spike tests
 ```
 
 ## 目标架构
@@ -90,5 +99,4 @@ FinanceClaw API / BFF
   → LangSmith Trace / Evaluation
 ```
 
-后续 Stage 必须先满足当前阶段门禁，再按垂直切片切换入口并删除对应旧模块，不长期维护双
-Runtime 或兼容层。
+后续 Stage 按垂直切片推进，不恢复第二套 Runtime、Registry、Provider SPI 或 Plugin 生命周期。

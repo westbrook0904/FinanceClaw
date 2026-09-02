@@ -282,11 +282,7 @@ class MemoryGatewayTests(unittest.IsolatedAsyncioTestCase):
         context = invocation("req-policy")
         denied_gateway = MemoryGateway(
             InMemoryMemoryProvider(),
-            MemoryPolicy(
-                PolicyEngine(
-                    (MemoryEffectPolicy(PolicyPhase.PRE_MEMORY_WRITE, "deny"),)
-                )
-            ),
+            MemoryPolicy(PolicyEngine((MemoryEffectPolicy(PolicyPhase.PRE_MEMORY_WRITE, "deny"),))),
             allowed_namespaces={"profile"},
             clock=lambda: NOW,
         )
@@ -303,9 +299,7 @@ class MemoryGatewayTests(unittest.IsolatedAsyncioTestCase):
         approval_gateway = MemoryGateway(
             InMemoryMemoryProvider(),
             MemoryPolicy(
-                PolicyEngine(
-                    (MemoryEffectPolicy(PolicyPhase.PRE_MEMORY_READ, "approval"),)
-                )
+                PolicyEngine((MemoryEffectPolicy(PolicyPhase.PRE_MEMORY_READ, "approval"),))
             ),
             allowed_namespaces={"profile"},
             clock=lambda: NOW,
@@ -332,9 +326,7 @@ class MemoryGatewayTests(unittest.IsolatedAsyncioTestCase):
         delete_denied_gateway = MemoryGateway(
             shared_provider,
             MemoryPolicy(
-                PolicyEngine(
-                    (MemoryEffectPolicy(PolicyPhase.PRE_MEMORY_DELETE, "deny"),)
-                )
+                PolicyEngine((MemoryEffectPolicy(PolicyPhase.PRE_MEMORY_DELETE, "deny"),))
             ),
             allowed_namespaces={"profile"},
             clock=lambda: NOW,

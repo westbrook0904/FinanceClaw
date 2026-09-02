@@ -18,7 +18,6 @@ class ContextSourceKind(StrEnum):
     REQUEST = "request"
     SESSION = "session"
     MEMORY = "memory"
-    CAPABILITY_CATALOG = "capability_catalog"
     OBSERVATION = "observation"
 
 

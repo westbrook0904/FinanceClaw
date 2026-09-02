@@ -10,6 +10,7 @@ readme = "README.md"
 requires-python = ">=3.13,<3.14"
 dependencies = [
     "fastapi>=0.141,<1",
+    "httpx>=0.28,<1",
     "langchain>=1.3.16,<2",
     "langchain-mcp-adapters>=0.2,<1",
     "langchain-openai>=1.1,<2",
@@ -24,12 +25,6 @@ dependencies = [
     "redis>=6,<8",
     "uvicorn>=0.52,<1",
 ]
-
-[project.entry-points."financeclaw.plugins"]
-calculator-tool = "calculator_tool:CalculatorToolPlugin"
-echo-agent = "echo_agent:EchoAgentPlugin"
-mock-finance-agent = "mock_finance_agent:MockFinanceAgentPlugin"
-portfolio-risk-agent = "portfolio_risk_agent:PortfolioRiskAgentPlugin"
 
 [project.optional-dependencies]
 dev = [
@@ -55,59 +50,47 @@ select = ["E", "F", "I", "UP", "B"]
 [tool.setuptools]
 py-modules = ["main"]
 packages = [
-    "financeclaw_spike",
-    "harness_bootstrap",
+    "financeclaw",
+    "financeclaw.agents",
+    "financeclaw.api",
+    "financeclaw.application",
+    "financeclaw.audit",
+    "financeclaw.contracts",
+    "financeclaw.graphs",
+    "financeclaw.infrastructure",
+    "financeclaw.models",
+    "financeclaw.tools",
     "harness_contracts",
     "harness_context",
     "harness_events",
     "harness_memory",
-    "harness_plugin_local",
     "harness_policy",
-    "harness_registry",
-    "harness_selection",
-    "harness_runtime",
-    "harness_spi",
     "harness_trace",
-    "calculator_tool",
-    "echo_agent",
-    "mock_finance_agent",
-    "portfolio_risk_agent",
 ]
 
 [tool.setuptools.package-dir]
-financeclaw_spike = "financeclaw_spike"
-harness_bootstrap = "harness-bootstrap/src/harness_bootstrap"
+financeclaw = "financeclaw"
+"financeclaw.agents" = "financeclaw/agents"
+"financeclaw.api" = "financeclaw/api"
+"financeclaw.application" = "financeclaw/application"
+"financeclaw.audit" = "financeclaw/audit"
+"financeclaw.contracts" = "financeclaw/contracts"
+"financeclaw.graphs" = "financeclaw/graphs"
+"financeclaw.infrastructure" = "financeclaw/infrastructure"
+"financeclaw.models" = "financeclaw/models"
+"financeclaw.tools" = "financeclaw/tools"
 harness_contracts = "harness-contracts/src/harness_contracts"
 harness_context = "harness-context/src/harness_context"
 harness_events = "harness-events/src/harness_events"
 harness_memory = "harness-memory/src/harness_memory"
-harness_plugin_local = "harness-plugin-local/src/harness_plugin_local"
 harness_policy = "harness-policy/src/harness_policy"
-harness_registry = "harness-registry/src/harness_registry"
-harness_selection = "harness-selection/src/harness_selection"
-harness_runtime = "harness-runtime/src/harness_runtime"
-harness_spi = "harness-spi/src/harness_spi"
 harness_trace = "harness-trace/src/harness_trace"
-calculator_tool = "plugins/calculator-tool/src/calculator_tool"
-echo_agent = "plugins/echo-agent/src/echo_agent"
-mock_finance_agent = "plugins/mock-finance-agent/src/mock_finance_agent"
-portfolio_risk_agent = "plugins/portfolio-risk-agent/src/portfolio_risk_agent"
 
 [tool.setuptools.package-data]
-financeclaw_spike = ["py.typed"]
+financeclaw = ["py.typed"]
 harness_contracts = ["py.typed"]
 harness_context = ["py.typed"]
 harness_events = ["py.typed"]
 harness_memory = ["py.typed"]
-harness_spi = ["py.typed"]
-harness_registry = ["py.typed"]
-harness_selection = ["py.typed"]
-harness_plugin_local = ["py.typed"]
 harness_policy = ["py.typed"]
 harness_trace = ["py.typed"]
-harness_runtime = ["py.typed"]
-harness_bootstrap = ["py.typed"]
-calculator_tool = ["py.typed"]
-echo_agent = ["py.typed"]
-mock_finance_agent = ["py.typed"]
-portfolio_risk_agent = ["py.typed"]

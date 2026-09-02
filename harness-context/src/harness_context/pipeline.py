@@ -8,7 +8,6 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 from harness_contracts import (
-    CapabilityDescriptor,
     ContextConsumer,
     ContextItem,
     ContextProjectionLimits,
@@ -23,7 +22,7 @@ from .assembler import ContextAssembler
 from .models import ContextBundle, ContextCollection
 from .policy import ContextPolicy
 from .projector import ContextProjector
-from .source import CapabilityCatalogContextSource, ContextSource, RequestContextSource
+from .source import ContextSource, RequestContextSource
 
 type Clock = Callable[[], datetime]
 type IdFactory = Callable[[], str]
@@ -43,11 +42,7 @@ class ContextPipeline:
     ) -> None:
         if not isinstance(policy, ContextPolicy):
             raise TypeError("policy must be ContextPolicy")
-        effective_sources = (
-            tuple(sources)
-            if sources is not None
-            else (RequestContextSource(), CapabilityCatalogContextSource())
-        )
+        effective_sources = tuple(sources) if sources is not None else (RequestContextSource(),)
         if any(not isinstance(source, ContextSource) for source in effective_sources):
             raise TypeError("sources must contain ContextSource values")
         if assembler is not None and not isinstance(assembler, ContextAssembler):
@@ -100,7 +95,6 @@ class ContextPipeline:
         consumer: ContextConsumer,
         *,
         request_projection: Mapping[str, JsonValue],
-        capability_catalog: tuple[CapabilityDescriptor, ...],
         observations: tuple[Observation, ...] = (),
         suppress_memory_errors: bool = False,
     ) -> ContextBundle:
@@ -114,7 +108,6 @@ class ContextPipeline:
         collection = ContextCollection(
             invocation=invocation,
             request_projection=dict(request_projection),
-            capability_catalog=capability_catalog,
             observations=observations,
         )
         candidates = []

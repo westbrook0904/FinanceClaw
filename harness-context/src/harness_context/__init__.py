@@ -9,7 +9,6 @@ from .policy import ContextPolicy
 from .projector import ContextProjector
 from .prompt import ContextPrompt, PromptBuilder
 from .source import (
-    CapabilityCatalogContextSource,
     ContextSource,
     ObservationContextSource,
     RequestContextSource,
@@ -18,7 +17,6 @@ from .source import (
 )
 
 __all__ = [
-    "CapabilityCatalogContextSource",
     "ContextAssembler",
     "ContextBundle",
     "ContextCollection",

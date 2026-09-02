@@ -2,8 +2,9 @@
 
 更新时间：2026-09-02
 
-状态：实现完成；本地确定性、Agent Server、PostgreSQL/Redis 与镜像构建门禁通过；真实模型
-Provider 和 LangSmith 在线门禁等待凭证。因此在补齐在线证据前，Stage 1 仍为 **NO-GO**。
+状态：**GO**。本地确定性、Agent Server、PostgreSQL/Redis、镜像构建门禁已通过；真实
+DeepSeek OpenAI-compatible Provider、Tool Calling、structured output 与 LangSmith run tree 已在
+Stage-1 在线探针中补齐，Stage 1 可进入验收。
 
 ## 1. 实现范围
 
@@ -33,12 +34,12 @@ Stage-0 代码隔离在 `financeclaw_spike/`，包含：
 | CPython | 3.13.15 | 是 | PASS（conda） |
 | uv | 0.12.9 | 是 | PASS（frozen sync） |
 | LangChain | 1.3.18 | 是 | PASS |
-| LangChain OpenAI | 1.6.0 | 是 | 构建 PASS；在线调用待凭证 |
+| LangChain OpenAI | 1.6.0 | 是 | PASS（DeepSeek OpenAI-compatible 在线调用） |
 | LangGraph | 1.2.11 | 是 | PASS |
 | LangGraph CLI | 0.4.31 | 是 | dev/build PASS |
 | LangGraph API | 0.13.3 | 是 | dev PASS |
 | LangGraph SDK | 0.4.4 | 是 | PASS |
-| LangSmith | 0.12.1 | 是 | import/masking PASS；在线 trace 待凭证 |
+| LangSmith | 0.12.1 | 是 | PASS（在线 run tree） |
 | MCP SDK | 1.29.1 | 是 | PASS |
 | langchain-mcp-adapters | 0.3.2 | 是 | PASS |
 | langgraph-checkpoint-postgres | 3.1.2 | 是 | PASS |
@@ -113,14 +114,16 @@ READ/approval/egress/retry governance。
 - MCP adapter 生成的 `StructuredTool.args_schema` 是 JSON Schema dict，不保证是 Pydantic class。
 - Agent Server SDK 0.4.4 的 v2 stream part 在 HTTP 客户端侧按 dict 消费；不要依赖旧版对象属性。
 
-## 5. 尚待外部证据
+## 5. 在线门禁补充结果
 
-以下项目不能在没有用户 Secret/组织配置的本地环境伪造：
+2026-09-02 使用用户本地 Secret 注入执行 Stage-1 Provider 探针，未把凭证写入提交：
 
-1. 真实 OpenAI 模型的 async Tool Calling 与 structured output；
-2. LangSmith development project 中 Agent → custom context → Model → Tool 完整 run tree；
-3. LangSmith inputs/outputs、tags/metadata、masking 和 Dataset/Experiment 记录；
-4. Agent Server 生产许可、成本、数据驻留和 egress 评审。
+- OpenAI Provider Integration 成功调用 DeepSeek OpenAI-compatible endpoint；
+- Tool Calling 返回有效 `market_snapshot` call；
+- JSON mode 返回可通过 Pydantic 校验的 structured output；
+- 真实 Agent 执行 governance authorization 与 READ Tool，Audit 确认执行；
+- LangSmith 收到 Agent/Model/authorization/Tool run tree。
 
-补跑命令与环境变量模板见仓库根目录 `README.md` 和 `.env.stage0.example`。完成后应在本文件
-追加 Trace URL/截图位置、执行时间、模型版本和结论，再把 Stage 1 门禁改为 GO。
+证据 URL、兼容性差异与命令见 [Stage-1 验证记录](./Stage-1-验证记录.md)。Dataset/Experiment、
+Agent Server 生产许可、成本、数据驻留和 egress 评审属于后续生产化门禁，不作为 Stage-0
+框架兼容性阻塞项。

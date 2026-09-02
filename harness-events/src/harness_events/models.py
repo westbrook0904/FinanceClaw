@@ -1,4 +1,4 @@
-"""Capability Provider 调用事件协议。"""
+"""Retained internal execution event protocol pending Stage 5 removal."""
 
 from __future__ import annotations
 

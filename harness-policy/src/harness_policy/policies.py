@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
-
-from harness_contracts import EgressType, SideEffectType
+from collections.abc import Iterable
 
 from .models import PolicyContext, PolicyDecision, PolicyPhase
 from .policy import Policy
@@ -21,7 +19,6 @@ class AllowAllPolicy(Policy):
                 PolicyPhase.PRE_MEMORY_READ,
                 PolicyPhase.PRE_MEMORY_WRITE,
                 PolicyPhase.PRE_MEMORY_DELETE,
-                PolicyPhase.PRE_EXECUTE,
             }
         )
 
@@ -49,7 +46,6 @@ class TenantPolicy(Policy):
                 PolicyPhase.PRE_MEMORY_READ,
                 PolicyPhase.PRE_MEMORY_WRITE,
                 PolicyPhase.PRE_MEMORY_DELETE,
-                PolicyPhase.PRE_EXECUTE,
             }
         )
 
@@ -79,114 +75,4 @@ class TenantPolicy(Policy):
             self.name,
             reason="tenant allowed",
             constraints=constraints,
-        )
-
-
-class CapabilityPermissionPolicy(Policy):
-    """依据可信 Identity scopes 判断 Capability 调用权限。"""
-
-    def __init__(
-        self,
-        permissions: Mapping[str, Iterable[str]],
-        *,
-        allow_unconfigured: bool = False,
-    ) -> None:
-        self._permissions = {
-            capability: frozenset(scopes) for capability, scopes in permissions.items()
-        }
-        self._allow_unconfigured = allow_unconfigured
-
-    def evaluate(self, context: PolicyContext) -> PolicyDecision:
-        capability = context.capability
-        if capability is None:
-            return PolicyDecision.allow(self.name, reason="not a capability boundary")
-        capability_id = capability.id
-        required = self._permissions.get(capability_id, self._permissions.get("*"))
-
-        if required is None:
-            if self._allow_unconfigured:
-                return PolicyDecision.allow(
-                    self.name,
-                    reason="capability has no configured permission rule",
-                )
-            return PolicyDecision.deny(
-                self.name,
-                reason="capability has no configured permission rule",
-            )
-        if not required:
-            return PolicyDecision.allow(self.name, reason="capability requires no scopes")
-
-        identity = context.invocation.identity
-        if identity is None:
-            return PolicyDecision.deny(
-                self.name,
-                reason="authenticated identity is required",
-            )
-
-        granted = identity.scopes
-        if "*" not in granted and required.isdisjoint(granted):
-            return PolicyDecision.deny(
-                self.name,
-                reason="required capability scope is missing",
-                constraints={"required_scopes": sorted(required)},
-            )
-        return PolicyDecision.allow(
-            self.name,
-            reason="capability scope allowed",
-            constraints={"required_scopes": sorted(required)},
-        )
-
-
-class RequireApprovalPolicy(Policy):
-    """按 Capability/副作用/egress 要求一次 Human Approval。"""
-
-    def __init__(
-        self,
-        *,
-        capabilities: Iterable[str] = (),
-        side_effects: Iterable[SideEffectType] = (),
-        egress: Iterable[EgressType] = (),
-        reason: str = "capability requires human approval",
-    ) -> None:
-        self._capabilities = frozenset(capabilities)
-        self._side_effects = frozenset(side_effects)
-        self._egress = frozenset(egress)
-        if not isinstance(reason, str) or not reason.strip():
-            raise TypeError("reason must be a non-empty string")
-        self._reason = reason.strip()
-
-    def evaluate(self, context: PolicyContext) -> PolicyDecision:
-        capability = context.capability
-        if capability is None or not self._matches(context):
-            return PolicyDecision.allow(self.name, reason="approval rule did not match")
-        if context.approval_grant is not None:
-            return PolicyDecision.allow(
-                self.name,
-                reason="matching approval grant supplied",
-                constraints={"approval_id": context.approval_grant.approval_id},
-            )
-        profile = capability.execution_profile
-        return PolicyDecision.require_approval(
-            self.name,
-            reason=self._reason,
-            constraints={
-                "capability": capability.id,
-                "side_effect": profile.side_effect.value,
-                "egress": profile.egress.value,
-            },
-        )
-
-    def _matches(self, context: PolicyContext) -> bool:
-        capability = context.capability
-        if capability is None:
-            return False
-        profile = capability.execution_profile
-        selectors_configured = bool(self._capabilities or self._side_effects or self._egress)
-        if not selectors_configured:
-            return True
-        return (
-            capability.id in self._capabilities
-            or "*" in self._capabilities
-            or profile.side_effect in self._side_effects
-            or profile.egress in self._egress
         )

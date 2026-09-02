@@ -1,8 +1,6 @@
-import json
 import os
 import sys
 from importlib.metadata import version
-from pathlib import Path
 
 import pytest
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -26,14 +24,6 @@ def test_python_and_locked_framework_imports() -> None:
     assert version("langchain-mcp-adapters") == "0.3.2"
     assert version("langgraph-checkpoint-postgres") == "3.1.2"
     assert version("langgraph-checkpoint-redis") == "0.5.2"
-
-
-def test_langgraph_config_exports_graph_factory(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("FINANCECLAW_SPIKE_OFFLINE_MODEL", "true")
-    config = json.loads(Path("langgraph.json").read_text())
-
-    assert config["python_version"] == "3.13"
-    assert config["graphs"] == {"demo_agent": "./financeclaw_spike/graph.py:make_graph"}
 
 
 def test_real_provider_integration_constructs_without_network(

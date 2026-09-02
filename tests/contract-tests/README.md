@@ -1,23 +1,12 @@
 # contract-tests
 
-契约测试主要位于：
+Stage-1 的稳定产品边界位于 `financeclaw/contracts`，覆盖受信任 `ExecutionContext`、显式
+Tool/Workflow/Agent Target、BFF request/response、approval decision、stream event 与
+ArtifactReference。
 
-- `harness-contracts/tests`：Request、Context、Descriptor、ExecutionPlan、Binding、
-  Condition、Plan/Node State、Approval、Continuation、ResultEnvelope、错误、冻结和
-  JSON round-trip，以及 ExecutionMode、RouteDecision、ProviderDescriptor、Health、Selection、
-  ProviderAttempt 契约。
-- `harness-spi/tests`：AgentRequest、ToolRequest、PluginManifest，以及
-  Manifest/Provider Descriptor 一致性。
-- `harness-routing/tests`：RequestSummary、RoutingContext、Rule/LLM Route 与独立决策校验。
-- `harness-planning/tests`：跨模型 DAG、PlanDraft、PlanningAttempt、引用和 Capability Catalog
-  可执行性校验。
-- `harness-model/tests`：GenerateRequest/GenerateResult、structured output 和 usage 契约。
-
-这些测试保证模块可以只依赖顶层公共 API 开发，并尽早发现协议字段、序列化、冻结/可变
-边界或执行语义的非兼容变化。
+框架内部继续直接使用 BaseMessage、Command、Interrupt 和 LangGraph state；Capability、
+Provider、Selection、Retry、ResultEnvelope 等通用执行契约已删除，不再建立镜像协议。
 
 ```bash
-.venv/bin/python -m pytest \
-  harness-contracts/tests harness-spi/tests harness-routing/tests \
-  harness-planning/tests harness-model/tests -v
+.conda/envs/stage0/bin/python -m pytest tests/stage1 -q
 ```

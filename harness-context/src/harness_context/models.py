@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from harness_contracts import (
-    CapabilityDescriptor,
     ContextProjection,
     ContextSnapshot,
     ContextUseRecord,
@@ -20,7 +19,6 @@ from harness_contracts.base import FrozenJsonMapping
 class ContextCollection(ContractModel):
     invocation: InvocationContext
     request_projection: FrozenJsonMapping
-    capability_catalog: tuple[CapabilityDescriptor, ...]
     observations: tuple[Observation, ...] = ()
 
 

@@ -7,7 +7,6 @@ from collections.abc import Awaitable
 from datetime import datetime
 
 from harness_contracts import (
-    CapabilityDescriptor,
     ContextConsumer,
     ContextFreshness,
     ContextItem,
@@ -86,49 +85,6 @@ class RequestContextSource(ContextSource):
                 created_at=observed_at,
             ),
         )
-
-
-class CapabilityCatalogContextSource(ContextSource):
-    @property
-    def source_name(self) -> str:
-        return "harness-context.capability-catalog"
-
-    def collect(
-        self,
-        collection: ContextCollection,
-        consumer: ContextConsumer,
-        *,
-        observed_at: datetime,
-    ) -> tuple[ContextItem, ...]:
-        items: list[ContextItem] = []
-        for descriptor in collection.capability_catalog:
-            content = _project_descriptor(descriptor, consumer)
-            source_version = canonical_hash(content)
-            items.append(
-                ContextItem(
-                    item_id=stable_item_id(
-                        source_kind=ContextSourceKind.CAPABILITY_CATALOG.value,
-                        source_id=descriptor.id,
-                        source_version=source_version,
-                        kind="capability",
-                    ),
-                    kind="capability",
-                    content=content,
-                    source=ContextSourceRef(
-                        source_kind=ContextSourceKind.CAPABILITY_CATALOG,
-                        source_id=descriptor.id,
-                    ),
-                    provenance=ContextProvenance(producer=self.source_name),
-                    freshness=ContextFreshness(
-                        source_version=source_version,
-                        observed_at=observed_at,
-                    ),
-                    trust_tier=ContextTrustTier.APPLICATION,
-                    sensitivity=ContextSensitivity.INTERNAL,
-                    created_at=observed_at,
-                )
-            )
-        return tuple(items)
 
 
 class ObservationContextSource(ContextSource):
@@ -248,33 +204,3 @@ class StaticContextSource(ContextSource):
                 )
             )
         return tuple(items)
-
-
-def _project_descriptor(
-    descriptor: CapabilityDescriptor,
-    consumer: ContextConsumer,
-) -> dict[str, object]:
-    if not isinstance(descriptor, CapabilityDescriptor):
-        raise TypeError("capability catalog must contain CapabilityDescriptor values")
-    payload = descriptor.model_dump(mode="json")
-    projected: dict[str, object] = {
-        "id": payload["id"],
-        "name": payload["name"],
-        "type": payload["type"],
-        "version": payload["version"],
-        "tags": sorted(payload["tags"]),
-    }
-    if consumer in {ContextConsumer.PLAN, ContextConsumer.EXPLORE}:
-        execution_profile = dict(payload["execution_profile"])
-        if consumer is ContextConsumer.PLAN:
-            # PLAN supports both sync and async nodes; Explore completion eligibility is a
-            # Harness-owned scope guard and must not perturb the established PLAN projection.
-            execution_profile.pop("completion_mode", None)
-        projected.update(
-            {
-                "input_schema": payload["input_schema"],
-                "output_schema": payload["output_schema"],
-                "execution_profile": execution_profile,
-            }
-        )
-    return projected

@@ -1,25 +1,11 @@
 # plugin-tests
 
-插件测试位于 `plugins/tests` 和 `harness-plugin-local/tests`，覆盖：
+Stage-1 已删除通用 PluginSPI、本地插件生命周期和示例插件。可执行能力统一为受治理的
+LangChain `BaseTool`；远程工具通过无状态 MCP adapter 接入，并由本地 `ToolGovernance` 覆盖
+远端声明。
 
-- Echo Agent 原样回显；
-- Calculator Tool 四则运算及结构化错误；
-- Mock Finance Agent 的显式 mock 输出；
-- Portfolio Risk Agent 的真实 Decimal 估值、日损益和限额检查；
-- Plugin 生命周期幂等；
-- Manifest 与 Provider Descriptor 一致；
-- `financeclaw.plugins` entry point 打包配置；
-- 自动/显式发现、注册、注销和失败回滚；
-- 四个插件通过 Bootstrap 与 Direct Runtime 的完整调用；
-- 示例 Capability 参与第二阶段 finance-review-plan 的并行、Join、Approval 和 Resume。
-- 旧 Plugin 在 Stage 3A 下自动获得稳定 Provider ID，加载/卸载按 Provider 精确执行。
-- Stage 3B `handle()` 的 FAST/PLAN 路径继续只通过 CapabilityInvoker 调用插件；Router 和
-  Planner 不获得 Plugin/Provider instance。
+相关测试现位于：
 
-插件测试同时守住依赖边界：业务插件不实现 Scheduler、Policy、Trace、StateStore 或
-恢复逻辑。
-
-```bash
-.venv/bin/python -m pytest \
-  plugins/tests harness-plugin-local/tests tests/stage2 tests/stage3a tests/stage3b -v
-```
+- `tests/stage1/test_governance.py`：本地 Tool/Catalog/Policy；
+- `tests/stage1/test_mcp.py`：MCP 转换、调用与治理覆盖；
+- `tests/stage1/test_agent.py`：Agent Tool allowlist 与执行时授权。

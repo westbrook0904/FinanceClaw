@@ -5,8 +5,6 @@ from __future__ import annotations
 from enum import StrEnum
 
 from harness_contracts import (
-    ApprovalGrant,
-    CapabilityDescriptor,
     ContextConsumer,
     ContextItem,
     ContractModel,
@@ -15,7 +13,6 @@ from harness_contracts import (
     MemoryRecord,
     MemorySubjectScope,
     MemoryWriteProposal,
-    ProviderDescriptor,
 )
 from harness_contracts.base import FrozenJsonMapping, NonEmptyString
 from pydantic import Field, model_validator
@@ -28,7 +25,6 @@ class PolicyPhase(StrEnum):
     PRE_MEMORY_READ = "pre_memory_read"
     PRE_MEMORY_WRITE = "pre_memory_write"
     PRE_MEMORY_DELETE = "pre_memory_delete"
-    PRE_EXECUTE = "pre_execute"
 
 
 class PolicyEffect(StrEnum):
@@ -39,10 +35,7 @@ class PolicyEffect(StrEnum):
 
 class PolicyContext(ContractModel):
     invocation: InvocationContext
-    phase: PolicyPhase = PolicyPhase.PRE_EXECUTE
-    capability: CapabilityDescriptor | None = None
-    provider: ProviderDescriptor | None = None
-    approval_grant: ApprovalGrant | None = None
+    phase: PolicyPhase = PolicyPhase.PRE_CONTEXT
     context_item: ContextItem | None = None
     context_consumer: ContextConsumer | None = None
     memory_scope: MemorySubjectScope | None = None
@@ -76,20 +69,9 @@ class PolicyContext(ContractModel):
                 raise ValueError(
                     "pre_context policy context requires context_item and context_consumer"
                 )
-            if any(
-                value is not None
-                for value in (self.capability, self.provider, self.approval_grant)
-            ):
-                raise ValueError("pre_context policy context forbids execution fields")
             return self
 
-        if self.context_item is not None or self.context_consumer is not None:
-            raise ValueError("context_item and context_consumer are only valid for pre_context")
-        if self.capability is None:
-            raise ValueError("pre_execute policy context requires capability")
-        if self.provider is not None and self.provider.capability_id != self.capability.id:
-            raise ValueError("provider capability_id must match capability.id")
-        return self
+        raise ValueError("unsupported retained policy phase")
 
     def _validate_memory_payload(self) -> PolicyContext:
         if self.memory_scope is None:
@@ -97,9 +79,6 @@ class PolicyContext(ContractModel):
         if any(
             value is not None
             for value in (
-                self.capability,
-                self.provider,
-                self.approval_grant,
                 self.context_item,
                 self.context_consumer,
             )

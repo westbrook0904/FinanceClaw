@@ -22,7 +22,6 @@ _CONSUMER_SOURCES = {
             ContextSourceKind.REQUEST,
             ContextSourceKind.SESSION,
             ContextSourceKind.MEMORY,
-            ContextSourceKind.CAPABILITY_CATALOG,
         }
     ),
     ContextConsumer.PLAN: frozenset(
@@ -31,7 +30,6 @@ _CONSUMER_SOURCES = {
             ContextSourceKind.REQUEST,
             ContextSourceKind.SESSION,
             ContextSourceKind.MEMORY,
-            ContextSourceKind.CAPABILITY_CATALOG,
         }
     ),
     ContextConsumer.EXPLORE: frozenset(ContextSourceKind),

@@ -1,21 +1,6 @@
-"""FinanceClaw 业务无关的稳定公共协议。"""
+"""Retained Conversation/Context/Memory contracts pending Stage 2 and Stage 3."""
 
-from .approval import (
-    ApprovalDecision,
-    ApprovalDecisionType,
-    ApprovalGrant,
-    ApprovalRequest,
-)
 from .base import ContractModel, JsonPrimitive, JsonValue, MutableContractModel
-from .capability import (
-    CapabilityCompletionMode,
-    CapabilityDescriptor,
-    CapabilityExecutionProfile,
-    CapabilityType,
-    EgressType,
-    IdempotencyType,
-    SideEffectType,
-)
 from .context import (
     CancellationContext,
     ExecutionState,
@@ -42,7 +27,6 @@ from .context_engineering import (
     ContextUseRecord,
 )
 from .errors import (
-    CapabilityError,
     ContextError,
     ErrorCategory,
     ErrorCode,
@@ -50,12 +34,8 @@ from .errors import (
     HarnessError,
     HarnessTimeoutError,
     MemoryAccessError,
-    PluginError,
     PolicyError,
-    ProviderError,
-    RegistryError,
     RequestError,
-    SelectionError,
 )
 from .memory import (
     MemoryKind,
@@ -68,33 +48,11 @@ from .memory import (
     MemoryWriteDraft,
     MemoryWriteProposal,
 )
-from .observation import Observation
-from .provider import (
-    ProviderAttempt,
-    ProviderAttemptStatus,
-    ProviderDescriptor,
-    ProviderHealthSnapshot,
-    ProviderHealthStatus,
-    ProviderPin,
-)
-from .request import Request, RequestInput, RequestOptions, RequestTarget
-from .result import Continuation, ResultEnvelope, ResultIssue, ResultOutput, ResultStatus
-from .retry import RetryPolicy
-from .selection import SelectionContext, SelectionDecision, SelectionRejection
+from .observation import Observation, ObservationStatus
+from .request import Request, RequestInput, RequestOptions
 
 __all__ = [
-    "ApprovalDecision",
-    "ApprovalDecisionType",
-    "ApprovalGrant",
-    "ApprovalRequest",
     "CancellationContext",
-    "CapabilityCompletionMode",
-    "CapabilityDescriptor",
-    "CapabilityExecutionProfile",
-    "CapabilityError",
-    "CapabilityType",
-    "Continuation",
-    "ContractModel",
     "ContextConsumer",
     "ContextError",
     "ContextFreshness",
@@ -110,7 +68,7 @@ __all__ = [
     "ContextSourceRef",
     "ContextTrustTier",
     "ContextUseRecord",
-    "EgressType",
+    "ContractModel",
     "ErrorCategory",
     "ErrorCode",
     "ErrorDetail",
@@ -119,7 +77,6 @@ __all__ = [
     "HarnessError",
     "HarnessTimeoutError",
     "IdentityContext",
-    "IdempotencyType",
     "InvocationContext",
     "JsonPrimitive",
     "JsonValue",
@@ -135,31 +92,12 @@ __all__ = [
     "MemoryWriteProposal",
     "MutableContractModel",
     "Observation",
-    "PluginError",
+    "ObservationStatus",
     "PolicyError",
-    "ProviderAttempt",
-    "ProviderAttemptStatus",
-    "ProviderDescriptor",
-    "ProviderError",
-    "ProviderHealthSnapshot",
-    "ProviderHealthStatus",
-    "ProviderPin",
-    "RegistryError",
     "Request",
     "RequestError",
     "RequestInput",
     "RequestOptions",
-    "RequestTarget",
-    "ResultEnvelope",
-    "ResultIssue",
-    "ResultOutput",
-    "ResultStatus",
-    "RetryPolicy",
-    "SelectionContext",
-    "SelectionDecision",
-    "SelectionError",
-    "SelectionRejection",
-    "SideEffectType",
     "TenantContext",
     "TraceContext",
 ]

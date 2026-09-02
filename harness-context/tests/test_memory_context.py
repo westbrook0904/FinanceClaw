@@ -71,7 +71,6 @@ class MemoryContextTests(unittest.IsolatedAsyncioTestCase):
             read_context,
             ContextConsumer.PLAN,
             request_projection={},
-            capability_catalog=(),
         )
 
         self.assertEqual(len(bundle.projection.items), 1)
@@ -90,7 +89,6 @@ class MemoryContextTests(unittest.IsolatedAsyncioTestCase):
             invocation("other-request", subject="subject-b"),
             ContextConsumer.PLAN,
             request_projection={},
-            capability_catalog=(),
         )
         self.assertEqual(isolated.projection.items, ())
 
@@ -99,7 +97,6 @@ class MemoryContextTests(unittest.IsolatedAsyncioTestCase):
             read_context,
             ContextConsumer.PLAN,
             request_projection={},
-            capability_catalog=(),
         )
         self.assertEqual(deleted.projection.items, ())
 
@@ -137,7 +134,6 @@ class MemoryContextTests(unittest.IsolatedAsyncioTestCase):
             invocation("ttl-read"),
             ContextConsumer.ROUTE,
             request_projection={},
-            capability_catalog=(),
         )
         self.assertEqual(bundle.snapshot.items, ())
 
@@ -160,7 +156,6 @@ class MemoryContextTests(unittest.IsolatedAsyncioTestCase):
             minimal,
             ContextConsumer.ROUTE,
             request_projection={},
-            capability_catalog=(),
         )
         self.assertEqual(bundle.snapshot.items, ())
 

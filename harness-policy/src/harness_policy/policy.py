@@ -1,4 +1,4 @@
-"""Policy Provider 的最小扩展接口。"""
+"""Retained Context and Memory policy extension interface."""
 
 from __future__ import annotations
 
@@ -16,9 +16,9 @@ class Policy(ABC):
 
     @property
     def phases(self) -> frozenset[PolicyPhase]:
-        """兼容阶段一 Policy：默认只参与 PRE_EXECUTE。"""
+        """Default to the retained context boundary during staged migration."""
 
-        return frozenset({PolicyPhase.PRE_EXECUTE})
+        return frozenset({PolicyPhase.PRE_CONTEXT})
 
     @abstractmethod
     def evaluate(self, context: PolicyContext) -> PolicyDecision:

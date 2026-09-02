@@ -12,6 +12,7 @@ build/
 .env
 .env.*
 !.env.stage0.example
+!.env.stage1.example
 .langgraph_api/
 .idea/
 .real-use/

@@ -21,7 +21,6 @@ _ALLOWED_TRUST = {
     ContextSourceKind.REQUEST: frozenset({ContextTrustTier.USER}),
     ContextSourceKind.SESSION: frozenset({ContextTrustTier.APPLICATION, ContextTrustTier.USER}),
     ContextSourceKind.MEMORY: frozenset({ContextTrustTier.DATA}),
-    ContextSourceKind.CAPABILITY_CATALOG: frozenset({ContextTrustTier.APPLICATION}),
     ContextSourceKind.OBSERVATION: frozenset({ContextTrustTier.DATA}),
 }
 

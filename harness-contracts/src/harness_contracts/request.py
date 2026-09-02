@@ -16,17 +16,6 @@ class RequestInput(ContractModel):
     content: FrozenJsonValue
 
 
-class RequestTarget(ContractModel):
-    """Direct Invocation 的显式调用目标。
-
-    `capability` 必填，因此 Runtime 暂时不需要 Planner 或 LLM Router。
-    `plugin` 仅作为可选的 Provider 限定条件，能力名称仍是主要路由语义。
-    """
-
-    capability: NonEmptyString
-    plugin: NonEmptyString | None = None
-
-
 class RequestOptions(ContractModel):
     """单次 Invocation 的通用执行选项。"""
 
@@ -46,5 +35,4 @@ class Request(ContractModel):
     user_id: NonEmptyString | None = None
     input: RequestInput
     metadata: FrozenJsonMapping = Field(default_factory=dict)
-    target: RequestTarget | None = None
     options: RequestOptions = Field(default_factory=RequestOptions)
