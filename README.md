@@ -1,110 +1,94 @@
 # FinanceClaw
 
-FinanceClaw 正在从自研通用 Agent 框架收敛为“开源运行时 + 金融 Agent 领域核心”。当前
-`main` 已移除自研 Router、LLM Planner/PlanDraft、模型协议栈、ReAct 循环、DAG 调度器、
-checkpoint/恢复内核；这些通用能力后续分别复用 LangChain 与 LangGraph。
+FinanceClaw 正在按 [`.redesign/`](.redesign/README.md) 从自研通用 Agent Harness 收敛为
+“LangChain/LangGraph/LangSmith + 金融领域核心”。`.redesign/` 是当前唯一目标架构基线；
+旧 Harness 代码在 Stage 0 保留，仅用于回归，不被新 Spike 引用。
 
-FinanceClaw 自己继续聚焦四件事：
+## 当前阶段
 
-- Agent 的记忆与上下文工程；
-- 工具/Capability 的注册、发现、过滤与投影；
-- 工具调用前后的 Policy、权限、审批、幂等和 Provider 安全；
-- 金融场景需要的稳定结果、错误、Trace 与评测闭环。
+Stage 0 Framework Compatibility Spike 已实现以下隔离切片：
 
-## 已确定的顶层路径
+- Python 3.13 + `uv.lock`；
+- LangChain `create_agent` 与 OpenAI Provider Integration；
+- READ `BaseTool` + `ToolRetryMiddleware`；
+- WRITE `BaseTool` + `HumanInTheLoopMiddleware` + interrupt/resume；
+- trusted runtime context 下的动态 Tool 过滤；
+- LangGraph thread/checkpoint/stream 与 Agent Server graph；
+- stateless MCP server、MCP → `BaseTool` 转换与本地治理覆盖；
+- LangSmith 自动调用链、自定义 context run、完整开发 I/O 日志与凭证脱敏；
+- PostgreSQL checkpointer、Redis Store 与 worker/graph 重建恢复探针。
 
-```text
-Request
-  ├─ 显式 Capability  → DIRECT   → CapabilityInvoker
-  ├─ 显式 Workflow    → WORKFLOW → Published StateGraph（待实现）
-  └─ 未指定目标        → AGENT    → LangChain Agent / LangGraph（待实现）
-```
+实现位于 `financeclaw_spike/`，不依赖 `harness-runtime`、`harness-registry`、
+`harness-spi` 或其他旧执行抽象。验证状态和版本差异见
+[Stage-0 验证记录](.redesign/stages/Stage-0-验证记录.md)。
 
-顶层不再让 LLM 选择所谓 FAST/PLAN 模式，也不要求 LLM 一次性生成复杂 PlanDraft。无明确目标
-的请求直接进入顶层 Agent；重复且可验证的业务流程发布为固定、版本化 Workflow。
+## Conda 环境
 
-## 当前可用核心
-
-| 模块 | 职责 |
-|---|---|
-| `harness-contracts` | Request、Capability、Provider、Context、Memory、Result、Error、Retry 等稳定协议 |
-| `harness-spi` | Agent、Tool、Plugin 的最小扩展接口 |
-| `harness-registry` | Capability 与 Provider 的 1:N 注册及只读 Catalog |
-| `harness-selection` | Eligibility、Health 与确定性 Provider 选择 |
-| `harness-policy` | Context、Memory 和 Capability 调用治理 |
-| `harness-context` | Context Source、投影、裁剪与安全 Prompt 构建基础 |
-| `harness-memory` | Memory Provider/Gateway、scope、namespace、TTL、evidence 与 Policy |
-| `harness-runtime` | 统一 `CapabilityInvoker` 与 Direct Invocation |
-| `harness-plugin-local` | 本地集合与 entry point 插件发现、事务加载和生命周期 |
-| `harness-trace` | 领域 Trace/Span 和瞬时事件 |
-| `harness-events` | Provider 调用事件发布/订阅边界 |
-| `harness-bootstrap` | 上述核心的 Composition Root 与应用生命周期 |
-| `plugins/*` | 示例 Agent/Tool Capability；财经能力仍与 Core 解耦 |
-
-当前 Direct Invocation 保留 Provider retry/fallback：READ 可按策略重试并降级；WRITE 只有在
-稳定 idempotency key 与相同非空 `equivalence_group` 同时成立时才允许跨 Provider fallback。
-这属于 FinanceClaw 的工具执行安全，不由 LangChain 模型重试或 LangGraph 节点重试取代。
-
-## 安装
-
-- Python `>=3.14.3,<3.15`
-- Pydantic v2
-- 所有包采用 `src` layout 并提供 `py.typed`
+推荐用 Miniforge/conda 管理解释器，用 uv 把项目锁定依赖安装进同一个 conda 环境：
 
 ```bash
-.venv/bin/pip install -e ".[dev]"
+conda create --yes --prefix .conda/envs/stage0 python=3.13 pip uv=0.12.9
+
+UV_PROJECT_ENVIRONMENT="$PWD/.conda/envs/stage0" \
+  .conda/envs/stage0/bin/uv sync \
+  --all-extras --frozen \
+  --python .conda/envs/stage0/bin/python
 ```
 
-## Direct Invocation
-
-```python
-import asyncio
-
-from harness_bootstrap import build_harness
-from harness_contracts import Request, RequestInput, RequestTarget
-
-
-async def main() -> None:
-    request = Request(
-        input=RequestInput(type="text", content="hello"),
-        target=RequestTarget(capability="echo.reply/v1"),
-    )
-    async with build_harness() as app:
-        result = await app.invoke(request)
-        print(result.model_dump(mode="json"))
-
-
-asyncio.run(main())
-```
-
-`Request.target=None` 为未来顶层 Agent 入口保留；当前 `app.invoke()` 遇到无目标请求会返回
-`HARNESS.REQUEST.TARGET_REQUIRED`。
+也可使用 `environment.stage0.yml` 创建等价的命名环境。conda 环境、`.env`、IDE 文件和
+Agent Server 本地状态均已从 Git 与 Docker build context 排除。
 
 ## 测试
 
-```bash
-.venv/bin/python -m pytest \
-  harness-contracts/tests harness-spi/tests harness-registry/tests \
-  harness-context/tests harness-memory/tests harness-plugin-local/tests \
-  harness-selection/tests harness-policy/tests harness-trace/tests \
-  harness-runtime/tests harness-events/tests harness-bootstrap/tests \
-  plugins/tests tests/stage3a -q
+不依赖外部凭证的确定性测试：
 
-.venv/bin/python -m ruff check \
-  harness-bootstrap harness-contracts harness-context harness-events \
-  harness-memory harness-plugin-local harness-policy harness-registry \
-  harness-runtime harness-selection harness-spi harness-trace plugins tests main.py
+```bash
+.conda/envs/stage0/bin/python -m pytest -q
+.conda/envs/stage0/bin/ruff check financeclaw_spike tests/stage0 pyproject.toml
+.conda/envs/stage0/bin/ruff format --check financeclaw_spike tests/stage0
 ```
 
-## 架构决议
+本地 Agent Server：
 
-当前收敛由以下文档共同定义：
+```bash
+FINANCECLAW_SPIKE_OFFLINE_MODEL=true \
+FINANCECLAW_SPIKE_DEBUG_FULL_IO=false \
+FINANCECLAW_SPIKE_ENVIRONMENT=test \
+LANGSMITH_TRACING=false \
+  .conda/envs/stage0/bin/langgraph dev --no-browser --no-reload
 
-- `.design/FinanceClaw-LemonClaw-架构对齐分析.md`
-- `.design/FinanceClaw-顶层Agent与确定性Workflow-ADR讨论稿.md`
-- `.design/FinanceClaw-LangChain模型运行时复用-ADR讨论稿.md`
-- `.design/FinanceClaw-LangGraph编排运行时复用-ADR讨论稿.md`
+.conda/envs/stage0/bin/python -m financeclaw_spike.server_smoke
+```
 
-下一步不会恢复被删除的通用框架代码，而是设计三个薄适配面：`ModelRuntime`、
-`AgentRuntime/GraphRuntime`、`CapabilityToolAdapter`。框架负责运行机制，FinanceClaw 仍拥有
-身份、上下文、记忆、工具授权和调用安全。
+真实 Provider、LangSmith、PostgreSQL 与 Redis 验证前，复制 `.env.stage0.example` 为 `.env`
+并填写本地 Secret。不要提交 `.env`：
+
+```bash
+.conda/envs/stage0/bin/python -m financeclaw_spike.probe provider
+.conda/envs/stage0/bin/python -m financeclaw_spike.probe mcp
+
+docker compose -p financeclaw-stage0 -f compose.stage0.yml up -d --wait
+.conda/envs/stage0/bin/python -m financeclaw_spike.probe services
+docker compose -p financeclaw-stage0 -f compose.stage0.yml down
+```
+
+Agent Server 镜像构建：
+
+```bash
+.conda/envs/stage0/bin/langgraph build -t financeclaw-stage0:spike
+```
+
+## 目标架构
+
+```text
+FinanceClaw API / BFF
+  → LangGraph Agent Server
+      → LangChain Agent / Models / BaseTool / Middleware
+      → MCP / Financial Services
+      → PostgreSQL / Redis / Artifact Store
+  → Conversation / Memory / Governance / Audit
+  → LangSmith Trace / Evaluation
+```
+
+后续 Stage 必须先满足当前阶段门禁，再按垂直切片切换入口并删除对应旧模块，不长期维护双
+Runtime 或兼容层。

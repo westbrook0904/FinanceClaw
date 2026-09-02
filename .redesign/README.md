@@ -40,6 +40,7 @@
 实施阶段：
 
 - [Stage 0：Framework Spike](./stages/Stage-0-Framework-Spike-实施说明.md)
+  - [Stage 0 验证记录](./stages/Stage-0-验证记录.md)
 - [Stage 1：Execution Spine](./stages/Stage-1-Execution-Spine-实施说明.md)
 - [Stage 2：Conversation Context](./stages/Stage-2-Conversation-Context-实施说明.md)
 - [Stage 3：Long-term Memory](./stages/Stage-3-Long-term-Memory-实施说明.md)

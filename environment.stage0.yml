@@ -1,0 +1,7 @@
+name: financeclaw-stage0
+channels:
+  - conda-forge
+dependencies:
+  - python=3.13
+  - pip
+  - uv=0.12.9
