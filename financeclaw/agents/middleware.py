@@ -9,12 +9,19 @@ from hashlib import sha256
 from typing import Any
 
 from langchain.agents.middleware import AgentMiddleware, ModelRequest, ModelResponse
-from langchain_core.messages import ToolMessage
+from langchain_core.messages import HumanMessage, ToolMessage
 from langsmith import traceable
 
 from financeclaw.audit import AuditEventType, AuditRecord, AuditRepository
 from financeclaw.contracts import ExecutionContext
-from financeclaw.tools import ToolCatalog, ToolDecisionType, ToolPolicy
+from financeclaw.tools import ToolCatalog, ToolDecision, ToolDecisionType, ToolPolicy
+
+from .directives import (
+    InvocationDirective,
+    InvocationKind,
+    assess_tool_slots,
+    parse_invocation_directive,
+)
 
 LOGGER = logging.getLogger("financeclaw.model_io")
 
@@ -144,7 +151,16 @@ class ToolGovernanceMiddleware(AgentMiddleware):
             return context, None, None, arguments_hash
         if managed.key not in self.allowed_keys:
             return context, managed, None, arguments_hash
-        decision = self.policy.evaluate(context, managed.governance, arguments)
+        directive_denial = self._directive_denial(request.state, managed.tool, arguments)
+        decision = (
+            ToolDecision(
+                effect=ToolDecisionType.DENY,
+                reason=directive_denial,
+                policy_version=self.policy.version,
+            )
+            if directive_denial is not None
+            else self.policy.evaluate(context, managed.governance, arguments)
+        )
         trace_tool_authorization(
             tool_id=tool_id,
             effect=decision.effect.value,
@@ -165,6 +181,61 @@ class ToolGovernanceMiddleware(AgentMiddleware):
             tool_call_id=str(tool_call.get("id", "")) or None,
         )
         return context, managed, decision, arguments_hash
+
+    @staticmethod
+    def _directive_denial(state: Any, tool: Any, arguments: dict[str, Any]) -> str | None:
+        """Prevent a model from bypassing an incomplete or mismatched directive.
+
+        Visibility filtering guides the model, but execution safety cannot rely
+        on model compliance.  The latest user directive is therefore checked a
+        second time immediately before the Tool body runs.
+        """
+
+        messages = state.get("messages", ()) if isinstance(state, Mapping) else ()
+        latest_user_entry = next(
+            (
+                (index, message)
+                for index, message in reversed(tuple(enumerate(messages)))
+                if isinstance(message, HumanMessage) and isinstance(message.content, str)
+            ),
+            None,
+        )
+        if latest_user_entry is None:
+            return None
+        latest_user_index, latest_user = latest_user_entry
+        directive = parse_invocation_directive(latest_user.content)
+        if directive is None:
+            return None
+        if any(isinstance(message, ToolMessage) for message in messages[latest_user_index + 1 :]):
+            return "the explicit directive already produced a Tool result"
+        if directive.kind is not InvocationKind.TOOL:
+            return "the current user directive does not authorize a Tool call"
+        if directive.resource_id != tool.name:
+            return "the model-selected Tool does not match the explicit user directive"
+
+        expected = assess_tool_slots(tool, directive)
+        if (
+            not directive.payload
+            or directive.parse_error
+            or (directive.arguments is not None and not expected.complete)
+        ):
+            return "the explicit Tool directive has missing or invalid required slots"
+        if directive.arguments is None:
+            # Natural-language payloads require semantic extraction by the Agent;
+            # BaseTool performs the final schema validation on extracted values.
+            return None
+        actual = assess_tool_slots(
+            tool,
+            InvocationDirective(
+                kind=InvocationKind.TOOL,
+                resource_id=tool.name,
+                payload="{}",
+                arguments=arguments,
+            ),
+        )
+        if not actual.complete or actual.arguments != expected.arguments:
+            return "Tool arguments differ from the schema-validated explicit directive"
+        return None
 
     def _audit(
         self,

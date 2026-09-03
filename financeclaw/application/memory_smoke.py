@@ -11,7 +11,7 @@ from pydantic import SecretStr
 
 from financeclaw.audit import AuditEventType, SqlAlchemyAuditRepository
 from financeclaw.bootstrap import build_components
-from financeclaw.contracts import ApprovalDecision, RunRequest
+from financeclaw.contracts import ApprovalDecision, ConversationTurnRequest
 from financeclaw.conversation import SqlAlchemyConversationRepository
 from financeclaw.infrastructure import FinanceClawSettings
 
@@ -77,10 +77,8 @@ async def probe_memory(
     try:
         source = await service.create(tenant_id=tenant_id, subject_id=subject_id)
         write = await service.start_turn(
-            RunRequest(
-                conversation_id=source.conversation_id,
-                message="remember preference low volatility",
-            ),
+            source.conversation_id,
+            ConversationTurnRequest(message="remember preference low volatility"),
             tenant_id=tenant_id,
             subject_id=subject_id,
             scopes=scopes,
@@ -106,10 +104,8 @@ async def probe_memory(
 
         recall_conversation = await service.create(tenant_id=tenant_id, subject_id=subject_id)
         recall = await service.start_turn(
-            RunRequest(
-                conversation_id=recall_conversation.conversation_id,
-                message="回忆偏好：低波动",
-            ),
+            recall_conversation.conversation_id,
+            ConversationTurnRequest(message="回忆偏好：低波动"),
             tenant_id=tenant_id,
             subject_id=subject_id,
             scopes=scopes,

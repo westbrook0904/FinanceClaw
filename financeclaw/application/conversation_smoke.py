@@ -7,7 +7,7 @@ import json
 from pydantic import SecretStr
 
 from financeclaw.bootstrap import build_components
-from financeclaw.contracts import RunRequest
+from financeclaw.contracts import ConversationTurnRequest
 from financeclaw.conversation import SqlAlchemyConversationRepository
 from financeclaw.infrastructure import FinanceClawSettings
 
@@ -57,7 +57,8 @@ async def probe_conversation(
                 subject_id="stage2-smoke",
             )
         accepted = await service.start_turn(
-            RunRequest(conversation_id=conversation_id, message=message),
+            conversation_id,
+            ConversationTurnRequest(message=message),
             tenant_id="stage2-smoke",
             subject_id="stage2-smoke",
             scopes=frozenset({"market:read", "tools:read", "artifacts:read"}),
@@ -89,7 +90,9 @@ async def probe_conversation(
             "run_id": accepted.run_id,
             "message_count": len(messages.messages),
             "manifest_count": len(manifests),
-            "agent_profile_version": conversation.agent_profile_version,
+            "agent_profile_version": repository.get_owned(
+                conversation_id, "stage2-smoke", "stage2-smoke"
+            ).agent_profile_version,
             "completed": True,
         }
     finally:

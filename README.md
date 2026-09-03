@@ -5,7 +5,15 @@ FinanceClaw 正在按 [`.redesign/`](.redesign/README.md) 从自研通用 Agent 
 
 ## 当前阶段
 
-Stage 4 Published Workflows 已成为当前基线，并在 Stage-3 主链之外增加一条严格隔离的固定流程：
+Stage 4 Published Workflows 已成为当前基线；在此基础上，对外接口已修订为“根会话统一进入顶层 Agent”：
+
+- 产品写入口只有 Conversation 创建和 message-only Turn 提交，不接受 Agent、Tool 或 Workflow Target；
+- `finance_agent` 使用 ReAct 判断直接回答、Tool Calling、Workflow handoff 或领域 Agent delegation；
+- `/tool <id>`、`/workflow <id>`、`/agent <id>` 是调用偏好，不是身份或权限；
+- `/tool` 已支持 Pydantic Schema 校验、缺参提槽、单 Tool 候选约束和执行时二次授权；
+- 原直接 Tool/Workflow/Run 创建路由从 OpenAPI 隐藏，并仅允许 `internal:invoke` 服务身份；Workflow/领域 Agent 的 typed handoff 与父子 run 持久化按修订设计继续实现。
+
+Stage 4 已交付的固定流程能力包括：
 
 - 不可变、启动期装配的 `WorkflowCatalog`，固定 workflow、graph revision、ModelProfile、Tool
   版本、审批点和超时策略；
@@ -14,8 +22,7 @@ Stage 4 Published Workflows 已成为当前基线，并在 Stage-3 主链之外�
 - Workflow 独占 Agent Server thread，BFF 永久保存业务 run、thread、server run、发布版本、输入 hash、
   审批和 artifact 映射；
 - 审批使用 LangGraph interrupt/resume，权限、owner、原始参数 hash 和过期时间均在恢复前复验；
-- 标准入口 `POST /v1/workflows/{workflow_id}/runs`，也支持显式 `WorkflowTarget`，普通 ReAct Agent
-  和 Direct Tool 路径保持不变；
+- 内部 `portfolio_review` Workflow 创建、恢复和审批链保持可用，产品调用将经顶层 Agent handoff 接入；
 - 报告写入使用 run/node 幂等键，State/checkpoint 只保留有界结构化数据和 artifact 引用；
 - Alembic `0003_stage4`、完整生命周期 Audit 和 LangSmith 五类回归样本。
 
@@ -82,8 +89,10 @@ Secret 只放 `.env` 或部署平台 Secret Manager，不要写入 Git 跟踪的
 .conda/envs/stage0/bin/uvicorn main:app --host 127.0.0.1 --port 8000
 ```
 
-通过 `POST /v1/conversations` 创建会话，再在 `POST /v1/runs` body 中传入返回的
-`conversation_id`。后续轮次复用同一 ID；原始消息、摘要与 Manifest 均由业务数据库持久化。
+通过 `POST /v1/conversations` 创建会话，再调用
+`POST /v1/conversations/{conversation_id}/turns`，请求体只传 `message`。后续轮次复用同一 ID；
+原始消息、摘要与 Manifest 均由业务数据库持久化。需要明确表达调用偏好时，把
+`/tool ...`、`/workflow ...` 或 `/agent ...` 直接写入 `message`，不要在请求体中传 Target。
 长期记忆由 Agent Server 的 LangGraph Store 持久化；生产部署需把 Agent Server Store 配置为
 PostgreSQL-backed 实现。记忆写入会暂停为审批，调用 `/v1/runs/{run_id}/resume` 批准或拒绝。
 

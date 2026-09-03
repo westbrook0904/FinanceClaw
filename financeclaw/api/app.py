@@ -1,11 +1,11 @@
-"""Minimal product BFF for run, stream, direct Tool, approval and readiness."""
+"""Conversation-first product BFF with internal control-plane compatibility."""
 
 import asyncio
 import logging
 from contextlib import asynccontextmanager
 from typing import Annotated
 
-from fastapi import Depends, FastAPI, Header
+from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from financeclaw.application import (
@@ -22,6 +22,8 @@ from financeclaw.contracts import (
     ApprovalDecision,
     ConversationMessagesResponse,
     ConversationResponse,
+    ConversationTurnAccepted,
+    ConversationTurnRequest,
     CreateConversationRequest,
     RunAccepted,
     RunRequest,
@@ -43,6 +45,17 @@ from .errors import install_error_handlers
 from .streaming import project_sse
 
 LOGGER = logging.getLogger(__name__)
+_INTERNAL_INVOKE_SCOPE = "internal:invoke"
+
+
+def _require_internal_invocation(principal: AuthenticatedPrincipal) -> None:
+    """Keep deterministic graph entry points out of the product trust boundary."""
+
+    if "*" not in principal.scopes and _INTERNAL_INVOKE_SCOPE not in principal.scopes:
+        raise HTTPException(
+            status_code=403,
+            detail="direct graph invocation is restricted to internal service identities",
+        )
 
 
 def create_app(
@@ -82,7 +95,12 @@ def create_app(
             content={"status": "ready" if available else "unavailable", "agent_server": available},
         )
 
-    @app.post("/v1/runs", response_model=RunAccepted, status_code=202)
+    @app.post(
+        "/v1/runs",
+        response_model=RunAccepted,
+        status_code=202,
+        include_in_schema=False,
+    )
     async def start_run(
         request: RunRequest,
         principal: Annotated[AuthenticatedPrincipal, Depends(principal_dep)],
@@ -90,6 +108,7 @@ def create_app(
             str, Header(alias="Idempotency-Key", min_length=1, max_length=200)
         ],
     ) -> RunAccepted:
+        _require_internal_invocation(principal)
         if isinstance(request.target, WorkflowTarget):
             if request.conversation_id is not None:
                 raise WorkflowInputError(
@@ -108,7 +127,8 @@ def create_app(
             if conversation_service is None:
                 raise RuntimeError("conversation service is not configured")
             return await conversation_service.start_turn(
-                request,
+                request.conversation_id,
+                ConversationTurnRequest(message=request.message),
                 tenant_id=principal.tenant_id,
                 subject_id=principal.subject_id,
                 scopes=principal.scopes,
@@ -126,6 +146,7 @@ def create_app(
         "/v1/workflows/{workflow_id}/runs",
         response_model=RunAccepted,
         status_code=202,
+        include_in_schema=False,
     )
     async def start_workflow(
         workflow_id: str,
@@ -135,6 +156,7 @@ def create_app(
             str, Header(alias="Idempotency-Key", min_length=1, max_length=200)
         ],
     ) -> RunAccepted:
+        _require_internal_invocation(principal)
         if workflow_service is None:
             raise RuntimeError("workflow service is not configured")
         return await workflow_service.start(
@@ -149,7 +171,12 @@ def create_app(
             idempotency_key=idempotency_key,
         )
 
-    @app.post("/v1/tools/{tool_id}:invoke", response_model=RunAccepted, status_code=202)
+    @app.post(
+        "/v1/tools/{tool_id}:invoke",
+        response_model=RunAccepted,
+        status_code=202,
+        include_in_schema=False,
+    )
     async def invoke_tool(
         tool_id: str,
         request: ToolInvokeRequest,
@@ -158,6 +185,7 @@ def create_app(
             str, Header(alias="Idempotency-Key", min_length=1, max_length=200)
         ],
     ) -> RunAccepted:
+        _require_internal_invocation(principal)
         run_request = RunRequest(
             message=f"Direct invocation of {tool_id}",
             target=ToolTarget(
@@ -289,14 +317,43 @@ def create_app(
 
         @app.post("/v1/conversations", response_model=ConversationResponse, status_code=201)
         async def create_conversation(
-            request: CreateConversationRequest,
+            _request: CreateConversationRequest,
             principal: Annotated[AuthenticatedPrincipal, Depends(principal_dep)],
         ) -> ConversationResponse:
             return await conversation_service.create(
                 tenant_id=principal.tenant_id,
                 subject_id=principal.subject_id,
-                agent_id=request.agent_id,
-                agent_profile_version=request.agent_profile_version,
+            )
+
+        @app.post(
+            "/v1/conversations/{conversation_id}/turns",
+            response_model=ConversationTurnAccepted,
+            status_code=202,
+        )
+        async def start_conversation_turn(
+            conversation_id: str,
+            request: ConversationTurnRequest,
+            principal: Annotated[AuthenticatedPrincipal, Depends(principal_dep)],
+            idempotency_key: Annotated[
+                str, Header(alias="Idempotency-Key", min_length=1, max_length=200)
+            ],
+        ) -> ConversationTurnAccepted:
+            accepted = await conversation_service.start_turn(
+                conversation_id,
+                request,
+                tenant_id=principal.tenant_id,
+                subject_id=principal.subject_id,
+                scopes=principal.scopes,
+                idempotency_key=idempotency_key,
+            )
+            if accepted.conversation_id is None or accepted.turn_id is None:
+                raise RuntimeError("conversation turn acknowledgement is incomplete")
+            return ConversationTurnAccepted(
+                run_id=accepted.run_id,
+                status=accepted.status,
+                idempotent_replay=accepted.idempotent_replay,
+                conversation_id=accepted.conversation_id,
+                turn_id=accepted.turn_id,
             )
 
         @app.get("/v1/conversations/{conversation_id}", response_model=ConversationResponse)

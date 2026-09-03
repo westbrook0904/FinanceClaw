@@ -10,6 +10,8 @@ from langchain_core.outputs import ChatGeneration, ChatResult
 from langchain_core.runnables import Runnable
 from pydantic import PrivateAttr
 
+from .directives import InvocationKind, parse_invocation_directive
+
 
 class OfflineFinanceModel(BaseChatModel):
     _bound_tool_names: set[str] = PrivateAttr(default_factory=set)
@@ -67,8 +69,38 @@ class OfflineFinanceModel(BaseChatModel):
                     ChatGeneration(message=AIMessage(content=f"Tool result: {last.content}"))
                 ]
             )
-        content = str(last.content).lower()
-        if "remember preference" in content or "记住" in content:
+        raw_content = str(last.content)
+        directive = parse_invocation_directive(raw_content)
+        if directive is not None and directive.kind is not InvocationKind.TOOL:
+            return ChatResult(
+                generations=[
+                    ChatGeneration(
+                        message=AIMessage(
+                            content=(
+                                f"Requested {directive.kind.value} '{directive.resource_id}' "
+                                "has no registered delegation capability."
+                            )
+                        )
+                    )
+                ]
+            )
+        if directive is not None and (directive.parse_error or not directive.payload):
+            problem = directive.parse_error or "required arguments"
+            return ChatResult(
+                generations=[
+                    ChatGeneration(
+                        message=AIMessage(
+                            content=f"Please provide the missing or invalid {problem}."
+                        )
+                    )
+                ]
+            )
+
+        content = raw_content.lower()
+        if directive is not None and directive.arguments is not None:
+            name = directive.resource_id
+            args = directive.arguments
+        elif "remember preference" in content or "记住" in content:
             name = "propose_memory"
             args = {
                 "kind": "preference",

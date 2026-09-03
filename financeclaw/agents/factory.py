@@ -32,6 +32,7 @@ from financeclaw.tools import (
 )
 
 from .context_middleware import ConversationContextMiddleware
+from .directive_middleware import InvocationDirectiveMiddleware
 from .memory_middleware import MemoryRecallMiddleware
 from .middleware import ContextTraceMiddleware, FullIODebugMiddleware, ToolGovernanceMiddleware
 from .profiles import AgentProfile
@@ -140,6 +141,9 @@ class AgentFactory:
                     self.audit,
                     allowed_keys=allowed_keys,
                 ),
+                # Directive processing intentionally follows visibility filtering:
+                # a user-named Tool cannot make a policy-hidden Tool visible.
+                InvocationDirectiveMiddleware(),
             ]
         )
         if self.artifact_service is not None:
@@ -160,7 +164,7 @@ class AgentFactory:
                     tool_catalog=self.tool_catalog,
                     agent_profile_version=profile.version,
                     model_profile_version=model_profile.version,
-                    prompt_template_version="finance-agent-system/1.0.0",
+                    prompt_template_version="finance-agent-system/2.0.0",
                     debug_full_io=self.debug_full_io,
                 )
             )

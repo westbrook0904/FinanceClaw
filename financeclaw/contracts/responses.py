@@ -13,9 +13,22 @@ class ContractModel(BaseModel):
 
 
 class RunRequest(ContractModel):
+    """Internal compatibility contract for control-plane dispatch.
+
+    Product clients submit :class:`ConversationTurnRequest` instead.  Keeping
+    this contract internal lets operational probes address a compiled graph
+    without turning a user-controlled ``target`` into an authorization path.
+    """
+
     message: Annotated[str, Field(min_length=1, max_length=32_000)]
     target: RunTarget | None = None
     conversation_id: Annotated[str, Field(min_length=1, max_length=128)] | None = None
+
+
+class ConversationTurnRequest(ContractModel):
+    """The only user-controlled input needed to continue a conversation."""
+
+    message: Annotated[str, Field(min_length=1, max_length=32_000)]
 
 
 class ToolInvokeRequest(ContractModel):
@@ -31,6 +44,8 @@ class WorkflowInvokeRequest(ContractModel):
 
 
 class RunAccepted(ContractModel):
+    """Internal run creation result, including execution-plane routing data."""
+
     run_id: str
     thread_id: str
     status: str
@@ -40,15 +55,22 @@ class RunAccepted(ContractModel):
     turn_id: str | None = None
 
 
+class ConversationTurnAccepted(ContractModel):
+    """Public acknowledgement without Agent Server topology or target details."""
+
+    run_id: str
+    status: str
+    idempotent_replay: bool = False
+    conversation_id: str
+    turn_id: str
+
+
 class CreateConversationRequest(ContractModel):
-    agent_id: Annotated[str, Field(min_length=1, max_length=128)] = "finance_agent"
-    agent_profile_version: Annotated[str, Field(pattern=r"^\d+\.\d+\.\d+$")] | None = None
+    """Create a conversation owned by the platform's top-level Agent."""
 
 
 class ConversationResponse(ContractModel):
     conversation_id: str
-    agent_id: str
-    agent_profile_version: str
     status: str
     created_at: str
 

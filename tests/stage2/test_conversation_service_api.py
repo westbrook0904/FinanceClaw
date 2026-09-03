@@ -16,8 +16,8 @@ from financeclaw.application import (
     TargetResolver,
 )
 from financeclaw.bootstrap import build_components
-from financeclaw.contracts import AgentTarget, RunRequest, ToolTarget
-from financeclaw.conversation import ConversationConflict, SqlAlchemyConversationRepository
+from financeclaw.contracts import ConversationTurnRequest
+from financeclaw.conversation import SqlAlchemyConversationRepository
 from financeclaw.infrastructure import ApplicationDatabase, FinanceClawSettings
 
 
@@ -130,14 +130,16 @@ async def test_restart_reconciliation_thread_mapping_profile_pin_and_ownership(
     )
     conversation = await service.create(tenant_id="tenant-a", subject_id="subject-a")
     accepted = await service.start_turn(
-        RunRequest(conversation_id=conversation.conversation_id, message="first question"),
+        conversation.conversation_id,
+        ConversationTurnRequest(message="first question"),
         tenant_id="tenant-a",
         subject_id="subject-a",
         scopes=frozenset({"market:read"}),
         idempotency_key="first-turn",
     )
     replay = await service.start_turn(
-        RunRequest(conversation_id=conversation.conversation_id, message="first question"),
+        conversation.conversation_id,
+        ConversationTurnRequest(message="first question"),
         tenant_id="tenant-a",
         subject_id="subject-a",
         scopes=frozenset({"market:read"}),
@@ -146,30 +148,6 @@ async def test_restart_reconciliation_thread_mapping_profile_pin_and_ownership(
     assert replay.run_id == accepted.run_id
     assert replay.idempotent_replay
     assert len(fake.create_calls) == 1
-    with pytest.raises(ConversationConflict):
-        await service.start_turn(
-            RunRequest(
-                conversation_id=conversation.conversation_id,
-                message="switch target",
-                target=ToolTarget(tool_id="market_snapshot", arguments={"symbol": "AAPL"}),
-            ),
-            tenant_id="tenant-a",
-            subject_id="subject-a",
-            scopes=frozenset({"market:read"}),
-            idempotency_key="wrong-target",
-        )
-    with pytest.raises(ConversationConflict):
-        await service.start_turn(
-            RunRequest(
-                conversation_id=conversation.conversation_id,
-                message="switch profile",
-                target=AgentTarget(agent_id="finance_agent", version="9.9.9"),
-            ),
-            tenant_id="tenant-a",
-            subject_id="subject-a",
-            scopes=frozenset({"market:read"}),
-            idempotency_key="wrong-profile",
-        )
     if components.database is not None:
         components.database.close()
 
@@ -195,7 +173,8 @@ async def test_restart_reconciliation_thread_mapping_profile_pin_and_ownership(
             subject_id="subject-b",
         )
     second = await restarted.start_turn(
-        RunRequest(conversation_id=conversation.conversation_id, message="second question"),
+        conversation.conversation_id,
+        ConversationTurnRequest(message="second question"),
         tenant_id="tenant-a",
         subject_id="subject-a",
         scopes=frozenset({"market:read"}),
@@ -245,13 +224,37 @@ async def test_conversation_http_contract_and_cross_tenant_isolation(tmp_path: P
         created = await client.post(
             "/v1/conversations", json={}, headers={"Authorization": "Bearer token-a"}
         )
+        rejected_agent_selection = await client.post(
+            "/v1/conversations",
+            json={"agent_id": "specialist"},
+            headers={"Authorization": "Bearer token-a"},
+        )
         conversation_id = created.json()["conversation_id"]
         started = await client.post(
-            "/v1/runs",
-            json={"conversation_id": conversation_id, "message": "read AAPL"},
+            f"/v1/conversations/{conversation_id}/turns",
+            json={"message": "read AAPL"},
             headers={
                 "Authorization": "Bearer token-a",
                 "Idempotency-Key": "api-turn",
+            },
+        )
+        rejected_target = await client.post(
+            f"/v1/conversations/{conversation_id}/turns",
+            json={
+                "message": "switch Agent",
+                "target": {"kind": "agent", "agent_id": "specialist"},
+            },
+            headers={
+                "Authorization": "Bearer token-a",
+                "Idempotency-Key": "forbidden-target",
+            },
+        )
+        blocked_control_plane = await client.post(
+            "/v1/runs",
+            json={"message": "bypass root Agent"},
+            headers={
+                "Authorization": "Bearer token-a",
+                "Idempotency-Key": "blocked-control-plane",
             },
         )
         hidden = await client.get(
@@ -263,13 +266,25 @@ async def test_conversation_http_contract_and_cross_tenant_isolation(tmp_path: P
             headers={"Authorization": "Bearer token-a"},
         )
         health = await client.get("/health")
+        openapi = (await client.get("/openapi.json")).json()
 
     assert created.status_code == 201
+    assert "agent_id" not in created.json()
+    assert "agent_profile_version" not in created.json()
+    assert rejected_agent_selection.status_code == 422
     assert started.status_code == 202
     assert started.json()["conversation_id"] == conversation_id
+    assert "target_kind" not in started.json()
+    assert "thread_id" not in started.json()
+    assert rejected_target.status_code == 422
+    assert blocked_control_plane.status_code == 403
     assert hidden.status_code == 404
     assert [item["role"] for item in messages.json()["messages"]] == ["user"]
     assert health.json()["stage"] == "4"
+    assert "/v1/conversations/{conversation_id}/turns" in openapi["paths"]
+    assert "/v1/tools/{tool_id}:invoke" not in openapi["paths"]
+    assert "/v1/workflows/{workflow_id}/runs" not in openapi["paths"]
+    assert "/v1/runs" not in openapi["paths"]
     if components.database is not None:
         components.database.close()
 
@@ -284,10 +299,7 @@ async def test_replay_recovers_server_run_created_before_local_bind(
     fake = FakeAgentServerClient()
     service = ConversationService(fake, repository, components.agent_profiles)
     conversation = await service.create(tenant_id="tenant-a", subject_id="subject-a")
-    request = RunRequest(
-        conversation_id=conversation.conversation_id,
-        message="recover this dispatch",
-    )
+    request = ConversationTurnRequest(message="recover this dispatch")
     original_bind = repository.bind_server_run
     attempts = 0
 
@@ -301,6 +313,7 @@ async def test_replay_recovers_server_run_created_before_local_bind(
     monkeypatch.setattr(repository, "bind_server_run", fail_first_bind)
     with pytest.raises(RuntimeError, match="local commit failure"):
         await service.start_turn(
+            conversation.conversation_id,
             request,
             tenant_id="tenant-a",
             subject_id="subject-a",
@@ -308,6 +321,7 @@ async def test_replay_recovers_server_run_created_before_local_bind(
             idempotency_key="bind-window",
         )
     recovered = await service.start_turn(
+        conversation.conversation_id,
         request,
         tenant_id="tenant-a",
         subject_id="subject-a",

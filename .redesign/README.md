@@ -2,7 +2,7 @@
 
 状态：已确认，作为下一轮实现与删除工作的唯一目标架构基线。
 
-更新时间：2026-09-02
+更新时间：2026-09-03
 
 ## 目的
 
@@ -19,7 +19,7 @@
 ## 已冻结的关键决议
 
 1. 运行时统一使用稳定的 CPython `>=3.13,<3.14`。
-2. 没有显式 Tool、Workflow 或 Agent Target 的请求直接进入默认顶层 Agent，不再让 LLM 选择 FAST/PLAN/REACT 模式。
+2. 所有产品会话消息统一进入默认顶层 Agent，由其在 ReAct 循环中回答、调用 Tool、调用 Workflow 或委派领域 Agent；对外 API 不接受 Agent/Tool/Workflow Target。
 3. 不再要求 LLM 构造复杂 `PlanDraft`；确定性业务流程发布为版本化 LangGraph Workflow。
 4. Tool 统一使用 LangChain `BaseTool`；Capability、Provider Registry、通用 Selection 和旧 Invoker 退出。
 5. LangChain 没有通用 Tool 业务 RBAC/ABAC；FinanceClaw 只保留薄 `ToolGovernance` 与确定性 Policy 函数，并通过 Middleware/HITL 落地。
@@ -36,6 +36,7 @@
 - [目标模块与依赖设计](./02-目标模块与依赖设计.md)
 - [数据模型与持久化设计](./03-数据模型与持久化设计.md)
 - [安全、观测与评测设计](./04-安全观测与评测设计.md)
+- [顶层 Agent 与对外接口修订](./05-顶层Agent与对外接口修订.md)
 
 实施阶段：
 

@@ -11,20 +11,18 @@ from langchain_core.messages import AIMessage
 
 from financeclaw.agents import AgentProfileCatalog
 from financeclaw.contracts import (
-    AgentTarget,
     ApprovalDecision,
     ApprovalDecisionType,
     ConversationMessageResponse,
     ConversationMessagesResponse,
     ConversationResponse,
+    ConversationTurnRequest,
     ExecutionContext,
     RunAccepted,
-    RunRequest,
     RunStatusResponse,
     StreamEvent,
 )
 from financeclaw.conversation import (
-    ConversationConflict,
     ConversationNotFound,
     SqlAlchemyConversationRepository,
     SummaryService,
@@ -42,6 +40,15 @@ class ApprovalExpired(RuntimeError):
 
 
 class ConversationService:
+    """Own conversations whose root runtime is the platform Agent.
+
+    The profile pin is an internal reproducibility concern.  Callers cannot
+    select or switch the root Agent; specialist Agents are delegated work,
+    rather than alternative owners of the user conversation.
+    """
+
+    ROOT_AGENT_ID = "finance_agent"
+
     def __init__(
         self,
         client: AgentServerClient,
@@ -66,10 +73,8 @@ class ConversationService:
         *,
         tenant_id: str,
         subject_id: str,
-        agent_id: str = "finance_agent",
-        agent_profile_version: str | None = None,
     ) -> ConversationResponse:
-        profile = self.agent_profiles.resolve(agent_id, agent_profile_version)
+        profile = self.agent_profiles.resolve(self.ROOT_AGENT_ID)
         conversation = await asyncio.to_thread(
             self.repository.create_conversation,
             tenant_id=tenant_id,
@@ -106,31 +111,20 @@ class ConversationService:
 
     async def start_turn(
         self,
-        request: RunRequest,
+        conversation_id: str,
+        request: ConversationTurnRequest,
         *,
         tenant_id: str,
         subject_id: str,
         scopes: frozenset[str],
         idempotency_key: str,
     ) -> RunAccepted:
-        if request.conversation_id is None:
-            raise ValueError("conversation_id is required")
         conversation = await asyncio.to_thread(
             self.repository.get_owned,
-            request.conversation_id,
+            conversation_id,
             tenant_id,
             subject_id,
         )
-        if request.target is not None:
-            if not isinstance(request.target, AgentTarget):
-                raise ConversationConflict(
-                    "conversation turns only support the pinned Agent target"
-                )
-            if request.target.agent_id != conversation.agent_id or (
-                request.target.version is not None
-                and request.target.version != conversation.agent_profile_version
-            ):
-                raise ConversationConflict("conversation AgentProfile is pinned and cannot change")
         request_hash = sha256(
             json.dumps(
                 {
@@ -179,7 +173,7 @@ class ConversationService:
             if server_run is None:
                 server_run = await self.client.create_run(
                     thread_id=conversation.agent_thread_id,
-                    assistant_id="finance_agent",
+                    assistant_id=conversation.agent_id,
                     input={"messages": [{"role": "user", "content": request.message}]},
                     context=context.model_dump(mode="json"),
                     metadata=_server_metadata(
@@ -298,7 +292,7 @@ class ConversationService:
         )
         result = await self.client.resume_run(
             thread_id=conversation.agent_thread_id,
-            assistant_id="finance_agent",
+            assistant_id=conversation.agent_id,
             command={"resume": {"decisions": [mapped]}},
             context=context.model_dump(mode="json"),
             metadata=_server_metadata(context, stage="3"),
@@ -334,7 +328,7 @@ class ConversationService:
         except ConversationNotFound as exc:
             raise RunNotFound(str(exc)) from exc
         async for part in self.client.stream_thread(
-            thread_id=conversation.agent_thread_id, assistant_id="finance_agent"
+            thread_id=conversation.agent_thread_id, assistant_id=conversation.agent_id
         ):
             if isinstance(part, Mapping):
                 yield StreamEvent(
@@ -388,8 +382,6 @@ class ConversationService:
 def _conversation_response(conversation: Any) -> ConversationResponse:
     return ConversationResponse(
         conversation_id=conversation.conversation_id,
-        agent_id=conversation.agent_id,
-        agent_profile_version=conversation.agent_profile_version,
         status=conversation.status.value,
         created_at=conversation.created_at.isoformat(),
     )

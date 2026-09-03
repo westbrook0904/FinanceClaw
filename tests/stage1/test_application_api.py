@@ -83,7 +83,7 @@ def build_api():
             "token-a": AuthenticatedPrincipal(
                 tenant_id="tenant-a",
                 subject_id="subject-a",
-                scopes={"market:read", "watchlist:write"},
+                scopes={"market:read", "watchlist:write", "internal:invoke"},
             ),
             "token-b": AuthenticatedPrincipal(
                 tenant_id="tenant-b",
@@ -96,7 +96,7 @@ def build_api():
 
 
 @pytest.mark.asyncio
-async def test_default_agent_dispatch_and_bff_idempotency() -> None:
+async def test_internal_default_agent_dispatch_and_bff_idempotency() -> None:
     app, fake = build_api()
     transport = httpx.ASGITransport(app=app)
     headers = {"Authorization": "Bearer token-a", "Idempotency-Key": "same-key"}
@@ -117,7 +117,7 @@ async def test_default_agent_dispatch_and_bff_idempotency() -> None:
 
 
 @pytest.mark.asyncio
-async def test_direct_tool_dispatch_auth_ownership_resume_and_stream() -> None:
+async def test_internal_tool_dispatch_auth_ownership_resume_and_stream() -> None:
     app, fake = build_api()
     transport = httpx.ASGITransport(app=app)
     headers = {"Authorization": "Bearer token-a", "Idempotency-Key": "direct-key"}

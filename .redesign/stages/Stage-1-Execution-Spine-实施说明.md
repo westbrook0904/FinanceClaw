@@ -2,7 +2,7 @@
 
 ## 1. 目标
 
-建立 FinanceClaw 新的生产运行主干，使默认 Agent、显式 Direct Tool 与 MCP/local Tool 均不依赖旧 Capability Runtime，并在验收后删除第一批重复框架代码。
+建立 FinanceClaw 新的生产运行主干，使默认 Agent、受治理 Tool Calling 与 MCP/local Tool 均不依赖旧 Capability Runtime，并在验收后删除第一批重复框架代码。固定 Direct Tool 图仅作为内部验证和控制平面适配器。
 
 ## 2. 范围
 
@@ -100,7 +100,7 @@ READ/无需审批 Tool 确定性穿过 interrupt；WRITE Tool 使用 arguments h
 实现内部可演进的产品接口：
 
 - 默认 Agent run/stream；
-- Direct Tool invoke；
+- 顶层 Agent 的显式 Tool 指令与内部 Direct Tool invoke；
 - run status；
 - approval resume；
 - health/readiness。
@@ -142,7 +142,7 @@ BFF 负责认证上下文、Target 解析、idempotency 和 Agent Server API 映
 - Policy allow/deny/approval；
 - tenant/scope；
 - READ/WRITE retry predicate；
-- TargetResolver。
+- slash directive 解析、提槽与内部 TargetResolver 兼容性。
 
 ### Graph
 
@@ -162,7 +162,7 @@ BFF 负责认证上下文、Target 解析、idempotency 和 Agent Server API 映
 
 ## 9. 验收条件
 
-- 默认 Agent 与 Direct Tool 全部通过新链路；
+- 默认 Agent 与受治理 Tool Calling 全部通过新链路，内部 Direct Tool 探针可用；
 - Agent/Workflow/Direct 使用同一 Tool Policy 语义；
 - Capability/Provider Registry 不在新代码依赖图中；
 - WRITE Tool 未批准不能执行；

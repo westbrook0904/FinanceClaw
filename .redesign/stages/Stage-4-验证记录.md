@@ -1,5 +1,7 @@
 # Stage 4：Published Workflows 验证记录
 
+> 2026-09-03 接口修订：本记录中的 Workflow 直连路由是 Stage-4 当时的交付证据；当前产品 OpenAPI 已改为顶层 Agent 的 message-only Conversation/Turn 入口，直连路由仅供 `internal:invoke` 服务身份兼容使用。
+
 更新时间：2026-09-03
 
 状态：**GO（本地验收完成）**。`portfolio_review@1.0.0` 已作为代码发布的固定 LangGraph

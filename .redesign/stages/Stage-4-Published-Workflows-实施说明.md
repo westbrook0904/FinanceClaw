@@ -75,13 +75,13 @@ Catalog 不做动态发现、运行时插件扫描和 Provider 选择。
 
 ## 4. 请求路由
 
-Workflow 只能通过以下方式进入：
+产品会话中的 Workflow 只能由顶层 Agent 通过受治理的 handoff 进入：
 
-- 用户显式指定 `workflow_id`；
-- 产品界面绑定固定 workflow；
-- 服务端确定性业务规则选择固定 workflow。
+- 顶层 Agent 根据用户自然语言，从当前可见的已发布 Workflow 中选择；
+- 用户使用 `/workflow <workflow_id>` 表达调用偏好，顶层 Agent 完成参数提取和提槽；
+- 产品界面的固定流程操作转换为同等的会话指令，不能直接指定公开 API Target。
 
-不得让模型从任意候选中自行决定是否切换 Workflow，也不得生成包含任意节点、边和执行策略的动态 `PlanDraft`。
+模型只能从 Catalog/Profile/Policy 暴露的已发布 Workflow 中选择，不能动态生成 Workflow ID、版本、节点、边和执行策略。服务端在 typed handoff 后再次确定版本、权限和输入 Schema，并创建独立 child run。
 
 ## 5. 版本与幂等
 
@@ -132,7 +132,7 @@ Workflow 只能通过以下方式进入：
 - 至少一个真实 Workflow 在 Agent Server 上可发布、执行、中断和恢复；
 - 所有流程均为代码定义、版本化、可测试的 LangGraph；
 - 普通请求不经过 Planner 或动态 DAG；
-- 业务 API 能确定性选择并追踪 Workflow；
+- 顶层 Agent 能选择或遵循显式 Workflow 指令，BFF 能确定性解析 handoff 并追踪父子 run；
 - 幂等、审批、制品、LangSmith trace 和 Audit 形成完整链路；
 - 旧 Planner/DAG Runtime 已从生产依赖中移除。
 

@@ -1,5 +1,7 @@
 # Stage 1：Execution Spine 验证记录
 
+> 2026-09-03 接口修订：`TargetResolver`、`RunService` 与 `direct_tool` 的验证结果仅代表内部控制平面能力；产品写入口不再暴露 Target，详见顶层 Agent 接口修订 ADR。
+
 更新时间：2026-09-02
 
 状态：**GO**。Stage-1 新执行主链、离线 Agent Server、DeepSeek OpenAI 兼容协议与 LangSmith

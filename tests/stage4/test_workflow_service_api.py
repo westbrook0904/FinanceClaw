@@ -167,7 +167,9 @@ async def test_workflow_http_contract_and_generic_target_routing(tmp_path: Path)
         authenticator=StaticBearerAuthenticator(
             {
                 "token-a": AuthenticatedPrincipal(
-                    tenant_id="tenant-a", subject_id="subject-a", scopes=SCOPES
+                    tenant_id="tenant-a",
+                    subject_id="subject-a",
+                    scopes=SCOPES | {"internal:invoke"},
                 ),
                 "token-b": AuthenticatedPrincipal(
                     tenant_id="tenant-b", subject_id="subject-b", scopes=SCOPES
