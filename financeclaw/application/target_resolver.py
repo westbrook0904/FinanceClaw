@@ -6,6 +6,7 @@ from typing import Any
 from financeclaw.agents import AgentProfileCatalog
 from financeclaw.contracts import AgentTarget, RunRequest, ToolTarget, WorkflowTarget
 from financeclaw.tools import ToolCatalog
+from financeclaw.workflows import WorkflowCatalog
 
 
 class TargetResolutionError(LookupError):
@@ -27,11 +28,13 @@ class TargetResolver:
         *,
         tool_catalog: ToolCatalog,
         agent_profiles: AgentProfileCatalog,
+        workflow_catalog: WorkflowCatalog | None = None,
         default_agent_id: str = "finance_agent",
         default_agent_version: str = "1.0.0",
     ) -> None:
         self.tool_catalog = tool_catalog
         self.agent_profiles = agent_profiles
+        self.workflow_catalog = workflow_catalog or WorkflowCatalog(())
         self.default_agent_id = default_agent_id
         self.default_agent_version = default_agent_version
 
@@ -79,5 +82,16 @@ class TargetResolver:
                 target_version=managed.governance.version,
             )
         if isinstance(target, WorkflowTarget):
-            raise TargetResolutionError("published workflows are introduced in Stage 4")
+            try:
+                definition = self.workflow_catalog.resolve(target.workflow_id, target.version)
+                normalized = definition.normalize_input(target.arguments)
+            except (LookupError, ValueError) as exc:
+                raise TargetResolutionError(str(exc)) from exc
+            return ResolvedTarget(
+                kind="workflow",
+                assistant_id=definition.assistant_id,
+                input=normalized,
+                target_id=definition.workflow_id,
+                target_version=definition.version,
+            )
         raise TypeError("unsupported request target")

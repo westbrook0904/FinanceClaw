@@ -21,3 +21,6 @@ direct_tool = build_direct_tool_graph(
     read_max_attempts=settings.read_max_attempts,
     artifact_service=components.artifact_service,
 )
+if components.workflow_catalog is None:
+    raise RuntimeError("published workflow catalog was not configured")
+portfolio_review_v1 = components.workflow_catalog.resolve("portfolio_review", "1.0.0").graph

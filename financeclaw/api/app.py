@@ -14,6 +14,8 @@ from financeclaw.application import (
     RunNotFound,
     RunService,
     TargetResolver,
+    WorkflowInputError,
+    WorkflowService,
 )
 from financeclaw.bootstrap import build_components
 from financeclaw.contracts import (
@@ -26,6 +28,8 @@ from financeclaw.contracts import (
     RunStatusResponse,
     ToolInvokeRequest,
     ToolTarget,
+    WorkflowInvokeRequest,
+    WorkflowTarget,
 )
 from financeclaw.infrastructure import FinanceClawSettings
 
@@ -46,6 +50,7 @@ def create_app(
     run_service: RunService,
     authenticator: Authenticator,
     conversation_service: ConversationService | None = None,
+    workflow_service: WorkflowService | None = None,
 ) -> FastAPI:
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
@@ -54,6 +59,11 @@ def create_app(
                 await conversation_service.reconcile_incomplete()
             except Exception:
                 LOGGER.exception("conversation reconciliation deferred after startup failure")
+        if workflow_service is not None:
+            try:
+                await workflow_service.reconcile_incomplete()
+            except Exception:
+                LOGGER.exception("workflow reconciliation deferred after startup failure")
         yield
 
     app = FastAPI(title="FinanceClaw API", version="1.0.0", lifespan=lifespan)
@@ -62,7 +72,7 @@ def create_app(
 
     @app.get("/health")
     async def health() -> dict[str, str]:
-        return {"status": "ok", "stage": "3"}
+        return {"status": "ok", "stage": "4"}
 
     @app.get("/ready")
     async def ready() -> JSONResponse:
@@ -80,6 +90,20 @@ def create_app(
             str, Header(alias="Idempotency-Key", min_length=1, max_length=200)
         ],
     ) -> RunAccepted:
+        if isinstance(request.target, WorkflowTarget):
+            if request.conversation_id is not None:
+                raise WorkflowInputError(
+                    "published workflows cannot run inside an Agent conversation"
+                )
+            if workflow_service is None:
+                raise RuntimeError("workflow service is not configured")
+            return await workflow_service.start(
+                request.target,
+                tenant_id=principal.tenant_id,
+                subject_id=principal.subject_id,
+                scopes=principal.scopes,
+                idempotency_key=idempotency_key,
+            )
         if request.conversation_id is not None:
             if conversation_service is None:
                 raise RuntimeError("conversation service is not configured")
@@ -92,6 +116,33 @@ def create_app(
             )
         return await run_service.start(
             request,
+            tenant_id=principal.tenant_id,
+            subject_id=principal.subject_id,
+            scopes=principal.scopes,
+            idempotency_key=idempotency_key,
+        )
+
+    @app.post(
+        "/v1/workflows/{workflow_id}/runs",
+        response_model=RunAccepted,
+        status_code=202,
+    )
+    async def start_workflow(
+        workflow_id: str,
+        request: WorkflowInvokeRequest,
+        principal: Annotated[AuthenticatedPrincipal, Depends(principal_dep)],
+        idempotency_key: Annotated[
+            str, Header(alias="Idempotency-Key", min_length=1, max_length=200)
+        ],
+    ) -> RunAccepted:
+        if workflow_service is None:
+            raise RuntimeError("workflow service is not configured")
+        return await workflow_service.start(
+            WorkflowTarget(
+                workflow_id=workflow_id,
+                version=request.version,
+                arguments=request.arguments,
+            ),
             tenant_id=principal.tenant_id,
             subject_id=principal.subject_id,
             scopes=principal.scopes,
@@ -133,13 +184,22 @@ def create_app(
                 subject_id=principal.subject_id,
             )
         except RunNotFound:
-            if conversation_service is None:
-                raise
-            return await conversation_service.status(
-                run_id,
-                tenant_id=principal.tenant_id,
-                subject_id=principal.subject_id,
-            )
+            if workflow_service is not None:
+                try:
+                    return await workflow_service.status(
+                        run_id,
+                        tenant_id=principal.tenant_id,
+                        subject_id=principal.subject_id,
+                    )
+                except RunNotFound:
+                    pass
+            if conversation_service is not None:
+                return await conversation_service.status(
+                    run_id,
+                    tenant_id=principal.tenant_id,
+                    subject_id=principal.subject_id,
+                )
+            raise
 
     @app.post("/v1/runs/{run_id}/resume", response_model=RunStatusResponse)
     async def resume_run(
@@ -155,15 +215,26 @@ def create_app(
                 subject_id=principal.subject_id,
             )
         except RunNotFound:
-            if conversation_service is None:
-                raise
-            return await conversation_service.resume(
-                run_id,
-                decision,
-                tenant_id=principal.tenant_id,
-                subject_id=principal.subject_id,
-                scopes=principal.scopes,
-            )
+            if workflow_service is not None:
+                try:
+                    return await workflow_service.resume(
+                        run_id,
+                        decision,
+                        tenant_id=principal.tenant_id,
+                        subject_id=principal.subject_id,
+                        scopes=principal.scopes,
+                    )
+                except RunNotFound:
+                    pass
+            if conversation_service is not None:
+                return await conversation_service.resume(
+                    run_id,
+                    decision,
+                    tenant_id=principal.tenant_id,
+                    subject_id=principal.subject_id,
+                    scopes=principal.scopes,
+                )
+            raise
 
     @app.get("/v1/runs/{run_id}/events")
     async def stream_run(
@@ -182,19 +253,36 @@ def create_app(
                 subject_id=principal.subject_id,
             )
         except RunNotFound:
-            if conversation_service is None:
-                raise
-            await asyncio.to_thread(
-                conversation_service.assert_owned,
-                run_id,
-                tenant_id=principal.tenant_id,
-                subject_id=principal.subject_id,
-            )
-            events = conversation_service.stream(
-                run_id,
-                tenant_id=principal.tenant_id,
-                subject_id=principal.subject_id,
-            )
+            found_workflow = False
+            if workflow_service is not None:
+                try:
+                    await workflow_service.assert_owned(
+                        run_id,
+                        tenant_id=principal.tenant_id,
+                        subject_id=principal.subject_id,
+                    )
+                    events = workflow_service.stream(
+                        run_id,
+                        tenant_id=principal.tenant_id,
+                        subject_id=principal.subject_id,
+                    )
+                    found_workflow = True
+                except RunNotFound:
+                    pass
+            if not found_workflow:
+                if conversation_service is None:
+                    raise
+                await asyncio.to_thread(
+                    conversation_service.assert_owned,
+                    run_id,
+                    tenant_id=principal.tenant_id,
+                    subject_id=principal.subject_id,
+                )
+                events = conversation_service.stream(
+                    run_id,
+                    tenant_id=principal.tenant_id,
+                    subject_id=principal.subject_id,
+                )
         return StreamingResponse(project_sse(events), media_type="text/event-stream")
 
     if conversation_service is not None:
@@ -251,6 +339,7 @@ def create_default_app(settings: FinanceClawSettings | None = None) -> FastAPI:
     resolver = TargetResolver(
         tool_catalog=components.tool_catalog,
         agent_profiles=components.agent_profiles,
+        workflow_catalog=components.workflow_catalog,
     )
     run_service = RunService(client, resolver)
     if components.conversation_repository is None:
@@ -261,6 +350,14 @@ def create_default_app(settings: FinanceClawSettings | None = None) -> FastAPI:
         components.agent_profiles,
         summary_service=components.summary_service,
         approval_timeout_seconds=settings.approval_timeout_seconds,
+    )
+    if components.workflow_repository is None or components.workflow_catalog is None:
+        raise RuntimeError("workflow persistence was not configured")
+    workflow_service = WorkflowService(
+        client,
+        components.workflow_repository,
+        components.workflow_catalog,
+        components.audit,
     )
     principals = {}
     if settings.bff_auth_token is not None:
@@ -273,6 +370,7 @@ def create_default_app(settings: FinanceClawSettings | None = None) -> FastAPI:
         run_service=run_service,
         authenticator=StaticBearerAuthenticator(principals),
         conversation_service=conversation_service,
+        workflow_service=workflow_service,
     )
     app.state.financeclaw_database = components.database
     return app

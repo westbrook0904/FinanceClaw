@@ -61,12 +61,14 @@ packages = [
     "financeclaw.conversation",
     "financeclaw.contracts",
     "financeclaw.graphs",
+    "financeclaw.graphs.workflows",
     "financeclaw.infrastructure",
     "financeclaw.infrastructure.migrations",
     "financeclaw.infrastructure.migrations.versions",
     "financeclaw.memory",
     "financeclaw.models",
     "financeclaw.tools",
+    "financeclaw.workflows",
     "harness_contracts",
     "harness_events",
     "harness_trace",
@@ -82,12 +84,14 @@ financeclaw = "financeclaw"
 "financeclaw.conversation" = "financeclaw/conversation"
 "financeclaw.contracts" = "financeclaw/contracts"
 "financeclaw.graphs" = "financeclaw/graphs"
+"financeclaw.graphs.workflows" = "financeclaw/graphs/workflows"
 "financeclaw.infrastructure" = "financeclaw/infrastructure"
 "financeclaw.infrastructure.migrations" = "financeclaw/infrastructure/migrations"
 "financeclaw.infrastructure.migrations.versions" = "financeclaw/infrastructure/migrations/versions"
 "financeclaw.memory" = "financeclaw/memory"
 "financeclaw.models" = "financeclaw/models"
 "financeclaw.tools" = "financeclaw/tools"
+"financeclaw.workflows" = "financeclaw/workflows"
 harness_contracts = "harness-contracts/src/harness_contracts"
 harness_events = "harness-events/src/harness_events"
 harness_trace = "harness-trace/src/harness_trace"

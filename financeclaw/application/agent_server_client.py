@@ -89,7 +89,7 @@ class LangGraphAgentServerClient:
         metadata = state.get("metadata", {})
         state_run_id = metadata.get("run_id") if isinstance(metadata, Mapping) else None
         if state_run_id == run_id and state.get("interrupts"):
-            return {**run, "status": "interrupted"}
+            return {**run, "status": "interrupted", "interrupts": state["interrupts"]}
         return run
 
     async def join_run(self, *, thread_id: str, run_id: str) -> Mapping[str, Any]:

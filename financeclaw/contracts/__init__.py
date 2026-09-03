@@ -17,6 +17,7 @@ from .responses import (
     RunStatusResponse,
     StreamEvent,
     ToolInvokeRequest,
+    WorkflowInvokeRequest,
 )
 from .targets import AgentTarget, RunTarget, ToolTarget, WorkflowTarget
 
@@ -42,4 +43,5 @@ __all__ = [
     "ToolTarget",
     "ToolInvokeRequest",
     "WorkflowTarget",
+    "WorkflowInvokeRequest",
 ]

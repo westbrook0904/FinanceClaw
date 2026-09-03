@@ -33,6 +33,7 @@ class FinanceClawSettings(BaseSettings):
     model_max_retries: int = Field(default=2, ge=0, le=8)
     read_max_attempts: int = Field(default=3, ge=1, le=8)
     approval_timeout_seconds: int = Field(default=900, ge=30, le=86_400)
+    workflow_run_timeout_seconds: int = Field(default=300, ge=1, le=86_400)
     mcp_timeout_seconds: float = Field(default=10.0, gt=0, le=60)
     agent_server_url: str = "http://127.0.0.1:2024"
     agent_server_service_token: SecretStr | None = None
@@ -49,10 +50,12 @@ class FinanceClawSettings(BaseSettings):
                 "memory:read",
                 "memory:write",
                 "memory:delete",
+                "portfolio:review",
+                "workflows:approve",
             }
         )
     )
-    langsmith_project: str = "financeclaw-stage3-development"
+    langsmith_project: str = "financeclaw-stage4-development"
     database_url: SecretStr = SecretStr("sqlite+pysqlite:///./.financeclaw/financeclaw.db")
     database_auto_create_schema: bool = True
     artifact_root: str = ".financeclaw/artifacts"

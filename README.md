@@ -5,7 +5,21 @@ FinanceClaw 正在按 [`.redesign/`](.redesign/README.md) 从自研通用 Agent 
 
 ## 当前阶段
 
-Stage 3 Long-term Memory 已成为默认入口，并在 Stage-2 会话主链上增加：
+Stage 4 Published Workflows 已成为当前基线，并在 Stage-3 主链之外增加一条严格隔离的固定流程：
+
+- 不可变、启动期装配的 `WorkflowCatalog`，固定 workflow、graph revision、ModelProfile、Tool
+  版本、审批点和超时策略；
+- 首个真实流程 `portfolio_review@1.0.0`：校验输入、读取有来源与时间戳的行情、检查新鲜度、
+  确定性计算组合集中度、审批后发布报告制品；
+- Workflow 独占 Agent Server thread，BFF 永久保存业务 run、thread、server run、发布版本、输入 hash、
+  审批和 artifact 映射；
+- 审批使用 LangGraph interrupt/resume，权限、owner、原始参数 hash 和过期时间均在恢复前复验；
+- 标准入口 `POST /v1/workflows/{workflow_id}/runs`，也支持显式 `WorkflowTarget`，普通 ReAct Agent
+  和 Direct Tool 路径保持不变；
+- 报告写入使用 run/node 幂等键，State/checkpoint 只保留有界结构化数据和 artifact 引用；
+- Alembic `0003_stage4`、完整生命周期 Audit 和 LangSmith 五类回归样本。
+
+此前 Stage-2/3 能力继续保留：
 
 - 永久、append-only 的 Conversation Journal，以及 Conversation/Thread/AgentProfile 固定映射；
 - 基于 token budget 的最近原文、分段/分层摘要和相关古老历史选择；
@@ -22,7 +36,7 @@ Stage 3 Long-term Memory 已成为默认入口，并在 Stage-2 会话主链上�
 旧 `harness-runtime`、`harness-registry`、`harness-selection`、`harness-spi`、
 `harness-plugin-local`、`harness-context`、`harness-memory`、`harness-policy`、通用
 Provider/Capability/Context/Memory contracts 和示例 plugins 已删除。验证证据见
-[Stage-3 验证记录](.redesign/stages/Stage-3-验证记录.md)。Stage-0 Spike 仅作为框架兼容性历史
+[Stage-4 验证记录](.redesign/stages/Stage-4-验证记录.md)。Stage-0 Spike 仅作为框架兼容性历史
 切片保留，不再是产品入口。
 
 ## 环境
@@ -38,7 +52,7 @@ UV_PROJECT_ENVIRONMENT="$PWD/.conda/envs/stage0" \
   --python .conda/envs/stage0/bin/python
 ```
 
-复制 `.env.stage3.example` 为 `.env`。DeepSeek 通过 OpenAI 协议接入时，核心配置为：
+复制 `.env.stage4.example` 为 `.env`。DeepSeek 通过 OpenAI 协议接入时，核心配置为：
 
 ```dotenv
 FINANCECLAW_MODEL=openai:deepseek-v4-pro
@@ -102,6 +116,12 @@ Stage-3 的 Memory HITL、跨 thread recall、Manifest 与 Audit 冒烟：
 .conda/envs/stage0/bin/python -m financeclaw.application.memory_smoke
 ```
 
+Stage-4 固定 Workflow 的独立 thread、审批、报告制品、Audit 与进程内业务恢复冒烟：
+
+```bash
+.conda/envs/stage0/bin/python -m financeclaw.application.workflow_smoke
+```
+
 配置真实 Provider 与 LangSmith 后执行在线门禁：
 
 ```bash
@@ -120,10 +140,10 @@ DeepSeek thinking 模型目前用 JSON mode 完成 structured output；默认原
 .conda/envs/stage0/bin/ruff format --check financeclaw financeclaw_spike tests
 ```
 
-配置 `LANGSMITH_API_KEY` 后，可幂等创建 Stage-3 的五个 Memory 回归样本：
+配置 `LANGSMITH_API_KEY` 后，可幂等创建 Stage-4 的五个 Workflow 回归样本：
 
 ```bash
-.conda/envs/stage0/bin/python -m financeclaw.application.memory_eval_seed
+.conda/envs/stage0/bin/python -m financeclaw.application.workflow_eval_seed
 ```
 
 ## 目标架构
@@ -134,7 +154,7 @@ FinanceClaw API / BFF
       → LangChain Agent / Models / BaseTool / Middleware
       → MCP / Financial Services
       → PostgreSQL / Redis / Artifact Store
-  → Conversation / Memory / Governance / Audit
+  → Conversation / Memory / Published Workflows / Governance / Audit
   → LangSmith Trace / Evaluation
 ```
 

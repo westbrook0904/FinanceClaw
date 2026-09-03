@@ -1,4 +1,4 @@
-"""FinanceClaw composition root for the governed Stage-3 vertical slice."""
+"""FinanceClaw composition root for the governed Stage-4 vertical slice."""
 
 from dataclasses import dataclass
 
@@ -20,10 +20,16 @@ from financeclaw.conversation import (
     SqlAlchemyConversationRepository,
     SummaryService,
 )
+from financeclaw.graphs.workflows import portfolio_review_definition
 from financeclaw.infrastructure import ApplicationDatabase, FinanceClawSettings
 from financeclaw.memory import LongTermMemoryService, MemoryPolicy, default_memory_tools
 from financeclaw.models import ModelFactory, ModelProfile, ModelProfileCatalog, ModelProfileRef
 from financeclaw.tools import ToolCatalog, ToolPolicy, default_local_tools, managed_mcp_quote_tool
+from financeclaw.workflows import (
+    SqlAlchemyWorkflowRepository,
+    WorkflowCatalog,
+    WorkflowRepository,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,6 +48,8 @@ class FinanceClawComponents:
     summary_service: SummaryService | None = None
     artifact_service: ArtifactService | None = None
     memory_service: LongTermMemoryService | None = None
+    workflow_catalog: WorkflowCatalog | None = None
+    workflow_repository: WorkflowRepository | None = None
 
     @property
     def default_agent_profile(self) -> AgentProfile:
@@ -65,6 +73,7 @@ def build_components(
     context_builder: ConversationContextBuilder | None = None
     summary_service: SummaryService | None = None
     artifact_service: ArtifactService | None = None
+    workflow_repository: WorkflowRepository | None = None
     if enable_persistence:
         database = ApplicationDatabase(settings.database_url.get_secret_value())
         if settings.database_auto_create_schema:
@@ -91,6 +100,7 @@ def build_components(
             LocalArtifactStore(settings.artifact_root),
             inline_bytes=settings.artifact_inline_bytes,
         )
+        workflow_repository = SqlAlchemyWorkflowRepository(database.session_factory)
 
     if audit is not None:
         effective_audit = audit
@@ -119,6 +129,21 @@ def build_components(
             )
         )
     tool_policy = ToolPolicy()
+    workflow_catalog = WorkflowCatalog(
+        (
+            portfolio_review_definition(
+                catalog=tool_catalog,
+                policy=tool_policy,
+                audit=effective_audit,
+                artifact_service=artifact_service,
+                read_max_attempts=settings.read_max_attempts,
+                run_timeout_seconds=settings.workflow_run_timeout_seconds,
+                approval_timeout_seconds=settings.approval_timeout_seconds,
+            ),
+        )
+        if artifact_service is not None
+        else ()
+    )
 
     fallback_profiles = tuple(
         ModelProfile(
@@ -197,4 +222,6 @@ def build_components(
         summary_service=summary_service,
         artifact_service=artifact_service,
         memory_service=memory_service,
+        workflow_catalog=workflow_catalog,
+        workflow_repository=workflow_repository,
     )

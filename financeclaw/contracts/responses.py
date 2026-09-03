@@ -23,6 +23,13 @@ class ToolInvokeRequest(ContractModel):
     arguments: dict[str, Any] = Field(default_factory=dict)
 
 
+class WorkflowInvokeRequest(ContractModel):
+    """Explicit product entry point for one published workflow release."""
+
+    version: Annotated[str, Field(pattern=r"^\d+\.\d+\.\d+$")] | None = None
+    arguments: dict[str, Any] = Field(default_factory=dict)
+
+
 class RunAccepted(ContractModel):
     run_id: str
     thread_id: str

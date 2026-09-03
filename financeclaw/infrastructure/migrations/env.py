@@ -11,6 +11,7 @@ from financeclaw.conversation import tables as _conversation_tables  # noqa: F40
 from financeclaw.infrastructure import FinanceClawSettings, normalize_database_url
 from financeclaw.infrastructure.database import ensure_database_parent
 from financeclaw.infrastructure.orm import Base
+from financeclaw.workflows import tables as _workflow_tables  # noqa: F401
 
 config = context.config
 if config.config_file_name is not None:

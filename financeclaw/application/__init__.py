@@ -4,6 +4,12 @@ from .agent_server_client import AgentServerClient, LangGraphAgentServerClient, 
 from .conversation_service import ApprovalExpired, ConversationService
 from .run_service import IdempotencyConflict, RunNotFound, RunService
 from .target_resolver import ResolvedTarget, TargetResolutionError, TargetResolver
+from .workflow_service import (
+    WorkflowApprovalExpired,
+    WorkflowAuthorizationError,
+    WorkflowInputError,
+    WorkflowService,
+)
 
 __all__ = [
     "AgentServerClient",
@@ -17,4 +23,8 @@ __all__ = [
     "ServerRun",
     "TargetResolutionError",
     "TargetResolver",
+    "WorkflowApprovalExpired",
+    "WorkflowAuthorizationError",
+    "WorkflowInputError",
+    "WorkflowService",
 ]

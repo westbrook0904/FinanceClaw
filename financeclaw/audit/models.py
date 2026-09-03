@@ -21,6 +21,12 @@ class AuditEventType(StrEnum):
     MEMORY_SUPERSEDED = "memory.superseded"
     MEMORY_REVOKED = "memory.revoked"
     MEMORY_DELETED = "memory.deleted"
+    WORKFLOW_STARTED = "workflow.started"
+    WORKFLOW_INTERRUPTED = "workflow.interrupted"
+    WORKFLOW_APPROVED = "workflow.approved"
+    WORKFLOW_REJECTED = "workflow.rejected"
+    WORKFLOW_COMPLETED = "workflow.completed"
+    WORKFLOW_FAILED = "workflow.failed"
 
 
 class AuditRecord(BaseModel):

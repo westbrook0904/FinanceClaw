@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from financeclaw.audit import tables as _audit_tables  # noqa: F401
 from financeclaw.conversation import tables as _conversation_tables  # noqa: F401
 from financeclaw.infrastructure.orm import Base
+from financeclaw.workflows import tables as _workflow_tables  # noqa: F401
 
 
 class ApplicationDatabase:

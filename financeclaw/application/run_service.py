@@ -16,10 +16,11 @@ from financeclaw.contracts import (
     RunRequest,
     RunStatusResponse,
     StreamEvent,
+    WorkflowTarget,
 )
 
 from .agent_server_client import AgentServerClient
-from .target_resolver import ResolvedTarget, TargetResolver
+from .target_resolver import ResolvedTarget, TargetResolutionError, TargetResolver
 
 
 class IdempotencyConflict(RuntimeError):
@@ -70,6 +71,10 @@ class RunService:
         scopes: frozenset[str],
         idempotency_key: str,
     ) -> RunAccepted:
+        if isinstance(request.target, WorkflowTarget):
+            raise TargetResolutionError(
+                "published workflows require the persistent WorkflowService path"
+            )
         fingerprint = self._fingerprint(request)
         key = (tenant_id, subject_id, idempotency_key)
         async with self._lock:
