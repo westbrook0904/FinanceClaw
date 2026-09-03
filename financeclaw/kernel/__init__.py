@@ -1,0 +1,51 @@
+"""跨层共享且不依赖具体实现的运行上下文、目标与响应契约。"""
+
+from .context import DataClassification, ExecutionContext
+from .responses import (
+    AgentResponse,
+    ApprovalDecision,
+    ApprovalDecisionType,
+    ArtifactReference,
+    ConversationMessageResponse,
+    ConversationMessagesResponse,
+    ConversationResponse,
+    ConversationTurnAccepted,
+    ConversationTurnRequest,
+    CreateConversationRequest,
+    DirectToolResponse,
+    ErrorResponse,
+    RunAccepted,
+    RunRequest,
+    RunStatusResponse,
+    StreamEvent,
+    ToolInvokeRequest,
+    WorkflowInvokeRequest,
+)
+from .targets import AgentTarget, RunTarget, ToolTarget, WorkflowTarget
+
+__all__ = [
+    "AgentResponse",
+    "AgentTarget",
+    "ApprovalDecision",
+    "ApprovalDecisionType",
+    "ArtifactReference",
+    "ConversationMessageResponse",
+    "ConversationMessagesResponse",
+    "ConversationResponse",
+    "ConversationTurnAccepted",
+    "ConversationTurnRequest",
+    "CreateConversationRequest",
+    "DataClassification",
+    "DirectToolResponse",
+    "ErrorResponse",
+    "ExecutionContext",
+    "RunAccepted",
+    "RunRequest",
+    "RunStatusResponse",
+    "RunTarget",
+    "StreamEvent",
+    "ToolTarget",
+    "ToolInvokeRequest",
+    "WorkflowTarget",
+    "WorkflowInvokeRequest",
+]
