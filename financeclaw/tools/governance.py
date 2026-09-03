@@ -14,6 +14,7 @@ class SideEffect(StrEnum):
     READ = "read"
     WRITE = "write"
     EXTERNAL_ACTION = "external_action"
+    DELEGATION = "delegation"
 
 
 class Idempotency(StrEnum):
@@ -81,9 +82,10 @@ class ToolGovernance(BaseModel):
 
     @model_validator(mode="after")
     def validate_safety_invariants(self) -> "ToolGovernance":
-        if self.side_effect is not SideEffect.READ and self.approval is not ApprovalMode.ALWAYS:
+        mutable_effects = {SideEffect.WRITE, SideEffect.EXTERNAL_ACTION}
+        if self.side_effect in mutable_effects and self.approval is not ApprovalMode.ALWAYS:
             raise ValueError("WRITE and external-action tools must always require approval")
-        if self.side_effect is not SideEffect.READ and self.retry_profile is not RetryProfile.NONE:
+        if self.side_effect in mutable_effects and self.retry_profile is not RetryProfile.NONE:
             raise ValueError("WRITE and external-action tools cannot use automatic retry")
         if (
             self.retry_profile is RetryProfile.TRANSIENT_READ

@@ -567,6 +567,7 @@ def _normalize_turn_status(status: str) -> TurnStatus:
         "accepted": TurnStatus.ACCEPTED,
         "pending": TurnStatus.PENDING,
         "running": TurnStatus.RUNNING,
+        "waiting_child": TurnStatus.WAITING_CHILD,
         "interrupted": TurnStatus.INTERRUPTED,
         "success": TurnStatus.COMPLETED,
         "completed": TurnStatus.COMPLETED,

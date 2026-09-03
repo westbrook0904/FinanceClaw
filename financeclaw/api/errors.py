@@ -5,6 +5,8 @@ from fastapi.responses import JSONResponse
 
 from financeclaw.application import (
     ApprovalExpired,
+    DelegationAuthorizationError,
+    DelegationInputError,
     IdempotencyConflict,
     RunNotFound,
     TargetResolutionError,
@@ -14,6 +16,7 @@ from financeclaw.application import (
 )
 from financeclaw.contracts import ErrorResponse
 from financeclaw.conversation import ConversationConflict, ConversationNotFound
+from financeclaw.delegation import DelegationConflict
 from financeclaw.workflows import WorkflowConflict
 
 
@@ -71,3 +74,20 @@ def install_error_handlers(app: FastAPI) -> None:
     ) -> JSONResponse:
         payload = ErrorResponse(code="WORKFLOW_APPROVAL_EXPIRED", message=str(exc))
         return JSONResponse(status_code=410, content=payload.model_dump(mode="json"))
+
+    @app.exception_handler(DelegationInputError)
+    async def delegation_input(_request: Request, exc: DelegationInputError) -> JSONResponse:
+        payload = ErrorResponse(code="DELEGATION_INPUT_INVALID", message=str(exc))
+        return JSONResponse(status_code=422, content=payload.model_dump(mode="json"))
+
+    @app.exception_handler(DelegationAuthorizationError)
+    async def delegation_forbidden(
+        _request: Request, exc: DelegationAuthorizationError
+    ) -> JSONResponse:
+        payload = ErrorResponse(code="DELEGATION_FORBIDDEN", message=str(exc))
+        return JSONResponse(status_code=403, content=payload.model_dump(mode="json"))
+
+    @app.exception_handler(DelegationConflict)
+    async def delegation_conflict(_request: Request, exc: DelegationConflict) -> JSONResponse:
+        payload = ErrorResponse(code="DELEGATION_CONFLICT", message=str(exc))
+        return JSONResponse(status_code=409, content=payload.model_dump(mode="json"))

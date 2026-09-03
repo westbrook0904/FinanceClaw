@@ -148,7 +148,7 @@ class AgentFactory:
         )
         if self.artifact_service is not None:
             middleware.append(ToolResultArtifactMiddleware(self.artifact_service))
-        if self.memory_service is not None:
+        if self.memory_service is not None and profile.memory_policy != "none":
             middleware.append(
                 MemoryRecallMiddleware(
                     self.memory_service,
@@ -164,7 +164,7 @@ class AgentFactory:
                     tool_catalog=self.tool_catalog,
                     agent_profile_version=profile.version,
                     model_profile_version=model_profile.version,
-                    prompt_template_version="finance-agent-system/2.0.0",
+                    prompt_template_version=f"{profile.agent_id}-system/{profile.version}",
                     debug_full_io=self.debug_full_io,
                 )
             )

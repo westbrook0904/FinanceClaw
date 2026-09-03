@@ -13,6 +13,11 @@ finance_agent = components.agent_factory.build(
     model=OfflineFinanceModel() if settings.offline_model else None,
     checkpointer=None,
 )
+market_research_agent = components.agent_factory.build(
+    components.agent_profiles.resolve("market_research_agent", "1.0.0"),
+    model=OfflineFinanceModel() if settings.offline_model else None,
+    checkpointer=None,
+)
 direct_tool = build_direct_tool_graph(
     catalog=components.tool_catalog,
     policy=components.tool_policy,

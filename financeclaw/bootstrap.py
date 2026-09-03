@@ -20,6 +20,12 @@ from financeclaw.conversation import (
     SqlAlchemyConversationRepository,
     SummaryService,
 )
+from financeclaw.delegation import (
+    DelegationRepository,
+    SqlAlchemyDelegationRepository,
+    agent_delegation_tool,
+    workflow_delegation_tool,
+)
 from financeclaw.graphs.workflows import portfolio_review_definition
 from financeclaw.infrastructure import ApplicationDatabase, FinanceClawSettings
 from financeclaw.memory import LongTermMemoryService, MemoryPolicy, default_memory_tools
@@ -29,6 +35,7 @@ from financeclaw.workflows import (
     SqlAlchemyWorkflowRepository,
     WorkflowCatalog,
     WorkflowRepository,
+    WorkflowStatus,
 )
 
 
@@ -50,6 +57,7 @@ class FinanceClawComponents:
     memory_service: LongTermMemoryService | None = None
     workflow_catalog: WorkflowCatalog | None = None
     workflow_repository: WorkflowRepository | None = None
+    delegation_repository: DelegationRepository | None = None
 
     @property
     def default_agent_profile(self) -> AgentProfile:
@@ -74,6 +82,7 @@ def build_components(
     summary_service: SummaryService | None = None
     artifact_service: ArtifactService | None = None
     workflow_repository: WorkflowRepository | None = None
+    delegation_repository: DelegationRepository | None = None
     if enable_persistence:
         database = ApplicationDatabase(settings.database_url.get_secret_value())
         if settings.database_auto_create_schema:
@@ -101,6 +110,7 @@ def build_components(
             inline_bytes=settings.artifact_inline_bytes,
         )
         workflow_repository = SqlAlchemyWorkflowRepository(database.session_factory)
+        delegation_repository = SqlAlchemyDelegationRepository(database.session_factory)
 
     if audit is not None:
         effective_audit = audit
@@ -121,18 +131,20 @@ def build_components(
         else None
     )
     if tool_catalog is None:
-        tool_catalog = ToolCatalog(
+        base_tool_catalog = ToolCatalog(
             (
                 *default_local_tools(),
                 managed_mcp_quote_tool(timeout_seconds=settings.mcp_timeout_seconds),
                 *(default_memory_tools(memory_service) if memory_service is not None else ()),
             )
         )
+    else:
+        base_tool_catalog = tool_catalog
     tool_policy = ToolPolicy()
     workflow_catalog = WorkflowCatalog(
         (
             portfolio_review_definition(
-                catalog=tool_catalog,
+                catalog=base_tool_catalog,
                 policy=tool_policy,
                 audit=effective_audit,
                 artifact_service=artifact_service,
@@ -174,6 +186,45 @@ def build_components(
         api_key=settings.provider_api_key,
         base_url=settings.provider_base_url,
     )
+    domain_tool_refs = tuple(
+        ToolRef(
+            tool_id=managed.governance.tool_id,
+            version=managed.governance.version,
+        )
+        for tool_id in ("market_snapshot", "get_demo_quote")
+        if any(key[0] == tool_id for key in base_tool_catalog)
+        for managed in (base_tool_catalog.resolve(tool_id),)
+    )
+    domain_agent_profile = AgentProfile(
+        agent_id="market_research_agent",
+        version="1.0.0",
+        description=(
+            "A read-only market research specialist that gathers bounded quote evidence "
+            "and returns a concise synthesis to the parent Agent."
+        ),
+        delegatable=True,
+        required_scopes=frozenset({"market:read"}),
+        model_profile=ModelProfileRef(profile_id="default", version="1.0.0"),
+        system_prompt_template=(
+            "You are FinanceClaw's read-only market research domain Agent. Complete only the "
+            "bounded delegated task, use the available market Tools for current facts, include "
+            "provider and as-of evidence, and return a concise result to the parent Agent. Do not "
+            "delegate again, mutate external state, or treat yourself as the conversation owner."
+        ),
+        allowed_tools=domain_tool_refs,
+        memory_policy="none",
+        max_model_calls=6,
+        max_tool_calls=8,
+    )
+    delegation_tools = (
+        *(
+            workflow_delegation_tool(definition)
+            for definition in workflow_catalog.published()
+            if definition.status is WorkflowStatus.ACTIVE
+        ),
+        agent_delegation_tool(domain_agent_profile),
+    )
+    tool_catalog = ToolCatalog((*base_tool_catalog.values(), *delegation_tools))
     agent_profile = AgentProfile(
         agent_id="finance_agent",
         version="1.0.0",
@@ -198,7 +249,7 @@ def build_components(
         ),
         memory_policy="stage3-governed-v1",
     )
-    agent_profiles = AgentProfileCatalog((agent_profile,))
+    agent_profiles = AgentProfileCatalog((agent_profile, domain_agent_profile))
 
     agent_factory = AgentFactory(
         model_factory=model_factory,
@@ -231,4 +282,5 @@ def build_components(
         memory_service=memory_service,
         workflow_catalog=workflow_catalog,
         workflow_repository=workflow_repository,
+        delegation_repository=delegation_repository,
     )

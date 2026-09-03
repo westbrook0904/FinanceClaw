@@ -74,6 +74,7 @@ def test_production_dependency_graph_has_no_stage1_legacy_runtime() -> None:
     assert all(name not in pyproject for name in removed)
     assert config["graphs"] == {
         "finance_agent": "./financeclaw/graphs/server_graphs.py:finance_agent",
+        "market_research_agent": ("./financeclaw/graphs/server_graphs.py:market_research_agent"),
         "direct_tool": "./financeclaw/graphs/server_graphs.py:direct_tool",
         "portfolio_review_v1": ("./financeclaw/graphs/server_graphs.py:portfolio_review_v1"),
     }

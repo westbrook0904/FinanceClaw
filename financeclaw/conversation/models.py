@@ -20,6 +20,7 @@ class TurnStatus(StrEnum):
     ACCEPTED = "accepted"
     PENDING = "pending"
     RUNNING = "running"
+    WAITING_CHILD = "waiting_child"
     INTERRUPTED = "interrupted"
     COMPLETED = "completed"
     FAILED = "failed"

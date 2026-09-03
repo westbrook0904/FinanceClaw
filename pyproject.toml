@@ -60,6 +60,7 @@ packages = [
     "financeclaw.audit",
     "financeclaw.conversation",
     "financeclaw.contracts",
+    "financeclaw.delegation",
     "financeclaw.graphs",
     "financeclaw.graphs.workflows",
     "financeclaw.infrastructure",
@@ -83,6 +84,7 @@ financeclaw = "financeclaw"
 "financeclaw.audit" = "financeclaw/audit"
 "financeclaw.conversation" = "financeclaw/conversation"
 "financeclaw.contracts" = "financeclaw/contracts"
+"financeclaw.delegation" = "financeclaw/delegation"
 "financeclaw.graphs" = "financeclaw/graphs"
 "financeclaw.graphs.workflows" = "financeclaw/graphs/workflows"
 "financeclaw.infrastructure" = "financeclaw/infrastructure"

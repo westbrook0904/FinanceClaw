@@ -19,7 +19,9 @@ def test_stage4_migration_has_versioned_runs_approvals_and_idempotency(
     command.upgrade(Config("alembic.ini"), "head")
     engine = create_engine(url)
     inspector = inspect(engine)
-    assert {"workflow_runs", "workflow_approvals"} <= set(inspector.get_table_names())
+    assert {"workflow_runs", "workflow_approvals", "delegations"} <= set(
+        inspector.get_table_names()
+    )
     run_columns = {column["name"] for column in inspector.get_columns("workflow_runs")}
     assert {
         "workflow_id",
@@ -50,6 +52,22 @@ def test_stage4_migration_has_versioned_runs_approvals_and_idempotency(
         "decided_by",
         "expires_at",
     } <= approval_columns
+    delegation_columns = {column["name"] for column in inspector.get_columns("delegations")}
+    assert {
+        "parent_run_id",
+        "parent_turn_id",
+        "child_run_id",
+        "child_thread_id",
+        "child_server_run_id",
+        "kind",
+        "target_id",
+        "target_version",
+        "request_fingerprint",
+        "authorization_decision",
+        "policy_version",
+        "status",
+        "delivered_at",
+    } <= delegation_columns
     engine.dispose()
 
 

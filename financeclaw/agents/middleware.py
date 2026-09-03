@@ -208,10 +208,13 @@ class ToolGovernanceMiddleware(AgentMiddleware):
             return None
         if any(isinstance(message, ToolMessage) for message in messages[latest_user_index + 1 :]):
             return "the explicit directive already produced a Tool result"
-        if directive.kind is not InvocationKind.TOOL:
-            return "the current user directive does not authorize a Tool call"
-        if directive.resource_id != tool.name:
-            return "the model-selected Tool does not match the explicit user directive"
+        expected_tool_name = (
+            directive.resource_id
+            if directive.kind is InvocationKind.TOOL
+            else f"delegate_{directive.kind.value}__{directive.resource_id}"
+        )
+        if expected_tool_name != tool.name:
+            return "the model-selected capability does not match the explicit user directive"
 
         expected = assess_tool_slots(tool, directive)
         if (

@@ -2,6 +2,13 @@
 
 from .agent_server_client import AgentServerClient, LangGraphAgentServerClient, ServerRun
 from .conversation_service import ApprovalExpired, ConversationService
+from .delegation_service import (
+    DelegationAuthorizationError,
+    DelegationInputError,
+    DelegationService,
+    delegation_projection,
+    extract_handoff_interrupt,
+)
 from .run_service import IdempotencyConflict, RunNotFound, RunService
 from .target_resolver import ResolvedTarget, TargetResolutionError, TargetResolver
 from .workflow_service import (
@@ -15,6 +22,9 @@ __all__ = [
     "AgentServerClient",
     "ApprovalExpired",
     "ConversationService",
+    "DelegationAuthorizationError",
+    "DelegationInputError",
+    "DelegationService",
     "IdempotencyConflict",
     "LangGraphAgentServerClient",
     "ResolvedTarget",
@@ -27,4 +37,6 @@ __all__ = [
     "WorkflowAuthorizationError",
     "WorkflowInputError",
     "WorkflowService",
+    "delegation_projection",
+    "extract_handoff_interrupt",
 ]

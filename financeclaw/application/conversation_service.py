@@ -30,8 +30,14 @@ from financeclaw.conversation import (
 from financeclaw.conversation import (
     IdempotencyConflict as JournalIdempotencyConflict,
 )
+from financeclaw.delegation import DelegationConflict, DelegationRecord, DelegationStatus
 
 from .agent_server_client import AgentServerClient
+from .delegation_service import (
+    DelegationService,
+    delegation_projection,
+    extract_handoff_interrupt,
+)
 from .run_service import IdempotencyConflict, RunNotFound
 
 
@@ -55,6 +61,7 @@ class ConversationService:
         repository: SqlAlchemyConversationRepository,
         agent_profiles: AgentProfileCatalog,
         *,
+        delegation_service: DelegationService | None = None,
         summary_service: SummaryService | None = None,
         approval_timeout_seconds: int = 900,
         clock: Callable[[], datetime] | None = None,
@@ -64,6 +71,7 @@ class ConversationService:
         self.client = client
         self.repository = repository
         self.agent_profiles = agent_profiles
+        self.delegation_service = delegation_service
         self.summary_service = summary_service
         self.approval_timeout = timedelta(seconds=approval_timeout_seconds)
         self._clock = clock or (lambda: datetime.now(UTC))
@@ -178,7 +186,7 @@ class ConversationService:
                     context=context.model_dump(mode="json"),
                     metadata=_server_metadata(
                         context,
-                        stage="3",
+                        stage="4",
                         conversation_id=conversation.conversation_id,
                         agent_profile_version=conversation.agent_profile_version,
                     ),
@@ -199,7 +207,16 @@ class ConversationService:
             turn_id=turn.turn_id,
         )
 
-    async def status(self, run_id: str, *, tenant_id: str, subject_id: str) -> RunStatusResponse:
+    async def status(
+        self,
+        run_id: str,
+        *,
+        tenant_id: str,
+        subject_id: str,
+        scopes: frozenset[str] = frozenset(),
+        allow_dispatch: bool = True,
+        allow_parent_resume: bool = True,
+    ) -> RunStatusResponse:
         try:
             turn, conversation = await asyncio.to_thread(
                 self._owned_turn_and_conversation,
@@ -209,6 +226,29 @@ class ConversationService:
             )
         except ConversationNotFound as exc:
             raise RunNotFound(str(exc)) from exc
+        if turn.status.value == "completed":
+            return RunStatusResponse(
+                run_id=run_id,
+                thread_id=conversation.agent_thread_id,
+                status="completed",
+            )
+        active = (
+            await self.delegation_service.latest_for_parent(
+                run_id,
+                tenant_id=tenant_id,
+                subject_id=subject_id,
+            )
+            if self.delegation_service is not None
+            else None
+        )
+        if active is not None:
+            return await self._advance_delegation(
+                turn,
+                conversation,
+                active,
+                scopes=scopes,
+                allow_parent_resume=allow_parent_resume,
+            )
         if turn.server_run_id is None:
             return RunStatusResponse(
                 run_id=run_id,
@@ -236,6 +276,31 @@ class ConversationService:
             await asyncio.to_thread(self.repository.update_turn_status, run_id, "failed")
             status = "failed"
         elif server_status == "interrupted":
+            handoff = extract_handoff_interrupt(server)
+            if handoff is not None and allow_dispatch:
+                if self.delegation_service is None:
+                    raise RuntimeError("delegation service is not configured")
+                delegation = await self.delegation_service.start(
+                    handoff,
+                    parent_run_id=run_id,
+                    parent_turn_id=turn.turn_id,
+                    conversation_id=conversation.conversation_id,
+                    tenant_id=tenant_id,
+                    subject_id=subject_id,
+                    scopes=scopes,
+                )
+                await asyncio.to_thread(
+                    self.repository.update_turn_status,
+                    run_id,
+                    "waiting_child",
+                )
+                return await self._advance_delegation(
+                    turn,
+                    conversation,
+                    delegation,
+                    scopes=scopes,
+                    allow_parent_resume=allow_parent_resume,
+                )
             await asyncio.to_thread(self.repository.update_turn_status, run_id, "interrupted")
             status = "interrupted"
         else:
@@ -267,6 +332,35 @@ class ConversationService:
             )
         except ConversationNotFound as exc:
             raise RunNotFound(str(exc)) from exc
+        active = (
+            await self.delegation_service.latest_for_parent(
+                run_id,
+                tenant_id=tenant_id,
+                subject_id=subject_id,
+            )
+            if self.delegation_service is not None
+            else None
+        )
+        if active is not None:
+            current = await self.delegation_service.status(
+                active.delegation_id,
+                tenant_id=tenant_id,
+                subject_id=subject_id,
+            )
+            if current.status is not DelegationStatus.INTERRUPTED:
+                raise DelegationConflict("delegated child is not waiting for approval")
+            current = await self.delegation_service.resume(
+                current,
+                decision,
+                scopes=scopes,
+            )
+            return await self._advance_delegation(
+                turn,
+                conversation,
+                current,
+                scopes=scopes,
+                allow_parent_resume=True,
+            )
         created_at = turn.created_at
         if created_at.tzinfo is None:
             # SQLite drops timezone metadata; application timestamps are UTC by
@@ -295,7 +389,7 @@ class ConversationService:
             assistant_id=conversation.agent_id,
             command={"resume": {"decisions": [mapped]}},
             context=context.model_dump(mode="json"),
-            metadata=_server_metadata(context, stage="3"),
+            metadata=_server_metadata(context, stage="4"),
         )
         status = "interrupted" if result.get("__interrupt__") else "completed"
         if status == "completed":
@@ -354,9 +448,104 @@ class ConversationService:
         for turn in turns:
             if turn.server_run_id is None:
                 continue
-            await self.status(turn.run_id, tenant_id=turn.tenant_id, subject_id=turn.subject_id)
+            await self.status(
+                turn.run_id,
+                tenant_id=turn.tenant_id,
+                subject_id=turn.subject_id,
+                allow_dispatch=False,
+                allow_parent_resume=False,
+            )
             reconciled.append(turn.run_id)
         return tuple(reconciled)
+
+    async def _advance_delegation(
+        self,
+        turn: Any,
+        conversation: Any,
+        record: DelegationRecord,
+        *,
+        scopes: frozenset[str],
+        allow_parent_resume: bool,
+    ) -> RunStatusResponse:
+        if self.delegation_service is None:
+            raise RuntimeError("delegation service is not configured")
+        current = await self.delegation_service.status(
+            record.delegation_id,
+            tenant_id=record.tenant_id,
+            subject_id=record.subject_id,
+        )
+        terminal = {
+            DelegationStatus.COMPLETED,
+            DelegationStatus.REJECTED,
+            DelegationStatus.FAILED,
+        }
+        if current.status not in terminal or not allow_parent_resume:
+            parent_status = (
+                "interrupted" if current.status is DelegationStatus.INTERRUPTED else "waiting_child"
+            )
+            await asyncio.to_thread(
+                self.repository.update_turn_status,
+                turn.run_id,
+                parent_status,
+            )
+            return RunStatusResponse(
+                run_id=turn.run_id,
+                thread_id=conversation.agent_thread_id,
+                status=parent_status,
+                output={"delegation": delegation_projection(current)},
+            )
+
+        context = ExecutionContext(
+            tenant_id=record.tenant_id,
+            subject_id=record.subject_id,
+            scopes=scopes,
+            conversation_id=conversation.conversation_id,
+            turn_id=turn.turn_id,
+            run_id=turn.run_id,
+        )
+        result = await self.client.resume_run(
+            thread_id=conversation.agent_thread_id,
+            assistant_id=conversation.agent_id,
+            command={"resume": self.delegation_service.result(current).model_dump(mode="json")},
+            context=context.model_dump(mode="json"),
+            metadata=_server_metadata(
+                context,
+                stage="4",
+                delegation_id=current.delegation_id,
+            ),
+        )
+        await self.delegation_service.mark_delivered(current)
+        next_handoff = extract_handoff_interrupt(result)
+        if next_handoff is not None:
+            next_record = await self.delegation_service.start(
+                next_handoff,
+                parent_run_id=turn.run_id,
+                parent_turn_id=turn.turn_id,
+                conversation_id=conversation.conversation_id,
+                tenant_id=record.tenant_id,
+                subject_id=record.subject_id,
+                scopes=scopes,
+            )
+            return await self._advance_delegation(
+                turn,
+                conversation,
+                next_record,
+                scopes=scopes,
+                allow_parent_resume=allow_parent_resume,
+            )
+        final_content = _final_assistant_content(result)
+        await asyncio.to_thread(
+            self._record_completed,
+            turn.run_id,
+            conversation.conversation_id,
+            final_content,
+        )
+        return RunStatusResponse(
+            run_id=turn.run_id,
+            thread_id=conversation.agent_thread_id,
+            status="completed",
+            output=_jsonable_output(result),
+        )
 
     def _owned_turn_and_conversation(
         self, run_id: str, tenant_id: str, subject_id: str

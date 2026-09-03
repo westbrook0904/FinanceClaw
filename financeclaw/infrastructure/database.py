@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session, sessionmaker
 # before create_all is used by development and tests.
 from financeclaw.audit import tables as _audit_tables  # noqa: F401
 from financeclaw.conversation import tables as _conversation_tables  # noqa: F401
+from financeclaw.delegation import tables as _delegation_tables  # noqa: F401
 from financeclaw.infrastructure.orm import Base
 from financeclaw.workflows import tables as _workflow_tables  # noqa: F401
 

@@ -106,3 +106,23 @@ repository/service 并从数据库得到 `completed`。完整输出还返回了�
 
 Stage-5 继续处理生产 OIDC、PostgreSQL/Redis 部署配置、对象存储、OTel 后端、告警和剩余兼容包；
 Stage-4 不扩展成通用编排平台。
+
+## 8. 顶层 Agent handoff 闭环补充验证
+
+2026-09-03 按对外接口修订完成了 Stage-4 的产品入口闭环：
+
+- active Workflow 和显式 `delegatable` 领域 Agent 被包装为受治理的 delegation Tool；
+- delegation Tool 通过 LangGraph `interrupt` 产生严格的 `WorkflowHandoff` 或 `AgentHandoff`，
+  Tool 在 child 结束前不会伪造同步结果；
+- BFF 按 owner、scope、Catalog、目标版本和 Pydantic Schema 重新验证 handoff，随后创建独立
+  child thread/run；
+- 新增 `delegations` 表和 Alembic `0004_delegations`，永久保存 parent turn/run、child
+  thread/run/server run、目标版本、规范化参数及 hash、授权决定、策略版本、状态和结果；
+- child Workflow 审批由父 run 的恢复接口转交既有 Workflow interrupt/resume，父 Agent 无权自动批准；
+- child 终态被封装为 `DelegationResult` 恢复原 delegation Tool，再由顶层 Agent 生成会话答案；
+- 首个 `market_research_agent@1.0.0` 只持有行情读取 Tool，不拥有根 Conversation，也不能继续委派。
+
+确定性测试覆盖 typed interrupt/resume、Workflow handoff 二次校验、父子 run/thread 隔离、BFF
+重建后的映射恢复、child 结果回送、Audit 生命周期和迁移列约束。当前结果为 Stage-4 `19 passed`、
+全仓 `85 passed, 4 skipped`；Ruff、compileall、Alembic `upgrade → downgrade → upgrade` 和隔离 wheel
+内容检查均通过。4 个跳过项仍是原有外部凭据/基础设施门禁。

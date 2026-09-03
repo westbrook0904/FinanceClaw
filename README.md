@@ -11,7 +11,9 @@ Stage 4 Published Workflows 已成为当前基线；在此基础上，对外接�
 - `finance_agent` 使用 ReAct 判断直接回答、Tool Calling、Workflow handoff 或领域 Agent delegation；
 - `/tool <id>`、`/workflow <id>`、`/agent <id>` 是调用偏好，不是身份或权限；
 - `/tool` 已支持 Pydantic Schema 校验、缺参提槽、单 Tool 候选约束和执行时二次授权；
-- 原直接 Tool/Workflow/Run 创建路由从 OpenAPI 隐藏，并仅允许 `internal:invoke` 服务身份；Workflow/领域 Agent 的 typed handoff 与父子 run 持久化按修订设计继续实现。
+- 原直接 Tool/Workflow/Run 创建路由从 OpenAPI 隐藏，并仅允许 `internal:invoke` 服务身份；
+- Workflow 与领域 Agent 已作为受治理的 delegation Tool 暴露给顶层 Agent，并使用 typed handoff、
+  独立 child thread/run 和永久父子映射执行。
 
 Stage 4 已交付的固定流程能力包括：
 
@@ -22,9 +24,13 @@ Stage 4 已交付的固定流程能力包括：
 - Workflow 独占 Agent Server thread，BFF 永久保存业务 run、thread、server run、发布版本、输入 hash、
   审批和 artifact 映射；
 - 审批使用 LangGraph interrupt/resume，权限、owner、原始参数 hash 和过期时间均在恢复前复验；
-- 内部 `portfolio_review` Workflow 创建、恢复和审批链保持可用，产品调用将经顶层 Agent handoff 接入；
+- `portfolio_review` 可由顶层 Agent 或 `/workflow portfolio_review` 指令选中，BFF 再次校验
+  scope、版本与输入 Schema 后创建独立 child run；
+- `market_research_agent@1.0.0` 是首个只读领域 Agent，只获得行情读取 Tool，不拥有根 Conversation；
+- `delegations` 永久记录 parent turn/run、child thread/run/server run、目标版本、参数 hash、状态和结果；
+- child Workflow 的审批沿用原 interrupt/resume，完成后以 `DelegationResult` 恢复父 Agent 汇总；
 - 报告写入使用 run/node 幂等键，State/checkpoint 只保留有界结构化数据和 artifact 引用；
-- Alembic `0003_stage4`、完整生命周期 Audit 和 LangSmith 五类回归样本。
+- Alembic `0003_stage4`/`0004_delegations`、完整生命周期 Audit 和 LangSmith 五类回归样本。
 
 此前 Stage-2/3 能力继续保留：
 

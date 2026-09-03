@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 
 from financeclaw.application import (
     ConversationService,
+    DelegationService,
     LangGraphAgentServerClient,
     RunNotFound,
     RunService,
@@ -64,19 +65,25 @@ def create_app(
     authenticator: Authenticator,
     conversation_service: ConversationService | None = None,
     workflow_service: WorkflowService | None = None,
+    delegation_service: DelegationService | None = None,
 ) -> FastAPI:
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
-        if conversation_service is not None:
-            try:
-                await conversation_service.reconcile_incomplete()
-            except Exception:
-                LOGGER.exception("conversation reconciliation deferred after startup failure")
         if workflow_service is not None:
             try:
                 await workflow_service.reconcile_incomplete()
             except Exception:
                 LOGGER.exception("workflow reconciliation deferred after startup failure")
+        if delegation_service is not None:
+            try:
+                await delegation_service.reconcile_incomplete()
+            except Exception:
+                LOGGER.exception("delegation reconciliation deferred after startup failure")
+        if conversation_service is not None:
+            try:
+                await conversation_service.reconcile_incomplete()
+            except Exception:
+                LOGGER.exception("conversation reconciliation deferred after startup failure")
         yield
 
     app = FastAPI(title="FinanceClaw API", version="1.0.0", lifespan=lifespan)
@@ -222,7 +229,17 @@ def create_app(
                 except RunNotFound:
                     pass
             if conversation_service is not None:
-                return await conversation_service.status(
+                try:
+                    return await conversation_service.status(
+                        run_id,
+                        tenant_id=principal.tenant_id,
+                        subject_id=principal.subject_id,
+                        scopes=principal.scopes,
+                    )
+                except RunNotFound:
+                    pass
+            if delegation_service is not None:
+                return await delegation_service.child_status(
                     run_id,
                     tenant_id=principal.tenant_id,
                     subject_id=principal.subject_id,
@@ -401,13 +418,6 @@ def create_default_app(settings: FinanceClawSettings | None = None) -> FastAPI:
     run_service = RunService(client, resolver)
     if components.conversation_repository is None:
         raise RuntimeError("conversation persistence was not configured")
-    conversation_service = ConversationService(
-        client,
-        components.conversation_repository,
-        components.agent_profiles,
-        summary_service=components.summary_service,
-        approval_timeout_seconds=settings.approval_timeout_seconds,
-    )
     if components.workflow_repository is None or components.workflow_catalog is None:
         raise RuntimeError("workflow persistence was not configured")
     workflow_service = WorkflowService(
@@ -415,6 +425,23 @@ def create_default_app(settings: FinanceClawSettings | None = None) -> FastAPI:
         components.workflow_repository,
         components.workflow_catalog,
         components.audit,
+    )
+    if components.delegation_repository is None:
+        raise RuntimeError("delegation persistence was not configured")
+    delegation_service = DelegationService(
+        client,
+        components.delegation_repository,
+        workflow_service,
+        components.agent_profiles,
+        components.audit,
+    )
+    conversation_service = ConversationService(
+        client,
+        components.conversation_repository,
+        components.agent_profiles,
+        delegation_service=delegation_service,
+        summary_service=components.summary_service,
+        approval_timeout_seconds=settings.approval_timeout_seconds,
     )
     principals = {}
     if settings.bff_auth_token is not None:
@@ -428,6 +455,7 @@ def create_default_app(settings: FinanceClawSettings | None = None) -> FastAPI:
         authenticator=StaticBearerAuthenticator(principals),
         conversation_service=conversation_service,
         workflow_service=workflow_service,
+        delegation_service=delegation_service,
     )
     app.state.financeclaw_database = components.database
     return app

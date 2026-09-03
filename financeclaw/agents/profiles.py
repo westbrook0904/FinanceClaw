@@ -20,6 +20,9 @@ class AgentProfile(BaseModel):
 
     agent_id: str
     version: str = Field(pattern=r"^\d+\.\d+\.\d+$")
+    description: str = ""
+    delegatable: bool = False
+    required_scopes: frozenset[str] = Field(default_factory=frozenset)
     model_profile: ModelProfileRef
     system_prompt_template: str
     allowed_tools: tuple[ToolRef, ...]

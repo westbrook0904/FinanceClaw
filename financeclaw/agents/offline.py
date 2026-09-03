@@ -71,7 +71,27 @@ class OfflineFinanceModel(BaseChatModel):
             )
         raw_content = str(last.content)
         directive = parse_invocation_directive(raw_content)
-        if directive is not None and directive.kind is not InvocationKind.TOOL:
+        directive_capability = (
+            None
+            if directive is None
+            else (
+                directive.resource_id
+                if directive.kind is InvocationKind.TOOL
+                else f"delegate_{directive.kind.value}__{directive.resource_id}"
+            )
+        )
+        if directive is not None and (directive.parse_error or not directive.payload):
+            problem = directive.parse_error or "required arguments"
+            return ChatResult(
+                generations=[
+                    ChatGeneration(
+                        message=AIMessage(
+                            content=f"Please provide the missing or invalid {problem}."
+                        )
+                    )
+                ]
+            )
+        if directive is not None and directive_capability not in self._bound_tool_names:
             return ChatResult(
                 generations=[
                     ChatGeneration(
@@ -84,22 +104,17 @@ class OfflineFinanceModel(BaseChatModel):
                     )
                 ]
             )
-        if directive is not None and (directive.parse_error or not directive.payload):
-            problem = directive.parse_error or "required arguments"
-            return ChatResult(
-                generations=[
-                    ChatGeneration(
-                        message=AIMessage(
-                            content=f"Please provide the missing or invalid {problem}."
-                        )
-                    )
-                ]
-            )
-
         content = raw_content.lower()
         if directive is not None and directive.arguments is not None:
-            name = directive.resource_id
+            name = (
+                directive.resource_id
+                if directive.kind is InvocationKind.TOOL
+                else f"delegate_{directive.kind.value}__{directive.resource_id}"
+            )
             args = directive.arguments
+        elif directive is not None and directive.kind is InvocationKind.AGENT and directive.payload:
+            name = f"delegate_agent__{directive.resource_id}"
+            args = {"task": directive.payload}
         elif "remember preference" in content or "记住" in content:
             name = "propose_memory"
             args = {

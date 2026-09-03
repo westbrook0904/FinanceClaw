@@ -38,23 +38,17 @@ class InvocationDirectiveMiddleware(AgentMiddleware):
         if directive is None:
             return request
 
-        if directive.kind is not InvocationKind.TOOL:
-            instruction = (
-                f"The user requested {directive.kind.value} '{directive.resource_id}'. "
-                "Treat this as an invocation preference, never as authorization. "
-                "Do not substitute a Tool or another Agent. Use the matching registered "
-                "delegation capability if one is visible; otherwise explain that it is "
-                "unavailable. "
-                "The root conversation remains owned by the top-level Agent."
-            )
-            return self._override(request, instruction=instruction, tools=[])
-
-        selected = self._find_tool(request.tools, directive.resource_id)
+        capability_name = (
+            directive.resource_id
+            if directive.kind is InvocationKind.TOOL
+            else f"delegate_{directive.kind.value}__{directive.resource_id}"
+        )
+        selected = self._find_tool(request.tools, capability_name)
         if selected is None:
             instruction = (
-                f"The user requested Tool '{directive.resource_id}', but that Tool is unknown or "
-                "not visible under the current policy. Explain that it cannot be used; do not "
-                "silently choose a different Tool."
+                f"The user requested {directive.kind.value} '{directive.resource_id}', but the "
+                "matching capability is unknown or not visible under the current policy. Explain "
+                "that it cannot be used; do not silently choose another capability."
             )
             return self._override(request, instruction=instruction, tools=[])
 
@@ -64,7 +58,8 @@ class InvocationDirectiveMiddleware(AgentMiddleware):
                 assessment.arguments, ensure_ascii=False, sort_keys=True
             )
             instruction = (
-                f"Call only Tool '{directive.resource_id}' now with these schema-validated "
+                f"Call only {directive.kind.value} capability '{capability_name}' now with these "
+                "schema-validated "
                 f"arguments: {normalized_arguments}. "
                 "Do not infer, add, or replace arguments."
             )
@@ -75,19 +70,18 @@ class InvocationDirectiveMiddleware(AgentMiddleware):
             )
         if directive.payload and not directive.payload.startswith("{"):
             instruction = (
-                f"The user explicitly prefers Tool '{directive.resource_id}'. Extract its "
-                "arguments "
-                "from the user's natural-language payload. Call only this Tool if every required "
-                "schema field is known; otherwise ask one concise clarification for the "
-                "missing fields."
+                f"The user explicitly prefers {directive.kind.value} '{directive.resource_id}'. "
+                "Extract its arguments from the user's natural-language payload. Call only the "
+                "matching capability if every required schema field is known; otherwise ask one "
+                "concise clarification for the missing fields."
             )
             return self._override(request, instruction=instruction, tools=[selected])
 
         problems = [*assessment.missing_fields, *assessment.validation_errors]
         detail = ", ".join(problems) if problems else "tool arguments"
         instruction = (
-            f"The user explicitly prefers Tool '{directive.resource_id}', but these slots are "
-            "missing "
+            f"The user explicitly prefers {directive.kind.value} '{directive.resource_id}', but "
+            "these slots are missing "
             f"or invalid: {detail}. Ask one concise clarification that requests only those values. "
             "Do not call any Tool in this model turn."
         )

@@ -87,7 +87,9 @@ def assess_tool_slots(tool: BaseTool, directive: InvocationDirective) -> SlotAss
 
     if directive.parse_error is not None:
         return SlotAssessment(arguments=None, validation_errors=(directive.parse_error,))
-    schema = tool.args_schema
+    # ``tool_call_schema`` excludes trusted ToolRuntime/Store/State injections.
+    # Slot filling must reason only about fields controlled by the user/model.
+    schema = tool.tool_call_schema
     if not isinstance(schema, type) or not issubclass(schema, BaseModel):
         # A tool without a Pydantic schema cannot participate in deterministic
         # slot validation; leave natural-language extraction to the Agent.
