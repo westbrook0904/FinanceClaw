@@ -1,5 +1,6 @@
 """Deterministic local model used only for tests and offline Agent Server smoke."""
 
+import json
 from collections.abc import Sequence
 from typing import Any
 
@@ -41,13 +42,43 @@ class OfflineFinanceModel(BaseChatModel):
         del stop, run_manager, kwargs
         last = messages[-1]
         if isinstance(last, ToolMessage):
+            if last.name == "propose_memory":
+                proposal = json.loads(str(last.content))
+                draft = proposal["draft"]
+                return ChatResult(
+                    generations=[
+                        ChatGeneration(
+                            message=AIMessage(
+                                content="",
+                                tool_calls=[
+                                    {
+                                        "name": "confirm_memory",
+                                        "args": {"proposal_id": proposal["proposal_id"], **draft},
+                                        "id": "offline-confirm-memory-call",
+                                        "type": "tool_call",
+                                    }
+                                ],
+                            )
+                        )
+                    ]
+                )
             return ChatResult(
                 generations=[
                     ChatGeneration(message=AIMessage(content=f"Tool result: {last.content}"))
                 ]
             )
         content = str(last.content).lower()
-        if "watchlist" in content or "自选" in content or "write" in content:
+        if "remember preference" in content or "记住" in content:
+            name = "propose_memory"
+            args = {
+                "kind": "preference",
+                "content": "用户偏好低波动资产",
+                "evidence_message_ids": ["current"],
+            }
+        elif "recall memory" in content or "回忆偏好" in content:
+            name = "search_memories"
+            args = {"query": "低波动", "limit": 5}
+        elif "watchlist" in content or "自选" in content or "write" in content:
             name = "watchlist_add"
             args = {"symbol": "AAPL", "note": "stage1"}
         elif "calculate" in content or "计算" in content:

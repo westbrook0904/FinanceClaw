@@ -32,6 +32,7 @@ class FinanceClawSettings(BaseSettings):
     model_max_tokens: int = Field(default=4096, ge=64, le=384_000)
     model_max_retries: int = Field(default=2, ge=0, le=8)
     read_max_attempts: int = Field(default=3, ge=1, le=8)
+    approval_timeout_seconds: int = Field(default=900, ge=30, le=86_400)
     mcp_timeout_seconds: float = Field(default=10.0, gt=0, le=60)
     agent_server_url: str = "http://127.0.0.1:2024"
     agent_server_service_token: SecretStr | None = None
@@ -40,10 +41,18 @@ class FinanceClawSettings(BaseSettings):
     bff_subject_id: str = "developer"
     bff_scopes: frozenset[str] = Field(
         default_factory=lambda: frozenset(
-            {"market:read", "tools:read", "watchlist:write", "artifacts:read"}
+            {
+                "market:read",
+                "tools:read",
+                "watchlist:write",
+                "artifacts:read",
+                "memory:read",
+                "memory:write",
+                "memory:delete",
+            }
         )
     )
-    langsmith_project: str = "financeclaw-stage2-development"
+    langsmith_project: str = "financeclaw-stage3-development"
     database_url: SecretStr = SecretStr("sqlite+pysqlite:///./.financeclaw/financeclaw.db")
     database_auto_create_schema: bool = True
     artifact_root: str = ".financeclaw/artifacts"
@@ -55,6 +64,9 @@ class FinanceClawSettings(BaseSettings):
     context_safety_margin: int = Field(default=1_024, ge=0)
     summary_segment_messages: int = Field(default=12, ge=2, le=1_000)
     summary_hierarchy_segments: int = Field(default=8, ge=2, le=1_000)
+    memory_recall_tokens: int = Field(default=768, ge=64, le=8_192)
+    memory_recall_limit: int = Field(default=5, ge=1, le=20)
+    memory_auto_commit_low_risk_preferences: bool = False
 
     @model_validator(mode="after")
     def protect_production(self) -> "FinanceClawSettings":

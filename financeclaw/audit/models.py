@@ -16,6 +16,11 @@ class AuditEventType(StrEnum):
     TOOL_REJECTED = "tool.rejected"
     FINANCIAL_TOOL_EXECUTED = "financial_tool.executed"
     FINANCIAL_TOOL_FAILED = "financial_tool.failed"
+    MEMORY_PROPOSED = "memory.proposed"
+    MEMORY_COMMITTED = "memory.committed"
+    MEMORY_SUPERSEDED = "memory.superseded"
+    MEMORY_REVOKED = "memory.revoked"
+    MEMORY_DELETED = "memory.deleted"
 
 
 class AuditRecord(BaseModel):

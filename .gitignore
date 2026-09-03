@@ -14,6 +14,7 @@ build/
 !.env.stage0.example
 !.env.stage1.example
 !.env.stage2.example
+!.env.stage3.example
 .langgraph_api/
 .financeclaw/
 .idea/

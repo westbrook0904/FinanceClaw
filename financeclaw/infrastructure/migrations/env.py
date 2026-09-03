@@ -5,16 +5,22 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
-from financeclaw.conversation.tables import Base
+# Alembic discovers tables through imports registered on the shared metadata.
+from financeclaw.audit import tables as _audit_tables  # noqa: F401
+from financeclaw.conversation import tables as _conversation_tables  # noqa: F401
 from financeclaw.infrastructure import FinanceClawSettings, normalize_database_url
+from financeclaw.infrastructure.database import ensure_database_parent
+from financeclaw.infrastructure.orm import Base
 
 config = context.config
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # Migration setup must not disable application loggers in an embedding
+    # process (for example pytest or an administrative worker).
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 settings = FinanceClawSettings()
-config.set_main_option(
-    "sqlalchemy.url", normalize_database_url(settings.database_url.get_secret_value())
-)
+database_url = normalize_database_url(settings.database_url.get_secret_value())
+ensure_database_parent(database_url)
+config.set_main_option("sqlalchemy.url", database_url)
 target_metadata = Base.metadata
 
 

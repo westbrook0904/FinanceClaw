@@ -62,7 +62,7 @@ def create_app(
 
     @app.get("/health")
     async def health() -> dict[str, str]:
-        return {"status": "ok", "stage": "2"}
+        return {"status": "ok", "stage": "3"}
 
     @app.get("/ready")
     async def ready() -> JSONResponse:
@@ -260,6 +260,7 @@ def create_default_app(settings: FinanceClawSettings | None = None) -> FastAPI:
         components.conversation_repository,
         components.agent_profiles,
         summary_service=components.summary_service,
+        approval_timeout_seconds=settings.approval_timeout_seconds,
     )
     principals = {}
     if settings.bff_auth_token is not None:

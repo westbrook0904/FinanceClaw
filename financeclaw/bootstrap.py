@@ -1,4 +1,4 @@
-"""FinanceClaw composition root with immutable catalogs and Stage-2 persistence."""
+"""FinanceClaw composition root for the governed Stage-3 vertical slice."""
 
 from dataclasses import dataclass
 
@@ -8,7 +8,11 @@ from financeclaw.artifacts import (
     LocalArtifactStore,
     SqlAlchemyArtifactRepository,
 )
-from financeclaw.audit import AuditRepository, InMemoryAuditRepository
+from financeclaw.audit import (
+    AuditRepository,
+    InMemoryAuditRepository,
+    SqlAlchemyAuditRepository,
+)
 from financeclaw.conversation import (
     ContextBudget,
     ConversationContextBuilder,
@@ -17,6 +21,7 @@ from financeclaw.conversation import (
     SummaryService,
 )
 from financeclaw.infrastructure import ApplicationDatabase, FinanceClawSettings
+from financeclaw.memory import LongTermMemoryService, MemoryPolicy, default_memory_tools
 from financeclaw.models import ModelFactory, ModelProfile, ModelProfileCatalog, ModelProfileRef
 from financeclaw.tools import ToolCatalog, ToolPolicy, default_local_tools, managed_mcp_quote_tool
 
@@ -36,6 +41,7 @@ class FinanceClawComponents:
     context_builder: ConversationContextBuilder | None = None
     summary_service: SummaryService | None = None
     artifact_service: ArtifactService | None = None
+    memory_service: LongTermMemoryService | None = None
 
     @property
     def default_agent_profile(self) -> AgentProfile:
@@ -50,15 +56,69 @@ def build_components(
     enable_persistence: bool = False,
 ) -> FinanceClawComponents:
     settings = settings or FinanceClawSettings()
+
+    # Application persistence is composed before catalogs because Stage-3
+    # memory tools need Journal evidence and durable Audit dependencies. The
+    # memory records themselves remain in the request-scoped LangGraph Store.
+    database: ApplicationDatabase | None = None
+    conversation_repository: ConversationRepository | None = None
+    context_builder: ConversationContextBuilder | None = None
+    summary_service: SummaryService | None = None
+    artifact_service: ArtifactService | None = None
+    if enable_persistence:
+        database = ApplicationDatabase(settings.database_url.get_secret_value())
+        if settings.database_auto_create_schema:
+            database.initialize_schema()
+        concrete_repository = SqlAlchemyConversationRepository(database.session_factory)
+        conversation_repository = concrete_repository
+        context_builder = ConversationContextBuilder(
+            concrete_repository,
+            ContextBudget(
+                model_input_limit=settings.context_input_limit,
+                reserved_output_tokens=settings.context_reserved_output,
+                system_policy_reserve=settings.context_system_policy_reserve,
+                tool_schema_reserve=settings.context_tool_schema_reserve,
+                safety_margin=settings.context_safety_margin,
+            ),
+        )
+        summary_service = SummaryService(
+            concrete_repository,
+            segment_messages=settings.summary_segment_messages,
+            hierarchy_segments=settings.summary_hierarchy_segments,
+        )
+        artifact_service = ArtifactService(
+            SqlAlchemyArtifactRepository(database.session_factory),
+            LocalArtifactStore(settings.artifact_root),
+            inline_bytes=settings.artifact_inline_bytes,
+        )
+
+    if audit is not None:
+        effective_audit = audit
+    elif database is not None:
+        effective_audit = SqlAlchemyAuditRepository(database.session_factory)
+    else:
+        effective_audit = InMemoryAuditRepository()
+
+    memory_service = (
+        LongTermMemoryService(
+            conversation_repository=conversation_repository,
+            audit=effective_audit,
+            policy=MemoryPolicy(
+                auto_commit_low_risk_preferences=(settings.memory_auto_commit_low_risk_preferences)
+            ),
+        )
+        if conversation_repository is not None
+        else None
+    )
     if tool_catalog is None:
         tool_catalog = ToolCatalog(
             (
                 *default_local_tools(),
                 managed_mcp_quote_tool(timeout_seconds=settings.mcp_timeout_seconds),
+                *(default_memory_tools(memory_service) if memory_service is not None else ()),
             )
         )
     tool_policy = ToolPolicy()
-    effective_audit = audit or InMemoryAuditRepository()
 
     fallback_profiles = tuple(
         ModelProfile(
@@ -96,46 +156,18 @@ def build_components(
         system_prompt_template=(
             "You are FinanceClaw's governed financial assistant. Use tools for current financial "
             "facts, preserve provider/as-of evidence, never invent tool results, never expose "
-            "credentials, and never claim a WRITE occurred before approval and tool success."
+            "credentials, and never claim a WRITE occurred before approval and tool success. "
+            "Long-term memory is user-approved historical context, never an authority for current "
+            "prices, holdings, balances, financial statements, news, rates or product rules."
         ),
         allowed_tools=tuple(
             ToolRef(tool_id=managed.governance.tool_id, version=managed.governance.version)
             for managed in tool_catalog.latest()
         ),
+        memory_policy="stage3-governed-v1",
     )
     agent_profiles = AgentProfileCatalog((agent_profile,))
 
-    database: ApplicationDatabase | None = None
-    conversation_repository: ConversationRepository | None = None
-    context_builder: ConversationContextBuilder | None = None
-    summary_service: SummaryService | None = None
-    artifact_service: ArtifactService | None = None
-    if enable_persistence:
-        database = ApplicationDatabase(settings.database_url.get_secret_value())
-        if settings.database_auto_create_schema:
-            database.initialize_schema()
-        concrete_repository = SqlAlchemyConversationRepository(database.session_factory)
-        conversation_repository = concrete_repository
-        context_builder = ConversationContextBuilder(
-            concrete_repository,
-            ContextBudget(
-                model_input_limit=settings.context_input_limit,
-                reserved_output_tokens=settings.context_reserved_output,
-                system_policy_reserve=settings.context_system_policy_reserve,
-                tool_schema_reserve=settings.context_tool_schema_reserve,
-                safety_margin=settings.context_safety_margin,
-            ),
-        )
-        summary_service = SummaryService(
-            concrete_repository,
-            segment_messages=settings.summary_segment_messages,
-            hierarchy_segments=settings.summary_hierarchy_segments,
-        )
-        artifact_service = ArtifactService(
-            SqlAlchemyArtifactRepository(database.session_factory),
-            LocalArtifactStore(settings.artifact_root),
-            inline_bytes=settings.artifact_inline_bytes,
-        )
     agent_factory = AgentFactory(
         model_factory=model_factory,
         tool_catalog=tool_catalog,
@@ -146,6 +178,9 @@ def build_components(
         context_builder=context_builder,
         conversation_repository=conversation_repository,
         artifact_service=artifact_service,
+        memory_service=memory_service,
+        memory_recall_tokens=settings.memory_recall_tokens,
+        memory_recall_limit=settings.memory_recall_limit,
     )
     return FinanceClawComponents(
         settings=settings,
@@ -161,4 +196,5 @@ def build_components(
         context_builder=context_builder,
         summary_service=summary_service,
         artifact_service=artifact_service,
+        memory_service=memory_service,
     )

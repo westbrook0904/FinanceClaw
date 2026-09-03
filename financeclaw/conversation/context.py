@@ -22,7 +22,13 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from financeclaw.contracts import ExecutionContext
 
-from .models import ContextOmission, ContextSelection, ConversationMessage, ConversationSummary
+from .models import (
+    ContextOmission,
+    ContextSelection,
+    ConversationMessage,
+    ConversationSummary,
+    ManifestMemoryReference,
+)
 from .repository import ConversationRepository
 
 _TERM = re.compile(r"[A-Za-z0-9._-]{2,}|[\u4e00-\u9fff]{2,}")
@@ -133,6 +139,7 @@ class ConversationContextBuilder:
         runtime_messages: Sequence[AnyMessage],
         system_prompt: str,
         tools: Sequence[Any],
+        memory_references: Sequence[ManifestMemoryReference] = (),
     ) -> tuple[list[AnyMessage], ContextSelection]:
         if context.conversation_id is None:
             raise ValueError("conversation_id is required for journal context selection")
@@ -280,6 +287,7 @@ class ConversationContextBuilder:
         selection = ContextSelection(
             recent_message_ids=tuple(item.message_id for item in recent_selected),
             summary_ids=tuple(item.summary_id for item in selected_summaries),
+            memory_refs=tuple(memory_references),
             historical_message_ids=tuple(item.message_id for item in selected_old),
             tool_result_refs=tool_refs,
             input_token_count=input_tokens,

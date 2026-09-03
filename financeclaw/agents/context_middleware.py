@@ -12,10 +12,11 @@ from langsmith import traceable, tracing_context
 
 from financeclaw.contracts import ExecutionContext
 from financeclaw.conversation.context import ConversationContextBuilder
-from financeclaw.conversation.models import ModelContextManifest
+from financeclaw.conversation.models import ManifestMemoryReference, ModelContextManifest
 from financeclaw.conversation.repository import ConversationRepository
 from financeclaw.tools import ToolCatalog
 
+from .memory_middleware import MEMORY_REFS_KEY
 from .middleware import redact_sensitive
 
 LOGGER = logging.getLogger("financeclaw.model_io")
@@ -74,11 +75,19 @@ class ConversationContextMiddleware(AgentMiddleware):
                 content if isinstance(content, str) else json.dumps(content, default=str)
             )
         tools = list(request.tools)
+        memory_references: tuple[ManifestMemoryReference, ...] = ()
+        if request.system_message is not None:
+            raw_references = request.system_message.additional_kwargs.get(MEMORY_REFS_KEY, ())
+            if isinstance(raw_references, list | tuple):
+                memory_references = tuple(
+                    ManifestMemoryReference.model_validate(item) for item in raw_references
+                )
         messages, selection = self.builder.build(
             context=context,
             runtime_messages=request.messages,
             system_prompt=system_prompt,
             tools=tools,
+            memory_references=memory_references,
         )
         trace_conversation_recall(
             conversation_id=context.conversation_id,
@@ -115,6 +124,8 @@ class ConversationContextMiddleware(AgentMiddleware):
             recent_message_start=min(recent_sequences) if recent_sequences else None,
             recent_message_end=max(recent_sequences) if recent_sequences else None,
             summary_ids=selection.summary_ids,
+            memory_ids=tuple(item.memory_id for item in selection.memory_refs),
+            memory_refs=selection.memory_refs,
             historical_message_ids=selection.historical_message_ids,
             tool_result_refs=selection.tool_result_refs,
             exposed_tools=tuple(exposed_tools),

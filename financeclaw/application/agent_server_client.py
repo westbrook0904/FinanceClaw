@@ -77,7 +77,20 @@ class LangGraphAgentServerClient:
         return ServerRun(run_id=str(run["run_id"]), status=str(run.get("status", "pending")))
 
     async def get_run(self, *, thread_id: str, run_id: str) -> Mapping[str, Any]:
-        return await self._client.runs.get(thread_id, run_id)
+        run = await self._client.runs.get(thread_id, run_id)
+        if str(run.get("status")) not in {"success", "completed"}:
+            return run
+
+        # Recent Agent Server releases report a run that safely reached a
+        # durable HITL checkpoint as ``success``.  The pending review lives on
+        # the thread state instead.  Normalize that transport detail here so
+        # the application service has one stable ``interrupted`` contract.
+        state = await self._client.threads.get_state(thread_id)
+        metadata = state.get("metadata", {})
+        state_run_id = metadata.get("run_id") if isinstance(metadata, Mapping) else None
+        if state_run_id == run_id and state.get("interrupts"):
+            return {**run, "status": "interrupted"}
+        return run
 
     async def join_run(self, *, thread_id: str, run_id: str) -> Mapping[str, Any]:
         return await self._client.runs.join(thread_id, run_id)

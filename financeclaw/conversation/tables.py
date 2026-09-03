@@ -1,6 +1,6 @@
 """SQLAlchemy tables owned by the FinanceClaw application database."""
 
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import (
@@ -14,15 +14,9 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-
-def utcnow() -> datetime:
-    return datetime.now(UTC)
-
-
-class Base(DeclarativeBase):
-    pass
+from financeclaw.infrastructure.orm import Base, utcnow
 
 
 class ConversationRow(Base):
@@ -175,6 +169,7 @@ class ModelContextManifestRow(Base):
     recent_message_end: Mapped[int | None] = mapped_column(Integer)
     summary_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     memory_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    memory_refs: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False, default=list)
     historical_message_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     tool_result_refs: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     exposed_tools: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)

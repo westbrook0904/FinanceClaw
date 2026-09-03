@@ -2,7 +2,8 @@
 
 import asyncio
 import json
-from collections.abc import AsyncIterator, Mapping
+from collections.abc import AsyncIterator, Callable, Mapping
+from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from typing import Any
 
@@ -36,6 +37,10 @@ from .agent_server_client import AgentServerClient
 from .run_service import IdempotencyConflict, RunNotFound
 
 
+class ApprovalExpired(RuntimeError):
+    """The checkpoint remains immutable, but an expired action cannot resume."""
+
+
 class ConversationService:
     def __init__(
         self,
@@ -44,11 +49,17 @@ class ConversationService:
         agent_profiles: AgentProfileCatalog,
         *,
         summary_service: SummaryService | None = None,
+        approval_timeout_seconds: int = 900,
+        clock: Callable[[], datetime] | None = None,
     ) -> None:
+        if approval_timeout_seconds < 0:
+            raise ValueError("approval timeout cannot be negative")
         self.client = client
         self.repository = repository
         self.agent_profiles = agent_profiles
         self.summary_service = summary_service
+        self.approval_timeout = timedelta(seconds=approval_timeout_seconds)
+        self._clock = clock or (lambda: datetime.now(UTC))
 
     async def create(
         self,
@@ -173,7 +184,7 @@ class ConversationService:
                     context=context.model_dump(mode="json"),
                     metadata=_server_metadata(
                         context,
-                        stage="2",
+                        stage="3",
                         conversation_id=conversation.conversation_id,
                         agent_profile_version=conversation.agent_profile_version,
                     ),
@@ -262,6 +273,14 @@ class ConversationService:
             )
         except ConversationNotFound as exc:
             raise RunNotFound(str(exc)) from exc
+        created_at = turn.created_at
+        if created_at.tzinfo is None:
+            # SQLite drops timezone metadata; application timestamps are UTC by
+            # invariant, so restore the marker before comparing the deadline.
+            created_at = created_at.replace(tzinfo=UTC)
+        if self._clock() >= created_at + self.approval_timeout:
+            await asyncio.to_thread(self.repository.update_turn_status, run_id, "failed")
+            raise ApprovalExpired("approval window has expired; start a new memory proposal")
         mapped: dict[str, Any] = {"type": decision.type.value}
         if decision.reason is not None:
             mapped["message"] = decision.reason
@@ -282,7 +301,7 @@ class ConversationService:
             assistant_id="finance_agent",
             command={"resume": {"decisions": [mapped]}},
             context=context.model_dump(mode="json"),
-            metadata=_server_metadata(context, stage="2"),
+            metadata=_server_metadata(context, stage="3"),
         )
         status = "interrupted" if result.get("__interrupt__") else "completed"
         if status == "completed":

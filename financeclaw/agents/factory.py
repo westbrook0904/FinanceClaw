@@ -14,11 +14,13 @@ from langchain.agents.middleware import (
 )
 from langchain_core.language_models.chat_models import BaseChatModel
 from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.store.base import BaseStore
 
 from financeclaw.artifacts import ArtifactService, ToolResultArtifactMiddleware
 from financeclaw.audit import AuditRepository
 from financeclaw.contracts import ExecutionContext
 from financeclaw.conversation import ConversationContextBuilder, ConversationRepository
+from financeclaw.memory import LongTermMemoryService
 from financeclaw.models import ModelFactory
 from financeclaw.tools import (
     ApprovalMode,
@@ -30,6 +32,7 @@ from financeclaw.tools import (
 )
 
 from .context_middleware import ConversationContextMiddleware
+from .memory_middleware import MemoryRecallMiddleware
 from .middleware import ContextTraceMiddleware, FullIODebugMiddleware, ToolGovernanceMiddleware
 from .profiles import AgentProfile
 
@@ -49,6 +52,9 @@ class AgentFactory:
         context_builder: ConversationContextBuilder | None = None,
         conversation_repository: ConversationRepository | None = None,
         artifact_service: ArtifactService | None = None,
+        memory_service: LongTermMemoryService | None = None,
+        memory_recall_tokens: int = 768,
+        memory_recall_limit: int = 5,
     ) -> None:
         self.model_factory = model_factory
         self.tool_catalog = tool_catalog
@@ -59,6 +65,9 @@ class AgentFactory:
         self.context_builder = context_builder
         self.conversation_repository = conversation_repository
         self.artifact_service = artifact_service
+        self.memory_service = memory_service
+        self.memory_recall_tokens = memory_recall_tokens
+        self.memory_recall_limit = memory_recall_limit
 
     def build(
         self,
@@ -67,6 +76,7 @@ class AgentFactory:
         model: BaseChatModel | None = None,
         fallback_models: tuple[BaseChatModel, ...] | None = None,
         checkpointer: Any = _DEFAULT_CHECKPOINTER,
+        store: BaseStore | None = None,
     ) -> Any:
         resolved_tools = tuple(
             self.tool_catalog.resolve(ref.tool_id, ref.version) for ref in profile.allowed_tools
@@ -134,6 +144,14 @@ class AgentFactory:
         )
         if self.artifact_service is not None:
             middleware.append(ToolResultArtifactMiddleware(self.artifact_service))
+        if self.memory_service is not None:
+            middleware.append(
+                MemoryRecallMiddleware(
+                    self.memory_service,
+                    max_tokens=self.memory_recall_tokens,
+                    max_memories=self.memory_recall_limit,
+                )
+            )
         if self.context_builder is not None and self.conversation_repository is not None:
             middleware.append(
                 ConversationContextMiddleware(
@@ -189,5 +207,6 @@ class AgentFactory:
             middleware=middleware,
             context_schema=ExecutionContext,
             checkpointer=resolved_checkpointer,
+            store=store,
             name=profile.agent_id,
         )

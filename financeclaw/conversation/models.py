@@ -2,9 +2,9 @@
 
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Any, Literal
+from typing import Any, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class FrozenRecord(BaseModel):
@@ -111,6 +111,15 @@ class ContextOmission(FrozenRecord):
     token_count: int = Field(ge=0)
 
 
+class ManifestMemoryReference(FrozenRecord):
+    """The versioned reason a memory was exposed to one model call."""
+
+    memory_id: str
+    schema_version: int = Field(ge=1)
+    memory_type: Literal["preference", "goal", "constraint", "decision_note"]
+    injection_reason: str
+
+
 class ModelContextManifest(FrozenRecord):
     manifest_id: str
     model_call_id: str
@@ -124,6 +133,7 @@ class ModelContextManifest(FrozenRecord):
     recent_message_end: int | None = None
     summary_ids: tuple[str, ...] = ()
     memory_ids: tuple[str, ...] = ()
+    memory_refs: tuple[ManifestMemoryReference, ...] = ()
     historical_message_ids: tuple[str, ...] = ()
     tool_result_refs: tuple[str, ...] = ()
     exposed_tools: tuple[str, ...] = ()
@@ -133,12 +143,22 @@ class ModelContextManifest(FrozenRecord):
     context_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
+    @model_validator(mode="after")
+    def memory_ids_must_match_versioned_references(self) -> Self:
+        referenced_ids = tuple(item.memory_id for item in self.memory_refs)
+        if self.memory_ids != referenced_ids:
+            raise ValueError("manifest memory_ids must match memory_refs in order")
+        if len(referenced_ids) != len(set(referenced_ids)):
+            raise ValueError("manifest memory references must be unique")
+        return self
+
 
 class ContextSelection(FrozenRecord):
     """Serializable selection evidence; runtime messages stay as BaseMessage."""
 
     recent_message_ids: tuple[str, ...] = ()
     summary_ids: tuple[str, ...] = ()
+    memory_refs: tuple[ManifestMemoryReference, ...] = ()
     historical_message_ids: tuple[str, ...] = ()
     tool_result_refs: tuple[str, ...] = ()
     input_token_count: int

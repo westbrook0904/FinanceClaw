@@ -110,6 +110,8 @@ def build_direct_tool_graph(
     def validate_target(state: DirectToolState) -> dict[str, Any]:
         try:
             managed = catalog.resolve(state["tool_id"], state.get("version"))
+            if not managed.governance.direct_invocation:
+                raise ValueError("tool is not available through DirectToolGraph")
             schema = managed.tool.get_input_schema()
             normalized = schema.model_validate(state.get("arguments", {})).model_dump(mode="json")
         except Exception as exc:

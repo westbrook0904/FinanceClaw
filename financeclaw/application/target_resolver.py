@@ -63,6 +63,10 @@ class TargetResolver:
                 managed = self.tool_catalog.resolve(target.tool_id, target.version)
             except LookupError as exc:
                 raise TargetResolutionError(str(exc)) from exc
+            if not managed.governance.direct_invocation:
+                raise TargetResolutionError(
+                    f"tool is only available inside the governed Agent path: {target.tool_id}"
+                )
             return ResolvedTarget(
                 kind="tool",
                 assistant_id="direct_tool",

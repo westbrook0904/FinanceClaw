@@ -3,7 +3,12 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from financeclaw.application import IdempotencyConflict, RunNotFound, TargetResolutionError
+from financeclaw.application import (
+    ApprovalExpired,
+    IdempotencyConflict,
+    RunNotFound,
+    TargetResolutionError,
+)
 from financeclaw.contracts import ErrorResponse
 from financeclaw.conversation import ConversationConflict, ConversationNotFound
 
@@ -33,3 +38,8 @@ def install_error_handlers(app: FastAPI) -> None:
     async def conversation_conflict(_request: Request, exc: ConversationConflict) -> JSONResponse:
         payload = ErrorResponse(code="CONVERSATION_CONFLICT", message=str(exc))
         return JSONResponse(status_code=409, content=payload.model_dump(mode="json"))
+
+    @app.exception_handler(ApprovalExpired)
+    async def approval_expired(_request: Request, exc: ApprovalExpired) -> JSONResponse:
+        payload = ErrorResponse(code="APPROVAL_EXPIRED", message=str(exc))
+        return JSONResponse(status_code=410, content=payload.model_dump(mode="json"))

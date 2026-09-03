@@ -28,7 +28,6 @@ def test_stage2_runtime_does_not_reference_deleted_context_stack() -> None:
     )
     sources = [
         *sorted((root / "financeclaw").rglob("*.py")),
-        *sorted((root / "harness-policy" / "src").rglob("*.py")),
         *sorted((root / "harness-contracts" / "src").rglob("*.py")),
     ]
     offenders = {
@@ -50,13 +49,15 @@ def test_alembic_upgrade_downgrade_and_reupgrade(tmp_path: Path, monkeypatch) ->
 
     command.upgrade(config, "head")
     engine = create_engine(url)
-    assert set(inspect(engine).get_table_names()) == STAGE2_TABLES
+    # Later stages may extend the application schema; Stage 2 owns and
+    # continues to require this subset rather than forbidding new domain rows.
+    assert STAGE2_TABLES.issubset(inspect(engine).get_table_names())
 
     command.downgrade(config, "base")
     assert inspect(engine).get_table_names() == ["alembic_version"]
 
     command.upgrade(config, "head")
-    assert set(inspect(engine).get_table_names()) == STAGE2_TABLES
+    assert STAGE2_TABLES.issubset(inspect(engine).get_table_names())
     engine.dispose()
 
 

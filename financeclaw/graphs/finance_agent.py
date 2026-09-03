@@ -1,4 +1,4 @@
-"""Agent Server graph factories with Stage-2 persistent context support."""
+"""Agent Server graph factories with Stage-3 context and memory support."""
 
 from typing import Any
 

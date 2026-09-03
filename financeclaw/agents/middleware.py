@@ -1,5 +1,6 @@
 """Tool governance, bounded debug I/O and LangSmith context middleware."""
 
+import asyncio
 import json
 import logging
 import re
@@ -236,7 +237,12 @@ class ToolGovernanceMiddleware(AgentMiddleware):
         request: Any,
         handler: Callable[[Any], Awaitable[Any]],
     ) -> Any:
-        context, managed, decision, arguments_hash = self._authorize(request)
+        # Authorization writes a durable audit record.  Keep that synchronous
+        # SQLAlchemy work off the Agent Server event loop; blockbuster treats a
+        # leaked sqlite call here as a production correctness error.
+        context, managed, decision, arguments_hash = await asyncio.to_thread(
+            self._authorize, request
+        )
         if managed is None or managed.key not in self.allowed_keys:
             return self._denied_message(request, "tool is not in the AgentProfile allowlist")
         if decision.effect is ToolDecisionType.DENY:
@@ -244,7 +250,8 @@ class ToolGovernanceMiddleware(AgentMiddleware):
         try:
             response = await handler(request)
         except Exception:
-            self._audit(
+            await asyncio.to_thread(
+                self._audit,
                 context,
                 managed,
                 event=AuditEventType.FINANCIAL_TOOL_FAILED,
@@ -253,7 +260,8 @@ class ToolGovernanceMiddleware(AgentMiddleware):
                 tool_call_id=str(request.tool_call.get("id", "")) or None,
             )
             raise
-        self._audit(
+        await asyncio.to_thread(
+            self._audit,
             context,
             managed,
             event=AuditEventType.FINANCIAL_TOOL_EXECUTED,

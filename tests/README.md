@@ -1,7 +1,7 @@
 # Tests
 
 当前回归基线覆盖 Stage-0 框架兼容切片、Stage-1 Execution Spine、Stage-2 Conversation
-Context，以及仍由 FinanceClaw 保留的 Memory、Policy、Trace、Events 契约。
+Context、Stage-3 Long-term Memory，以及仍临时保留的 Trace/Events 契约。
 
 ```bash
 .conda/envs/stage0/bin/python -m pytest -q
@@ -24,6 +24,14 @@ Context，以及仍由 FinanceClaw 保留的 Memory、Policy、Trace、Events �
 - 每次模型调用的 Manifest、完整 Prompt 调试开关和 Secret 脱敏；
 - Artifact offload/hash/owner/scope；
 - Alembic upgrade/downgrade/re-upgrade 及旧 Context Runtime 依赖隔离。
+
+`tests/stage3` 重点验证：
+
+- 可信 namespace、Journal evidence、四种类型和金融时效事实边界；
+- propose/confirm HITL、跨 thread 召回、租户隔离和独立 memory token budget；
+- supersede/revoke/delete 后不再检索或注入；
+- Prompt data-only 区域与 Manifest 版本/原因引用一致；
+- 永久 Audit、Alembic schema、LangSmith dataset seed 和旧 Memory Runtime 删除。
 
 真实 Provider、LangSmith 与 Agent Server 网络联调由显式 smoke/probe 命令执行，不用 mock 结果
 冒充在线证据。

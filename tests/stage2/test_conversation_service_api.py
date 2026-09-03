@@ -269,7 +269,7 @@ async def test_conversation_http_contract_and_cross_tenant_isolation(tmp_path: P
     assert started.json()["conversation_id"] == conversation_id
     assert hidden.status_code == 404
     assert [item["role"] for item in messages.json()["messages"]] == ["user"]
-    assert health.json()["stage"] == "2"
+    assert health.json()["stage"] == "3"
     if components.database is not None:
         components.database.close()
 
