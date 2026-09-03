@@ -1,3 +1,5 @@
+"""`test_migrations_architecture` 模块提供`stage3`相关能力。"""
+
 from pathlib import Path
 
 import pytest
@@ -7,12 +9,12 @@ from pydantic import SecretStr
 from sqlalchemy import create_engine, inspect
 
 from financeclaw.application import TargetResolutionError, TargetResolver
-from financeclaw.application.memory_eval_seed import SAMPLES
-from financeclaw.audit import AuditEventType, SqlAlchemyAuditRepository
 from financeclaw.bootstrap import build_components
-from financeclaw.contracts import RunRequest, ToolTarget
 from financeclaw.infrastructure import ApplicationDatabase, FinanceClawSettings
-from financeclaw.memory import MemoryDraft
+from financeclaw.kernel import RunRequest, ToolTarget
+from financeclaw.modules.audit import AuditEventType, SqlAlchemyAuditRepository
+from financeclaw.modules.memory import MemoryDraft
+from financeclaw.operations.memory_eval_seed import SAMPLES
 
 from .support import conversation_context
 
@@ -20,26 +22,41 @@ from .support import conversation_context
 def test_stage3_migration_adds_audit_and_manifest_memory_references(
     tmp_path: Path, monkeypatch
 ) -> None:
+    """验证函数名所描述的业务场景符合预期。"""
+    # 准备 url，供后续步骤使用。
     url = f"sqlite+pysqlite:///{tmp_path / 'stage3-migration.db'}"
+    # 前置条件满足后调用 setenv。
     monkeypatch.setenv("FINANCECLAW_ENVIRONMENT", "test")
+    # 前置条件满足后调用 setenv。
     monkeypatch.setenv("FINANCECLAW_DATABASE_URL", url)
+    # 准备 config，供后续步骤使用。
     config = Config("alembic.ini")
+    # 前置条件满足后调用 upgrade。
     command.upgrade(config, "head")
+    # 准备 engine，供后续步骤使用。
     engine = create_engine(url)
+    # 准备 inspector，供后续步骤使用。
     inspector = inspect(engine)
+    # 继续执行前验证内部不变量。
     assert "audit_records" in inspector.get_table_names()
+    # 准备 manifest_columns，供后续步骤使用。
     manifest_columns = {
         column["name"] for column in inspector.get_columns("model_context_manifests")
     }
+    # 继续执行前验证内部不变量。
     assert "memory_refs" in manifest_columns
+    # 准备 audit_columns，供后续步骤使用。
     audit_columns = {column["name"] for column in inspector.get_columns("audit_records")}
+    # 继续执行前验证内部不变量。
     assert {"tenant_id", "subject_id", "event_type", "payload_hash", "evidence_refs"} <= (
         audit_columns
     )
+    # 前置条件满足后调用 dispose。
     engine.dispose()
 
 
 def test_alembic_creates_missing_sqlite_parent_directory(tmp_path: Path, monkeypatch) -> None:
+    """验证函数名所描述的业务场景符合预期。"""
     database_path = tmp_path / "missing" / "nested" / "stage3.db"
     monkeypatch.setenv("FINANCECLAW_ENVIRONMENT", "test")
     monkeypatch.setenv("FINANCECLAW_DATABASE_URL", f"sqlite+pysqlite:///{database_path}")
@@ -48,6 +65,7 @@ def test_alembic_creates_missing_sqlite_parent_directory(tmp_path: Path, monkeyp
 
 
 def test_stage3_runtime_has_no_legacy_memory_stack() -> None:
+    """验证函数名所描述的业务场景符合预期。"""
     root = Path(__file__).parents[2]
     sources = sorted((root / "financeclaw").rglob("*.py"))
     forbidden = ("harness_memory", "MemoryProvider", "MemoryGateway", "PRE_MEMORY")
@@ -64,6 +82,7 @@ def test_stage3_runtime_has_no_legacy_memory_stack() -> None:
 
 
 def test_langsmith_regression_seed_covers_required_memory_cases() -> None:
+    """验证函数名所描述的业务场景符合预期。"""
     assert {sample["case"] for sample in SAMPLES} == {
         "stable_preference_recall",
         "superseded_preference",
@@ -76,6 +95,8 @@ def test_langsmith_regression_seed_covers_required_memory_cases() -> None:
 def test_memory_tools_cannot_bypass_agent_human_approval_via_direct_target(
     tmp_path: Path,
 ) -> None:
+    """验证函数名所描述的业务场景符合预期。"""
+    # 准备 components，供后续步骤使用。
     components = build_components(
         FinanceClawSettings(
             environment="test",
@@ -86,10 +107,12 @@ def test_memory_tools_cannot_bypass_agent_human_approval_via_direct_target(
         ),
         enable_persistence=True,
     )
+    # 准备 resolver，供后续步骤使用。
     resolver = TargetResolver(
         tool_catalog=components.tool_catalog,
         agent_profiles=components.agent_profiles,
     )
+    # 限定依赖资源的生命周期，并确保资源能够可靠释放。
     with pytest.raises(TargetResolutionError, match="governed Agent path"):
         resolver.resolve(
             RunRequest(
@@ -105,12 +128,16 @@ def test_memory_tools_cannot_bypass_agent_human_approval_via_direct_target(
                 ),
             )
         )
+    # 显式处理 `components.database is not None` 分支。
     if components.database is not None:
         components.database.close()
 
 
 def test_memory_audit_survives_repository_reconstruction(tmp_path: Path) -> None:
+    """验证函数名所描述的业务场景符合预期。"""
+    # 准备 path，供后续步骤使用。
     path = tmp_path / "audit.db"
+    # 准备 settings，供后续步骤使用。
     settings = FinanceClawSettings(
         environment="test",
         offline_model=True,
@@ -118,11 +145,17 @@ def test_memory_audit_survives_repository_reconstruction(tmp_path: Path) -> None
         database_url=SecretStr(f"sqlite+pysqlite:///{path}"),
         artifact_root=str(tmp_path / "artifacts"),
     )
+    # 准备 components，供后续步骤使用。
     components = build_components(settings, enable_persistence=True)
+    # 准备 repository，供后续步骤使用。
     repository = components.conversation_repository
+    # 准备 service，供后续步骤使用。
     service = components.memory_service
+    # 继续执行前验证内部不变量。
     assert repository is not None and service is not None
+    # 准备 context and _，供后续步骤使用。
     context, _ = conversation_context(repository, key="persistent-audit")
+    # 前置条件满足后调用 propose。
     service.propose(
         context,
         MemoryDraft(
@@ -131,11 +164,18 @@ def test_memory_audit_survives_repository_reconstruction(tmp_path: Path) -> None
             evidence_message_ids=("current",),
         ),
     )
+    # 继续执行前验证内部不变量。
     assert components.database is not None
+    # 前置条件满足后调用 close。
     components.database.close()
 
+    # 准备 database，供后续步骤使用。
     database = ApplicationDatabase(f"sqlite+pysqlite:///{path}")
+    # 准备 audit，供后续步骤使用。
     audit = SqlAlchemyAuditRepository(database.session_factory)
+    # 准备 records，供后续步骤使用。
     records = audit.records(tenant_id=context.tenant_id, subject_id=context.subject_id)
+    # 继续执行前验证内部不变量。
     assert [record.event_type for record in records] == [AuditEventType.MEMORY_PROPOSED]
+    # 前置条件满足后调用 close。
     database.close()

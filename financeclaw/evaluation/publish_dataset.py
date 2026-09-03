@@ -1,4 +1,4 @@
-"""Publish the sanitized Stage-5 regression corpus to a version-named dataset."""
+"""提供 publish dataset 评测与发布能力。"""
 
 import argparse
 from pathlib import Path
@@ -9,6 +9,7 @@ from .regression import load_cases, publish_cases
 
 
 def main() -> None:
+    """解析命令行参数，执行 publish dataset 操作并输出结果。"""
     parser = argparse.ArgumentParser()
     parser.add_argument("--name", required=True, help="Immutable dataset name including version")
     parser.add_argument(

@@ -71,6 +71,13 @@ Stage 4 已交付的固定流程能力继续保留：
 Contracts 空壳和示例实现均已从生产构建删除。验证证据见
 [Stage-5 验证记录](.redesign/stages/Stage-5-验证记录.md)。
 
+## 代码结构
+
+正式代码按企业级模块化单体组织：`interfaces` 承接 HTTP 协议，`application` 协调用例，
+`modules` 聚合领域模块，`orchestration` 承载 Agent/Graph/Tool 运行时，`infrastructure` 提供数据库、
+外部客户端、LLM、安全和观测适配，`kernel` 保存稳定共享契约，`operations` 只保存运维命令。
+完整职责及依赖规则见 [包结构设计](docs/architecture/package-layout.md)。
+
 ## 环境
 
 推荐用 conda 管理解释器，用 uv 把锁定依赖安装到同一个项目内环境：
@@ -132,36 +139,36 @@ FINANCECLAW_ENVIRONMENT=test \
 LANGSMITH_TRACING=false \
   .conda/envs/financeclaw/bin/langgraph dev --no-browser --no-reload --port 2024
 
-.conda/envs/financeclaw/bin/python -m financeclaw.application.server_smoke
+.conda/envs/financeclaw/bin/python -m financeclaw.operations.server_smoke
 ```
 
 跨 Agent Server 重启的 Conversation smoke 可分两次运行：
 
 ```bash
-.conda/envs/financeclaw/bin/python -m financeclaw.application.conversation_smoke \
+.conda/envs/financeclaw/bin/python -m financeclaw.operations.conversation_smoke \
   --idempotency-key before-restart
 
 # 重启 Agent Server，并把第一次输出的 conversation_id 传入
-.conda/envs/financeclaw/bin/python -m financeclaw.application.conversation_smoke \
+.conda/envs/financeclaw/bin/python -m financeclaw.operations.conversation_smoke \
   --conversation-id <conversation_id> --idempotency-key after-restart
 ```
 
 Stage-3 的 Memory HITL、跨 thread recall、Manifest 与 Audit 冒烟：
 
 ```bash
-.conda/envs/financeclaw/bin/python -m financeclaw.application.memory_smoke
+.conda/envs/financeclaw/bin/python -m financeclaw.operations.memory_smoke
 ```
 
 Stage-4 固定 Workflow 的独立 thread、审批、报告制品、Audit 与进程内业务恢复冒烟：
 
 ```bash
-.conda/envs/financeclaw/bin/python -m financeclaw.application.workflow_smoke
+.conda/envs/financeclaw/bin/python -m financeclaw.operations.workflow_smoke
 ```
 
 配置真实 Provider 与 LangSmith 后执行在线门禁：
 
 ```bash
-.conda/envs/financeclaw/bin/python -m financeclaw.application.provider_probe
+.conda/envs/financeclaw/bin/python -m financeclaw.operations.provider_probe
 ```
 
 DeepSeek thinking 模型目前用 JSON mode 完成 structured output；默认原生 JSON Schema

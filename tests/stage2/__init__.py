@@ -1,1 +1,1 @@
-"""Stage-2 Conversation Journal and context tests."""
+"""`__init__` 模块提供`stage2`相关能力。"""

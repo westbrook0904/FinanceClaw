@@ -11,15 +11,15 @@ Workflow 完成目录注册、真实 Agent Server 执行、durable interrupt/res
 
 ## 1. 包边界与首个业务流程
 
-- `financeclaw.workflows.models`：发布定义、Tool/审批/超时策略和持久化业务事实；
-- `financeclaw.workflows.catalog`：进程启动时构造的只读版本目录，只让 active 发布接收新流量；
-- `financeclaw.workflows.repository` / `tables`：维护业务 run、Agent Server thread/run、版本、输入 hash、
+- `financeclaw.modules.workflows.models`：发布定义、Tool/审批/超时策略和持久化业务事实；
+- `financeclaw.modules.workflows.catalog`：进程启动时构造的只读版本目录，只让 active 发布接收新流量；
+- `financeclaw.modules.workflows.repository` / `tables`：维护业务 run、Agent Server thread/run、版本、输入 hash、
   输出、artifact 和审批决定的永久映射；
-- `financeclaw.graphs.workflows.portfolio_review_v1`：唯一 Stage-4 固定图，步骤为严格输入规范化 →
+- `financeclaw.orchestration.graphs.workflows.portfolio_review_v1`：唯一 Stage-4 固定图，步骤为严格输入规范化 →
   行情读取 → 数据新鲜度检查 → 集中度/风险计算 → 发布审批 → 报告制品；
 - `financeclaw.application.workflow_service`：只做 owner/scope/幂等/超时/版本与 Agent Server 映射，
   不实现第二套 checkpoint、queue、scheduler 或执行引擎；
-- `financeclaw.api`：新增 `POST /v1/workflows/{workflow_id}/runs`，并支持显式 `WorkflowTarget`；
+- `financeclaw.interfaces.http`：新增 `POST /v1/workflows/{workflow_id}/runs`，并支持显式 `WorkflowTarget`；
   普通 Agent、Conversation 和 Direct Tool 路由保持独立。
 
 `langgraph.json` 将 `portfolio_review_v1` 显式映射到发布图。`WorkflowDefinition` 固定了
@@ -69,7 +69,7 @@ dist/financeclaw-0.1.0.tar.gz
 dist/financeclaw-0.1.0-py3-none-any.whl
 ```
 
-wheel 检查确认包含 `financeclaw.workflows`、`financeclaw.graphs.workflows` 和
+wheel 检查确认包含 `financeclaw.modules.workflows`、`financeclaw.orchestration.graphs.workflows` 和
 `0003_stage4_workflows.py`。
 
 ## 5. 真实 Agent Server 验证
@@ -93,7 +93,7 @@ repository/service 并从数据库得到 `completed`。完整输出还返回了�
 
 ## 6. LangSmith 回归入口
 
-`financeclaw.application.workflow_eval_seed` 提供 5 个幂等样本：正常发布、过期数据分支、Tool
+`financeclaw.operations.workflow_eval_seed` 提供 5 个幂等样本：正常发布、过期数据分支、Tool
 瞬时故障恢复、拒绝审批和 checkpoint 恢复。设置 `LANGSMITH_API_KEY` 后可写入
 `financeclaw-stage4-published-workflow-v1`；当前验收只验证本地样本契约与节点/Tool trace，没有创建
 远程数据集。

@@ -1,1 +1,1 @@
-"""Stage-1 execution spine tests."""
+"""`__init__` 模块提供`stage1`相关能力。"""

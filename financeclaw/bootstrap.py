@@ -1,49 +1,93 @@
-"""FinanceClaw composition root for the production-hardened application."""
+"""组装 FinanceClaw 的配置、基础设施、领域服务与运行时组件。"""
 
 from dataclasses import dataclass
 
-from financeclaw.agents import AgentFactory, AgentProfile, AgentProfileCatalog, ToolRef
-from financeclaw.artifacts import (
+from financeclaw.infrastructure import ApplicationDatabase, ArtifactBackend, FinanceClawSettings
+from financeclaw.infrastructure.llm import (
+    ModelFactory,
+    ModelProfile,
+    ModelProfileCatalog,
+    ModelProfileRef,
+)
+from financeclaw.infrastructure.security import EgressPolicy
+from financeclaw.modules.artifacts import (
     ArtifactService,
     LocalArtifactStore,
     S3ArtifactStore,
     SqlAlchemyArtifactRepository,
 )
-from financeclaw.audit import (
+from financeclaw.modules.audit import (
     AuditRepository,
     InMemoryAuditRepository,
     SqlAlchemyAuditRepository,
 )
-from financeclaw.conversation import (
+from financeclaw.modules.conversation import (
     ContextBudget,
     ConversationContextBuilder,
     ConversationRepository,
     SqlAlchemyConversationRepository,
     SummaryService,
 )
-from financeclaw.delegation import (
+from financeclaw.modules.delegation import (
     DelegationRepository,
     SqlAlchemyDelegationRepository,
-    agent_delegation_tool,
-    workflow_delegation_tool,
 )
-from financeclaw.graphs.workflows import portfolio_review_definition
-from financeclaw.infrastructure import ApplicationDatabase, ArtifactBackend, FinanceClawSettings
-from financeclaw.memory import LongTermMemoryService, MemoryPolicy, default_memory_tools
-from financeclaw.models import ModelFactory, ModelProfile, ModelProfileCatalog, ModelProfileRef
-from financeclaw.outbox import OutboxRepository, SqlAlchemyOutboxRepository
-from financeclaw.security import EgressPolicy
-from financeclaw.tools import ToolCatalog, ToolPolicy, default_local_tools, managed_mcp_quote_tool
-from financeclaw.workflows import (
+from financeclaw.modules.memory import LongTermMemoryService, MemoryPolicy
+from financeclaw.modules.outbox import OutboxRepository, SqlAlchemyOutboxRepository
+from financeclaw.modules.workflows import (
     SqlAlchemyWorkflowRepository,
     WorkflowCatalog,
     WorkflowRepository,
     WorkflowStatus,
 )
+from financeclaw.orchestration.agents import (
+    AgentFactory,
+    AgentProfile,
+    AgentProfileCatalog,
+    ToolRef,
+)
+from financeclaw.orchestration.graphs.workflows import portfolio_review_definition
+from financeclaw.orchestration.tools import (
+    ToolCatalog,
+    ToolPolicy,
+    default_local_tools,
+    managed_mcp_quote_tool,
+)
+from financeclaw.orchestration.tools.delegation import (
+    agent_delegation_tool,
+    workflow_delegation_tool,
+)
+from financeclaw.orchestration.tools.memory import default_memory_tools
 
 
 @dataclass(frozen=True, slots=True)
 class FinanceClawComponents:
+    """保存一次启动中组装完成的共享组件，供 HTTP 与图工厂复用。
+
+    适用场景：
+        用于集中表达该职责，避免调用方直接依赖底层实现细节。
+
+    属性：
+        settings: 应用启动时已校验的集中配置。
+        tool_catalog: 登记并解析所有可用受治理工具版本的目录。
+        tool_policy: 在工具执行前作出允许、拒绝或需审批决定的策略。
+        audit: 记录授权、执行和状态变化的审计仓储。
+        model_profiles: 可按 ID 和版本解析模型配置的只读目录。
+        agent_profiles: 可按稳定标识和版本解析 Agent 配置的只读目录。
+        model_factory: 依据模型配置创建主模型和回退模型的工厂。
+        agent_factory: 根据 Agent 配置组装完整运行时的工厂。
+        database: 可选的数据库运行时；未启用持久化时为空。
+        conversation_repository: 维护会话 Journal、摘要和上下文清单的仓储。
+        context_builder: 在 token 预算内构造可复现模型上下文的服务。
+        summary_service: 负责构建和维护分层会话摘要的领域服务。
+        artifact_service: 决定结果内联或外置，并持久化制品元数据的服务。
+        memory_service: 管理长期记忆生命周期与检索的领域服务。
+        workflow_catalog: 登记并解析所有可用确定性工作流版本的目录。
+        workflow_repository: 维护工作流运行与审批快照的仓储。
+        delegation_repository: 维护父子运行委派状态的仓储。
+        outbox_repository: 与业务事务协调写入和领取待发布事件的仓储。
+    """
+
     settings: FinanceClawSettings
     tool_catalog: ToolCatalog
     tool_policy: ToolPolicy
@@ -65,6 +109,7 @@ class FinanceClawComponents:
 
     @property
     def default_agent_profile(self) -> AgentProfile:
+        """返回顶层金融 Agent 的固定配置，供图工厂和会话服务复用。"""
         return self.agent_profiles.resolve("finance_agent", "1.0.0")
 
 
@@ -75,11 +120,9 @@ def build_components(
     audit: AuditRepository | None = None,
     enable_persistence: bool = False,
 ) -> FinanceClawComponents:
+    """根据已注入依赖组装bootstrap 模块的数据。"""
     settings = settings or FinanceClawSettings()
 
-    # Application persistence is composed before catalogs because Stage-3
-    # memory tools need Journal evidence and durable Audit dependencies. The
-    # memory records themselves remain in the request-scoped LangGraph Store.
     database: ApplicationDatabase | None = None
     conversation_repository: ConversationRepository | None = None
     context_builder: ConversationContextBuilder | None = None
@@ -142,8 +185,6 @@ def build_components(
     else:
         effective_audit = InMemoryAuditRepository()
 
-    # All configured network destinations are validated once before clients or
-    # provider SDKs are constructed. Dynamic Tool URLs must apply the same port.
     if not settings.offline_model and settings.provider_base_url:
         EgressPolicy(
             settings.egress_allowed_hosts,

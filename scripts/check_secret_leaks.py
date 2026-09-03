@@ -1,4 +1,4 @@
-"""Fail CI when committed application surfaces contain recognizable live credentials."""
+"""`check_secret_leaks` 模块提供工程脚本相关能力。"""
 
 import re
 from pathlib import Path
@@ -14,6 +14,7 @@ PATTERNS = {
 
 
 def main() -> None:
+    """解析命令行参数并执行对应的工程任务。"""
     findings: list[str] = []
     for relative in SCAN_ROOTS:
         root = ROOT / relative

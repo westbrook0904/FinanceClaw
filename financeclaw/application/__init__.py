@@ -1,6 +1,5 @@
-"""Application use cases and Agent Server boundary."""
+"""应用层用例编排：连接接口层、领域模块与 Agent Server 端口。"""
 
-from .agent_server_client import AgentServerClient, LangGraphAgentServerClient, ServerRun
 from .conversation_service import ApprovalExpired, ConversationService
 from .delegation_service import (
     DelegationAuthorizationError,
@@ -9,6 +8,7 @@ from .delegation_service import (
     delegation_projection,
     extract_handoff_interrupt,
 )
+from .ports import AgentServerClient, ServerRun
 from .run_service import IdempotencyConflict, RunNotFound, RunService
 from .target_resolver import ResolvedTarget, TargetResolutionError, TargetResolver
 from .workflow_service import (
@@ -26,7 +26,6 @@ __all__ = [
     "DelegationInputError",
     "DelegationService",
     "IdempotencyConflict",
-    "LangGraphAgentServerClient",
     "ResolvedTarget",
     "RunNotFound",
     "RunService",

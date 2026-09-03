@@ -1,1 +1,1 @@
-"""Stage-3 governed long-term-memory tests."""
+"""`__init__` 模块提供`stage3`相关能力。"""

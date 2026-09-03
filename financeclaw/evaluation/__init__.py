@@ -1,4 +1,4 @@
-"""Versioned release-evaluation contracts and LangSmith dataset publishing."""
+"""提供   init   评测与发布能力。"""
 
 from .regression import (
     REQUIRED_CATEGORIES,

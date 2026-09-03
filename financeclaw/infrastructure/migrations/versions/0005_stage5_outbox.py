@@ -1,8 +1,4 @@
-"""Add the Stage-5 transactional outbox.
-
-Revision ID: 0005_stage5
-Revises: 0004_delegations
-"""
+"""定义该版本数据库结构变更及其可逆迁移步骤。"""
 
 from collections.abc import Sequence
 
@@ -16,6 +12,7 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    """创建本版本新增的表、索引和约束。"""
     op.create_table(
         "outbox_events",
         sa.Column("event_id", sa.String(128), primary_key=True),
@@ -46,6 +43,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """按依赖逆序移除本版本引入的数据库对象。"""
     op.drop_index("ix_outbox_owner", table_name="outbox_events")
     op.drop_index("ix_outbox_delivery", table_name="outbox_events")
     op.drop_table("outbox_events")

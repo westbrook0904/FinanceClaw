@@ -56,58 +56,21 @@ target-version = "py313"
 line-length = 100
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B"]
+select = ["E", "F", "I", "UP", "B", "D"]
+ignore = [
+    "D105",  # 魔术方法在调用位置已经能够表达自身语义。
+    "D107",  # 类文档已经统一说明构造语义。
+    "D203",  # 采用与 PEP 257 兼容的 D211 布局。
+    "D213",  # 多行说明的摘要放在起始行。
+    "D400",  # Ruff 尚不能识别中文句号作为结尾标点。
+    "D415",  # 中文说明统一使用全角句号。
+]
 
 [tool.setuptools]
 py-modules = ["main"]
-packages = [
-    "financeclaw",
-    "financeclaw.agents",
-    "financeclaw.api",
-    "financeclaw.application",
-    "financeclaw.artifacts",
-    "financeclaw.audit",
-    "financeclaw.conversation",
-    "financeclaw.contracts",
-    "financeclaw.delegation",
-    "financeclaw.evaluation",
-    "financeclaw.graphs",
-    "financeclaw.graphs.workflows",
-    "financeclaw.infrastructure",
-    "financeclaw.infrastructure.migrations",
-    "financeclaw.infrastructure.migrations.versions",
-    "financeclaw.memory",
-    "financeclaw.models",
-    "financeclaw.observability",
-    "financeclaw.outbox",
-    "financeclaw.security",
-    "financeclaw.tools",
-    "financeclaw.workflows",
-]
 
-[tool.setuptools.package-dir]
-financeclaw = "financeclaw"
-"financeclaw.agents" = "financeclaw/agents"
-"financeclaw.api" = "financeclaw/api"
-"financeclaw.application" = "financeclaw/application"
-"financeclaw.artifacts" = "financeclaw/artifacts"
-"financeclaw.audit" = "financeclaw/audit"
-"financeclaw.conversation" = "financeclaw/conversation"
-"financeclaw.contracts" = "financeclaw/contracts"
-"financeclaw.delegation" = "financeclaw/delegation"
-"financeclaw.evaluation" = "financeclaw/evaluation"
-"financeclaw.graphs" = "financeclaw/graphs"
-"financeclaw.graphs.workflows" = "financeclaw/graphs/workflows"
-"financeclaw.infrastructure" = "financeclaw/infrastructure"
-"financeclaw.infrastructure.migrations" = "financeclaw/infrastructure/migrations"
-"financeclaw.infrastructure.migrations.versions" = "financeclaw/infrastructure/migrations/versions"
-"financeclaw.memory" = "financeclaw/memory"
-"financeclaw.models" = "financeclaw/models"
-"financeclaw.observability" = "financeclaw/observability"
-"financeclaw.outbox" = "financeclaw/outbox"
-"financeclaw.security" = "financeclaw/security"
-"financeclaw.tools" = "financeclaw/tools"
-"financeclaw.workflows" = "financeclaw/workflows"
+[tool.setuptools.packages.find]
+include = ["financeclaw*"]
 
 [tool.setuptools.package-data]
 financeclaw = [

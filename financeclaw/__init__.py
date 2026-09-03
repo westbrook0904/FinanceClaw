@@ -1,4 +1,4 @@
-"""FinanceClaw product runtime built on LangChain and LangGraph."""
+"""FinanceClaw 金融智能体平台包。"""
 
 from financeclaw.bootstrap import FinanceClawComponents, build_components
 

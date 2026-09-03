@@ -1,4 +1,4 @@
-"""Persistent BFF orchestration for code-published workflow runs."""
+"""管理持久化工作流运行及其中断审批生命周期。"""
 
 from __future__ import annotations
 
@@ -9,8 +9,7 @@ from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from typing import Any
 
-from financeclaw.audit import AuditEventType, AuditRecord, AuditRepository
-from financeclaw.contracts import (
+from financeclaw.kernel import (
     ApprovalDecision,
     ApprovalDecisionType,
     ExecutionContext,
@@ -19,7 +18,8 @@ from financeclaw.contracts import (
     StreamEvent,
     WorkflowTarget,
 )
-from financeclaw.workflows import (
+from financeclaw.modules.audit import AuditEventType, AuditRecord, AuditRepository
+from financeclaw.modules.workflows import (
     WorkflowApproval,
     WorkflowApprovalStatus,
     WorkflowCatalog,
@@ -31,24 +31,53 @@ from financeclaw.workflows import (
     WorkflowRunStatus,
 )
 
-from .agent_server_client import AgentServerClient
+from .ports import AgentServerClient
 from .run_service import IdempotencyConflict, RunNotFound
 
 
 class WorkflowAuthorizationError(PermissionError):
+    """定义工作流AuthorizationError。
+
+    适用场景：
+        用于把该失败条件跨层传递，并在接口边界转换为稳定错误。
+    """
+
     pass
 
 
 class WorkflowApprovalExpired(RuntimeError):
+    """定义工作流审批Expired。
+
+    适用场景：
+        用于把该失败条件跨层传递，并在接口边界转换为稳定错误。
+    """
+
     pass
 
 
 class WorkflowInputError(ValueError):
+    """定义工作流输入Error。
+
+    适用场景：
+        用于把该失败条件跨层传递，并在接口边界转换为稳定错误。
+    """
+
     pass
 
 
 class WorkflowService:
-    """Map durable business runs to Agent Server threads without a second runtime."""
+    """管理确定性工作流从接收、执行、中断审批到终态落库的全过程。
+
+    适用场景：
+        用于应用用例需要跨仓储、外部端口或领域策略协调一致结果的场景。
+
+    属性：
+        client: 负责与外部 Agent Server 或供应商通信的端口实现。
+        repository: 负责领域状态读写和事务一致性的仓储。
+        catalog: 用于解析固定版本目标的只读目录。
+        audit: 记录授权、执行和状态变化的审计仓储。
+        _clock: 可替换时间源，便于统一 UTC 时间并支持确定性测试。
+    """
 
     def __init__(
         self,
@@ -59,6 +88,7 @@ class WorkflowService:
         *,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
+        """注入并保存工作流Service所需的协作对象，同时校验构造期不变量。"""
         self.client = client
         self.repository = repository
         self.catalog = catalog
@@ -74,6 +104,7 @@ class WorkflowService:
         scopes: frozenset[str],
         idempotency_key: str,
     ) -> RunAccepted:
+        """校验权限与输入后幂等创建工作流运行，并确保服务端运行已提交和绑定。"""
         try:
             definition = self.catalog.resolve(target.workflow_id, target.version)
             normalized = definition.normalize_input(target.arguments)
@@ -142,6 +173,7 @@ class WorkflowService:
         )
 
     async def status(self, run_id: str, *, tenant_id: str, subject_id: str) -> RunStatusResponse:
+        """合并数据库记录与服务端状态，处理中断、超时和完成结果。"""
         record = await self._owned(run_id, tenant_id, subject_id)
         if record.status in _TERMINAL:
             return self._response(record)
@@ -203,6 +235,7 @@ class WorkflowService:
         subject_id: str,
         scopes: frozenset[str],
     ) -> RunStatusResponse:
+        """校验待决审批、过期时间与参数哈希后恢复工作流检查点。"""
         record = await self._owned(run_id, tenant_id, subject_id)
         if record.status in _TERMINAL:
             return self._response(record)
@@ -289,6 +322,7 @@ class WorkflowService:
         return await self._complete(record, result)
 
     async def reconcile_incomplete(self) -> tuple[str, ...]:
+        """扫描未完成工作流并与 Agent Server 对账，修复可确定的状态。"""
         records = await asyncio.to_thread(self.repository.list_incomplete)
         reconciled: list[str] = []
         for record in records:
@@ -303,11 +337,13 @@ class WorkflowService:
         return tuple(reconciled)
 
     async def assert_owned(self, run_id: str, *, tenant_id: str, subject_id: str) -> None:
+        """验证工作流Service满足当前边界要求，否则抛出明确异常。"""
         await self._owned(run_id, tenant_id, subject_id)
 
     async def stream(
         self, run_id: str, *, tenant_id: str, subject_id: str
     ) -> AsyncIterator[StreamEvent]:
+        """校验访问权限后流式输出工作流Service事件。"""
         record = await self._owned(run_id, tenant_id, subject_id)
         async for part in self.client.stream_thread(
             thread_id=record.thread_id,
@@ -327,6 +363,7 @@ class WorkflowService:
     async def _record_interrupt(
         self, record: WorkflowRun, server: Mapping[str, Any]
     ) -> RunStatusResponse:
+        """把已确认的工作流Service事实持久化。"""
         payload = _interrupt_payload(server)
         if (
             payload.get("workflow_id") != record.workflow_id
@@ -391,6 +428,7 @@ class WorkflowService:
     async def _complete(
         self, record: WorkflowRun, raw_output: Mapping[str, Any]
     ) -> RunStatusResponse:
+        """收敛工作流成功输出，持久化终态和制品引用并记录审计事件。"""
         output = dict(raw_output)
         if isinstance(output.get("response"), Mapping):
             output = dict(output["response"])
@@ -444,6 +482,7 @@ class WorkflowService:
         return self._response(completed)
 
     async def _owned(self, run_id: str, tenant_id: str, subject_id: str) -> WorkflowRun:
+        """读取记录并同时校验租户与主体所有权，避免越权访问。"""
         try:
             return await asyncio.to_thread(self.repository.get_owned, run_id, tenant_id, subject_id)
         except WorkflowNotFound as exc:
@@ -460,6 +499,7 @@ class WorkflowService:
         resource_type: str = "workflow",
         artifact_refs: tuple[str, ...] = (),
     ) -> None:
+        """构造不可变审计事件并写入审计仓储。"""
         audit = AuditRecord(
             event_type=event,
             tenant_id=record.tenant_id,
@@ -485,6 +525,7 @@ class WorkflowService:
 
     @staticmethod
     def _context(record: WorkflowRun, scopes: frozenset[str]) -> ExecutionContext:
+        """从 LangChain 请求或工具运行时提取并校验可信执行上下文。"""
         return ExecutionContext(
             tenant_id=record.tenant_id,
             subject_id=record.subject_id,
@@ -495,10 +536,12 @@ class WorkflowService:
 
     @staticmethod
     def _turn_id(record: WorkflowRun) -> str:
+        """从工作流输入或运行标识派生稳定轮次关联标识。"""
         return f"workflow-{record.run_id.removeprefix('run-')}"
 
     @staticmethod
     def _metadata(record: WorkflowRun, context: ExecutionContext) -> dict[str, Any]:
+        """把制品 ORM 行转换为不可变元数据记录。"""
         metadata = {
             **context.trace_metadata(),
             "stage": "4",
@@ -514,10 +557,12 @@ class WorkflowService:
 
     @staticmethod
     def _require_scopes(granted: frozenset[str], required: frozenset[str]) -> None:
+        """比较所需与已有权限域，缺失任一权限时拒绝操作。"""
         if "*" not in granted and not required.issubset(granted):
             raise WorkflowAuthorizationError("required workflow scope is missing")
 
     def _now(self) -> datetime:
+        """从可替换时间源取得带 UTC 时区的当前时间。"""
         value = self._clock()
         if value.tzinfo is None or value.utcoffset() is None:
             raise TypeError("workflow clock must return a timezone-aware datetime")
@@ -525,6 +570,7 @@ class WorkflowService:
 
     @staticmethod
     def _response(record: WorkflowRun) -> RunStatusResponse:
+        """把工作流记录及可选审批投影为统一运行状态响应。"""
         return RunStatusResponse(
             run_id=record.run_id,
             thread_id=record.thread_id,
@@ -541,17 +587,19 @@ _TERMINAL = {
 
 
 def _server_status(value: str) -> WorkflowRunStatus:
+    """把 Agent Server 状态字符串映射为工作流状态枚举。"""
     if value == "running":
         return WorkflowRunStatus.RUNNING
     return WorkflowRunStatus.PENDING
 
 
 def _aware(value: datetime) -> datetime:
-    # SQLite drops the timezone marker; all application timestamps are UTC.
+    """为 SQLite 读出的无时区时间恢复 UTC 标记后再参与比较。"""
     return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
 
 
 def _hash(value: Mapping[str, Any]) -> str:
+    """对规范化内容计算稳定 SHA-256，供幂等、审批绑定或审计使用。"""
     return sha256(
         json.dumps(
             value,
@@ -564,6 +612,7 @@ def _hash(value: Mapping[str, Any]) -> str:
 
 
 def _interrupt_payload(server: Mapping[str, Any]) -> dict[str, Any]:
+    """从服务端任务中断结构提取第一个有效审批载荷。"""
     interrupts = server.get("interrupts", server.get("__interrupt__"))
     if not isinstance(interrupts, list | tuple) or not interrupts:
         raise WorkflowConflict("workflow interruption is missing approval payload")

@@ -1,8 +1,4 @@
-"""Persist Stage-3 Audit records and versioned Manifest memory references.
-
-Revision ID: 0002_stage3
-Revises: 0001_stage2
-"""
+"""定义该版本数据库结构变更及其可逆迁移步骤。"""
 
 from collections.abc import Sequence
 
@@ -16,8 +12,7 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    # The default backfills Stage-2 manifests so an in-place upgrade does not
-    # manufacture memory references for model calls that had none.
+    """创建本版本新增的表、索引和约束。"""
     op.add_column(
         "model_context_manifests",
         sa.Column(
@@ -58,6 +53,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """按依赖逆序移除本版本引入的数据库对象。"""
     op.drop_index("ix_audit_run", table_name="audit_records")
     op.drop_index("ix_audit_owner_time", table_name="audit_records")
     op.drop_table("audit_records")

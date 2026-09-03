@@ -1,10 +1,4 @@
-"""Shared SQLAlchemy metadata for tables owned by the application database.
-
-Domain packages define their own rows, while this module supplies only the
-declarative registry and a timezone-aware default. Keeping the registry here
-prevents one domain (for example, Audit) from depending on another domain's
-table module merely to participate in the same database schema.
-"""
+"""提供领域表模型共享的 SQLAlchemy 声明基类与 UTC 时间工厂。"""
 
 from datetime import UTC, datetime
 
@@ -12,10 +6,13 @@ from sqlalchemy.orm import DeclarativeBase
 
 
 def utcnow() -> datetime:
-    """Return an aware UTC timestamp suitable for SQLAlchemy defaults."""
-
+    """返回带 UTC 时区的当前时间，供 ORM 默认值统一使用。"""
     return datetime.now(UTC)
 
 
 class Base(DeclarativeBase):
-    """Declarative base shared by FinanceClaw application-owned tables."""
+    """定义Base。
+
+    适用场景：
+        用于集中表达该职责，避免调用方直接依赖底层实现细节。
+    """

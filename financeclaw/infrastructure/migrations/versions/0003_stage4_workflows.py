@@ -1,8 +1,4 @@
-"""Persist Stage-4 published workflow runs and approval decisions.
-
-Revision ID: 0003_stage4
-Revises: 0002_stage3
-"""
+"""定义该版本数据库结构变更及其可逆迁移步骤。"""
 
 from collections.abc import Sequence
 
@@ -16,6 +12,7 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    """创建本版本新增的表、索引和约束。"""
     op.create_table(
         "workflow_runs",
         sa.Column("run_id", sa.String(128), primary_key=True),
@@ -98,6 +95,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """按依赖逆序移除本版本引入的数据库对象。"""
     op.drop_index("ix_workflow_approvals_pending", table_name="workflow_approvals")
     op.drop_index("ix_workflow_approvals_owner", table_name="workflow_approvals")
     op.drop_table("workflow_approvals")

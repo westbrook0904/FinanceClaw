@@ -1,8 +1,4 @@
-"""Create Stage-2 Conversation Journal, summaries, manifests and artifacts.
-
-Revision ID: 0001_stage2
-Revises: none
-"""
+"""定义该版本数据库结构变更及其可逆迁移步骤。"""
 
 from collections.abc import Sequence
 
@@ -16,6 +12,7 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    """创建本版本新增的表、索引和约束。"""
     op.create_table(
         "conversations",
         sa.Column("conversation_id", sa.String(128), primary_key=True),
@@ -192,6 +189,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """按依赖逆序移除本版本引入的数据库对象。"""
     op.drop_index("ix_artifacts_owner", table_name="artifacts")
     op.drop_table("artifacts")
     op.drop_index("ix_manifests_run", table_name="model_context_manifests")

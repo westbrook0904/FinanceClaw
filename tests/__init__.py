@@ -1,1 +1,1 @@
-"""FinanceClaw repository-level tests."""
+"""`__init__` 模块提供自动化测试相关能力。"""

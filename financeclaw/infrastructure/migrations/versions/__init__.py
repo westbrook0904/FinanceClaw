@@ -1,1 +1,1 @@
-"""Ordered FinanceClaw database schema revisions."""
+"""定义该版本数据库结构变更及其可逆迁移步骤。"""

@@ -1,3 +1,5 @@
+"""`test_release_gates` 模块提供`stage5`相关能力。"""
+
 import tomllib
 from pathlib import Path
 
@@ -11,6 +13,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_versioned_regression_dataset_covers_every_stage5_gate() -> None:
+    """验证函数名所描述的业务场景符合预期。"""
     cases = load_cases(ROOT / "evals" / "stage5-regression-v1.json")
     results = tuple(
         EvaluationResult(case_id=case.case_id, passed=True, score=1.0) for case in cases
@@ -20,6 +23,7 @@ def test_versioned_regression_dataset_covers_every_stage5_gate() -> None:
 
 
 def test_stage5_migration_adds_transactional_outbox(tmp_path, monkeypatch) -> None:
+    """验证函数名所描述的业务场景符合预期。"""
     url = f"sqlite+pysqlite:///{tmp_path / 'stage5.db'}"
     monkeypatch.setenv("FINANCECLAW_ENVIRONMENT", "test")
     monkeypatch.setenv("FINANCECLAW_DATABASE_URL", url)
@@ -34,6 +38,7 @@ def test_stage5_migration_adds_transactional_outbox(tmp_path, monkeypatch) -> No
 
 
 def test_sbom_script_and_ci_release_controls_are_committed() -> None:
+    """验证函数名所描述的业务场景符合预期。"""
     ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
     dockerfile = (ROOT / "Dockerfile").read_text()
 
@@ -46,6 +51,7 @@ def test_sbom_script_and_ci_release_controls_are_committed() -> None:
 
 
 def test_agent_server_runtime_is_not_in_the_default_bff_dependency_set() -> None:
+    """验证函数名所描述的业务场景符合预期。"""
     project = tomllib.loads((ROOT / "pyproject.toml").read_text())
     default_dependencies = "\n".join(project["project"]["dependencies"])
 

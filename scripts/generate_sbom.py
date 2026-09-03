@@ -1,4 +1,4 @@
-"""Generate a deterministic CycloneDX SBOM from the committed uv lock file."""
+"""`generate_sbom` 模块提供工程脚本相关能力。"""
 
 import argparse
 import json
@@ -7,6 +7,7 @@ from pathlib import Path
 
 
 def main() -> None:
+    """解析命令行参数并执行对应的工程任务。"""
     parser = argparse.ArgumentParser()
     parser.add_argument("--lock", default="uv.lock")
     parser.add_argument("--output", default="build/sbom.cdx.json")

@@ -2,10 +2,10 @@
   "$schema": "https://langgra.ph/schema.json",
   "dependencies": ["."],
   "graphs": {
-    "finance_agent": "./financeclaw/graphs/server_graphs.py:finance_agent",
-    "market_research_agent": "./financeclaw/graphs/server_graphs.py:market_research_agent",
-    "direct_tool": "./financeclaw/graphs/server_graphs.py:direct_tool",
-    "portfolio_review_v1": "./financeclaw/graphs/server_graphs.py:portfolio_review_v1"
+    "finance_agent": "./financeclaw/orchestration/graphs/server_graphs.py:finance_agent",
+    "market_research_agent": "./financeclaw/orchestration/graphs/server_graphs.py:market_research_agent",
+    "direct_tool": "./financeclaw/orchestration/graphs/server_graphs.py:direct_tool",
+    "portfolio_review_v1": "./financeclaw/orchestration/graphs/server_graphs.py:portfolio_review_v1"
   },
   "env": ".env",
   "python_version": "3.13"

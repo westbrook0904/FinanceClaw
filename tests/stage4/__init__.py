@@ -1,1 +1,1 @@
-"""Stage-4 published workflow acceptance tests."""
+"""`__init__` 模块提供`stage4`相关能力。"""

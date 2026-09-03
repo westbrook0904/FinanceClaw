@@ -9,15 +9,15 @@ Stage 0 已完成的外部兼容性探测。
 
 ## 1. 包边界与落地能力
 
-- `financeclaw.memory.models`：只承载 `MemoryDraft`、`MemoryRecord`、生命周期、来源与召回引用；
-- `financeclaw.memory.policy`：只处理长期记忆内容边界、敏感等级和确认要求，不引入通用规则引擎；
-- `financeclaw.memory.service`：作为 LangGraph `BaseStore` 的薄治理层，负责可信 namespace、
+- `financeclaw.modules.memory.models`：只承载 `MemoryDraft`、`MemoryRecord`、生命周期、来源与召回引用；
+- `financeclaw.modules.memory.policy`：只处理长期记忆内容边界、敏感等级和确认要求，不引入通用规则引擎；
+- `financeclaw.modules.memory.service`：作为 LangGraph `BaseStore` 的薄治理层，负责可信 namespace、
   Journal 证据、生命周期、检索投影和 Audit/Trace；
-- `financeclaw.memory.tools`：提供 `search_memories`、`propose_memory`、`confirm_memory` 和
+- `financeclaw.modules.memory.tools`：提供 `search_memories`、`propose_memory`、`confirm_memory` 和
   `forget_memory` 四个 `BaseTool`，并统一接入 ToolCatalog/ToolPolicy；
-- `financeclaw.agents.memory_middleware`：在模型调用前召回，使用独立 token budget 注入明确的
+- `financeclaw.orchestration.agents.memory_middleware`：在模型调用前召回，使用独立 token budget 注入明确的
   data-only 区域，并把实际引用交给 Conversation Context Manifest；
-- `financeclaw.audit`：增加永久 SQLAlchemy Audit repository/table，业务数据库使用共享 ORM Base；
+- `financeclaw.modules.audit`：增加永久 SQLAlchemy Audit repository/table，业务数据库使用共享 ORM Base；
 - `financeclaw.application`：增加真实 Agent Server memory smoke、LangSmith 回归样本 seed 和
   HITL 过期保护；客户端适配层把新版 Agent Server 的 checkpoint interrupts 归一化为稳定的
   `interrupted` 业务状态；
@@ -72,7 +72,7 @@ upgrade head → downgrade base → upgrade head
 
 ```text
 uv build → financeclaw-0.1.0.tar.gz + financeclaw-0.1.0-py3-none-any.whl
-wheel includes financeclaw.memory and 0002_stage3 migration
+wheel includes financeclaw.modules.memory and 0002_stage3 migration
 wheel excludes harness_memory and harness_policy
 ```
 
@@ -97,7 +97,7 @@ wheel excludes harness_memory and harness_policy
 
 ## 5. LangSmith 回归入口
 
-`financeclaw.application.memory_eval_seed` 提供 5 个幂等样本：稳定偏好召回、新偏好替代旧偏好、
+`financeclaw.operations.memory_eval_seed` 提供 5 个幂等样本：稳定偏好召回、新偏好替代旧偏好、
 租户隔离、实时工具事实优先、高影响记忆确认。设置 `LANGSMITH_API_KEY` 后可写入
 `financeclaw-stage3-memory-regression-v1`；当前工作区无 Key，因此本次只验证了样本契约与 traceable
 span 埋点，没有创建远程数据集。
