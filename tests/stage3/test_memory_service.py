@@ -6,7 +6,6 @@ from uuid import uuid4
 
 import pytest
 from langgraph.store.memory import InMemoryStore
-from langgraph.store.postgres import PostgresStore
 from pydantic import ValidationError
 
 from financeclaw.kernel import ExecutionContext
@@ -300,6 +299,8 @@ def test_store_value_cannot_forge_identity_inside_trusted_namespace(tmp_path: Pa
 )
 def test_postgres_store_record_survives_connection_reconstruction(tmp_path: Path) -> None:
     """验证函数名所描述的业务场景符合预期。"""
+    from langgraph.store.postgres import PostgresStore
+
     # 准备 database and repository，供后续步骤使用。
     database, repository = journal(tmp_path / "postgres-store.db")
     # 准备 unique，供后续步骤使用。

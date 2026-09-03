@@ -10,7 +10,6 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from financeclaw.infrastructure.observability import instrument_sqlalchemy_engine
 from financeclaw.infrastructure.orm import Base
-
 from financeclaw.modules.audit import tables as _audit_tables  # noqa: F401
 from financeclaw.modules.conversation import tables as _conversation_tables  # noqa: F401
 from financeclaw.modules.delegation import tables as _delegation_tables  # noqa: F401

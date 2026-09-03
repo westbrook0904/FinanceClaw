@@ -8,7 +8,6 @@ from sqlalchemy import engine_from_config, pool
 from financeclaw.infrastructure import FinanceClawSettings, normalize_database_url
 from financeclaw.infrastructure.database import ensure_database_parent
 from financeclaw.infrastructure.orm import Base
-
 from financeclaw.modules.audit import tables as _audit_tables  # noqa: F401
 from financeclaw.modules.conversation import tables as _conversation_tables  # noqa: F401
 from financeclaw.modules.outbox import tables as _outbox_tables  # noqa: F401
