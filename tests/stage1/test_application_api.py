@@ -156,3 +156,4 @@ async def test_internal_tool_dispatch_auth_ownership_resume_and_stream() -> None
     assert fake.resume_commands == [{"resume": {"decisions": [{"type": "approve"}]}}]
     assert "event: values" in stream.text
     assert ready.status_code == 200
+    assert ready.headers["x-request-id"]

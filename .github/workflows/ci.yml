@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test-and-supply-chain:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.12.9"
+          enable-cache: true
+      - run: uv python install 3.13
+      - run: uv sync --frozen --extra dev
+      - run: uv run ruff check financeclaw tests scripts
+      - run: uv run ruff format --check financeclaw tests scripts
+      - run: uv run python scripts/check_secret_leaks.py
+      - run: uv run pytest -q
+      - run: uv run python scripts/generate_sbom.py
+      - run: uv export --frozen --no-dev --no-emit-project --format requirements-txt --output-file build/production-requirements.txt
+      - run: uv run pip-audit --strict --require-hashes --disable-pip --requirement build/production-requirements.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: financeclaw-sbom
+          path: build/sbom.cdx.json

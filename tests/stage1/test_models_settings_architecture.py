@@ -28,10 +28,10 @@ def test_deepseek_openai_compatible_configuration_is_explicit() -> None:
     assert type(model.openai_api_key).__name__ == "SecretStr"
 
 
-def test_production_rejects_debug_or_missing_bff_authentication() -> None:
+def test_production_rejects_debug_or_missing_oidc_authentication() -> None:
     with pytest.raises(ValidationError, match="debug_full_io"):
         FinanceClawSettings(environment="production", offline_model=False, debug_full_io=True)
-    with pytest.raises(ValidationError, match="bff_auth_token"):
+    with pytest.raises(ValidationError, match="oidc_issuer"):
         FinanceClawSettings(environment="production", offline_model=False, debug_full_io=False)
 
 
@@ -68,6 +68,9 @@ def test_production_dependency_graph_has_no_stage1_legacy_runtime() -> None:
         "harness_selection",
         "harness_spi",
         "harness_plugin_local",
+        "harness_contracts",
+        "harness_events",
+        "harness_trace",
     )
 
     assert all(name not in source for name in removed)

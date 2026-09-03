@@ -7,6 +7,8 @@ from typing import Protocol
 from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 
+from financeclaw.outbox.tables import OutboxEventRow
+
 from .models import AuditEventType, AuditRecord
 from .tables import AuditRecordRow
 
@@ -36,8 +38,9 @@ class InMemoryAuditRepository:
 class SqlAlchemyAuditRepository:
     """Append-only AuditRepository backed by the application database."""
 
-    def __init__(self, sessions: sessionmaker) -> None:
+    def __init__(self, sessions: sessionmaker, *, emit_outbox: bool = True) -> None:
         self._sessions = sessions
+        self._emit_outbox = emit_outbox
 
     def append(self, record: AuditRecord) -> None:
         if not isinstance(record, AuditRecord):
@@ -66,6 +69,29 @@ class SqlAlchemyAuditRepository:
                     metadata_json=record.metadata,
                 )
             )
+            if self._emit_outbox:
+                session.add(
+                    OutboxEventRow(
+                        event_id=f"outbox-{record.audit_id}",
+                        event_type=record.event_type.value,
+                        aggregate_type=record.resource_type,
+                        aggregate_id=record.resource_id,
+                        tenant_id=record.tenant_id,
+                        subject_id=record.subject_id,
+                        payload={
+                            "audit_id": record.audit_id,
+                            "run_id": record.run_id,
+                            "event_type": record.event_type.value,
+                            "resource_type": record.resource_type,
+                            "resource_id": record.resource_id,
+                            "payload_hash": record.payload_hash,
+                        },
+                        status="pending",
+                        attempts=0,
+                        available_at=record.occurred_at,
+                        created_at=record.occurred_at,
+                    )
+                )
 
     def records(
         self, *, tenant_id: str | None = None, subject_id: str | None = None

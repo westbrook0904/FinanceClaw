@@ -137,7 +137,8 @@ def test_graph_interrupts_then_publishes_one_bounded_provenance_artifact(
     assert output["risk_band"] == "high"
     assert {item["provider"] for item in output["source_refs"]} == {"financeclaw-stage1-demo"}
     artifact_id = output["artifact"]["artifact_id"]
-    assert list(store.values) == [artifact_id]
+    assert len(store.values) == 1
+    assert next(iter(store.values)).endswith(f"/{artifact_id}")
 
     state = definition.graph.get_state(config).values
     serialized_state = repr(state).lower()
@@ -226,7 +227,8 @@ def test_report_artifact_write_is_idempotent_for_the_same_run_node(tmp_path: Pat
     )
     assert replay.artifact_id == first.artifact_id
     assert replay.content_hash == first.content_hash
-    assert list(store.values) == [first.artifact_id]
+    assert len(store.values) == 1
+    assert next(iter(store.values)).endswith(f"/{first.artifact_id}")
     with pytest.raises(ValueError, match="different content"):
         service.persist(
             {"report": "changed"},

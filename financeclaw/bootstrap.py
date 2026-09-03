@@ -1,4 +1,4 @@
-"""FinanceClaw composition root for the governed Stage-4 vertical slice."""
+"""FinanceClaw composition root for the production-hardened application."""
 
 from dataclasses import dataclass
 
@@ -6,6 +6,7 @@ from financeclaw.agents import AgentFactory, AgentProfile, AgentProfileCatalog, 
 from financeclaw.artifacts import (
     ArtifactService,
     LocalArtifactStore,
+    S3ArtifactStore,
     SqlAlchemyArtifactRepository,
 )
 from financeclaw.audit import (
@@ -27,9 +28,11 @@ from financeclaw.delegation import (
     workflow_delegation_tool,
 )
 from financeclaw.graphs.workflows import portfolio_review_definition
-from financeclaw.infrastructure import ApplicationDatabase, FinanceClawSettings
+from financeclaw.infrastructure import ApplicationDatabase, ArtifactBackend, FinanceClawSettings
 from financeclaw.memory import LongTermMemoryService, MemoryPolicy, default_memory_tools
 from financeclaw.models import ModelFactory, ModelProfile, ModelProfileCatalog, ModelProfileRef
+from financeclaw.outbox import OutboxRepository, SqlAlchemyOutboxRepository
+from financeclaw.security import EgressPolicy
 from financeclaw.tools import ToolCatalog, ToolPolicy, default_local_tools, managed_mcp_quote_tool
 from financeclaw.workflows import (
     SqlAlchemyWorkflowRepository,
@@ -58,6 +61,7 @@ class FinanceClawComponents:
     workflow_catalog: WorkflowCatalog | None = None
     workflow_repository: WorkflowRepository | None = None
     delegation_repository: DelegationRepository | None = None
+    outbox_repository: OutboxRepository | None = None
 
     @property
     def default_agent_profile(self) -> AgentProfile:
@@ -83,8 +87,12 @@ def build_components(
     artifact_service: ArtifactService | None = None
     workflow_repository: WorkflowRepository | None = None
     delegation_repository: DelegationRepository | None = None
+    outbox_repository: OutboxRepository | None = None
     if enable_persistence:
-        database = ApplicationDatabase(settings.database_url.get_secret_value())
+        database = ApplicationDatabase(
+            settings.database_url.get_secret_value(),
+            statement_timeout_seconds=settings.database_statement_timeout_seconds,
+        )
         if settings.database_auto_create_schema:
             database.initialize_schema()
         concrete_repository = SqlAlchemyConversationRepository(database.session_factory)
@@ -104,13 +112,28 @@ def build_components(
             segment_messages=settings.summary_segment_messages,
             hierarchy_segments=settings.summary_hierarchy_segments,
         )
+        artifact_store = (
+            S3ArtifactStore(
+                bucket=settings.artifact_s3_bucket or "",
+                prefix=settings.artifact_s3_prefix,
+                endpoint_url=settings.artifact_s3_endpoint_url,
+                region_name=settings.artifact_s3_region,
+                sse_algorithm=settings.artifact_s3_sse_algorithm,
+                kms_key_id=settings.artifact_s3_kms_key_id,
+                timeout_seconds=settings.artifact_s3_timeout_seconds,
+                max_pool_connections=settings.artifact_s3_max_pool_connections,
+            )
+            if settings.artifact_backend is ArtifactBackend.S3
+            else LocalArtifactStore(settings.artifact_root)
+        )
         artifact_service = ArtifactService(
             SqlAlchemyArtifactRepository(database.session_factory),
-            LocalArtifactStore(settings.artifact_root),
+            artifact_store,
             inline_bytes=settings.artifact_inline_bytes,
         )
         workflow_repository = SqlAlchemyWorkflowRepository(database.session_factory)
         delegation_repository = SqlAlchemyDelegationRepository(database.session_factory)
+        outbox_repository = SqlAlchemyOutboxRepository(database.session_factory)
 
     if audit is not None:
         effective_audit = audit
@@ -118,6 +141,34 @@ def build_components(
         effective_audit = SqlAlchemyAuditRepository(database.session_factory)
     else:
         effective_audit = InMemoryAuditRepository()
+
+    # All configured network destinations are validated once before clients or
+    # provider SDKs are constructed. Dynamic Tool URLs must apply the same port.
+    if not settings.offline_model and settings.provider_base_url:
+        EgressPolicy(
+            settings.egress_allowed_hosts,
+            require_https=settings.environment.value in {"staging", "production"},
+        ).validate(settings.provider_base_url)
+    EgressPolicy(
+        settings.internal_service_hosts,
+        require_https=False,
+        allow_private_hosts=True,
+    ).validate(settings.agent_server_url)
+    if settings.environment.value == "production" and settings.oidc_jwks_url:
+        EgressPolicy(settings.egress_allowed_hosts).validate(settings.oidc_jwks_url)
+        EgressPolicy(settings.egress_allowed_hosts).validate(settings.langsmith_endpoint)
+        if settings.otel_exporter_endpoint:
+            EgressPolicy(settings.egress_allowed_hosts).validate(settings.otel_exporter_endpoint)
+        if settings.otel_metrics_exporter_endpoint:
+            EgressPolicy(settings.egress_allowed_hosts).validate(
+                settings.otel_metrics_exporter_endpoint
+            )
+    if settings.artifact_s3_endpoint_url:
+        EgressPolicy(
+            settings.internal_service_hosts,
+            require_https=False,
+            allow_private_hosts=True,
+        ).validate(settings.artifact_s3_endpoint_url)
 
     memory_service = (
         LongTermMemoryService(
@@ -283,4 +334,5 @@ def build_components(
         workflow_catalog=workflow_catalog,
         workflow_repository=workflow_repository,
         delegation_repository=delegation_repository,
+        outbox_repository=outbox_repository,
     )

@@ -11,11 +11,7 @@ build/
 .conda/
 .env
 .env.*
-!.env.stage0.example
-!.env.stage1.example
-!.env.stage2.example
-!.env.stage3.example
-!.env.stage4.example
+!.env.stage5.example
 .langgraph_api/
 .financeclaw/
 .idea/

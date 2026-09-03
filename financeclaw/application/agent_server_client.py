@@ -6,6 +6,7 @@ from typing import Any, Protocol
 
 import httpx
 from langgraph_sdk import get_client
+from opentelemetry import trace
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,14 +50,22 @@ class AgentServerClient(Protocol):
 
 
 class LangGraphAgentServerClient:
-    def __init__(self, *, url: str, service_token: str | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        url: str,
+        service_token: str | None = None,
+        timeout_seconds: float = 30.0,
+    ) -> None:
         headers = {"Authorization": f"Bearer {service_token}"} if service_token else None
         self._url = url.rstrip("/")
         self._headers = headers
-        self._client = get_client(url=self._url, headers=headers)
+        self._client = get_client(url=self._url, headers=headers, timeout=timeout_seconds)
+        self._tracer = trace.get_tracer("financeclaw.agent_server")
 
     async def create_thread(self, thread_id: str) -> None:
-        await self._client.threads.create(thread_id=thread_id, if_exists="do_nothing")
+        with self._tracer.start_as_current_span("agent_server.create_thread"):
+            await self._client.threads.create(thread_id=thread_id, if_exists="do_nothing")
 
     async def create_run(
         self,
@@ -67,13 +76,14 @@ class LangGraphAgentServerClient:
         context: dict[str, Any],
         metadata: dict[str, Any],
     ) -> ServerRun:
-        run = await self._client.runs.create(
-            thread_id,
-            assistant_id,
-            input=input,
-            context=context,
-            metadata=metadata,
-        )
+        with self._tracer.start_as_current_span("agent_server.create_run"):
+            run = await self._client.runs.create(
+                thread_id,
+                assistant_id,
+                input=input,
+                context=context,
+                metadata=metadata,
+            )
         return ServerRun(run_id=str(run["run_id"]), status=str(run.get("status", "pending")))
 
     async def get_run(self, *, thread_id: str, run_id: str) -> Mapping[str, Any]:
@@ -135,8 +145,9 @@ class LangGraphAgentServerClient:
 
     async def health(self) -> bool:
         try:
-            async with httpx.AsyncClient(timeout=2) as client:
-                response = await client.get(f"{self._url}/ok", headers=self._headers)
+            with self._tracer.start_as_current_span("agent_server.health"):
+                async with httpx.AsyncClient(timeout=2, follow_redirects=False) as client:
+                    response = await client.get(f"{self._url}/ok", headers=self._headers)
             return response.is_success
         except httpx.HTTPError:
             return False

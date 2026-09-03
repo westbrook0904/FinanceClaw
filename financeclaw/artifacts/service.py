@@ -40,7 +40,12 @@ class ArtifactService:
         if len(payload) <= self.inline_bytes:
             return value, None
         artifact_id = f"artifact-{uuid4().hex}"
-        storage_uri = self.store.put(artifact_id, payload)
+        storage_uri = self.store.put(
+            artifact_id,
+            payload,
+            tenant_id=context.tenant_id,
+            subject_id=context.subject_id,
+        )
         metadata = ArtifactMetadata(
             artifact_id=artifact_id,
             tenant_id=context.tenant_id,
@@ -52,6 +57,7 @@ class ArtifactService:
             source_type=source_type,
             source_id=source_id,
             access_policy={"required_scope": "artifacts:read"},
+            encryption_metadata=self.store.encryption_metadata(),
         )
         self.repository.save(metadata)
         bounded = {
@@ -110,7 +116,12 @@ class ArtifactService:
                 raise ValueError("artifact idempotency key identifies different content")
             return existing
 
-        storage_uri = self.store.put(artifact_id, payload)
+        storage_uri = self.store.put(
+            artifact_id,
+            payload,
+            tenant_id=context.tenant_id,
+            subject_id=context.subject_id,
+        )
         metadata = ArtifactMetadata(
             artifact_id=artifact_id,
             tenant_id=context.tenant_id,
@@ -122,6 +133,7 @@ class ArtifactService:
             source_type=source_type,
             source_id=source_id,
             access_policy={"required_scope": "artifacts:read"},
+            encryption_metadata=self.store.encryption_metadata(),
         )
         return self.repository.save(metadata)
 

@@ -5,7 +5,8 @@ FinanceClaw 正在按 [`.redesign/`](.redesign/README.md) 从自研通用 Agent 
 
 ## 当前阶段
 
-Stage 4 Published Workflows 已成为当前基线；在此基础上，对外接口已修订为“根会话统一进入顶层 Agent”：
+Stage 5 Production Hardening 已完成仓库内可自动验证的生产加固；对外接口保持“根会话统一进入
+顶层 Agent”：
 
 - 产品写入口只有 Conversation 创建和 message-only Turn 提交，不接受 Agent、Tool 或 Workflow Target；
 - `finance_agent` 使用 ReAct 判断直接回答、Tool Calling、Workflow handoff 或领域 Agent delegation；
@@ -15,7 +16,27 @@ Stage 4 Published Workflows 已成为当前基线；在此基础上，对外接�
 - Workflow 与领域 Agent 已作为受治理的 delegation Tool 暴露给顶层 Agent，并使用 typed handoff、
   独立 child thread/run 和永久父子映射执行。
 
-Stage 4 已交付的固定流程能力包括：
+Stage 5 新增的生产能力包括：
+
+- 生产 BFF 使用 OIDC/JWT issuer、audience、时效和非对称算法校验，从可信 claims 生成
+  tenant、subject 与 scopes；静态 token 只允许本地开发；
+- Provider、OIDC JWKS 与内部 Agent Server 的出站目标启动时按 allowlist 校验；客户端不跟随
+  健康检查重定向，并为外部调用设置超时；
+- OpenTelemetry 关联 HTTP、数据库与 Agent Server 调用，结构化日志默认脱敏；正式 Audit 不由
+  trace 或普通日志替代；
+- 每条永久 Audit 与有界 Outbox 事件在同一数据库事务落盘，异步 publisher 使用租约、退避与
+  dead-letter；
+- Artifact Store 支持 S3 兼容后端、强制 SSE、内容 checksum，以及不暴露原始身份的
+  tenant/subject key；
+- `/ready` 组合检查业务 PostgreSQL、Artifact Store 与 Agent Server，lifespan 负责数据库关闭和
+  OTel flush；
+- `evals/stage5-regression-v1.json` 覆盖工具/补槽/委派/策略/记忆/金融时效/恢复/注入/租户/Provider
+  故障，关键用例与总分作为发布门禁；
+- 生产镜像、部署基线、SBOM、依赖漏洞扫描 CI，以及发布、故障、灾备和数据主体请求 Runbook；
+- 旧 `financeclaw_spike`、`harness-contracts`、`harness-events`、`harness-trace` 与相关旧测试、
+  构建声明已删除，不再保留双 Runtime。
+
+Stage 4 已交付的固定流程能力继续保留：
 
 - 不可变、启动期装配的 `WorkflowCatalog`，固定 workflow、graph revision、ModelProfile、Tool
   版本、审批点和超时策略；
@@ -46,26 +67,26 @@ Stage 4 已交付的固定流程能力包括：
 - FastAPI BFF 的 Conversation 创建、查询、消息查询和持久化 run 编排；
 - Stage-1 的 Tool 治理、审批、retry/fallback、SSE、Audit 与 DeepSeek OpenAI 协议继续保留。
 
-旧 `harness-runtime`、`harness-registry`、`harness-selection`、`harness-spi`、
-`harness-plugin-local`、`harness-context`、`harness-memory`、`harness-policy`、通用
-Provider/Capability/Context/Memory contracts 和示例 plugins 已删除。验证证据见
-[Stage-4 验证记录](.redesign/stages/Stage-4-验证记录.md)。Stage-0 Spike 仅作为框架兼容性历史
-切片保留，不再是产品入口。
+全部旧 Harness Runtime、Registry、Selection、SPI、Context、Memory、Policy、Trace、Events、
+Contracts 空壳和示例实现均已从生产构建删除。验证证据见
+[Stage-5 验证记录](.redesign/stages/Stage-5-验证记录.md)。
 
 ## 环境
 
 推荐用 conda 管理解释器，用 uv 把锁定依赖安装到同一个项目内环境：
 
 ```bash
-conda create --yes --prefix .conda/envs/stage0 python=3.13 pip uv=0.12.9
+conda create --yes --prefix .conda/envs/financeclaw python=3.13 pip uv=0.12.9
 
-UV_PROJECT_ENVIRONMENT="$PWD/.conda/envs/stage0" \
-  .conda/envs/stage0/bin/uv sync \
+UV_PROJECT_ENVIRONMENT="$PWD/.conda/envs/financeclaw" \
+  .conda/envs/financeclaw/bin/uv sync \
   --all-extras --frozen \
-  --python .conda/envs/stage0/bin/python
+  --python .conda/envs/financeclaw/bin/python
 ```
 
-复制 `.env.stage4.example` 为 `.env`。DeepSeek 通过 OpenAI 协议接入时，核心配置为：
+本地从 `config/environments/development.env.example` 生成 `.env`；生产从
+`.env.stage5.example` 生成部署配置，并由 Secret Manager 注入真实凭据。DeepSeek 通过 OpenAI
+协议接入时，核心配置为：
 
 ```dotenv
 FINANCECLAW_MODEL=openai:deepseek-v4-pro
@@ -78,7 +99,7 @@ Secret 只放 `.env` 或部署平台 Secret Manager，不要写入 Git 跟踪的
 升级已有环境或部署生产前先执行 Alembic；生产使用 PostgreSQL 并关闭自动建表：
 
 ```bash
-.conda/envs/stage0/bin/alembic upgrade head
+.conda/envs/financeclaw/bin/alembic upgrade head
 ```
 
 ## 运行
@@ -86,13 +107,13 @@ Secret 只放 `.env` 或部署平台 Secret Manager，不要写入 Git 跟踪的
 先启动内部 Agent Server：
 
 ```bash
-.conda/envs/stage0/bin/langgraph dev --no-browser --no-reload --port 2024
+.conda/envs/financeclaw/bin/langgraph dev --no-browser --no-reload --port 2024
 ```
 
 再启动唯一产品入口 BFF：
 
 ```bash
-.conda/envs/stage0/bin/uvicorn main:app --host 127.0.0.1 --port 8000
+.conda/envs/financeclaw/bin/uvicorn main:app --host 127.0.0.1 --port 8000
 ```
 
 通过 `POST /v1/conversations` 创建会话，再调用
@@ -109,38 +130,38 @@ FINANCECLAW_OFFLINE_MODEL=true \
 FINANCECLAW_DEBUG_FULL_IO=false \
 FINANCECLAW_ENVIRONMENT=test \
 LANGSMITH_TRACING=false \
-  .conda/envs/stage0/bin/langgraph dev --no-browser --no-reload --port 2024
+  .conda/envs/financeclaw/bin/langgraph dev --no-browser --no-reload --port 2024
 
-.conda/envs/stage0/bin/python -m financeclaw.application.server_smoke
+.conda/envs/financeclaw/bin/python -m financeclaw.application.server_smoke
 ```
 
 跨 Agent Server 重启的 Conversation smoke 可分两次运行：
 
 ```bash
-.conda/envs/stage0/bin/python -m financeclaw.application.conversation_smoke \
+.conda/envs/financeclaw/bin/python -m financeclaw.application.conversation_smoke \
   --idempotency-key before-restart
 
 # 重启 Agent Server，并把第一次输出的 conversation_id 传入
-.conda/envs/stage0/bin/python -m financeclaw.application.conversation_smoke \
+.conda/envs/financeclaw/bin/python -m financeclaw.application.conversation_smoke \
   --conversation-id <conversation_id> --idempotency-key after-restart
 ```
 
 Stage-3 的 Memory HITL、跨 thread recall、Manifest 与 Audit 冒烟：
 
 ```bash
-.conda/envs/stage0/bin/python -m financeclaw.application.memory_smoke
+.conda/envs/financeclaw/bin/python -m financeclaw.application.memory_smoke
 ```
 
 Stage-4 固定 Workflow 的独立 thread、审批、报告制品、Audit 与进程内业务恢复冒烟：
 
 ```bash
-.conda/envs/stage0/bin/python -m financeclaw.application.workflow_smoke
+.conda/envs/financeclaw/bin/python -m financeclaw.application.workflow_smoke
 ```
 
 配置真实 Provider 与 LangSmith 后执行在线门禁：
 
 ```bash
-.conda/envs/stage0/bin/python -m financeclaw.application.provider_probe
+.conda/envs/financeclaw/bin/python -m financeclaw.application.provider_probe
 ```
 
 DeepSeek thinking 模型目前用 JSON mode 完成 structured output；默认原生 JSON Schema
@@ -149,16 +170,21 @@ DeepSeek thinking 模型目前用 JSON mode 完成 structured output；默认原
 ## 测试
 
 ```bash
-.conda/envs/stage0/bin/python -m pytest -q
-.conda/envs/stage0/bin/ruff check financeclaw financeclaw_spike harness-contracts/src \
-  harness-events/src harness-trace/src tests pyproject.toml
-.conda/envs/stage0/bin/ruff format --check financeclaw financeclaw_spike tests
+.conda/envs/financeclaw/bin/python -m pytest -q
+.conda/envs/financeclaw/bin/ruff check financeclaw tests scripts
+.conda/envs/financeclaw/bin/ruff format --check financeclaw tests scripts
+.conda/envs/financeclaw/bin/python scripts/generate_sbom.py
+.conda/envs/financeclaw/bin/uv export --frozen --no-dev --no-emit-project \
+  --format requirements-txt --output-file build/production-requirements.txt
+.conda/envs/financeclaw/bin/pip-audit --strict --require-hashes --disable-pip \
+  --requirement build/production-requirements.txt
 ```
 
-配置 `LANGSMITH_API_KEY` 后，可幂等创建 Stage-4 的五个 Workflow 回归样本：
+配置 `LANGSMITH_API_KEY` 后，可创建带版本名的 Stage-5 发布回归数据集：
 
 ```bash
-.conda/envs/stage0/bin/python -m financeclaw.application.workflow_eval_seed
+.conda/envs/financeclaw/bin/python -m financeclaw.evaluation.publish_dataset \
+  --name financeclaw-stage5-regression-v1
 ```
 
 ## 目标架构
@@ -173,4 +199,6 @@ FinanceClaw API / BFF
   → LangSmith Trace / Evaluation
 ```
 
-后续 Stage 按垂直切片推进，不恢复第二套 Runtime、Registry、Provider SPI 或 Plugin 生命周期。
+真实上线仍须完成组织级许可证/数据驻留评审、真实容量与故障注入、恢复演练和安全评审；清单见
+[`docs/operations/release-checklist.md`](docs/operations/release-checklist.md)。任何后续功能都不得恢复
+第二套 Runtime、Registry、Provider SPI 或 Plugin 生命周期。

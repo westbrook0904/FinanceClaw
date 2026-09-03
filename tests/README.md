@@ -1,8 +1,8 @@
 # Tests
 
-当前回归基线覆盖 Stage-0 框架兼容切片、Stage-1 Execution Spine、Stage-2 Conversation
-Context、Stage-3 Long-term Memory、Stage-4 Published Workflows，以及仍临时保留的
-Trace/Events 契约。
+当前回归基线覆盖 Stage-1 Execution Spine、Stage-2 Conversation Context、Stage-3
+Long-term Memory、Stage-4 Published Workflows 和 Stage-5 Production Hardening。旧 Spike、
+Trace、Events 与混合 Contracts 测试已随对应实现删除。
 
 ```bash
 .conda/envs/stage0/bin/python -m pytest -q
@@ -42,6 +42,14 @@ Trace/Events 契约。
 - 业务 run/thread/server run/version/artifact 映射、租户隔离和跨服务实例恢复；
 - 请求级与报告节点级幂等、新旧版本并行和普通 Agent 路径隔离；
 - Alembic `0003_stage4`、LangSmith dataset seed 和旧 Planner/DAG Runtime 删除。
+
+`tests/stage5` 重点验证：
+
+- OIDC/JWT issuer、audience、时效、非对称算法和可信 tenant/subject/scope 投影；
+- 生产配置 fail-closed、外部 HTTP allowlist 与跨租户资源隔离；
+- Audit/Outbox 原子写入、租约发布和 S3 加密租户 key；
+- 结构化日志凭据脱敏、OTel 低基数字段和组合健康检查；
+- 版本化回归数据集、Alembic `0005_stage5`、锁文件、SBOM 与漏洞扫描门禁。
 
 真实 Provider、LangSmith 与 Agent Server 网络联调由显式 smoke/probe 命令执行，不用 mock 结果
 冒充在线证据。

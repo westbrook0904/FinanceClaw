@@ -4,7 +4,7 @@ from .middleware import ToolResultArtifactMiddleware
 from .models import ArtifactMetadata
 from .repository import ArtifactNotFound, ArtifactRepository, SqlAlchemyArtifactRepository
 from .service import ArtifactService
-from .storage import ArtifactStore, InMemoryArtifactStore, LocalArtifactStore
+from .storage import ArtifactStore, InMemoryArtifactStore, LocalArtifactStore, S3ArtifactStore
 
 __all__ = [
     "ArtifactMetadata",
@@ -14,6 +14,7 @@ __all__ = [
     "ArtifactStore",
     "InMemoryArtifactStore",
     "LocalArtifactStore",
+    "S3ArtifactStore",
     "SqlAlchemyArtifactRepository",
     "ToolResultArtifactMiddleware",
 ]

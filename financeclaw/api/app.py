@@ -1,9 +1,11 @@
 """Conversation-first product BFF with internal control-plane compatibility."""
 
 import asyncio
+import inspect
 import logging
+from collections.abc import Awaitable, Callable, Mapping
 from contextlib import asynccontextmanager
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -35,10 +37,18 @@ from financeclaw.contracts import (
     WorkflowTarget,
 )
 from financeclaw.infrastructure import FinanceClawSettings
+from financeclaw.observability import (
+    TelemetryRuntime,
+    configure_json_logging,
+    configure_langsmith,
+    configure_telemetry,
+    install_request_observability,
+)
 
 from .auth import (
     AuthenticatedPrincipal,
     Authenticator,
+    OIDCJWTAuthenticator,
     StaticBearerAuthenticator,
     principal_dependency,
 )
@@ -66,6 +76,11 @@ def create_app(
     conversation_service: ConversationService | None = None,
     workflow_service: WorkflowService | None = None,
     delegation_service: DelegationService | None = None,
+    readiness_checks: Mapping[str, Callable[[], Awaitable[bool]]] | None = None,
+    shutdown_hooks: tuple[Callable[[], Any], ...] = (),
+    readiness_timeout_seconds: float = 3.0,
+    shutdown_timeout_seconds: float = 20.0,
+    p95_target_ms: int = 2_500,
 ) -> FastAPI:
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
@@ -84,22 +99,48 @@ def create_app(
                 await conversation_service.reconcile_incomplete()
             except Exception:
                 LOGGER.exception("conversation reconciliation deferred after startup failure")
-        yield
+        try:
+            yield
+        finally:
+            for hook in reversed(shutdown_hooks):
+                try:
+                    if inspect.iscoroutinefunction(hook):
+                        await asyncio.wait_for(hook(), timeout=shutdown_timeout_seconds)
+                    else:
+                        await asyncio.wait_for(
+                            asyncio.to_thread(hook),
+                            timeout=shutdown_timeout_seconds,
+                        )
+                except Exception:
+                    LOGGER.exception("shutdown hook failed")
 
     app = FastAPI(title="FinanceClaw API", version="1.0.0", lifespan=lifespan)
     principal_dep = principal_dependency(authenticator)
     install_error_handlers(app)
+    install_request_observability(app, p95_target_ms=p95_target_ms)
 
     @app.get("/health")
     async def health() -> dict[str, str]:
-        return {"status": "ok", "stage": "4"}
+        return {"status": "ok", "stage": "5"}
 
     @app.get("/ready")
     async def ready() -> JSONResponse:
-        available = await run_service.client.health()
+        checks = readiness_checks or {"agent_server": run_service.client.health}
+
+        async def run_check(name: str, check: Callable[[], Awaitable[bool]]) -> tuple[str, bool]:
+            try:
+                result = await asyncio.wait_for(check(), timeout=readiness_timeout_seconds)
+            except Exception:
+                result = False
+            return name, result
+
+        results = dict(
+            await asyncio.gather(*(run_check(name, check) for name, check in checks.items()))
+        )
+        available = all(results.values())
         return JSONResponse(
             status_code=200 if available else 503,
-            content={"status": "ready" if available else "unavailable", "agent_server": available},
+            content={"status": "ready" if available else "unavailable", "checks": results},
         )
 
     @app.post(
@@ -403,13 +444,32 @@ def create_app(
 
 def create_default_app(settings: FinanceClawSettings | None = None) -> FastAPI:
     settings = settings or FinanceClawSettings()
+    configure_json_logging(settings.log_level)
+    configure_langsmith(
+        project=settings.langsmith_project,
+        endpoint=settings.langsmith_endpoint,
+        sample_rate=settings.langsmith_trace_sample_rate,
+        hide_inputs=settings.langsmith_hide_inputs,
+        hide_outputs=settings.langsmith_hide_outputs,
+    )
+    telemetry: TelemetryRuntime = configure_telemetry(
+        service_name=settings.otel_service_name,
+        environment=settings.environment.value,
+        endpoint=settings.otel_exporter_endpoint,
+        metrics_endpoint=settings.otel_metrics_exporter_endpoint,
+        sample_rate=settings.otel_trace_sample_rate,
+    )
     components = build_components(settings, enable_persistence=True)
     service_token = (
         settings.agent_server_service_token.get_secret_value()
         if settings.agent_server_service_token is not None
         else None
     )
-    client = LangGraphAgentServerClient(url=settings.agent_server_url, service_token=service_token)
+    client = LangGraphAgentServerClient(
+        url=settings.agent_server_url,
+        service_token=service_token,
+        timeout_seconds=settings.agent_server_timeout_seconds,
+    )
     resolver = TargetResolver(
         tool_catalog=components.tool_catalog,
         agent_profiles=components.agent_profiles,
@@ -443,19 +503,56 @@ def create_default_app(settings: FinanceClawSettings | None = None) -> FastAPI:
         summary_service=components.summary_service,
         approval_timeout_seconds=settings.approval_timeout_seconds,
     )
-    principals = {}
-    if settings.bff_auth_token is not None:
-        principals[settings.bff_auth_token.get_secret_value()] = AuthenticatedPrincipal(
-            tenant_id=settings.bff_tenant_id,
-            subject_id=settings.bff_subject_id,
-            scopes=settings.bff_scopes,
+    if settings.oidc_issuer and settings.oidc_audience and settings.oidc_jwks_url:
+        authenticator: Authenticator = OIDCJWTAuthenticator(
+            issuer=settings.oidc_issuer,
+            audience=settings.oidc_audience,
+            jwks_url=settings.oidc_jwks_url,
+            algorithms=settings.oidc_algorithms,
+            tenant_claim=settings.oidc_tenant_claim,
+            subject_claim=settings.oidc_subject_claim,
+            scope_claim=settings.oidc_scope_claim,
+            leeway_seconds=settings.oidc_clock_skew_seconds,
+            jwks_timeout_seconds=settings.oidc_jwks_timeout_seconds,
         )
+    else:
+        principals = {}
+        if settings.bff_auth_token is not None:
+            principals[settings.bff_auth_token.get_secret_value()] = AuthenticatedPrincipal(
+                tenant_id=settings.bff_tenant_id,
+                subject_id=settings.bff_subject_id,
+                scopes=settings.bff_scopes,
+            )
+        authenticator = StaticBearerAuthenticator(principals)
+
+    async def database_ready() -> bool:
+        if components.database is None:
+            return False
+        return await asyncio.to_thread(components.database.ping)
+
+    async def artifact_ready() -> bool:
+        if components.artifact_service is None:
+            return False
+        return await asyncio.to_thread(components.artifact_service.store.health)
+
+    shutdown_hooks: list[Callable[[], Any]] = [telemetry.shutdown]
+    if components.database is not None:
+        shutdown_hooks.append(components.database.close)
     app = create_app(
         run_service=run_service,
-        authenticator=StaticBearerAuthenticator(principals),
+        authenticator=authenticator,
         conversation_service=conversation_service,
         workflow_service=workflow_service,
         delegation_service=delegation_service,
+        readiness_checks={
+            "database": database_ready,
+            "artifact_store": artifact_ready,
+            "agent_server": client.health,
+        },
+        shutdown_hooks=tuple(shutdown_hooks),
+        readiness_timeout_seconds=settings.readiness_timeout_seconds,
+        shutdown_timeout_seconds=settings.shutdown_timeout_seconds,
+        p95_target_ms=settings.api_p95_target_ms,
     )
     app.state.financeclaw_database = components.database
     return app

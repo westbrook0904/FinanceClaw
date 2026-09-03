@@ -280,7 +280,7 @@ async def test_conversation_http_contract_and_cross_tenant_isolation(tmp_path: P
     assert blocked_control_plane.status_code == 403
     assert hidden.status_code == 404
     assert [item["role"] for item in messages.json()["messages"]] == ["user"]
-    assert health.json()["stage"] == "4"
+    assert health.json()["stage"] == "5"
     assert "/v1/conversations/{conversation_id}/turns" in openapi["paths"]
     assert "/v1/tools/{tool_id}:invoke" not in openapi["paths"]
     assert "/v1/workflows/{workflow_id}/runs" not in openapi["paths"]

@@ -26,10 +26,7 @@ def test_stage2_runtime_does_not_reference_deleted_context_stack() -> None:
         "ContextProjection",
         "ContextConsumer",
     )
-    sources = [
-        *sorted((root / "financeclaw").rglob("*.py")),
-        *sorted((root / "harness-contracts" / "src").rglob("*.py")),
-    ]
+    sources = sorted((root / "financeclaw").rglob("*.py"))
     offenders = {
         str(path.relative_to(root)): term
         for path in sources

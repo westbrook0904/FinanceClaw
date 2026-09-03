@@ -221,6 +221,6 @@ async def test_workflow_http_contract_and_generic_target_routing(tmp_path: Path)
     assert completed.json()["status"] == "completed"
     assert generic.status_code == 202
     assert generic.json()["target_kind"] == "workflow"
-    assert health.json() == {"status": "ok", "stage": "4"}
+    assert health.json() == {"status": "ok", "stage": "5"}
     assert AuditEventType.WORKFLOW_COMPLETED in [record.event_type for record in audit.records()]
     database.close()
