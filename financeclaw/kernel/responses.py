@@ -1,4 +1,8 @@
-"""跨层共享且不依赖具体实现的运行上下文、目标与响应契约。"""
+"""跨层共享的请求/响应契约模型，覆盖运行受理、会话轮次、直连调用与审批流。
+
+本模块属于 kernel（稳定共享契约层）：BFF（HTTP 接口层）与 orchestration 据此
+收发数据；所有模型均继承 ``ContractModel``，禁止未声明的额外字段。
+"""
 
 from enum import StrEnum
 from typing import Annotated, Any, Literal
@@ -9,28 +13,26 @@ from .targets import RunTarget
 
 
 class ContractModel(BaseModel):
-    """定义契约模型。
+    """全部对外契约模型的公共基类，统一禁止未声明字段。
 
-    适用场景：
-        用于在接口、领域与持久化边界之间传递经过校验的结构化数据。
-
-    属性：
-        model_config: Pydantic 校验策略，禁止未知字段并在需要时冻结实例。
+    使用场景：本模块内的请求/响应模型均继承它，使 API 层在遇到契约外
+    字段时直接校验失败，避免未知字段静默穿透到业务层。
     """
 
     model_config = ConfigDict(extra="forbid")
 
 
 class RunRequest(ContractModel):
-    """定义运行的接口请求。
+    """发起一次 Run 的请求体：不经会话轮次，直接向目标提交任务。
 
-    适用场景：
-        用于接口层接收并校验调用方输入，再交给应用服务处理。
+    使用场景：脚本或集成方调用运行入口时使用；不指定 ``target`` 时，
+    由顶层 Agent（ReAct）自行决策直接回答、调工具、跑流程或委派。
 
-    属性：
-        message: 调用方提交的自然语言消息，是本次规划或会话轮次的主要输入。
-        target: 调用方指定的运行目标；为空时使用平台默认根 Agent。
-        conversation_id: 会话稳定标识，用于关联消息、轮次、摘要和上下文清单。
+    Attributes:
+        message: 用户消息正文，长度 1~32000 字符。
+        target: 可选运行目标；为 None 时由顶层 Agent 自行决策路由。
+        conversation_id: 可选会话 ID，用于把本次运行挂到已有会话上下文。
+
     """
 
     message: Annotated[str, Field(min_length=1, max_length=32_000)]
@@ -39,27 +41,29 @@ class RunRequest(ContractModel):
 
 
 class ConversationTurnRequest(ContractModel):
-    """定义会话轮次的接口请求。
+    """创建 message-only Turn 的请求体，即 BFF 唯一产品写入口的入参。
 
-    适用场景：
-        用于接口层接收并校验调用方输入，再交给应用服务处理。
+    使用场景：终端用户在会话中发言时，BFF 用它创建 Conversation + Turn，
+    由 finance_agent 决定直接回答、调用能力或委派。
 
-    属性：
-        message: 调用方提交的自然语言消息，是本次规划或会话轮次的主要输入。
+    Attributes:
+        message: 用户消息正文，长度 1~32000 字符。
+
     """
 
     message: Annotated[str, Field(min_length=1, max_length=32_000)]
 
 
 class ToolInvokeRequest(ContractModel):
-    """定义工具Invoke的接口请求。
+    """直连调用 Tool 的请求体：绕过 Agent 决策、直达治理后的工具执行路径。
 
-    适用场景：
-        用于接口层接收并校验调用方输入，再交给应用服务处理。
+    使用场景：集成方明确知道要调用的工具时使用；入参校验、策略与审计
+    仍由 ToolPolicy 与 AuditRepository 保证。
 
-    属性：
-        version: 语义版本，用于固定运行行为并支持审计复现。
-        arguments: 传给目标工具或工作流的已解析参数。
+    Attributes:
+        version: 可选工具版本；为 None 时解析为目录中的最新版本。
+        arguments: 工具入参字典，默认为空字典，须符合工具参数 schema。
+
     """
 
     version: str | None = None
@@ -67,14 +71,15 @@ class ToolInvokeRequest(ContractModel):
 
 
 class WorkflowInvokeRequest(ContractModel):
-    """定义工作流Invoke的接口请求。
+    """直连调用 Workflow 的请求体：绕过 Agent 决策、直达已发布流程。
 
-    适用场景：
-        用于接口层接收并校验调用方输入，再交给应用服务处理。
+    使用场景：集成方需要确定性的多步流程执行时使用；指定版本号以
+    保证流程行为可复现。
 
-    属性：
-        version: 语义版本，用于固定运行行为并支持审计复现。
-        arguments: 传给目标工具或工作流的已解析参数。
+    Attributes:
+        version: 目标 Workflow 的语义化版本号（形如 ``1.2.3``）；可为 None。
+        arguments: 流程入参字典，默认为空字典，须符合流程入参 schema。
+
     """
 
     version: Annotated[str, Field(pattern=r"^\d+\.\d+\.\d+$")] | None = None
@@ -82,19 +87,20 @@ class WorkflowInvokeRequest(ContractModel):
 
 
 class RunAccepted(ContractModel):
-    """定义运行Accepted。
+    """Run 受理成功的响应体：返回运行定位信息与初始状态。
 
-    适用场景：
-        用于集中表达该职责，避免调用方直接依赖底层实现细节。
+    使用场景：运行入口同步受理请求后立即返回，调用方凭 ``run_id``
+    查询状态或订阅流式事件。
 
-    属性：
-        run_id: 应用侧运行标识，用于跨服务查询、追踪和幂等关联。
-        thread_id: Agent Server 线程标识，用于保存运行检查点与消息状态。
-        status: 当前生命周期状态，决定记录允许的后续操作。
-        target_kind: 实际运行目标类别，用于调用方解释运行语义。
-        idempotent_replay: 本次结果是否来自相同幂等键和请求内容的安全重放。
-        conversation_id: 会话稳定标识，用于关联消息、轮次、摘要和上下文清单。
-        turn_id: 会话轮次标识，用于把一次用户输入与其运行结果关联。
+    Attributes:
+        run_id: 受理的运行 ID。
+        thread_id: LangGraph 线程 ID，用于状态查询与流式订阅。
+        status: 受理时的初始状态字符串，由服务端状态机定义。
+        target_kind: 目标类型字符串（tool/workflow/agent）。
+        idempotent_replay: True 表示本次为幂等重放，复用了先前同键请求的结果。
+        conversation_id: 关联的会话 ID；无会话上下文时为 None。
+        turn_id: 关联的轮次 ID；无会话上下文时为 None。
+
     """
 
     run_id: str
@@ -107,17 +113,18 @@ class RunAccepted(ContractModel):
 
 
 class ConversationTurnAccepted(ContractModel):
-    """定义会话轮次Accepted。
+    """会话轮次受理成功的响应体：返回会话、轮次与运行的定位信息。
 
-    适用场景：
-        用于集中表达该职责，避免调用方直接依赖底层实现细节。
+    使用场景：BFF 创建 message-only Turn 成功后返回，客户端据此轮询
+    ``run_id`` 或订阅流式事件以获取 Agent 回复。
 
-    属性：
-        run_id: 应用侧运行标识，用于跨服务查询、追踪和幂等关联。
-        status: 当前生命周期状态，决定记录允许的后续操作。
-        idempotent_replay: 本次结果是否来自相同幂等键和请求内容的安全重放。
-        conversation_id: 会话稳定标识，用于关联消息、轮次、摘要和上下文清单。
-        turn_id: 会话轮次标识，用于把一次用户输入与其运行结果关联。
+    Attributes:
+        run_id: 本轮触发的运行 ID。
+        status: 受理时的初始状态字符串，由服务端状态机定义。
+        idempotent_replay: True 表示本次为幂等重放，复用了先前同键请求的结果。
+        conversation_id: 会话 ID。
+        turn_id: 本轮次 ID。
+
     """
 
     run_id: str
@@ -128,23 +135,26 @@ class ConversationTurnAccepted(ContractModel):
 
 
 class CreateConversationRequest(ContractModel):
-    """定义创建会话的接口请求。
+    """创建会话的请求体。
 
-    适用场景：
-        用于接口层接收并校验调用方输入，再交给应用服务处理。
+    使用场景：客户端开启新会话时使用；当前无需任何入参，保留空模型
+    作为契约占位，便于未来扩展字段而不破坏兼容性。
     """
+
+    pass
 
 
 class ConversationResponse(ContractModel):
-    """定义会话的边界响应。
+    """会话基础信息的响应体。
 
-    适用场景：
-        用于接口层向调用方返回稳定结构，避免泄露内部实现对象。
+    使用场景：创建会话成功后返回，客户端保存 ``conversation_id`` 用于
+    后续发言与查询。
 
-    属性：
-        conversation_id: 会话稳定标识，用于关联消息、轮次、摘要和上下文清单。
-        status: 当前生命周期状态，决定记录允许的后续操作。
-        created_at: 记录创建时间，统一按 UTC 解释。
+    Attributes:
+        conversation_id: 会话全局唯一 ID。
+        status: 会话状态字符串，由服务端状态机定义。
+        created_at: 会话创建时间（ISO 格式字符串）。
+
     """
 
     conversation_id: str
@@ -153,19 +163,20 @@ class ConversationResponse(ContractModel):
 
 
 class ConversationMessageResponse(ContractModel):
-    """定义会话消息的边界响应。
+    """会话内单条消息的响应体。
 
-    适用场景：
-        用于接口层向调用方返回稳定结构，避免泄露内部实现对象。
+    使用场景：查询会话消息列表时返回，客户端依据 ``sequence`` 还原顺序、
+    依据 ``parent_message_id`` 还原分支关系。
 
-    属性：
-        message_id: 关联对象的稳定标识，用于查询、关联和审计追踪。
-        turn_id: 会话轮次标识，用于把一次用户输入与其运行结果关联。
-        sequence: 消息在会话内从 1 开始的稳定顺序号。
-        parent_message_id: 被该消息直接响应的父消息标识；无父消息时为空。
-        role: 消息发送方角色。
-        content: 经过边界校验后保存或传递的正文内容。
-        created_at: 记录创建时间，统一按 UTC 解释。
+    Attributes:
+        message_id: 消息全局唯一 ID。
+        turn_id: 消息所属的轮次 ID。
+        sequence: 消息在会话内的序号，单调递增，用于排序。
+        parent_message_id: 父消息 ID，用于分支/重试场景；无父消息时为 None。
+        role: 消息角色，仅允许 ``user`` 或 ``assistant``。
+        content: 消息文本内容。
+        created_at: 消息创建时间（ISO 格式字符串）。
+
     """
 
     message_id: str
@@ -178,14 +189,14 @@ class ConversationMessageResponse(ContractModel):
 
 
 class ConversationMessagesResponse(ContractModel):
-    """定义会话Messages的边界响应。
+    """会话消息列表的响应体。
 
-    适用场景：
-        用于接口层向调用方返回稳定结构，避免泄露内部实现对象。
+    使用场景：客户端拉取会话历史时返回，通常按 ``sequence`` 升序渲染。
 
-    属性：
-        conversation_id: 会话稳定标识，用于关联消息、轮次、摘要和上下文清单。
-        messages: 按会话顺序排列的消息集合。
+    Attributes:
+        conversation_id: 所属会话 ID。
+        messages: 会话内全部消息元组，顺序由服务端按会话语义保证。
+
     """
 
     conversation_id: str
@@ -193,16 +204,17 @@ class ConversationMessagesResponse(ContractModel):
 
 
 class RunStatusResponse(ContractModel):
-    """定义运行状态的边界响应。
+    """Run 状态查询的响应体。
 
-    适用场景：
-        用于接口层向调用方返回稳定结构，避免泄露内部实现对象。
+    使用场景：客户端轮询运行状态时使用；到达终态后 ``output`` 携带
+    运行输出。
 
-    属性：
-        run_id: 应用侧运行标识，用于跨服务查询、追踪和幂等关联。
-        thread_id: Agent Server 线程标识，用于保存运行检查点与消息状态。
-        status: 当前生命周期状态，决定记录允许的后续操作。
-        output: 运行完成后的结构化输出；尚未完成时为空。
+    Attributes:
+        run_id: 被查询的运行 ID。
+        thread_id: LangGraph 线程 ID。
+        status: 当前状态字符串，由服务端状态机定义。
+        output: 运行输出（对象或列表）；尚未产生输出时为 None。
+
     """
 
     run_id: str
@@ -212,16 +224,16 @@ class RunStatusResponse(ContractModel):
 
 
 class AgentResponse(ContractModel):
-    """定义Agent的边界响应。
+    """Agent 运行的最终响应体：返回自然语言回复与运行定位信息。
 
-    适用场景：
-        用于接口层向调用方返回稳定结构，避免泄露内部实现对象。
+    使用场景：非流式调用 Agent 完成后返回；客户端优先展示 ``message``。
 
-    属性：
-        run_id: 应用侧运行标识，用于跨服务查询、追踪和幂等关联。
-        thread_id: Agent Server 线程标识，用于保存运行检查点与消息状态。
-        status: 当前生命周期状态，决定记录允许的后续操作。
-        message: 调用方提交的自然语言消息，是本次规划或会话轮次的主要输入。
+    Attributes:
+        run_id: 本次运行 ID。
+        thread_id: LangGraph 线程 ID，可用于追问与流式订阅。
+        status: 运行终态状态字符串，由服务端状态机定义。
+        message: Agent 的最终文本回复；无文本产出时为 None。
+
     """
 
     run_id: str
@@ -231,16 +243,17 @@ class AgentResponse(ContractModel):
 
 
 class ArtifactReference(ContractModel):
-    """定义外置制品的位置、大小和完整性元数据。
+    """产出制品（Artifact）的引用信息，指向一个已落盘的制品。
 
-    适用场景：
-        用于集中表达该职责，避免调用方直接依赖底层实现细节。
+    使用场景：Tool/Workflow 执行产出文件类结果时随响应返回，客户端凭
+    ``artifact_id`` 经制品服务获取内容。
 
-    属性：
-        artifact_id: 制品稳定标识。
-        content_type: 制品内容的 MIME 类型，供下载方选择解析方式。
-        content_hash: 正文的 SHA-256，用于完整性校验、去重与审计。
-        size_bytes: 制品序列化后的字节数。
+    Attributes:
+        artifact_id: 制品全局唯一 ID。
+        content_type: 制品的 MIME 类型。
+        content_hash: 制品内容的哈希值，用于完整性校验。
+        size_bytes: 制品字节数，非负整数。
+
     """
 
     artifact_id: str
@@ -250,20 +263,21 @@ class ArtifactReference(ContractModel):
 
 
 class DirectToolResponse(ContractModel):
-    """定义直接工具的边界响应。
+    """Tool 直连调用的响应体：返回执行状态、结果与治理信息。
 
-    适用场景：
-        用于接口层向调用方返回稳定结构，避免泄露内部实现对象。
+    使用场景：直连工具调用结束后返回；调用方依据 ``status`` 分支处理
+    成功结果、审批中断或失败原因。
 
-    属性：
-        run_id: 应用侧运行标识，用于跨服务查询、追踪和幂等关联。
-        tool_id: 工具的稳定标识。
-        tool_version: 运行固定使用的版本，用于审计复现。
-        status: 当前生命周期状态，决定记录允许的后续操作。
-        result: 内部步骤产生、等待后续投影的执行结果。
-        error: 失败原因的稳定文本；成功或未结束时为空。
-        artifact: 详细报告的制品引用；未生成时为空。
-        arguments_hash: 规范化参数的 SHA-256，用于审批绑定和篡改检测。
+    Attributes:
+        run_id: 本次调用对应的运行 ID。
+        tool_id: 被调用工具的 ID。
+        tool_version: 实际执行的工具版本。
+        status: 执行结果状态，仅允许 success/denied/rejected/failed/interrupted。
+        result: 工具执行结果（任意 JSON 值）；无结果时为 None。
+        error: 失败原因描述；成功时为 None。
+        artifact: 工具产出的制品引用；未产出制品时为 None。
+        arguments_hash: 入参哈希，用于幂等判定与审计比对；缺失时为 None。
+
     """
 
     run_id: str
@@ -277,15 +291,10 @@ class DirectToolResponse(ContractModel):
 
 
 class ApprovalDecisionType(StrEnum):
-    """定义审批决策Type。
+    """审批决策类型枚举，表示人对 Agent 待执行动作的处置方式。
 
-    适用场景：
-        用于限制持久化值和边界输入，避免以自由字符串表达状态。
-
-    属性：
-        APPROVE: 审批人同意按原参数继续执行。
-        REJECT: 审批人拒绝执行并结束当前动作。
-        EDIT: 审批人提供修改后的参数，再按新参数重新授权。
+    使用场景：Tool/Workflow 触发人机协同（HITL）审批而挂起时，审批方
+    提交 ``ApprovalDecision`` 所用的 ``type`` 字段取值。
     """
 
     APPROVE = "approve"
@@ -294,16 +303,17 @@ class ApprovalDecisionType(StrEnum):
 
 
 class ApprovalDecision(ContractModel):
-    """定义审批决策。
+    """一次人机协同审批的决策内容，决定被挂起动作的后续走向。
 
-    适用场景：
-        用于集中表达该职责，避免调用方直接依赖底层实现细节。
+    使用场景：Agent 发起需审批的工具/流程调用而挂起等待时，审批人
+    通过审批 API 提交本模型以恢复或终止执行。
 
-    属性：
-        type: 流事件类型，决定客户端如何解释 `data` 载荷。
-        arguments_hash: 规范化参数的 SHA-256，用于审批绑定和篡改检测。
-        arguments: 传给目标工具或工作流的已解析参数。
-        reason: 产生当前决策、遗漏或状态的可读原因。
+    Attributes:
+        type: 决策类型：批准、驳回或修订入参后重提交。
+        arguments_hash: 被审批调用的入参哈希，用于与挂起请求精确匹配。
+        arguments: 修订后的入参；仅 ``EDIT`` 决策允许携带。
+        reason: 审批理由说明，最长 500 字符；可为 None。
+
     """
 
     type: ApprovalDecisionType
@@ -313,7 +323,16 @@ class ApprovalDecision(ContractModel):
 
     @model_validator(mode="after")
     def validate_edit(self) -> "ApprovalDecision":
-        """校验审批决策的跨字段一致性；不满足不变量时拒绝构造。"""
+        """校验 ``arguments`` 字段仅允许出现在 ``EDIT`` 决策中。
+
+        Returns:
+            校验通过的原模型实例。
+
+        Raises:
+            ValueError: ``EDIT`` 决策缺少 ``arguments``，或非 ``EDIT`` 决策
+                携带了 ``arguments``。
+
+        """
         if self.type is ApprovalDecisionType.EDIT and self.arguments is None:
             raise ValueError("edit approval decision requires arguments")
         if self.type is not ApprovalDecisionType.EDIT and self.arguments is not None:
@@ -322,14 +341,15 @@ class ApprovalDecision(ContractModel):
 
 
 class StreamEvent(ContractModel):
-    """定义Stream事件。
+    """流式传输事件的通用信封，包装任意事件类型与负载。
 
-    适用场景：
-        用于集中表达该职责，避免调用方直接依赖底层实现细节。
+    使用场景：SSE 等流式通道把 Agent/Workflow 的中间事件逐条封装为
+    本模型下发，客户端按 ``event`` 分发处理。
 
-    属性：
-        event: SSE 事件名称，供客户端选择对应处理分支。
-        data: 已经过 JSON 序列化的流事件载荷。
+    Attributes:
+        event: 事件类型名，由服务端事件体系定义。
+        data: 事件负载（任意 JSON 值），结构随事件类型而定。
+
     """
 
     event: str
@@ -337,15 +357,16 @@ class StreamEvent(ContractModel):
 
 
 class ErrorResponse(ContractModel):
-    """定义Error的边界响应。
+    """统一错误响应体：以稳定错误码向客户端描述失败。
 
-    适用场景：
-        用于接口层向调用方返回稳定结构，避免泄露内部实现对象。
+    使用场景：接口校验失败或内部异常时返回；客户端依据 ``code`` 做
+    程序化处理、依据 ``message`` 做人类可读提示。
 
-    属性：
-        code: 稳定错误代码，供客户端分支处理而不依赖提示文本。
-        message: 调用方提交的自然语言消息，是本次规划或会话轮次的主要输入。
-        details: 可安全返回给调用方的结构化错误详情。
+    Attributes:
+        code: 机器可读的错误码，客户端据此分支处理。
+        message: 面向人的错误描述，可直接展示。
+        details: 结构化补充信息（如字段级错误），默认为空字典。
+
     """
 
     code: str

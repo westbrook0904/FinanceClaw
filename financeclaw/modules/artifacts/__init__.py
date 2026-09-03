@@ -1,4 +1,8 @@
-"""按业务能力拆分的领域模型、仓储与领域服务。"""
+"""Artifact（工件）领域模块的公开出口。
+
+汇总大体积工具结果 offload 所需的元数据模型、仓储抽象、应用服务与存储后端实现，
+供模块外部统一从本包导入。
+"""
 
 from .models import ArtifactMetadata
 from .repository import ArtifactNotFound, ArtifactRepository, SqlAlchemyArtifactRepository

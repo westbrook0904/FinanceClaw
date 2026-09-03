@@ -1,4 +1,8 @@
-"""持久化制品元数据并提供按内容哈希去重查询。"""
+"""Artifact 元数据的仓储层实现。
+
+位于 artifacts 模块的持久化边界：定义仓储协议并基于 SQLAlchemy 落库，表结构复用
+conversation 模块的 ``ArtifactMetadataRow``，读写均按 tenant/subject 归属过滤。
+"""
 
 from typing import Protocol
 
@@ -11,33 +15,33 @@ from .models import ArtifactMetadata
 
 
 class ArtifactNotFound(LookupError):
-    """定义制品NotFound。
+    """按归属查询 Artifact 元数据未命中时抛出的领域异常。
 
-    适用场景：
-        用于把该失败条件跨层传递，并在接口边界转换为稳定错误。
+    使用场景：由仓储的 ``get_owned`` 在查无归属匹配的工件时抛出，服务层捕获后
+    用于区分"工件不存在"与幂等复用等不同处理路径。
     """
 
     pass
 
 
 class ArtifactRepository(Protocol):
-    """定义制品Repository。
+    """Artifact 元数据仓储协议，约束持久化实现必须提供的读写能力。
 
-    适用场景：
-        用于依赖倒置和测试替身，使应用逻辑不依赖具体客户端实现。
+    使用场景：由 ArtifactService 依赖注入使用，屏蔽具体存储实现；实现方按
+    结构化子类型满足本协议即可，无需显式继承。
     """
 
     def save(self, metadata: ArtifactMetadata) -> ArtifactMetadata:
-        """持久化制品记录并返回存储后的记录。"""
+        """持久化一条 Artifact 元数据，成功后原样返回该元数据。"""
         ...
 
     def get_owned(self, artifact_id: str, tenant_id: str, subject_id: str) -> ArtifactMetadata:
-        """按标识读取制品记录；不存在时由下层仓储抛出明确异常。"""
+        """按工件标识与归属租户/主体读取元数据，未命中时抛出 ArtifactNotFound。"""
         ...
 
 
 def _metadata(row: ArtifactMetadataRow) -> ArtifactMetadata:
-    """把制品 ORM 行转换为不可变元数据记录。"""
+    """把 ORM 行 ``ArtifactMetadataRow`` 转换为领域模型 ``ArtifactMetadata``。"""
     return ArtifactMetadata(
         artifact_id=row.artifact_id,
         tenant_id=row.tenant_id,
@@ -55,21 +59,36 @@ def _metadata(row: ArtifactMetadataRow) -> ArtifactMetadata:
 
 
 class SqlAlchemyArtifactRepository:
-    """定义SqlAlchemy制品Repository。
+    """基于 SQLAlchemy 会话工厂的 Artifact 元数据仓储实现。
 
-    适用场景：
-        用于领域服务需要持久化状态，同时不应感知 SQL 细节的场景。
+    使用场景：由基础设施层注入 ``sessionmaker``，在事务中完成元数据写入，并通过
+    归属过滤查询支持 owner 隔离读取。
 
-    属性：
-        _sessions: 内部 `sessions` 状态或依赖，不属于公开接口。
+    Attributes:
+        _sessions: SQLAlchemy 会话工厂，用于创建读写元数据的数据库会话（内部状态）。
+
     """
 
     def __init__(self, sessions: sessionmaker[Session]) -> None:
-        """注入并保存制品记录所需的协作对象，同时校验构造期不变量。"""
+        """创建仓储实例。
+
+        Args:
+            sessions: 用于创建数据库会话的 SQLAlchemy 会话工厂。
+
+        """
         self._sessions = sessions
 
     def save(self, metadata: ArtifactMetadata) -> ArtifactMetadata:
-        """持久化制品记录并返回存储后的记录。"""
+        """把一条 Artifact 元数据写入数据库，成功后返回原元数据。
+
+        Args:
+            metadata: 待持久化的工件元数据。
+
+        Returns:
+            原样返回的 ``metadata``，便于调用方继续使用。
+
+        """
+        # 1. 把领域模型映射为 ORM 行对象。
         row = ArtifactMetadataRow(
             artifact_id=metadata.artifact_id,
             tenant_id=metadata.tenant_id,
@@ -84,17 +103,33 @@ class SqlAlchemyArtifactRepository:
             encryption_metadata=metadata.encryption_metadata,
             created_at=metadata.created_at,
         )
+        # 2. 在独立事务中落库，失败时整体回滚。
         with self._sessions.begin() as session:
             session.add(row)
         return metadata
 
     def get_owned(self, artifact_id: str, tenant_id: str, subject_id: str) -> ArtifactMetadata:
-        """按标识读取制品记录；不存在时由下层仓储抛出明确异常。"""
+        """按工件标识与归属（租户/主体）查询元数据。
+
+        Args:
+            artifact_id: 工件唯一标识。
+            tenant_id: 租户标识，参与归属过滤。
+            subject_id: 主体标识，参与归属过滤。
+
+        Returns:
+            命中的工件元数据。
+
+        Raises:
+            ArtifactNotFound: 未找到归属匹配的工件元数据时抛出。
+
+        """
+        # 1. 构造同时匹配工件标识与归属三元组的查询。
         statement = select(ArtifactMetadataRow).where(
             ArtifactMetadataRow.artifact_id == artifact_id,
             ArtifactMetadataRow.tenant_id == tenant_id,
             ArtifactMetadataRow.subject_id == subject_id,
         )
+        # 2. 执行查询，未命中即抛出异常，避免向非归属方泄露工件存在性。
         with self._sessions() as session:
             row = session.scalar(statement)
             if row is None:

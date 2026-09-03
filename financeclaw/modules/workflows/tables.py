@@ -1,4 +1,8 @@
-"""声明工作流运行与审批的 SQLAlchemy 表映射。"""
+"""工作流运行与审批的 SQLAlchemy ORM 表定义。
+
+workflow_runs 保存运行事实与 thread/server run 映射，workflow_approvals
+保存审批决定，两者以级联外键关联，供 BFF 永久保存与追溯。
+"""
 
 from datetime import datetime
 from typing import Any
@@ -10,36 +14,37 @@ from financeclaw.infrastructure.orm import Base, utcnow
 
 
 class WorkflowRunRow(Base):
-    """定义工作流运行Row。
+    """workflow_runs 表的 ORM 映射，持久化一次工作流运行的全部事实。
 
-    适用场景：
-        用于集中表达该职责，避免调用方直接依赖底层实现细节。
+    使用场景：
+        由 SqlAlchemyWorkflowRepository 读写；thread_id 与 server_run_id
+        全表唯一保证 Workflow 独占 thread 且一运行至多一个远端执行，
+        （租户，流程，版本，幂等键）唯一保证发布幂等。
 
-    属性：
-        __tablename__: 内部 `tablename  ` 状态或依赖，不属于公开接口。
-        __table_args__: 内部 `table args  ` 状态或依赖，不属于公开接口。
-        run_id: 应用侧运行标识，用于跨服务查询、追踪和幂等关联。
-        tenant_id: 租户隔离键，所有读取和写入都必须以此限定边界。
-        subject_id: 已认证主体标识，用于所有权校验和审计归因。
-        workflow_id: 工作流的稳定标识。
-        workflow_version: 本次运行固定使用的工作流版本。
-        assistant_id: 提交 Agent Server 时使用的助手或图标识。
-        deployment_revision: 构建工作流图的部署修订号，用于定位实际运行代码。
-        model_profile_id: 关联对象的稳定标识，用于查询、关联和审计追踪。
-        run_timeout_seconds: 该操作允许的最长时间（秒）。
-        approval_timeout_seconds: 该操作允许的最长时间（秒）。
-        thread_id: Agent Server 线程标识，用于保存运行检查点与消息状态。
-        server_run_id: Agent Server 侧运行标识；尚未提交远端运行时为空。
-        client_idempotency_key: 客户端幂等键，在同一资源范围内唯一。
-        arguments_hash: 规范化参数的 SHA-256，用于审批绑定和篡改检测。
-        request_fingerprint: 委派或工作流请求的稳定指纹，用于幂等冲突检测。
-        input_payload: 提交给工作流的规范化输入快照。
-        output_payload: 运行终态时保存的结构化输出快照。
-        artifact_refs: 本次运行、审计或事件关联的制品标识集合。
-        status: 当前生命周期状态，决定记录允许的后续操作。
-        started_at: 该生命周期事件发生的 UTC 时间。
-        updated_at: 最近一次状态或内容变更时间，统一按 UTC 解释。
-        completed_at: 进入成功或失败终态的时间；未结束时为空。
+    Attributes:
+        run_id: 应用侧运行标识，主键。
+        tenant_id: 租户隔离键。
+        subject_id: 已认证主体标识，用于所有权校验。
+        workflow_id: 工作流稳定标识。
+        workflow_version: 本次运行固定的工作流版本。
+        assistant_id: Agent Server 侧助手标识。
+        deployment_revision: 装配该运行所用的部署修订号。
+        model_profile_id: 本次运行固定的模型档案标识。
+        run_timeout_seconds: 运行超时快照（秒）。
+        approval_timeout_seconds: 审批超时快照（秒）。
+        thread_id: Workflow 独占的 Agent Server thread 标识，全表唯一。
+        server_run_id: 绑定的 Agent Server 运行标识，全表唯一；未绑定时为空。
+        client_idempotency_key: 客户端幂等键，参与发布幂等唯一约束。
+        arguments_hash: 规范化参数的 SHA-256，用于审批绑定与篡改检测。
+        request_fingerprint: 请求指纹 SHA-256，用于幂等冲突检测。
+        input_payload: 归一化输入参数的 JSON 快照。
+        output_payload: 终态输出的 JSON 快照；未结束时为空。
+        artifact_refs: 发布制品标识列表的 JSON 存储，默认为空列表。
+        status: 运行状态字符串，取值为 WorkflowRunStatus 的值。
+        started_at: 运行创建时间（UTC，带时区）。
+        updated_at: 最近一次变更时间（UTC，带时区），更新时自动刷新。
+        completed_at: 进入终态的时间；未结束时为空。
+
     """
 
     __tablename__ = "workflow_runs"
@@ -86,30 +91,30 @@ class WorkflowRunRow(Base):
 
 
 class WorkflowApprovalRow(Base):
-    """定义工作流审批Row。
+    """workflow_approvals 表的 ORM 映射，持久化人工审批事实。
 
-    适用场景：
-        用于集中表达该职责，避免调用方直接依赖底层实现细节。
+    使用场景：
+        由 SqlAlchemyWorkflowRepository 读写；（run_id, approval_point）
+        唯一保证同一运行的同一检查点只有一条审批，挂起状态索引支撑过期清理。
 
-    属性：
-        __tablename__: 内部 `tablename  ` 状态或依赖，不属于公开接口。
-        __table_args__: 内部 `table args  ` 状态或依赖，不属于公开接口。
-        approval_id: 审批请求稳定标识。
-        run_id: 应用侧运行标识，用于跨服务查询、追踪和幂等关联。
-        tenant_id: 租户隔离键，所有读取和写入都必须以此限定边界。
-        subject_id: 已认证主体标识，用于所有权校验和审计归因。
-        approval_point: 工作流中触发本次人工确认的稳定节点名称。
-        arguments_hash: 规范化参数的 SHA-256，用于审批绑定和篡改检测。
-        requested_action: 需要人工确认的具体操作。
-        request_payload: 审批点展示并绑定哈希的请求参数快照。
-        allowed_decisions: 当前配置明确允许的值集合。
-        required_scope: 作出该审批决定所需的权限域。
-        status: 当前生命周期状态，决定记录允许的后续操作。
-        requested_at: 该生命周期事件发生的 UTC 时间。
-        expires_at: 记录或审批失效时间；为空表示不按时间自动失效。
-        decided_at: 该生命周期事件发生的 UTC 时间。
-        decided_by: 作出审批决定的主体标识。
-        decision_reason: 审批人或策略给出的决定理由。
+    Attributes:
+        approval_id: 审批请求稳定标识，主键。
+        run_id: 关联的运行标识，外键指向 workflow_runs，级联删除。
+        tenant_id: 租户隔离键。
+        subject_id: 发起运行的主体标识。
+        approval_point: 触发审批的检查点标识。
+        arguments_hash: 绑定的输入参数哈希，恢复前用于复验。
+        requested_action: 请求人工确认的具体动作。
+        request_payload: 展示给审批人的请求参数 JSON 快照。
+        allowed_decisions: 允许决定值列表的 JSON 存储。
+        required_scope: 作出决定所需的权限域。
+        status: 审批状态字符串，取值为 WorkflowApprovalStatus 的值。
+        requested_at: 审批请求创建时间（UTC，带时区）。
+        expires_at: 审批过期时间（UTC，带时区），超时后不得再决定。
+        decided_at: 决定时间；未决定时为空。
+        decided_by: 决定人主体标识；未决定时为空。
+        decision_reason: 决定理由文本；可为空。
+
     """
 
     __tablename__ = "workflow_approvals"

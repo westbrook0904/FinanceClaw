@@ -1,4 +1,8 @@
-"""定义会话、消息、摘要和模型上下文清单领域记录。"""
+"""会话日志模块的领域模型（Pydantic 冻结记录）与状态枚举定义。
+
+定义 Conversation/Turn/Message/Summary/Manifest 等不可变记录，作为
+context、repository、summaries 与上层服务共享的数据契约。
+"""
 
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -8,27 +12,29 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class FrozenRecord(BaseModel):
-    """定义不可变的持久化记录。
+    """所有会话领域记录共用的冻结基类。
 
-    适用场景：
-        用于跨步骤保存不可变事实，并支持持久化或审计重放。
+    使用场景：作为 Conversation、ConversationMessage 等记录模型的基类，统一
+    禁止未知字段与就地修改，保证写入业务数据库的记录不可变。
 
-    属性：
-        model_config: Pydantic 校验策略，禁止未知字段并在需要时冻结实例。
+    Attributes:
+        model_config: Pydantic 模型配置；extra="forbid" 拒绝未知字段，
+            frozen=True 禁止修改实例属性。
+
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
 class ConversationStatus(StrEnum):
-    """会话是否仍允许继续追加轮次。
+    """会话的生命周期状态。
 
-    适用场景：
-        用于限制持久化值和边界输入，避免以自由字符串表达状态。
+    使用场景：创建会话时默认置为 ACTIVE，归档后置为 ARCHIVED；
+    归档会话不再接受新 turn。
 
-    属性：
-        ACTIVE: 记录当前有效，可继续读取或追加操作。
-        ARCHIVED: 记录已归档，只保留历史查询用途。
+    成员（StrEnum 取值即入库字符串）：
+        ACTIVE：会话处于活跃状态，可继续追加 turn 与消息。
+        ARCHIVED：会话已归档，只读，不再接受新消息。
     """
 
     ACTIVE = "active"
@@ -36,19 +42,20 @@ class ConversationStatus(StrEnum):
 
 
 class TurnStatus(StrEnum):
-    """会话轮次从接收到完成或失败的生命周期状态。
+    """一次对话 turn 的执行状态。
 
-    适用场景：
-        用于限制持久化值和边界输入，避免以自由字符串表达状态。
+    使用场景：BFF 创建 turn 时置为 ACCEPTED，Agent Server 认领后流转到
+    RUNNING/WAITING_CHILD 等中间态，最终收敛到 COMPLETED 或 FAILED；
+    非终态 turn 可被对账流程扫描并跨 Agent Server 重启继续。
 
-    属性：
-        ACCEPTED: 表示 `accepted` 这一受限枚举值。
-        PENDING: 操作已创建但尚未开始处理。
-        RUNNING: 操作正在执行且尚未产生终态结果。
-        WAITING_CHILD: 父运行暂停推进，正在等待子委派完成。
-        INTERRUPTED: 运行停在可恢复检查点，等待外部决定。
-        COMPLETED: 操作已成功完成并可读取最终结果。
-        FAILED: 操作已失败，错误信息应记录在对应字段。
+    成员（StrEnum 取值即入库字符串）：
+        ACCEPTED：BFF 已受理并写入用户消息，尚未被 Agent Server 认领。
+        PENDING：状态归一化时的兜底取值，表示等待执行。
+        RUNNING：Agent Server 正在执行该 turn。
+        WAITING_CHILD：正在等待子 Agent 或子流程返回。
+        INTERRUPTED：执行被中断，尚未到达终态。
+        COMPLETED：执行成功，assistant 回复已落库。
+        FAILED：执行失败，turn 进入终态。
     """
 
     ACCEPTED = "accepted"
@@ -61,14 +68,14 @@ class TurnStatus(StrEnum):
 
 
 class MessageRole(StrEnum):
-    """消息在对话中的发送方角色。
+    """对话原文消息的角色枚举。
 
-    适用场景：
-        用于限制持久化值和边界输入，避免以自由字符串表达状态。
+    使用场景：Conversation Journal 只持久化 user 与 assistant 两类原文，
+    工具往返等中间内容不进入原文日志。
 
-    属性：
-        USER: 消息来自已认证用户。
-        ASSISTANT: 消息由 Agent 或模型生成。
+    成员（StrEnum 取值即入库字符串）：
+        USER：用户输入的消息。
+        ASSISTANT：Agent 产生的最终回复消息。
     """
 
     USER = "user"
@@ -76,14 +83,14 @@ class MessageRole(StrEnum):
 
 
 class SummaryStatus(StrEnum):
-    """摘要是否仍是当前有效版本。
+    """摘要的生命周期状态。
 
-    适用场景：
-        用于限制持久化值和边界输入，避免以自由字符串表达状态。
+    使用场景：摘要生成后为 ACTIVE；被重建版本替换后置为 SUPERSEDED 并记录
+    superseded_by，旧摘要保留供审计但不再进入上下文选择。
 
-    属性：
-        ACTIVE: 记录当前有效，可继续读取或追加操作。
-        SUPERSEDED: 该版本已被新版本替代，不再作为当前有效记录。
+    成员（StrEnum 取值即入库字符串）：
+        ACTIVE：当前生效、可被上下文装配选用的摘要。
+        SUPERSEDED：已被更新版本取代的历史摘要。
     """
 
     ACTIVE = "active"
@@ -91,21 +98,22 @@ class SummaryStatus(StrEnum):
 
 
 class Conversation(FrozenRecord):
-    """定义一条根 Agent 会话。
+    """一次持久化对话的聚合根记录，固定绑定租户、主体与 Agent 线程。
 
-    适用场景：
-        用于在接口、领域与持久化边界之间传递经过校验的结构化数据。
+    使用场景：BFF 创建会话时写入；后续所有 turn、消息、摘要与 Manifest 都通过
+    conversation_id 关联到该记录，agent_thread_id 唯一，支撑跨重启继续。
 
-    属性：
-        conversation_id: 会话稳定标识，用于关联消息、轮次、摘要和上下文清单。
-        tenant_id: 租户隔离键，所有读取和写入都必须以此限定边界。
-        subject_id: 已认证主体标识，用于所有权校验和审计归因。
-        agent_id: Agent 配置的稳定标识。
-        agent_profile_version: 本次运行固定使用的 Agent 配置版本。
-        agent_thread_id: 根 Agent 使用的服务端线程标识。
-        status: 当前生命周期状态，决定记录允许的后续操作。
-        created_at: 记录创建时间，统一按 UTC 解释。
-        updated_at: 最近一次状态或内容变更时间，统一按 UTC 解释。
+    Attributes:
+        conversation_id: 会话全局唯一标识，形如 "conversation-<hex>"，作为主键。
+        tenant_id: 租户标识，用于多租户隔离与归属校验。
+        subject_id: 主体（用户或服务账号）标识，与 tenant_id 共同构成归属键。
+        agent_id: 绑定的 Agent 标识，会话内所有模型调用共享同一 Agent。
+        agent_profile_version: 创建会话时的 Agent Profile 版本，用于审计与兼容。
+        agent_thread_id: LangGraph Agent 线程 ID（UUID 字符串），全局唯一。
+        status: 会话状态，默认 ACTIVE，取值见 ConversationStatus。
+        created_at: 会话创建时间（UTC）。
+        updated_at: 会话最近一次更新时间（UTC），通常随新消息追加而刷新。
+
     """
 
     conversation_id: str
@@ -120,26 +128,27 @@ class Conversation(FrozenRecord):
 
 
 class ConversationTurn(FrozenRecord):
-    """定义会话中的一次用户轮次及运行关联。
+    """一次对话轮次的执行记录，承载幂等键与 Agent Server 运行绑定。
 
-    适用场景：
-        用于在接口、领域与持久化边界之间传递经过校验的结构化数据。
+    使用场景：BFF 以 client_idempotency_key 幂等创建 turn 并写入用户消息；
+    Agent Server 通过 bind_server_run 绑定 server_run_id，重启后按状态对账续跑。
 
-    属性：
-        turn_id: 会话轮次标识，用于把一次用户输入与其运行结果关联。
-        conversation_id: 会话稳定标识，用于关联消息、轮次、摘要和上下文清单。
-        tenant_id: 租户隔离键，所有读取和写入都必须以此限定边界。
-        subject_id: 已认证主体标识，用于所有权校验和审计归因。
-        run_id: 应用侧运行标识，用于跨服务查询、追踪和幂等关联。
-        server_run_id: Agent Server 侧运行标识；尚未提交远端运行时为空。
-        client_idempotency_key: 客户端幂等键，在同一资源范围内唯一。
-        request_hash: 请求规范化后的哈希，用于检测幂等键复用冲突。
-        target_type: 目标类别，用于区分 Agent、工具和工作流。
-        target_id: 解析前或解析后的目标稳定标识。
-        target_version: 运行实际绑定的目标版本，防止后续配置变化影响重放。
-        status: 当前生命周期状态，决定记录允许的后续操作。
-        created_at: 记录创建时间，统一按 UTC 解释。
-        completed_at: 进入成功或失败终态的时间；未结束时为空。
+    Attributes:
+        turn_id: turn 全局唯一标识，形如 "turn-<hex>"，作为主键。
+        conversation_id: 所属会话标识，关联 Conversation。
+        tenant_id: 租户标识，与 subject_id 共同用于归属校验。
+        subject_id: 主体标识，与 tenant_id、client_idempotency_key 构成幂等约束。
+        run_id: 平台侧运行标识，形如 "run-<hex>"，Agent Server 由此定位 turn。
+        server_run_id: Agent Server 侧运行标识；一个 turn 至多绑定一个，未绑定为 None。
+        client_idempotency_key: 客户端幂等键，同租户同主体下唯一，防止重复提交。
+        request_hash: 请求内容哈希，用于检测幂等键复用但请求不同的情况。
+        target_type: 目标对象类型（被操作的领域对象类别）。
+        target_id: 目标对象标识。
+        target_version: 目标对象版本，用于并发与兼容控制。
+        status: turn 当前状态，取值见 TurnStatus。
+        created_at: turn 创建时间（UTC）。
+        completed_at: turn 到达终态的时间（UTC）；未完成时为 None。
+
     """
 
     turn_id: str
@@ -159,22 +168,23 @@ class ConversationTurn(FrozenRecord):
 
 
 class ConversationMessage(FrozenRecord):
-    """定义会话 Journal 中的一条有序消息。
+    """对话原文日志中的单条消息，append-only 且按 sequence 排序。
 
-    适用场景：
-        用于在接口、领域与持久化边界之间传递经过校验的结构化数据。
+    使用场景：turn 创建时写入用户消息，执行完成后写入 assistant 回复；
+    上下文装配时按预算从中选取最近原文与相关古老历史消息。
 
-    属性：
-        message_id: 关联对象的稳定标识，用于查询、关联和审计追踪。
-        conversation_id: 会话稳定标识，用于关联消息、轮次、摘要和上下文清单。
-        turn_id: 会话轮次标识，用于把一次用户输入与其运行结果关联。
-        sequence: 消息在会话内从 1 开始的稳定顺序号。
-        parent_message_id: 被该消息直接响应的父消息标识；无父消息时为空。
-        role: 消息发送方角色。
-        content: 经过边界校验后保存或传递的正文内容。
-        content_hash: 正文的 SHA-256，用于完整性校验、去重与审计。
-        visible: 该消息是否应暴露给后续模型上下文。
-        created_at: 记录创建时间，统一按 UTC 解释。
+    Attributes:
+        message_id: 消息全局唯一标识，形如 "message-<hex>"，作为主键。
+        conversation_id: 所属会话标识，关联 Conversation。
+        turn_id: 产生该消息的 turn 标识，关联 ConversationTurn。
+        sequence: 会话内序号（从 1 起递增），与会话共同唯一，决定上下文顺序。
+        parent_message_id: 父消息标识（分支消息用）；顶层消息为 None。
+        role: 消息角色，取值见 MessageRole（仅 user/assistant）。
+        content: 消息原文文本。
+        content_hash: 内容的 SHA-256 十六进制摘要，用于幂等对账与冲突检测。
+        visible: 是否对用户可见；默认 True，隐藏消息不参与默认上下文装配。
+        created_at: 消息写入时间（UTC）。
+
     """
 
     message_id: str
@@ -190,30 +200,31 @@ class ConversationMessage(FrozenRecord):
 
 
 class ConversationSummary(FrozenRecord):
-    """定义一段连续消息或低层摘要的压缩表示。
+    """一段历史消息或低层摘要的摘要记录，支持分段与分层两种粒度。
 
-    适用场景：
-        用于在接口、领域与持久化边界之间传递经过校验的结构化数据。
+    使用场景：SummaryService 按分段（level=0）与分层（level>=1）生成摘要并落库；
+    上下文装配时按相关性选取摘要，替代超出预算的古老原文。
 
-    属性：
-        summary_id: 摘要稳定标识。
-        conversation_id: 会话稳定标识，用于关联消息、轮次、摘要和上下文清单。
-        level: 摘要层级；0 表示直接由原始消息生成。
-        start_sequence: 摘要覆盖的第一条消息序号。
-        end_sequence: 摘要覆盖的最后一条消息序号。
-        source_message_ids: 生成摘要时使用的原始消息标识，保留证据链。
-        source_summary_ids: 生成高层摘要时使用的低层摘要标识。
-        summary_content: 提供给模型的压缩会话内容。
-        topics: 摘要提取出的主题标签。
-        entities: 摘要提取出的实体名称。
-        decisions: 摘要提取出的已确认决策。
-        open_items: 摘要提取出的未完成事项。
-        model_profile_version: 本次模型调用固定使用的模型配置版本。
-        template_version: 生成该内容时使用的模板版本。
-        content_hash: 正文的 SHA-256，用于完整性校验、去重与审计。
-        status: 当前生命周期状态，决定记录允许的后续操作。
-        superseded_by: 替代当前记录的新版本标识；仍有效时为空。
-        created_at: 记录创建时间，统一按 UTC 解释。
+    Attributes:
+        summary_id: 摘要全局唯一标识，形如 "summary-<hex>"，作为主键。
+        conversation_id: 所属会话标识，关联 Conversation。
+        level: 摘要层级；0 表示由原文消息生成的分段摘要，>=1 表示聚合低层摘要。
+        start_sequence: 覆盖范围的起始消息序号（含）。
+        end_sequence: 覆盖范围的结束消息序号（含）。
+        source_message_ids: 生成该摘要的源消息 ID 元组；level=0 时使用。
+        source_summary_ids: 生成该摘要的源摘要 ID 元组；level>=1 时使用。
+        summary_content: 摘要正文文本。
+        topics: 摘要覆盖的主题词元组，用于相关性排序。
+        entities: 摘要中的实体（如股票代码）元组，用于相关性排序。
+        decisions: 摘要记录的历史决策元组，默认为空。
+        open_items: 摘要遗留的未决事项元组，默认为空。
+        model_profile_version: 生成摘要所用摘要器/模型配置版本。
+        template_version: 摘要模板版本，用于审计与再生成兼容。
+        content_hash: 摘要内容的 SHA-256 十六进制摘要，用于重建幂等判定。
+        status: 摘要状态，默认 ACTIVE，取值见 SummaryStatus。
+        superseded_by: 取代该摘要的新摘要 ID；未被取代时为 None。
+        created_at: 摘要创建时间（UTC）。
+
     """
 
     summary_id: str
@@ -237,16 +248,19 @@ class ConversationSummary(FrozenRecord):
 
 
 class ContextOmission(FrozenRecord):
-    """定义上下文Omission。
+    """上下文装配中被省略项的记录，用于审计与调试 token 取舍。
 
-    适用场景：
-        用于在接口、领域与持久化边界之间传递经过校验的结构化数据。
+    使用场景：ConversationContextBuilder 在预算不足或工件外置时生成省略记录，
+    随 Manifest 持久化，说明每条历史为何没有进入本次模型调用。
 
-    属性：
-        reason: 产生当前决策、遗漏或状态的可读原因。
-        item_type: 被上下文选择算法省略的条目类别。
-        item_id: 关联对象的稳定标识，用于查询、关联和审计追踪。
-        token_count: 该条目占用的估算 token 数。
+    Attributes:
+        reason: 省略原因；token_budget=超出预算、recent_window=超出最近窗口、
+            not_relevant=与查询无关、artifact_offloaded=工具结果已外置、
+            current_input_truncated=当前输入被截断。
+        item_type: 被省略对象的类型；message/summary/tool_result/current_input。
+        item_id: 被省略对象的标识（消息 ID、摘要 ID 或运行时占位 ID）。
+        token_count: 该对象占用的 token 估算值（截断场景为被裁掉的数量）。
+
     """
 
     reason: Literal[
@@ -262,16 +276,18 @@ class ContextOmission(FrozenRecord):
 
 
 class ManifestMemoryReference(FrozenRecord):
-    """定义清单记忆的稳定引用。
+    """进入模型上下文的一条记忆引用，说明注入了哪条记忆及其原因。
 
-    适用场景：
-        用于在接口、领域与持久化边界之间传递经过校验的结构化数据。
+    使用场景：记忆中间件注入偏好/目标等记忆时生成引用，随 Manifest 持久化，
+    保证模型调用中记忆使用的可追溯性。
 
-    属性：
-        memory_id: 长期记忆稳定标识。
-        schema_version: 记录结构版本，用于兼容演进和历史数据解析。
-        memory_type: 长期记忆的语义类别。
-        injection_reason: 该记忆与当前问题相关并被注入的原因。
+    Attributes:
+        memory_id: 被注入记忆的唯一标识。
+        schema_version: 记忆条目的 schema 版本，从 1 起。
+        memory_type: 记忆类型；preference=偏好、goal=目标、constraint=约束、
+            decision_note=决策备注。
+        injection_reason: 注入该记忆的原因说明。
+
     """
 
     memory_id: str
@@ -281,33 +297,34 @@ class ManifestMemoryReference(FrozenRecord):
 
 
 class ModelContextManifest(FrozenRecord):
-    """定义一次模型调用实际可见内容的审计清单。
+    """一次模型调用的上下文清单，永久记录本次调用实际使用的上下文构成。
 
-    适用场景：
-        用于在接口、领域与持久化边界之间传递经过校验的结构化数据。
+    使用场景：每次模型调用前由上下文中间件构建并经 save_manifest 持久化，
+    支撑审计、成本分析与跨 Agent Server 重启后的行为复现。
 
-    属性：
-        manifest_id: 模型上下文清单标识，用于复现单次模型调用输入。
-        model_call_id: 一次具体模型调用的关联标识。
-        conversation_id: 会话稳定标识，用于关联消息、轮次、摘要和上下文清单。
-        turn_id: 会话轮次标识，用于把一次用户输入与其运行结果关联。
-        run_id: 应用侧运行标识，用于跨服务查询、追踪和幂等关联。
-        prompt_template_version: 构造模型提示时使用的模板版本。
-        agent_profile_version: 本次运行固定使用的 Agent 配置版本。
-        model_profile_version: 本次模型调用固定使用的模型配置版本。
-        recent_message_start: 本次选择的近期消息起始序号。
-        recent_message_end: 本次选择的近期消息结束序号。
-        summary_ids: 本次上下文使用的摘要标识。
-        memory_ids: 本次上下文实际注入的长期记忆标识，顺序与引用一致。
-        memory_refs: 带版本和注入原因的长期记忆引用。
-        historical_message_ids: 因相关性被补充选择的较早消息标识。
-        tool_result_refs: 上下文引用的外置工具结果标识。
-        exposed_tools: 本次模型调用可见的工具名称。
-        input_token_count: 最终选择内容的估算输入 token 数。
-        available_input_tokens: 扣除输出、系统策略和安全余量后的输入预算。
-        omissions: 因预算或相关性未纳入上下文的条目及原因。
-        context_hash: 最终上下文选择的稳定哈希，用于审计和复现。
-        created_at: 记录创建时间，统一按 UTC 解释。
+    Attributes:
+        manifest_id: 清单唯一标识，形如 "manifest-<hex>"。
+        model_call_id: 模型调用唯一标识，形如 "model-call-<hex>"，同调用幂等。
+        conversation_id: 所属会话标识。
+        turn_id: 所属 turn 标识。
+        run_id: 平台侧运行标识。
+        prompt_template_version: 所用提示词模板版本。
+        agent_profile_version: 所用 Agent Profile 版本。
+        model_profile_version: 所用模型配置版本。
+        recent_message_start: 入选最近原文消息的最小序号；无入选时为 None。
+        recent_message_end: 入选最近原文消息的最大序号；无入选时为 None。
+        summary_ids: 本次入选的摘要 ID 元组。
+        memory_ids: 注入的记忆 ID 元组，必须与 memory_refs 顺序一致。
+        memory_refs: 记忆引用明细，见 ManifestMemoryReference。
+        historical_message_ids: 按相关性入选的古老历史消息 ID 元组。
+        tool_result_refs: 本次调用涉及的外置工件（工具结果）ID 元组。
+        exposed_tools: 本次暴露给模型的工具清单（带版本的工具 ID）。
+        input_token_count: 输入 token 估算总数（含系统提示与工具 schema）。
+        available_input_tokens: 配置的可用输入 token 预算。
+        omissions: 被省略项明细，见 ContextOmission。
+        context_hash: 完整输入上下文的 SHA-256 摘要，用于幂等与一致性校验。
+        created_at: 清单创建时间（UTC），默认当前时间。
+
     """
 
     manifest_id: str
@@ -334,7 +351,17 @@ class ModelContextManifest(FrozenRecord):
 
     @model_validator(mode="after")
     def memory_ids_must_match_versioned_references(self) -> Self:
-        """校验一次模型调用实际可见内容的审计清单的跨字段一致性；不满足不变量时拒绝构造。"""
+        """校验 memory_ids 与 memory_refs 严格一一对应且无重复。
+
+        使用场景：构造 Manifest 时自动执行，防止清单中记忆 ID 与引用明细不一致。
+
+        Returns:
+            Self: 校验通过后的模型实例。
+
+        Raises:
+            ValueError: memory_ids 与 memory_refs 不一致或存在重复记忆 ID 时抛出。
+
+        """
         referenced_ids = tuple(item.memory_id for item in self.memory_refs)
         if self.memory_ids != referenced_ids:
             raise ValueError("manifest memory_ids must match memory_refs in order")
@@ -344,22 +371,24 @@ class ModelContextManifest(FrozenRecord):
 
 
 class ContextSelection(FrozenRecord):
-    """定义上下文选择算法输出的可序列化证据。
+    """一次上下文装配的选取结果，是构建 ModelContextManifest 的直接数据来源。
 
-    适用场景：
-        用于在接口、领域与持久化边界之间传递经过校验的结构化数据。
+    使用场景：ConversationContextBuilder.build 返回该对象；中间件据此组装最终
+    消息列表、构建 Manifest，并在 development 环境输出完整 Prompt 调试信息。
 
-    属性：
-        recent_message_ids: 关联对象标识的有序集合。
-        summary_ids: 本次上下文使用的摘要标识。
-        memory_refs: 带版本和注入原因的长期记忆引用。
-        historical_message_ids: 因相关性被补充选择的较早消息标识。
-        tool_result_refs: 上下文引用的外置工具结果标识。
-        input_token_count: 最终选择内容的估算输入 token 数。
-        available_input_tokens: 扣除输出、系统策略和安全余量后的输入预算。
-        omissions: 因预算或相关性未纳入上下文的条目及原因。
-        context_hash: 最终上下文选择的稳定哈希，用于审计和复现。
-        debug_payload: 仅调试模式保存的上下文明细；正常模式保持为空。
+    Attributes:
+        recent_message_ids: 按 token 预算入选的最近原文消息 ID 元组（按会话顺序）。
+        summary_ids: 入选的摘要 ID 元组。
+        memory_refs: 注入的记忆引用元组。
+        historical_message_ids: 按相关性入选的古老历史消息 ID 元组（按序号升序）。
+        tool_result_refs: 被外置的工件（工具结果）ID 元组。
+        input_token_count: 本次装配的输入 token 估算总数（含系统提示与工具 schema）。
+        available_input_tokens: 配置的可用输入 token 预算。
+        omissions: 被省略项明细元组。
+        context_hash: 完整输入上下文的 SHA-256 摘要。
+        debug_payload: 调试负载，含系统提示、消息序列化结果、工具 schema 与
+            预算配置；仅在 development 环境用于输出完整 Prompt。
+
     """
 
     recent_message_ids: tuple[str, ...] = ()

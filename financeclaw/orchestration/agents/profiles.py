@@ -1,4 +1,10 @@
-"""定义版本化 Agent 配置及其只读目录。"""
+"""Agent 档案与档案目录：声明可装配 Agent 的静态规格。
+
+属于 orchestration.agents 的声明层：AgentProfile 描述一个可装配 Agent（如
+finance_agent、只读领域 Agent）的允许工具、模型档案、系统提示与限额；
+AgentProfileCatalog 以不可变映射管理全部档案并提供版本解析。
+
+"""
 
 from collections.abc import Iterable, Iterator, Mapping
 from types import MappingProxyType
@@ -9,15 +15,15 @@ from financeclaw.infrastructure.llm import ModelProfileRef
 
 
 class ToolRef(BaseModel):
-    """定义工具Ref。
+    """档案内引用的工具条目，按工具 id 与语义化版本锁定。
 
-    适用场景：
-        用于在接口、领域与持久化边界之间传递经过校验的结构化数据。
+    使用场景：AgentProfile.allowed_tools 的元素类型；AgentFactory 装配时据此
+    从工具目录解析受治理的受管工具。
 
-    属性：
-        model_config: Pydantic 校验策略，禁止未知字段并在需要时冻结实例。
-        tool_id: 工具的稳定标识。
-        version: 语义版本，用于固定运行行为并支持审计复现。
+    Attributes:
+        tool_id: 工具在工具目录中的唯一标识。
+        version: 工具版本，必须为 ``主.次.修订`` 语义化版本格式。
+
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -27,26 +33,26 @@ class ToolRef(BaseModel):
 
 
 class AgentProfile(BaseModel):
-    """定义固定模型、工具和中间件行为的 Agent 版本配置。
+    """一个可装配 Agent 的完整静态档案声明。
 
-    适用场景：
-        用于以版本化配置固定运行行为，确保审计与结果可复现。
+    使用场景：由启动期配置构造并注册进 AgentProfileCatalog；AgentFactory.build
+    依据它解析工具、模型、系统提示、调用限额与记忆策略，装配对应 Agent。
 
-    属性：
-        model_config: Pydantic 校验策略，禁止未知字段并在需要时冻结实例。
-        agent_id: Agent 配置的稳定标识。
-        version: 语义版本，用于固定运行行为并支持审计复现。
-        description: 供调用者、模型或运维人员理解用途的可读说明。
-        delegatable: 该 Agent 是否允许作为父运行的委派目标。
-        required_scopes: 执行目标必须具备的权限域集合。
-        model_profile: Agent 固定使用的模型配置引用。
-        system_prompt_template: 定义 Agent 职责、限制和输出要求的系统提示模板。
-        allowed_tools: 当前配置明确允许的值集合。
-        middleware_profile: 选择 Agent 运行时中间件组合的配置名称。
-        context_policy: 选择会话上下文截取与摘要策略的配置名称。
-        memory_policy: 选择长期记忆检索与写入策略的配置名称。
-        max_model_calls: 限制该资源或操作的最大允许值。
-        max_tool_calls: 限制该资源或操作的最大允许值。
+    Attributes:
+        agent_id: Agent 唯一标识，如 ``finance_agent``。
+        version: 档案版本，必须为 ``主.次.修订`` 语义化版本格式。
+        description: 档案的人类可读描述，默认空串。
+        delegatable: 是否允许被其他 Agent 委托调用，默认 False。
+        required_scopes: 调用该 Agent 所需的权限作用域集合，默认为空集。
+        model_profile: 引用的模型档案（含模型 id 与版本）。
+        system_prompt_template: Agent 的系统提示模板文本。
+        allowed_tools: 允许使用的工具引用序列，装配时逐个解析。
+        middleware_profile: 中间件组合策略标识，默认 ``governed-v1``。
+        context_policy: 上下文组装策略标识，默认 ``stage2-journal-v1``。
+        memory_policy: 记忆策略标识；``none`` 表示不挂载记忆召回中间件。
+        max_model_calls: 单次运行的模型调用上限，取值 1-64，默认 8。
+        max_tool_calls: 单次运行的工具调用上限，取值 1-128，默认 12。
+
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -67,22 +73,28 @@ class AgentProfile(BaseModel):
 
     @property
     def key(self) -> tuple[str, str]:
-        """返回由稳定标识与版本组成的目录复合键。"""
+        """档案的目录键：``(agent_id, version)`` 二元组。"""
         return self.agent_id, self.version
 
 
 class AgentProfileCatalog(Mapping[tuple[str, str], AgentProfile]):
-    """保存不可变 Agent 配置，并支持解析指定版本或最新版本。
+    """只读的 Agent 档案目录，按键 ``(agent_id, version)`` 存取档案。
 
-    适用场景：
-        用于运行时必须按显式版本复现配置，或选择最新兼容版本的场景。
+    使用场景：启动期收集全部 AgentProfile 构造一次；装配与委托解析时通过
+    resolve 按 id 取指定版本或最高版本的档案。
 
-    属性：
-        _entries: 按复合键索引的只读目录内容。
     """
 
     def __init__(self, profiles: Iterable[AgentProfile]) -> None:
-        """注入并保存Agent配置Catalog所需的协作对象，同时校验构造期不变量。"""
+        """收录档案并构建不可变索引。
+
+        Args:
+            profiles: 待收录的 Agent 档案序列。
+
+        Raises:
+            ValueError: 存在重复的 ``(agent_id, version)`` 档案时抛出。
+
+        """
         entries: dict[tuple[str, str], AgentProfile] = {}
         for profile in profiles:
             if profile.key in entries:
@@ -91,19 +103,31 @@ class AgentProfileCatalog(Mapping[tuple[str, str], AgentProfile]):
         self._entries = MappingProxyType(entries)
 
     def __getitem__(self, key: tuple[str, str]) -> AgentProfile:
-        """按键读取目录项，保持 Mapping 接口语义。"""
+        """按键 ``(agent_id, version)`` 取档案，缺失时抛 KeyError。"""
         return self._entries[key]
 
     def __iter__(self) -> Iterator[tuple[str, str]]:
-        """按目录内部的稳定顺序迭代所有键。"""
+        """返回目录键的迭代器。"""
         return iter(self._entries)
 
     def __len__(self) -> int:
-        """返回目录当前登记的条目数量。"""
+        """返回收录的档案数量。"""
         return len(self._entries)
 
     def resolve(self, agent_id: str, version: str | None = None) -> AgentProfile:
-        """解析并校验Agent配置Catalog，返回固定版本的运行对象。"""
+        """按 id 解析档案：指定版本取精确匹配，未指定取最高语义化版本。
+
+        Args:
+            agent_id: Agent 唯一标识。
+            version: 目标档案版本；None 表示取该 id 下的最高版本。
+
+        Returns:
+            AgentProfile: 解析到的档案。
+
+        Raises:
+            LookupError: 指定版本不存在或该 id 下无任何档案时抛出。
+
+        """
         if version is not None:
             try:
                 return self._entries[(agent_id, version)]

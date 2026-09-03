@@ -1,4 +1,9 @@
-"""定义可版本化的模型配置及其只读目录。"""
+"""模型档案契约：声明模型的调用参数与合规约束，并提供不可变档案目录。
+
+本模块属于 infrastructure 层的 LLM 适配：档案是版本化的配置契约，
+orchestration 与 bootstrap 按引用（profile_id + 版本）解析档案，
+确保模型切换可追溯、可回滚。
+"""
 
 from collections.abc import Iterable, Iterator, Mapping
 from types import MappingProxyType
@@ -9,15 +14,15 @@ from financeclaw.kernel import DataClassification
 
 
 class ModelProfileRef(BaseModel):
-    """定义模型配置Ref。
+    """模型档案引用：以 profile_id 与语义化版本唯一定位一个档案。
 
-    适用场景：
-        用于在接口、领域与持久化边界之间传递经过校验的结构化数据。
+    使用场景：工作流定义、降级链等场景中引用模型而不内嵌参数，
+    保证配置变更受版本管理约束。
 
-    属性：
-        model_config: Pydantic 校验策略，禁止未知字段并在需要时冻结实例。
-        profile_id: 版本化配置的稳定标识。
-        version: 语义版本，用于固定运行行为并支持审计复现。
+    Attributes:
+        profile_id: 档案标识，如 ``default``。
+        version: 档案版本，须符合语义化版本（如 ``1.0.0``）。
+
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -27,24 +32,24 @@ class ModelProfileRef(BaseModel):
 
 
 class ModelProfile(BaseModel):
-    """定义固定供应商模型参数与数据边界的版本配置。
+    """模型档案：单个模型的完整调用参数与数据分级、区域等合规约束。
 
-    适用场景：
-        用于以版本化配置固定运行行为，确保审计与结果可复现。
+    使用场景：由 bootstrap.py 组合根按配置构造并注册进目录；orchestration
+    层据此初始化模型，降级链校验也依赖档案中的能力声明。
 
-    属性：
-        model_config: Pydantic 校验策略，禁止未知字段并在需要时冻结实例。
-        profile_id: 版本化配置的稳定标识。
-        version: 语义版本，用于固定运行行为并支持审计复现。
-        model: 供应商模型名称。
-        temperature: 模型采样温度；较低值用于提高可复现性。
-        timeout_seconds: 该操作允许的最长时间（秒）。
-        max_tokens: 该步骤可用或实际使用的 token 数量。
-        fallback_profiles: 主模型失败时按顺序尝试的备用模型配置引用。
-        allowed_data_classes: 该配置允许发送或处理的数据分类集合。
-        allowed_regions: 模型请求允许落地或处理数据的区域集合。
-        supports_tool_calling: 供应方或运行目标是否支持该能力。
-        supports_structured_output: 供应方或运行目标是否支持该能力。
+    Attributes:
+        profile_id: 档案标识。
+        version: 档案版本，须符合语义化版本。
+        model: 模型标识，格式为 ``provider:model``（如 ``openai:deepseek-v4-pro``）。
+        temperature: 采样温度 [0, 2]，金融场景默认 0 以保证确定性。
+        timeout_seconds: 单次调用超时（秒），取值范围 (0, 600]。
+        max_tokens: 单次生成的最大 token 数，下限 64。
+        fallback_profiles: 降级档案引用序列，按顺序尝试。
+        allowed_data_classes: 允许处理的数据敏感级别集合，默认放开全部分级。
+        allowed_regions: 允许部署/处理数据的区域集合，默认仅 ``global``。
+        supports_tool_calling: 是否支持工具调用。
+        supports_structured_output: 是否支持结构化输出。
+
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -65,43 +70,61 @@ class ModelProfile(BaseModel):
 
     @property
     def key(self) -> tuple[str, str]:
-        """返回由稳定标识与版本组成的目录复合键。"""
+        """档案在目录中的唯一键：(profile_id, version)。"""
         return self.profile_id, self.version
 
 
 class ModelProfileCatalog(Mapping[tuple[str, str], ModelProfile]):
-    """保存不可变模型配置，以“配置 ID + 版本”稳定解析。
+    """不可变模型档案目录：按 (profile_id, version) 索引并解析档案。
 
-    适用场景：
-        用于运行时必须按显式版本复现配置，或选择最新兼容版本的场景。
-
-    属性：
-        _entries: 按复合键索引的只读目录内容。
+    使用场景：由 bootstrap.py 汇集全部档案后构造，注入 ``ModelFactory``
+    与编排层；目录只读，运行期不允许增改档案。
     """
 
     def __init__(self, profiles: Iterable[ModelProfile]) -> None:
-        """注入并保存模型配置Catalog所需的协作对象，同时校验构造期不变量。"""
+        """构建目录并拒绝重复的档案键。
+
+        Args:
+            profiles: 待注册的模型档案集合。
+
+        Raises:
+            ValueError: 存在 (profile_id, version) 重复的档案。
+
+        """
         entries: dict[tuple[str, str], ModelProfile] = {}
+        # 逐个注册，重复键视为配置错误立即失败。
         for profile in profiles:
             if profile.key in entries:
                 raise ValueError(f"duplicate model profile: {profile.profile_id}@{profile.version}")
             entries[profile.key] = profile
+        # 用 MappingProxyType 包装，保证目录不可变。
         self._entries = MappingProxyType(entries)
 
     def __getitem__(self, key: tuple[str, str]) -> ModelProfile:
-        """按键读取目录项，保持 Mapping 接口语义。"""
+        """按 (profile_id, version) 取档案，键不存在时抛 KeyError。"""
         return self._entries[key]
 
     def __iter__(self) -> Iterator[tuple[str, str]]:
-        """按目录内部的稳定顺序迭代所有键。"""
+        """迭代目录中的全部档案键。"""
         return iter(self._entries)
 
     def __len__(self) -> int:
-        """返回目录当前登记的条目数量。"""
+        """返回目录中的档案数量。"""
         return len(self._entries)
 
     def resolve(self, ref: ModelProfileRef) -> ModelProfile:
-        """解析并校验模型配置Catalog，返回固定版本的运行对象。"""
+        """把档案引用解析为具体档案。
+
+        Args:
+            ref: 模型档案引用。
+
+        Returns:
+            对应的模型档案。
+
+        Raises:
+            LookupError: 引用的档案在目录中不存在。
+
+        """
         try:
             return self._entries[(ref.profile_id, ref.version)]
         except KeyError as exc:

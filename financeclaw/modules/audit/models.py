@@ -1,4 +1,8 @@
-"""定义授权、执行与记忆操作使用的不可变审计事件。"""
+"""审计记录的领域模型定义。
+
+位于 audit 模块的模型层：定义审计事件类型枚举与不可变的审计记录模型，覆盖工具
+调用、审批、记忆写入、工作流与委派的完整生命周期。
+"""
 
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -9,36 +13,37 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class AuditEventType(StrEnum):
-    """定义审计事件Type。
+    """审计事件类型枚举，覆盖各领域对象完整生命周期中的关键事件。
 
-    适用场景：
-        用于限制持久化值和边界输入，避免以自由字符串表达状态。
+    使用场景：写入 AuditRecord 时标记事件种类；仓储层把其字符串值持久化到审计
+    表与 Outbox 事件中，供检索与投递。
 
-    属性：
-        TOOL_ALLOWED: 表示 `tool_allowed` 这一受限枚举值。
-        TOOL_DENIED: 表示 `tool_denied` 这一受限枚举值。
-        TOOL_APPROVAL_REQUESTED: 表示 `tool_approval_requested` 这一受限枚举值。
-        TOOL_APPROVED: 表示 `tool_approved` 这一受限枚举值。
-        TOOL_REJECTED: 表示 `tool_rejected` 这一受限枚举值。
-        FINANCIAL_TOOL_EXECUTED: 表示 `financial_tool_executed` 这一受限枚举值。
-        FINANCIAL_TOOL_FAILED: 表示 `financial_tool_failed` 这一受限枚举值。
-        MEMORY_PROPOSED: 表示 `memory_proposed` 这一受限枚举值。
-        MEMORY_COMMITTED: 表示 `memory_committed` 这一受限枚举值。
-        MEMORY_SUPERSEDED: 表示 `memory_superseded` 这一受限枚举值。
-        MEMORY_REVOKED: 表示 `memory_revoked` 这一受限枚举值。
-        MEMORY_DELETED: 表示 `memory_deleted` 这一受限枚举值。
-        WORKFLOW_STARTED: 表示 `workflow_started` 这一受限枚举值。
-        WORKFLOW_INTERRUPTED: 表示 `workflow_interrupted` 这一受限枚举值。
-        WORKFLOW_APPROVED: 表示 `workflow_approved` 这一受限枚举值。
-        WORKFLOW_REJECTED: 表示 `workflow_rejected` 这一受限枚举值。
-        WORKFLOW_COMPLETED: 表示 `workflow_completed` 这一受限枚举值。
-        WORKFLOW_FAILED: 表示 `workflow_failed` 这一受限枚举值。
-        DELEGATION_REQUESTED: 表示 `delegation_requested` 这一受限枚举值。
-        DELEGATION_STARTED: 表示 `delegation_started` 这一受限枚举值。
-        DELEGATION_INTERRUPTED: 表示 `delegation_interrupted` 这一受限枚举值。
-        DELEGATION_COMPLETED: 表示 `delegation_completed` 这一受限枚举值。
-        DELEGATION_FAILED: 表示 `delegation_failed` 这一受限枚举值。
-        DELEGATION_DELIVERED: 表示 `delegation_delivered` 这一受限枚举值。
+    Attributes:
+        TOOL_ALLOWED: 工具调用被策略允许。
+        TOOL_DENIED: 工具调用被策略拒绝。
+        TOOL_APPROVAL_REQUESTED: 工具调用触发审批请求。
+        TOOL_APPROVED: 工具调用审批通过。
+        TOOL_REJECTED: 工具调用审批被驳回。
+        FINANCIAL_TOOL_EXECUTED: 金融工具执行成功。
+        FINANCIAL_TOOL_FAILED: 金融工具执行失败。
+        MEMORY_PROPOSED: 记忆写入提案已生成。
+        MEMORY_COMMITTED: 记忆提案已提交生效。
+        MEMORY_SUPERSEDED: 既有记忆被新记忆取代。
+        MEMORY_REVOKED: 记忆被撤销。
+        MEMORY_DELETED: 记忆被删除。
+        WORKFLOW_STARTED: 工作流运行已启动。
+        WORKFLOW_INTERRUPTED: 工作流运行被中断。
+        WORKFLOW_APPROVED: 工作流审批获得通过。
+        WORKFLOW_REJECTED: 工作流审批被驳回。
+        WORKFLOW_COMPLETED: 工作流运行完成。
+        WORKFLOW_FAILED: 工作流运行失败。
+        DELEGATION_REQUESTED: 委派请求已登记。
+        DELEGATION_STARTED: 委派子任务已启动。
+        DELEGATION_INTERRUPTED: 委派子任务被中断。
+        DELEGATION_COMPLETED: 委派子任务执行完成。
+        DELEGATION_FAILED: 委派子任务执行失败。
+        DELEGATION_DELIVERED: 委派结果已回递给父运行。
+
     """
 
     TOOL_ALLOWED = "tool.allowed"
@@ -68,32 +73,32 @@ class AuditEventType(StrEnum):
 
 
 class AuditRecord(BaseModel):
-    """定义审计的持久化记录。
+    """一条不可变的永久审计记录，描述"谁在何时对什么资源做了什么决定"。
 
-    适用场景：
-        用于跨步骤保存不可变事实，并支持持久化或审计重放。
+    使用场景：工具调用、审批、记忆写入、工作流与委派等关键动作发生时构造，
+    由 AuditRepository 与 Outbox 事件在同一事务中落盘，作为合规与追溯依据。
 
-    属性：
-        model_config: Pydantic 校验策略，禁止未知字段并在需要时冻结实例。
-        audit_id: 关联对象的稳定标识，用于查询、关联和审计追踪。
-        event_type: 事件的语义类型，供消费者选择处理逻辑。
-        occurred_at: 该生命周期事件发生的 UTC 时间。
-        tenant_id: 租户隔离键，所有读取和写入都必须以此限定边界。
-        subject_id: 已认证主体标识，用于所有权校验和审计归因。
-        conversation_id: 会话稳定标识，用于关联消息、轮次、摘要和上下文清单。
-        turn_id: 会话轮次标识，用于把一次用户输入与其运行结果关联。
-        run_id: 应用侧运行标识，用于跨服务查询、追踪和幂等关联。
-        tool_call_id: 关联对象的稳定标识，用于查询、关联和审计追踪。
-        resource_type: 被审批、审计或事件关联的资源类别。
-        resource_id: 关联对象的稳定标识，用于查询、关联和审计追踪。
-        resource_version: 运行固定使用的版本，用于审计复现。
-        action: 审批点准备执行的动作名称。
-        decision: 审批人或策略引擎作出的结构化决定。
-        policy_version: 作出决策时使用的策略版本。
-        payload_hash: 事件载荷的稳定哈希，用于完整性核对。
-        evidence_refs: 支撑该记忆事实的消息或外部证据引用。
-        artifact_refs: 本次运行、审计或事件关联的制品标识集合。
-        metadata: 随运行或记录保存的非业务控制信息。
+    Attributes:
+        audit_id: 审计记录唯一标识，形如 ``audit-<uuid4 hex>``，默认自动生成。
+        event_type: 事件类型（AuditEventType），标记该记录覆盖的生命周期事件。
+        occurred_at: 事件发生时间（UTC 带时区），默认为构造时的当前时间。
+        tenant_id: 租户标识，用于多租户数据隔离。
+        subject_id: 主体标识，与 tenant_id 共同界定审计记录的归属。
+        conversation_id: 关联会话标识；非会话场景为 None。
+        turn_id: 事件所属的对话轮次标识。
+        run_id: 事件所属的 Agent 运行标识。
+        tool_call_id: 关联的工具调用标识；仅工具类事件存在，其余场景为 None。
+        resource_type: 被操作资源类型，默认为 ``tool``。
+        resource_id: 被操作资源标识。
+        resource_version: 被操作资源的版本，用于策略与语义的可追溯。
+        action: 对资源执行的动作名称。
+        decision: 策略判定结果（如允许、拒绝、需审批）。
+        policy_version: 作出判定时使用的策略版本。
+        payload_hash: 事件负载的摘要哈希，在不落明文的情况下固化证据。
+        evidence_refs: 证据引用标识列表（如消息、文件引用），默认为空。
+        artifact_refs: 关联 Artifact 标识列表，默认为空。
+        metadata: 附加结构化元数据，默认为空字典。
+
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)

@@ -1,4 +1,8 @@
-"""登记并解析不可变版本的确定性工作流定义。"""
+"""启动期装配的不可变工作流目录：登记固定版本并解析可用流程定义。
+
+目录内容在进程启动时一次性装配，运行期只读，保证工作流、图修订、
+ModelProfile 与工具版本可按版本精确复现。
+"""
 
 from collections.abc import Iterable, Iterator, Mapping
 from types import MappingProxyType
@@ -7,32 +11,44 @@ from .models import WorkflowDefinition, WorkflowStatus
 
 
 class WorkflowCatalogError(LookupError):
-    """定义工作流CatalogError。
+    """目录解析不到可用工作流时抛出的查找异常。
 
-    适用场景：
-        用于把该失败条件跨层传递，并在接口边界转换为稳定错误。
+    使用场景：
+        resolve 找不到指定版本或最新的 ACTIVE 工作流时抛出，
+        调用方应转换为稳定错误响应。
     """
 
     pass
 
 
 def _version_key(version: str) -> tuple[int, int, int]:
-    """把语义版本拆为整数元组，供目录选择最新版本。"""
-    return tuple(int(part) for part in version.split("."))  # type: ignore[return-value]
+    """把语义版本字符串解析为可比较的整数元组，供目录选择最新版本。"""
+    return tuple(int(part) for part in version.split("."))
 
 
 class WorkflowCatalog(Mapping[tuple[str, str], WorkflowDefinition]):
-    """登记工作流版本并解析显式版本或某工作流的最新版本。
+    """按（workflow_id, version）索引的只读工作流目录。
 
-    适用场景：
-        用于运行时必须按显式版本复现配置，或选择最新兼容版本的场景。
+    使用场景：
+        启动期登记全部已发布流程；运行期按显式版本或最新 ACTIVE 版本
+        解析定义，保证一次运行绑定确定的图、模型档案与工具集合。
 
-    属性：
-        _entries: 按复合键索引的只读目录内容。
+    Attributes:
+        _entries: 以（workflow_id, version）为键的只读定义映射。
+
     """
 
     def __init__(self, definitions: Iterable[WorkflowDefinition]) -> None:
-        """注入并保存工作流Catalog所需的协作对象，同时校验构造期不变量。"""
+        """装配目录并校验登记项。
+
+        Args:
+            definitions: 待登记的工作流定义集合。
+
+        Raises:
+            TypeError: 登记项不是 WorkflowDefinition。
+            ValueError: 同一（workflow_id, version）被登记两次。
+
+        """
         entries: dict[tuple[str, str], WorkflowDefinition] = {}
         for definition in definitions:
             if not isinstance(definition, WorkflowDefinition):
@@ -49,7 +65,7 @@ class WorkflowCatalog(Mapping[tuple[str, str], WorkflowDefinition]):
         return self._entries[key]
 
     def __iter__(self) -> Iterator[tuple[str, str]]:
-        """按目录内部的稳定顺序迭代所有键。"""
+        """按登记顺序迭代全部（workflow_id, version）键。"""
         return iter(self._entries)
 
     def __len__(self) -> int:
@@ -57,7 +73,19 @@ class WorkflowCatalog(Mapping[tuple[str, str], WorkflowDefinition]):
         return len(self._entries)
 
     def resolve(self, workflow_id: str, version: str | None = None) -> WorkflowDefinition:
-        """解析并校验工作流Catalog，返回固定版本的运行对象。"""
+        """解析指定工作流的确定版本定义。
+
+        Args:
+            workflow_id: 工作流稳定标识。
+            version: 期望版本；为空时解析该工作流最新的 ACTIVE 版本。
+
+        Returns:
+            命中的 ACTIVE 状态工作流定义。
+
+        Raises:
+            WorkflowCatalogError: 指定版本不存在，或不存在 ACTIVE 版本。
+
+        """
         if version is not None:
             candidate = self._entries.get((workflow_id, version))
             if candidate is None or candidate.status is not WorkflowStatus.ACTIVE:
@@ -73,7 +101,7 @@ class WorkflowCatalog(Mapping[tuple[str, str], WorkflowDefinition]):
         return max(candidates, key=lambda item: _version_key(item.version))
 
     def published(self) -> tuple[WorkflowDefinition, ...]:
-        """返回所有已发布、可被新运行解析的工作流定义。"""
+        """返回目录中全部定义，按工作流标识与语义版本号升序排列。"""
         return tuple(
             sorted(
                 self._entries.values(),

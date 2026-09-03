@@ -1,4 +1,8 @@
-"""编排父运行向工作流或专业 Agent 的可恢复委派。"""
+"""delegation 应用服务：接收顶层 Agent 的 typed handoff，治理化地启动子运行。
+
+把 Workflow 或领域 Agent 作为受治理的 delegation Tool 派发为独立 child
+thread/run，维护永久父子映射，并把子结果交付回父运行，全程落审计。
+"""
 
 from __future__ import annotations
 
@@ -39,37 +43,31 @@ from .workflow_service import WorkflowAuthorizationError, WorkflowInputError, Wo
 
 
 class DelegationInputError(ValueError):
-    """定义委派输入Error。
-
-    适用场景：
-        用于把该失败条件跨层传递，并在接口边界转换为稳定错误。
-    """
+    """handoff 请求非法（目标不可用、参数不合法或父引用不匹配）时抛出。"""
 
     pass
 
 
 class DelegationAuthorizationError(PermissionError):
-    """定义委派AuthorizationError。
-
-    适用场景：
-        用于把该失败条件跨层传递，并在接口边界转换为稳定错误。
-    """
+    """调用方缺少 delegation 目标所需权限范围时抛出。"""
 
     pass
 
 
 class DelegationService:
-    """协调父运行与子 Agent/工作流之间的创建、轮询、恢复和结果交付。
+    """delegation 用例服务：把 typed handoff 落地为受治理的子运行。
 
-    适用场景：
-        用于应用用例需要跨仓储、外部端口或领域策略协调一致结果的场景。
+    使用场景：顶层 finance_agent 通过 ReAct 决定把任务交给 Workflow 或领域
+    Agent 时，以 delegation Tool 的形式发起 typed handoff；本服务校验父引用
+    与权限、幂等落库、启动独立 child thread/run，并把子结果交付回父运行。
 
-    属性：
-        client: 负责与外部 Agent Server 或供应商通信的端口实现。
-        repository: 负责领域状态读写和事务一致性的仓储。
-        workflow_service: 负责启动、查询和恢复确定性工作流的应用服务。
-        agent_profiles: 可按稳定标识和版本解析 Agent 配置的只读目录。
-        audit: 记录授权、执行和状态变化的审计仓储。
+    Attributes:
+        client: Agent Server 客户端 Port，用于子线程与子运行管理。
+        repository: delegation 仓储，持久化父子映射与状态流转。
+        workflow_service: 工作流服务，负责 Workflow 类子运行的启动与审批。
+        agent_profiles: Agent Profile 目录，用于解析领域 Agent 目标。
+        audit: 审计仓储，记录 delegation 全生命周期的审计事件。
+
     """
 
     def __init__(
@@ -80,7 +78,16 @@ class DelegationService:
         agent_profiles: AgentProfileCatalog,
         audit: AuditRepository,
     ) -> None:
-        """注入并保存委派Service所需的协作对象，同时校验构造期不变量。"""
+        """装配 delegation 服务依赖。
+
+        Args:
+            client: Agent Server 客户端 Port。
+            repository: delegation 仓储实现。
+            workflow_service: 工作流服务。
+            agent_profiles: Agent Profile 目录。
+            audit: 审计仓储。
+
+        """
         self.client = client
         self.repository = repository
         self.workflow_service = workflow_service
@@ -98,14 +105,35 @@ class DelegationService:
         subject_id: str,
         scopes: frozenset[str],
     ) -> DelegationRecord:
-        """解析并授权委派目标，幂等创建委派记录，再启动或复用对应子运行。"""
+        """受理 typed handoff：校验、幂等落库并启动（或复用）子运行。
+
+        Args:
+            handoff: 顶层 Agent 发出的 typed handoff 请求。
+            parent_run_id: 父业务 run ID。
+            parent_turn_id: 父业务 Turn ID。
+            conversation_id: 所属会话 ID。
+            tenant_id: 租户 ID。
+            subject_id: 主体 ID。
+            scopes: 调用方权限范围，用于目标解析鉴权。
+
+        Returns:
+            delegation 记录（含子运行映射与最新状态）。
+
+        Raises:
+            DelegationInputError: 父引用不匹配、目标不可用或参数非法。
+            DelegationAuthorizationError: 缺少目标所需权限范围。
+
+        """
+        # 1. 校验 handoff 中的父 run/turn/会话引用与当前 Turn 一致。
         self._verify_parent(
             handoff,
             parent_run_id=parent_run_id,
             parent_turn_id=parent_turn_id,
             conversation_id=conversation_id,
         )
+        # 2. 解析目标（Workflow 定义或 Agent Profile）并校验所需权限范围。
         kind, target_id, target_version, arguments = self._resolve(handoff, scopes)
+        # 3. 以 handoff_id 为幂等键落库；重复请求复用既有记录。
         record, created = await asyncio.to_thread(
             self.repository.ensure_requested,
             delegation_id=handoff.handoff_id,
@@ -119,12 +147,14 @@ class DelegationService:
             target_version=target_version,
             arguments=arguments,
         )
+        # 4. 首次创建时写入 REQUESTED 审计。
         if created:
             await self._audit(
                 record,
                 AuditEventType.DELEGATION_REQUESTED,
                 decision="requested",
             )
+        # 5. 尚未启动子运行：按目标类型启动 Workflow 或领域 Agent。
         if record.child_run_id is None:
             if record.kind is DelegationKind.WORKFLOW:
                 record = await self._start_workflow(record, scopes)
@@ -135,10 +165,21 @@ class DelegationService:
     async def status(
         self, delegation_id: str, *, tenant_id: str, subject_id: str
     ) -> DelegationRecord:
-        """读取委派及其子运行状态，必要时推进状态机并持久化变化。"""
+        """查询 delegation 状态；必要时恢复子运行并同步最新进度。
+
+        Args:
+            delegation_id: delegation ID。
+            tenant_id: 租户 ID。
+            subject_id: 主体 ID。
+
+        Returns:
+            delegation 记录（已同步子运行最新状态）。
+
+        """
         record = await asyncio.to_thread(
             self.repository.get_owned, delegation_id, tenant_id, subject_id
         )
+        # 1. 已到终态（含 DELIVERED）直接返回。
         if record.status in {
             DelegationStatus.COMPLETED,
             DelegationStatus.REJECTED,
@@ -146,6 +187,7 @@ class DelegationService:
             DelegationStatus.DELIVERED,
         }:
             return record
+        # 2. 子运行未启动（或 Agent 子运行缺 server run）：以通配权限恢复启动，用于对账。
         if record.child_run_id is None:
             recovery_scopes = frozenset({"*"})
             if record.kind is DelegationKind.WORKFLOW:
@@ -154,6 +196,7 @@ class DelegationService:
                 record = await self._start_agent(record, recovery_scopes)
         elif record.kind is DelegationKind.AGENT and record.child_server_run_id is None:
             record = await self._start_agent(record, frozenset({"*"}))
+        # 3. 按子运行类型同步状态：Workflow 走工作流服务，Agent 查询 server。
         if record.kind is DelegationKind.WORKFLOW:
             child = await self.workflow_service.status(
                 record.child_run_id,
@@ -170,7 +213,20 @@ class DelegationService:
         *,
         scopes: frozenset[str],
     ) -> DelegationRecord:
-        """把审批决定转交子工作流或 Agent，并同步委派状态。"""
+        """把审批决定转发给 Workflow 子运行并同步 delegation 状态。
+
+        Args:
+            record: 当前 delegation 记录。
+            decision: 审批决定（approve/reject 及理由、参数 hash）。
+            scopes: 调用方权限范围，用于子工作流审批鉴权。
+
+        Returns:
+            同步子状态后的 delegation 记录。
+
+        Raises:
+            DelegationConflict: 子运行不是 Workflow 或尚未启动，无法恢复。
+
+        """
         if record.kind is not DelegationKind.WORKFLOW or record.child_run_id is None:
             raise DelegationConflict("delegated child does not support approval resume")
         child = await self.workflow_service.resume(
@@ -185,7 +241,20 @@ class DelegationService:
     async def child_status(
         self, child_run_id: str, *, tenant_id: str, subject_id: str
     ) -> RunStatusResponse:
-        """根据委派目标类型查询子 Agent 或工作流的统一运行状态。"""
+        """按子运行 ID 查询 delegation 子运行的最新状态。
+
+        Args:
+            child_run_id: 子业务 run ID。
+            tenant_id: 租户 ID。
+            subject_id: 主体 ID。
+
+        Returns:
+            子运行的状态响应。
+
+        Raises:
+            RunNotFound: delegation 不存在或子运行尚未启动。
+
+        """
         try:
             record = await asyncio.to_thread(
                 self.repository.get_by_child_owned,
@@ -210,7 +279,15 @@ class DelegationService:
         )
 
     async def mark_delivered(self, record: DelegationRecord) -> DelegationRecord:
-        """以幂等方式标记委派Service的状态。"""
+        """把 delegation 标记为已交付父运行，并在状态变化时写审计。
+
+        Args:
+            record: 待标记的 delegation 记录。
+
+        Returns:
+            更新后的 delegation 记录（状态为 DELIVERED）。
+
+        """
         delivered, changed = await asyncio.to_thread(
             self.repository.set_status,
             record.delegation_id,
@@ -227,7 +304,17 @@ class DelegationService:
     async def latest_for_parent(
         self, parent_run_id: str, *, tenant_id: str, subject_id: str
     ) -> DelegationRecord | None:
-        """读取父运行最近一个尚未完成结果交付的委派。"""
+        """查询父运行最近一条尚未交付的 delegation。
+
+        Args:
+            parent_run_id: 父业务 run ID。
+            tenant_id: 租户 ID。
+            subject_id: 主体 ID。
+
+        Returns:
+            未交付的 delegation 记录；不存在时为 None。
+
+        """
         return await asyncio.to_thread(
             self.repository.latest_undelivered_for_parent,
             parent_run_id,
@@ -236,21 +323,39 @@ class DelegationService:
         )
 
     async def reconcile_incomplete(self) -> tuple[str, ...]:
-        """扫描未完成委派并与子运行对账，返回本次成功推进的委派标识。"""
+        """对账所有未交付的 delegation：逐条刷新状态直至子运行收敛。
+
+        Returns:
+            本次完成对账的 delegation ID 列表。
+
+        """
         records = await asyncio.to_thread(self.repository.list_undelivered)
         reconciled: list[str] = []
         for record in records:
+            # 1. 逐条触发状态同步（内部会恢复未启动的子运行）。
             await self.status(
                 record.delegation_id,
                 tenant_id=record.tenant_id,
                 subject_id=record.subject_id,
             )
             reconciled.append(record.delegation_id)
+        # 2. 返回已对账的 delegation ID 列表。
         return tuple(reconciled)
 
     @staticmethod
     def result(record: DelegationRecord) -> DelegationResult:
-        """返回已完成委派的规范化结果；未完成或失败时抛出状态冲突。"""
+        """把到终态的 delegation 投影为可交付父运行的 DelegationResult。
+
+        Args:
+            record: delegation 记录。
+
+        Returns:
+            含子运行结果、输出与错误信息的投影对象。
+
+        Raises:
+            DelegationConflict: 子运行未启动或尚未到终态。
+
+        """
         if record.child_run_id is None or record.status not in {
             DelegationStatus.COMPLETED,
             DelegationStatus.REJECTED,
@@ -271,8 +376,22 @@ class DelegationService:
     async def _start_workflow(
         self, record: DelegationRecord, scopes: frozenset[str]
     ) -> DelegationRecord:
-        """校验输入后启动委派Service，返回可供后续查询的记录。"""
+        """以 delegation_id 为幂等键启动 Workflow 子运行并绑定映射。
+
+        Args:
+            record: 待启动的 delegation 记录。
+            scopes: 调用方权限范围，用于工作流鉴权。
+
+        Returns:
+            绑定子运行后的 delegation 记录。
+
+        Raises:
+            WorkflowAuthorizationError: 缺少工作流所需权限范围。
+            WorkflowInputError: 工作流入参不合法。
+
+        """
         try:
+            # 1. 以 delegation_id 为幂等键启动工作流。
             accepted = await self.workflow_service.start(
                 WorkflowTarget(
                     workflow_id=record.target_id,
@@ -285,8 +404,10 @@ class DelegationService:
                 idempotency_key=record.delegation_id,
             )
         except (WorkflowAuthorizationError, WorkflowInputError) as exc:
+            # 2. 启动失败：先把 delegation 置为 FAILED，再向上抛出。
             await self._fail_start(record, str(exc))
             raise
+        # 3. 读取工作流运行并绑定 child 映射与状态。
         workflow = await asyncio.to_thread(
             self.workflow_service.repository.get_owned,
             accepted.run_id,
@@ -301,21 +422,39 @@ class DelegationService:
             child_server_run_id=workflow.server_run_id,
             status=_delegation_status(workflow.status.value),
         )
+        # 4. 写 STARTED 审计。
         await self._audit(bound, AuditEventType.DELEGATION_STARTED, decision="child_started")
         return bound
 
     async def _start_agent(
         self, record: DelegationRecord, scopes: frozenset[str]
     ) -> DelegationRecord:
-        """校验输入后启动委派Service，返回可供后续查询的记录。"""
+        """启动领域 Agent 子运行（独立 child thread/run）并绑定映射。
+
+        Args:
+            record: 待启动的 delegation 记录。
+            scopes: 调用方权限范围，用于目标鉴权。
+
+        Returns:
+            绑定子运行后的 delegation 记录。
+
+        Raises:
+            DelegationAuthorizationError: 缺少目标 Agent 所需权限范围。
+            DelegationConflict: 子运行标识未成功预生成。
+
+        """
+        # 1. 解析目标 Agent Profile 并校验权限范围。
         profile = self.agent_profiles.resolve(record.target_id, record.target_version)
         self._require_scopes(scopes, profile.required_scopes)
+        # 2. 预生成子 run/thread 标识（幂等：重复调用复用既有标识）。
         prepared = await asyncio.to_thread(
             self.repository.prepare_agent_child, record.delegation_id
         )
         if prepared.child_run_id is None or prepared.child_thread_id is None:
             raise DelegationConflict("Agent child identity was not prepared")
+        # 3. 创建子线程。
         await self.client.create_thread(prepared.child_thread_id)
+        # 4. 对账路径先按 application_run_id 找回既有 server run，避免重复执行。
         server_run = await self.client.find_run(
             thread_id=prepared.child_thread_id,
             application_run_id=prepared.child_run_id,
@@ -329,6 +468,7 @@ class DelegationService:
                 turn_id=prepared.parent_turn_id,
                 run_id=prepared.child_run_id,
             )
+            # 5. 以委托任务描述为输入创建新的 server run。
             server_run = await self.client.create_run(
                 thread_id=prepared.child_thread_id,
                 assistant_id=profile.agent_id,
@@ -344,6 +484,7 @@ class DelegationService:
                     "delegation_id": prepared.delegation_id,
                 },
             )
+        # 6. 绑定 child 映射与状态。
         bound = await asyncio.to_thread(
             self.repository.bind_child,
             prepared.delegation_id,
@@ -352,11 +493,20 @@ class DelegationService:
             child_server_run_id=server_run.run_id,
             status=_delegation_status(server_run.status),
         )
+        # 7. 写 STARTED 审计。
         await self._audit(bound, AuditEventType.DELEGATION_STARTED, decision="child_started")
         return bound
 
     async def _agent_status(self, record: DelegationRecord) -> DelegationRecord:
-        """读取 Agent Server 子运行并映射为委派生命周期状态。"""
+        """查询领域 Agent 子运行的 server 状态并翻译为 delegation 状态转移。
+
+        Args:
+            record: delegation 记录（须已绑定子线程与 server run）。
+
+        Returns:
+            状态转移后的 delegation 记录。
+
+        """
         if record.child_thread_id is None or record.child_server_run_id is None:
             return record
         server = await self.client.get_run(
@@ -365,6 +515,7 @@ class DelegationService:
         )
         status = str(server.get("status", record.status.value))
         if status in {"success", "completed"}:
+            # 成功：取回最终回复作为输出。
             raw = await self.client.join_run(
                 thread_id=record.child_thread_id,
                 run_id=record.child_server_run_id,
@@ -376,19 +527,30 @@ class DelegationService:
                 output=output,
             )
         if status in {"error", "failed"}:
+            # 失败：记录失败原因。
             return await self._transition(
                 record,
                 DelegationStatus.FAILED,
                 error="domain Agent child run failed",
             )
         if status == "interrupted":
+            # 中断：子 Agent 在等待其自身的审批。
             return await self._transition(record, DelegationStatus.INTERRUPTED)
         return await self._transition(record, _delegation_status(status))
 
     async def _sync_child_status(
         self, record: DelegationRecord, child: RunStatusResponse
     ) -> DelegationRecord:
-        """把统一子运行响应映射并写入委派状态机。"""
+        """把子运行状态响应同步为 delegation 状态转移。
+
+        Args:
+            record: delegation 记录。
+            child: 子运行最新状态响应。
+
+        Returns:
+            状态转移后的 delegation 记录。
+
+        """
         status = _delegation_status(child.status)
         error = "delegated Workflow failed" if status is DelegationStatus.FAILED else None
         return await self._transition(record, status, output=child.output, error=error)
@@ -401,7 +563,18 @@ class DelegationService:
         output: dict[str, Any] | list[Any] | None = None,
         error: str | None = None,
     ) -> DelegationRecord:
-        """使用仓储乐观锁推进委派状态，并追加对应审计事件。"""
+        """落地 delegation 状态转移，并在状态实际变化时写对应审计事件。
+
+        Args:
+            record: delegation 记录。
+            status: 目标状态。
+            output: 终态输出载荷；非字典（如列表）时忽略。
+            error: 失败原因描述。
+
+        Returns:
+            更新后的 delegation 记录。
+
+        """
         normalized_output = output if isinstance(output, dict) else None
         updated, changed = await asyncio.to_thread(
             self.repository.set_status,
@@ -422,14 +595,34 @@ class DelegationService:
         return updated
 
     async def _fail_start(self, record: DelegationRecord, error: str) -> None:
-        """在子运行启动失败时将委派标记失败并记录原因。"""
+        """把启动失败的 delegation 置为 FAILED 并记录错误信息。
+
+        Args:
+            record: delegation 记录。
+            error: 失败原因描述。
+
+        """
         await self._transition(record, DelegationStatus.FAILED, error=error)
 
     def _resolve(
         self, handoff: HandoffRequest, scopes: frozenset[str]
     ) -> tuple[DelegationKind, str, str, dict[str, Any]]:
-        """解析委派类型、固定目标版本、校验输入与所需权限。"""
+        """解析 handoff 目标并校验权限，返回四元组供落库使用。
+
+        Args:
+            handoff: typed handoff 请求。
+            scopes: 调用方权限范围。
+
+        Returns:
+            （目标类型, 目标 ID, 目标版本, 归一化后参数）四元组。
+
+        Raises:
+            DelegationAuthorizationError: 缺少目标所需权限范围。
+            DelegationInputError: 目标不存在、不可委托或参数非法。
+
+        """
         try:
+            # Workflow handoff：解析已发布定义、校验权限并归一化入参。
             if isinstance(handoff, WorkflowHandoff):
                 definition = self.workflow_service.catalog.resolve(handoff.workflow_id)
                 self._require_scopes(scopes, definition.required_scopes)
@@ -439,6 +632,7 @@ class DelegationService:
                     definition.version,
                     definition.normalize_input(handoff.arguments),
                 )
+            # Agent handoff：目标 Profile 必须显式允许被委托（delegatable）。
             profile = self.agent_profiles.resolve(handoff.agent_id)
             if not profile.delegatable:
                 raise DelegationInputError("AgentProfile is not available for delegation")
@@ -451,6 +645,7 @@ class DelegationService:
         except DelegationAuthorizationError:
             raise
         except Exception as exc:
+            # 除授权错误外，其余异常统一包装为入参错误。
             raise DelegationInputError(str(exc)) from exc
 
     @staticmethod
@@ -461,7 +656,18 @@ class DelegationService:
         parent_turn_id: str,
         conversation_id: str,
     ) -> None:
-        """校验父运行、轮次、会话、租户和主体引用保持一致。"""
+        """校验 handoff 声明的父 run/turn/会话引用与当前 Turn 完全一致。
+
+        Args:
+            handoff: typed handoff 请求。
+            parent_run_id: 父业务 run ID。
+            parent_turn_id: 父业务 Turn ID。
+            conversation_id: 所属会话 ID。
+
+        Raises:
+            DelegationInputError: 任一父引用不匹配。
+
+        """
         if (
             handoff.parent_run_id != parent_run_id
             or handoff.parent_turn_id != parent_turn_id
@@ -471,14 +677,30 @@ class DelegationService:
 
     @staticmethod
     def _require_scopes(granted: frozenset[str], required: frozenset[str]) -> None:
-        """比较所需与已有权限域，缺失任一权限时拒绝操作。"""
+        """校验授予权限范围覆盖所需范围（通配 "*" 直接放行）。
+
+        Args:
+            granted: 调用方被授予的权限范围。
+            required: 目标所需的权限范围。
+
+        Raises:
+            DelegationAuthorizationError: 所需范围未被覆盖。
+
+        """
         if "*" not in granted and not required.issubset(granted):
             raise DelegationAuthorizationError("required delegation scope is missing")
 
     async def _audit(
         self, record: DelegationRecord, event: AuditEventType, *, decision: str
     ) -> None:
-        """构造不可变审计事件并写入审计仓储。"""
+        """写一条 delegation 审计记录（策略版本固定为 delegation-policy/1.0.0）。
+
+        Args:
+            record: delegation 记录，提供主体与父子引用字段。
+            event: 审计事件类型。
+            decision: 审计决策描述（如 requested、child_started）。
+
+        """
         await asyncio.to_thread(
             self.audit.append,
             AuditRecord(
@@ -502,7 +724,18 @@ class DelegationService:
 
 
 def extract_handoff_interrupt(value: Mapping[str, Any]) -> HandoffRequest | None:
-    """从 LangGraph 中断载荷中识别并校验委派请求。"""
+    """从 server 响应中提取首个合法的 typed handoff（schema_version=1）。
+
+    Args:
+        value: server 运行详情（中断位于 "interrupts" 或 "__interrupt__" 键）。
+
+    Returns:
+        解析出的 WorkflowHandoff 或 AgentHandoff；无中断时为 None。
+
+    Raises:
+        DelegationInputError: 中断载荷携带了不合法的 typed handoff。
+
+    """
     raw_items = value.get("interrupts") or value.get("__interrupt__") or ()
     if isinstance(raw_items, Mapping):
         raw_items = (raw_items,)
@@ -522,7 +755,15 @@ def extract_handoff_interrupt(value: Mapping[str, Any]) -> HandoffRequest | None
 
 
 def delegation_projection(record: DelegationRecord) -> dict[str, Any]:
-    """把委派记录投影为可放入运行响应的公开结构。"""
+    """把 delegation 记录裁剪为对外可见的字段投影。
+
+    Args:
+        record: delegation 记录。
+
+    Returns:
+        含标识、目标、子运行与状态输出的可序列化字典。
+
+    """
     return {
         "delegation_id": record.delegation_id,
         "kind": record.kind.value,
@@ -536,7 +777,15 @@ def delegation_projection(record: DelegationRecord) -> dict[str, Any]:
 
 
 def _delegation_status(status: str) -> DelegationStatus:
-    """把子运行状态字符串归一化为委派状态枚举。"""
+    """把子运行状态字符串映射为 delegation 状态（未知值回落 PENDING）。
+
+    Args:
+        status: 子运行状态字符串（工作流或 server 状态值，"success" 视为完成）。
+
+    Returns:
+        对应的 delegation 状态。
+
+    """
     return {
         WorkflowRunStatus.ACCEPTED.value: DelegationStatus.PENDING,
         WorkflowRunStatus.PENDING.value: DelegationStatus.PENDING,
@@ -550,7 +799,15 @@ def _delegation_status(status: str) -> DelegationStatus:
 
 
 def _final_assistant_content(output: Mapping[str, Any]) -> str | None:
-    """从服务端输出消息中提取最后一条助手文本。"""
+    """从子运行输出的消息列表中取最后一条 AI/assistant 消息的文本内容。
+
+    Args:
+        output: 运行输出映射（含 "messages" 键时生效）。
+
+    Returns:
+        最终回复文本；非字符串内容序列化为 JSON，找不到时为 None。
+
+    """
     messages = output.get("messages")
     if not isinstance(messages, list):
         return None

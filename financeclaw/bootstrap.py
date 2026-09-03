@@ -1,4 +1,9 @@
-"""组装 FinanceClaw 的配置、基础设施、领域服务与运行时组件。"""
+"""组合根（composition root）：把业务模块的 Port 与具体基础设施实现装配起来。
+
+本模块是全应用唯一的“接口到实现”绑定点：application 与 orchestration 只依赖
+抽象（Port/Catalog/Factory），数据库、对象存储、模型与 Agent 的具体实现在此
+依据配置选择并注入，最终产出 ``FinanceClawComponents`` 供入口层使用。
+"""
 
 from dataclasses import dataclass
 
@@ -62,30 +67,31 @@ from financeclaw.orchestration.tools.memory import default_memory_tools
 
 @dataclass(frozen=True, slots=True)
 class FinanceClawComponents:
-    """保存一次启动中组装完成的共享组件，供 HTTP 与图工厂复用。
+    """组合根的装配结果容器，持有平台运行所需的全部组件实例。
 
-    适用场景：
-        用于集中表达该职责，避免调用方直接依赖底层实现细节。
+    使用场景：由 ``build_components`` 构造并返回；应用入口、API 层与测试
+    夹具从中取用目录、工厂与各仓储，未启用持久化时相应字段为 None。
 
-    属性：
-        settings: 应用启动时已校验的集中配置。
-        tool_catalog: 登记并解析所有可用受治理工具版本的目录。
-        tool_policy: 在工具执行前作出允许、拒绝或需审批决定的策略。
-        audit: 记录授权、执行和状态变化的审计仓储。
-        model_profiles: 可按 ID 和版本解析模型配置的只读目录。
-        agent_profiles: 可按稳定标识和版本解析 Agent 配置的只读目录。
-        model_factory: 依据模型配置创建主模型和回退模型的工厂。
-        agent_factory: 根据 Agent 配置组装完整运行时的工厂。
-        database: 可选的数据库运行时；未启用持久化时为空。
-        conversation_repository: 维护会话 Journal、摘要和上下文清单的仓储。
-        context_builder: 在 token 预算内构造可复现模型上下文的服务。
-        summary_service: 负责构建和维护分层会话摘要的领域服务。
-        artifact_service: 决定结果内联或外置，并持久化制品元数据的服务。
-        memory_service: 管理长期记忆生命周期与检索的领域服务。
-        workflow_catalog: 登记并解析所有可用确定性工作流版本的目录。
-        workflow_repository: 维护工作流运行与审批快照的仓储。
-        delegation_repository: 维护父子运行委派状态的仓储。
-        outbox_repository: 与业务事务协调写入和领取待发布事件的仓储。
+    Attributes:
+        settings: 全局配置，涵盖环境、模型、数据库、存储与观测等。
+        tool_catalog: 治理后的工具目录，含本地工具、MCP 报价工具、记忆与委派工具。
+        tool_policy: 工具调用策略，承载调用校验与治理规则。
+        audit: 审计仓储；未注入且未启用持久化时为内存实现。
+        model_profiles: 模型档案目录，登记主模型与降级候选档案。
+        agent_profiles: Agent 档案目录，登记顶层与领域 Agent 档案。
+        model_factory: 模型工厂，依据模型档案构建模型实例。
+        agent_factory: Agent 工厂，依据 Agent 档案与工具目录构建 ReAct Agent。
+        database: 应用数据库连接；未启用持久化时为 None。
+        conversation_repository: 会话仓储；未启用持久化时为 None。
+        context_builder: 上下文预算构建器，控制注入模型的上下文规模。
+        summary_service: 会话摘要服务，负责分段与层级摘要生成。
+        artifact_service: 制品服务，负责制品登记与内容读写。
+        memory_service: 长期记忆服务；无会话仓储时不可用，为 None。
+        workflow_catalog: Workflow 目录，登记已发布的流程定义。
+        workflow_repository: Workflow 仓储；未启用持久化时为 None。
+        delegation_repository: Agent 委派记录仓储；未启用持久化时为 None。
+        outbox_repository: Outbox 仓储，支撑事件最终一致外发；未启用持久化时为 None。
+
     """
 
     settings: FinanceClawSettings
@@ -109,7 +115,12 @@ class FinanceClawComponents:
 
     @property
     def default_agent_profile(self) -> AgentProfile:
-        """返回顶层金融 Agent 的固定配置，供图工厂和会话服务复用。"""
+        """返回默认顶层 Agent（finance_agent 1.0.0）的档案。
+
+        Returns:
+            顶层财务 Agent 的 ``AgentProfile``。
+
+        """
         return self.agent_profiles.resolve("finance_agent", "1.0.0")
 
 
@@ -120,7 +131,19 @@ def build_components(
     audit: AuditRepository | None = None,
     enable_persistence: bool = False,
 ) -> FinanceClawComponents:
-    """根据已注入依赖组装bootstrap 模块的数据。"""
+    """依据配置装配 FinanceClaw 全部组件，返回可直接运行的组件集合。
+
+    Args:
+        settings: 全局配置；缺省时构造默认配置（从环境变量读取）。
+        tool_catalog: 外部注入的工具目录；缺省时按配置构建默认目录。
+        audit: 外部注入的审计仓储；缺省时按持久化开关选择具体实现。
+        enable_persistence: 是否启用数据库持久化（会话、制品、Workflow、委派、Outbox）。
+
+    Returns:
+        装配完成的 ``FinanceClawComponents``。
+
+    """
+    # 1. 加载配置：未显式传入时使用默认构造（从环境变量读取）。
     settings = settings or FinanceClawSettings()
 
     database: ApplicationDatabase | None = None
@@ -131,13 +154,16 @@ def build_components(
     workflow_repository: WorkflowRepository | None = None
     delegation_repository: DelegationRepository | None = None
     outbox_repository: OutboxRepository | None = None
+    # 2. 按需装配持久化设施：数据库、会话/制品/Workflow/委派/Outbox 仓储及派生服务。
     if enable_persistence:
+        # 2.1 建立数据库连接，并可选自动初始化表结构（便于开发与首次部署）。
         database = ApplicationDatabase(
             settings.database_url.get_secret_value(),
             statement_timeout_seconds=settings.database_statement_timeout_seconds,
         )
         if settings.database_auto_create_schema:
             database.initialize_schema()
+        # 2.2 装配会话仓储、上下文预算构建器与摘要服务。
         concrete_repository = SqlAlchemyConversationRepository(database.session_factory)
         conversation_repository = concrete_repository
         context_builder = ConversationContextBuilder(
@@ -155,6 +181,7 @@ def build_components(
             segment_messages=settings.summary_segment_messages,
             hierarchy_segments=settings.summary_hierarchy_segments,
         )
+        # 2.3 依据配置选择制品后端（S3 或本地文件系统），并装配制品服务。
         artifact_store = (
             S3ArtifactStore(
                 bucket=settings.artifact_s3_bucket or "",
@@ -174,10 +201,12 @@ def build_components(
             artifact_store,
             inline_bytes=settings.artifact_inline_bytes,
         )
+        # 2.4 装配 Workflow、委派与 Outbox 仓储。
         workflow_repository = SqlAlchemyWorkflowRepository(database.session_factory)
         delegation_repository = SqlAlchemyDelegationRepository(database.session_factory)
         outbox_repository = SqlAlchemyOutboxRepository(database.session_factory)
 
+    # 3. 选择审计实现：外部注入优先；否则有数据库用 SQL 实现，兜底内存实现。
     if audit is not None:
         effective_audit = audit
     elif database is not None:
@@ -185,16 +214,20 @@ def build_components(
     else:
         effective_audit = InMemoryAuditRepository()
 
+    # 4. 出站网络策略校验：逐一校验模型提供方、Agent Server 与各类外部端点。
+    # 4.1 校验模型提供方地址（离线模式或未配置时跳过）。
     if not settings.offline_model and settings.provider_base_url:
         EgressPolicy(
             settings.egress_allowed_hosts,
             require_https=settings.environment.value in {"staging", "production"},
         ).validate(settings.provider_base_url)
+    # 4.2 校验内部 Agent Server 地址（允许内网主机与 HTTP）。
     EgressPolicy(
         settings.internal_service_hosts,
         require_https=False,
         allow_private_hosts=True,
     ).validate(settings.agent_server_url)
+    # 4.3 生产环境额外校验认证、LangSmith 与 OpenTelemetry 观测端点。
     if settings.environment.value == "production" and settings.oidc_jwks_url:
         EgressPolicy(settings.egress_allowed_hosts).validate(settings.oidc_jwks_url)
         EgressPolicy(settings.egress_allowed_hosts).validate(settings.langsmith_endpoint)
@@ -204,6 +237,7 @@ def build_components(
             EgressPolicy(settings.egress_allowed_hosts).validate(
                 settings.otel_metrics_exporter_endpoint
             )
+    # 4.4 自定义 S3 端点按内部服务策略校验（允许内网与 HTTP）。
     if settings.artifact_s3_endpoint_url:
         EgressPolicy(
             settings.internal_service_hosts,
@@ -211,6 +245,7 @@ def build_components(
             allow_private_hosts=True,
         ).validate(settings.artifact_s3_endpoint_url)
 
+    # 5. 装配长期记忆服务：依赖会话仓储，未启用持久化时跳过。
     memory_service = (
         LongTermMemoryService(
             conversation_repository=conversation_repository,
@@ -222,6 +257,7 @@ def build_components(
         if conversation_repository is not None
         else None
     )
+    # 6. 构建基础工具目录：本地工具 + MCP 报价工具 + 记忆工具；外部注入优先。
     if tool_catalog is None:
         base_tool_catalog = ToolCatalog(
             (
@@ -232,7 +268,9 @@ def build_components(
         )
     else:
         base_tool_catalog = tool_catalog
+    # 工具调用策略与目录解耦，使用默认规则集独立实例化。
     tool_policy = ToolPolicy()
+    # 7. 装配 Workflow 目录：仅在制品服务可用（已启用持久化）时注册组合复盘流程。
     workflow_catalog = WorkflowCatalog(
         (
             portfolio_review_definition(
@@ -249,6 +287,7 @@ def build_components(
         else ()
     )
 
+    # 8. 装配模型档案目录：主模型 + 按序降级的候选模型链（fallback）。
     fallback_profiles = tuple(
         ModelProfile(
             profile_id=f"fallback-{index}",
@@ -273,11 +312,13 @@ def build_components(
         ),
     )
     model_profiles = ModelProfileCatalog((primary_profile, *fallback_profiles))
+    # 9. 构建模型工厂：依据档案目录实例化模型客户端。
     model_factory = ModelFactory(
         model_profiles,
         api_key=settings.provider_api_key,
         base_url=settings.provider_base_url,
     )
+    # 10. 定义只读市场调研领域 Agent：仅暴露市场类工具，不允许二次委派或写操作。
     domain_tool_refs = tuple(
         ToolRef(
             tool_id=managed.governance.tool_id,
@@ -308,6 +349,7 @@ def build_components(
         max_model_calls=6,
         max_tool_calls=8,
     )
+    # 为每个已发布且激活的 Workflow 与领域 Agent 生成委派工具，供顶层 Agent 调用。
     delegation_tools = (
         *(
             workflow_delegation_tool(definition)
@@ -316,7 +358,9 @@ def build_components(
         ),
         agent_delegation_tool(domain_agent_profile),
     )
+    # 把委派工具并入目录，使顶层 Agent 能以工具调用形式触发 Workflow/Agent 委派。
     tool_catalog = ToolCatalog((*base_tool_catalog.values(), *delegation_tools))
+    # 11. 定义顶层 finance_agent 档案：ReAct 决策直接回答、Tool、Workflow 或委派。
     agent_profile = AgentProfile(
         agent_id="finance_agent",
         version="1.0.0",
@@ -343,6 +387,7 @@ def build_components(
     )
     agent_profiles = AgentProfileCatalog((agent_profile, domain_agent_profile))
 
+    # 12. 构建 Agent 工厂：绑定模型、工具、策略、审计与各类服务。
     agent_factory = AgentFactory(
         model_factory=model_factory,
         tool_catalog=tool_catalog,
@@ -357,6 +402,7 @@ def build_components(
         memory_recall_tokens=settings.memory_recall_tokens,
         memory_recall_limit=settings.memory_recall_limit,
     )
+    # 13. 汇总返回组件集合。
     return FinanceClawComponents(
         settings=settings,
         tool_catalog=tool_catalog,

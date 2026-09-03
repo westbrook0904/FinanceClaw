@@ -1,4 +1,8 @@
-"""声明委派记录的 SQLAlchemy 持久化映射。"""
+"""``delegations`` 表的 SQLAlchemy ORM 映射，永久保存委派生命周期全量数据。
+
+委派记录是委派子系统的事实来源：受理、child 绑定、状态推进与结果交付的
+每个阶段都更新本表，支撑审计、幂等受理与按父运行或 child 运行的追溯查询。
+"""
 
 from datetime import datetime
 from typing import Any
@@ -10,41 +14,43 @@ from financeclaw.infrastructure.orm import Base, utcnow
 
 
 class DelegationRow(Base):
-    """定义委派Row。
+    """委派记录的持久化行，对应 ``delegations`` 表，一次委派一行。
 
-    适用场景：
-        用于集中表达该职责，避免调用方直接依赖底层实现细节。
+    使用场景：仓库在受理时插入本行，并在启动、状态同步、交付各阶段更新；
+    外键关联 ``conversations`` 与 ``conversation_turns``，保证父子轮次可追溯，
+    child run 的全表唯一约束确保一个 child run 至多归属一条委派。
 
-    属性：
-        __tablename__: 内部 `tablename  ` 状态或依赖，不属于公开接口。
-        __table_args__: 内部 `table args  ` 状态或依赖，不属于公开接口。
-        delegation_id: 一次父子运行委派的稳定标识。
-        tenant_id: 租户隔离键，所有读取和写入都必须以此限定边界。
-        subject_id: 已认证主体标识，用于所有权校验和审计归因。
-        conversation_id: 会话稳定标识，用于关联消息、轮次、摘要和上下文清单。
-        parent_turn_id: 发起委派的父会话轮次标识。
-        parent_run_id: 发起委派的父运行标识。
-        kind: 记录或目标的语义类别。
-        target_id: 解析前或解析后的目标稳定标识。
-        target_version: 运行实际绑定的目标版本，防止后续配置变化影响重放。
-        arguments: 传给目标工具或工作流的已解析参数。
-        arguments_hash: 规范化参数的 SHA-256，用于审批绑定和篡改检测。
-        request_fingerprint: 委派或工作流请求的稳定指纹，用于幂等冲突检测。
-        authorization_decision: 执行前记录的策略授权结果。
-        policy_version: 作出决策时使用的策略版本。
-        child_run_id: 实际执行委派任务的子运行标识。
-        child_thread_id: 子 Agent 保存检查点与消息的线程标识。
-        child_server_run_id: 关联对象的稳定标识，用于查询、关联和审计追踪。
-        status: 当前生命周期状态，决定记录允许的后续操作。
-        output_payload: 运行终态时保存的结构化输出快照。
-        error: 失败原因的稳定文本；成功或未结束时为空。
-        created_at: 记录创建时间，统一按 UTC 解释。
-        updated_at: 最近一次状态或内容变更时间，统一按 UTC 解释。
-        completed_at: 进入成功或失败终态的时间；未结束时为空。
-        delivered_at: 该生命周期事件发生的 UTC 时间。
+    Attributes:
+        delegation_id: 委派唯一标识（即 handoff_id），主键，最长 128 字符。
+        tenant_id: 租户 ID，最长 128 字符，非空。
+        subject_id: 主体（用户）ID，最长 128 字符，非空。
+        conversation_id: 所属会话 ID，外键指向 conversations.conversation_id。
+        parent_turn_id: 发起委派的父轮次 ID，外键指向 conversation_turns.turn_id。
+        parent_run_id: 发起委派的父 Agent 运行 ID，最长 128 字符。
+        kind: 委派种类字符串（workflow 或 agent），最长 32 字符。
+        target_id: 目标标识（workflow_id 或 agent_id），最长 128 字符。
+        target_version: 目标版本号（如 ``1.0.0``），最长 32 字符。
+        arguments: 委派参数字典，以 JSON 存储。
+        arguments_hash: 参数的 SHA-256 摘要，64 位十六进制字符串。
+        request_fingerprint: 请求指纹（SHA-256），防止 handoff ID 被复用。
+        authorization_decision: 授权决策，当前恒为 ``allowed``。
+        policy_version: 受理时使用的委派策略版本。
+        child_run_id: child 运行 ID，未启动时为 None；全表唯一。
+        child_thread_id: child 的 LangGraph thread ID，未启动时为 None。
+        child_server_run_id: agent server 侧运行 ID，仅 Agent 委派有值。
+        status: 当前状态字符串，取值见 DelegationStatus。
+        output_payload: child 成功输出的 JSON 载荷，未完成时为 None。
+        error: 失败或被拒原因文本，未出错时为 None。
+        created_at: 创建时间（带时区 UTC），默认 utcnow。
+        updated_at: 最近更新时间（带时区 UTC），默认并在更新时刷新为 utcnow。
+        completed_at: 首次进入完成、拒绝或失败终态的时间，未终态为 None。
+        delivered_at: 首次交付父 Agent 的时间，未交付为 None。
+
     """
 
     __tablename__ = "delegations"
+    # 唯一约束保证 child run 全表唯一；两个索引分别支撑按父运行查委派、
+    # 按状态扫描未交付记录（对账）两类查询。
     __table_args__ = (
         UniqueConstraint("child_run_id", name="uq_delegations_child_run"),
         Index(

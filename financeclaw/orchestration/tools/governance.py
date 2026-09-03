@@ -1,4 +1,8 @@
-"""定义工具副作用、风险、审批、出站和审计策略元数据。"""
+"""Tool 治理元数据：以声明式契约描述每个受治理 Tool 的风险与约束。
+
+属于 orchestration/tools 治理层的基础模块，被目录、策略与各类 Tool
+实现共同依赖；执行策略（ToolPolicy）依据这里的元数据做放行判定。
+"""
 
 from dataclasses import dataclass
 from enum import StrEnum
@@ -11,16 +15,10 @@ from financeclaw.kernel import DataClassification
 
 
 class SideEffect(StrEnum):
-    """工具调用对外部状态产生的副作用类型。
+    """Tool 副作用类型枚举，标注调用会对世界产生哪类改变。
 
-    适用场景：
-        用于限制持久化值和边界输入，避免以自由字符串表达状态。
-
-    属性：
-        READ: 工具只读取数据，不应改变外部状态。
-        WRITE: 工具会创建或修改外部持久化状态。
-        EXTERNAL_ACTION: 工具会触发现实世界或第三方系统动作。
-        DELEGATION: 工具把任务移交给另一个 Agent 或工作流。
+    使用场景：填写 ToolGovernance.side_effect；执行策略据此决定审批与
+    重试资格，写入与外部动作类 Tool 被强制要求人工审批且禁止自动重试。
     """
 
     READ = "read"
@@ -30,15 +28,10 @@ class SideEffect(StrEnum):
 
 
 class Idempotency(StrEnum):
-    """工具是否支持重试以及是否强制提供幂等键。
+    """Tool 幂等性枚举，声明重复调用同一请求时的行为保证。
 
-    适用场景：
-        用于限制持久化值和边界输入，避免以自由字符串表达状态。
-
-    属性：
-        NONE: 不启用该治理能力或没有对应副作用。
-        IDEMPOTENT: 相同参数可安全重复执行并得到等价效果。
-        KEY_REQUIRED: 只有携带稳定幂等键时才允许安全重试。
+    使用场景：填写 ToolGovernance.idempotency；KEY_REQUIRED 表示调用方
+    必须携带幂等键才能安全重放，用于写入与委托类 Tool 的去重。
     """
 
     NONE = "none"
@@ -47,15 +40,9 @@ class Idempotency(StrEnum):
 
 
 class RiskLevel(StrEnum):
-    """工具调用的业务风险等级。
+    """Tool 风险等级枚举，从低到高刻画误用的潜在危害。
 
-    适用场景：
-        用于限制持久化值和边界输入，避免以自由字符串表达状态。
-
-    属性：
-        LOW: 低风险，满足权限后通常可直接执行。
-        MEDIUM: 中等风险，需要更严格审计或按策略审批。
-        HIGH: 高风险，应在执行前取得明确人工审批。
+    使用场景：填写 ToolGovernance.risk_level，供审批与审计策略分级处理。
     """
 
     LOW = "low"
@@ -64,14 +51,10 @@ class RiskLevel(StrEnum):
 
 
 class ApprovalMode(StrEnum):
-    """工具在执行前是否必须取得人工批准。
+    """Tool 执行前的人工审批模式枚举。
 
-    适用场景：
-        用于限制持久化值和边界输入，避免以自由字符串表达状态。
-
-    属性：
-        NONE: 不启用该治理能力或没有对应副作用。
-        ALWAYS: 每次执行都必须经过人工审批。
+    使用场景：填写 ToolGovernance.approval；ALWAYS 表示每次执行前都要
+    经过人在回路（HITL）批准，NONE 表示可信上下文下可直接执行。
     """
 
     NONE = "none"
@@ -79,15 +62,10 @@ class ApprovalMode(StrEnum):
 
 
 class Egress(StrEnum):
-    """工具调用是否访问内部或外部网络。
+    """Tool 数据出域范围枚举，声明数据可流向的边界。
 
-    适用场景：
-        用于限制持久化值和边界输入，避免以自由字符串表达状态。
-
-    属性：
-        NONE: 不启用该治理能力或没有对应副作用。
-        INTERNAL: 仅允许访问平台内部网络资源或处理内部级数据。
-        EXTERNAL: 允许访问经出站策略批准的外部服务。
+    使用场景：填写 ToolGovernance.egress；EXTERNAL 表示数据可能离开
+    平台边界，需要额外的出域管控与审计关注。
     """
 
     NONE = "none"
@@ -96,16 +74,10 @@ class Egress(StrEnum):
 
 
 class Sensitivity(StrEnum):
-    """工具可处理数据的最高敏感级别。
+    """Tool 可接触数据的敏感级别枚举，与数据分级体系对齐。
 
-    适用场景：
-        用于限制持久化值和边界输入，避免以自由字符串表达状态。
-
-    属性：
-        PUBLIC: 无需访问控制即可公开的数据等级。
-        INTERNAL: 仅允许访问平台内部网络资源或处理内部级数据。
-        CONFIDENTIAL: 需要严格访问控制的机密数据等级。
-        RESTRICTED: 受最严格限制、通常不得发送给外部供应方的数据等级。
+    使用场景：填写 ToolGovernance.sensitivity，作为 Tool 可见性与
+    数据分级校验的依据之一。
     """
 
     PUBLIC = "public"
@@ -115,14 +87,10 @@ class Sensitivity(StrEnum):
 
 
 class RetryProfile(StrEnum):
-    """工具失败后可采用的重试策略。
+    """Tool 自动重试策略枚举，声明失败后能否自动重试及适用范围。
 
-    适用场景：
-        用于限制持久化值和边界输入，避免以自由字符串表达状态。
-
-    属性：
-        NONE: 不启用该治理能力或没有对应副作用。
-        TRANSIENT_READ: 仅对瞬时读取错误采用受限重试。
+    使用场景：填写 ToolGovernance.retry_profile；TRANSIENT_READ 仅允许
+    只读 Tool 对瞬态错误自动重试，写入与外部动作类 Tool 一律禁止。
     """
 
     NONE = "none"
@@ -130,15 +98,10 @@ class RetryProfile(StrEnum):
 
 
 class AuditLevel(StrEnum):
-    """工具调用需记录的审计详细程度。
+    """Tool 审计记录的详细程度枚举。
 
-    适用场景：
-        用于限制持久化值和边界输入，避免以自由字符串表达状态。
-
-    属性：
-        DECISION: 只记录治理决策及其关键依据。
-        EXECUTION: 同时记录治理决策与执行结果。
-        FULL: 记录经脱敏的完整决策、输入与执行结果。
+    使用场景：填写 ToolGovernance.audit_level；FULL 记录决策与执行全
+    过程，EXECUTION 仅记录执行，DECISION 仅记录放行决策。
     """
 
     DECISION = "decision"
@@ -147,27 +110,31 @@ class AuditLevel(StrEnum):
 
 
 class ToolGovernance(BaseModel):
-    """定义一个工具版本的静态安全与合规约束。
+    """单个受治理 Tool 的声明式治理契约：风险、审批、出域与数据分级约束。
 
-    适用场景：
-        用于在接口、领域与持久化边界之间传递经过校验的结构化数据。
+    使用场景：每个 ManagedTool 构建时必须携带一份治理元数据；执行策略
+    （ToolPolicy）据此判定放行、拒绝或要求审批，审计与目录消费这些
+    字段做归因与版本管理。实例冻结且禁止未知字段，构建后不可篡改。
 
-    属性：
-        model_config: Pydantic 校验策略，禁止未知字段并在需要时冻结实例。
-        tool_id: 工具的稳定标识。
-        version: 语义版本，用于固定运行行为并支持审计复现。
-        side_effect: 调用对外部状态的影响类别。
-        idempotency: 调用的幂等能力及幂等键要求。
-        risk_level: 调用风险等级，用于决定审批与审计强度。
-        required_scopes: 执行目标必须具备的权限域集合。
-        approval: 执行前采用的人工审批策略。
-        egress: 调用所需的网络出站范围。
-        sensitivity: 允许处理的数据敏感级别。
-        retry_profile: 失败后允许采用的重试策略。
-        audit_level: 授权与执行过程要求的审计粒度。
-        direct_invocation: 是否允许调用方绕过 Agent 规划直接执行该工具。
-        tenant_allowlist: 可使用该工具的租户白名单；为空表示不额外限制。
-        allowed_data_classes: 该配置允许发送或处理的数据分类集合。
+    Attributes:
+        tool_id: Tool 唯一标识，1~128 字符，必须与 BaseTool.name 一致。
+        version: Tool 语义化版本号，形如 ``major.minor.patch``。
+        side_effect: 副作用类型，决定审批与重试约束。
+        idempotency: 幂等性保证，写入类 Tool 通常要求幂等键。
+        risk_level: 风险等级，供审批与审计分级。
+        required_scopes: 调用该 Tool 所需的作用域集合，缺省为空集。
+        approval: 人工审批模式；写入与外部动作类必须为 ALWAYS。
+        egress: 数据出域范围。
+        sensitivity: 可接触数据的敏感级别。
+        retry_profile: 自动重试策略。
+        audit_level: 审计详细程度，默认 FULL。
+        direct_invocation: 是否允许绕过 Agent 经 API 直接调用，
+            默认允许；委托类与记忆类 Tool 会显式关闭。
+        tenant_allowlist: 允许使用该 Tool 的租户白名单；None 表示
+            不限制租户。
+        allowed_data_classes: 允许处理的数据密级集合，缺省放开全部
+            密级，敏感 Tool 应显式收窄。
+
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -191,12 +158,24 @@ class ToolGovernance(BaseModel):
 
     @model_validator(mode="after")
     def validate_safety_invariants(self) -> "ToolGovernance":
-        """校验一个工具版本的静态安全与合规约束的跨字段一致性；不满足不变量时拒绝构造。"""
+        """校验跨字段安全不变式，拒绝自相矛盾的治理配置。
+
+        Returns:
+            校验通过的原始实例。
+
+        Raises:
+            ValueError: 写入/外部动作类 Tool 未强制审批、允许自动重试，
+                或瞬态重试配置用在了非只读 Tool 上。
+
+        """
+        # 1. 写入与外部动作类 Tool 必须强制人工审批。
         mutable_effects = {SideEffect.WRITE, SideEffect.EXTERNAL_ACTION}
         if self.side_effect in mutable_effects and self.approval is not ApprovalMode.ALWAYS:
             raise ValueError("WRITE and external-action tools must always require approval")
+        # 2. 写入与外部动作类 Tool 禁止自动重试，避免重复产生副作用。
         if self.side_effect in mutable_effects and self.retry_profile is not RetryProfile.NONE:
             raise ValueError("WRITE and external-action tools cannot use automatic retry")
+        # 3. 瞬态重试配置只允许出现在只读 Tool 上。
         if (
             self.retry_profile is RetryProfile.TRANSIENT_READ
             and self.side_effect is not SideEffect.READ
@@ -207,21 +186,30 @@ class ToolGovernance(BaseModel):
 
 @dataclass(frozen=True, slots=True)
 class ManagedTool:
-    """定义LangChain 工具及其不可分离的治理元数据。
+    """治理受管 Tool：把 LangChain Tool 实现与其治理元数据成对绑定。
 
-    适用场景：
-        用于把该能力纳入 LangChain/LangGraph 工具调用与统一治理链的场景。
+    使用场景：各类 Tool 实现完成装配后都包装为 ManagedTool 再注册进
+    ToolCatalog；执行策略与审计层通过 governance 字段做放行判定与
+    归因，通过 tool 字段做实际调用。
 
-    属性：
-        tool: 实际执行能力的 LangChain 工具实例。
-        governance: 与工具版本绑定的静态治理元数据。
+    Attributes:
+        tool: LangChain ``BaseTool`` 实例，承担实际的工具执行。
+        governance: 该 Tool 的治理元数据，其 tool_id 必须与 tool.name
+            一致。
+
     """
 
     tool: BaseTool
     governance: ToolGovernance
 
     def __post_init__(self) -> None:
-        """校验成对封装的工具标识与治理元数据完全一致。"""
+        """校验绑定不变式：tool 必须是 BaseTool 且名称与治理 ID 一致。
+
+        Raises:
+            TypeError: tool 不是 LangChain ``BaseTool`` 实例。
+            ValueError: tool.name 与 governance.tool_id 不一致。
+
+        """
         if not isinstance(self.tool, BaseTool):
             raise TypeError("tool must be a LangChain BaseTool")
         if self.tool.name != self.governance.tool_id:
@@ -229,5 +217,5 @@ class ManagedTool:
 
     @property
     def key(self) -> tuple[str, str]:
-        """返回由稳定标识与版本组成的目录复合键。"""
+        """返回目录索引键 (tool_id, version)。"""
         return self.governance.tool_id, self.governance.version

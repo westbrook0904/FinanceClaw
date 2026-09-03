@@ -1,4 +1,8 @@
-"""声明 Outbox 事件的 SQLAlchemy 持久化映射。"""
+"""``outbox_events`` 表的 SQLAlchemy ORM 映射，承载事务性发件箱事件。
+
+业务写路径（如审计落库）在同一事务中插入本表，保证"永久 Audit 与有界
+Outbox 事件"原子落盘；异步 publisher 通过本表领取并推进事件投递状态。
+"""
 
 from datetime import datetime
 from typing import Any
@@ -10,31 +14,33 @@ from financeclaw.infrastructure.orm import Base, utcnow
 
 
 class OutboxEventRow(Base):
-    """定义Outbox事件Row。
+    """Outbox 事件的持久化行，对应 ``outbox_events`` 表。
 
-    适用场景：
-        用于集中表达该职责，避免调用方直接依赖底层实现细节。
+    使用场景：与 Audit 行在同一事务中插入，实现 Transactional Outbox；publisher
+    借助投递索引扫描到期事件并加租约，投递结果（成功、退避、死信）回写到
+    本行的状态字段。
 
-    属性：
-        __tablename__: 内部 `tablename  ` 状态或依赖，不属于公开接口。
-        __table_args__: 内部 `table args  ` 状态或依赖，不属于公开接口。
-        event_id: 审计或 Outbox 事件的稳定标识。
-        event_type: 事件的语义类型，供消费者选择处理逻辑。
-        aggregate_type: 产生 Outbox 事件的聚合根类别。
-        aggregate_id: 关联对象的稳定标识，用于查询、关联和审计追踪。
-        tenant_id: 租户隔离键，所有读取和写入都必须以此限定边界。
-        subject_id: 已认证主体标识，用于所有权校验和审计归因。
-        payload: 事件携带的结构化业务数据。
-        status: 当前生命周期状态，决定记录允许的后续操作。
-        attempts: 已经尝试投递或执行的次数。
-        available_at: 该生命周期事件发生的 UTC 时间。
-        locked_until: 事件领取租约的到期时间，防止多个发布者重复处理。
-        created_at: 记录创建时间，统一按 UTC 解释。
-        published_at: 该生命周期事件发生的 UTC 时间。
-        last_error: 最近一次失败原因，尚未失败时为空。
+    Attributes:
+        event_id: 事件唯一标识，主键，最长 128 字符。
+        event_type: 事件类型字符串，最长 128 字符。
+        aggregate_type: 聚合类型（如资源类型），最长 64 字符。
+        aggregate_id: 聚合标识（如资源 ID），最长 128 字符。
+        tenant_id: 租户 ID，最长 128 字符。
+        subject_id: 主体（用户）ID，最长 128 字符。
+        payload: 事件载荷字典，JSON 存储，默认空字典。
+        status: 投递状态字符串，取值见 OutboxStatus，默认 ``pending``。
+        attempts: 已尝试投递次数，默认 0。
+        available_at: 何时可被领取（带时区），重试时按指数退避向后推移。
+        locked_until: 租约到期时间（带时区），未持租约为 None。
+        created_at: 创建时间（带时区 UTC），默认 utcnow。
+        published_at: 投递成功时间，未投递为 None。
+        last_error: 最近一次投递失败原因文本，无失败为 None。
+
     """
 
     __tablename__ = "outbox_events"
+    # 投递索引支撑 publisher 按（状态，可用时间，租约时间）领取到期事件；
+    # 归属索引支撑按租户与主体回溯事件创建记录。
     __table_args__ = (
         Index("ix_outbox_delivery", "status", "available_at", "locked_until"),
         Index("ix_outbox_owner", "tenant_id", "subject_id", "created_at"),

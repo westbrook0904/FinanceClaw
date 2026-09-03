@@ -1,4 +1,8 @@
-"""定义大结果外置后使用的不可变制品引用。"""
+"""Artifact 元数据的领域模型定义。
+
+位于 artifacts 模块的模型层，用 Pydantic 描述被 offload 到外部存储的工具结果工件，
+字段与 conversation 模块的 ``ArtifactMetadataRow`` 持久化结构一一对应。
+"""
 
 from datetime import UTC, datetime
 from typing import Any
@@ -7,25 +11,25 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class ArtifactMetadata(BaseModel):
-    """定义制品Metadata。
+    """一条被 offload 到 Artifact Store 的工件元数据，本身不携带工件内容。
 
-    适用场景：
-        用于在接口、领域与持久化边界之间传递经过校验的结构化数据。
+    使用场景：工具结果超过内联阈值时，由 ArtifactService 在写入存储并落库时构造；
+    读取时作为归属校验（tenant/subject）与完整性校验（SHA256）的依据。
 
-    属性：
-        model_config: Pydantic 校验策略，禁止未知字段并在需要时冻结实例。
-        artifact_id: 制品稳定标识。
-        tenant_id: 租户隔离键，所有读取和写入都必须以此限定边界。
-        subject_id: 已认证主体标识，用于所有权校验和审计归因。
-        content_type: 制品内容的 MIME 类型，供下载方选择解析方式。
-        storage_uri: 制品内容的存储位置，不包含访问凭证。
-        content_hash: 正文的 SHA-256，用于完整性校验、去重与审计。
-        size_bytes: 制品序列化后的字节数。
-        source_type: 内容来源类别，例如用户陈述或系统推导。
-        source_id: 关联对象的稳定标识，用于查询、关联和审计追踪。
-        access_policy: 读取制品所需满足的租户、主体或权限限制。
-        encryption_metadata: 证明制品静态加密方式的非敏感元数据。
-        created_at: 记录创建时间，统一按 UTC 解释。
+    Attributes:
+        artifact_id: 工件唯一标识，形如 ``artifact-<uuid4 hex>``，同时作为存储与数据库主键。
+        tenant_id: 租户标识，用于多租户数据隔离。
+        subject_id: 主体标识，与 tenant_id 共同限定该工件的读取归属。
+        content_type: 工件内容的 MIME 类型，通常为 ``application/json``。
+        storage_uri: 存储后端返回的存储地址，如 ``artifact-s3://bucket/key``。
+        content_hash: 工件内容的 SHA256 摘要，限定为 64 位小写十六进制，读取时用于完整性校验。
+        size_bytes: 工件内容字节数，约束为非负整数。
+        source_type: 产生该工件的来源类型（如工具、工作流），用于溯源。
+        source_id: 产生该工件的来源对象标识，与 source_type 共同定位来源。
+        access_policy: 访问策略描述，如要求调用方具备 ``artifacts:read`` 权限范围。
+        encryption_metadata: 存储后端的服务端加密描述，如 SSE 算法与 KMS 密钥标识。
+        created_at: 元数据创建时间（UTC 带时区），默认为构造时的当前时间。
+
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)

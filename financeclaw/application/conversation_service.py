@@ -1,4 +1,7 @@
-"""围绕 Agent Server 运行编排持久化的多轮会话。"""
+"""会话应用服务：面向 BFF 编排会话创建、Turn 提交、状态轮询、审批恢复与流式订阅。
+
+同时持久化业务 run/thread/server run 映射，并驱动 delegation 派发与会话摘要生成。
+"""
 
 import asyncio
 import json
@@ -42,28 +45,30 @@ from .run_service import IdempotencyConflict, RunNotFound
 
 
 class ApprovalExpired(RuntimeError):
-    """表示审批窗口已过期，原检查点仍保留但不得继续恢复。
+    """顶层 Agent 的审批窗口已超时，无法继续恢复运行时抛出。"""
 
-    适用场景：
-        用于把该失败条件跨层传递，并在接口边界转换为稳定错误。
-    """
+    pass
 
 
 class ConversationService:
-    """协调根 Agent 会话的 Journal、Agent Server 运行、审批和子委派。
+    """会话用例服务：把 BFF 的会话操作翻译为仓储写入与 Agent Server 调用。
 
-    适用场景：
-        用于应用用例需要跨仓储、外部端口或领域策略协调一致结果的场景。
+    使用场景：承载 POST /v1/conversations（create）、提交 message-only Turn
+    （start_turn）、轮询 Run 状态并按需派发 delegation（status）、提交审批决定
+    （resume）、订阅流式事件（stream），以及重启后的未完成 Turn 对账
+    （reconcile_incomplete）。会话固定绑定顶层 Agent finance_agent。
 
-    属性：
-        ROOT_AGENT_ID: 表示 `root_agent_id` 这一受限枚举值。
-        client: 负责与外部 Agent Server 或供应商通信的端口实现。
-        repository: 负责领域状态读写和事务一致性的仓储。
-        agent_profiles: 可按稳定标识和版本解析 Agent 配置的只读目录。
-        delegation_service: 负责父运行与子目标之间状态协调的应用服务。
-        summary_service: 负责构建和维护分层会话摘要的领域服务。
-        approval_timeout: 人工审批允许等待的时长；超时后禁止恢复原检查点。
-        _clock: 可替换时间源，便于统一 UTC 时间并支持确定性测试。
+    Attributes:
+        ROOT_AGENT_ID: 会话默认绑定的顶层 Agent ID（"finance_agent"）。
+        client: Agent Server 客户端 Port，负责 thread/run 的创建、查询与恢复。
+        repository: 会话仓储，持久化会话、Turn、消息与 server run 绑定关系。
+        agent_profiles: Agent Profile 目录，用于解析顶层 Agent 的版本信息。
+        delegation_service: delegation 服务，处理 Workflow 与领域 Agent 派发；
+            未启用派发能力时可为 None。
+        summary_service: 会话摘要服务，Turn 完成后补齐分段与层级摘要；
+            未启用摘要时可为 None。
+        approval_timeout: 顶层审批窗口时长，超时后 resume 将拒绝恢复。
+
     """
 
     ROOT_AGENT_ID = "finance_agent"
@@ -79,7 +84,21 @@ class ConversationService:
         approval_timeout_seconds: int = 900,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
-        """注入并保存会话Service所需的协作对象，同时校验构造期不变量。"""
+        """装配会话服务依赖并校验配置。
+
+        Args:
+            client: Agent Server 客户端 Port。
+            repository: 会话仓储实现。
+            agent_profiles: Agent Profile 目录。
+            delegation_service: 可选的 delegation 服务。
+            summary_service: 可选的会话摘要服务。
+            approval_timeout_seconds: 顶层审批窗口时长（秒），不可为负。
+            clock: 可注入的时钟，便于测试审批超时；缺省取当前 UTC 时间。
+
+        Raises:
+            ValueError: approval_timeout_seconds 为负数。
+
+        """
         if approval_timeout_seconds < 0:
             raise ValueError("approval timeout cannot be negative")
         self.client = client
@@ -96,8 +115,19 @@ class ConversationService:
         tenant_id: str,
         subject_id: str,
     ) -> ConversationResponse:
-        """创建归属指定租户和主体的根会话，并固定当前根 Agent 配置版本。"""
+        """为租户与主体创建绑定顶层 Agent 的新会话。
+
+        Args:
+            tenant_id: 租户 ID。
+            subject_id: 主体（用户）ID。
+
+        Returns:
+            新会话的 ID、状态与创建时间。
+
+        """
+        # 1. 解析顶层 Agent Profile 以固定其版本。
         profile = self.agent_profiles.resolve(self.ROOT_AGENT_ID)
+        # 2. 在线程池中落库创建会话（避免阻塞事件循环）。
         conversation = await asyncio.to_thread(
             self.repository.create_conversation,
             tenant_id=tenant_id,
@@ -105,17 +135,44 @@ class ConversationService:
             agent_id=profile.agent_id,
             agent_profile_version=profile.version,
         )
+        # 3. 投影为 API 响应。
         return _conversation_response(conversation)
 
     def get(self, conversation_id: str, *, tenant_id: str, subject_id: str) -> ConversationResponse:
-        """读取调用主体拥有的会话，并转换为不泄露内部模型的响应。"""
+        """查询归属于当前租户与主体的会话快照。
+
+        Args:
+            conversation_id: 会话 ID。
+            tenant_id: 租户 ID。
+            subject_id: 主体 ID。
+
+        Returns:
+            会话的 ID、状态与创建时间。
+
+        Raises:
+            ConversationNotFound: 会话不存在或归属不匹配。
+
+        """
         conversation = self.repository.get_owned(conversation_id, tenant_id, subject_id)
         return _conversation_response(conversation)
 
     def messages(
         self, conversation_id: str, *, tenant_id: str, subject_id: str
     ) -> ConversationMessagesResponse:
-        """校验会话所有权后，按稳定序号返回该会话的可见消息。"""
+        """列出归属会话内的全部消息（按会话内顺序）。
+
+        Args:
+            conversation_id: 会话 ID。
+            tenant_id: 租户 ID。
+            subject_id: 主体 ID。
+
+        Returns:
+            会话 ID 与消息列表（含消息 ID、Turn、序号与角色）。
+
+        Raises:
+            ConversationNotFound: 会话不存在或归属不匹配。
+
+        """
         self.repository.get_owned(conversation_id, tenant_id, subject_id)
         messages = self.repository.list_messages(conversation_id)
         return ConversationMessagesResponse(
@@ -144,13 +201,31 @@ class ConversationService:
         scopes: frozenset[str],
         idempotency_key: str,
     ) -> RunAccepted:
-        """以幂等方式追加用户消息、创建会话轮次，并确保对应服务端运行已绑定。"""
+        """提交一条用户消息并启动（或幂等重放）对应的服务端运行。
+
+        Args:
+            conversation_id: 目标会话 ID。
+            request: 仅含 message 的 Turn 请求（message-only）。
+            tenant_id: 租户 ID。
+            subject_id: 主体 ID。
+            scopes: 调用方权限范围，随执行上下文下发。
+            idempotency_key: 客户端幂等键，重复提交需保持一致。
+
+        Returns:
+            受理结果：业务 run/Turn 标识、服务端 thread 与是否幂等重放。
+
+        Raises:
+            IdempotencyConflict: 同一幂等键被用于不同请求内容。
+
+        """
+        # 1. 校验会话归属并读取会话快照。
         conversation = await asyncio.to_thread(
             self.repository.get_owned,
             conversation_id,
             tenant_id,
             subject_id,
         )
+        # 2. 计算请求指纹：绑定会话、消息与 Agent 版本，用于幂等冲突判定。
         request_hash = sha256(
             json.dumps(
                 {
@@ -163,6 +238,7 @@ class ConversationService:
                 separators=(",", ":"),
             ).encode()
         ).hexdigest()
+        # 3. 开启 Turn：仓储按幂等键判重，重复请求返回既有 Turn 并标记重放。
         try:
             turn, _, replay = await asyncio.to_thread(
                 self.repository.begin_turn,
@@ -178,6 +254,7 @@ class ConversationService:
             )
         except JournalIdempotencyConflict as exc:
             raise IdempotencyConflict(str(exc)) from exc
+        # 4. 首次执行（Turn 尚未绑定 server run）：创建 Agent 线程与执行上下文。
         if turn.server_run_id is None:
             await self.client.create_thread(conversation.agent_thread_id)
             context = ExecutionContext(
@@ -188,6 +265,7 @@ class ConversationService:
                 turn_id=turn.turn_id,
                 run_id=turn.run_id,
             )
+            # 5. 重放路径先按 application_run_id 找回既有 server run，避免重复执行。
             server_run = (
                 await self.client.find_run(
                     thread_id=conversation.agent_thread_id,
@@ -196,6 +274,7 @@ class ConversationService:
                 if replay
                 else None
             )
+            # 6. 找不到则以用户消息为输入创建新的 server run。
             if server_run is None:
                 server_run = await self.client.create_run(
                     thread_id=conversation.agent_thread_id,
@@ -209,12 +288,14 @@ class ConversationService:
                         agent_profile_version=conversation.agent_profile_version,
                     ),
                 )
+            # 7. 把 server run 绑定回 Turn，落库映射与最新状态。
             turn = await asyncio.to_thread(
                 self.repository.bind_server_run,
                 turn.turn_id,
                 server_run.run_id,
                 server_run.status,
             )
+        # 8. 返回受理结果。
         return RunAccepted(
             run_id=turn.run_id,
             thread_id=conversation.agent_thread_id,
@@ -235,7 +316,23 @@ class ConversationService:
         allow_dispatch: bool = True,
         allow_parent_resume: bool = True,
     ) -> RunStatusResponse:
-        """汇总本地轮次、活动委派与服务端运行状态，并把可确认的终态写回 Journal。"""
+        """轮询 Turn 对应 run 的最新状态，并在必要时推进 delegation 派发。
+
+        Args:
+            run_id: 业务 run ID。
+            tenant_id: 租户 ID。
+            subject_id: 主体 ID。
+            scopes: 调用方权限范围，用于 delegation 鉴权。
+            allow_dispatch: 是否允许在 server 中断时派发 delegation。
+            allow_parent_resume: 子运行到终态后是否允许恢复父运行。
+
+        Returns:
+            最新状态响应；delegation 场景附带子运行投影。
+
+        Raises:
+            RunNotFound: run 不存在或不属于当前主体。
+
+        """
         try:
             turn, conversation = await asyncio.to_thread(
                 self._owned_turn_and_conversation,
@@ -245,12 +342,14 @@ class ConversationService:
             )
         except ConversationNotFound as exc:
             raise RunNotFound(str(exc)) from exc
+        # 1. 已完成的 Turn 直接短路返回。
         if turn.status.value == "completed":
             return RunStatusResponse(
                 run_id=run_id,
                 thread_id=conversation.agent_thread_id,
                 status="completed",
             )
+        # 2. 存在未交付的 delegation：推进子运行并回传父状态。
         active = (
             await self.delegation_service.latest_for_parent(
                 run_id,
@@ -268,18 +367,21 @@ class ConversationService:
                 scopes=scopes,
                 allow_parent_resume=allow_parent_resume,
             )
+        # 3. 尚未绑定 server run：维持当前业务状态。
         if turn.server_run_id is None:
             return RunStatusResponse(
                 run_id=run_id,
                 thread_id=conversation.agent_thread_id,
                 status=turn.status.value,
             )
+        # 4. 查询 server run 状态并按结果分派处理。
         server = await self.client.get_run(
             thread_id=conversation.agent_thread_id, run_id=turn.server_run_id
         )
         server_status = str(server.get("status", turn.status.value))
         output: Mapping[str, Any] | None = None
         if server_status in {"success", "completed"}:
+            # 4a. 成功：取回最终输出，落库助手回复并补摘要。
             output = await self.client.join_run(
                 thread_id=conversation.agent_thread_id, run_id=turn.server_run_id
             )
@@ -292,9 +394,11 @@ class ConversationService:
             )
             status = "completed"
         elif server_status in {"error", "failed"}:
+            # 4b. 失败：把 Turn 置为 failed。
             await asyncio.to_thread(self.repository.update_turn_status, run_id, "failed")
             status = "failed"
         elif server_status == "interrupted":
+            # 4c. 中断：typed handoff 且允许派发时启动 delegation；否则标记等待审批。
             handoff = extract_handoff_interrupt(server)
             if handoff is not None and allow_dispatch:
                 if self.delegation_service is None:
@@ -323,6 +427,7 @@ class ConversationService:
             await asyncio.to_thread(self.repository.update_turn_status, run_id, "interrupted")
             status = "interrupted"
         else:
+            # 4d. 其余状态原样同步到 Turn。
             await asyncio.to_thread(self.repository.update_turn_status, run_id, server_status)
             status = server_status
         serializable_output = _jsonable_output(output)
@@ -342,7 +447,24 @@ class ConversationService:
         subject_id: str,
         scopes: frozenset[str],
     ) -> RunStatusResponse:
-        """校验审批时效与参数绑定后，恢复当前委派或根 Agent 检查点。"""
+        """提交顶层审批决定并恢复（或继续推进）对应 run。
+
+        Args:
+            run_id: 业务 run ID。
+            decision: 审批决定（approve/reject/edit 及理由、参数 hash）。
+            tenant_id: 租户 ID。
+            subject_id: 主体 ID。
+            scopes: 调用方权限范围，随执行上下文下发。
+
+        Returns:
+            恢复后的最新状态响应。
+
+        Raises:
+            RunNotFound: run 不存在或不属于当前主体。
+            DelegationConflict: 子运行未处于等待审批状态。
+            ApprovalExpired: 顶层审批窗口已超时。
+
+        """
         try:
             turn, conversation = await asyncio.to_thread(
                 self._owned_turn_and_conversation,
@@ -352,6 +474,7 @@ class ConversationService:
             )
         except ConversationNotFound as exc:
             raise RunNotFound(str(exc)) from exc
+        # 1. 存在未交付 delegation：把决定转发给子运行，再推进父 Turn。
         active = (
             await self.delegation_service.latest_for_parent(
                 run_id,
@@ -381,12 +504,14 @@ class ConversationService:
                 scopes=scopes,
                 allow_parent_resume=True,
             )
+        # 2. 校验顶层审批窗口：超时则置 failed 并抛出。
         created_at = turn.created_at
         if created_at.tzinfo is None:
             created_at = created_at.replace(tzinfo=UTC)
         if self._clock() >= created_at + self.approval_timeout:
             await asyncio.to_thread(self.repository.update_turn_status, run_id, "failed")
             raise ApprovalExpired("approval window has expired; start a new memory proposal")
+        # 3. 把决定映射为 server 端 resume 命令（EDIT 附带修改后的参数）。
         mapped: dict[str, Any] = {"type": decision.type.value}
         if decision.reason is not None:
             mapped["message"] = decision.reason
@@ -394,6 +519,7 @@ class ConversationService:
             mapped["arguments_hash"] = decision.arguments_hash
         if decision.type is ApprovalDecisionType.EDIT:
             mapped["arguments"] = decision.arguments
+        # 4. 携带执行上下文恢复 server 运行。
         context = ExecutionContext(
             tenant_id=tenant_id,
             subject_id=subject_id,
@@ -409,6 +535,7 @@ class ConversationService:
             context=context.model_dump(mode="json"),
             metadata=_server_metadata(context, stage="4"),
         )
+        # 5. 仍在等待审批则置 interrupted；完成则落最终回复并补摘要。
         status = "interrupted" if result.get("__interrupt__") else "completed"
         if status == "completed":
             final_content = _final_assistant_content(result)
@@ -430,7 +557,20 @@ class ConversationService:
     async def stream(
         self, run_id: str, *, tenant_id: str, subject_id: str
     ) -> AsyncIterator[StreamEvent]:
-        """校验运行所有权后，将服务端线程事件转换为统一流事件。"""
+        """订阅 run 所在线程的流式事件。
+
+        Args:
+            run_id: 业务 run ID。
+            tenant_id: 租户 ID。
+            subject_id: 主体 ID。
+
+        Yields:
+            归一化后的流式事件（事件名 + 数据载荷）。
+
+        Raises:
+            RunNotFound: run 不存在或不属于当前主体。
+
+        """
         try:
             _, conversation = await asyncio.to_thread(
                 self._owned_turn_and_conversation,
@@ -455,7 +595,14 @@ class ConversationService:
                 )
 
     def assert_owned(self, run_id: str, *, tenant_id: str, subject_id: str) -> None:
-        """验证会话Service满足当前边界要求，否则抛出明确异常。"""
+        """校验 run 归属于当前租户与主体，不通过则抛出 RunNotFound。
+
+        Args:
+            run_id: 业务 run ID。
+            tenant_id: 租户 ID。
+            subject_id: 主体 ID。
+
+        """
         try:
             turn = self.repository.get_turn_owned(run_id, tenant_id, subject_id)
             self.repository.get_owned(turn.conversation_id, tenant_id, subject_id)
@@ -463,12 +610,19 @@ class ConversationService:
             raise RunNotFound(str(exc)) from exc
 
     async def reconcile_incomplete(self) -> tuple[str, ...]:
-        """扫描非终态轮次并逐一拉取远端状态，供启动恢复或定时修复使用。"""
+        """对账所有未完成 Turn：刷新状态但不触发新的派发或父恢复。
+
+        Returns:
+            本次完成对账的业务 run ID 列表。
+
+        """
         reconciled: list[str] = []
+        # 1. 拉取所有未完成 Turn。
         turns = await asyncio.to_thread(self.repository.list_incomplete_turns)
         for turn in turns:
             if turn.server_run_id is None:
                 continue
+            # 2. 按归属刷新状态；禁用派发与父恢复，避免对账产生新副作用。
             await self.status(
                 turn.run_id,
                 tenant_id=turn.tenant_id,
@@ -477,6 +631,7 @@ class ConversationService:
                 allow_parent_resume=False,
             )
             reconciled.append(turn.run_id)
+        # 3. 返回已对账的 run ID 列表。
         return tuple(reconciled)
 
     async def _advance_delegation(
@@ -488,9 +643,25 @@ class ConversationService:
         scopes: frozenset[str],
         allow_parent_resume: bool,
     ) -> RunStatusResponse:
-        """推进活动子委派；完成后向父检查点交付结果并继续根运行。"""
+        """推进 delegation：同步子运行状态，到终态时把结果交付回父运行。
+
+        Args:
+            turn: 父业务 Turn 记录。
+            conversation: 父会话记录。
+            record: 当前 delegation 记录。
+            scopes: 调用方权限范围，随执行上下文下发。
+            allow_parent_resume: 是否允许在子运行到终态后恢复父运行。
+
+        Returns:
+            父运行最新的状态响应。
+
+        Raises:
+            RuntimeError: delegation 服务未装配。
+
+        """
         if self.delegation_service is None:
             raise RuntimeError("delegation service is not configured")
+        # 1. 读取 delegation 最新状态。
         current = await self.delegation_service.status(
             record.delegation_id,
             tenant_id=record.tenant_id,
@@ -501,6 +672,7 @@ class ConversationService:
             DelegationStatus.REJECTED,
             DelegationStatus.FAILED,
         }
+        # 2. 子运行未到终态（或不允许父恢复）：父 Turn 置为 waiting_child/interrupted。
         if current.status not in terminal or not allow_parent_resume:
             parent_status = (
                 "interrupted" if current.status is DelegationStatus.INTERRUPTED else "waiting_child"
@@ -517,6 +689,7 @@ class ConversationService:
                 output={"delegation": delegation_projection(current)},
             )
 
+        # 3. 子运行到终态：以 delegation 结果作为 resume 命令恢复父运行。
         context = ExecutionContext(
             tenant_id=record.tenant_id,
             subject_id=record.subject_id,
@@ -536,7 +709,9 @@ class ConversationService:
                 delegation_id=current.delegation_id,
             ),
         )
+        # 4. 标记 delegation 已交付父运行。
         await self.delegation_service.mark_delivered(current)
+        # 5. 父运行又发出新的 handoff：递归派发下一个 delegation。
         next_handoff = extract_handoff_interrupt(result)
         if next_handoff is not None:
             next_record = await self.delegation_service.start(
@@ -555,6 +730,7 @@ class ConversationService:
                 scopes=scopes,
                 allow_parent_resume=allow_parent_resume,
             )
+        # 6. 父运行完成：落最终回复并补摘要。
         final_content = _final_assistant_content(result)
         await asyncio.to_thread(
             self._record_completed,
@@ -572,7 +748,17 @@ class ConversationService:
     def _owned_turn_and_conversation(
         self, run_id: str, tenant_id: str, subject_id: str
     ) -> tuple[Any, Any]:
-        """读取记录并同时校验租户与主体所有权，避免越权访问。"""
+        """加载归属于当前租户与主体的 Turn 及其会话。
+
+        Args:
+            run_id: 业务 run ID。
+            tenant_id: 租户 ID。
+            subject_id: 主体 ID。
+
+        Returns:
+            （Turn 记录, 会话记录）二元组。
+
+        """
         turn = self.repository.get_turn_owned(run_id, tenant_id, subject_id)
         conversation = self.repository.get_owned(turn.conversation_id, tenant_id, subject_id)
         return turn, conversation
@@ -583,17 +769,35 @@ class ConversationService:
         conversation_id: str,
         final_content: str | None,
     ) -> None:
-        """把已确认的会话Service事实持久化。"""
+        """落库 run 完成结果：追加助手回复、置 Turn 完成并补齐摘要。
+
+        Args:
+            run_id: 业务 run ID。
+            conversation_id: 会话 ID。
+            final_content: 最终助手回复文本；None 时跳过消息写入。
+
+        """
+        # 1. 有最终回复时追加 assistant 消息。
         if final_content is not None:
             self.repository.append_assistant_message(run_id=run_id, content=final_content)
+        # 2. 置 Turn 为完成态。
         self.repository.update_turn_status(run_id, "completed")
+        # 3. 补齐会话摘要的分段与层级。
         if self.summary_service is not None:
             self.summary_service.build_missing_segments(conversation_id)
             self.summary_service.build_hierarchy(conversation_id)
 
 
 def _conversation_response(conversation: Any) -> ConversationResponse:
-    """把内部会话记录转换为公开会话响应。"""
+    """把会话记录投影为 API 响应（ID、状态与创建时间）。
+
+    Args:
+        conversation: 会话记录。
+
+    Returns:
+        会话响应对象。
+
+    """
     return ConversationResponse(
         conversation_id=conversation.conversation_id,
         status=conversation.status.value,
@@ -602,7 +806,16 @@ def _conversation_response(conversation: Any) -> ConversationResponse:
 
 
 def _server_metadata(context: ExecutionContext, **extra: str) -> dict[str, str]:
-    """组合执行上下文与阶段字段，生成不含敏感原值的服务端元数据。"""
+    """构建写入 server run 的追踪元数据。
+
+    Args:
+        context: 执行上下文，提供租户/主体/turn/run 的追踪字段。
+        **extra: 追加的元数据键值（如 stage、conversation_id）。
+
+    Returns:
+        以 application_run_id 承载业务 run 映射的元数据字典。
+
+    """
     metadata = context.trace_metadata()
     metadata["application_run_id"] = metadata.pop("run_id")
     metadata.update(extra)
@@ -610,7 +823,15 @@ def _server_metadata(context: ExecutionContext, **extra: str) -> dict[str, str]:
 
 
 def _final_assistant_content(output: Mapping[str, Any]) -> str | None:
-    """从服务端输出消息中提取最后一条助手文本。"""
+    """从运行输出的消息列表中取最后一条 AI/assistant 消息的文本内容。
+
+    Args:
+        output: 运行输出映射（含 "messages" 键时生效）。
+
+    Returns:
+        最终回复文本；非字符串内容序列化为 JSON，找不到时为 None。
+
+    """
     messages = output.get("messages")
     if not isinstance(messages, list):
         return None
@@ -626,7 +847,15 @@ def _final_assistant_content(output: Mapping[str, Any]) -> str | None:
 
 
 def _jsonable_output(output: Mapping[str, Any] | None) -> dict[str, Any] | None:
-    """把映射输出递归转换为可安全进入响应模型的 JSON 结构。"""
+    """把输出映射转换为可 JSON 序列化的字典（Pydantic 模型逐个导出）。
+
+    Args:
+        output: 原始输出映射；None 原样返回。
+
+    Returns:
+        转换后的字典；入参为 None 时返回 None。
+
+    """
     if output is None:
         return None
     converted: dict[str, Any] = {}

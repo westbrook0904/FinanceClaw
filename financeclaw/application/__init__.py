@@ -1,4 +1,4 @@
-"""应用层用例编排：连接接口层、领域模块与 Agent Server 端口。"""
+"""应用层用例服务的统一出口：向 BFF 与引导装配暴露跨模块用例、异常与出站 Port。"""
 
 from .conversation_service import ApprovalExpired, ConversationService
 from .delegation_service import (
@@ -18,6 +18,7 @@ from .workflow_service import (
     WorkflowService,
 )
 
+# 公开 API 清单：限定包级 `import *` 与外部引用的可见符号。
 __all__ = [
     "AgentServerClient",
     "ApprovalExpired",

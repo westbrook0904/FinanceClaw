@@ -1,4 +1,10 @@
-"""提供 regression 评测与发布能力。"""
+"""离线回归评测的核心实现：用例契约、加载、发布门禁与 LangSmith 发布。
+
+属于 evaluation 层：``RegressionCase`` 与 ``EvaluationResult`` 定义回归用例和
+评测结果的稳定数据契约；``load_cases`` 从版本库 JSON 加载用例；
+``RegressionGate`` 按"类别覆盖、结果对齐、关键用例、平均分基线"执行发布
+门禁；``publish_cases`` 把用例发布为带版本名的 LangSmith 回归数据集。
+"""
 
 import json
 from pathlib import Path
@@ -6,6 +12,8 @@ from typing import Any, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
 
+# 发布门禁要求数据集必须覆盖的用例类别：工具、补槽、委派、策略、记忆、
+# 金融时效、恢复、注入、租户与 Provider 故障。
 REQUIRED_CATEGORIES = frozenset(
     {
         "tool_selection",
@@ -23,18 +31,19 @@ REQUIRED_CATEGORIES = frozenset(
 
 
 class RegressionCase(BaseModel):
-    """定义RegressionCase。
+    """单条离线回归用例：绑定类别与关键性标记的输入和参考输出。
 
-    适用场景：
-        用于在接口、领域与持久化边界之间传递经过校验的结构化数据。
+    使用场景：``load_cases`` 从版本库 JSON 反序列化得到；作为发布门禁
+    ``RegressionGate.assert_passed`` 的评分对象，并经 ``publish_cases``
+    写入 LangSmith 数据集。
 
-    属性：
-        model_config: Pydantic 校验策略，禁止未知字段并在需要时冻结实例。
-        case_id: 关联对象的稳定标识，用于查询、关联和审计追踪。
-        category: 回归用例所属类别，便于分组统计和门禁定位。
-        critical: 该用例失败是否必须立即阻止发布。
-        inputs: 执行评测用例所需的结构化输入。
-        reference_outputs: 评测时用于比较的预期关键输出。
+    Attributes:
+        case_id: 用例全局唯一 ID，用于把评测结果对齐回用例。
+        category: 用例所属类别，用于门禁检查类别覆盖（见 ``REQUIRED_CATEGORIES``）。
+        critical: 是否为关键用例；关键用例失败将直接导致门禁失败。
+        inputs: 发给被测系统的输入负载（如用户消息与上下文）。
+        reference_outputs: 评分时对照的参考输出负载。
+
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -47,16 +56,16 @@ class RegressionCase(BaseModel):
 
 
 class EvaluationResult(BaseModel):
-    """定义评测的执行结果。
+    """单条用例的评测结果：是否通过与 [0, 1] 区间内的归一化得分。
 
-    适用场景：
-        用于在接口、领域与持久化边界之间传递经过校验的结构化数据。
+    使用场景：由评测执行方对每个 ``RegressionCase`` 产出，成批传入
+    ``RegressionGate.assert_passed`` 参与门禁判定。
 
-    属性：
-        model_config: Pydantic 校验策略，禁止未知字段并在需要时冻结实例。
-        case_id: 关联对象的稳定标识，用于查询、关联和审计追踪。
-        passed: 该用例是否满足验收条件。
-        score: 评测得分，通常归一化到 0 至 1。
+    Attributes:
+        case_id: 对应的回归用例 ID。
+        passed: 该用例是否通过评测。
+        score: 归一化得分，取值范围 [0, 1]。
+
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -67,17 +76,26 @@ class EvaluationResult(BaseModel):
 
 
 class RegressionGate:
-    """核对评测用例与结果，阻止缺失、失败或低于阈值的发布。
+    """发布门禁：校验类别覆盖、结果对齐、关键用例与平均分基线。
 
-    适用场景：
-        用于集中表达该职责，避免调用方直接依赖底层实现细节。
+    使用场景：发布前把数据集用例与评测结果交给 ``assert_passed``；
+    任一检查不满足即抛出 ``AssertionError`` 使发布流程失败。
 
-    属性：
-        minimum_score: 非关键用例汇总后允许通过门禁的最低得分。
+    Attributes:
+        minimum_score: 全量用例平均分必须达到的基线，取值范围 (0, 1]。
+
     """
 
     def __init__(self, *, minimum_score: float = 0.95) -> None:
-        """注入并保存RegressionGate所需的协作对象，同时校验构造期不变量。"""
+        """校验并保存平均分基线。
+
+        Args:
+            minimum_score: 平均分基线，默认 0.95。
+
+        Raises:
+            ValueError: minimum_score 不在 (0, 1] 区间内。
+
+        """
         if not 0 < minimum_score <= 1:
             raise ValueError("minimum_score must be in (0, 1]")
         self.minimum_score = minimum_score
@@ -87,19 +105,33 @@ class RegressionGate:
         cases: tuple[RegressionCase, ...],
         results: tuple[EvaluationResult, ...],
     ) -> None:
-        """校验结果覆盖所有用例、关键用例全部通过且总体得分达到门槛。"""
+        """执行发布门禁：类别覆盖、结果对齐、关键用例与平均分逐项校验。
+
+        Args:
+            cases: 版本库数据集中的全部回归用例。
+            results: 与用例一一对应的评测结果。
+
+        Raises:
+            AssertionError: 数据集缺少必备类别、评测结果与用例不对齐、
+                存在失败的关键用例，或平均分低于基线。
+
+        """
+        # 1. 校验数据集覆盖全部必备类别。
         categories = {case.category for case in cases}
         missing = REQUIRED_CATEGORIES - categories
         if missing:
             raise AssertionError(f"regression dataset is missing categories: {sorted(missing)}")
+        # 2. 校验评测结果与用例按 case_id 一一对齐。
         by_id = {result.case_id: result for result in results}
         if set(by_id) != {case.case_id for case in cases}:
             raise AssertionError("evaluation results do not match the versioned dataset")
+        # 3. 校验关键用例全部通过，任一失败即门禁失败。
         failed_critical = [
             case.case_id for case in cases if case.critical and not by_id[case.case_id].passed
         ]
         if failed_critical:
             raise AssertionError(f"critical evaluation failures: {failed_critical}")
+        # 4. 校验全量用例平均分不低于基线。
         average = sum(result.score for result in results) / len(results)
         if average < self.minimum_score:
             raise AssertionError(
@@ -108,25 +140,35 @@ class RegressionGate:
 
 
 def load_cases(path: str | Path) -> tuple[RegressionCase, ...]:
-    """从持久化表示加载并校验regression 模块的数据。"""
+    """从版本库 JSON 文件加载全部回归用例。
+
+    Args:
+        path: 回归集 JSON 文件路径，顶层需包含 ``cases`` 数组。
+
+    Returns:
+        按文件顺序排列的回归用例元组。
+
+    Raises:
+        pydantic.ValidationError: 用例字段不符合 ``RegressionCase`` 契约。
+
+    """
     raw = json.loads(Path(path).read_text(encoding="utf-8"))
     return tuple(RegressionCase.model_validate(item) for item in raw["cases"])
 
 
 class _LangSmithClient(Protocol):
-    """定义LangSmithClient。
+    """``publish_cases`` 依赖的最小 LangSmith 客户端协议。
 
-    适用场景：
-        用于依赖倒置和测试替身，使应用逻辑不依赖具体客户端实现。
+    使用场景：评测与测试可注入满足该协议的内存假客户端，避免依赖真实
+    LangSmith 服务；真实场景直接传入 ``langsmith.Client``。
+
     """
 
     def create_dataset(self, *, dataset_name: str, description: str) -> Any:
-        """创建并返回新的LangSmithClient。"""
-        ...
+        """在 LangSmith 上创建一个指定名称与描述的回归数据集。"""
 
     def create_examples(self, *, dataset_id: Any, examples: list[dict[str, Any]]) -> Any:
-        """创建并返回新的LangSmithClient。"""
-        ...
+        """向指定数据集批量写入评测样例。"""
 
 
 def publish_cases(
@@ -135,7 +177,17 @@ def publish_cases(
     dataset_name: str,
     cases: tuple[RegressionCase, ...],
 ) -> Any:
-    """发布regression 模块的数据并返回供应方结果。"""
+    """在 LangSmith 创建回归数据集并灌入全部用例。
+
+    Args:
+        client: 满足 ``_LangSmithClient`` 协议的 LangSmith 客户端。
+        dataset_name: 目标数据集名，约定包含版本号，改版时启用新名字。
+        cases: 待发布的回归用例。
+
+    Returns:
+        新建数据集对象（含 ``id`` 与 ``name``）。
+
+    """
     dataset = client.create_dataset(
         dataset_name=dataset_name,
         description="FinanceClaw Stage-5 production security and behavior regression gate",

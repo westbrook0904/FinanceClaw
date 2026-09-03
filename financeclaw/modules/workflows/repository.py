@@ -1,4 +1,8 @@
-"""持久化工作流运行、审批快照及乐观锁版本。"""
+"""工作流运行与审批的持久化仓储：Protocol 接口与 SQLAlchemy 实现。
+
+BFF 借助本仓储永久保存业务 run、thread 与 server run 的映射、输入哈希、
+审批决定与制品引用，并为审批恢复执行提供复验依据。
+"""
 
 from __future__ import annotations
 
@@ -20,40 +24,42 @@ from .tables import WorkflowApprovalRow, WorkflowRunRow
 
 
 class WorkflowNotFound(LookupError):
-    """定义工作流NotFound。
+    """目标运行或审批不存在时抛出的查找异常。
 
-    适用场景：
-        用于把该失败条件跨层传递，并在接口边界转换为稳定错误。
+    使用场景：
+        按标识读取不到记录、或记录不属于当前租户与主体时抛出。
     """
 
     pass
 
 
 class WorkflowConflict(RuntimeError):
-    """定义工作流Conflict。
+    """运行或审批状态发生非法变更时抛出的运行时异常。
 
-    适用场景：
-        用于把该失败条件跨层传递，并在接口边界转换为稳定错误。
+    使用场景：
+        终态被改写、server run 重复绑定或审批检查点漂移时抛出。
     """
 
     pass
 
 
 class WorkflowIdempotencyConflict(RuntimeError):
-    """定义工作流IdempotencyConflict。
+    """客户端幂等键被用于不同请求时抛出的运行时异常。
 
-    适用场景：
-        用于把该失败条件跨层传递，并在接口边界转换为稳定错误。
+    使用场景：
+        同一幂等键再次到达但请求指纹或主体不同时抛出，
+        提示调用方更换幂等键，而不是复用旧运行。
     """
 
     pass
 
 
 class WorkflowRepository(Protocol):
-    """定义工作流Repository。
+    """工作流运行与审批仓储的持久化契约。
 
-    适用场景：
-        用于依赖倒置和测试替身，使应用逻辑不依赖具体客户端实现。
+    使用场景：
+        应用层依赖本接口读写运行与审批事实，具体实现可替换为
+        SQLAlchemy 仓储或测试用假仓储。
     """
 
     def begin_run(
@@ -67,15 +73,31 @@ class WorkflowRepository(Protocol):
         request_fingerprint: str,
         input_payload: dict[str, Any],
     ) -> tuple[WorkflowRun, bool]:
-        """以请求指纹幂等创建工作流运行；指纹冲突时拒绝复用幂等键。"""
+        """按幂等键创建运行登记，或在请求指纹一致时复用既有运行。
+
+        Returns:
+            二元组：（运行记录，是否复用了既有记录）。
+
+        """
         ...
 
     def get_owned(self, run_id: str, tenant_id: str, subject_id: str) -> WorkflowRun:
-        """按标识读取工作流运行；不存在时由下层仓储抛出明确异常。"""
+        """读取属于指定租户与主体的运行记录。
+
+        Raises:
+            WorkflowNotFound: 运行不存在或不属于该主体。
+
+        """
         ...
 
     def bind_server_run(self, run_id: str, server_run_id: str, status: str) -> WorkflowRun:
-        """将应用轮次或工作流运行与 Agent Server 运行标识原子绑定。"""
+        """把运行绑定到 Agent Server 的 server run 并归一化同步状态。
+
+        Raises:
+            WorkflowNotFound: 运行不存在。
+            WorkflowConflict: 已绑定到其他 server run。
+
+        """
         ...
 
     def set_status(
@@ -86,19 +108,34 @@ class WorkflowRepository(Protocol):
         output_payload: dict[str, Any] | None = None,
         artifact_refs: tuple[str, ...] = (),
     ) -> tuple[WorkflowRun, bool]:
-        """以乐观锁推进运行或委派状态，并更新终态载荷与时间戳。"""
+        """更新运行状态，可选写入输出与制品引用。
+
+        Returns:
+            二元组：（更新后的运行，状态是否发生变化）。
+
+        """
         ...
 
     def list_incomplete(self) -> tuple[WorkflowRun, ...]:
-        """按稳定顺序列出满足条件的工作流运行。"""
+        """列出全部未进入终态的运行，按启动时间升序。"""
         ...
 
     def ensure_approval(self, approval: WorkflowApproval) -> tuple[WorkflowApproval, bool]:
-        """幂等创建审批快照，并确保同一审批标识始终绑定相同请求哈希。"""
+        """登记审批请求；同一运行的同一检查点幂等复用。
+
+        Returns:
+            二元组：（审批记录，是否为新创建）。
+
+        """
         ...
 
     def get_approval(self, run_id: str) -> WorkflowApproval:
-        """按标识读取工作流运行；不存在时由下层仓储抛出明确异常。"""
+        """读取指定运行最近一次审批请求。
+
+        Raises:
+            WorkflowNotFound: 不存在审批记录。
+
+        """
         ...
 
     def decide_approval(
@@ -110,12 +147,17 @@ class WorkflowRepository(Protocol):
         reason: str | None,
         decided_at: datetime,
     ) -> tuple[WorkflowApproval, bool]:
-        """仅对待决审批写入决定，并通过请求哈希防止参数替换。"""
+        """落成审批决定；重复同一决定时幂等返回。
+
+        Returns:
+            二元组：（审批记录，是否为本次新决定）。
+
+        """
         ...
 
 
 def _run(row: WorkflowRunRow) -> WorkflowRun:
-    """执行工具的同步实现，并返回可序列化结果。"""
+    """把运行 ORM 行转换为领域模型。"""
     return WorkflowRun(
         run_id=row.run_id,
         tenant_id=row.tenant_id,
@@ -143,7 +185,7 @@ def _run(row: WorkflowRunRow) -> WorkflowRun:
 
 
 def _approval(row: WorkflowApprovalRow) -> WorkflowApproval:
-    """把审批 ORM 行转换为不可变工作流审批记录。"""
+    """把审批 ORM 行转换为领域模型。"""
     return WorkflowApproval(
         approval_id=row.approval_id,
         run_id=row.run_id,
@@ -165,17 +207,24 @@ def _approval(row: WorkflowApprovalRow) -> WorkflowApproval:
 
 
 class SqlAlchemyWorkflowRepository:
-    """定义SqlAlchemy工作流Repository。
+    """基于 SQLAlchemy 的工作流仓储实现。
 
-    适用场景：
-        用于领域服务需要持久化状态，同时不应感知 SQL 细节的场景。
+    使用场景：
+        在 BFF 与应用服务中持久化工作流运行与审批事实；
+        每个写方法都在独立事务中执行，读方法使用短会话。
 
-    属性：
-        _sessions: 内部 `sessions` 状态或依赖，不属于公开接口。
+    Attributes:
+        _sessions: SQLAlchemy 会话工厂，写操作使用事务作用域。
+
     """
 
     def __init__(self, sessions: sessionmaker[Session]) -> None:
-        """注入并保存工作流运行所需的协作对象，同时校验构造期不变量。"""
+        """注入 SQLAlchemy 会话工厂。
+
+        Args:
+            sessions: 会话工厂，写操作将使用其事务作用域。
+
+        """
         self._sessions = sessions
 
     def begin_run(
@@ -189,8 +238,17 @@ class SqlAlchemyWorkflowRepository:
         request_fingerprint: str,
         input_payload: dict[str, Any],
     ) -> tuple[WorkflowRun, bool]:
-        """以请求指纹幂等创建工作流运行；指纹冲突时拒绝复用幂等键。"""
+        """按幂等键创建运行登记，或在指纹一致时复用既有运行。
+
+        Returns:
+            二元组：（运行记录，是否复用了既有记录）。
+
+        Raises:
+            WorkflowIdempotencyConflict: 幂等键已被不同指纹或主体使用。
+
+        """
         with self._sessions.begin() as session:
+            # 1. 幂等查询：同一租户、流程、版本与幂等键的既有运行。
             existing = session.scalar(
                 select(WorkflowRunRow).where(
                     WorkflowRunRow.tenant_id == tenant_id,
@@ -199,6 +257,7 @@ class SqlAlchemyWorkflowRepository:
                     WorkflowRunRow.client_idempotency_key == idempotency_key,
                 )
             )
+            # 2. 指纹或主体不一致说明同键不同请求，属于幂等冲突。
             if existing is not None:
                 if (
                     existing.subject_id != subject_id
@@ -207,7 +266,9 @@ class SqlAlchemyWorkflowRepository:
                     raise WorkflowIdempotencyConflict(
                         "workflow idempotency key was already used for another request"
                     )
+                # 3. 命中且归属一致时复用既有运行。
                 return _run(existing), True
+            # 4. 未命中则创建新运行：分配 run_id 与独占 thread_id，状态为 ACCEPTED。
             now = datetime.now(UTC)
             row = WorkflowRunRow(
                 run_id=f"run-{uuid4().hex}",
@@ -234,11 +295,18 @@ class SqlAlchemyWorkflowRepository:
         return _run(row), False
 
     def bind_server_run(self, run_id: str, server_run_id: str, status: str) -> WorkflowRun:
-        """将应用轮次或工作流运行与 Agent Server 运行标识原子绑定。"""
+        """把运行绑定到 Agent Server 的 server run 并归一化同步状态。
+
+        Raises:
+            WorkflowNotFound: 运行不存在。
+            WorkflowConflict: 已绑定到其他 server run。
+
+        """
         with self._sessions.begin() as session:
             row = session.get(WorkflowRunRow, run_id)
             if row is None:
                 raise WorkflowNotFound("workflow run was not found")
+            # 一次运行至多绑定一个 server run；重复绑定同一值视为幂等。
             if row.server_run_id is not None and row.server_run_id != server_run_id:
                 raise WorkflowConflict("workflow run is already bound to another server run")
             row.server_run_id = server_run_id
@@ -247,7 +315,12 @@ class SqlAlchemyWorkflowRepository:
         return _run(row)
 
     def get_owned(self, run_id: str, tenant_id: str, subject_id: str) -> WorkflowRun:
-        """按标识读取工作流运行；不存在时由下层仓储抛出明确异常。"""
+        """读取属于指定租户与主体的运行记录。
+
+        Raises:
+            WorkflowNotFound: 运行不存在或不属于该主体。
+
+        """
         statement = select(WorkflowRunRow).where(
             WorkflowRunRow.run_id == run_id,
             WorkflowRunRow.tenant_id == tenant_id,
@@ -267,11 +340,21 @@ class SqlAlchemyWorkflowRepository:
         output_payload: dict[str, Any] | None = None,
         artifact_refs: tuple[str, ...] = (),
     ) -> tuple[WorkflowRun, bool]:
-        """以乐观锁推进运行或委派状态，并更新终态载荷与时间戳。"""
+        """更新运行状态，可选写入输出与制品引用。
+
+        Returns:
+            二元组：（更新后的运行，状态是否发生变化）。
+
+        Raises:
+            WorkflowNotFound: 运行不存在。
+            WorkflowConflict: 终态被改写为其他状态。
+
+        """
         with self._sessions.begin() as session:
             row = session.get(WorkflowRunRow, run_id)
             if row is None:
                 raise WorkflowNotFound("workflow run was not found")
+            # 1. 终态保护：终态不可改为其他状态，同状态重放视为幂等。
             terminal = {
                 WorkflowRunStatus.COMPLETED.value,
                 WorkflowRunStatus.REJECTED.value,
@@ -279,6 +362,7 @@ class SqlAlchemyWorkflowRepository:
             }
             if row.status in terminal and row.status != status.value:
                 raise WorkflowConflict("terminal workflow status cannot be changed")
+            # 2. 记录状态变化，并按需写入输出与去重后的制品引用。
             changed = row.status != status.value
             row.status = status.value
             row.updated_at = datetime.now(UTC)
@@ -286,6 +370,7 @@ class SqlAlchemyWorkflowRepository:
                 row.output_payload = output_payload
             if artifact_refs:
                 row.artifact_refs = list(dict.fromkeys(artifact_refs))
+            # 3. 进入终态时补记完成时间（仅在首次进入时生效）。
             if status in {
                 WorkflowRunStatus.COMPLETED,
                 WorkflowRunStatus.REJECTED,
@@ -295,7 +380,7 @@ class SqlAlchemyWorkflowRepository:
         return _run(row), changed
 
     def list_incomplete(self) -> tuple[WorkflowRun, ...]:
-        """按稳定顺序列出满足条件的工作流运行。"""
+        """列出全部未进入终态的运行，按启动时间升序。"""
         terminal = (
             WorkflowRunStatus.COMPLETED.value,
             WorkflowRunStatus.REJECTED.value,
@@ -310,14 +395,24 @@ class SqlAlchemyWorkflowRepository:
             return tuple(_run(row) for row in session.scalars(statement))
 
     def ensure_approval(self, approval: WorkflowApproval) -> tuple[WorkflowApproval, bool]:
-        """幂等创建审批快照，并确保同一审批标识始终绑定相同请求哈希。"""
+        """登记审批请求；同一运行的同一检查点幂等复用。
+
+        Returns:
+            二元组：（审批记录，是否为新创建）。
+
+        Raises:
+            WorkflowConflict: 既有审批的标识或参数哈希与本次不一致。
+
+        """
         with self._sessions.begin() as session:
+            # 1. 幂等查询：同一运行的同一审批点只允许一条审批。
             existing = session.scalar(
                 select(WorkflowApprovalRow).where(
                     WorkflowApprovalRow.run_id == approval.run_id,
                     WorkflowApprovalRow.approval_point == approval.approval_point,
                 )
             )
+            # 2. 既有审批必须与本次标识及参数哈希一致，防止检查点漂移。
             if existing is not None:
                 if (
                     existing.approval_id != approval.approval_id
@@ -325,6 +420,7 @@ class SqlAlchemyWorkflowRepository:
                 ):
                     raise WorkflowConflict("workflow approval checkpoint changed unexpectedly")
                 return _approval(existing), False
+            # 3. 不存在时落库新的审批请求。
             row = WorkflowApprovalRow(
                 approval_id=approval.approval_id,
                 run_id=approval.run_id,
@@ -344,7 +440,12 @@ class SqlAlchemyWorkflowRepository:
         return _approval(row), True
 
     def get_approval(self, run_id: str) -> WorkflowApproval:
-        """按标识读取工作流运行；不存在时由下层仓储抛出明确异常。"""
+        """读取指定运行最近一次（按请求时间）审批请求。
+
+        Raises:
+            WorkflowNotFound: 不存在审批记录。
+
+        """
         with self._sessions() as session:
             row = session.scalar(
                 select(WorkflowApprovalRow)
@@ -364,15 +465,26 @@ class SqlAlchemyWorkflowRepository:
         reason: str | None,
         decided_at: datetime,
     ) -> tuple[WorkflowApproval, bool]:
-        """仅对待决审批写入决定，并通过请求哈希防止参数替换。"""
+        """落成审批决定；重复同一决定时幂等返回。
+
+        Returns:
+            二元组：（审批记录，是否为本次新决定）。
+
+        Raises:
+            WorkflowNotFound: 审批不存在。
+            WorkflowConflict: 审批已被以不同内容决定过。
+
+        """
         with self._sessions.begin() as session:
             row = session.get(WorkflowApprovalRow, approval_id)
             if row is None:
                 raise WorkflowNotFound("workflow approval was not found")
+            # 1. 非待定状态：同一决定幂等重放，其他情况视为重复决定冲突。
             if row.status != WorkflowApprovalStatus.PENDING.value:
                 if row.status == status.value and row.decided_by == decided_by:
                     return _approval(row), False
                 raise WorkflowConflict("workflow approval has already been decided")
+            # 2. 待定状态：落成决定状态、决定人、理由与决定时间。
             row.status = status.value
             row.decided_by = decided_by
             row.decision_reason = reason
@@ -381,7 +493,7 @@ class SqlAlchemyWorkflowRepository:
 
 
 def _normalize_status(status: str) -> WorkflowRunStatus:
-    """将输入规范化为可比较、可持久化的repository 模块的数据。"""
+    """把 Agent Server 侧状态字符串归一化为运行状态枚举，未知值退化为 PENDING。"""
     return {
         "accepted": WorkflowRunStatus.ACCEPTED,
         "pending": WorkflowRunStatus.PENDING,

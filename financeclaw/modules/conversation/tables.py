@@ -1,4 +1,8 @@
-"""声明会话 Journal 相关 SQLAlchemy 表映射。"""
+"""会话日志模块的 SQLAlchemy ORM 表定义（业务数据库持久化层）。
+
+定义 conversations、conversation_turns、conversation_messages、
+conversation_summaries、model_context_manifests 与 artifacts 六张表。
+"""
 
 from datetime import datetime
 from typing import Any
@@ -20,24 +24,23 @@ from financeclaw.infrastructure.orm import Base, utcnow
 
 
 class ConversationRow(Base):
-    """定义会话Row。
+    """会话表：持久化 Conversation 领域记录，一个会话固定绑定一个 Agent 线程。
 
-    适用场景：
-        用于集中表达该职责，避免调用方直接依赖底层实现细节。
+    使用场景：作为 Conversation Journal 的根表；agent_thread_id 全局唯一，
+    支撑 LangGraph 线程映射与跨 Agent Server 重启继续。
 
-    属性：
-        __tablename__: 内部 `tablename  ` 状态或依赖，不属于公开接口。
-        __table_args__: 内部 `table args  ` 状态或依赖，不属于公开接口。
-        conversation_id: 会话稳定标识，用于关联消息、轮次、摘要和上下文清单。
-        tenant_id: 租户隔离键，所有读取和写入都必须以此限定边界。
-        subject_id: 已认证主体标识，用于所有权校验和审计归因。
-        agent_id: Agent 配置的稳定标识。
-        agent_profile_version: 本次运行固定使用的 Agent 配置版本。
-        agent_thread_id: 根 Agent 使用的服务端线程标识。
-        status: 当前生命周期状态，决定记录允许的后续操作。
-        created_at: 记录创建时间，统一按 UTC 解释。
-        updated_at: 最近一次状态或内容变更时间，统一按 UTC 解释。
-        turns: 该会话通过 ORM 关系加载的轮次集合。
+    Attributes:
+        conversation_id: 会话标识，主键（String(128)）。
+        tenant_id: 租户标识（String(128)），非空，与 subject_id 组成归属索引。
+        subject_id: 主体标识（String(128)），非空。
+        agent_id: Agent 标识（String(128)），非空。
+        agent_profile_version: 创建会话时的 Agent Profile 版本（String(32)），非空。
+        agent_thread_id: Agent 线程 UUID（String(128)），非空，全局唯一约束。
+        status: 会话状态字符串，非空，默认 "active"。
+        created_at: 创建时间（带时区），非空，默认当前 UTC 时间。
+        updated_at: 更新时间（带时区），非空，默认当前 UTC 时间且随更新刷新。
+        turns: 关联的 turn 列表；随会话级联删除。
+
     """
 
     __tablename__ = "conversations"
@@ -66,30 +69,29 @@ class ConversationRow(Base):
 
 
 class ConversationTurnRow(Base):
-    """定义会话轮次Row。
+    """轮次表：持久化 ConversationTurn 记录，承载幂等键与 Agent Server 绑定。
 
-    适用场景：
-        用于集中表达该职责，避免调用方直接依赖底层实现细节。
+    使用场景：BFF 幂等创建 turn 后写入本表；（租户，主体，幂等键）唯一约束
+    保证 append-only；run_id 唯一约束供 Agent Server 定位轮次。
 
-    属性：
-        __tablename__: 内部 `tablename  ` 状态或依赖，不属于公开接口。
-        __table_args__: 内部 `table args  ` 状态或依赖，不属于公开接口。
-        turn_id: 会话轮次标识，用于把一次用户输入与其运行结果关联。
-        conversation_id: 会话稳定标识，用于关联消息、轮次、摘要和上下文清单。
-        tenant_id: 租户隔离键，所有读取和写入都必须以此限定边界。
-        subject_id: 已认证主体标识，用于所有权校验和审计归因。
-        run_id: 应用侧运行标识，用于跨服务查询、追踪和幂等关联。
-        server_run_id: Agent Server 侧运行标识；尚未提交远端运行时为空。
-        client_idempotency_key: 客户端幂等键，在同一资源范围内唯一。
-        request_hash: 请求规范化后的哈希，用于检测幂等键复用冲突。
-        target_type: 目标类别，用于区分 Agent、工具和工作流。
-        target_id: 解析前或解析后的目标稳定标识。
-        target_version: 运行实际绑定的目标版本，防止后续配置变化影响重放。
-        status: 当前生命周期状态，决定记录允许的后续操作。
-        created_at: 记录创建时间，统一按 UTC 解释。
-        completed_at: 进入成功或失败终态的时间；未结束时为空。
-        conversation: 该记录所属的会话 ORM 对象。
-        messages: 按会话顺序排列的消息集合。
+    Attributes:
+        turn_id: turn 标识，主键（String(128)）。
+        conversation_id: 所属会话标识，外键指向 conversations.conversation_id，非空。
+        tenant_id: 租户标识（String(128)），非空，参与幂等唯一约束。
+        subject_id: 主体标识（String(128)），非空，参与幂等唯一约束。
+        run_id: 平台运行标识（String(128)），非空，全局唯一约束。
+        server_run_id: Agent Server 运行标识（String(128)）；未绑定时为 NULL。
+        client_idempotency_key: 客户端幂等键（String(200)），非空，参与幂等唯一约束。
+        request_hash: 请求内容哈希（String(64)），非空。
+        target_type: 目标对象类型（String(32)），非空。
+        target_id: 目标对象标识（String(128)），非空。
+        target_version: 目标对象版本（String(32)），非空。
+        status: turn 状态字符串，非空，默认 "accepted"。
+        created_at: 创建时间（带时区），非空，默认当前 UTC 时间。
+        completed_at: 终态完成时间（带时区）；未完成时为 NULL。
+        conversation: 所属会话的关联对象（多对一）。
+        messages: 该 turn 下的消息列表；随 turn 级联删除。
+
     """
 
     __tablename__ = "conversation_turns"
@@ -130,25 +132,24 @@ class ConversationTurnRow(Base):
 
 
 class ConversationMessageRow(Base):
-    """定义会话消息Row。
+    """消息表：持久化 ConversationMessage 原文日志，append-only 且按序号排列。
 
-    适用场景：
-        用于集中表达该职责，避免调用方直接依赖底层实现细节。
+    使用场景：（会话，序号）唯一约束保证序号不重复；turn_id+role 索引支撑
+    幂等对账查询；上下文装配按序号顺序读取原文。
 
-    属性：
-        __tablename__: 内部 `tablename  ` 状态或依赖，不属于公开接口。
-        __table_args__: 内部 `table args  ` 状态或依赖，不属于公开接口。
-        message_id: 关联对象的稳定标识，用于查询、关联和审计追踪。
-        conversation_id: 会话稳定标识，用于关联消息、轮次、摘要和上下文清单。
-        turn_id: 会话轮次标识，用于把一次用户输入与其运行结果关联。
-        sequence: 消息在会话内从 1 开始的稳定顺序号。
-        parent_message_id: 被该消息直接响应的父消息标识；无父消息时为空。
-        role: 消息发送方角色。
-        content: 经过边界校验后保存或传递的正文内容。
-        content_hash: 正文的 SHA-256，用于完整性校验、去重与审计。
-        visible: 该消息是否应暴露给后续模型上下文。
-        created_at: 记录创建时间，统一按 UTC 解释。
-        turn: 该消息所属的会话轮次 ORM 对象。
+    Attributes:
+        message_id: 消息标识，主键（String(128)）。
+        conversation_id: 所属会话标识，外键指向 conversations.conversation_id，非空。
+        turn_id: 所属 turn 标识，外键指向 conversation_turns.turn_id，非空。
+        sequence: 会话内序号，非空，与 conversation_id 组成唯一约束。
+        parent_message_id: 父消息标识（自引用外键）；分支消息使用，顶层为 NULL。
+        role: 消息角色字符串（user/assistant），非空。
+        content: 消息原文（Text），非空。
+        content_hash: 内容 SHA-256 摘要（String(64)），非空，用于对账。
+        visible: 是否可见，非空，默认 True。
+        created_at: 创建时间（带时区），非空，默认当前 UTC 时间。
+        turn: 所属 turn 的关联对象（多对一）。
+
     """
 
     __tablename__ = "conversation_messages"
@@ -178,32 +179,31 @@ class ConversationMessageRow(Base):
 
 
 class ConversationSummaryRow(Base):
-    """定义会话摘要Row。
+    """摘要表：持久化 ConversationSummary，支持分段与分层摘要。
 
-    适用场景：
-        用于集中表达该职责，避免调用方直接依赖底层实现细节。
+    使用场景：（会话，层级，起始，结束）组合索引支撑区间查询；
+    superseded_by 自引用外键记录摘要换代链路。
 
-    属性：
-        __tablename__: 内部 `tablename  ` 状态或依赖，不属于公开接口。
-        __table_args__: 内部 `table args  ` 状态或依赖，不属于公开接口。
-        summary_id: 摘要稳定标识。
-        conversation_id: 会话稳定标识，用于关联消息、轮次、摘要和上下文清单。
-        level: 摘要层级；0 表示直接由原始消息生成。
-        start_sequence: 摘要覆盖的第一条消息序号。
-        end_sequence: 摘要覆盖的最后一条消息序号。
-        source_message_ids: 生成摘要时使用的原始消息标识，保留证据链。
-        source_summary_ids: 生成高层摘要时使用的低层摘要标识。
-        summary_content: 提供给模型的压缩会话内容。
-        topics: 摘要提取出的主题标签。
-        entities: 摘要提取出的实体名称。
-        decisions: 摘要提取出的已确认决策。
-        open_items: 摘要提取出的未完成事项。
-        model_profile_version: 本次模型调用固定使用的模型配置版本。
-        template_version: 生成该内容时使用的模板版本。
-        content_hash: 正文的 SHA-256，用于完整性校验、去重与审计。
-        status: 当前生命周期状态，决定记录允许的后续操作。
-        superseded_by: 替代当前记录的新版本标识；仍有效时为空。
-        created_at: 记录创建时间，统一按 UTC 解释。
+    Attributes:
+        summary_id: 摘要标识，主键（String(128)）。
+        conversation_id: 所属会话标识，外键指向 conversations.conversation_id，非空。
+        level: 摘要层级（0 为分段摘要，>=1 为分层摘要），非空。
+        start_sequence: 覆盖起始序号，非空。
+        end_sequence: 覆盖结束序号，非空。
+        source_message_ids: 源消息 ID 列表（JSON），非空，默认空列表。
+        source_summary_ids: 源摘要 ID 列表（JSON），非空，默认空列表。
+        summary_content: 摘要正文（Text），非空。
+        topics: 主题词列表（JSON），非空，默认空列表。
+        entities: 实体（股票代码）列表（JSON），非空，默认空列表。
+        decisions: 历史决策列表（JSON），非空，默认空列表。
+        open_items: 未决事项列表（JSON），非空，默认空列表。
+        model_profile_version: 生成摘要的摘要器版本（String(32)），非空。
+        template_version: 摘要模板版本（String(64)），非空。
+        content_hash: 摘要内容 SHA-256 摘要（String(64)），非空。
+        status: 摘要状态字符串，非空，默认 "active"。
+        superseded_by: 取代本摘要的新摘要 ID（自引用外键）；未被取代时为 NULL。
+        created_at: 创建时间（带时区），非空，默认当前 UTC 时间。
+
     """
 
     __tablename__ = "conversation_summaries"
@@ -244,35 +244,34 @@ class ConversationSummaryRow(Base):
 
 
 class ModelContextManifestRow(Base):
-    """定义模型上下文清单Row。
+    """模型上下文清单表：永久保存每次模型调用的 ModelContextManifest。
 
-    适用场景：
-        用于集中表达该职责，避免调用方直接依赖底层实现细节。
+    使用场景：model_call_id 唯一约束保证一次调用一条清单；
+    （会话，turn，run）组合索引支撑按轮次审计与回放。
 
-    属性：
-        __tablename__: 内部 `tablename  ` 状态或依赖，不属于公开接口。
-        __table_args__: 内部 `table args  ` 状态或依赖，不属于公开接口。
-        manifest_id: 模型上下文清单标识，用于复现单次模型调用输入。
-        model_call_id: 一次具体模型调用的关联标识。
-        conversation_id: 会话稳定标识，用于关联消息、轮次、摘要和上下文清单。
-        turn_id: 会话轮次标识，用于把一次用户输入与其运行结果关联。
-        run_id: 应用侧运行标识，用于跨服务查询、追踪和幂等关联。
-        prompt_template_version: 构造模型提示时使用的模板版本。
-        agent_profile_version: 本次运行固定使用的 Agent 配置版本。
-        model_profile_version: 本次模型调用固定使用的模型配置版本。
-        recent_message_start: 本次选择的近期消息起始序号。
-        recent_message_end: 本次选择的近期消息结束序号。
-        summary_ids: 本次上下文使用的摘要标识。
-        memory_ids: 本次上下文实际注入的长期记忆标识，顺序与引用一致。
-        memory_refs: 带版本和注入原因的长期记忆引用。
-        historical_message_ids: 因相关性被补充选择的较早消息标识。
-        tool_result_refs: 上下文引用的外置工具结果标识。
-        exposed_tools: 本次模型调用可见的工具名称。
-        input_token_count: 最终选择内容的估算输入 token 数。
-        available_input_tokens: 扣除输出、系统策略和安全余量后的输入预算。
-        omissions: 因预算或相关性未纳入上下文的条目及原因。
-        context_hash: 最终上下文选择的稳定哈希，用于审计和复现。
-        created_at: 记录创建时间，统一按 UTC 解释。
+    Attributes:
+        manifest_id: 清单标识，主键（String(128)）。
+        model_call_id: 模型调用标识（String(128)），非空，全局唯一约束。
+        conversation_id: 所属会话标识，外键指向 conversations.conversation_id，非空。
+        turn_id: 所属 turn 标识，外键指向 conversation_turns.turn_id，非空。
+        run_id: 平台运行标识（String(128)），非空。
+        prompt_template_version: 提示词模板版本（String(64)），非空。
+        agent_profile_version: Agent Profile 版本（String(32)），非空。
+        model_profile_version: 模型配置版本（String(32)），非空。
+        recent_message_start: 入选最近原文的最小序号；无入选时为 NULL。
+        recent_message_end: 入选最近原文的最大序号；无入选时为 NULL。
+        summary_ids: 入选摘要 ID 列表（JSON），非空，默认空列表。
+        memory_ids: 注入记忆 ID 列表（JSON），非空，默认空列表。
+        memory_refs: 记忆引用明细（JSON 对象列表），非空，默认空列表。
+        historical_message_ids: 相关古老历史消息 ID 列表（JSON），非空，默认空列表。
+        tool_result_refs: 外置工件 ID 列表（JSON），非空，默认空列表。
+        exposed_tools: 暴露给模型的工具清单（JSON），非空，默认空列表。
+        input_token_count: 估算输入 token 总数，非空。
+        available_input_tokens: 配置的可用输入预算，非空。
+        omissions: 省略明细（JSON 对象列表），非空，默认空列表。
+        context_hash: 上下文 SHA-256 摘要（String(64)），非空。
+        created_at: 创建时间（带时区），非空，默认当前 UTC 时间。
+
     """
 
     __tablename__ = "model_context_manifests"
@@ -309,26 +308,25 @@ class ModelContextManifestRow(Base):
 
 
 class ArtifactMetadataRow(Base):
-    """定义制品MetadataRow。
+    """工件元数据表：记录外置工具结果等工件的存储与访问信息。
 
-    适用场景：
-        用于集中表达该职责，避免调用方直接依赖底层实现细节。
+    使用场景：工具结果超出保留预算时正文外置到对象存储，本表保存其存储 URI、
+    内容哈希、大小与访问/加密策略，供审计与按需回读。
 
-    属性：
-        __tablename__: 内部 `tablename  ` 状态或依赖，不属于公开接口。
-        __table_args__: 内部 `table args  ` 状态或依赖，不属于公开接口。
-        artifact_id: 制品稳定标识。
-        tenant_id: 租户隔离键，所有读取和写入都必须以此限定边界。
-        subject_id: 已认证主体标识，用于所有权校验和审计归因。
-        content_type: 制品内容的 MIME 类型，供下载方选择解析方式。
-        storage_uri: 制品内容的存储位置，不包含访问凭证。
-        content_hash: 正文的 SHA-256，用于完整性校验、去重与审计。
-        size_bytes: 制品序列化后的字节数。
-        source_type: 内容来源类别，例如用户陈述或系统推导。
-        source_id: 关联对象的稳定标识，用于查询、关联和审计追踪。
-        access_policy: 读取制品所需满足的租户、主体或权限限制。
-        encryption_metadata: 证明制品静态加密方式的非敏感元数据。
-        created_at: 记录创建时间，统一按 UTC 解释。
+    Attributes:
+        artifact_id: 工件标识，主键（String(128)）。
+        tenant_id: 租户标识（String(128)），非空，参与归属索引。
+        subject_id: 主体标识（String(128)），非空，参与归属索引。
+        content_type: 工件 MIME 类型（String(200)），非空。
+        storage_uri: 对象存储 URI（Text），非空。
+        content_hash: 内容 SHA-256 摘要（String(64)），非空。
+        size_bytes: 内容字节数，非空。
+        source_type: 产生工件的来源类型（String(64)），非空。
+        source_id: 来源对象标识（String(128)），非空。
+        access_policy: 访问策略（JSON 对象），非空，默认空对象。
+        encryption_metadata: 加密元数据（JSON 对象），非空，默认空对象。
+        created_at: 创建时间（带时区），非空，默认当前 UTC 时间。
+
     """
 
     __tablename__ = "artifacts"

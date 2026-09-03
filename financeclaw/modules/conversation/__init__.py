@@ -1,4 +1,7 @@
-"""按业务能力拆分的领域模型、仓储与领域服务。"""
+"""FinanceClaw 会话日志（Conversation Journal）模块的公共出口。
+
+聚合上下文装配、领域模型、持久化仓库与摘要服务，供应用层与编排层统一导入。
+"""
 
 from .context import ContextBudget, ConversationContextBuilder, TokenCounter
 from .models import (

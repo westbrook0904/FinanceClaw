@@ -1,18 +1,28 @@
-"""定义该版本数据库结构变更及其可逆迁移步骤。"""
+"""首个迁移（stage2）：创建会话域的基础表。
+
+建立多租户会话模型的核心表结构：``conversations``（会话）、
+``conversation_turns``（轮次，含幂等键约束）、``conversation_messages``
+（消息，按会话内序号唯一）、``conversation_summaries``（分层摘要）、
+``model_context_manifests``（模型上下文清单，可审计复现上下文组装）
+以及 ``artifacts``（产物登记），并附各查询路径所需索引。
+"""
 
 from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
 
+# 本迁移的版本标识，作为迁移链的起点。
 revision: str = "0001_stage2"
+# 前驱版本：无（首个迁移）。
 down_revision: str | None = None
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    """创建本版本新增的表、索引和约束。"""
+    """创建 stage2 会话域的全部表、约束与索引。"""
+    # 1. 会话主表：租户+主体定位归属，agent_thread_id 唯一映射服务端线程。
     op.create_table(
         "conversations",
         sa.Column("conversation_id", sa.String(128), primary_key=True),
@@ -31,6 +41,7 @@ def upgrade() -> None:
         "conversations",
         ["tenant_id", "subject_id", "conversation_id"],
     )
+    # 2. 轮次表：run_id 唯一 + 客户端幂等键唯一，支撑重试与去重。
     op.create_table(
         "conversation_turns",
         sa.Column("turn_id", sa.String(128), primary_key=True),
@@ -65,6 +76,7 @@ def upgrade() -> None:
         "conversation_turns",
         ["conversation_id", "created_at"],
     )
+    # 3. 消息表：会话内 sequence 唯一，支持 parent_message_id 组织树状结构。
     op.create_table(
         "conversation_messages",
         sa.Column("message_id", sa.String(128), primary_key=True),
@@ -96,6 +108,7 @@ def upgrade() -> None:
         ),
     )
     op.create_index("ix_messages_turn_role", "conversation_messages", ["turn_id", "role"])
+    # 4. 分层摘要表：按 level 与消息序号区间组织，superseded_by 记录被替换关系。
     op.create_table(
         "conversation_summaries",
         sa.Column("summary_id", sa.String(128), primary_key=True),
@@ -131,6 +144,7 @@ def upgrade() -> None:
         "conversation_summaries",
         ["conversation_id", "level", "start_sequence", "end_sequence"],
     )
+    # 5. 模型上下文清单表：记录每次模型调用的上下文组装来源，model_call_id 唯一。
     op.create_table(
         "model_context_manifests",
         sa.Column("manifest_id", sa.String(128), primary_key=True),
@@ -170,6 +184,7 @@ def upgrade() -> None:
         "model_context_manifests",
         ["conversation_id", "turn_id", "run_id"],
     )
+    # 6. 产物登记表：记录产物存储位置、内容哈希与访问/加密元数据。
     op.create_table(
         "artifacts",
         sa.Column("artifact_id", sa.String(128), primary_key=True),
@@ -189,7 +204,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    """按依赖逆序移除本版本引入的数据库对象。"""
+    """回滚 stage2：按依赖逆序删除全部索引与表。"""
     op.drop_index("ix_artifacts_owner", table_name="artifacts")
     op.drop_table("artifacts")
     op.drop_index("ix_manifests_run", table_name="model_context_manifests")

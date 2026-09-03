@@ -1,18 +1,26 @@
-"""定义该版本数据库结构变更及其可逆迁移步骤。"""
+"""stage4 迁移：创建工作流域的运行表与人工审批表。
+
+``workflow_runs`` 记录一次工作流执行的完整档案（版本、模型档案、
+超时预算、幂等键与输入输出），``workflow_approvals`` 记录人工审批点
+的请求与决策；二者分别带未完成扫描与待审批扫描所需索引。
+"""
 
 from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
 
+# 本迁移的版本标识。
 revision: str = "0003_stage4"
+# 前驱版本：0002_stage3（记忆引用与审计表）。
 down_revision: str | None = "0002_stage3"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    """创建本版本新增的表、索引和约束。"""
+    """创建工作流运行表与审批表及其约束、索引。"""
+    # 1. 工作流运行表：thread 与 server_run 唯一映射，发布级幂等键防重复触发。
     op.create_table(
         "workflow_runs",
         sa.Column("run_id", sa.String(128), primary_key=True),
@@ -52,11 +60,13 @@ def upgrade() -> None:
         "workflow_runs",
         ["tenant_id", "subject_id", "run_id"],
     )
+    # 状态+更新时间索引：供后台扫描超时与未完成运行。
     op.create_index(
         "ix_workflow_runs_incomplete",
         "workflow_runs",
         ["status", "updated_at"],
     )
+    # 2. 审批表：一个运行在同一审批点仅一条记录，含决策窗口与决策人信息。
     op.create_table(
         "workflow_approvals",
         sa.Column("approval_id", sa.String(128), primary_key=True),
@@ -87,6 +97,7 @@ def upgrade() -> None:
         "workflow_approvals",
         ["tenant_id", "subject_id", "approval_id"],
     )
+    # 状态+过期时间索引：供后台扫描过期未决的审批。
     op.create_index(
         "ix_workflow_approvals_pending",
         "workflow_approvals",
@@ -95,7 +106,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    """按依赖逆序移除本版本引入的数据库对象。"""
+    """回滚 stage4：先删审批表（含其索引），再删工作流运行表。"""
     op.drop_index("ix_workflow_approvals_pending", table_name="workflow_approvals")
     op.drop_index("ix_workflow_approvals_owner", table_name="workflow_approvals")
     op.drop_table("workflow_approvals")

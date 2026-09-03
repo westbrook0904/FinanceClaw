@@ -1,4 +1,8 @@
-"""Agent、工具和 LangGraph 工作流的运行时编排。"""
+"""orchestration 工具治理层的公共出口：汇总受治理 Tool 的目录、治理元数据与实现。
+
+对外统一导出 ToolCatalog、ToolGovernance/ManagedTool、ToolPolicy 以及本地、
+MCP 两类 Tool 实现，orchestration 与 API 层应只从本包导入工具相关符号。
+"""
 
 from .catalog import ToolCatalog, ToolCatalogError
 from .governance import (
@@ -17,6 +21,7 @@ from .local import CalculatorTool, MarketSnapshotTool, WatchlistWriteTool, defau
 from .mcp import MCPQuoteTool, MCPToolUnavailable, managed_mcp_quote_tool
 from .policy import ToolDecision, ToolDecisionType, ToolPolicy, TransientToolError
 
+# 包对外导出的 Tool 治理相关符号清单。
 __all__ = [
     "ApprovalMode",
     "AuditLevel",

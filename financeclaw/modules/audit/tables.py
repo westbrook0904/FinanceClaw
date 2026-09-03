@@ -1,4 +1,8 @@
-"""声明审计事件的 SQLAlchemy 持久化映射。"""
+"""审计记录的 ORM 表定义。
+
+位于 audit 模块的持久化层：定义 ``audit_records`` 表结构，供仓储层写入与查询，
+与 Outbox 事件表配合实现审计记录与事件的同事务落盘。
+"""
 
 from datetime import datetime
 from typing import Any
@@ -10,33 +14,33 @@ from financeclaw.infrastructure.orm import Base, utcnow
 
 
 class AuditRecordRow(Base):
-    """定义审计RecordRow。
+    """``audit_records`` 表的 ORM 映射，保存一条不可变的永久审计记录。
 
-    适用场景：
-        用于集中表达该职责，避免调用方直接依赖底层实现细节。
+    使用场景：由 SqlAlchemyAuditRepository 在追加审计时写入；通过租户/主体与
+    时间、运行标识与事件类型两类索引支持审计查询与追溯。
 
-    属性：
-        __tablename__: 内部 `tablename  ` 状态或依赖，不属于公开接口。
-        __table_args__: 内部 `table args  ` 状态或依赖，不属于公开接口。
-        audit_id: 关联对象的稳定标识，用于查询、关联和审计追踪。
-        event_type: 事件的语义类型，供消费者选择处理逻辑。
-        occurred_at: 该生命周期事件发生的 UTC 时间。
-        tenant_id: 租户隔离键，所有读取和写入都必须以此限定边界。
-        subject_id: 已认证主体标识，用于所有权校验和审计归因。
-        conversation_id: 会话稳定标识，用于关联消息、轮次、摘要和上下文清单。
-        turn_id: 会话轮次标识，用于把一次用户输入与其运行结果关联。
-        run_id: 应用侧运行标识，用于跨服务查询、追踪和幂等关联。
-        tool_call_id: 关联对象的稳定标识，用于查询、关联和审计追踪。
-        resource_type: 被审批、审计或事件关联的资源类别。
-        resource_id: 关联对象的稳定标识，用于查询、关联和审计追踪。
-        resource_version: 运行固定使用的版本，用于审计复现。
-        action: 审批点准备执行的动作名称。
-        decision: 审批人或策略引擎作出的结构化决定。
-        policy_version: 作出决策时使用的策略版本。
-        payload_hash: 事件载荷的稳定哈希，用于完整性核对。
-        evidence_refs: 支撑该记忆事实的消息或外部证据引用。
-        artifact_refs: 本次运行、审计或事件关联的制品标识集合。
-        metadata_json: 经 JSON 编码后持久化的附加审计元数据。
+    Attributes:
+        audit_id: 审计记录唯一标识，主键，最长 128 字符。
+        event_type: 事件类型字符串（``AuditEventType`` 的值），最长 64 字符，非空。
+        occurred_at: 事件发生时间（带时区），默认为当前 UTC 时间，非空。
+        tenant_id: 租户标识，最长 128 字符，非空。
+        subject_id: 主体标识，最长 128 字符，非空。
+        conversation_id: 关联会话标识，最长 128 字符；非会话场景为 NULL。
+        turn_id: 事件所属的对话轮次标识，最长 128 字符，非空。
+        run_id: 事件所属的 Agent 运行标识，最长 128 字符，非空。
+        tool_call_id: 关联的工具调用标识，最长 128 字符；仅工具类事件存在。
+        resource_type: 被操作资源类型，最长 64 字符，非空。
+        resource_id: 被操作资源标识，最长 128 字符，非空。
+        resource_version: 被操作资源版本，最长 32 字符，非空。
+        action: 对资源执行的动作名称，最长 64 字符，非空。
+        decision: 策略判定结果，最长 64 字符，非空。
+        policy_version: 作出判定时使用的策略版本，最长 64 字符，非空。
+        payload_hash: 事件负载的 SHA256 摘要，64 字符，非空。
+        evidence_refs: 证据引用标识列表（JSON 数组），默认为空列表，非空。
+        artifact_refs: 关联 Artifact 标识列表（JSON 数组），默认为空列表，非空。
+        metadata_json: 附加结构化元数据（JSON 对象），映射到列 ``metadata``，
+            默认为空字典，非空。
+
     """
 
     __tablename__ = "audit_records"

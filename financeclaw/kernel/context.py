@@ -1,4 +1,8 @@
-"""跨层共享且不依赖具体实现的运行上下文、目标与响应契约。"""
+"""跨层共享的运行时上下文契约：租户、主体、会话定位与数据分级。
+
+本模块属于 kernel（稳定共享契约层），被 orchestration 与 infrastructure 依赖，
+自身不依赖任何业务模块，变更需保持向后兼容。
+"""
 
 from enum import StrEnum
 from typing import Annotated
@@ -7,16 +11,10 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class DataClassification(StrEnum):
-    """运行上下文或供应商配置允许处理的数据敏感等级。
+    """数据敏感级别枚举，标注一次运行所涉数据的最高密级。
 
-    适用场景：
-        用于限制持久化值和边界输入，避免以自由字符串表达状态。
-
-    属性：
-        PUBLIC: 无需访问控制即可公开的数据等级。
-        INTERNAL: 仅允许访问平台内部网络资源或处理内部级数据。
-        CONFIDENTIAL: 需要严格访问控制的机密数据等级。
-        RESTRICTED: 受最严格限制、通常不得发送给外部供应方的数据等级。
+    使用场景：构造 ``ExecutionContext`` 时声明密级；审计、记忆与观测等
+    下游组件依据密级决定脱敏、留存与展示策略。
     """
 
     PUBLIC = "public"
@@ -25,26 +23,27 @@ class DataClassification(StrEnum):
     RESTRICTED = "restricted"
 
 
+# 通用标识符类型：1~128 位，仅允许字母、数字与 . _ : -，用于各类 ID 字段的统一校验。
 Identifier = Annotated[str, Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9._:-]+$")]
 
 
 class ExecutionContext(BaseModel):
-    """定义跨 Agent、图与工具传递的可信调用上下文。
+    """一次运行的执行上下文：携带租户、主体、会话定位与数据分级等背景信息。
 
-    适用场景：
-        用于在接口、领域与持久化边界之间传递经过校验的结构化数据。
+    使用场景：BFF 受理请求后构造，随 Run 贯穿 orchestration 与 infrastructure，
+    用于多租户隔离、授权判定、审计归属与观测标注。
 
-    属性：
-        model_config: Pydantic 校验策略，禁止未知字段并在需要时冻结实例。
-        tenant_id: 租户隔离键，所有读取和写入都必须以此限定边界。
-        subject_id: 已认证主体标识，用于所有权校验和审计归因。
-        scopes: 调用主体拥有的权限域集合。
-        conversation_id: 会话稳定标识，用于关联消息、轮次、摘要和上下文清单。
-        turn_id: 会话轮次标识，用于把一次用户输入与其运行结果关联。
-        run_id: 应用侧运行标识，用于跨服务查询、追踪和幂等关联。
-        data_classification: 本次运行处理的数据分类，用于约束模型和工具选择。
-        locale: 模型面向用户生成内容时采用的语言与地区标记。
-        timezone: 解释用户时间和展示时间时采用的 IANA 时区。
+    Attributes:
+        tenant_id: 租户 ID，多租户隔离与存储命名空间的一级维度。
+        subject_id: 主体 ID（通常是终端用户），权限校验与审计记录的归属对象。
+        scopes: 授予本次运行的作用域集合，供 Tool/Workflow 的授权策略校验。
+        conversation_id: 会话 ID；不经会话的直连运行（裸 Tool/Workflow）可为 None。
+        turn_id: 轮次 ID，定位会话中由一次用户输入触发的工作单元。
+        run_id: 本次运行的唯一 ID，贯穿审计、状态查询与流式事件。
+        data_classification: 本次运行的数据密级，默认 ``INTERNAL``。
+        locale: 语言环境标签，影响回复语言与本地化格式，默认 ``zh-CN``。
+        timezone: IANA 时区名，用于时间展示与调度类逻辑，默认 ``Asia/Shanghai``。
+
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -60,11 +59,17 @@ class ExecutionContext(BaseModel):
     timezone: Annotated[str, Field(min_length=1, max_length=64)] = "Asia/Shanghai"
 
     def trace_metadata(self) -> dict[str, str]:
-        """生成不含原始租户和主体标识的追踪元数据；敏感标识仅输出截断哈希。"""
+        """生成供分布式追踪使用的元数据字典，租户与主体 ID 经哈希脱敏。
+
+        Returns:
+            包含租户/主体哈希、轮次与运行 ID、数据密级的追踪标签字典。
+
+        """
         from hashlib import sha256
 
         def digest(value: str) -> str:
-            """计算不可逆的截断 SHA-256，避免在追踪标签中暴露原始标识。"""
+            """对标识符取 SHA-256 摘要，仅保留前 16 位十六进制用于脱敏。"""
+            # 仅保留摘要前 16 位十六进制，避免完整哈希被反推或滥用。
             return sha256(value.encode()).hexdigest()[:16]
 
         return {

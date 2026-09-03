@@ -1,4 +1,8 @@
-"""定义工作流输入目标、运行状态、审批和版本化定义。"""
+"""工作流的定义、运行与审批领域模型，以及对应的生命周期状态枚举。
+
+WorkflowDefinition 固定一次流程装配的全部要素；WorkflowRun 与
+WorkflowApproval 记录运行与 HITL 审批的事实，由 BFF 永久保存。
+"""
 
 from __future__ import annotations
 
@@ -11,28 +15,30 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class FrozenWorkflowModel(BaseModel):
-    """定义不可变工作流模型。
+    """所有工作流模型共用的不可变 Pydantic 基类。
 
-    适用场景：
-        用于在接口、领域与持久化边界之间传递经过校验的结构化数据。
+    使用场景：
+        保证运行、审批等事实记录在创建后不可被篡改或随意扩展。
 
-    属性：
-        model_config: Pydantic 校验策略，禁止未知字段并在需要时冻结实例。
+    Attributes:
+        model_config: Pydantic 配置；禁止未知字段（extra="forbid"）并冻结实例。
+
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
 class WorkflowStatus(StrEnum):
-    """定义工作流状态。
+    """工作流定义的发布状态。
 
-    适用场景：
-        用于限制持久化值和边界输入，避免以自由字符串表达状态。
+    使用场景：
+        目录只解析 ACTIVE 定义；DEPRECATED 版本保留可查但不可再启动。
 
-    属性：
-        DRAFT: 表示 `draft` 这一受限枚举值。
-        ACTIVE: 记录当前有效，可继续读取或追加操作。
-        DEPRECATED: 表示 `deprecated` 这一受限枚举值。
+    Attributes:
+        DRAFT: 尚未发布，仅用于编辑与评审。
+        ACTIVE: 已发布，可被目录解析并启动运行。
+        DEPRECATED: 已废弃，保留定义但不再允许新运行。
+
     """
 
     DRAFT = "draft"
@@ -41,19 +47,20 @@ class WorkflowStatus(StrEnum):
 
 
 class WorkflowRunStatus(StrEnum):
-    """工作流运行从接收到终态的生命周期状态。
+    """工作流运行的生命周期状态。
 
-    适用场景：
-        用于限制持久化值和边界输入，避免以自由字符串表达状态。
+    使用场景：
+        驱动 BFF 侧的运行状态机；COMPLETED/REJECTED/FAILED 为终态，不可再变更。
 
-    属性：
-        ACCEPTED: 表示 `accepted` 这一受限枚举值。
-        PENDING: 操作已创建但尚未开始处理。
-        RUNNING: 操作正在执行且尚未产生终态结果。
-        INTERRUPTED: 运行停在可恢复检查点，等待外部决定。
-        COMPLETED: 操作已成功完成并可读取最终结果。
-        REJECTED: 表示 `rejected` 这一受限枚举值。
-        FAILED: 操作已失败，错误信息应记录在对应字段。
+    Attributes:
+        ACCEPTED: 请求已受理，尚未在 Agent Server 上启动。
+        PENDING: 运行已提交，等待执行或审批。
+        RUNNING: 正在图中执行。
+        INTERRUPTED: 停在审批等 interrupt 检查点，等待恢复。
+        COMPLETED: 运行成功结束。
+        REJECTED: 审批被拒绝，运行终止。
+        FAILED: 执行失败，运行终止。
+
     """
 
     ACCEPTED = "accepted"
@@ -66,16 +73,17 @@ class WorkflowRunStatus(StrEnum):
 
 
 class WorkflowApprovalStatus(StrEnum):
-    """定义工作流审批状态。
+    """人工审批决定的生命周期状态。
 
-    适用场景：
-        用于限制持久化值和边界输入，避免以自由字符串表达状态。
+    使用场景：
+        审批点产生 PENDING 记录，复验通过后由审批人落成终态。
 
-    属性：
-        PENDING: 操作已创建但尚未开始处理。
-        APPROVED: 表示 `approved` 这一受限枚举值。
-        REJECTED: 表示 `rejected` 这一受限枚举值。
-        EXPIRED: 表示 `expired` 这一受限枚举值。
+    Attributes:
+        PENDING: 等待审批人决定。
+        APPROVED: 已批准，运行可恢复。
+        REJECTED: 已拒绝，运行终止。
+        EXPIRED: 超过审批时限，未再被决定。
+
     """
 
     PENDING = "pending"
@@ -85,14 +93,15 @@ class WorkflowApprovalStatus(StrEnum):
 
 
 class WorkflowToolRef(FrozenWorkflowModel):
-    """定义工作流工具Ref。
+    """工作流允许使用的工具及其固定版本引用。
 
-    适用场景：
-        用于在接口、领域与持久化边界之间传递经过校验的结构化数据。
+    使用场景：
+        装配期把流程绑定的工具版本固化进定义，运行期据此校验可用工具。
 
-    属性：
-        tool_id: 工具的稳定标识。
-        version: 语义版本，用于固定运行行为并支持审计复现。
+    Attributes:
+        tool_id: 工具稳定标识，1 到 128 字符。
+        version: 工具语义化版本，形如 x.y.z。
+
     """
 
     tool_id: str = Field(min_length=1, max_length=128)
@@ -100,17 +109,19 @@ class WorkflowToolRef(FrozenWorkflowModel):
 
 
 class ApprovalPoint(FrozenWorkflowModel):
-    """定义审批Point。
+    """工作流中需要人工审批（HITL）的检查点定义。
 
-    适用场景：
-        用于在接口、领域与持久化边界之间传递经过校验的结构化数据。
+    使用场景：
+        图执行到该检查点时通过 LangGraph interrupt 暂停，BFF 侧据此
+        生成审批请求，恢复前复验权限、归属与原始参数哈希。
 
-    属性：
-        approval_id: 审批请求稳定标识。
-        description: 供调用者、模型或运维人员理解用途的可读说明。
-        requested_action: 需要人工确认的具体操作。
-        allowed_decisions: 当前配置明确允许的值集合。
-        required_scope: 作出该审批决定所需的权限域。
+    Attributes:
+        approval_id: 检查点稳定标识，在同一工作流内唯一。
+        description: 面向审批人的检查点说明，1 到 500 字符。
+        requested_action: 该检查点请求确认的具体动作。
+        allowed_decisions: 允许的决定集合，默认仅 approve 与 reject。
+        required_scope: 作出决定所需的权限域，默认 workflows:approve。
+
     """
 
     approval_id: str = Field(min_length=1, max_length=128)
@@ -121,7 +132,7 @@ class ApprovalPoint(FrozenWorkflowModel):
 
     @model_validator(mode="after")
     def decisions_are_nonempty_and_unique(self) -> ApprovalPoint:
-        """校验审批Point的跨字段一致性；不满足不变量时拒绝构造。"""
+        """校验决定集合非空且取值不重复。"""
         if not self.allowed_decisions or len(self.allowed_decisions) != len(
             set(self.allowed_decisions)
         ):
@@ -130,14 +141,15 @@ class ApprovalPoint(FrozenWorkflowModel):
 
 
 class WorkflowTimeoutPolicy(FrozenWorkflowModel):
-    """定义工作流Timeout策略。
+    """工作流运行与审批的超时策略。
 
-    适用场景：
-        用于在执行副作用前作出确定性治理决策。
+    使用场景：
+        装配期固化超时参数，随运行快照持久化，用于运行超时与审批过期判定。
 
-    属性：
-        run_timeout_seconds: 该操作允许的最长时间（秒）。
-        approval_timeout_seconds: 该操作允许的最长时间（秒）。
+    Attributes:
+        run_timeout_seconds: 单次运行允许的最长时长（秒），默认 300。
+        approval_timeout_seconds: 审批等待的最长时限（秒），默认 900。
+
     """
 
     run_timeout_seconds: int = Field(default=300, ge=1, le=86_400)
@@ -146,25 +158,27 @@ class WorkflowTimeoutPolicy(FrozenWorkflowModel):
 
 @dataclass(frozen=True, slots=True)
 class WorkflowDefinition:
-    """定义工作流构建器及其权限、超时和版本元数据。
+    """一个已发布工作流的不可变定义，固定其全部装配要素。
 
-    适用场景：
-        用于集中表达该职责，避免调用方直接依赖底层实现细节。
+    使用场景：
+        在启动期由目录装配登记；启动运行时按版本取出，归一化输入，
+        并绑定图、模型档案、工具版本、审批点与超时策略。
 
-    属性：
-        workflow_id: 工作流的稳定标识。
-        version: 语义版本，用于固定运行行为并支持审计复现。
-        assistant_id: 提交 Agent Server 时使用的助手或图标识。
-        graph: 已经编译、可由 Agent Server 执行的 LangGraph 图。
-        input_schema: 工作流公开输入使用的 Pydantic 校验模型。
-        output_schema: 工作流终态输出使用的 Pydantic 校验模型。
-        model_profile_id: 关联对象的稳定标识，用于查询、关联和审计追踪。
-        allowed_tools: 当前配置明确允许的值集合。
-        approval_points: 该工作流定义允许产生中断的节点集合。
-        timeout_policy: 工作流运行超时后采用的失败处理策略。
-        status: 当前生命周期状态，决定记录允许的后续操作。
-        deployment_revision: 构建工作流图的部署修订号，用于定位实际运行代码。
-        required_scopes: 执行目标必须具备的权限域集合。
+    Attributes:
+        workflow_id: 工作流稳定标识，如 portfolio_review。
+        version: 语义化版本号，形如 x.y.z。
+        assistant_id: Agent Server 侧承载该流程的助手标识。
+        graph: 编译后的 LangGraph 图对象；发布定义不允许为空。
+        input_schema: 输入参数的 Pydantic 模型类型，用于校验与归一化。
+        output_schema: 输出结果的 Pydantic 模型类型。
+        model_profile_id: 本次流程固定使用的模型档案标识。
+        allowed_tools: 允许使用的工具版本集合，（工具，版本）组合不重复。
+        approval_points: 人工审批检查点集合，检查点标识不重复。
+        timeout_policy: 运行与审批的超时策略。
+        status: 发布状态，仅 ACTIVE 可被目录解析。
+        deployment_revision: 装配该定义时的部署修订号，用于定位运行代码。
+        required_scopes: 启动该流程所需的权限域集合。
+
     """
 
     workflow_id: str
@@ -182,7 +196,7 @@ class WorkflowDefinition:
     required_scopes: frozenset[str]
 
     def __post_init__(self) -> None:
-        """校验成对封装的工具标识与治理元数据完全一致。"""
+        """校验标识、版本、工具与审批点等装配期不变量。"""
         if not self.workflow_id or not self.assistant_id or not self.deployment_revision:
             raise ValueError("workflow identifiers cannot be empty")
         parts = self.version.split(".")
@@ -199,43 +213,53 @@ class WorkflowDefinition:
 
     @property
     def key(self) -> tuple[str, str]:
-        """返回由稳定标识与版本组成的目录复合键。"""
+        """返回目录索引键（workflow_id, version）。"""
         return self.workflow_id, self.version
 
     def normalize_input(self, arguments: dict[str, Any]) -> dict[str, Any]:
-        """将输入规范化为可比较、可持久化的工作流构建器及其权限、超时和版本元数据。"""
+        """按输入模式校验并归一化参数，返回 JSON 兼容字典。
+
+        Args:
+            arguments: 调用方提交的原始参数。
+
+        Returns:
+            经 input_schema 校验后的 JSON 兼容参数字典。
+
+        """
         return self.input_schema.model_validate(arguments).model_dump(mode="json")
 
 
 class WorkflowRun(FrozenWorkflowModel):
-    """定义一次工作流执行的持久化状态与服务端关联。
+    """一次工作流运行的持久事实记录，由 BFF 永久保存。
 
-    适用场景：
-        用于在接口、领域与持久化边界之间传递经过校验的结构化数据。
+    使用场景：
+        串起客户端请求、Workflow 独占 thread 与 server run 的映射，
+        并保存输入哈希、输出与发布制品引用以支撑追溯与审计。
 
-    属性：
-        run_id: 应用侧运行标识，用于跨服务查询、追踪和幂等关联。
-        tenant_id: 租户隔离键，所有读取和写入都必须以此限定边界。
-        subject_id: 已认证主体标识，用于所有权校验和审计归因。
-        workflow_id: 工作流的稳定标识。
-        workflow_version: 本次运行固定使用的工作流版本。
-        assistant_id: 提交 Agent Server 时使用的助手或图标识。
-        deployment_revision: 构建工作流图的部署修订号，用于定位实际运行代码。
-        model_profile_id: 关联对象的稳定标识，用于查询、关联和审计追踪。
-        run_timeout_seconds: 该操作允许的最长时间（秒）。
-        approval_timeout_seconds: 该操作允许的最长时间（秒）。
-        thread_id: Agent Server 线程标识，用于保存运行检查点与消息状态。
-        server_run_id: Agent Server 侧运行标识；尚未提交远端运行时为空。
-        client_idempotency_key: 客户端幂等键，在同一资源范围内唯一。
-        arguments_hash: 规范化参数的 SHA-256，用于审批绑定和篡改检测。
-        request_fingerprint: 委派或工作流请求的稳定指纹，用于幂等冲突检测。
-        input_payload: 提交给工作流的规范化输入快照。
-        output_payload: 运行终态时保存的结构化输出快照。
-        artifact_refs: 本次运行、审计或事件关联的制品标识集合。
-        status: 当前生命周期状态，决定记录允许的后续操作。
-        started_at: 该生命周期事件发生的 UTC 时间。
-        updated_at: 最近一次状态或内容变更时间，统一按 UTC 解释。
-        completed_at: 进入成功或失败终态的时间；未结束时为空。
+    Attributes:
+        run_id: 应用侧运行标识。
+        tenant_id: 租户隔离键。
+        subject_id: 已认证主体标识，用于所有权校验。
+        workflow_id: 本次运行的工作流标识。
+        workflow_version: 本次运行固定的工作流版本。
+        assistant_id: Agent Server 侧助手标识。
+        deployment_revision: 装配该运行所用的部署修订号。
+        model_profile_id: 本次运行固定的模型档案标识。
+        run_timeout_seconds: 运行超时快照（秒）。
+        approval_timeout_seconds: 审批超时快照（秒）。
+        thread_id: Workflow 独占的 Agent Server thread 标识。
+        server_run_id: 绑定的 Agent Server 运行标识；尚未绑定时为空。
+        client_idempotency_key: 客户端幂等键，与租户、流程、版本共同唯一。
+        arguments_hash: 规范化输入参数的 SHA-256，审批恢复前用于复验。
+        request_fingerprint: 完整请求的 SHA-256 指纹，用于幂等冲突检测。
+        input_payload: 归一化后的输入参数快照。
+        output_payload: 终态时的结构化输出快照；未结束时为空。
+        artifact_refs: 本次运行发布的制品标识（如审批后的报告）。
+        status: 当前运行状态。
+        started_at: 运行创建时间。
+        updated_at: 最近一次状态变更时间。
+        completed_at: 进入终态的时间；未结束时为空。
+
     """
 
     run_id: str
@@ -263,28 +287,30 @@ class WorkflowRun(FrozenWorkflowModel):
 
 
 class WorkflowApproval(FrozenWorkflowModel):
-    """定义工作流中断点对应的人工审批快照。
+    """一次人工审批的持久事实记录，与 LangGraph interrupt 检查点对应。
 
-    适用场景：
-        用于在接口、领域与持久化边界之间传递经过校验的结构化数据。
+    使用场景：
+        运行停在审批点时创建 PENDING 记录；恢复前复验权限、归属、
+        原始参数哈希与过期时间，决定后再落成终态。
 
-    属性：
+    Attributes:
         approval_id: 审批请求稳定标识。
-        run_id: 应用侧运行标识，用于跨服务查询、追踪和幂等关联。
-        tenant_id: 租户隔离键，所有读取和写入都必须以此限定边界。
-        subject_id: 已认证主体标识，用于所有权校验和审计归因。
-        approval_point: 工作流中触发本次人工确认的稳定节点名称。
-        arguments_hash: 规范化参数的 SHA-256，用于审批绑定和篡改检测。
-        requested_action: 需要人工确认的具体操作。
-        request_payload: 审批点展示并绑定哈希的请求参数快照。
-        allowed_decisions: 当前配置明确允许的值集合。
-        required_scope: 作出该审批决定所需的权限域。
-        status: 当前生命周期状态，决定记录允许的后续操作。
-        requested_at: 该生命周期事件发生的 UTC 时间。
-        expires_at: 记录或审批失效时间；为空表示不按时间自动失效。
-        decided_at: 该生命周期事件发生的 UTC 时间。
-        decided_by: 作出审批决定的主体标识。
-        decision_reason: 审批人或策略给出的决定理由。
+        run_id: 关联的工作流运行标识。
+        tenant_id: 租户隔离键。
+        subject_id: 发起运行的主体标识。
+        approval_point: 触发审批的检查点标识，同一运行内唯一。
+        arguments_hash: 绑定的输入参数哈希，恢复前用于篡改检测。
+        requested_action: 请求人工确认的具体动作。
+        request_payload: 展示给审批人的请求参数快照。
+        allowed_decisions: 允许的决定值集合。
+        required_scope: 作出决定所需的权限域。
+        status: 审批状态。
+        requested_at: 审批请求创建时间。
+        expires_at: 审批过期时间，超时后不得再决定。
+        decided_at: 决定时间；未决定时为空。
+        decided_by: 作出决定的主体标识；未决定时为空。
+        decision_reason: 审批人给出的决定理由；可为空。
+
     """
 
     approval_id: str

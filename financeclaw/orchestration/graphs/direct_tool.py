@@ -1,4 +1,9 @@
-"""构建带策略判断、审批中断、重试和制品投影的直接工具图。"""
+"""直连工具调用图的装配实现。
+
+位于 orchestration/graphs 图装配层，承载 ``/tool <id>`` 直连路径：
+入参经工具 Pydantic Schema 校验归一化，按治理策略授权，需要时经
+LangGraph interrupt 走人机审批，最后按读写副作用分流执行并投影响应。
+"""
 
 from typing import Any, Literal, TypedDict
 from uuid import uuid4
@@ -24,15 +29,16 @@ from financeclaw.orchestration.tools import (
 
 
 class DirectToolInput(TypedDict):
-    """定义直接工具的校验输入。
+    """直连工具调用的输入 State：调用方提交的原始目标与参数。
 
-    适用场景：
-        用于图节点之间共享结构化字典，同时保留静态类型提示。
+    使用场景：作为 StateGraph 的 input_schema，仅接受这三个键，
+    多余或缺失的字段由 validate_target 节点负责校验与反馈。
 
-    属性：
-        tool_id: 工具的稳定标识。
-        version: 语义版本，用于固定运行行为并支持审计复现。
-        arguments: 传给目标工具或工作流的已解析参数。
+    Attributes:
+        tool_id: 待调用工具的稳定标识，须在工具目录中可解析。
+        version: 期望的工具版本；None 表示由目录解析最新可用版本。
+        arguments: 工具入参字典，未经校验的原始形态，校验后会被规范化覆盖。
+
     """
 
     tool_id: str
@@ -41,23 +47,27 @@ class DirectToolInput(TypedDict):
 
 
 class DirectToolState(DirectToolInput, total=False):
-    """定义直接工具的图运行状态。
+    """直连工具图的全量运行 State：在输入之上累积校验、授权与执行结果。
 
-    适用场景：
-        用于 LangGraph 节点之间共享逐步填充的运行状态。
+    使用场景：作为 StateGraph 的 State 在节点间传递；所有键均可缺省
+    （total=False），审批中断时即由 checkpoint 持久化这些键的取值。
 
-    属性：
-        resolved_version: 运行固定使用的版本，用于审计复现。
-        normalized_arguments: 经过入参模型校验和规范化后的工具参数。
-        arguments_hash: 规范化参数的 SHA-256，用于审批绑定和篡改检测。
-        decision: 审批人或策略引擎作出的结构化决定。
-        approval_id: 审批请求稳定标识。
-        approved_hash: 审批时确认的参数哈希，防止恢复时参数被替换。
-        approval_outcome: 人工审批结果，用于决定继续、拒绝或按编辑后参数执行。
-        result: 内部步骤产生、等待后续投影的执行结果。
-        error: 失败原因的稳定文本；成功或未结束时为空。
-        response: 投影到公开边界后的结构化响应。
-        artifact: 详细报告的制品引用；未生成时为空。
+    Attributes:
+        tool_id: 待调用工具的稳定标识（继承自输入）。
+        version: 期望的工具版本（继承自输入），可为 None。
+        arguments: 工具入参，validate_target 后被规范化结果覆盖。
+        resolved_version: validate_target 解析出的工具实际执行版本。
+        normalized_arguments: 经工具输入 Schema 校验并 JSON 化的规范入参。
+        arguments_hash: 规范入参的规范哈希，审计与审批比对共用。
+        decision: 策略决策（ToolDecision 的 JSON 字典：effect/reason 等）。
+        approval_id: 需审批时按上下文派生的确定性审批标识，否则为空串。
+        approved_hash: 审批通过时登记的入参哈希；编辑或失效后清空。
+        approval_outcome: 审批结论：approved/rejected/edited/invalidated。
+        result: 工具执行结果；配置制品服务且超限时被替换为有界摘要。
+        error: 当前错误信息，空串表示无错误。
+        response: 终节点产出的 DirectToolResponse JSON 字典。
+        artifact: 结果制品引用（artifact_id 等）；未产出制品时缺省。
+
     """
 
     resolved_version: str
@@ -74,20 +84,32 @@ class DirectToolState(DirectToolInput, total=False):
 
 
 class DirectToolOutput(TypedDict):
-    """定义直接工具的稳定输出。
+    """直连工具图的输出 State：仅暴露最终响应，内部字段不外泄。
 
-    适用场景：
-        用于图节点之间共享结构化字典，同时保留静态类型提示。
+    使用场景：作为 StateGraph 的 output_schema，图运行结束只返回
+    project_response 节点写入的响应字典。
 
-    属性：
-        response: 投影到公开边界后的结构化响应。
+    Attributes:
+        response: DirectToolResponse 的 JSON 字典，含状态、结果与治理信息。
+
     """
 
     response: dict[str, Any]
 
 
 def _parse_decision(value: Any) -> dict[str, Any]:
-    """解析外部表示并转换为direct tool 模块的数据。"""
+    """解析审批恢复负载，兼容 decisions 列表包装与扁平对象两种形态。
+
+    Args:
+        value: interrupt 恢复时得到的审批决定负载。
+
+    Returns:
+        收敛为单条审批决定的字典。
+
+    Raises:
+        ValueError: 负载不是对象，或 decisions 不是恰好一条决定时抛出。
+
+    """
     if not isinstance(value, dict):
         raise ValueError("approval resume payload must be an object")
     decisions = value.get("decisions")
@@ -99,7 +121,16 @@ def _parse_decision(value: Any) -> dict[str, Any]:
 
 
 def _approval_id(context: ExecutionContext, state: DirectToolState) -> str:
-    """由运行、目标和参数哈希生成稳定审批标识，确保恢复绑定原请求。"""
+    """按（run_id，tool_id，版本，入参哈希）派生确定性审批标识。
+
+    Args:
+        context: 当前执行上下文，提供 run_id 等定位信息。
+        state: 当前图 State，须已含 tool_id、resolved_version 与 arguments_hash。
+
+    Returns:
+        形如 ``approval-<24 位哈希>`` 的标识；同一调用重复派生不漂移。
+
+    """
     source = (
         f"{context.run_id}:{state['tool_id']}:{state['resolved_version']}:{state['arguments_hash']}"
     )
@@ -115,7 +146,23 @@ def build_direct_tool_graph(
     read_max_attempts: int = 3,
     artifact_service: ArtifactService | None = None,
 ) -> Any:
-    """根据已注入依赖组装direct tool 模块的数据。"""
+    """装配并编译直连工具调用图，返回名为 direct_tool 的可执行 graph。
+
+    固定链路：START → validate_target → authorize →（授权分流：审批中断或
+    读写执行）→ project_response → END；审批支持批准、改参重校验与驳回。
+
+    Args:
+        catalog: 工具目录，按（tool_id，version）解析出受治理的工具。
+        policy: 工具治理策略，对每次调用评估 allow/deny/require_approval。
+        audit: 审计仓储，写入工具调用全生命周期的审计事件。
+        checkpointer: LangGraph checkpoint 后端，支撑审批中断后的恢复；可为 None。
+        read_max_attempts: 只读执行遇瞬时错误的最大尝试次数，默认 3。
+        artifact_service: 制品服务，超限结果 offload 为 Artifact；可为 None。
+
+    Returns:
+        编译后的 LangGraph 图（LangGraph CompiledGraph）。
+
+    """
 
     def append_audit(
         context: ExecutionContext,
@@ -125,7 +172,16 @@ def build_direct_tool_graph(
         decision: str,
         tool_call_id: str | None = None,
     ) -> None:
-        """为直接工具图的授权、审批和执行阶段追加不可变审计事件。"""
+        """写入一条归属当前上下文的工具审计记录。
+
+        Args:
+            context: 当前执行上下文，提供租户、主体与运行定位。
+            state: 当前图 State，提供工具定位、入参哈希与制品引用。
+            event: 审计事件类型（allow/deny/approval/executed/failed 等）。
+            decision: 决策或执行结论的描述性取值。
+            tool_call_id: 本次执行的调用标识；缺省表示尚未执行。
+
+        """
         managed = catalog.resolve(state["tool_id"], state["resolved_version"])
         audit.append(
             AuditRecord(
@@ -153,7 +209,20 @@ def build_direct_tool_graph(
         )
 
     def validate_target(state: DirectToolState) -> dict[str, Any]:
-        """校验direct tool 模块的数据的跨字段不变量并返回自身。"""
+        """LangGraph 节点（validate_target）：校验直连目标并归一化入参。
+
+        位于图的 START 之后第一个节点：按（tool_id，version）解析工具，
+        要求治理配置允许直连（direct_invocation），再经工具输入 Schema
+        完成 Pydantic 校验与 JSON 化规范化。
+
+        Args:
+            state: 当前图 State；读取 tool_id、version 与 arguments。
+
+        Returns:
+            写入 State 的增量：解析版本、规范化入参及其哈希，并清空
+            error 与 approved_hash；失败时仅写 error，交由授权节点短路。
+
+        """
         try:
             managed = catalog.resolve(state["tool_id"], state.get("version"))
             if not managed.governance.direct_invocation:
@@ -172,7 +241,20 @@ def build_direct_tool_graph(
         }
 
     def authorize(state: DirectToolState, runtime: Runtime[ExecutionContext]) -> dict[str, Any]:
-        """解析工具版本、校验参数并执行首次策略授权。"""
+        """LangGraph 节点（authorize）：评估工具治理策略并落授权审计。
+
+        位于 validate_target 之后、所有执行路径之前：无错误时用策略评估
+        当前调用，把决策 JSON 与派生的审批标识写入 State，并按决策落
+        TOOL_ALLOWED/TOOL_DENIED/TOOL_APPROVAL_REQUESTED 审计事件。
+
+        Args:
+            state: 当前图 State；出错时直接放行短路，不做评估。
+            runtime: LangGraph 运行时，提供 ExecutionContext。
+
+        Returns:
+            写入 State 的增量：decision 决策 JSON 与 approval_id。
+
+        """
         if state.get("error"):
             return {}
         context = runtime.context
@@ -200,7 +282,16 @@ def build_direct_tool_graph(
         return {"decision": decision.model_dump(mode="json"), "approval_id": approval_id}
 
     def route_authorization(state: DirectToolState) -> str:
-        """依据策略决策选择拒绝、请求审批或直接执行。"""
+        """LangGraph 条件边路由（authorize 之后）：按授权决策分流。
+
+        Args:
+            state: 当前图 State，须已含 decision 决策 JSON。
+
+        Returns:
+            下一节点名：出错或拒绝去 project_response，需审批去 approval，
+            其余按副作用分流到 execute_read/execute_write。
+
+        """
         if state.get("error"):
             return "project_response"
         effect = state["decision"]["effect"]
@@ -214,7 +305,22 @@ def build_direct_tool_graph(
         )
 
     def approval(state: DirectToolState, runtime: Runtime[ExecutionContext]) -> dict[str, Any]:
-        """创建与规范化参数哈希绑定的 LangGraph 人工审批中断。"""
+        """LangGraph 节点（approval）：人机审批中断点。
+
+        位于授权分流之后：经 LangGraph interrupt 挂起，携带审批标识、
+        工具版本、规范化入参与哈希；恢复时复验审批决定——reject 记审计
+        并置失败；edit 允许改参（改工具名会被拒），回退 validate_target
+        重新校验；approve 须携带与挂起一致的入参哈希，否则判失效。
+
+        Args:
+            state: 当前图 State，须已含授权节点写入的审批上下文。
+            runtime: LangGraph 运行时，提供 ExecutionContext。
+
+        Returns:
+            写入 State 的增量：approval_outcome，以及按结论附带的新参数、
+            approved_hash 或 error。
+
+        """
         payload = {
             "approval_id": state["approval_id"],
             "tool_id": state["tool_id"],
@@ -277,7 +383,16 @@ def build_direct_tool_graph(
         }
 
     def route_approval(state: DirectToolState) -> str:
-        """根据审批决定选择继续执行、拒绝终结或重新校验参数。"""
+        """LangGraph 条件边路由（approval 之后）：按审批结论分流。
+
+        Args:
+            state: 当前图 State，须已含 approval_outcome。
+
+        Returns:
+            下一节点名：edited/invalidated 回 validate_target 重校验，
+            rejected 或出错去 project_response，approved 按副作用执行。
+
+        """
         outcome = state.get("approval_outcome")
         if outcome in {"edited", "invalidated"}:
             return "validate_target"
@@ -289,7 +404,20 @@ def build_direct_tool_graph(
         )
 
     def authorize_execution(state: DirectToolState, context: ExecutionContext) -> tuple[Any, Any]:
-        """在审批恢复后对最终参数重新运行策略，防止编辑绕过治理。"""
+        """执行前二次授权：恢复/重放场景下重新评估策略后再放行。
+
+        Args:
+            state: 当前图 State，须已含 resolved_version 与规范化入参。
+            context: 当前执行上下文，提供租户、主体与权限域。
+
+        Returns:
+            二元组（解析后的工具，本次策略决策）。
+
+        Raises:
+            PermissionError: 策略拒绝，或需审批但 approved_hash 与当前
+                入参哈希不一致（审批通过后参数已被改动）时抛出。
+
+        """
         managed = catalog.resolve(state["tool_id"], state["resolved_version"])
         decision = policy.evaluate(context, managed.governance, state["normalized_arguments"])
         if decision.effect is ToolDecisionType.DENY:
@@ -302,7 +430,22 @@ def build_direct_tool_graph(
         return managed, decision
 
     def execute(state: DirectToolState, runtime: Runtime[ExecutionContext]) -> dict[str, Any]:
-        """按重试策略调用工具，并把成功结果或最终错误写入图状态。"""
+        """LangGraph 节点（execute_read/execute_write 复用）：执行工具。
+
+        位于授权或审批通过之后：先做执行时二次授权，再以规范化入参
+        调用工具；只读节点由 RetryPolicy 对瞬时错误重试，写节点不重试。
+        失败记 FINANCIAL_TOOL_FAILED 后原样抛出；成功且配置制品服务时
+        把超限结果 offload 为 Artifact，最后记 FINANCIAL_TOOL_EXECUTED。
+
+        Args:
+            state: 当前图 State，须已含二次授权所需字段。
+            runtime: LangGraph 运行时，提供 ExecutionContext。
+
+        Returns:
+            写入 State 的增量：result、artifact（可为 None）、最新的
+            decision JSON，并清空 error。
+
+        """
         managed, decision = authorize_execution(state, runtime.context)
         try:
             result = managed.tool.invoke(state["normalized_arguments"])
@@ -350,7 +493,20 @@ def build_direct_tool_graph(
     def project_response(
         state: DirectToolState, runtime: Runtime[ExecutionContext]
     ) -> dict[str, Any]:
-        """将直接工具图内部状态收敛为稳定响应，并按阈值外置大结果。"""
+        """LangGraph 终节点（project_response）：把 State 投影为响应体。
+
+        位于所有执行与失败路径的汇合点：按结果与审批结论判定 status
+        （success/rejected/denied/failed），版本缺省回退到入参版本或
+        unknown，产出 DirectToolResponse 作为图的唯一输出。
+
+        Args:
+            state: 当前图 State，含执行结果或失败原因。
+            runtime: LangGraph 运行时，提供 run_id。
+
+        Returns:
+            写入 State 的增量：response 响应 JSON 字典。
+
+        """
         decision = state.get("decision", {})
         effect = decision.get("effect")
         if state.get("result") is not None:
@@ -374,15 +530,18 @@ def build_direct_tool_graph(
         )
         return {"response": response.model_dump(mode="json")}
 
+    # 直连工具图：输入输出契约收敛，运行上下文为 ExecutionContext。
     graph = StateGraph(
         DirectToolState,
         context_schema=ExecutionContext,
         input_schema=DirectToolInput,
         output_schema=DirectToolOutput,
     )
+    # 节点注册：目标校验、授权、审批中断、读写执行与响应投影。
     graph.add_node("validate_target", validate_target)
     graph.add_node("authorize", authorize)
     graph.add_node("approval", approval)
+    # 只读执行节点：瞬时错误按固定节奏重试至多 read_max_attempts 次。
     graph.add_node(
         "execute_read",
         execute,
@@ -395,8 +554,10 @@ def build_direct_tool_graph(
             retry_on=TransientToolError,
         ),
     )
+    # 写执行节点：副作用不可安全重放，不配置重试。
     graph.add_node("execute_write", execute)
     graph.add_node("project_response", project_response)
+    # 固定主干边与两处条件分流（授权后按决策、审批后按结论）。
     graph.add_edge(START, "validate_target")
     graph.add_edge("validate_target", "authorize")
     graph.add_conditional_edges("authorize", route_authorization)
@@ -404,4 +565,5 @@ def build_direct_tool_graph(
     graph.add_edge("execute_read", "project_response")
     graph.add_edge("execute_write", "project_response")
     graph.add_edge("project_response", END)
+    # 以 checkpointer 支撑审批中断后的恢复，图名 direct_tool。
     return graph.compile(checkpointer=checkpointer, name="direct_tool")

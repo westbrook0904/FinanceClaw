@@ -1,4 +1,8 @@
-"""提供无会话运行的启动、查询、审批恢复与事件流接口。"""
+"""轻量 Run 编排服务（stage=1 直通通道）：解析目标并在 Agent Server 上执行。
+
+在内存中维护业务 run 与 server run 的映射、幂等键索引；进程重启即失效，
+需要持久化对账的会话与工作流路径分别使用 ConversationService 与 WorkflowService。
+"""
 
 import json
 from asyncio import Lock
@@ -24,45 +28,38 @@ from .target_resolver import ResolvedTarget, TargetResolutionError, TargetResolv
 
 
 class IdempotencyConflict(RuntimeError):
-    """定义IdempotencyConflict。
-
-    适用场景：
-        用于把该失败条件跨层传递，并在接口边界转换为稳定错误。
-    """
+    """同一幂等键被用于内容不同的请求时抛出的冲突异常。"""
 
     pass
 
 
 class RunNotFound(LookupError):
-    """定义运行NotFound。
-
-    适用场景：
-        用于把该失败条件跨层传递，并在接口边界转换为稳定错误。
-    """
+    """指定 run 不存在或不属于当前租户与主体时抛出。"""
 
     pass
 
 
 @dataclass(frozen=True, slots=True)
 class RunRecord:
-    """定义进程内无会话运行的所有权和远端关联。
+    """一次已受理 Run 的完整映射记录（业务标识与 server 运行的绑定）。
 
-    适用场景：
-        用于跨步骤保存不可变事实，并支持持久化或审计重放。
+    使用场景：RunService 内部用于幂等判定、归属校验与状态回写，
+    并在恢复审批或订阅流式事件时提供 server 侧定位信息。
 
-    属性：
-        run_id: 应用侧运行标识，用于跨服务查询、追踪和幂等关联。
-        server_run_id: Agent Server 侧运行标识；尚未提交远端运行时为空。
-        thread_id: Agent Server 线程标识，用于保存运行检查点与消息状态。
-        tenant_id: 租户隔离键，所有读取和写入都必须以此限定边界。
-        subject_id: 已认证主体标识，用于所有权校验和审计归因。
-        assistant_id: 提交 Agent Server 时使用的助手或图标识。
-        target_kind: 实际运行目标类别，用于调用方解释运行语义。
-        target_id: 解析前或解析后的目标稳定标识。
-        target_version: 运行实际绑定的目标版本，防止后续配置变化影响重放。
-        fingerprint: 请求规范化后的指纹，用于识别幂等重放与冲突。
-        context: 本次运行的租户、主体、权限与关联标识上下文。
-        status: 当前生命周期状态，决定记录允许的后续操作。
+    Attributes:
+        run_id: 业务 run ID，形如 "run-<uuid hex>"。
+        server_run_id: Agent Server 端运行 ID。
+        thread_id: 服务端会话线程 ID。
+        tenant_id: 归属租户 ID，用于所有权校验。
+        subject_id: 归属主体（用户）ID，用于所有权校验。
+        assistant_id: 执行该 run 所用的服务端 assistant 标识。
+        target_kind: 解析后的目标类型（"agent" 或 "tool"）。
+        target_id: 目标业务 ID。
+        target_version: 目标语义化版本号。
+        fingerprint: 请求内容的 SHA-256 指纹，用于幂等键冲突检测。
+        context: 随运行下发的执行上下文（租户、主体、权限范围等）。
+        status: 最近一次已知的 server run 状态字符串。
+
     """
 
     run_id: str
@@ -80,21 +77,28 @@ class RunRecord:
 
 
 class RunService:
-    """管理不依赖持久化会话的短生命周期 Agent 或工具运行。
+    """轻量 Run 编排服务：受理 RunRequest 并在 Agent Server 上执行。
 
-    适用场景：
-        用于应用用例需要跨仓储、外部端口或领域策略协调一致结果的场景。
+    使用场景：阶段一（stage=1）直通通道，供非会话用例直接运行 Agent 与工具
+    目标；发布型 Workflow 不走本服务，必须使用持久化的 WorkflowService 通道。
 
-    属性：
-        client: 负责与外部 Agent Server 或供应商通信的端口实现。
-        resolver: 把外部目标请求解析为固定版本运行参数的解析器。
-        _by_idempotency: 内部 `by idempotency` 状态或依赖，不属于公开接口。
-        _by_run_id: 关联对象的稳定标识，用于查询、关联和审计追踪。
-        _lock: 内部 `lock` 状态或依赖，不属于公开接口。
+    Attributes:
+        client: Agent Server 客户端 Port。
+        resolver: 目标解析器，把请求目标翻译为可执行描述。
+        _by_idempotency: （私有）幂等键 (tenant_id, subject_id, key) 到记录的索引。
+        _by_run_id: （私有）业务 run ID 到记录的映射。
+        _lock: （私有）保护上述两个索引并发访问的 asyncio 锁。
+
     """
 
     def __init__(self, client: AgentServerClient, resolver: TargetResolver) -> None:
-        """注入并保存运行Service所需的协作对象，同时校验构造期不变量。"""
+        """装配 Run 编排依赖。
+
+        Args:
+            client: Agent Server 客户端 Port。
+            resolver: 目标解析器。
+
+        """
         self.client = client
         self.resolver = resolver
         self._by_idempotency: dict[tuple[str, str, str], RunRecord] = {}
@@ -103,7 +107,15 @@ class RunService:
 
     @staticmethod
     def _fingerprint(request: RunRequest) -> str:
-        """对规范化运行请求计算稳定哈希，用于幂等冲突检测。"""
+        """对请求做规范化 JSON 序列化并计算 SHA-256 指纹。
+
+        Args:
+            request: 待摘要的 Run 请求。
+
+        Returns:
+            64 位十六进制指纹字符串。
+
+        """
         payload = json.dumps(request.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))
         return sha256(payload.encode()).hexdigest()
 
@@ -116,21 +128,41 @@ class RunService:
         scopes: frozenset[str],
         idempotency_key: str,
     ) -> RunAccepted:
-        """解析调用目标，利用请求指纹实现进程内幂等，然后创建服务端运行。"""
+        """受理一次 Run 请求：解析目标、创建 server run 并登记幂等索引。
+
+        Args:
+            request: 待执行的 Run 请求（目标可为 None、Agent 或工具）。
+            tenant_id: 租户 ID。
+            subject_id: 主体 ID。
+            scopes: 调用方权限范围，随执行上下文下发。
+            idempotency_key: 客户端幂等键，重复提交需保持一致。
+
+        Returns:
+            受理结果：run/thread 标识、目标类型与是否幂等重放。
+
+        Raises:
+            TargetResolutionError: 目标为发布型 Workflow、无法解析或未被治理允许。
+            IdempotencyConflict: 幂等键已被内容不同的请求占用。
+
+        """
         if isinstance(request.target, WorkflowTarget):
             raise TargetResolutionError(
                 "published workflows require the persistent WorkflowService path"
             )
+        # 1. 计算请求指纹，作为幂等键冲突的判定依据。
         fingerprint = self._fingerprint(request)
         key = (tenant_id, subject_id, idempotency_key)
+        # 2. 加锁保护幂等索引与 run 映射的并发读写。
         async with self._lock:
             existing = self._by_idempotency.get(key)
             if existing is not None:
+                # 3. 幂等键已存在：指纹一致则重放，否则视为冲突。
                 if existing.fingerprint != fingerprint:
                     raise IdempotencyConflict(
                         "idempotency key was already used for another request"
                     )
                 return self._accepted(existing, replay=True)
+            # 4. 首次请求：解析目标并创建映射记录。
             resolved = self.resolver.resolve(request)
             record = await self._create_record(
                 resolved,
@@ -152,7 +184,20 @@ class RunService:
         scopes: frozenset[str],
         fingerprint: str,
     ) -> RunRecord:
-        """创建并返回新的运行Service。"""
+        """在 Agent Server 上创建线程与运行，并组装映射记录。
+
+        Args:
+            target: 解析后的执行目标。
+            tenant_id: 租户 ID。
+            subject_id: 主体 ID。
+            scopes: 调用方权限范围。
+            fingerprint: 请求指纹，写入映射记录。
+
+        Returns:
+            业务 run 与 server run 的映射记录。
+
+        """
+        # 1. 生成业务 run/thread/turn 标识与执行上下文。
         run_id = f"run-{uuid4().hex}"
         thread_id = str(uuid4())
         context = ExecutionContext(
@@ -162,6 +207,7 @@ class RunService:
             turn_id=f"turn-{uuid4().hex}",
             run_id=run_id,
         )
+        # 2. 组装服务端元数据：application_run_id 承载业务 run 映射。
         metadata = {
             **context.trace_metadata(),
             "stage": "1",
@@ -170,6 +216,7 @@ class RunService:
             "target_version": target.target_version,
         }
         metadata["application_run_id"] = metadata.pop("run_id")
+        # 3. 创建线程并启动 server run。
         await self.client.create_thread(thread_id)
         server_run = await self.client.create_run(
             thread_id=thread_id,
@@ -178,6 +225,7 @@ class RunService:
             context=context.model_dump(mode="json"),
             metadata=metadata,
         )
+        # 4. 返回完整的映射记录。
         return RunRecord(
             run_id=run_id,
             server_run_id=server_run.run_id,
@@ -194,14 +242,30 @@ class RunService:
         )
 
     async def status(self, run_id: str, *, tenant_id: str, subject_id: str) -> RunStatusResponse:
-        """读取调用主体拥有的运行，并返回服务端当前状态及可用输出。"""
+        """查询 run 的最新状态，并把 server 状态回写到内存记录。
+
+        Args:
+            run_id: 业务 run ID。
+            tenant_id: 租户 ID。
+            subject_id: 主体 ID。
+
+        Returns:
+            最新状态响应（输出仅透传可序列化载荷）。
+
+        Raises:
+            RunNotFound: run 不存在或不属于当前主体。
+
+        """
+        # 1. 校验归属并加载记录。
         record = self._owned_record(run_id, tenant_id=tenant_id, subject_id=subject_id)
+        # 2. 查询服务端最新状态并回写内存记录。
         result = await self.client.get_run(
             thread_id=record.thread_id,
             run_id=record.server_run_id,
         )
         status = str(result.get("status", record.status))
         self._by_run_id[run_id] = replace(record, status=status)
+        # 3. 仅透传可序列化的输出载荷。
         output = result.get("output")
         if not isinstance(output, dict | list):
             output = None
@@ -220,8 +284,24 @@ class RunService:
         tenant_id: str,
         subject_id: str,
     ) -> RunStatusResponse:
-        """把人工审批决定转换为 LangGraph Command，恢复中断的服务端运行。"""
+        """提交审批决定并恢复被中断的 run。
+
+        Args:
+            run_id: 业务 run ID。
+            decision: 审批决定（approve/reject/edit 及理由、参数 hash）。
+            tenant_id: 租户 ID。
+            subject_id: 主体 ID。
+
+        Returns:
+            恢复后的最新状态响应。
+
+        Raises:
+            RunNotFound: run 不存在或不属于当前主体。
+
+        """
+        # 1. 校验归属并加载运行记录。
         record = self._owned_record(run_id, tenant_id=tenant_id, subject_id=subject_id)
+        # 2. 组装审批决定：EDIT 附带编辑后的工具调用参数。
         mapped: dict[str, Any] = {"type": decision.type.value}
         if decision.arguments_hash is not None:
             mapped["arguments_hash"] = decision.arguments_hash
@@ -232,6 +312,7 @@ class RunService:
                 "name": record.target_id,
                 "args": decision.arguments,
             }
+        # 3. 恢复服务端运行。
         result = await self.client.resume_run(
             thread_id=record.thread_id,
             assistant_id=record.assistant_id,
@@ -247,6 +328,7 @@ class RunService:
                 "stage": "1",
             },
         )
+        # 4. 依据 "__interrupt__" 判定是继续等待审批还是已完成。
         interrupted = bool(result.get("__interrupt__"))
         status = "interrupted" if interrupted else "completed"
         output: dict[str, Any] | list[Any] | None = dict(result)
@@ -260,7 +342,20 @@ class RunService:
     async def stream(
         self, run_id: str, *, tenant_id: str, subject_id: str
     ) -> AsyncIterator[StreamEvent]:
-        """校验运行所有权后转发服务端线程事件。"""
+        """订阅 run 所在线程的流式事件。
+
+        Args:
+            run_id: 业务 run ID。
+            tenant_id: 租户 ID。
+            subject_id: 主体 ID。
+
+        Yields:
+            归一化后的流式事件（事件名 + 数据载荷）。
+
+        Raises:
+            RunNotFound: run 不存在或不属于当前主体。
+
+        """
         record = self._owned_record(run_id, tenant_id=tenant_id, subject_id=subject_id)
         async for part in self.client.stream_thread(
             thread_id=record.thread_id,
@@ -275,19 +370,48 @@ class RunService:
             yield StreamEvent(event=event, data=data)
 
     def _owned_record(self, run_id: str, *, tenant_id: str, subject_id: str) -> RunRecord:
-        """读取记录并同时校验租户与主体所有权，避免越权访问。"""
+        """加载归属于当前租户与主体的运行记录。
+
+        Args:
+            run_id: 业务 run ID。
+            tenant_id: 租户 ID。
+            subject_id: 主体 ID。
+
+        Returns:
+            对应的映射记录。
+
+        Raises:
+            RunNotFound: 记录不存在或归属不匹配。
+
+        """
         record = self._by_run_id.get(run_id)
         if record is None or record.tenant_id != tenant_id or record.subject_id != subject_id:
             raise RunNotFound("run was not found for authenticated owner")
         return record
 
     def assert_owned(self, run_id: str, *, tenant_id: str, subject_id: str) -> None:
-        """验证运行Service满足当前边界要求，否则抛出明确异常。"""
+        """校验 run 归属于当前租户与主体，不通过则抛出 RunNotFound。
+
+        Args:
+            run_id: 业务 run ID。
+            tenant_id: 租户 ID。
+            subject_id: 主体 ID。
+
+        """
         self._owned_record(run_id, tenant_id=tenant_id, subject_id=subject_id)
 
     @staticmethod
     def _accepted(record: RunRecord, *, replay: bool) -> RunAccepted:
-        """把内部运行记录投影为已接受响应。"""
+        """把映射记录投影为受理响应。
+
+        Args:
+            record: 已创建或命中的映射记录。
+            replay: 是否为幂等重放。
+
+        Returns:
+            受理响应对象。
+
+        """
         return RunAccepted(
             run_id=record.run_id,
             thread_id=record.thread_id,

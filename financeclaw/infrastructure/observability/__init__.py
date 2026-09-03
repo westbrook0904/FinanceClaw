@@ -1,4 +1,8 @@
-"""数据库、模型供应商、安全策略和可观测性等基础设施适配。"""
+"""观测适配集合：结构化 JSON 日志、LangSmith 追踪与 OpenTelemetry 遥测。
+
+本包属于 infrastructure 层，由 bootstrap.py 组合根按配置装配，统一提供
+日志脱敏、链路追踪、指标采集与请求/SQL 观测插桩。
+"""
 
 from .langsmith import configure_langsmith
 from .logging import JsonLogFormatter, configure_json_logging, redact_sensitive

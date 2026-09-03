@@ -1,4 +1,8 @@
-"""跨层共享且不依赖具体实现的运行上下文、目标与响应契约。"""
+"""kernel 包的公共出口，汇总跨层共享的稳定契约。
+
+包含执行上下文与数据分级、请求/响应模型以及运行目标（RunTarget）判别联合；
+其他分层只允许从本包导入 kernel 契约，保证依赖方向清晰。
+"""
 
 from .context import DataClassification, ExecutionContext
 from .responses import (
@@ -23,6 +27,7 @@ from .responses import (
 )
 from .targets import AgentTarget, RunTarget, ToolTarget, WorkflowTarget
 
+# 包对外导出的符号清单。
 __all__ = [
     "AgentResponse",
     "AgentTarget",
