@@ -6,6 +6,7 @@
 """
 
 from enum import StrEnum
+from typing import Literal
 from urllib.parse import urlparse
 
 from pydantic import Field, SecretStr, model_validator
@@ -151,6 +152,18 @@ class FinanceClawSettings(BaseSettings):
     agent_server_url: str = "http://127.0.0.1:2024"
     agent_server_timeout_seconds: float = Field(default=30.0, gt=0, le=300)
     agent_server_service_token: SecretStr | None = None
+    feishu_enabled: bool = False
+    feishu_app_id: str | None = None
+    feishu_app_secret: SecretStr | None = None
+    feishu_allowed_open_ids: frozenset[str] = Field(default_factory=frozenset)
+    feishu_scopes: frozenset[str] = Field(
+        default_factory=lambda: frozenset(
+            {"market:read", "tools:read", "artifacts:read", "memory:read"}
+        )
+    )
+    feishu_max_concurrency: int = Field(default=8, ge=1, le=128)
+    feishu_security_mode: Literal["audit", "strict"] = "audit"
+    feishu_connect_timeout_seconds: float = Field(default=30.0, gt=0, le=120)
     oidc_issuer: str | None = None
     oidc_audience: str | None = None
     oidc_jwks_url: str | None = None
@@ -293,4 +306,23 @@ class FinanceClawSettings(BaseSettings):
             raise ValueError("unsupported S3 server-side encryption algorithm")
         if self.artifact_s3_kms_key_id and not self.artifact_s3_sse_algorithm.startswith("aws:kms"):
             raise ValueError("artifact_s3_kms_key_id requires aws:kms encryption")
+        # 6. 飞书一期只在显式开启时校验凭证、灰度白名单和最小权限。
+        if self.feishu_enabled:
+            if not self.feishu_app_id or not self.feishu_app_id.strip():
+                raise ValueError("feishu_app_id is required when Feishu channel is enabled")
+            if (
+                self.feishu_app_secret is None
+                or not self.feishu_app_secret.get_secret_value().strip()
+            ):
+                raise ValueError("feishu_app_secret is required when Feishu channel is enabled")
+            if not self.feishu_allowed_open_ids or any(
+                not item.strip() for item in self.feishu_allowed_open_ids
+            ):
+                raise ValueError("feishu_allowed_open_ids must contain the canary user allowlist")
+            if not self.feishu_scopes or any(not item.strip() for item in self.feishu_scopes):
+                raise ValueError("feishu_scopes cannot be empty")
+            if {"*", "internal:invoke"}.intersection(self.feishu_scopes):
+                raise ValueError("feishu_scopes cannot grant wildcard or internal invocation")
+            if self.environment is Environment.PRODUCTION and self.feishu_security_mode != "strict":
+                raise ValueError("production Feishu channel requires strict security mode")
         return self

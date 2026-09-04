@@ -8,6 +8,12 @@ from .delegation_service import (
     delegation_projection,
     extract_handoff_interrupt,
 )
+from .feishu_channel_service import (
+    FeishuChannelService,
+    FeishuInboundMessage,
+    FeishuMarkdownStream,
+    FeishuReplyGateway,
+)
 from .ports import AgentServerClient, ServerRun
 from .run_service import IdempotencyConflict, RunNotFound, RunService
 from .target_resolver import ResolvedTarget, TargetResolutionError, TargetResolver
@@ -26,6 +32,10 @@ __all__ = [
     "DelegationAuthorizationError",
     "DelegationInputError",
     "DelegationService",
+    "FeishuChannelService",
+    "FeishuInboundMessage",
+    "FeishuMarkdownStream",
+    "FeishuReplyGateway",
     "IdempotencyConflict",
     "ResolvedTarget",
     "RunNotFound",

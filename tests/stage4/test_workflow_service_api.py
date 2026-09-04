@@ -293,7 +293,7 @@ async def test_workflow_http_contract_and_generic_target_routing(tmp_path: Path)
     # 继续执行前验证内部不变量。
     assert generic.json()["target_kind"] == "workflow"
     # 继续执行前验证内部不变量。
-    assert health.json() == {"status": "ok", "stage": "5"}
+    assert health.json() == {"status": "ok", "stage": "6"}
     # 继续执行前验证内部不变量。
     assert AuditEventType.WORKFLOW_COMPLETED in [record.event_type for record in audit.records()]
     # 前置条件满足后调用 close。

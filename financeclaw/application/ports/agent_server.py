@@ -126,12 +126,12 @@ class AgentServerClient(Protocol):
         """
         pass
 
-    def stream_thread(self, *, thread_id: str, assistant_id: str) -> AsyncIterator[Any]:
-        """订阅线程的流式事件序列（事件为映射或对象两种形态，由实现方决定）。
+    def stream_run(self, *, thread_id: str, run_id: str) -> AsyncIterator[Any]:
+        """订阅指定服务端运行的流式事件序列。
 
         Args:
             thread_id: 目标线程 ID。
-            assistant_id: 服务端 assistant（编译后的 LangGraph 图）标识。
+            run_id: 服务端运行 ID，避免共享线程上的多个 Turn 发生事件串流。
 
         Returns:
             异步事件迭代器。

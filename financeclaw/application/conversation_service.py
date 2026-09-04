@@ -5,6 +5,7 @@
 
 import asyncio
 import json
+import logging
 from collections.abc import AsyncIterator, Callable, Mapping
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
@@ -26,6 +27,7 @@ from financeclaw.kernel import (
 )
 from financeclaw.modules.conversation import (
     ConversationNotFound,
+    MessageRole,
     SqlAlchemyConversationRepository,
     SummaryService,
 )
@@ -42,6 +44,15 @@ from .delegation_service import (
 )
 from .ports import AgentServerClient
 from .run_service import IdempotencyConflict, RunNotFound
+from .streaming import (
+    completed_stream_event,
+    failed_stream_event,
+    interrupted_stream_event,
+    progress_stream_event,
+    project_server_part,
+)
+
+LOGGER = logging.getLogger(__name__)
 
 
 class ApprovalExpired(RuntimeError):
@@ -138,6 +149,58 @@ class ConversationService:
         # 3. 投影为 API 响应。
         return _conversation_response(conversation)
 
+    async def get_or_create_channel_conversation(
+        self,
+        *,
+        channel: str,
+        app_id: str,
+        tenant_key: str,
+        external_user_id: str,
+        external_chat_id: str,
+        tenant_id: str,
+        subject_id: str,
+    ) -> ConversationResponse:
+        """原子解析或创建一个外部单聊绑定的顶层 Agent 会话。
+
+        Args:
+            channel: Channel 类型，一期固定为 ``feishu``。
+            app_id: 飞书应用 ID。
+            tenant_key: 已验证事件中的飞书租户键。
+            external_user_id: 已验证事件中的发件人 open_id。
+            external_chat_id: 已验证事件中的 P2P chat_id。
+            tenant_id: 映射后的 FinanceClaw 租户 ID。
+            subject_id: 映射后的 FinanceClaw 主体 ID。
+
+        Returns:
+            绑定对应的 Conversation 响应；首次访问时会连同绑定一起创建。
+
+        """
+        values = (
+            channel,
+            app_id,
+            tenant_key,
+            external_user_id,
+            external_chat_id,
+            tenant_id,
+            subject_id,
+        )
+        if any(not value.strip() for value in values):
+            raise ValueError("channel conversation identity fields cannot be empty")
+        profile = self.agent_profiles.resolve(self.ROOT_AGENT_ID)
+        _, conversation, _ = await asyncio.to_thread(
+            self.repository.get_or_create_channel_conversation,
+            channel=channel,
+            app_id=app_id,
+            tenant_key=tenant_key,
+            external_user_id=external_user_id,
+            external_chat_id=external_chat_id,
+            tenant_id=tenant_id,
+            subject_id=subject_id,
+            agent_id=profile.agent_id,
+            agent_profile_version=profile.version,
+        )
+        return _conversation_response(conversation)
+
     def get(self, conversation_id: str, *, tenant_id: str, subject_id: str) -> ConversationResponse:
         """查询归属于当前租户与主体的会话快照。
 
@@ -190,6 +253,39 @@ class ConversationService:
                 for item in messages
             ),
         )
+
+    async def assistant_content(
+        self,
+        run_id: str,
+        *,
+        tenant_id: str,
+        subject_id: str,
+    ) -> str | None:
+        """读取指定会话 run 已落库的最终助手文本。
+
+        Args:
+            run_id: FinanceClaw 业务运行 ID。
+            tenant_id: 归属租户 ID。
+            subject_id: 归属主体 ID。
+
+        Returns:
+            Journal 中该 Turn 的最终助手文本；尚未写入时返回 ``None``。
+
+        """
+        try:
+            turn, _ = await asyncio.to_thread(
+                self._owned_turn_and_conversation,
+                run_id,
+                tenant_id,
+                subject_id,
+            )
+        except ConversationNotFound as exc:
+            raise RunNotFound(str(exc)) from exc
+        messages = await asyncio.to_thread(self.repository.list_messages, turn.conversation_id)
+        for message in reversed(messages):
+            if message.turn_id == turn.turn_id and message.role is MessageRole.ASSISTANT:
+                return message.content
+        return None
 
     async def start_turn(
         self,
@@ -555,14 +651,20 @@ class ConversationService:
         )
 
     async def stream(
-        self, run_id: str, *, tenant_id: str, subject_id: str
+        self,
+        run_id: str,
+        *,
+        tenant_id: str,
+        subject_id: str,
+        scopes: frozenset[str] = frozenset(),
     ) -> AsyncIterator[StreamEvent]:
-        """订阅 run 所在线程的流式事件。
+        """订阅指定会话 server run，并以 Journal 校正最终助手文本。
 
         Args:
             run_id: 业务 run ID。
             tenant_id: 租户 ID。
             subject_id: 主体 ID。
+            scopes: 调用方权限范围，用于流结束后的 delegation 推进。
 
         Yields:
             归一化后的流式事件（事件名 + 数据载荷）。
@@ -572,7 +674,7 @@ class ConversationService:
 
         """
         try:
-            _, conversation = await asyncio.to_thread(
+            turn, conversation = await asyncio.to_thread(
                 self._owned_turn_and_conversation,
                 run_id,
                 tenant_id,
@@ -580,19 +682,48 @@ class ConversationService:
             )
         except ConversationNotFound as exc:
             raise RunNotFound(str(exc)) from exc
-        async for part in self.client.stream_thread(
-            thread_id=conversation.agent_thread_id, assistant_id=conversation.agent_id
-        ):
-            if isinstance(part, Mapping):
-                yield StreamEvent(
-                    event=str(part.get("event", "message")),
-                    data=part.get("data", dict(part)),
+        if turn.server_run_id is not None and turn.status.value not in {"completed", "failed"}:
+            try:
+                async for part in self.client.stream_run(
+                    thread_id=conversation.agent_thread_id,
+                    run_id=turn.server_run_id,
+                ):
+                    projected = project_server_part(part)
+                    if projected is not None:
+                        yield projected
+            except Exception:
+                LOGGER.warning(
+                    "conversation run stream ended unexpectedly",
+                    extra={"run_id": run_id},
                 )
-            else:
-                yield StreamEvent(
-                    event=str(getattr(part, "event", "message")),
-                    data=getattr(part, "data", repr(part)),
-                )
+
+        try:
+            final = await self.status(
+                run_id,
+                tenant_id=tenant_id,
+                subject_id=subject_id,
+                scopes=scopes,
+            )
+        except Exception:
+            LOGGER.warning("conversation final reconciliation failed", extra={"run_id": run_id})
+            yield failed_stream_event(run_id)
+            return
+        if final.status == "completed":
+            content = await self.assistant_content(
+                run_id,
+                tenant_id=tenant_id,
+                subject_id=subject_id,
+            )
+            output = final.output or {}
+            if content is not None:
+                output = {**output, "messages": [{"type": "assistant", "content": content}]}
+            yield completed_stream_event(run_id, output)
+        elif final.status == "interrupted":
+            yield interrupted_stream_event(run_id)
+        elif final.status == "failed":
+            yield failed_stream_event(run_id)
+        else:
+            yield progress_stream_event(run_id, final.status)
 
     def assert_owned(self, run_id: str, *, tenant_id: str, subject_id: str) -> None:
         """校验 run 归属于当前租户与主体，不通过则抛出 RunNotFound。

@@ -1,6 +1,6 @@
 # Stage 6：飞书 P2P Channel 实施说明
 
-状态：Proposed
+状态：Implemented（仓库一期完成；真实飞书 P2P 联调待凭证）
 编制日期：2026-09-04
 
 ## 1. 目标
@@ -183,28 +183,30 @@ tenant_key 和 open_id 不从正文、Prompt 或普通 HTTP Header 推导。
 
 ## 8. 代码落点
 
-预计新增：
+实际新增：
 
     financeclaw/interfaces/channels/__init__.py
     financeclaw/interfaces/channels/feishu.py
     financeclaw/application/feishu_channel_service.py
+    financeclaw/application/streaming.py
     financeclaw/infrastructure/migrations/versions/0006_feishu_channel.py
     tests/stage6/__init__.py
     tests/stage6/test_feishu_channel.py
     tests/stage6/test_run_streaming.py
 
-预计修改：
+主要修改：
 
+    financeclaw/application/__init__.py
     financeclaw/application/ports/agent_server.py
     financeclaw/infrastructure/clients/agent_server.py
     financeclaw/application/run_service.py
     financeclaw/application/workflow_service.py
     financeclaw/application/conversation_service.py
+    financeclaw/modules/conversation/models.py
     financeclaw/modules/conversation/tables.py
     financeclaw/modules/conversation/repository.py
     financeclaw/infrastructure/settings.py
     financeclaw/interfaces/http/app.py
-    financeclaw/bootstrap.py
     pyproject.toml
     uv.lock
     config/environments/*.env.example

@@ -5,8 +5,9 @@
 """
 
 import json
+import logging
 from asyncio import Lock
-from collections.abc import AsyncIterator, Mapping
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, replace
 from hashlib import sha256
 from typing import Any
@@ -24,7 +25,16 @@ from financeclaw.kernel import (
 )
 
 from .ports import AgentServerClient
+from .streaming import (
+    completed_stream_event,
+    failed_stream_event,
+    interrupted_stream_event,
+    progress_stream_event,
+    project_server_part,
+)
 from .target_resolver import ResolvedTarget, TargetResolutionError, TargetResolver
+
+LOGGER = logging.getLogger(__name__)
 
 
 class IdempotencyConflict(RuntimeError):
@@ -342,7 +352,7 @@ class RunService:
     async def stream(
         self, run_id: str, *, tenant_id: str, subject_id: str
     ) -> AsyncIterator[StreamEvent]:
-        """订阅 run 所在线程的流式事件。
+        """订阅指定 server run，并以权威终态查询校正流式结果。
 
         Args:
             run_id: 业务 run ID。
@@ -357,17 +367,42 @@ class RunService:
 
         """
         record = self._owned_record(run_id, tenant_id=tenant_id, subject_id=subject_id)
-        async for part in self.client.stream_thread(
-            thread_id=record.thread_id,
-            assistant_id=record.assistant_id,
-        ):
-            if isinstance(part, Mapping):
-                event = str(part.get("event", "message"))
-                data = part.get("data", dict(part))
+        stream_failed = False
+        try:
+            async for part in self.client.stream_run(
+                thread_id=record.thread_id,
+                run_id=record.server_run_id,
+            ):
+                projected = project_server_part(part)
+                if projected is not None:
+                    yield projected
+        except Exception:
+            # join_stream 不回放建立订阅前的片段；断流后继续查权威状态，不泄漏异常细节。
+            stream_failed = True
+            LOGGER.warning("Agent Server run stream ended unexpectedly", extra={"run_id": run_id})
+
+        try:
+            result = await self.client.get_run(
+                thread_id=record.thread_id,
+                run_id=record.server_run_id,
+            )
+            status = str(result.get("status", record.status))
+            self._by_run_id[run_id] = replace(record, status=status)
+            if status in {"success", "completed"}:
+                output = await self.client.join_run(
+                    thread_id=record.thread_id,
+                    run_id=record.server_run_id,
+                )
+                yield completed_stream_event(run_id, output)
+            elif status == "interrupted":
+                yield interrupted_stream_event(run_id)
+            elif status in {"error", "failed"} or stream_failed:
+                yield failed_stream_event(run_id)
             else:
-                event = str(getattr(part, "event", "message"))
-                data = getattr(part, "data", repr(part))
-            yield StreamEvent(event=event, data=data)
+                yield progress_stream_event(run_id, status)
+        except Exception:
+            LOGGER.warning("Agent Server final run reconciliation failed", extra={"run_id": run_id})
+            yield failed_stream_event(run_id)
 
     def _owned_record(self, run_id: str, *, tenant_id: str, subject_id: str) -> RunRecord:
         """加载归属于当前租户与主体的运行记录。

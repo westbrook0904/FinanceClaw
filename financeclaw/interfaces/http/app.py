@@ -17,6 +17,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from financeclaw.application import (
     ConversationService,
     DelegationService,
+    FeishuChannelService,
     RunNotFound,
     RunService,
     TargetResolver,
@@ -33,6 +34,7 @@ from financeclaw.infrastructure.observability import (
     configure_telemetry,
     install_request_observability,
 )
+from financeclaw.interfaces.channels import FeishuChannelAdapter
 from financeclaw.kernel import (
     ApprovalDecision,
     ConversationMessagesResponse,
@@ -90,6 +92,7 @@ def create_app(
     workflow_service: WorkflowService | None = None,
     delegation_service: DelegationService | None = None,
     readiness_checks: Mapping[str, Callable[[], Awaitable[bool]]] | None = None,
+    startup_hooks: tuple[Callable[[], Any], ...] = (),
     shutdown_hooks: tuple[Callable[[], Any], ...] = (),
     readiness_timeout_seconds: float = 3.0,
     shutdown_timeout_seconds: float = 20.0,
@@ -108,6 +111,7 @@ def create_app(
         delegation_service: 可选委派服务；为 None 时委派子运行状态不可查。
         readiness_checks: 就绪探针映射（名称到异步探针）；为 None 时仅探
             Agent Server 健康。
+        startup_hooks: 启动期回调元组；异常会使应用启动失败。
         shutdown_hooks: 关闭期回调元组，lifespan 中按注册逆序执行。
         readiness_timeout_seconds: 单个就绪探针的超时秒数。
         shutdown_timeout_seconds: 单个关闭钩子的超时秒数。
@@ -143,11 +147,19 @@ def create_app(
                 await conversation_service.reconcile_incomplete()
             except Exception:
                 LOGGER.exception("conversation reconciliation deferred after startup failure")
-        # 2. 让出控制权对外服务，直到进程关闭再进入 finally 收尾。
+        # 2. 启动协议适配器等外部生命周期组件；失败时让应用 fail fast。
         try:
+            for hook in startup_hooks:
+                if inspect.iscoroutinefunction(hook):
+                    await hook()
+                else:
+                    result = await asyncio.to_thread(hook)
+                    if inspect.isawaitable(result):
+                        await result
+            # 3. 让出控制权对外服务，直到进程关闭再进入 finally 收尾。
             yield
         finally:
-            # 3. 关闭收尾：按注册逆序执行钩子（如先关数据库、最后 flush OTel）；
+            # 4. 关闭收尾：按注册逆序执行钩子（如先关 Channel/数据库，再 flush OTel）；
             #    协程钩子直接 await，普通函数放线程池，均受超时约束。
             for hook in reversed(shutdown_hooks):
                 try:
@@ -170,7 +182,7 @@ def create_app(
     @app.get("/health")
     async def health() -> dict[str, str]:
         """存活探针（GET /health）：进程存活即返回 ok，不做依赖检查。"""
-        return {"status": "ok", "stage": "5"}
+        return {"status": "ok", "stage": "6"}
 
     @app.get("/ready")
     async def ready() -> JSONResponse:
@@ -551,6 +563,7 @@ def create_app(
                     run_id,
                     tenant_id=principal.tenant_id,
                     subject_id=principal.subject_id,
+                    scopes=principal.scopes,
                 )
         # 4. 统一以 SSE 响应输出所选事件源。
         return StreamingResponse(project_sse(events), media_type="text/event-stream")
@@ -762,7 +775,28 @@ def create_default_app(settings: FinanceClawSettings | None = None) -> FastAPI:
         summary_service=components.summary_service,
         approval_timeout_seconds=settings.approval_timeout_seconds,
     )
-    # 5. 选择认证器：OIDC 配置齐备时用 JWT 校验，否则退化为静态 token
+    # 5. 飞书 Channel 默认关闭；开启时才构造 SDK 适配器并在 lifespan 中连接。
+    feishu_channel: FeishuChannelAdapter | None = None
+    if settings.feishu_enabled:
+        if settings.feishu_app_id is None or settings.feishu_app_secret is None:
+            raise RuntimeError("Feishu channel configuration is incomplete")
+        feishu_service = FeishuChannelService(
+            conversation_service,
+            app_id=settings.feishu_app_id,
+            allowed_open_ids=settings.feishu_allowed_open_ids,
+            scopes=settings.feishu_scopes,
+            max_concurrency=settings.feishu_max_concurrency,
+        )
+        feishu_channel = FeishuChannelAdapter(
+            feishu_service,
+            app_id=settings.feishu_app_id,
+            app_secret=settings.feishu_app_secret.get_secret_value(),
+            allowed_open_ids=settings.feishu_allowed_open_ids,
+            max_concurrency=settings.feishu_max_concurrency,
+            security_mode=settings.feishu_security_mode,
+            connect_timeout_seconds=settings.feishu_connect_timeout_seconds,
+        )
+    # 6. 选择认证器：OIDC 配置齐备时用 JWT 校验，否则退化为静态 token
     #    （仅限本地开发，生产配置校验会禁止后者）。
     if settings.oidc_issuer and settings.oidc_audience and settings.oidc_jwks_url:
         authenticator: Authenticator = OIDCJWTAuthenticator(
@@ -798,26 +832,34 @@ def create_default_app(settings: FinanceClawSettings | None = None) -> FastAPI:
             return False
         return await asyncio.to_thread(components.artifact_service.store.health)
 
-    # 6. 汇总就绪探针与关闭钩子：lifespan 逆序执行，先关数据库、最后 flush OTel。
+    # 7. 汇总就绪探针与关闭钩子：逆序执行，先关 Channel/数据库、最后 flush OTel。
     shutdown_hooks: list[Callable[[], Any]] = [telemetry.shutdown]
     if components.database is not None:
         shutdown_hooks.append(components.database.close)
-    # 7. 装配 FastAPI 应用，并把数据库句柄挂到 app.state 供运维复用。
+    startup_hooks: tuple[Callable[[], Any], ...] = ()
+    readiness_checks: dict[str, Callable[[], Awaitable[bool]]] = {
+        "database": database_ready,
+        "artifact_store": artifact_ready,
+        "agent_server": client.health,
+    }
+    if feishu_channel is not None:
+        startup_hooks = (feishu_channel.start,)
+        shutdown_hooks.append(feishu_channel.stop)
+        readiness_checks["feishu_channel"] = feishu_channel.health
+    # 8. 装配 FastAPI 应用，并把数据库与 Channel 句柄挂到 app.state 供运维复用。
     app = create_app(
         run_service=run_service,
         authenticator=authenticator,
         conversation_service=conversation_service,
         workflow_service=workflow_service,
         delegation_service=delegation_service,
-        readiness_checks={
-            "database": database_ready,
-            "artifact_store": artifact_ready,
-            "agent_server": client.health,
-        },
+        readiness_checks=readiness_checks,
+        startup_hooks=startup_hooks,
         shutdown_hooks=tuple(shutdown_hooks),
         readiness_timeout_seconds=settings.readiness_timeout_seconds,
         shutdown_timeout_seconds=settings.shutdown_timeout_seconds,
         p95_target_ms=settings.api_p95_target_ms,
     )
     app.state.financeclaw_database = components.database
+    app.state.financeclaw_feishu_channel = feishu_channel
     return app

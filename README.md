@@ -5,8 +5,7 @@ FinanceClaw 正在按 [`.redesign/`](.redesign/README.md) 从自研通用 Agent 
 
 ## 当前阶段
 
-Stage 5 Production Hardening 已完成仓库内可自动验证的生产加固；对外接口保持“根会话统一进入
-顶层 Agent”：
+Stage 6 Feishu P2P Channel 一期已完成仓库内实现；对外接口保持“根会话统一进入顶层 Agent”：
 
 - 产品写入口只有 Conversation 创建和 message-only Turn 提交，不接受 Agent、Tool 或 Workflow Target；
 - `finance_agent` 使用 ReAct 判断直接回答、Tool Calling、Workflow handoff 或领域 Agent delegation；
@@ -15,6 +14,16 @@ Stage 5 Production Hardening 已完成仓库内可自动验证的生产加固；
 - 原直接 Tool/Workflow/Run 创建路由从 OpenAPI 隐藏，并仅允许 `internal:invoke` 服务身份；
 - Workflow 与领域 Agent 已作为受治理的 delegation Tool 暴露给顶层 Agent，并使用 typed handoff、
   独立 child thread/run 和永久父子映射执行。
+
+Stage 6 新增的飞书一期能力包括：
+
+- BFF 进程内使用官方 `lark-channel-sdk` WebSocket 长连接，默认关闭且只在启用时延迟加载；
+- 仅接收白名单用户的 P2P 文本消息，机器人、系统消息与群聊不会进入 Agent；
+- 飞书 app、tenant、open_id、chat_id 原子绑定到现有 Conversation Journal，多轮复用同一 thread；
+- `message_id` 同时进入持久化 Turn 幂等键，同 chat 串行、不同 chat 有界并行；
+- Agent Server 改为按 `server_run_id` 使用 `runs.join_stream`，只公开 delta、进度和稳定终态；
+- 回复使用流式 Markdown 卡片，结束时以 Journal 完整答案覆盖校正，CardKit 失败降级普通文本；
+- Alembic `0006_stage6` 管理绑定表；一期不包含群聊、媒体输入、飞书审批恢复或多实例主选。
 
 Stage 5 新增的生产能力包括：
 
@@ -69,7 +78,8 @@ Stage 4 已交付的固定流程能力继续保留：
 
 全部旧 Harness Runtime、Registry、Selection、SPI、Context、Memory、Policy、Trace、Events、
 Contracts 空壳和示例实现均已从生产构建删除。验证证据见
-[Stage-5 验证记录](.redesign/stages/Stage-5-验证记录.md)。
+[Stage-5 验证记录](.redesign/stages/Stage-5-验证记录.md)。Stage 6 的自动化与外部联调边界见
+[Stage-6 验证记录](.redesign/stages/Stage-6-验证记录.md)。
 
 ## 代码结构
 
@@ -92,8 +102,8 @@ UV_PROJECT_ENVIRONMENT="$PWD/.conda/envs/financeclaw" \
 ```
 
 本地从 `config/environments/development.env.example` 生成 `.env`；生产从
-`.env.stage5.example` 生成部署配置，并由 Secret Manager 注入真实凭据。DeepSeek 通过 OpenAI
-协议接入时，核心配置为：
+`config/environments/production.env.example` 生成部署配置，并由 Secret Manager 注入真实凭据。
+DeepSeek 通过 OpenAI 协议接入时，核心配置为：
 
 ```dotenv
 FINANCECLAW_MODEL=openai:deepseek-v4-pro
@@ -102,6 +112,22 @@ FINANCECLAW_PROVIDER_API_KEY=your-deepseek-api-key
 ```
 
 Secret 只放 `.env` 或部署平台 Secret Manager，不要写入 Git 跟踪的 example 文件。
+
+飞书一期使用企业自建应用。在飞书后台启用机器人、WebSocket 事件订阅和
+`im.message.receive_v1`，并授予消息收发与 CardKit 创建/更新权限；权限变化后需重新发布、安装应用。
+灰度 BFF 配置至少包含：
+
+```dotenv
+FINANCECLAW_FEISHU_ENABLED=true
+FINANCECLAW_FEISHU_APP_ID=cli_xxx
+FINANCECLAW_FEISHU_APP_SECRET=<from-secret-manager>
+FINANCECLAW_FEISHU_ALLOWED_OPEN_IDS='["ou_canary_user"]'
+FINANCECLAW_FEISHU_SCOPES='["market:read","tools:read","artifacts:read","memory:read"]'
+FINANCECLAW_FEISHU_MAX_CONCURRENCY=8
+FINANCECLAW_FEISHU_SECURITY_MODE=audit
+```
+
+生产启用时必须把 security mode 切换为 `strict`，且同一部署只允许一个 BFF 实例开启 Channel。
 
 升级已有环境或部署生产前先执行 Alembic；生产使用 PostgreSQL 并关闭自动建表：
 

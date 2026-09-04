@@ -92,6 +92,7 @@ class LangGraphAgentServerClient:
                 input=input,
                 context=context,
                 metadata=metadata,
+                stream_mode=("messages", "updates", "values"),
             )
         return ServerRun(run_id=str(run["run_id"]), status=str(run.get("status", "pending")))
 
@@ -195,20 +196,21 @@ class LangGraphAgentServerClient:
             metadata=metadata,
         )
 
-    def stream_thread(self, *, thread_id: str, assistant_id: str) -> AsyncIterator[Any]:
-        """订阅线程的流式输出事件。
+    def stream_run(self, *, thread_id: str, run_id: str) -> AsyncIterator[Any]:
+        """通过 ``runs.join_stream`` 订阅指定运行的真实异步事件流。
 
         Args:
             thread_id: 目标线程 ID。
-            assistant_id: Agent Server 侧的助手（图）ID。
+            run_id: Agent Server 侧运行 ID。
 
         Returns:
             异步事件流迭代器；显式携带鉴权头以支持流式端点。
 
         """
-        return self._client.threads.stream(
+        return self._client.runs.join_stream(
             thread_id,
-            assistant_id=assistant_id,
+            run_id,
+            stream_mode=("messages", "updates", "values"),
             headers=self._headers,
         )
 

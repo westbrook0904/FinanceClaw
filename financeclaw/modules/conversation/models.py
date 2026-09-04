@@ -127,6 +127,36 @@ class Conversation(FrozenRecord):
     updated_at: datetime
 
 
+class ChannelConversationBinding(FrozenRecord):
+    """外部消息单聊与 FinanceClaw Conversation 的稳定绑定。
+
+    使用场景：飞书 Channel 按应用、租户和 P2P chat 定位唯一会话，保证多轮
+    消息复用同一个 Agent thread；绑定身份只来自 SDK 已验证事件。
+
+    Attributes:
+        binding_id: 绑定记录主键。
+        channel: Channel 类型，一期固定为 ``feishu``。
+        app_id: 飞书应用 ID（非 Secret）。
+        tenant_key: 飞书事件中的租户标识。
+        external_user_id: 发件人的飞书 open_id。
+        external_chat_id: 飞书 P2P chat_id。
+        conversation_id: 关联的 FinanceClaw Conversation ID。
+        created_at: 绑定创建时间（UTC）。
+        updated_at: 最近一次解析绑定的时间（UTC）。
+
+    """
+
+    binding_id: str
+    channel: str
+    app_id: str
+    tenant_key: str
+    external_user_id: str
+    external_chat_id: str
+    conversation_id: str
+    created_at: datetime
+    updated_at: datetime
+
+
 class ConversationTurn(FrozenRecord):
     """一次对话轮次的执行记录，承载幂等键与 Agent Server 运行绑定。
 

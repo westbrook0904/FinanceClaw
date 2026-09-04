@@ -5,6 +5,7 @@
 
 from .context import ContextBudget, ConversationContextBuilder, TokenCounter
 from .models import (
+    ChannelConversationBinding,
     ContextOmission,
     ContextSelection,
     Conversation,
@@ -30,6 +31,7 @@ from .summaries import DeterministicSummarizer, SummaryService
 
 __all__ = [
     "ContextBudget",
+    "ChannelConversationBinding",
     "ContextOmission",
     "ContextSelection",
     "Conversation",

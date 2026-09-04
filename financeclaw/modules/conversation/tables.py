@@ -1,7 +1,7 @@
 """会话日志模块的 SQLAlchemy ORM 表定义（业务数据库持久化层）。
 
-定义 conversations、conversation_turns、conversation_messages、
-conversation_summaries、model_context_manifests 与 artifacts 六张表。
+定义 conversations、channel_conversation_bindings、conversation_turns、
+conversation_messages、conversation_summaries、model_context_manifests 与 artifacts 表。
 """
 
 from datetime import datetime
@@ -65,6 +65,57 @@ class ConversationRow(Base):
 
     turns: Mapped[list["ConversationTurnRow"]] = relationship(
         back_populates="conversation", cascade="all, delete-orphan"
+    )
+
+
+class ChannelConversationBindingRow(Base):
+    """Channel 单聊绑定表：把外部 chat 唯一映射到一个 Conversation。
+
+    Attributes:
+        binding_id: 绑定主键。
+        channel: Channel 类型，一期固定为 feishu。
+        app_id: 飞书应用 ID。
+        tenant_key: 飞书租户键。
+        external_user_id: 发件人 open_id。
+        external_chat_id: P2P chat_id。
+        conversation_id: FinanceClaw Conversation 外键。
+        created_at: 创建时间。
+        updated_at: 最近解析时间。
+
+    """
+
+    __tablename__ = "channel_conversation_bindings"
+    __table_args__ = (
+        UniqueConstraint(
+            "channel",
+            "app_id",
+            "tenant_key",
+            "external_chat_id",
+            name="uq_channel_conversation_bindings_chat",
+        ),
+        Index(
+            "ix_channel_conversation_bindings_user",
+            "channel",
+            "app_id",
+            "tenant_key",
+            "external_user_id",
+        ),
+    )
+
+    binding_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    channel: Mapped[str] = mapped_column(String(32), nullable=False)
+    app_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    tenant_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    external_user_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    external_chat_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    conversation_id: Mapped[str] = mapped_column(
+        ForeignKey("conversations.conversation_id"), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utcnow, onupdate=utcnow
     )
 
 

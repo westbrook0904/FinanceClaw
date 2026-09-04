@@ -11,9 +11,11 @@ from typing import Protocol
 from uuid import UUID, uuid4
 
 from sqlalchemy import Select, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
 from .models import (
+    ChannelConversationBinding,
     Conversation,
     ConversationMessage,
     ConversationStatus,
@@ -25,6 +27,7 @@ from .models import (
     TurnStatus,
 )
 from .tables import (
+    ChannelConversationBindingRow,
     ConversationMessageRow,
     ConversationRow,
     ConversationSummaryRow,
@@ -71,6 +74,8 @@ class ConversationRepository(Protocol):
 
     方法说明：
         create_conversation: 创建会话并返回记录。
+        get_channel_binding: 按外部单聊键读取绑定。
+        get_or_create_channel_conversation: 原子解析或创建单聊绑定及会话。
         get_owned: 按归属读取会话，不存在时抛 ConversationNotFound。
         begin_turn: 幂等开启 turn 并写入用户消息。
         bind_server_run: 将 turn 绑定到 Agent Server 运行并更新状态。
@@ -96,6 +101,33 @@ class ConversationRepository(Protocol):
 
     def get_owned(self, conversation_id: str, tenant_id: str, subject_id: str) -> Conversation:
         """按（会话 ID，租户，主体）读取会话记录，不存在时抛出异常。"""
+        ...
+
+    def get_channel_binding(
+        self,
+        *,
+        channel: str,
+        app_id: str,
+        tenant_key: str,
+        external_chat_id: str,
+    ) -> ChannelConversationBinding | None:
+        """按 Channel 单聊唯一键读取绑定；不存在时返回 ``None``。"""
+        ...
+
+    def get_or_create_channel_conversation(
+        self,
+        *,
+        channel: str,
+        app_id: str,
+        tenant_key: str,
+        external_user_id: str,
+        external_chat_id: str,
+        tenant_id: str,
+        subject_id: str,
+        agent_id: str,
+        agent_profile_version: str,
+    ) -> tuple[ChannelConversationBinding, Conversation, bool]:
+        """原子读取或创建 Channel 绑定和会话，返回是否新建。"""
         ...
 
     def begin_turn(
@@ -168,6 +200,21 @@ def _conversation(row: ConversationRow) -> Conversation:
         agent_profile_version=row.agent_profile_version,
         agent_thread_id=row.agent_thread_id,
         status=ConversationStatus(row.status),
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+    )
+
+
+def _channel_binding(row: ChannelConversationBindingRow) -> ChannelConversationBinding:
+    """将 ChannelConversationBindingRow 转换为领域绑定记录。"""
+    return ChannelConversationBinding(
+        binding_id=row.binding_id,
+        channel=row.channel,
+        app_id=row.app_id,
+        tenant_key=row.tenant_key,
+        external_user_id=row.external_user_id,
+        external_chat_id=row.external_chat_id,
+        conversation_id=row.conversation_id,
         created_at=row.created_at,
         updated_at=row.updated_at,
     )
@@ -356,6 +403,137 @@ class SqlAlchemyConversationRepository:
             if row is None:
                 raise ConversationNotFound("conversation was not found for authenticated owner")
             return _conversation(row)
+
+    def get_channel_binding(
+        self,
+        *,
+        channel: str,
+        app_id: str,
+        tenant_key: str,
+        external_chat_id: str,
+    ) -> ChannelConversationBinding | None:
+        """按外部单聊唯一键读取 Conversation 绑定。
+
+        Args:
+            channel: Channel 类型。
+            app_id: 外部应用 ID。
+            tenant_key: 外部租户键。
+            external_chat_id: 外部单聊 ID。
+
+        Returns:
+            已存在的绑定；找不到时返回 ``None``。
+
+        """
+        statement = select(ChannelConversationBindingRow).where(
+            ChannelConversationBindingRow.channel == channel,
+            ChannelConversationBindingRow.app_id == app_id,
+            ChannelConversationBindingRow.tenant_key == tenant_key,
+            ChannelConversationBindingRow.external_chat_id == external_chat_id,
+        )
+        with self._sessions() as session:
+            row = session.scalar(statement)
+            return _channel_binding(row) if row is not None else None
+
+    def get_or_create_channel_conversation(
+        self,
+        *,
+        channel: str,
+        app_id: str,
+        tenant_key: str,
+        external_user_id: str,
+        external_chat_id: str,
+        tenant_id: str,
+        subject_id: str,
+        agent_id: str,
+        agent_profile_version: str,
+    ) -> tuple[ChannelConversationBinding, Conversation, bool]:
+        """在一个事务内解析或新建 Channel 单聊绑定及其 Conversation。
+
+        唯一约束负责跨线程竞态收敛；竞态失败方回滚孤立 Conversation 后重读
+        胜出绑定。若同一个 chat 后续映射到不同用户身份则拒绝，避免身份串用。
+
+        Args:
+            channel: Channel 类型，一期传 ``feishu``。
+            app_id: 飞书应用 ID。
+            tenant_key: 飞书租户键。
+            external_user_id: 发件人 open_id。
+            external_chat_id: P2P chat_id。
+            tenant_id: 映射后的 FinanceClaw 租户 ID。
+            subject_id: 映射后的 FinanceClaw 主体 ID。
+            agent_id: 新会话绑定的顶层 Agent ID。
+            agent_profile_version: 新会话固定的 Agent Profile 版本。
+
+        Returns:
+            ``(binding, conversation, created)``；既有绑定时 created 为 False。
+
+        Raises:
+            ConversationConflict: 既有绑定身份不一致或并发创建无法收敛。
+
+        """
+        for _attempt in range(2):
+            try:
+                with self._sessions.begin() as session:
+                    existing = session.scalar(
+                        select(ChannelConversationBindingRow)
+                        .where(
+                            ChannelConversationBindingRow.channel == channel,
+                            ChannelConversationBindingRow.app_id == app_id,
+                            ChannelConversationBindingRow.tenant_key == tenant_key,
+                            ChannelConversationBindingRow.external_chat_id == external_chat_id,
+                        )
+                        .with_for_update()
+                    )
+                    if existing is not None:
+                        conversation = session.get(ConversationRow, existing.conversation_id)
+                        if conversation is None:
+                            raise ConversationConflict(
+                                "channel binding references a missing conversation"
+                            )
+                        if (
+                            existing.external_user_id != external_user_id
+                            or conversation.tenant_id != tenant_id
+                            or conversation.subject_id != subject_id
+                        ):
+                            raise ConversationConflict(
+                                "channel chat is already bound to another verified identity"
+                            )
+                        existing.updated_at = datetime.now(UTC)
+                        session.flush()
+                        return _channel_binding(existing), _conversation(conversation), False
+
+                    now = datetime.now(UTC)
+                    conversation = ConversationRow(
+                        conversation_id=f"conversation-{uuid4().hex}",
+                        tenant_id=tenant_id,
+                        subject_id=subject_id,
+                        agent_id=agent_id,
+                        agent_profile_version=agent_profile_version,
+                        agent_thread_id=str(uuid4()),
+                        status=ConversationStatus.ACTIVE.value,
+                        created_at=now,
+                        updated_at=now,
+                    )
+                    binding = ChannelConversationBindingRow(
+                        binding_id=f"binding-{uuid4().hex}",
+                        channel=channel,
+                        app_id=app_id,
+                        tenant_key=tenant_key,
+                        external_user_id=external_user_id,
+                        external_chat_id=external_chat_id,
+                        conversation_id=conversation.conversation_id,
+                        created_at=now,
+                        updated_at=now,
+                    )
+                    # 显式先刷 Conversation，避免未声明 ORM relationship 时绑定外键先写。
+                    session.add(conversation)
+                    session.flush()
+                    session.add(binding)
+                    session.flush()
+                    return _channel_binding(binding), _conversation(conversation), True
+            except IntegrityError:
+                # 并发插入相同唯一键时当前事务已回滚；下一轮读取胜出记录。
+                continue
+        raise ConversationConflict("concurrent channel binding creation did not converge")
 
     def begin_turn(
         self,

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from collections.abc import AsyncIterator, Callable, Mapping
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
@@ -37,6 +38,15 @@ from financeclaw.modules.workflows import (
 
 from .ports import AgentServerClient
 from .run_service import IdempotencyConflict, RunNotFound
+from .streaming import (
+    completed_stream_event,
+    failed_stream_event,
+    interrupted_stream_event,
+    progress_stream_event,
+    project_server_part,
+)
+
+LOGGER = logging.getLogger(__name__)
 
 
 class WorkflowAuthorizationError(PermissionError):
@@ -433,7 +443,7 @@ class WorkflowService:
     async def stream(
         self, run_id: str, *, tenant_id: str, subject_id: str
     ) -> AsyncIterator[StreamEvent]:
-        """订阅工作流运行所在线程的流式事件。
+        """订阅指定工作流 server run，并在流结束后校正业务终态。
 
         Args:
             run_id: 业务 run ID。
@@ -448,20 +458,32 @@ class WorkflowService:
 
         """
         record = await self._owned(run_id, tenant_id, subject_id)
-        async for part in self.client.stream_thread(
-            thread_id=record.thread_id,
-            assistant_id=record.assistant_id,
-        ):
-            if isinstance(part, Mapping):
-                yield StreamEvent(
-                    event=str(part.get("event", "message")),
-                    data=part.get("data", dict(part)),
-                )
-            else:
-                yield StreamEvent(
-                    event=str(getattr(part, "event", "message")),
-                    data=getattr(part, "data", repr(part)),
-                )
+        if record.server_run_id is not None and record.status not in _TERMINAL:
+            try:
+                async for part in self.client.stream_run(
+                    thread_id=record.thread_id,
+                    run_id=record.server_run_id,
+                ):
+                    projected = project_server_part(part)
+                    if projected is not None:
+                        yield projected
+            except Exception:
+                LOGGER.warning("workflow run stream ended unexpectedly", extra={"run_id": run_id})
+
+        try:
+            final = await self.status(run_id, tenant_id=tenant_id, subject_id=subject_id)
+        except Exception:
+            LOGGER.warning("workflow final reconciliation failed", extra={"run_id": run_id})
+            yield failed_stream_event(run_id)
+            return
+        if final.status == "completed":
+            yield completed_stream_event(run_id, final.output or {})
+        elif final.status == "interrupted":
+            yield interrupted_stream_event(run_id)
+        elif final.status in {"failed", "rejected"}:
+            yield failed_stream_event(run_id)
+        else:
+            yield progress_stream_event(run_id, final.status)
 
     async def _record_interrupt(
         self, record: WorkflowRun, server: Mapping[str, Any]

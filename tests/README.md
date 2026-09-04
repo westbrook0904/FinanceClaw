@@ -1,8 +1,8 @@
 # Tests
 
 当前回归基线覆盖 Stage-1 Execution Spine、Stage-2 Conversation Context、Stage-3
-Long-term Memory、Stage-4 Published Workflows 和 Stage-5 Production Hardening。旧 Spike、
-Trace、Events 与混合 Contracts 测试已随对应实现删除。
+Long-term Memory、Stage-4 Published Workflows、Stage-5 Production Hardening 和 Stage-6
+Feishu P2P Channel。旧 Spike、Trace、Events 与混合 Contracts 测试已随对应实现删除。
 
 ```bash
 .conda/envs/stage0/bin/python -m pytest -q
@@ -51,5 +51,14 @@ Trace、Events 与混合 Contracts 测试已随对应实现删除。
 - 结构化日志凭据脱敏、OTel 低基数字段和组合健康检查；
 - 版本化回归数据集、Alembic `0005_stage5`、锁文件、SBOM 与漏洞扫描门禁。
 
+`tests/stage6` 重点验证：
+
+- Agent Server `runs.join_stream` 的 run 级订阅与稳定脱敏事件投影；
+- 飞书 P2P/用户/文本准入、可信 tenant/open_id 映射和机器人回声过滤；
+- 单聊 Conversation 绑定、多轮复用、message_id 幂等、同 chat 串行与跨 chat 隔离；
+- 流式 Markdown 最终 Journal 校正、CardKit 失败文本降级和默认关闭配置；
+- Alembic `0006_stage6` 升级、回滚与再次升级。
+
 真实 Provider、LangSmith 与 Agent Server 网络联调由显式 smoke/probe 命令执行，不用 mock 结果
-冒充在线证据。
+冒充在线证据。飞书 WebSocket 连接探针在未注入 `FINANCECLAW_FEISHU_E2E_*` 专用凭证时显式
+skip；连接 ready 也不替代 canary 用户实际发消息的 P2P 验收。

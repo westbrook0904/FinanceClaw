@@ -71,9 +71,9 @@ class FakeAgentServerClient:
         """以流式方式输出 `FakeAgentServerClient`，并返回边界约定的结果。"""
         yield {"event": "values", "data": {"status": "running"}}
 
-    def stream_thread(self, *, thread_id: str, assistant_id: str) -> AsyncIterator[Any]:
-        """以流式方式输出 `thread`，并返回边界约定的结果。"""
-        del thread_id, assistant_id
+    def stream_run(self, *, thread_id: str, run_id: str) -> AsyncIterator[Any]:
+        """以流式方式输出指定 `run`，并返回边界约定的结果。"""
+        del thread_id, run_id
         return self._stream()
 
     async def health(self) -> bool:
@@ -190,7 +190,7 @@ async def test_internal_tool_dispatch_auth_ownership_resume_and_stream() -> None
     # 继续执行前验证内部不变量。
     assert fake.resume_commands == [{"resume": {"decisions": [{"type": "approve"}]}}]
     # 继续执行前验证内部不变量。
-    assert "event: values" in stream.text
+    assert "event: run.progress" in stream.text
     # 继续执行前验证内部不变量。
     assert ready.status_code == 200
     # 继续执行前验证内部不变量。

@@ -185,9 +185,9 @@ class FakeDelegationClient:
         """以流式方式输出 `FakeDelegationClient`，并返回边界约定的结果。"""
         yield {"event": "values", "data": {"status": "running"}}
 
-    def stream_thread(self, *, thread_id: str, assistant_id: str) -> AsyncIterator[Any]:
-        """以流式方式输出 `thread`，并返回边界约定的结果。"""
-        del thread_id, assistant_id
+    def stream_run(self, *, thread_id: str, run_id: str) -> AsyncIterator[Any]:
+        """以流式方式输出指定 `run`，并返回边界约定的结果。"""
+        del thread_id, run_id
         return self._stream()
 
     async def health(self) -> bool:

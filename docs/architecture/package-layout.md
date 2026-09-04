@@ -12,14 +12,14 @@ FinanceClaw 采用面向业务模块的模块化单体，并用清晰的边界�
 | `application` | 跨模块用例、事务流程和出站 Port | `kernel`、`modules`、`orchestration` 契约、Port 抽象 |
 | `orchestration` | ReAct Agent、LangGraph、Tool 治理与工作流 Graph | `application`、`kernel`、`modules` |
 | `infrastructure` | 配置、数据库、迁移、LLM、Agent Server 客户端、观测和安全适配 | 上层定义的 Port 与第三方 SDK |
-| `interfaces` | HTTP 输入校验、认证、错误映射和 SSE 输出 | `application` 与组合根 |
+| `interfaces` | HTTP/SSE 与飞书 WebSocket 的协议适配、输入规范化和生命周期 | `application` 与组合根 |
 | `operations` | 运维 smoke、在线探针和评测数据命令 | 正式公开的应用/基础设施接口 |
 | `evaluation` | 离线回归集、评分和发布门禁 | 稳定数据契约与 LangSmith SDK |
 
 ## 依赖原则
 
 1. `application` 拥有 `AgentServerClient` 等出站 Port，基础设施只负责实现，不反向定义业务接口。
-2. HTTP 层只完成协议适配，不复制 Conversation、Workflow 或 Delegation 业务规则。
+2. HTTP 与 Channel 层只完成协议适配，不复制 Conversation、Workflow 或 Delegation 业务规则。
 3. `bootstrap.py` 是唯一组合根；只有它可以同时了解业务模块与具体基础设施实现。
 4. 业务模块之间通过稳定模型协作；跨模块 ORM Table 引用只允许用于明确的外键或原子 Outbox 写入。
 5. 运维命令不放入 `application`，避免生产用例包混入可执行脚本和环境探针。
