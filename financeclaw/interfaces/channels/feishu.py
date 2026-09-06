@@ -80,7 +80,10 @@ class FeishuChannelAdapter:
         if self._ready:
             return
         self._application_loop = asyncio.get_running_loop()
-        channel = self._build_channel()
+        # SDK 1.4 在首次导入时保存 WS 模块级事件循环，并在后台线程运行、
+        # 关闭时停止它；在 ASGI 主循环导入会误捕获并停止 Uvicorn 的循环。
+        # 保持延迟加载，但在没有运行中事件循环的工作线程初始化 SDK。
+        channel = await asyncio.to_thread(self._build_channel)
         channel.on("raw", self._capture_raw_event)
         channel.on("message", self._on_message)
         channel.on("error", self._on_error)

@@ -141,6 +141,8 @@ class FinanceClawSettings(BaseSettings):
     provider_api_key: SecretStr | None = None
     offline_model: bool = False
     ziwei_enabled: bool = False
+    # 开发/测试联调可显式允许完整 I/O；日志和 tracing 的实际开关仍分别控制。
+    ziwei_allow_full_io: bool = True
     ziwei_convention: str | None = None
     ziwei_hmac_key: SecretStr | None = None
     ziwei_key_version: str = Field(default="1", min_length=1, max_length=32)
@@ -258,6 +260,11 @@ class FinanceClawSettings(BaseSettings):
 
         """
         # 1. 生产环境基线：禁用调试输出与离线模型。
+        if self.ziwei_allow_full_io and self.environment not in {
+            Environment.DEVELOPMENT,
+            Environment.TEST,
+        }:
+            raise ValueError("ziwei_allow_full_io is restricted to development/test")
         if self.ziwei_enabled:
             if self.environment not in {Environment.DEVELOPMENT, Environment.TEST}:
                 raise ValueError(
@@ -270,13 +277,14 @@ class FinanceClawSettings(BaseSettings):
                 or len(self.ziwei_hmac_key.get_secret_value().encode()) < 32
             ):
                 raise ValueError("ziwei_hmac_key must contain at least 32 bytes")
-            if (
+            if not self.ziwei_allow_full_io and (
                 self.debug_full_io
                 or not self.langsmith_hide_inputs
                 or not self.langsmith_hide_outputs
             ):
                 raise ValueError(
-                    "Ziwei requires debug_full_io=false and hidden LangSmith inputs/outputs"
+                    "Ziwei requires debug_full_io=false and hidden LangSmith inputs/outputs; "
+                    "development/test debugging can set FINANCECLAW_ZIWEI_ALLOW_FULL_IO=true"
                 )
         if self.environment is Environment.PRODUCTION and self.debug_full_io:
             raise ValueError("debug_full_io must be disabled in production")
