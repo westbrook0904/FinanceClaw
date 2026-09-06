@@ -133,6 +133,10 @@ class AgentFactory:
         fallback_models: tuple[BaseChatModel, ...] | None = None,
         checkpointer: Any = _DEFAULT_CHECKPOINTER,
         store: BaseStore | None = None,
+        state_schema: Any = None,
+        additional_middleware: tuple[Any, ...] = (),
+        use_profile_response_format: bool = True,
+        model_retry_limit: int | None = None,
     ) -> Any:
         """按档案装配带完整中间件栈的 ReAct Agent。
 
@@ -142,12 +146,18 @@ class AgentFactory:
             fallback_models: 显式指定的兜底模型；缺省时按模型档案解析。
             checkpointer: LangGraph Checkpointer；未显式传入时使用内存实现。
             store: LangGraph BaseStore，供记忆等设施使用；缺省为 None。
+            state_schema: 领域 graph 需要共享的原生 AgentState 扩展。
+            additional_middleware: 领域预算与输入约束，不能替代既有治理。
+            use_profile_response_format: 领域自行 finalize 时不创建合成响应工具。
+            model_retry_limit: 领域可收窄模型重试次数，不能扩大 Factory 的重试上限。
 
         Returns:
             Any: 装配完成的 ReAct Agent（LangGraph 编译结果）。
 
         """
         # 1. 依据档案解析受治理工具，并得到允许键集合（tool_id@version）。
+        if model_retry_limit is not None and not 0 <= model_retry_limit <= self.model_max_retries:
+            raise ValueError("domain model retry limit cannot exceed the Factory limit")
         resolved_tools = tuple(
             self.tool_catalog.resolve(ref.tool_id, ref.version) for ref in profile.allowed_tools
         )
@@ -206,7 +216,7 @@ class AgentFactory:
             if managed.governance.approval is ApprovalMode.ALWAYS
         }
         # 5. 按顺序装配治理类中间件：人工审批、工具治理与调用偏好指令。
-        middleware: list[Any] = []
+        middleware: list[Any] = list(additional_middleware)
         if interrupt_on:
             middleware.append(
                 HumanInTheLoopMiddleware(
@@ -227,7 +237,16 @@ class AgentFactory:
         )
         # 6. 可选挂载工件 offload、记忆召回与会话上下文中间件。
         if self.artifact_service is not None:
-            middleware.append(ToolResultArtifactMiddleware(self.artifact_service))
+            middleware.append(
+                ToolResultArtifactMiddleware(
+                    self.artifact_service,
+                    protected_tools=frozenset(
+                        managed.tool.name
+                        for managed in resolved_tools
+                        if (managed.tool.metadata or {}).get("preserve_result")
+                    ),
+                )
+            )
         if (
             self.memory_service is not None
             and profile.memory_policy != "none"
@@ -269,7 +288,9 @@ class AgentFactory:
             middleware.append(ModelFallbackMiddleware(*fallbacks))
         middleware.append(
             ModelRetryMiddleware(
-                max_retries=self.model_max_retries,
+                max_retries=self.model_max_retries
+                if model_retry_limit is None
+                else model_retry_limit,
                 initial_delay=0.1,
                 jitter=False,
                 on_failure="error",
@@ -323,5 +344,6 @@ class AgentFactory:
             checkpointer=resolved_checkpointer,
             store=store,
             name=profile.agent_id,
-            response_format=profile.output_schema,
+            response_format=profile.output_schema if use_profile_response_format else None,
+            state_schema=state_schema,
         )

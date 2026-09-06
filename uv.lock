@@ -377,6 +377,10 @@ dev = [
     { name = "pytest-asyncio" },
     { name = "ruff" },
 ]
+ziwei = [
+    { name = "tzdata" },
+    { name = "x-iztro" },
+]
 
 [package.metadata]
 requires-dist = [
@@ -408,9 +412,11 @@ requires-dist = [
     { name = "redis", marker = "extra == 'agent-server'", specifier = ">=6,<8" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.12,<1" },
     { name = "sqlalchemy", specifier = ">=2.0,<3" },
+    { name = "tzdata", marker = "extra == 'ziwei'", specifier = "==2026.3" },
     { name = "uvicorn", specifier = ">=0.52,<1" },
+    { name = "x-iztro", marker = "extra == 'ziwei'", specifier = "==0.4.0" },
 ]
-provides-extras = ["agent-server", "dev"]
+provides-extras = ["ziwei", "agent-server", "dev"]
 
 [[package]]
 name = "forbiddenfruit"
@@ -2200,6 +2206,18 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/86/eb/20b6cdf273913d0ad05a6a14aed4b9a85591c18a987a3d47f20fa13dcc47/websockets-15.0.1-cp313-cp313-win32.whl", hash = "sha256:ba9e56e8ceeeedb2e080147ba85ffcd5cd0711b89576b83784d8605a7df455fa", size = 176393, upload-time = "2025-03-05T20:02:53.814Z" },
     { url = "https://files.pythonhosted.org/packages/1b/6c/c65773d6cab416a64d191d6ee8a8b1c68a09970ea6909d16965d26bfed1e/websockets-15.0.1-cp313-cp313-win_amd64.whl", hash = "sha256:e09473f095a819042ecb2ab9465aee615bd9c2028e4ef7d933600a8401c79561", size = 176837, upload-time = "2025-03-05T20:02:55.237Z" },
     { url = "https://files.pythonhosted.org/packages/fa/a8/5b41e0da817d64113292ab1f8247140aac61cbf6cfd085d6a0fa77f4984f/websockets-15.0.1-py3-none-any.whl", hash = "sha256:f7a866fbc1e97b5c617ee4116daaa09b722101d4a3c170c787450ba409f9736f", size = 169743, upload-time = "2025-03-05T20:03:39.41Z" },
+]
+
+[[package]]
+name = "x-iztro"
+version = "0.4.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/2e/ad/1fd81b0ba95fef463c61ebc04e642a45110d859d656841b55e9c6a3eceef/x_iztro-0.4.0.tar.gz", hash = "sha256:f154e4de851db4101c751cd3ec0e35a4f50c20b297a3190b6cee46e08611f502", size = 345125, upload-time = "2026-08-21T12:35:58.133Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/16/7b/e0fabe3672c350594a80e39b0ae51d83c9bb3955c891e39abd07390537c5/x_iztro-0.4.0-cp310-abi3-macosx_10_12_x86_64.macosx_11_0_arm64.macosx_10_12_universal2.whl", hash = "sha256:fceec85af1bf005c228b7a153ca33a979ab28c8ee517de9f682d2c7471a0efcf", size = 1892181, upload-time = "2026-08-21T12:35:51.22Z" },
+    { url = "https://files.pythonhosted.org/packages/e5/24/8483235c9e5ed2161bdf6168721fff024f068a46c7e1e9a6225fa87abbd1/x_iztro-0.4.0-cp310-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:d61af5de15178ddbc2164d79f3dcbc65085303bb603467273f21b59b53c24281", size = 1058877, upload-time = "2026-08-21T12:35:53.08Z" },
+    { url = "https://files.pythonhosted.org/packages/a1/ac/5011f60cb13aaf151a06e270b8aed44a86b920a50f92e93b6000c158d715/x_iztro-0.4.0-cp310-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:e9d3832e93a9fdc305c8589f254fbb053d92dc946235a78f9a13244d285ccb02", size = 1080855, upload-time = "2026-08-21T12:35:54.81Z" },
+    { url = "https://files.pythonhosted.org/packages/24/99/f05469fdcd59efc7fc6a3d3056ffd3c342a6fa1523fc9a8f792f19da8df3/x_iztro-0.4.0-cp310-abi3-win_amd64.whl", hash = "sha256:e9fe553a5606c6cfc6d4b71ef21327e47cb03c55550410bbb0921f5e6b5c3d1b", size = 870950, upload-time = "2026-08-21T12:35:56.561Z" },
 ]
 
 [[package]]

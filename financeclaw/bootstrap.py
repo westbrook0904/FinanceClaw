@@ -7,6 +7,7 @@
 
 from dataclasses import dataclass
 
+from financeclaw.application.ziwei_service import ZiweiService
 from financeclaw.infrastructure import ApplicationDatabase, ArtifactBackend, FinanceClawSettings
 from financeclaw.infrastructure.llm import (
     ModelFactory,
@@ -112,6 +113,7 @@ class FinanceClawComponents:
     workflow_repository: WorkflowRepository | None = None
     delegation_repository: DelegationRepository | None = None
     outbox_repository: OutboxRepository | None = None
+    ziwei_service: ZiweiService | None = None
 
     @property
     def default_agent_profile(self) -> AgentProfile:
@@ -121,7 +123,7 @@ class FinanceClawComponents:
             顶层财务 Agent 的 ``AgentProfile``。
 
         """
-        return self.agent_profiles.resolve("finance_agent", "1.2.0")
+        return self.agent_profiles.resolve("finance_agent")
 
 
 def build_components(
@@ -447,7 +449,77 @@ def build_components(
         ),
         memory_policy="stage3-governed-v1",
     )
-    agent_profiles = AgentProfileCatalog((agent_profile, domain_agent_profile))
+    # Stage 7 工具不进入已发布根 1.2.0 的白名单；仅显式启用时发布新的根 1.3.0。
+    from financeclaw.kernel import DataClassification
+    from financeclaw.modules.ziwei.models import ZiweiConvention
+    from financeclaw.modules.ziwei.service import ZiweiCalculationService
+    from financeclaw.orchestration.agents.ziwei import ziwei_profile
+    from financeclaw.orchestration.tools.ziwei import ziwei_tools
+
+    ziwei_service = None
+    convention = ZiweiConvention()
+    if settings.ziwei_enabled:
+        from financeclaw.infrastructure.ziwei.x_iztro import XIztroEngine
+
+        ziwei_service = ZiweiService(
+            ZiweiCalculationService(XIztroEngine(), convention),
+            hmac_key=settings.ziwei_hmac_key.get_secret_value().encode(),
+            key_version=settings.ziwei_key_version,
+            artifacts=artifact_service,
+            projection_bytes=settings.ziwei_projection_bytes,
+        )
+    chart_tools = ziwei_tools(ziwei_service)
+    specialist = ziwei_profile(
+        configuration_fingerprint(
+            model_release,
+            settings.offline_model,
+            convention,
+            settings.ziwei_enabled,
+            settings.ziwei_key_version,
+            settings.ziwei_projection_bytes,
+            settings.context_input_limit,
+            settings.context_reserved_output,
+            settings.artifact_inline_bytes,
+            [managed.governance for managed in chart_tools],
+        )
+    )
+    ziwei_delegate = agent_delegation_tool(specialist)
+    ziwei_delegate.tool.metadata = {"preserve_result": True}
+    profiles = [agent_profile, domain_agent_profile, specialist]
+    if settings.ziwei_enabled:
+        stage7_root = agent_profile.model_copy(
+            update={
+                "version": "1.3.0",
+                "assistant_id": "finance_agent_v1_3_0",
+                "deployment_revision": "stage7-candidate/1",
+                "data_classification": DataClassification.CONFIDENTIAL,
+                "allowed_tools": (
+                    *agent_profile.allowed_tools,
+                    ToolRef(
+                        tool_id=ziwei_delegate.tool.name,
+                        version=specialist.version,
+                    ),
+                ),
+                "configuration_fingerprint": configuration_fingerprint(
+                    agent_profile.configuration_fingerprint,
+                    specialist.model_dump(mode="json"),
+                    ziwei_delegate.governance,
+                    "protected-structured-result-v1",
+                ),
+                "system_prompt_template": agent_profile.system_prompt_template
+                + (
+                    " Handle bounded Ziwei (紫微斗数) traditional-culture requests by delegating "
+                    "to ziwei_doushu_agent. Never calculate star positions yourself. Collect birth "
+                    "calendar/date, local clock or shichen, time basis, place and sex_for_chart; "
+                    "do not invent missing fields. Set requested level and explicit target. "
+                    "Preserve chart evidence and warnings. Astrology is not financial evidence. "
+                    "Never store birth data or divination conclusions in long-term memory."
+                ),
+            }
+        )
+        profiles.append(stage7_root)
+    agent_profiles = AgentProfileCatalog(profiles)
+    tool_catalog = ToolCatalog((*tool_catalog.values(), *chart_tools, ziwei_delegate))
 
     # 12. 构建 Agent 工厂：绑定模型、工具、策略、审计与各类服务。
     agent_factory = AgentFactory(
@@ -484,4 +556,5 @@ def build_components(
         workflow_repository=workflow_repository,
         delegation_repository=delegation_repository,
         outbox_repository=outbox_repository,
+        ziwei_service=ziwei_service,
     )

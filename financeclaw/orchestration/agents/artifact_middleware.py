@@ -6,6 +6,7 @@
 """
 
 import asyncio
+import json
 from collections.abc import Awaitable, Callable, Mapping
 from typing import Any
 
@@ -28,15 +29,19 @@ class ToolResultArtifactMiddleware(AgentMiddleware):
 
     """
 
-    def __init__(self, service: ArtifactService) -> None:
+    def __init__(
+        self, service: ArtifactService, *, protected_tools: frozenset[str] = frozenset()
+    ) -> None:
         """保存 Artifact 服务引用，交给后续工具调用投影使用。
 
         Args:
             service: 已初始化的 Artifact 服务。
+            protected_tools: 不允许截断结果的受信任工具名。
 
         """
         super().__init__()
         self.service = service
+        self.protected_tools = protected_tools
 
     @staticmethod
     def _context(request: Any) -> ExecutionContext:
@@ -64,6 +69,23 @@ class ToolResultArtifactMiddleware(AgentMiddleware):
         # 1. 仅处理 ToolMessage，其余响应原样放行。
         if not isinstance(response, ToolMessage):
             return response
+        if request.tool_call.get("name") in self.protected_tools or response.additional_kwargs.get(
+            "preserve_structure"
+        ):
+            content = (
+                response.content
+                if isinstance(response.content, str)
+                else json.dumps(response.content)
+            )
+            if len(content.encode()) > self.service.inline_bytes:
+                raise ValueError(
+                    "protected structured result exceeds inline budget; narrow the task"
+                )
+            return response.model_copy(
+                update={
+                    "additional_kwargs": {**response.additional_kwargs, "preserve_structure": True},
+                }
+            )
         # 2. 请求 ArtifactService offload，超出内联阈值时写入存储并返回元数据。
         projected, metadata = self.service.offload(
             response.content,

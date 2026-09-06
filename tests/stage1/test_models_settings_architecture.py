@@ -99,6 +99,12 @@ def test_production_dependency_graph_has_no_stage1_legacy_runtime() -> None:
     # 继续执行前验证内部不变量。
     assert config["graphs"] == {
         "finance_agent_v1_2_0": "./financeclaw/orchestration/graphs/server_graphs.py:finance_agent",
+        "finance_agent_v1_3_0": (
+            "./financeclaw/orchestration/graphs/server_graphs.py:finance_agent_stage7"
+        ),
+        "ziwei_doushu_agent_v1_0_0": (
+            "./financeclaw/orchestration/graphs/server_graphs.py:ziwei_doushu_agent"
+        ),
         "market_research_agent_v1_2_0": (
             "./financeclaw/orchestration/graphs/server_graphs.py:market_research_agent"
         ),

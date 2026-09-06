@@ -5,6 +5,12 @@ FinanceClaw 正在按 [`.redesign/`](.redesign/README.md) 从自研通用 Agent 
 
 ## 当前阶段
 
+Stage 7 已新增默认关闭的紫微斗数候选子 Agent：五个只读盘面工具、确定性本地引擎、
+有证据引用的解读及既有父子委派集成。仅允许 development/test 合成资料验证；
+默认排盘口径、独立基准与真实模型联调仍待验收，未开放生产或真实资料灰度。
+详见 [Stage 7 实施与验证](.redesign/stages/Stage-7-实施与验证.md)和
+[候选启用手册](docs/operations/ziwei-agent.md)。原有 Stage 6 能力保持不变。
+
 Stage 6 Feishu P2P Channel 一期已完成仓库内实现；对外接口保持“根会话统一进入顶层 Agent”：
 
 - 产品写入口只有 Conversation 创建和 message-only Turn 提交，不接受 Agent、Tool 或 Workflow Target；

@@ -140,6 +140,11 @@ class FinanceClawSettings(BaseSettings):
     provider_base_url: str | None = "https://api.deepseek.com"
     provider_api_key: SecretStr | None = None
     offline_model: bool = False
+    ziwei_enabled: bool = False
+    ziwei_convention: str | None = None
+    ziwei_hmac_key: SecretStr | None = None
+    ziwei_key_version: str = Field(default="1", min_length=1, max_length=32)
+    ziwei_projection_bytes: int = Field(default=14_000, ge=2_048, le=64_000)
     debug_full_io: bool = True
     log_level: str = "INFO"
     model_timeout_seconds: float = Field(default=60.0, gt=0, le=600)
@@ -253,6 +258,26 @@ class FinanceClawSettings(BaseSettings):
 
         """
         # 1. 生产环境基线：禁用调试输出与离线模型。
+        if self.ziwei_enabled:
+            if self.environment not in {Environment.DEVELOPMENT, Environment.TEST}:
+                raise ValueError(
+                    "Ziwei candidate is restricted to development/test until rule validation"
+                )
+            if self.ziwei_convention != "x-iztro-civil-candidate@1.0.0":
+                raise ValueError("explicit ziwei_convention candidate selection is required")
+            if (
+                self.ziwei_hmac_key is None
+                or len(self.ziwei_hmac_key.get_secret_value().encode()) < 32
+            ):
+                raise ValueError("ziwei_hmac_key must contain at least 32 bytes")
+            if (
+                self.debug_full_io
+                or not self.langsmith_hide_inputs
+                or not self.langsmith_hide_outputs
+            ):
+                raise ValueError(
+                    "Ziwei requires debug_full_io=false and hidden LangSmith inputs/outputs"
+                )
         if self.environment is Environment.PRODUCTION and self.debug_full_io:
             raise ValueError("debug_full_io must be disabled in production")
         if self.environment is Environment.PRODUCTION and self.offline_model:

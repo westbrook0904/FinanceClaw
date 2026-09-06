@@ -1,0 +1,134 @@
+"""真实 LangGraph＋真实本地引擎＋离线模型，验证可执行闭环而不只检查配置。"""
+
+import pytest
+from pydantic import ValidationError
+
+from financeclaw.bootstrap import build_components
+from financeclaw.infrastructure import FinanceClawSettings
+from financeclaw.modules.ziwei.errors import ZiweiError
+from financeclaw.modules.ziwei.models import BirthTime, TargetSelector, ZiweiAgentResult
+from financeclaw.orchestration.agents.ziwei_offline import OfflineZiweiModel
+from financeclaw.orchestration.graphs.ziwei_agent import build_ziwei_agent
+from tests.stage7.support import components, context, envelope, request, settings
+
+
+def test_default_disabled_root_and_explicit_root_allowlist():
+    """默认没有紫微委派；启用后原始五工具仍不可见，旧 Profile 不被修改。"""
+    base = build_components(
+        FinanceClawSettings(
+            _env_file=None, environment="test", offline_model=True, debug_full_io=False
+        )
+    )
+    assert base.default_agent_profile.version == "1.2.0"
+    assert not any("ziwei" in ref.tool_id for ref in base.default_agent_profile.allowed_tools)
+    active = components()
+    assert active.default_agent_profile.version == "1.3.0"
+    assert active.agent_profiles.resolve("finance_agent", "1.2.0") == base.default_agent_profile
+    names = {ref.tool_id for ref in active.default_agent_profile.allowed_tools}
+    assert {name for name in names if "ziwei" in name} == {"delegate_agent__ziwei_doushu_agent"}
+    specialist = active.agent_profiles.resolve("ziwei_doushu_agent")
+    assert len(specialist.allowed_tools) == 5 and not specialist.interaction_points
+    for ref in specialist.allowed_tools:
+        tool = active.tool_catalog.resolve(ref.tool_id, ref.version)
+        assert not tool.governance.direct_invocation
+        assert "runtime" not in tool.tool.tool_call_schema.model_json_schema()["properties"]
+        assert "birth" not in tool.tool.tool_call_schema.model_json_schema()["properties"]
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"ziwei_convention": None},
+        {"ziwei_hmac_key": "short"},
+        {"debug_full_io": True},
+        {"langsmith_hide_inputs": False},
+        {"environment": "staging"},
+    ],
+)
+def test_candidate_configuration_fails_closed(changes):
+    """规则、密钥、原文保护与环境未明确配置时不允许开启。"""
+    with pytest.raises(ValidationError):
+        settings(**changes)
+
+
+def test_irrelevant_calendar_and_fold_parameters_cannot_be_silently_ignored():
+    """只用于农历或钟表歧义的参数不能用于无关的输入类型。"""
+    with pytest.raises(ValidationError):
+        TargetSelector(kind="calendar_period", unit="year", year=2026, is_leap_month=True)
+    with pytest.raises(ValidationError):
+        BirthTime(kind="shichen", shichen="yin", fold=1)
+
+
+@pytest.mark.parametrize("mode", ["chart_only", "interpretation"])
+@pytest.mark.asyncio
+async def test_real_graph_produces_validated_evidence_and_result(mode):
+    """子 Agent 一次取日盘，最终结构化结果保留实际盘面与证据。"""
+    stack = components()
+    profile = stack.agent_profiles.resolve("ziwei_doushu_agent")
+    graph = build_ziwei_agent(
+        stack.agent_factory, profile, stack.ziwei_service, model=OfflineZiweiModel()
+    )
+    result = await graph.ainvoke(envelope(request(mode=mode)), context=context())
+    value = ZiweiAgentResult.model_validate(result["ziwei_result"])
+    assert value.outcome == ("answer" if mode == "interpretation" else "chart_only")
+    assert len(value.charts_used) == 1 and value.charts_used[0].level == "daily"
+    assert sum(m.type == "tool" for m in result["messages"]) == 1
+    assert result["ziwei_model_calls"] == (3 if mode == "interpretation" else 2)
+    if mode == "interpretation":
+        damaged = value.model_dump(mode="json")
+        damaged["interpretations"][0]["evidence_refs"] = ["fabricated/fact"]
+        with pytest.raises(ValidationError):
+            ZiweiAgentResult.model_validate(damaged)
+
+
+@pytest.mark.asyncio
+async def test_preflight_clarifies_without_any_model_or_tool():
+    """缺资料正常结束，根会话据此发问；不创建 Agent-child interrupt。"""
+    stack = components()
+    profile = stack.agent_profiles.resolve("ziwei_doushu_agent")
+    graph = build_ziwei_agent(
+        stack.agent_factory, profile, stack.ziwei_service, model=OfflineZiweiModel()
+    )
+    result = await graph.ainvoke(envelope(request(birth={})), context=context())
+    value = ZiweiAgentResult.model_validate(result["ziwei_result"])
+    assert value.outcome == "needs_clarification" and "birth.date" in value.missing_fields
+    assert not result.get("ziwei_model_calls") and not result.get("ziwei_charts")
+
+
+@pytest.mark.asyncio
+async def test_preflight_permissions_and_input_state_cannot_be_forged():
+    """外部 graph 输入不能注入伪造盘面；缺权限在任何计算前拒绝。"""
+    stack = components()
+    graph = build_ziwei_agent(
+        stack.agent_factory,
+        stack.agent_profiles.resolve("ziwei_doushu_agent"),
+        stack.ziwei_service,
+        model=OfflineZiweiModel(),
+    )
+    with pytest.raises(PermissionError):
+        await graph.ainvoke(envelope(request()), context=context(scopes=set()))
+    with pytest.raises(PermissionError):
+        await graph.ainvoke(envelope(request()), context=context(data_classification="internal"))
+    data = {
+        **envelope(request()),
+        "ziwei_charts": [{"chart_id": "forged"}],
+        "ziwei_result": {"outcome": "answer"},
+    }
+    result = await graph.ainvoke(data, context=context())
+    assert result["ziwei_result"]["charts_used"][0]["chart_id"] != "forged"
+
+
+@pytest.mark.asyncio
+async def test_too_small_prompt_budget_fails_instead_of_truncating():
+    """工具字节阈值以外，还检查最终模型上下文的整体预算。"""
+    stack = components()
+    graph = build_ziwei_agent(
+        stack.agent_factory,
+        stack.agent_profiles.resolve("ziwei_doushu_agent"),
+        stack.ziwei_service,
+        model=OfflineZiweiModel(),
+        input_budget=128,
+    )
+    with pytest.raises(ZiweiError) as error:
+        await graph.ainvoke(envelope(request(mode="interpretation")), context=context())
+    assert error.value.code == "ZIWEI_CONTEXT_BUDGET_EXCEEDED"

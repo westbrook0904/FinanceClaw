@@ -12,6 +12,7 @@ from types import MappingProxyType
 from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
 
 from financeclaw.infrastructure.llm import ModelProfileRef
+from financeclaw.kernel import DataClassification
 from financeclaw.modules.interactions.models import InteractionPoint
 
 
@@ -82,6 +83,10 @@ class AgentProfile(BaseModel):
     output_schema: type[BaseModel] | None = Field(default=None, exclude=True)
     output_state_key: str = "structured_response"
     interaction_points: tuple[InteractionPoint, ...] = ()
+    data_classification: DataClassification = Field(
+        default=DataClassification.INTERNAL,
+        exclude_if=lambda value: value == DataClassification.INTERNAL,
+    )
 
     @field_serializer("required_scopes")
     def serialize_required_scopes(self, value: frozenset[str]) -> list[str]:

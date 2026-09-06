@@ -470,6 +470,8 @@ class ConversationContextBuilder:
             tokens = self.counter.message(item)
             if total <= remaining:
                 break
+            if item.additional_kwargs.get("preserve_structure"):
+                continue
             if isinstance(item, (HumanMessage, ToolMessage)) and isinstance(item.content, str):
                 content_tokens = self.counter.text(item.content)
                 message_overhead = tokens - content_tokens

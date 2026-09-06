@@ -383,6 +383,7 @@ class ConversationService:
                 run_id=turn.run_id,
                 root_run_id=turn.run_id,
                 request_clock=self._clock().isoformat(),
+                data_classification=profile.data_classification,
             )
             await asyncio.to_thread(
                 self.execution.register,

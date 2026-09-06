@@ -1,8 +1,8 @@
 # FinanceClaw Redesign
 
-状态：已确认，作为下一轮实现与删除工作的唯一目标架构基线。
+状态：已确认的架构基线继续有效；新增阶段按各文档状态评审，Proposed 设计不自动成为冻结决议。
 
-更新时间：2026-09-03
+更新时间：2026-09-06
 
 ## 目的
 
@@ -51,6 +51,9 @@
 - [Stage 4：Published Workflows](./stages/Stage-4-Published-Workflows-实施说明.md)
 - [Stage 5：Production Hardening](./stages/Stage-5-Production-Hardening-实施说明.md)
 - [Stage 6 Fix：委派可靠性、用户交互与批量工具调用优化方案（Proposed）](./stages/stage-6-fix.md)
+- [Stage 7：Ziwei Domain Agent 设计（候选实现中）](./stages/Stage-7-Ziwei-Domain-Agent-设计说明.md)
+  - [Stage 7 设计审视与待确认决议](./stages/Stage-7-设计审视与待确认决议.md)
+  - [Stage 7 实施与验证记录](./stages/Stage-7-实施与验证.md)
 
 迁移材料：
 
@@ -64,3 +67,5 @@
 - 框架原生对象只在 API、持久化或审计边界转换为 FinanceClaw DTO。
 - 新增自研抽象前必须先确认 LangChain、LangGraph、LangSmith、MCP 或成熟基础设施没有覆盖。
 - 所有架构例外必须以新的 ADR 记录，不能在实现中静默偏离。
+- Stage 7 是现有金融核心上的受限传统文化咨询扩展提案；规则、引擎和隐私例外须经评审，
+  不以文档新增替代批准，也不将命理解释用作金融事实或决策依据。

@@ -7,16 +7,29 @@ langgraph.json 指向本模块：导入时即完成设置加载与组件装配�
 
 from financeclaw.bootstrap import build_components
 from financeclaw.infrastructure import FinanceClawSettings
+from financeclaw.infrastructure.observability.langsmith import configure_langsmith
 from financeclaw.orchestration.agents import OfflineFinanceModel
+from financeclaw.orchestration.agents.ziwei_offline import OfflineZiweiModel
 from financeclaw.orchestration.graphs.direct_tool import build_direct_tool_graph
+from financeclaw.orchestration.graphs.ziwei_agent import (
+    build_disabled_stage7_root,
+    build_ziwei_agent,
+)
 
 # Agent Server 共享的全局设置与装配后的组件集合（目录、策略、审计、制品服务等）。
 settings = FinanceClawSettings()
+configure_langsmith(
+    project=settings.langsmith_project,
+    endpoint=settings.langsmith_endpoint,
+    sample_rate=settings.langsmith_trace_sample_rate,
+    hide_inputs=settings.langsmith_hide_inputs,
+    hide_outputs=settings.langsmith_hide_outputs,
+)
 components = build_components(settings, enable_persistence=True)
 
 # 顶层金融 ReAct Agent 助手，面向会话编排工具调用、流程移交与领域委派。
 finance_agent = components.agent_factory.build(
-    components.default_agent_profile,
+    components.agent_profiles.resolve("finance_agent", "1.2.0"),
     model=OfflineFinanceModel() if settings.offline_model else None,
     checkpointer=None,
 )
@@ -25,6 +38,23 @@ market_research_agent = components.agent_factory.build(
     components.agent_profiles.resolve("market_research_agent", "1.2.0"),
     model=OfflineFinanceModel() if settings.offline_model else None,
     checkpointer=None,
+)
+# 根 1.2.0 与市场 Agent 不被替换；仅新会话在启用时选择根 1.3.0。
+finance_agent_stage7 = (
+    components.agent_factory.build(
+        components.agent_profiles.resolve("finance_agent", "1.3.0"),
+        model=OfflineFinanceModel() if settings.offline_model else None,
+        checkpointer=None,
+    )
+    if settings.ziwei_enabled
+    else build_disabled_stage7_root()
+)
+ziwei_doushu_agent = build_ziwei_agent(
+    components.agent_factory,
+    components.agent_profiles.resolve("ziwei_doushu_agent", "1.0.0"),
+    components.ziwei_service,
+    model=OfflineZiweiModel() if settings.offline_model else None,
+    input_budget=min(24_000, settings.context_input_limit - settings.context_reserved_output),
 )
 # 直连工具图助手，承载 /tool <id> 的校验、授权、审批与执行链路。
 direct_tool = build_direct_tool_graph(

@@ -462,12 +462,15 @@ class ToolGovernanceMiddleware(AgentMiddleware):
                 tool_call_id=str(request.tool_call.get("id", "")) or None,
             )
             raise
-        # 4. 执行成功时记录执行审计事件并返回响应。
+        # ToolException 可能已被框架转换为错误消息，不能误记为执行成功。
+        failed = isinstance(response, ToolMessage) and response.status == "error"
         self._audit(
             context,
             managed,
-            event=AuditEventType.FINANCIAL_TOOL_EXECUTED,
-            decision="executed",
+            event=AuditEventType.FINANCIAL_TOOL_FAILED
+            if failed
+            else AuditEventType.FINANCIAL_TOOL_EXECUTED,
+            decision="failed" if failed else "executed",
             arguments_hash=arguments_hash,
             tool_call_id=str(request.tool_call.get("id", "")) or None,
         )
@@ -508,12 +511,15 @@ class ToolGovernanceMiddleware(AgentMiddleware):
                 tool_call_id=str(request.tool_call.get("id", "")) or None,
             )
             raise
+        failed = isinstance(response, ToolMessage) and response.status == "error"
         await asyncio.to_thread(
             self._audit,
             context,
             managed,
-            event=AuditEventType.FINANCIAL_TOOL_EXECUTED,
-            decision="executed",
+            event=AuditEventType.FINANCIAL_TOOL_FAILED
+            if failed
+            else AuditEventType.FINANCIAL_TOOL_EXECUTED,
+            decision="failed" if failed else "executed",
             arguments_hash=arguments_hash,
             tool_call_id=str(request.tool_call.get("id", "")) or None,
         )
