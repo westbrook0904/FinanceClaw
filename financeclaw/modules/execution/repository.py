@@ -144,27 +144,36 @@ class ExecutionRepository:
         ):
             raise ExecutionConflict("runtime identity or scopes exceed the execution snapshot")
 
-    def prepare(self, operation_id: str, run_id: str, request: dict[str, Any]) -> dict[str, Any]:
+    def prepare(
+        self,
+        operation_id: str,
+        run_id: str,
+        request: dict[str, Any],
+        *,
+        session: Session | None = None,
+    ) -> dict[str, Any]:
         """按业务操作键准备命令；同键不同决定或执行位置必须冲突。"""
+        if session is None:
+            with self.sessions.begin() as transaction:
+                return self.prepare(operation_id, run_id, request, session=transaction)
         fingerprint = digest(request)
-        with self.sessions.begin() as session:
-            try:
-                with session.begin_nested():
-                    session.add(
-                        RunOperationRow(
-                            operation_id=operation_id,
-                            run_id=run_id,
-                            request_hash=fingerprint,
-                            request=request,
-                        )
+        try:
+            with session.begin_nested():
+                session.add(
+                    RunOperationRow(
+                        operation_id=operation_id,
+                        run_id=run_id,
+                        request_hash=fingerprint,
+                        request=request,
                     )
-                    session.flush()
-            except IntegrityError:
-                pass
-            row = session.get(RunOperationRow, operation_id)
-            if row is None or row.run_id != run_id or row.request_hash != fingerprint:
-                raise ExecutionConflict("operation key reused with a different command or snapshot")
-            return _operation(row)
+                )
+                session.flush()
+        except IntegrityError:
+            pass
+        row = session.get(RunOperationRow, operation_id)
+        if row is None or row.run_id != run_id or row.request_hash != fingerprint:
+            raise ExecutionConflict("operation key reused with a different command or snapshot")
+        return _operation(row)
 
     def claim(self, operation_id: str) -> bool:
         """只有一个进程获得提交权；领取与根预算扣减属于同一事务。"""
@@ -214,6 +223,46 @@ class ExecutionRepository:
                 for row in session.scalars(
                     select(RunOperationRow).where(RunOperationRow.run_id == run_id)
                 )
+            )
+
+    def delivery_in_progress(self, run_id: str, delegation_id: str) -> bool:
+        """拒绝后仅允许原委派工具接收已准备交付的终态，不把它当作新委派。
+
+        图恢复会重新进入中断工具的 wrapper。凭工具名称放行会扩大权限，因此
+        必须同时匹配原 handoff、已领取的交付操作、原生中断和确切执行链。
+        新模型调用仍先受批次守卫约束，取消仍由根预算的原子检查拦截。
+        """
+        from financeclaw.modules.delegation.tables import DelegationRow
+
+        with self.sessions() as session:
+            execution = session.get(RunExecutionRow, run_id)
+            delegation = session.get(DelegationRow, delegation_id)
+            operation = session.get(
+                RunOperationRow, "operation-" + digest([run_id, "delivery:" + delegation_id])
+            )
+            if (
+                execution is None
+                or delegation is None
+                or operation is None
+                or delegation.parent_run_id != run_id
+                or delegation.execution_status not in {"completed", "rejected", "failed"}
+                or operation.status not in {"claimed", "submitted", "uncertain"}
+            ):
+                return False
+            binding = delegation.execution_snapshot or {}
+            waiting = execution.waiting or {}
+            predecessor = binding.get("parent_server_run_id")
+            interrupt_id = binding.get("parent_interrupt_id")
+            resume = (operation.request.get("command") or {}).get("resume", {})
+            result = resume.get(interrupt_id, {}) if interrupt_id else resume
+            return bool(
+                predecessor
+                and waiting.get("kind") == "handoff"
+                and waiting.get("payload", {}).get("handoff_id") == delegation_id
+                and waiting.get("server_run_id") == predecessor
+                and operation.request.get("predecessor") == predecessor
+                and execution.server_run_id in {predecessor, operation.server_run_id}
+                and result.get("delegation_id") == delegation_id
             )
 
     def bind(self, operation_id: str, server_run_id: str) -> None:

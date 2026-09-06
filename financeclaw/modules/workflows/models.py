@@ -50,7 +50,7 @@ class WorkflowRunStatus(StrEnum):
     """工作流运行的生命周期状态。
 
     使用场景：
-        驱动 BFF 侧的运行状态机；COMPLETED/REJECTED/FAILED 为终态，不可再变更。
+        驱动 BFF 侧的运行状态机；COMPLETED/REJECTED/FAILED/CANCELLED 为终态。
 
     Attributes:
         ACCEPTED: 请求已受理，尚未在 Agent Server 上启动。
@@ -60,6 +60,7 @@ class WorkflowRunStatus(StrEnum):
         COMPLETED: 运行成功结束。
         REJECTED: 审批被拒绝，运行终止。
         FAILED: 执行失败，运行终止。
+        CANCELLED: 业务已取消且确切执行尝试全部确认停止，不表示副作用已撤销。
 
     """
 
@@ -70,6 +71,7 @@ class WorkflowRunStatus(StrEnum):
     COMPLETED = "completed"
     REJECTED = "rejected"
     FAILED = "failed"
+    CANCELLED = "cancelled"
 
 
 class WorkflowApprovalStatus(StrEnum):
@@ -83,6 +85,8 @@ class WorkflowApprovalStatus(StrEnum):
         APPROVED: 已批准，运行可恢复。
         REJECTED: 已拒绝，运行终止。
         EXPIRED: 超过审批时限，未再被决定。
+        CANCELLED: 根任务已请求取消，该审批窗口关闭。
+        SUPERSEDED: 被新的交互实例替换，旧审批不再有效。
 
     """
 
@@ -90,6 +94,8 @@ class WorkflowApprovalStatus(StrEnum):
     APPROVED = "approved"
     REJECTED = "rejected"
     EXPIRED = "expired"
+    CANCELLED = "cancelled"
+    SUPERSEDED = "superseded"
 
 
 class WorkflowToolRef(FrozenWorkflowModel):

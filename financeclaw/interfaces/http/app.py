@@ -50,6 +50,7 @@ from financeclaw.kernel import (
     WorkflowInvokeRequest,
     WorkflowTarget,
 )
+from financeclaw.modules.interactions import InteractionResponse
 
 from .auth import (
     AuthenticatedPrincipal,
@@ -178,6 +179,55 @@ def create_app(
     principal_dep = principal_dependency(authenticator)
     install_error_handlers(app)
     install_request_observability(app, p95_target_ms=p95_target_ms)
+
+    interaction_service = (
+        conversation_service.interactions
+        if conversation_service
+        else delegation_service.interactions
+        if delegation_service
+        else workflow_service.interactions
+        if workflow_service
+        else None
+    )
+    if interaction_service is not None and workflow_service is not None:
+        interaction_service.workflow_catalog = workflow_service.catalog
+
+    @app.get("/v1/interactions/{interaction_id}")
+    async def interaction_status(
+        interaction_id: str, principal: Annotated[AuthenticatedPrincipal, Depends(principal_dep)]
+    ) -> dict[str, Any]:
+        """按 ID 查询交互安全投影，旧入口也可定位；不恢复任何执行。"""
+        if interaction_service is None:
+            raise HTTPException(status_code=503, detail="interaction service is unavailable")
+        row = await asyncio.to_thread(
+            interaction_service.repository.get_owned,
+            interaction_id,
+            principal.tenant_id,
+            principal.subject_id,
+            now=interaction_service.clock(),
+        )
+        return await interaction_service.public(row)
+
+    @app.post("/v1/interactions/{interaction_id}/responses", status_code=202)
+    async def interaction_response(
+        interaction_id: str,
+        request: InteractionResponse,
+        principal: Annotated[AuthenticatedPrincipal, Depends(principal_dep)],
+        idempotency_key: Annotated[
+            str, Header(alias="Idempotency-Key", min_length=1, max_length=256)
+        ],
+    ) -> dict[str, Any]:
+        """资料、选择、审批分型提交；202 表示决定受理，不等于底层完成。"""
+        if interaction_service is None:
+            raise HTTPException(status_code=503, detail="interaction service is unavailable")
+        return await interaction_service.respond(
+            interaction_id,
+            request,
+            tenant_id=principal.tenant_id,
+            subject_id=principal.subject_id,
+            scopes=principal.scopes,
+            idempotency_key=idempotency_key,
+        )
 
     @app.get("/health")
     async def health() -> dict[str, str]:
@@ -420,6 +470,7 @@ def create_app(
                         run_id,
                         tenant_id=principal.tenant_id,
                         subject_id=principal.subject_id,
+                        scopes=principal.scopes,
                     )
                 except RunNotFound:
                     pass
@@ -440,6 +491,7 @@ def create_app(
                     run_id,
                     tenant_id=principal.tenant_id,
                     subject_id=principal.subject_id,
+                    scopes=principal.scopes,
                 )
             raise
 
@@ -448,12 +500,19 @@ def create_app(
         run_id: str,
         principal: Annotated[AuthenticatedPrincipal, Depends(principal_dep)],
     ) -> RunStatusResponse:
-        """取消已认证主体拥有的根会话任务，停止确认前不释放活动 Turn。"""
-        if conversation_service is None:
-            raise RunNotFound("conversation cancellation is not configured")
-        return await conversation_service.cancel(
-            run_id, tenant_id=principal.tenant_id, subject_id=principal.subject_id
-        )
+        """取消拥有的根会话或独立 Workflow；子任务须通过根运行统一停止。"""
+        if conversation_service is not None:
+            try:
+                return await conversation_service.cancel(
+                    run_id, tenant_id=principal.tenant_id, subject_id=principal.subject_id
+                )
+            except RunNotFound:
+                pass
+        if workflow_service is not None:
+            return await workflow_service.cancel(
+                run_id, tenant_id=principal.tenant_id, subject_id=principal.subject_id
+            )
+        raise RunNotFound("root task cancellation is not configured")
 
     @app.post("/v1/runs/{run_id}/resume", response_model=RunStatusResponse)
     async def resume_run(

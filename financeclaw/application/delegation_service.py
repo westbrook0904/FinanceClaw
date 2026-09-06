@@ -38,6 +38,7 @@ from financeclaw.orchestration.agents import AgentProfileCatalog
 
 from .delegation_context import resolve_context_refs
 from .execution_service import ExecutionService, agent_snapshot, verify_agent_snapshot
+from .interaction_service import InteractionService, waiting_reason
 from .ports import AgentServerClient
 from .run_observation import observe_run
 from .run_service import RunNotFound
@@ -102,6 +103,12 @@ class DelegationService:
         self.audit = audit
         self.execution = repository.execution
         self.operations = ExecutionService(client, self.execution)
+        self.interactions = InteractionService(
+            client,
+            self.execution,
+            agent_profiles=agent_profiles,
+            workflow_catalog=workflow_service.catalog,
+        )
         self.conversation_repository = conversation_repository
         self.artifact_service = artifact_service
 
@@ -287,9 +294,10 @@ class DelegationService:
                 record.child_run_id,
                 tenant_id=tenant_id,
                 subject_id=subject_id,
+                scopes=scopes,
             )
             return await self._sync_child_status(record, child)
-        return await self._agent_status(record)
+        return await self._agent_status(record, scopes=scopes)
 
     async def resume(
         self,
@@ -312,8 +320,20 @@ class DelegationService:
             DelegationConflict: 子运行不是 Workflow 或尚未启动，无法恢复。
 
         """
-        if record.kind is not DelegationKind.WORKFLOW or record.child_run_id is None:
+        if record.child_run_id is None:
             raise DelegationConflict("delegated child does not support approval resume")
+        if record.kind is DelegationKind.AGENT:
+            if not await self.interactions.resume_legacy(
+                record.child_run_id,
+                decision,
+                tenant_id=record.tenant_id,
+                subject_id=record.subject_id,
+                scopes=scopes,
+            ):
+                raise DelegationConflict(
+                    "child has no uniquely bound approval; use interaction response API"
+                )
+            return await self._agent_status(record)
         child = await self.workflow_service.resume(
             record.child_run_id,
             decision,
@@ -324,7 +344,12 @@ class DelegationService:
         return await self._sync_child_status(record, child)
 
     async def child_status(
-        self, child_run_id: str, *, tenant_id: str, subject_id: str
+        self,
+        child_run_id: str,
+        *,
+        tenant_id: str,
+        subject_id: str,
+        scopes: frozenset[str] | None = None,
     ) -> RunStatusResponse:
         """按子运行 ID 查询 delegation 子运行的最新状态。
 
@@ -332,6 +357,7 @@ class DelegationService:
             child_run_id: 子业务 run ID。
             tenant_id: 租户 ID。
             subject_id: 主体 ID。
+            scopes: 当前认证范围；缺省的后台查询不领取尚未提交的用户回答。
 
         Returns:
             子运行的状态响应。
@@ -353,6 +379,7 @@ class DelegationService:
             record.delegation_id,
             tenant_id=tenant_id,
             subject_id=subject_id,
+            scopes=scopes,
         )
         if current.child_run_id is None or current.child_thread_id is None:
             raise RunNotFound("delegated child run has not started")
@@ -361,6 +388,14 @@ class DelegationService:
             thread_id=current.child_thread_id,
             status=current.status.value,
             output=current.output_payload,
+            waiting_reason=(current.output_payload or {}).get("waiting_reason")
+            if current.status is DelegationStatus.INTERRUPTED
+            else None,
+            pending_interactions=tuple(
+                (current.output_payload or {}).get("pending_interactions", ())
+            )
+            if current.status is DelegationStatus.INTERRUPTED
+            else (),
         )
 
     async def mark_delivered(self, record: DelegationRecord) -> DelegationRecord:
@@ -625,18 +660,26 @@ class DelegationService:
             await self._audit(bound, AuditEventType.DELEGATION_STARTED, decision="child_started")
         return bound
 
-    async def _agent_status(self, record: DelegationRecord) -> DelegationRecord:
+    async def _agent_status(
+        self, record: DelegationRecord, *, scopes: frozenset[str] | None = None
+    ) -> DelegationRecord:
         """先分类中断，再按 Profile 声明的 state 字段校验领域结果。"""
         if record.child_thread_id is None or record.child_server_run_id is None:
             return record
-        server = await self.client.get_run(
-            thread_id=record.child_thread_id, run_id=record.child_server_run_id
-        )
+        await self.interactions.reconcile_owner(record.child_run_id, scopes=scopes)
+        uncertain = await self.operations.reconcile(record.child_run_id)
+        execution = await asyncio.to_thread(self.execution.get, record.child_run_id)
+        if uncertain:
+            return await self._transition(
+                record,
+                DelegationStatus.INTERRUPTED,
+                output={"waiting_reason": "submission_uncertain", "pending_interactions": []},
+            )
+        server_id = execution["server_run_id"]
+        server = await self.client.get_run(thread_id=record.child_thread_id, run_id=server_id)
         observation = observe_run(server)
         if observation.kind == "completed":
-            raw = await self.client.join_run(
-                thread_id=record.child_thread_id, run_id=record.child_server_run_id
-            )
+            raw = await self.client.join_run(thread_id=record.child_thread_id, run_id=server_id)
             observation = observe_run(raw)
             if observation.kind == "completed":
                 profile = self.agent_profiles.resolve(record.target_id, record.target_version)
@@ -664,8 +707,24 @@ class DelegationService:
             return await self._transition(
                 record, DelegationStatus.FAILED, error="domain Agent child run failed"
             )
+        if observation.kind in {"hitl", "interaction"} and observation.interrupt_id:
+            from datetime import timedelta
+
+            interaction = await self.interactions.observe_agent(
+                record.child_run_id,
+                observation,
+                server_run_id=server_id,
+                expires_at=self.interactions.clock() + timedelta(seconds=900),
+                checkpoint_id=(server.get("checkpoint") or {}).get("checkpoint_id"),
+            )
+            public = await self.interactions.public(interaction)
+            return await self._transition(
+                record,
+                DelegationStatus.INTERRUPTED,
+                output={"waiting_reason": waiting_reason(public), "pending_interactions": [public]},
+            )
         if observation.kind != "running":
-            # A/B 不接受任意 Agent-child 原位恢复，也不将其挂起伪装为成功。
+            # 未声明／多位置中断仍保持可见不支持状态，不能广播回答。
             return await self._transition(
                 record,
                 DelegationStatus.INTERRUPTED,

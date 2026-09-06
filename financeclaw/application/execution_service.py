@@ -90,8 +90,19 @@ class ExecutionService:
             "input": input,
             "command": command,
             "predecessor": predecessor,
+            "context": context,
+            "metadata": metadata,
         }
         operation = await asyncio.to_thread(self.repository.prepare, operation_id, run_id, request)
+        return await self.submit_prepared(operation["operation_id"])
+
+    async def submit_prepared(self, operation_id: str) -> ServerRun | None:
+        """恢复与用户决定同事务准备的操作；使用冻结命令，不重新拼接用户回答。"""
+        operation = await asyncio.to_thread(self.repository.operation, operation_id)
+        request = operation["request"]
+        thread_id, assistant_id = request["thread_id"], request["assistant_id"]
+        command, predecessor = request.get("command"), request.get("predecessor")
+        context, metadata = request["context"], request["metadata"]
         if operation["server_run_id"] is not None:
             return ServerRun(operation["server_run_id"], "pending")
         claimed = await asyncio.to_thread(self.repository.claim, operation_id)
@@ -104,7 +115,7 @@ class ExecutionService:
                     "metadata": {**metadata, "operation_id": operation_id},
                 }
                 server = (
-                    await self.client.create_run(input=input, **kwargs)
+                    await self.client.create_run(input=request.get("input"), **kwargs)
                     if command is None
                     else await self.client.submit_resume(
                         command=command, predecessor=predecessor, **kwargs
@@ -163,6 +174,50 @@ class ExecutionService:
             audit=audit,
         )
         return observed
+
+    async def confirm_tree_stopped(self, root_run_id: str) -> bool:
+        """对已经封闭派发的树逐次确认停止；未知提交不允许释放任务。
+
+        Conversation 和独立 Workflow 共用此边界。取消与外部副作用回滚无关，
+        已领取但没有回执的操作必须找到原尝试，不能猜测它未执行。
+        """
+        executions = await asyncio.to_thread(self.repository.tree, root_run_id)
+        confirmed = bool(executions)
+        for execution in executions:
+            if not execution["cancellation_requested"]:
+                raise ExecutionConflict("seal the task tree before confirming cancellation")
+            owner_stopped = True
+            operations = await asyncio.to_thread(
+                self.repository.operations_for_run, execution["run_id"]
+            )
+            for operation in operations:
+                if operation["status"] == "prepared":
+                    continue  # 根取消标记保证后续 CAS 领取失败。
+                server_id = operation["server_run_id"]
+                try:
+                    if server_id is None:
+                        found = await self.client.find_operation(
+                            thread_id=operation["request"]["thread_id"],
+                            operation_id=operation["operation_id"],
+                        )
+                        if found is None:
+                            owner_stopped = False
+                            continue
+                        server_id = found.run_id
+                        await asyncio.to_thread(
+                            self.repository.bind, operation["operation_id"], server_id
+                        )
+                    stopped = await self.client.cancel_run(
+                        thread_id=operation["request"]["thread_id"],
+                        run_id=server_id,
+                    )
+                except Exception:
+                    stopped = False
+                owner_stopped = owner_stopped and stopped
+            if owner_stopped:
+                await asyncio.to_thread(self.repository.confirm_cancel, execution["run_id"])
+            confirmed = confirmed and owner_stopped
+        return confirmed
 
     async def reconcile(self, run_id: str) -> bool:
         """补绑定响应丢失的原操作；返回是否仍有无法证明提交结果的操作。"""

@@ -22,7 +22,7 @@ finance_agent = components.agent_factory.build(
 )
 # 市场研究领域 Agent，承接行情检索类任务的专门委派。
 market_research_agent = components.agent_factory.build(
-    components.agent_profiles.resolve("market_research_agent", "1.1.0"),
+    components.agent_profiles.resolve("market_research_agent", "1.2.0"),
     model=OfflineFinanceModel() if settings.offline_model else None,
     checkpointer=None,
 )

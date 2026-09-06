@@ -98,8 +98,8 @@ def test_production_dependency_graph_has_no_stage1_legacy_runtime() -> None:
     assert all(name not in pyproject for name in removed)
     # 继续执行前验证内部不变量。
     assert config["graphs"] == {
-        "finance_agent_v1_1_0": "./financeclaw/orchestration/graphs/server_graphs.py:finance_agent",
-        "market_research_agent_v1_1_0": (
+        "finance_agent_v1_2_0": "./financeclaw/orchestration/graphs/server_graphs.py:finance_agent",
+        "market_research_agent_v1_2_0": (
             "./financeclaw/orchestration/graphs/server_graphs.py:market_research_agent"
         ),
         "direct_tool": "./financeclaw/orchestration/graphs/server_graphs.py:direct_tool",

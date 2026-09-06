@@ -23,6 +23,7 @@ from financeclaw.kernel import ErrorResponse
 from financeclaw.modules.conversation import ConversationConflict, ConversationNotFound
 from financeclaw.modules.delegation import DelegationConflict
 from financeclaw.modules.execution import ExecutionConflict
+from financeclaw.modules.interactions import InteractionNotFound
 from financeclaw.modules.workflows import WorkflowConflict
 
 
@@ -37,6 +38,13 @@ def install_error_handlers(app: FastAPI) -> None:
         app: 待安装错误处理器的 FastAPI 应用。
 
     """
+
+    @app.exception_handler(InteractionNotFound)
+    async def interaction_not_found(_request: Request, exc: InteractionNotFound) -> JSONResponse:
+        """交互不存在与归属不匹配统一返回 404，不暴露其他主体的状态。"""
+        return JSONResponse(
+            status_code=404, content={"code": "INTERACTION_NOT_FOUND", "message": str(exc)}
+        )
 
     @app.exception_handler(ExecutionConflict)
     async def execution_conflict(_request: Request, exc: ExecutionConflict) -> JSONResponse:

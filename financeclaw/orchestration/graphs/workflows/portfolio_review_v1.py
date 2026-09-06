@@ -886,6 +886,6 @@ def portfolio_review_definition(
             approval_timeout_seconds=approval_timeout_seconds,
         ),
         status=WorkflowStatus.ACTIVE,
-        deployment_revision="portfolio-review-v1/stage6fix-ab-1",
+        deployment_revision="portfolio-review-v1/stage6fix-c-1",
         required_scopes=frozenset({"portfolio:review", "market:read"}),
     )

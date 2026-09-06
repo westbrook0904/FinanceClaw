@@ -2,6 +2,7 @@
 
 import asyncio
 import os
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
@@ -16,6 +17,7 @@ from financeclaw.infrastructure import FinanceClawSettings
 from financeclaw.infrastructure.database import normalize_database_url
 from financeclaw.kernel import ExecutionContext
 from financeclaw.modules.execution import ExecutionConflict
+from financeclaw.modules.interactions import InteractionRepository
 from tests.stage6fix.test_execution_recovery import OWNER
 
 pytestmark = pytest.mark.skipif(
@@ -48,7 +50,7 @@ async def test_postgres_turn_journal_operation_and_budget_cas(tmp_path):
         )
         repository = components.conversation_repository
         conversation = repository.create_conversation(
-            **OWNER, agent_id="finance_agent", agent_profile_version="1.1.0"
+            **OWNER, agent_id="finance_agent", agent_profile_version="1.2.0"
         )
         requests = await asyncio.gather(
             *(
@@ -61,7 +63,7 @@ async def test_postgres_turn_journal_operation_and_budget_cas(tmp_path):
                     message="bounded test",
                     target_type="agent",
                     target_id="finance_agent",
-                    target_version="1.1.0",
+                    target_version="1.2.0",
                 )
                 for _ in range(20)
             )
@@ -98,6 +100,42 @@ async def test_postgres_turn_journal_operation_and_budget_cas(tmp_path):
                 return 0
 
         assert sum(await asyncio.gather(*(consume() for _ in range(20)))) == 7
+        # C 阶段使用同一根行锁：重复回答竞争只保存一个决定和一个 prepared 操作。
+        repository.execution.bind("pg-operation", "pg-server")
+        interactions = InteractionRepository(repository.execution)
+        now = datetime.now(UTC)
+        interaction = interactions.register(
+            turn.run_id,
+            source="agent_declared",
+            server_run_id="pg-server",
+            interrupt_id="pg-native",
+            point_id="details",
+            kind="input",
+            question="资料？",
+            request={"response_schema": {"type": "object"}},
+            now=now,
+            expires_at=now + timedelta(minutes=15),
+        )
+        decisions = await asyncio.gather(
+            *(
+                asyncio.to_thread(
+                    InteractionRepository(repository.execution).decide,
+                    interaction["interaction_id"],
+                    **OWNER,
+                    revision=1,
+                    response_key="same",
+                    response={"kind": "input", "answer": {"symbol": "AAPL"}},
+                    operation={
+                        "command": {"resume": {"pg-native": {"answer": {"symbol": "AAPL"}}}}
+                    },
+                    now=now,
+                )
+                for _ in range(20)
+            )
+        )
+        assert len({decision["operation_id"] for decision in decisions}) == 1
+        assert all(decision["status"] == "resolved" for decision in decisions)
+        assert len(repository.execution.operations_for_run(turn.run_id)) == 2
         await asyncio.gather(
             *(
                 asyncio.to_thread(

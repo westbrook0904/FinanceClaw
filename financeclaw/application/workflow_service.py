@@ -38,6 +38,7 @@ from financeclaw.modules.workflows import (
 )
 
 from .execution_service import ExecutionService
+from .interaction_service import InteractionService, waiting_reason
 from .ports import AgentServerClient
 from .run_observation import observe_run
 from .run_service import IdempotencyConflict, RunNotFound
@@ -112,6 +113,9 @@ class WorkflowService:
         self._clock = clock or (lambda: datetime.now(UTC))
         self.execution = repository.execution
         self.operations = ExecutionService(client, self.execution)
+        self.interactions = InteractionService(
+            client, self.execution, workflow_catalog=catalog, clock=lambda: self._clock()
+        )
 
     async def start(
         self,
@@ -245,13 +249,16 @@ class WorkflowService:
             idempotent_replay=replay,
         )
 
-    async def status(self, run_id: str, *, tenant_id: str, subject_id: str) -> RunStatusResponse:
+    async def status(
+        self, run_id: str, *, tenant_id: str, subject_id: str, scopes: frozenset[str] | None = None
+    ) -> RunStatusResponse:
         """查询工作流运行状态，并处理超时、中断登记与结果落库。
 
         Args:
             run_id: 业务 run ID。
             tenant_id: 租户 ID。
             subject_id: 主体 ID。
+            scopes: 当前权限；提供时才允许补发已落决定但尚未领取的恢复操作。
 
         Returns:
             最新状态响应。
@@ -264,6 +271,7 @@ class WorkflowService:
         # 1. 终态或尚未绑定 server run：直接返回当前记录。
         if record.status in _TERMINAL:
             return self._response(record)
+        await self.interactions.reconcile_owner(run_id, scopes=scopes)
         uncertain = await self.operations.reconcile(run_id)
         execution = await asyncio.to_thread(self.execution.get, run_id)
         if execution["cancellation_requested"]:
@@ -287,7 +295,7 @@ class WorkflowService:
         server_status = str(server.get("status", record.status.value))
         if server_status == "interrupted":
             # 3a. 中断：校验并登记审批单。
-            return await self._record_interrupt(record, server)
+            return await self._record_interrupt(record, server, server_run_id=server_id)
         if server_status in {"error", "failed", "timeout"}:
             # 3b. 失败：置 FAILED 并审计 server_failed。
             failed, changed = await asyncio.to_thread(
@@ -308,7 +316,7 @@ class WorkflowService:
                 run_id=server_id,
             )
             if output.get("interrupts") or output.get("__interrupt__"):
-                return await self._record_interrupt(record, output)
+                return await self._record_interrupt(record, output, server_run_id=server_id)
             return await self._complete(record, output)
         # 软超时只提示仍需确认停止。每次实际执行尝试独立计时，不消耗审批等待时间。
         operations = await asyncio.to_thread(self.execution.operations_for_run, run_id)
@@ -369,6 +377,10 @@ class WorkflowService:
         execution = await asyncio.to_thread(self.execution.get, run_id)
         if execution["cancellation_requested"]:
             raise WorkflowConflict("cancellation requested; approval cannot resume execution")
+        if await self.interactions.resume_legacy(
+            run_id, decision, tenant_id=tenant_id, subject_id=subject_id, scopes=scopes
+        ):
+            return await self.status(run_id, tenant_id=tenant_id, subject_id=subject_id)
         waiting = execution["waiting"]
         if not waiting or waiting["kind"] != "workflow":
             raise WorkflowConflict("workflow has no uniquely bound pending approval")
@@ -461,7 +473,35 @@ class WorkflowService:
                 self.repository.set_status, run_id, WorkflowRunStatus.FAILED
             )
             return self._response(failed)
-        return await self._record_interrupt(record, result)
+        return await self._record_interrupt(record, result, server_run_id=server_run.run_id)
+
+    async def cancel(self, run_id: str, *, tenant_id: str, subject_id: str) -> RunStatusResponse:
+        """独立 Workflow 使用与根会话相同的停止确认；子 Workflow 通过根任务取消。"""
+        record = await self._owned(run_id, tenant_id, subject_id)
+        if record.status in _TERMINAL:
+            return self._response(record)
+        execution = await asyncio.to_thread(self.execution.get, run_id)
+        if execution["root_run_id"] != run_id:
+            raise WorkflowConflict("cancel the owning root task, not its delegated Workflow")
+        await asyncio.to_thread(self.interactions.repository.cancel_tree, run_id, now=self._now())
+        confirmed = await self.operations.confirm_tree_stopped(run_id)
+        if confirmed:
+            record, changed = await asyncio.to_thread(
+                self.repository.set_status, run_id, WorkflowRunStatus.CANCELLED
+            )
+            if changed:
+                await self._audit(
+                    record,
+                    AuditEventType.WORKFLOW_CANCELLED,
+                    decision="execution_stop_confirmed",
+                    payload_hash=record.arguments_hash,
+                )
+        return self._response(record).model_copy(
+            update={
+                "status": "cancelled" if confirmed else "cancellation_requested",
+                "waiting_reason": None if confirmed else "execution_stop_not_confirmed",
+            }
+        )
 
     @staticmethod
     def _release(definition: Any) -> dict[str, Any]:
@@ -565,13 +605,14 @@ class WorkflowService:
             yield progress_stream_event(run_id, final.status)
 
     async def _record_interrupt(
-        self, record: WorkflowRun, server: Mapping[str, Any]
+        self, record: WorkflowRun, server: Mapping[str, Any], *, server_run_id: str
     ) -> RunStatusResponse:
         """校验 server 中断载荷并登记工作流审批单。
 
         Args:
             record: 工作流运行记录。
             server: server 运行详情（含中断载荷）。
+            server_run_id: 此次查询的确切尝试；不能把旧响应挂到并发更新后的最新 run。
 
         Returns:
             状态为 INTERRUPTED 的响应，附带审批载荷与过期时间。
@@ -580,6 +621,9 @@ class WorkflowService:
             WorkflowConflict: 中断载荷与业务运行或已发布定义不一致。
 
         """
+        execution = await asyncio.to_thread(self.execution.get, record.run_id)
+        if execution["server_run_id"] != server_run_id:
+            raise WorkflowConflict("stale workflow observation; query the current attempt")
         # 1. 提取审批载荷，并复验 workflow_id/版本/参数 hash 与业务运行一致。
         observation = observe_run(server)
         if observation.kind != "workflow":
@@ -590,7 +634,6 @@ class WorkflowService:
                 update={"waiting_reason": "unsupported_interruption"}
             )
         payload = _interrupt_payload(server)
-        execution = await asyncio.to_thread(self.execution.get, record.run_id)
         if (
             payload.get("workflow_id") != record.workflow_id
             or payload.get("workflow_version") != record.workflow_version
@@ -639,11 +682,12 @@ class WorkflowService:
                 "key": observation.interrupt_id or saved.approval_id,
                 "interrupt_id": observation.interrupt_id,
                 "kind": "workflow",
-                "server_run_id": execution["server_run_id"],
+                "server_run_id": server_run_id,
                 "payload": payload,
                 "payload_hash": _hash(payload),
                 "expires_at": _aware(saved.expires_at).isoformat(),
             },
+            server_run_id=server_run_id,
         )
         interrupted, changed = await asyncio.to_thread(
             self.repository.set_status, record.run_id, WorkflowRunStatus.INTERRUPTED
@@ -660,6 +704,22 @@ class WorkflowService:
             )
         # 6. 返回携带审批载荷与过期时间的响应。
         expired = self._now() >= _aware(saved.expires_at)
+        if observation.interrupt_id:
+            interaction = await self.interactions.observe_workflow(
+                record.run_id,
+                observation,
+                saved,
+                server_run_id=server_run_id,
+                checkpoint_id=(server.get("checkpoint") or {}).get("checkpoint_id"),
+            )
+            public = await self.interactions.public(interaction)
+            return RunStatusResponse(
+                run_id=record.run_id,
+                thread_id=record.thread_id,
+                status="interrupted",
+                waiting_reason=waiting_reason(public),
+                pending_interactions=(public,),
+            )
         if expired and saved.status is WorkflowApprovalStatus.PENDING:
             await self._expire_approval(record, saved)
         return RunStatusResponse(
@@ -962,6 +1022,7 @@ _TERMINAL = {
     WorkflowRunStatus.COMPLETED,
     WorkflowRunStatus.REJECTED,
     WorkflowRunStatus.FAILED,
+    WorkflowRunStatus.CANCELLED,
 }
 
 

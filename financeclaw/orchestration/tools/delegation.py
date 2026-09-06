@@ -119,7 +119,7 @@ class DelegationTool(BaseTool):
             raise ValueError("delegation requires a conversation turn context")
         tool_call_id = runtime.tool_call_id or "unknown-tool-call"
         # 2. 由父运行、工具调用与目标共同派生确定性 handoff_id（幂等键）。
-        handoff_id = _handoff_id(
+        handoff_id = delegation_handoff_id(
             parent_run_id=context.run_id,
             tool_call_id=tool_call_id,
             kind=self.handoff_kind,
@@ -310,7 +310,7 @@ def _governance(tool_id: str, required_scopes: frozenset[str], version: str) -> 
     )
 
 
-def _handoff_id(
+def delegation_handoff_id(
     *, parent_run_id: str, tool_call_id: str, kind: DelegationKind, target_id: str
 ) -> str:
     """由委托要素派生确定性的 handoff 标识，用作委托幂等键。

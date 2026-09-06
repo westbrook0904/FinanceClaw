@@ -25,6 +25,7 @@ class SideEffect(StrEnum):
     WRITE = "write"
     EXTERNAL_ACTION = "external_action"
     DELEGATION = "delegation"
+    INTERACTION = "interaction"
 
 
 class Idempotency(StrEnum):

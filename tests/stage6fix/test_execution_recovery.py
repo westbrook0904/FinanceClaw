@@ -253,7 +253,7 @@ class ChainedClient(ParentApprovalClient):
                 parent_turn_id=context["turn_id"],
                 conversation_id=context["conversation_id"],
                 agent_id="market_research_agent",
-                target_version="1.1.0",
+                target_version="1.2.0",
                 task="research MSFT",
             )
             return {"__interrupt__": [{"value": handoff.model_dump(mode="json")}]}

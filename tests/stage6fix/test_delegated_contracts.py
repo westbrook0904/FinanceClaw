@@ -32,7 +32,7 @@ def test_v1_v2_discriminator_and_outcome_contracts():
     typed = {
         **legacy.model_dump(),
         "schema_version": 2,
-        "target_version": "1.1.0",
+        "target_version": "1.2.0",
         "arguments": {"symbol": "AAPL"},
     }
     assert isinstance(HANDOFF_ADAPTER.validate_python(typed), AgentHandoffV2)

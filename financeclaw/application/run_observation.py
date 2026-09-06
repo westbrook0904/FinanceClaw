@@ -13,7 +13,16 @@ from .execution_service import json_value
 class RunObservation:
     """只保留分派需要的事实；载荷不是可直接向用户公开的内部 state。"""
 
-    kind: Literal["running", "completed", "failed", "handoff", "hitl", "workflow", "unsupported"]
+    kind: Literal[
+        "running",
+        "completed",
+        "failed",
+        "handoff",
+        "hitl",
+        "workflow",
+        "interaction",
+        "unsupported",
+    ]
     payload: dict[str, Any] | None = None
     interrupt_id: str | None = None
     handoff: HandoffRequest | None = None
@@ -35,6 +44,10 @@ def observe_run(value: Mapping[str, Any]) -> RunObservation:
             return RunObservation("unsupported")
         payload = dict(raw)
         identifier = item.get("id")
+        if payload.get("kind") == "user_interaction" and payload.get("schema_version") == 1:
+            if identifier and payload.get("interaction_kind") in {"input", "choice", "approval"}:
+                return RunObservation("interaction", payload, identifier)
+            return RunObservation("unsupported")
         if "handoff_id" in payload:
             try:
                 handoff = HANDOFF_ADAPTER.validate_python(payload)

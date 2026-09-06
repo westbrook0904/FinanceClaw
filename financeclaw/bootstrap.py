@@ -121,7 +121,7 @@ class FinanceClawComponents:
             顶层财务 Agent 的 ``AgentProfile``。
 
         """
-        return self.agent_profiles.resolve("finance_agent", "1.1.0")
+        return self.agent_profiles.resolve("finance_agent", "1.2.0")
 
 
 def build_components(
@@ -336,14 +336,36 @@ def build_components(
         MarketResearchInput,
         MarketResearchResult,
     )
+    from financeclaw.modules.interactions import InteractionPoint
 
     domain_agent_profile = AgentProfile(
         agent_id="market_research_agent",
-        version="1.1.0",
-        assistant_id="market_research_agent_v1_1_0",
+        version="1.2.0",
+        assistant_id="market_research_agent_v1_2_0",
         context_policy="delegated-task-only-v1",
         input_schema=MarketResearchInput,
         output_schema=MarketResearchResult,
+        interaction_points=(
+            InteractionPoint(
+                point_id="research_scope",
+                kind="input",
+                question="请补充本次研究的时间区间。",
+                response_schema={
+                    "type": "object",
+                    "properties": {
+                        "analysis_period": {"type": "string", "minLength": 1, "maxLength": 128}
+                    },
+                    "required": ["analysis_period"],
+                    "additionalProperties": False,
+                },
+            ),
+            InteractionPoint(
+                point_id="research_focus",
+                kind="choice",
+                question="希望重点研究哪个方面？",
+                options=("价格与走势", "风险与限制", "综合概览"),
+            ),
+        ),
         description=(
             "A read-only market research specialist that gathers bounded quote evidence "
             "and returns a concise synthesis to the parent Agent."
@@ -358,7 +380,9 @@ def build_components(
             "delegate again, mutate external state, or treat yourself as the conversation owner."
             " Return the declared structured outcome. If required facts or the subject "
             "are unclear, return needs_clarification with a precise question and "
-            "missing_fields; never interrupt. "
+            "missing_fields before doing substantive work. After saving useful progress, "
+            "use only the declared request_user tools for necessary input or choices, "
+            "then continue the same task using the user's actual answer. "
             "Return partial or unsupported with limitations when success cannot be established."
         ),
         allowed_tools=domain_tool_refs,
@@ -390,8 +414,8 @@ def build_components(
     # 11. 定义顶层 finance_agent 档案：ReAct 决策直接回答、Tool、Workflow 或委派。
     agent_profile = AgentProfile(
         agent_id="finance_agent",
-        version="1.1.0",
-        assistant_id="finance_agent_v1_1_0",
+        version="1.2.0",
+        assistant_id="finance_agent_v1_2_0",
         configuration_fingerprint=configuration_fingerprint(
             model_release,
             settings.offline_model,

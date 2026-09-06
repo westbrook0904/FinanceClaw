@@ -323,7 +323,14 @@ class SqlAlchemyWorkflowRepository:
             if row.server_run_id is not None and row.server_run_id != server_run_id:
                 raise WorkflowConflict("workflow run is already bound to another server run")
             row.server_run_id = server_run_id
-            row.status = _normalize_status(status).value
+            # 回执与取消／终态观察可以并发到达；补绑定只能补充关联，不能复活终态。
+            if row.status not in {
+                WorkflowRunStatus.COMPLETED.value,
+                WorkflowRunStatus.REJECTED.value,
+                WorkflowRunStatus.FAILED.value,
+                WorkflowRunStatus.CANCELLED.value,
+            }:
+                row.status = _normalize_status(status).value
             row.updated_at = datetime.now(UTC)
         return _run(row)
 
@@ -379,6 +386,7 @@ class SqlAlchemyWorkflowRepository:
                 WorkflowRunStatus.COMPLETED.value,
                 WorkflowRunStatus.REJECTED.value,
                 WorkflowRunStatus.FAILED.value,
+                WorkflowRunStatus.CANCELLED.value,
             }
             if row.status in terminal and row.status != status.value:
                 if status.value not in terminal:
@@ -397,6 +405,7 @@ class SqlAlchemyWorkflowRepository:
                 WorkflowRunStatus.COMPLETED,
                 WorkflowRunStatus.REJECTED,
                 WorkflowRunStatus.FAILED,
+                WorkflowRunStatus.CANCELLED,
             }:
                 row.completed_at = row.completed_at or datetime.now(UTC)
         return _run(row), changed
@@ -407,6 +416,7 @@ class SqlAlchemyWorkflowRepository:
             WorkflowRunStatus.COMPLETED.value,
             WorkflowRunStatus.REJECTED.value,
             WorkflowRunStatus.FAILED.value,
+            WorkflowRunStatus.CANCELLED.value,
         )
         statement = (
             select(WorkflowRunRow)

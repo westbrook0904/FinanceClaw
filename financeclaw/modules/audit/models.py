@@ -64,12 +64,16 @@ class AuditEventType(StrEnum):
     WORKFLOW_REJECTED = "workflow.rejected"
     WORKFLOW_COMPLETED = "workflow.completed"
     WORKFLOW_FAILED = "workflow.failed"
+    WORKFLOW_CANCELLED = "workflow.cancelled"
     DELEGATION_REQUESTED = "delegation.requested"
     DELEGATION_STARTED = "delegation.started"
     DELEGATION_INTERRUPTED = "delegation.interrupted"
     DELEGATION_COMPLETED = "delegation.completed"
     DELEGATION_FAILED = "delegation.failed"
     DELEGATION_DELIVERED = "delegation.delivered"
+    INTERACTION_REQUESTED = "interaction.requested"
+    INTERACTION_DECIDED = "interaction.decided"
+    INTERACTION_CLOSED = "interaction.closed"
 
 
 class AuditRecord(BaseModel):

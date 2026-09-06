@@ -9,6 +9,7 @@ from langchain.agents.middleware import AgentMiddleware
 
 from financeclaw.modules.execution import ExecutionConflict, ExecutionRepository
 from financeclaw.orchestration.tools import SideEffect, ToolCatalog
+from financeclaw.orchestration.tools.delegation import DelegationTool, delegation_handoff_id
 
 from .middleware import _context
 
@@ -49,7 +50,18 @@ class ExecutionBudgetMiddleware(AgentMiddleware):
         root = self.repository.get(context.root_run_id)
         if kind == "tool" and root["side_effects_denied"]:
             managed = self.catalog.resolve(request.tool_call["name"])
-            if managed.governance.side_effect is not SideEffect.READ:
+            delivering = isinstance(
+                managed.tool, DelegationTool
+            ) and self.repository.delivery_in_progress(
+                context.run_id,
+                delegation_handoff_id(
+                    parent_run_id=context.run_id,
+                    tool_call_id=request.tool_call["id"],
+                    kind=managed.tool.handoff_kind,
+                    target_id=managed.tool.target_id,
+                ),
+            )
+            if managed.governance.side_effect is not SideEffect.READ and not delivering:
                 raise ExecutionConflict("user rejected side effects; re-delegation is not allowed")
         self.repository.consume(context.run_id, kind)
 

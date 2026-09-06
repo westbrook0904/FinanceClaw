@@ -14,12 +14,13 @@ import pytest
 from pydantic import SecretStr
 
 from financeclaw.application import ConversationService, DelegationService, WorkflowService
-from financeclaw.bootstrap import build_components
 from financeclaw.infrastructure import FinanceClawSettings
 from financeclaw.infrastructure.clients.agent_server import LangGraphAgentServerClient
 from financeclaw.kernel import ApprovalDecision, ConversationTurnRequest, WorkflowTarget
+from financeclaw.modules.interactions import InteractionResponse
 from tests.stage4.support import workflow_arguments
 from tests.stage6fix.test_execution_recovery import OWNER
+from tests.stage6fixc.live_components import build_live_components
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("FINANCECLAW_RUN_AGENT_SERVER_TESTS") != "1",
@@ -55,8 +56,8 @@ def live_server(tmp_path_factory):
         PYTHONPATH=str(root),
     )
     graphs = {
-        "finance_agent_v1_1_0": "finance_agent",
-        "market_research_agent_v1_1_0": "market_research_agent",
+        "finance_agent_v1_2_0": "finance_agent",
+        "market_research_agent_v1_2_0": "market_research_agent",
         "portfolio_review_v1": "portfolio_review_v1",
     }
     config = directory / "langgraph.json"
@@ -127,7 +128,7 @@ def live_server(tmp_path_factory):
 def live_stack(live_server):
     """BFF 与 Server 共享业务数据库，但使用真实 HTTP 和独立进程检查点。"""
     url, database, artifacts, _ = live_server
-    components = build_components(
+    components = build_live_components(
         FinanceClawSettings(
             _env_file=None,
             environment="test",
@@ -135,7 +136,6 @@ def live_stack(live_server):
             database_url=SecretStr(database),
             artifact_root=artifacts,
         ),
-        enable_persistence=True,
     )
     client = LangGraphAgentServerClient(url=url)
     workflow = WorkflowService(
@@ -303,4 +303,96 @@ async def test_real_cancel_retains_checkpoint_and_rotates_thread(live_server):
     assert next_turn.thread_id != accepted.thread_id
     assert (await service.status(accepted.run_id, **OWNER)).thread_id == accepted.thread_id
     await service.cancel(next_turn.run_id, **OWNER)
+    components.database.close()
+
+
+@pytest.mark.parametrize("child_decision", ["approve", "reject"])
+@pytest.mark.asyncio
+async def test_real_child_input_choice_and_approval_resume_original_owner(
+    live_server, child_decision
+):
+    """C01/C04：三个真实子中断不唤醒父模型；拒绝后父不能换工具绕过。"""
+    components, client, _, service = live_stack(live_server)
+    conversation = await service.create(**OWNER)
+    accepted = await service.start_turn(
+        conversation.conversation_id,
+        ConversationTurnRequest(message="live-child-interactions"),
+        scopes=SCOPES,
+        idempotency_key="interactive-" + child_decision,
+        **OWNER,
+    )
+    first = (
+        await until_status(service, accepted.run_id, "interrupted", scopes=SCOPES)
+    ).pending_interactions[0]
+    child_id = first["owner_run_id"]
+    initial_child = service.execution.get(child_id)
+    child_thread, first_attempt = (
+        initial_child["snapshot"]["thread_id"],
+        initial_child["server_run_id"],
+    )
+    assert child_id != accepted.run_id and first["kind"] == "input"
+    await service.interactions.respond(
+        first["interaction_id"],
+        InteractionResponse(
+            revision=first["revision"], kind="input", answer={"analysis_period": "最近一个月"}
+        ),
+        scopes=SCOPES,
+        idempotency_key="input",
+        **OWNER,
+    )
+    second = (
+        await until_status(service, accepted.run_id, "interrupted", scopes=SCOPES)
+    ).pending_interactions[0]
+    assert second["owner_run_id"] == child_id and second["kind"] == "choice"
+    await service.interactions.respond(
+        second["interaction_id"],
+        InteractionResponse(revision=second["revision"], kind="choice", answer="风险与限制"),
+        scopes=SCOPES,
+        idempotency_key="choice",
+        **OWNER,
+    )
+    third = (
+        await until_status(service, accepted.run_id, "interrupted", scopes=SCOPES)
+    ).pending_interactions[0]
+    assert third["owner_run_id"] == child_id and third["kind"] == "approval"
+    assert len(components.conversation_repository.list_messages(conversation.conversation_id)) == 1
+    assert len(service.execution.operations_for_run(accepted.run_id)) == 1
+    await service.interactions.respond(
+        third["interaction_id"],
+        InteractionResponse(
+            revision=third["revision"],
+            kind="approval",
+            decision=child_decision,
+            action_hash=third["action_hash"],
+        ),
+        scopes=SCOPES,
+        idempotency_key="child-approval",
+        **OWNER,
+    )
+    if child_decision == "approve":
+        parent = (
+            await until_status(service, accepted.run_id, "interrupted", scopes=SCOPES)
+        ).pending_interactions[0]
+        assert parent["owner_run_id"] == accepted.run_id
+        await service.interactions.respond(
+            parent["interaction_id"],
+            InteractionResponse(
+                revision=parent["revision"],
+                kind="approval",
+                decision="approve",
+                action_hash=parent["action_hash"],
+            ),
+            scopes=SCOPES,
+            idempotency_key="parent-approval",
+            **OWNER,
+        )
+    final = await until_status(service, accepted.run_id, "completed", scopes=SCOPES)
+    assert final.status == "completed"
+    assert len(components.conversation_repository.list_messages(conversation.conversation_id)) == 2
+    assert len(service.execution.operations_for_run(child_id)) == 4
+    old = await client.get_run(thread_id=child_thread, run_id=first_attempt)
+    assert old["interrupts"][0]["id"] == first["interrupt_id"]
+    assert service.execution.get(child_id)["snapshot"]["thread_id"] == child_thread
+    if child_decision == "reject":
+        assert service.execution.get(accepted.run_id)["side_effects_denied"]
     components.database.close()

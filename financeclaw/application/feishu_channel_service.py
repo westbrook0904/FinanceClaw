@@ -10,9 +10,11 @@ from typing import Protocol
 from uuid import NAMESPACE_URL, uuid5
 
 from financeclaw.kernel import ConversationTurnRequest, StreamEvent
-from financeclaw.modules.conversation import ConversationConflict
+from financeclaw.modules.conversation import ConversationConflict, ConversationNotFound
+from financeclaw.modules.interactions import InteractionConflict, InteractionNotFound
 
 from .conversation_service import ConversationService
+from .feishu_interactions import format_interactions, parse_response
 
 LOGGER = logging.getLogger(__name__)
 
@@ -213,7 +215,33 @@ class FeishuChannelService:
                         await self._send_plain(gateway, message, self.EMPTY_TEXT, suffix="empty")
                         return "empty"
                     return await self._process_text(message, normalized, gateway)
+                except (InteractionConflict, InteractionNotFound) as exc:
+                    await self._send_plain(
+                        gateway,
+                        message,
+                        "交互未恢复：该请求可能已过期、已处理或不属于当前单聊；也请核对命令格式。"
+                        "请使用原问题的交互 ID、版本和摘要，或通过 API 查看。",
+                        suffix="interaction-conflict",
+                    )
+                    LOGGER.info(
+                        "Feishu interaction rejected", extra={"error_type": type(exc).__name__}
+                    )
+                    return "interaction_conflict"
                 except ConversationConflict:
+                    if message.text.strip().split(maxsplit=1)[0] in {
+                        "/answer",
+                        "/choose",
+                        "/approve",
+                        "/reject",
+                        "/cancel",
+                    }:
+                        await self._send_plain(
+                            gateway,
+                            message,
+                            "交互未恢复：事件身份与已绑定单聊不一致，请从原问题所在会话操作。",
+                            suffix="interaction-identity",
+                        )
+                        return "interaction_conflict"
                     await self._send_plain(
                         gateway,
                         message,
@@ -285,6 +313,54 @@ class FeishuChannelService:
             tenant_id=tenant_id,
             subject_id=subject_id,
         )
+        parsed = parse_response(normalized)
+        if parsed is not None:
+            identifier, response = parsed
+            accepted_response = await self.conversation_service.interactions.respond(
+                identifier,
+                response,
+                tenant_id=tenant_id,
+                subject_id=subject_id,
+                scopes=self.scopes,
+                conversation_id=conversation.conversation_id,
+                idempotency_key=f"feishu:{self.app_id}:{message.message_id}",
+            )
+            return await self._deliver_run(
+                accepted_response["root_run_id"],
+                message,
+                gateway,
+                tenant_id=tenant_id,
+                subject_id=subject_id,
+            )
+        if normalized.split(maxsplit=1)[0] == "/cancel":
+            parts = normalized.split()
+            if len(parts) != 2:
+                raise InteractionConflict("取消命令必须携带一个明确的根任务 ID。")
+            try:
+                turn = await asyncio.to_thread(
+                    self.conversation_service.repository.get_turn_owned,
+                    parts[1],
+                    tenant_id,
+                    subject_id,
+                )
+            except ConversationNotFound as exc:
+                raise InteractionNotFound("root task not found") from exc
+            if turn.conversation_id != conversation.conversation_id:
+                raise InteractionConflict("取消请求不属于当前单聊。")
+            result = await self.conversation_service.cancel(
+                parts[1], tenant_id=tenant_id, subject_id=subject_id
+            )
+            await self._send_plain(
+                gateway,
+                message,
+                "任务已确认停止；已发生的外部操作不会自动回滚。"
+                if result.status == "cancelled"
+                else "已请求取消，仍在确认执行停止；暂时不能复用该任务。"
+                if result.status == "cancellation_requested"
+                else f"任务已经结束（{result.status}），没有新增取消操作。",
+                suffix="cancel",
+            )
+            return result.status
         accepted = await self.conversation_service.start_turn(
             conversation.conversation_id,
             ConversationTurnRequest(message=normalized),
@@ -293,13 +369,27 @@ class FeishuChannelService:
             scopes=self.scopes,
             idempotency_key=f"feishu:{self.app_id}:{message.message_id}",
         )
+        return await self._deliver_run(
+            accepted.run_id, message, gateway, tenant_id=tenant_id, subject_id=subject_id
+        )
+
+    async def _deliver_run(
+        self,
+        run_id: str,
+        message: FeishuInboundMessage,
+        gateway: FeishuReplyGateway,
+        *,
+        tenant_id: str,
+        subject_id: str,
+    ) -> str:
+        """新 Turn 与交互恢复共用展示路径；回答不会追加新的父 Turn。"""
         state = _ReplyState()
 
         async def producer(stream: FeishuMarkdownStream) -> None:
             """把稳定应用事件写入 SDK 流控制器并最终以 Journal 校正。"""
             try:
                 async for event in self.conversation_service.stream(
-                    accepted.run_id,
+                    run_id,
                     tenant_id=tenant_id,
                     subject_id=subject_id,
                     scopes=self.scopes,
@@ -308,13 +398,13 @@ class FeishuChannelService:
             except Exception:
                 LOGGER.warning(
                     "Feishu application stream interrupted",
-                    extra={"run_id": accepted.run_id, "message_id": message.message_id},
+                    extra={"run_id": run_id, "message_id": message.message_id},
                 )
             if state.terminal_status is None:
                 await self._resolve_final(
                     stream,
                     state,
-                    run_id=accepted.run_id,
+                    run_id=run_id,
                     tenant_id=tenant_id,
                     subject_id=subject_id,
                 )
@@ -330,13 +420,13 @@ class FeishuChannelService:
         except Exception:
             LOGGER.warning(
                 "Feishu streaming card failed; falling back to text",
-                extra={"run_id": accepted.run_id, "message_id": message.message_id},
+                extra={"run_id": run_id, "message_id": message.message_id},
             )
             if state.terminal_status is None:
                 await self._resolve_final(
                     None,
                     state,
-                    run_id=accepted.run_id,
+                    run_id=run_id,
                     tenant_id=tenant_id,
                     subject_id=subject_id,
                 )
@@ -382,7 +472,9 @@ class FeishuChannelService:
             return
         if event.event == "run.interrupted":
             state.terminal_status = "interrupted"
-            state.final_text = self.INTERRUPTED_TEXT
+            state.final_text = format_interactions(
+                data.get("pending_interactions", ()), fallback=self.INTERRUPTED_TEXT
+            )
             await stream.set_content(state.final_text)
             return
         if event.event == "run.failed":
@@ -422,7 +514,19 @@ class FeishuChannelService:
                 return
             if response.status == "interrupted":
                 state.terminal_status = "interrupted"
-                state.final_text = self.INTERRUPTED_TEXT
+                state.final_text = format_interactions(
+                    response.pending_interactions, fallback=self.INTERRUPTED_TEXT
+                )
+                if stream is not None:
+                    await stream.set_content(state.final_text)
+                return
+            if response.status in {"cancelled", "cancellation_requested"}:
+                state.terminal_status = response.status
+                state.final_text = (
+                    "任务已取消。"
+                    if response.status == "cancelled"
+                    else "已请求取消，等待执行停止确认。"
+                )
                 if stream is not None:
                     await stream.set_content(state.final_text)
                 return

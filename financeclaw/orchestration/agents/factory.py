@@ -151,6 +151,10 @@ class AgentFactory:
         resolved_tools = tuple(
             self.tool_catalog.resolve(ref.tool_id, ref.version) for ref in profile.allowed_tools
         )
+        from financeclaw.orchestration.tools.interaction import question_tools
+
+        # 问题工具由 Profile 声明生成，其 Schema／权限随 Profile 一起冻结发布。
+        resolved_tools += question_tools(profile.interaction_points)
         allowed_keys = frozenset(managed.key for managed in resolved_tools)
         # 整个运行只使用这一份版本绑定，治理、HITL 与 Manifest 不再分别取 latest。
         pinned_catalog = ToolCatalog(resolved_tools)

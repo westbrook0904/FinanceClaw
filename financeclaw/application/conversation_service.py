@@ -42,6 +42,7 @@ from .delegation_service import (
     delegation_projection,
 )
 from .execution_service import ExecutionService, agent_snapshot, verify_agent_snapshot
+from .interaction_service import InteractionService, waiting_reason
 from .ports import AgentServerClient
 from .run_observation import observe_run
 from .run_service import IdempotencyConflict, RunNotFound
@@ -123,6 +124,15 @@ class ConversationService:
         self._clock = clock or (lambda: datetime.now(UTC))
         self.execution = repository.execution
         self.operations = ExecutionService(client, self.execution)
+        self.interactions = InteractionService(
+            client,
+            self.execution,
+            agent_profiles=agent_profiles,
+            workflow_catalog=delegation_service.workflow_service.catalog
+            if delegation_service
+            else None,
+            clock=lambda: self._clock(),
+        )
 
     async def create(
         self,
@@ -453,6 +463,7 @@ class ConversationService:
                 if content
                 else None,
             )
+        await self.interactions.reconcile_owner(run_id, scopes=scopes)
         uncertain = await self.operations.reconcile(run_id)
         execution = await asyncio.to_thread(self.execution.get, run_id)
         if execution["cancellation_requested"]:
@@ -592,6 +603,23 @@ class ConversationService:
                 scopes=scopes,
                 allow_parent_resume=allow_parent_resume,
             )
+        if observed.kind in {"hitl", "interaction"} and observed.interrupt_id:
+            interaction = await self.interactions.observe_agent(
+                turn.run_id,
+                observed,
+                server_run_id=server_id,
+                expires_at=datetime.fromisoformat(waiting["expires_at"]),
+                checkpoint_id=(result.get("checkpoint") or {}).get("checkpoint_id"),
+            )
+            public = await self.interactions.public(interaction)
+            await asyncio.to_thread(self.repository.update_turn_status, turn.run_id, "interrupted")
+            return RunStatusResponse(
+                run_id=turn.run_id,
+                thread_id=conversation.agent_thread_id,
+                status="interrupted",
+                waiting_reason=waiting_reason(public),
+                pending_interactions=(public,),
+            )
         await asyncio.to_thread(self.repository.update_turn_status, turn.run_id, "interrupted")
         reason = "approval_required" if observed.kind == "hitl" else "unsupported_interruption"
         projection = ()
@@ -666,6 +694,12 @@ class ConversationService:
             return await self._advance_delegation(
                 turn, conversation, current, scopes=scopes, allow_parent_resume=True
             )
+        if await self.interactions.resume_legacy(
+            run_id, decision, tenant_id=tenant_id, subject_id=subject_id, scopes=scopes
+        ):
+            return await self.status(
+                run_id, tenant_id=tenant_id, subject_id=subject_id, scopes=scopes
+            )
         waiting = execution["waiting"]
         if not waiting or waiting["kind"] != "hitl":
             raise ExecutionConflict("run has no single supported pending approval")
@@ -736,43 +770,11 @@ class ConversationService:
             return RunStatusResponse(
                 run_id=run_id, thread_id=conversation.agent_thread_id, status=turn.status.value
             )
-        await asyncio.to_thread(self.execution.request_cancel, run_id)
+        await asyncio.to_thread(self.interactions.repository.cancel_tree, run_id, now=self._clock())
         await asyncio.to_thread(
             self.repository.update_turn_status, run_id, "cancellation_requested"
         )
-        executions = await asyncio.to_thread(self.execution.tree, run_id)
-        confirmed = bool(executions)
-        for execution in executions:
-            # 未绑定回执的操作可能已经到达远程；不因 server_run_id 为空就释放线程。
-            operations = await asyncio.to_thread(
-                self.execution.operations_for_run, execution["run_id"]
-            )
-            for operation in operations:
-                if operation["status"] == "prepared":
-                    continue
-                server_id = operation["server_run_id"]
-                if server_id is None:
-                    found = await self.client.find_operation(
-                        thread_id=operation["request"]["thread_id"],
-                        operation_id=operation["operation_id"],
-                    )
-                    if found is None:
-                        confirmed = False
-                        continue
-                    server_id = found.run_id
-                    await asyncio.to_thread(
-                        self.execution.bind, operation["operation_id"], server_id
-                    )
-                try:
-                    stopped = await self.client.cancel_run(
-                        thread_id=operation["request"]["thread_id"],
-                        run_id=server_id,
-                    )
-                except Exception:
-                    stopped = False
-                confirmed = confirmed and stopped
-            if confirmed:
-                await asyncio.to_thread(self.execution.confirm_cancel, execution["run_id"])
+        confirmed = await self.operations.confirm_tree_stopped(run_id)
         if confirmed:
             await asyncio.to_thread(self.repository.confirm_cancel, run_id)
         return RunStatusResponse(
@@ -951,11 +953,7 @@ class ConversationService:
                 else "waiting_child"
             )
             interactions = ()
-            if (
-                current.kind.value == "workflow"
-                and status == "interrupted"
-                and current.output_payload
-            ):
+            if status == "interrupted" and current.output_payload:
                 reason = current.output_payload.get("waiting_reason") or reason
                 interactions = tuple(current.output_payload.get("pending_interactions", ()))
             return RunStatusResponse(

@@ -12,6 +12,7 @@ from types import MappingProxyType
 from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
 
 from financeclaw.infrastructure.llm import ModelProfileRef
+from financeclaw.modules.interactions.models import InteractionPoint
 
 
 class ToolRef(BaseModel):
@@ -75,11 +76,12 @@ class AgentProfile(BaseModel):
     max_tree_tool_calls: int = Field(default=128, ge=1, le=1024)
     max_tree_operations: int = Field(default=64, ge=1, le=256)
     assistant_id: str | None = None
-    deployment_revision: str = "stage6fix-ab/1"
+    deployment_revision: str = "stage6fix-c/1"
     configuration_fingerprint: str | None = None
     input_schema: type[BaseModel] | None = Field(default=None, exclude=True)
     output_schema: type[BaseModel] | None = Field(default=None, exclude=True)
     output_state_key: str = "structured_response"
+    interaction_points: tuple[InteractionPoint, ...] = ()
 
     @field_serializer("required_scopes")
     def serialize_required_scopes(self, value: frozenset[str]) -> list[str]:
@@ -90,6 +92,9 @@ class AgentProfile(BaseModel):
     def validate_bindings(self) -> "AgentProfile":
         """同名工具只能绑定一次；领域运行禁止根历史和长期记忆策略。"""
         names = [ref.tool_id for ref in self.allowed_tools]
+        points = [point.point_id for point in self.interaction_points]
+        if len(points) != len(set(points)):
+            raise ValueError("Agent interaction point IDs must be unique")
         if len(names) != len(set(names)):
             raise ValueError("AgentProfile cannot bind multiple versions of the same tool name")
         if self.context_policy not in {"stage2-journal-v1", "delegated-task-only-v1"}:

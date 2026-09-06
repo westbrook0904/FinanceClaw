@@ -3,21 +3,21 @@
 import os
 from datetime import UTC, datetime
 
-from langchain_core.messages import AIMessage, ToolMessage
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 from pydantic import SecretStr
 
-from financeclaw.bootstrap import build_components
 from financeclaw.infrastructure import FinanceClawSettings
 from financeclaw.orchestration.agents import OfflineFinanceModel
 from financeclaw.orchestration.graphs.workflows.portfolio_review_v1 import (
     build_portfolio_review_graph,
 )
+from tests.stage6fixc.live_components import build_live_components
 
 
 def server_components():
     """只使用验收临时目录，不读取用户 .env 或调用线上模型。"""
-    return build_components(
+    return build_live_components(
         FinanceClawSettings(
             _env_file=None,
             environment="test",
@@ -25,7 +25,6 @@ def server_components():
             database_url=SecretStr(os.environ["STAGE6FIX_TEST_DATABASE"]),
             artifact_root=os.environ["STAGE6FIX_TEST_ARTIFACTS"],
         ),
-        enable_persistence=True,
     )
 
 
@@ -47,7 +46,12 @@ class ChildThenApprovalModel(OfflineFinanceModel):
                 {"symbol": "AAPL", "note": "stage6fix real server"}
                 if isinstance(last, ToolMessage)
                 else {
-                    "task": "Read a bounded AAPL market snapshot",
+                    "task": "Read a bounded AAPL market snapshot "
+                    + (
+                        "live-child-interactions"
+                        if "live-child-interactions" in str(last.content)
+                        else ""
+                    ),
                     "arguments": {"symbols": ["AAPL"]},
                 }
             )
@@ -60,13 +64,60 @@ class ChildThenApprovalModel(OfflineFinanceModel):
         return ChatResult(generations=[ChatGeneration(message=result)])
 
 
+class InteractiveChildModel(OfflineFinanceModel):
+    """指定探针任务先资料、再选择、再原生审批，其余任务维持原离线行为。"""
+
+    def _generate(self, messages, *args, **kwargs):
+        """次序依赖真实工具回填，不以进程内状态模拟检查点。"""
+        if not any(
+            isinstance(message, HumanMessage) and "live-child-interactions" in str(message.content)
+            for message in messages
+        ):
+            return super()._generate(messages, *args, **kwargs)
+        last = messages[-1]
+        if isinstance(last, ToolMessage) and last.name == "watchlist_add":
+            return super()._generate(messages, *args, **kwargs)
+        if not isinstance(last, ToolMessage):
+            name, arguments = (
+                "request_user__research_scope",
+                {"question": "请给出本次研究的时间区间。"},
+            )
+        elif last.name == "request_user__research_scope":
+            name, arguments = (
+                "request_user__research_focus",
+                {"question": "请选择本次研究关注方向。"},
+            )
+        else:
+            name, arguments = (
+                "watchlist_add",
+                {"symbol": "AAPL", "note": "isolated child approval test"},
+            )
+        return ChatResult(
+            generations=[
+                ChatGeneration(
+                    message=AIMessage(
+                        content="",
+                        tool_calls=[
+                            {
+                                "name": name,
+                                "args": arguments,
+                                "id": "child-" + name,
+                                "type": "tool_call",
+                            }
+                        ],
+                    )
+                )
+            ]
+        )
+
+
 components = server_components()
 finance_agent = components.agent_factory.build(
     components.default_agent_profile, model=ChildThenApprovalModel(), checkpointer=None
 )
 market_research_agent = components.agent_factory.build(
     components.agent_profiles.resolve("market_research_agent"),
-    model=OfflineFinanceModel(),
+    model=InteractiveChildModel(),
     checkpointer=None,
 )
 # 演示行情时点固定在 2026-09-02；仅在测试图中固定新鲜度时钟，避免用例随日期失效。

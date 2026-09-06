@@ -1,8 +1,9 @@
 # Stage 6 Fix：委派可靠性、用户交互与批量工具调用优化方案
 
-状态：A／B 已实现并完成本地回归与真实开发 Agent Server 验证；C 仍为 Proposed。
+状态：A／B／C 已实现；C 默认单个待交互位置，不开放 C06 批次审批扩展。
 
 实施记录：[Stage 6 Fix A/B 实施与验证](./Stage-6-Fix-AB-实施与验证.md)。
+本次增量：[Stage 6 Fix C 实施与验证](./Stage-6-Fix-C-实施与验证.md)，包含最终接口、渠道命令、调用图和发布边界。
 本文第 2 节保留修复前的观察基线，不应作为新版本的能力说明。
 PostgreSQL 部署环境、线上模型供应商和真实飞书联调仍须在上线前单独验收。
 
@@ -35,7 +36,7 @@ PostgreSQL 部署环境、线上模型供应商和真实飞书联调仍须在上
 | 6-Fix B：上下文与澄清 | 任务级上下文、授权引用解析、Agent 输入输出契约、低成本澄清、新旧协议兼容、真实版本绑定 | 子任务结构化返回成功／需澄清／不支持等领域结果；顶层追问后新 Turn 重委派 |
 | 6-Fix C：持久化用户交互 | 统一交互记录、Agent-child 原位恢复、HTTP 交互接口、飞书关联回复／审批入口 | Workflow、顶层和子 Agent 的中途确认可定位、可恢复、可审计 |
 
-6-Fix C 是显式扩展，不是现有 Agent-child 能力。只需要低成本提槽的领域任务可以在 B 阶段接入，
+6-Fix C 是在 A／B 基础上实现的显式扩展。只需要低成本提槽的领域任务可以使用 B 阶段模式，
 不必等待完整的持久化用户交互。C 默认先支持单个待交互执行位置，复杂批次审批需独立启用和验收。
 
 ### 1.2 不包含
@@ -319,20 +320,23 @@ Agent Profile 可声明具体 input_schema、output_schema 及最终 state 字�
 
 ## 6. API、飞书和持久化兼容
 
-### 6.1 建议的增量 API（尚未实现）
+### 6.1 增量 API（已实现，字段以 C 实施记录为准）
 
 ```text
 GET  /v1/runs/{run_id}
      增加 waiting_reason、pending_interactions 的安全投影
 
 POST /v1/runs/{run_id}/cancel
-     A 阶段建议入口：校验归属并请求取消；返回请求状态，不冒充执行已停止
+     校验根会话或独立 Workflow 归属并请求取消；返回请求状态，不冒充执行已停止
+
+GET  /v1/interactions/{interaction_id}
+     认证后查看具体实例、安全动作投影和恢复提交状态
 
 POST /v1/interactions/{interaction_id}/responses
      按 interaction kind 校验 answer／decision，要求 revision 与幂等身份
 ```
 
-API 实际路径、字段和错误码在接口实施评审时固定；上面是本方案建议。
+API 实际路径、字段和错误码已在 C 实施记录中固定。
 已有 `POST /v1/runs/{run_id}/resume` 保持兼容：仅在能够唯一定位一个支持的待审批对象时映射；
 出现多对象或歧义返回冲突并给出明确交互入口，禁止默认处理最新一条。
 父运行 ID 可用于查找其子树中的交互，但不能因此越过 owner_run 的权限和快照校验。
@@ -351,6 +355,9 @@ SSE 保留现有稳定事件；可以为 run.interrupted 增加安全的交互�
 - 取消、拒绝、过期后卡片显示终态；旧按钮点击只能返回原状态或冲突，不能再执行。
 - 保留单实例飞书接入边界。本方案不顺带承诺多实例 WebSocket 主选、持久化 Inbox 或消息零丢失。
 
+C 本次采用明确文本命令，不装配按钮回调；历史消息不追溯更新，重复命令由服务端返回当前事实或冲突。
+资料使用 `/answer`，选项使用 `/choose`，审批使用 `/approve`／`/reject`；详见 C 实施记录。
+
 ### 6.3 数据迁移
 
 - 增量增加 execution_snapshot、交付状态／版本、run_operations；C 阶段再增加交互表及关联。
@@ -362,7 +369,8 @@ SSE 保留现有稳定事件；可以为 run.interrupted 增加安全的交互�
 
 ## 7. 优化后的场景调用图
 
-以下是**目标行为**。每图标明交付阶段；A／B／C 未完成前，不应当作当前线上保证。
+以下保留设计目标调用图。已实现路径及验证范围以 A/B、C 实施记录为准，不代表已经通过线上验收；
+其中 S9 的按钮与自由关联回复没有启用，本次使用带实例和版本的明确命令。
 
 ### S1：多个独立只读工具，一次汇合后判断下一步（A，主干当前已有）
 
@@ -619,11 +627,11 @@ flowchart TD
 | orchestration/agents/factory.py、profiles.py | 真正应用 context_policy；固定 Tool 绑定；批次守卫与预算 |
 | orchestration/agents/context_middleware.py | 根 Journal 与任务级子上下文分流 |
 | orchestration/tools/delegation.py | 目标版本与 Schema 绑定、v1/v2 兼容、精确结果匹配 |
-| application/interaction_service.py、modules/interactions（拟新增，C） | 小型业务交互契约、归属校验、决定持久化与恢复协调 |
+| application/interaction_service.py、modules/interactions（已新增，C） | 小型业务交互契约、归属校验、决定持久化与恢复协调 |
 | interfaces/http、application/streaming.py | 增量交互 API、安全投影、明确等待原因，不依赖 token 流判断终态 |
 | interfaces/channels/feishu.py、application/feishu_channel_service.py | C 阶段关联回答／审批入口；原有单聊与流式降级回归 |
 | bootstrap.py、server_graphs.py、langgraph*.json | 新旧 Profile／Graph 版本显式装配；禁止记录旧版本实际执行新代码 |
-| infrastructure/migrations、tests/stage6fix（拟新增） | 增量迁移、正确性／并发／故障注入与真实执行平面验收 |
+| infrastructure/migrations、tests/stage6fix、tests/stage6fixc | 增量迁移、正确性／并发／故障注入与真实执行平面验收 |
 
 顺序建议：先写失败用例与固定观察证据，再做 A；完成 A 的真实 Server Run 恢复测试后实施 B；
 只有产品确认需要原位用户交互及渠道入口时再实施 C。迁移、特性开关、旧运行处理和回滚策略与代码一起交付。
@@ -665,6 +673,9 @@ SQLite 的通过不替代部署数据库的事务／锁行为验证；脚本化�
 指标不记录敏感输入原文；审批 Audit 独立于模型 trace。
 
 ## 10. 待实施前固定的决定
+
+以下保留设计阶段的问题。本次实际选择为 A/B 先提交、C 单位置交互、明确飞书命令、查询驱动推进；
+版本排空和部署验收要求已固定在 [C 实施记录](./Stage-6-Fix-C-实施与验证.md)。
 
 1. 先交付 A＋B，还是同批交付 C？推荐先 A＋B，按中途交互的实际需求启用 C。
 2. 一期继续客户端 status／stream 驱动，还是要求断线后也主动完成并通知？本方案默认前者，不隐含增加后台任务平台。
