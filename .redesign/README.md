@@ -50,6 +50,7 @@
 - [Stage 3：Long-term Memory](./stages/Stage-3-Long-term-Memory-实施说明.md)
 - [Stage 4：Published Workflows](./stages/Stage-4-Published-Workflows-实施说明.md)
 - [Stage 5：Production Hardening](./stages/Stage-5-Production-Hardening-实施说明.md)
+- [Stage 6 Fix：委派可靠性、用户交互与批量工具调用优化方案（Proposed）](./stages/stage-6-fix.md)
 
 迁移材料：
 
