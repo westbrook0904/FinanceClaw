@@ -62,7 +62,7 @@ class TargetResolver:
         agent_profiles: AgentProfileCatalog,
         workflow_catalog: WorkflowCatalog | None = None,
         default_agent_id: str = "finance_agent",
-        default_agent_version: str = "1.0.0",
+        default_agent_version: str | None = None,
     ) -> None:
         """构建目标解析器并绑定各目录。
 
@@ -100,7 +100,7 @@ class TargetResolver:
             profile = self.agent_profiles.resolve(self.default_agent_id, self.default_agent_version)
             return ResolvedTarget(
                 kind="agent",
-                assistant_id="finance_agent",
+                assistant_id=profile.execution_assistant_id,
                 input={"messages": [{"role": "user", "content": request.message}]},
                 target_id=profile.agent_id,
                 target_version=profile.version,
@@ -113,7 +113,7 @@ class TargetResolver:
                 raise TargetResolutionError(str(exc)) from exc
             return ResolvedTarget(
                 kind="agent",
-                assistant_id="finance_agent",
+                assistant_id=profile.execution_assistant_id,
                 input={"messages": [{"role": "user", "content": request.message}]},
                 target_id=profile.agent_id,
                 target_version=profile.version,

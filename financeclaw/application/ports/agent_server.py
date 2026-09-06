@@ -126,6 +126,27 @@ class AgentServerClient(Protocol):
         """
         pass
 
+    async def submit_resume(
+        self,
+        *,
+        thread_id: str,
+        assistant_id: str,
+        command: dict[str, Any],
+        context: dict[str, Any],
+        metadata: dict[str, Any],
+        predecessor: str | None = None,
+    ) -> ServerRun:
+        """提交恢复并立即返回新 Server Run 回执，不把等待结果当作提交身份。"""
+        ...
+
+    async def find_operation(self, *, thread_id: str, operation_id: str) -> ServerRun | None:
+        """按出站操作 metadata 精确对账，发现重复尝试时必须报错。"""
+        ...
+
+    async def cancel_run(self, *, thread_id: str, run_id: str) -> bool:
+        """请求停止一个确切尝试；仅服务端确认停止后返回 True。"""
+        ...
+
     def stream_run(self, *, thread_id: str, run_id: str) -> AsyncIterator[Any]:
         """订阅指定服务端运行的流式事件序列。
 

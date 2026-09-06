@@ -16,6 +16,7 @@ from financeclaw.modules.audit import InMemoryAuditRepository
 from financeclaw.modules.workflows import SqlAlchemyWorkflowRepository, WorkflowCatalog
 from financeclaw.orchestration.graphs.workflows import portfolio_review_definition
 from financeclaw.orchestration.tools import ToolCatalog, ToolPolicy, default_local_tools
+from tests.receipt_client import ReceiptClientMixin
 
 
 class MutableClock:
@@ -30,7 +31,7 @@ class MutableClock:
         return self.value
 
 
-class FakeWorkflowClient:
+class FakeWorkflowClient(ReceiptClientMixin):
     """`FakeWorkflowClient` 封装外部服务的调用边界。"""
 
     def __init__(self) -> None:

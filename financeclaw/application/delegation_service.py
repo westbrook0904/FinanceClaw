@@ -16,13 +16,11 @@ from pydantic import ValidationError
 
 from financeclaw.kernel import (
     ApprovalDecision,
-    ExecutionContext,
     RunStatusResponse,
     WorkflowTarget,
 )
 from financeclaw.modules.audit import AuditEventType, AuditRecord, AuditRepository
 from financeclaw.modules.delegation import (
-    HANDOFF_ADAPTER,
     AgentDelegationInput,
     DelegationConflict,
     DelegationKind,
@@ -34,10 +32,14 @@ from financeclaw.modules.delegation import (
     HandoffRequest,
     WorkflowHandoff,
 )
+from financeclaw.modules.execution import ExecutionConflict, snapshot_context
 from financeclaw.modules.workflows import WorkflowRunStatus
 from financeclaw.orchestration.agents import AgentProfileCatalog
 
+from .delegation_context import resolve_context_refs
+from .execution_service import ExecutionService, agent_snapshot, verify_agent_snapshot
 from .ports import AgentServerClient
+from .run_observation import observe_run
 from .run_service import RunNotFound
 from .workflow_service import WorkflowAuthorizationError, WorkflowInputError, WorkflowService
 
@@ -77,6 +79,9 @@ class DelegationService:
         workflow_service: WorkflowService,
         agent_profiles: AgentProfileCatalog,
         audit: AuditRepository,
+        *,
+        conversation_repository: Any = None,
+        artifact_service: Any = None,
     ) -> None:
         """装配 delegation 服务依赖。
 
@@ -86,6 +91,8 @@ class DelegationService:
             workflow_service: 工作流服务。
             agent_profiles: Agent Profile 目录。
             audit: 审计仓储。
+            conversation_repository: 授权消息引用解析仓储，不自动注入历史。
+            artifact_service: 授权 Artifact 引用解析服务。
 
         """
         self.client = client
@@ -93,6 +100,10 @@ class DelegationService:
         self.workflow_service = workflow_service
         self.agent_profiles = agent_profiles
         self.audit = audit
+        self.execution = repository.execution
+        self.operations = ExecutionService(client, self.execution)
+        self.conversation_repository = conversation_repository
+        self.artifact_service = artifact_service
 
     async def start(
         self,
@@ -104,6 +115,9 @@ class DelegationService:
         tenant_id: str,
         subject_id: str,
         scopes: frozenset[str],
+        parent_snapshot: dict[str, Any] | None = None,
+        parent_server_run_id: str | None = None,
+        parent_interrupt_id: str | None = None,
     ) -> DelegationRecord:
         """受理 typed handoff：校验、幂等落库并启动（或复用）子运行。
 
@@ -115,6 +129,9 @@ class DelegationService:
             tenant_id: 租户 ID。
             subject_id: 主体 ID。
             scopes: 调用方权限范围，用于目标解析鉴权。
+            parent_snapshot: 父运行冻结的身份、授权和发布快照。
+            parent_server_run_id: 产生此次 handoff 的确切执行尝试。
+            parent_interrupt_id: 原生 handoff ID；旧单中断可缺省。
 
         Returns:
             delegation 记录（含子运行映射与最新状态）。
@@ -132,7 +149,52 @@ class DelegationService:
             conversation_id=conversation_id,
         )
         # 2. 解析目标（Workflow 定义或 Agent Profile）并校验所需权限范围。
-        kind, target_id, target_version, arguments = self._resolve(handoff, scopes)
+        if parent_snapshot is None:
+            parent = await asyncio.to_thread(self.execution.get, parent_run_id)
+            parent_snapshot = parent["snapshot"]
+            parent_server_run_id = parent["server_run_id"]
+        context = snapshot_context(parent_snapshot, scopes)
+        parent = await asyncio.to_thread(self.execution.get, parent_run_id)
+        if parent["cancellation_requested"] or parent["side_effects_denied"]:
+            raise ExecutionConflict("parent no longer permits new delegations")
+        kind, target_id, target_version, arguments = self._resolve(
+            handoff, context.scopes, parent_snapshot
+        )
+        try:
+            existing = await asyncio.to_thread(
+                self.repository.get_owned, handoff.handoff_id, tenant_id, subject_id
+            )
+        except DelegationNotFound:
+            existing = None
+        references = (
+            existing.execution_snapshot.get("resolved_context", [])
+            if (existing is not None and existing.execution_snapshot)
+            else (
+                await asyncio.to_thread(
+                    self._resolve_context_refs,
+                    tuple(arguments.get("context_refs", ())),
+                    context=context,
+                )
+                if kind is DelegationKind.AGENT
+                else []
+            )
+        )
+        execution_snapshot = {
+            "context": context.model_dump(mode="json"),
+            "parent_server_run_id": parent_server_run_id,
+            "parent_interrupt_id": parent_interrupt_id,
+            "resolved_context": references,
+            "target_release": agent_snapshot(
+                self.agent_profiles.resolve(target_id, target_version),
+                context,
+                thread_id="delegation-not-started",
+                input_hash="",
+            )
+            if kind is DelegationKind.AGENT
+            else self.workflow_service._release(
+                self.workflow_service.catalog[(target_id, target_version)]
+            ),
+        }
         # 3. 以 handoff_id 为幂等键落库；重复请求复用既有记录。
         record, created = await asyncio.to_thread(
             self.repository.ensure_requested,
@@ -146,6 +208,7 @@ class DelegationService:
             target_id=target_id,
             target_version=target_version,
             arguments=arguments,
+            execution_snapshot=execution_snapshot,
         )
         # 4. 首次创建时写入 REQUESTED 审计。
         if created:
@@ -162,8 +225,27 @@ class DelegationService:
                 record = await self._start_agent(record, scopes)
         return record
 
+    def _resolve_context_refs(self, refs: tuple[str, ...], *, context: Any) -> list[dict[str, Any]]:
+        """引用错误映射为可见输入／授权错误，不暴露底层对象或存储细节。"""
+        try:
+            return resolve_context_refs(
+                refs,
+                context=context,
+                conversations=self.conversation_repository,
+                artifacts=self.artifact_service,
+            )
+        except PermissionError as exc:
+            raise DelegationAuthorizationError("context reference is not authorized") from exc
+        except (ValueError, LookupError) as exc:
+            raise DelegationInputError("context reference is unavailable or invalid") from exc
+
     async def status(
-        self, delegation_id: str, *, tenant_id: str, subject_id: str
+        self,
+        delegation_id: str,
+        *,
+        tenant_id: str,
+        subject_id: str,
+        scopes: frozenset[str] | None = None,
     ) -> DelegationRecord:
         """查询 delegation 状态；必要时恢复子运行并同步最新进度。
 
@@ -171,6 +253,7 @@ class DelegationService:
             delegation_id: delegation ID。
             tenant_id: 租户 ID。
             subject_id: 主体 ID。
+            scopes: 当前权限上界；None 使用原授权，显式空集合表示撤权。
 
         Returns:
             delegation 记录（已同步子运行最新状态）。
@@ -187,15 +270,17 @@ class DelegationService:
             DelegationStatus.DELIVERED,
         }:
             return record
-        # 2. 子运行未启动（或 Agent 子运行缺 server run）：以通配权限恢复启动，用于对账。
+        # 仅使用原授权快照恢复，显式传入的当前权限只能进一步收窄。
+        if not record.execution_snapshot:
+            raise ExecutionConflict("delegation authorization snapshot is missing")
+        recovery_scopes = snapshot_context(record.execution_snapshot, scopes).scopes
         if record.child_run_id is None:
-            recovery_scopes = frozenset({"*"})
             if record.kind is DelegationKind.WORKFLOW:
                 record = await self._start_workflow(record, recovery_scopes)
             else:
                 record = await self._start_agent(record, recovery_scopes)
         elif record.kind is DelegationKind.AGENT and record.child_server_run_id is None:
-            record = await self._start_agent(record, frozenset({"*"}))
+            record = await self._start_agent(record, recovery_scopes)
         # 3. 按子运行类型同步状态：Workflow 走工作流服务，Agent 查询 server。
         if record.kind is DelegationKind.WORKFLOW:
             child = await self.workflow_service.status(
@@ -369,6 +454,8 @@ class DelegationService:
             target_version=record.target_version,
             child_run_id=record.child_run_id,
             status=record.status.value,
+            parent_run_id=record.parent_run_id,
+            arguments_hash=record.arguments_hash,
             output=record.output_payload,
             error=record.error,
         )
@@ -391,6 +478,11 @@ class DelegationService:
 
         """
         try:
+            definition = self.workflow_service.catalog[(record.target_id, record.target_version)]
+            if not record.execution_snapshot or record.execution_snapshot.get(
+                "target_release"
+            ) != self.workflow_service._release(definition):
+                raise ExecutionConflict("pinned delegated Workflow release is unavailable")
             # 1. 以 delegation_id 为幂等键启动工作流。
             accepted = await self.workflow_service.start(
                 WorkflowTarget(
@@ -402,6 +494,8 @@ class DelegationService:
                 subject_id=record.subject_id,
                 scopes=scopes,
                 idempotency_key=record.delegation_id,
+                parent_snapshot=record.execution_snapshot,
+                parent_run_id=record.parent_run_id,
             )
         except (WorkflowAuthorizationError, WorkflowInputError) as exc:
             # 2. 启动失败：先把 delegation 置为 FAILED，再向上抛出。
@@ -427,116 +521,157 @@ class DelegationService:
         return bound
 
     async def _start_agent(
-        self, record: DelegationRecord, scopes: frozenset[str]
+        self,
+        record: DelegationRecord,
+        scopes: frozenset[str],
     ) -> DelegationRecord:
-        """启动领域 Agent 子运行（独立 child thread/run）并绑定映射。
-
-        Args:
-            record: 待启动的 delegation 记录。
-            scopes: 调用方权限范围，用于目标鉴权。
-
-        Returns:
-            绑定子运行后的 delegation 记录。
-
-        Raises:
-            DelegationAuthorizationError: 缺少目标 Agent 所需权限范围。
-            DelegationConflict: 子运行标识未成功预生成。
-
-        """
-        # 1. 解析目标 Agent Profile 并校验权限范围。
+        """用冻结输入、必要引用和独立线程启动子 Agent，不装入根 Journal。"""
+        if not record.execution_snapshot:
+            raise ExecutionConflict("delegation authorization snapshot is missing")
         profile = self.agent_profiles.resolve(record.target_id, record.target_version)
-        self._require_scopes(scopes, profile.required_scopes)
-        # 2. 预生成子 run/thread 标识（幂等：重复调用复用既有标识）。
+        verify_agent_snapshot(profile, record.execution_snapshot.get("target_release", {}))
+        original = snapshot_context(record.execution_snapshot)
+        effective = snapshot_context(record.execution_snapshot, scopes)
+        self._require_scopes(effective.scopes, profile.required_scopes)
         prepared = await asyncio.to_thread(
             self.repository.prepare_agent_child, record.delegation_id
         )
-        if prepared.child_run_id is None or prepared.child_thread_id is None:
-            raise DelegationConflict("Agent child identity was not prepared")
-        # 3. 创建子线程。
-        await self.client.create_thread(prepared.child_thread_id)
-        # 4. 对账路径先按 application_run_id 找回既有 server run，避免重复执行。
-        server_run = await self.client.find_run(
-            thread_id=prepared.child_thread_id,
-            application_run_id=prepared.child_run_id,
+        context = original.model_copy(
+            update={
+                "run_id": prepared.child_run_id,
+                "root_run_id": original.root_run_id or record.parent_run_id,
+                "parent_run_id": record.parent_run_id,
+                "delegation_id": record.delegation_id,
+            }
         )
-        if server_run is None:
-            context = ExecutionContext(
-                tenant_id=prepared.tenant_id,
-                subject_id=prepared.subject_id,
-                scopes=scopes,
-                conversation_id=prepared.conversation_id,
-                turn_id=prepared.parent_turn_id,
-                run_id=prepared.child_run_id,
+        snapshot = agent_snapshot(
+            profile, context, thread_id=prepared.child_thread_id, input_hash=record.arguments_hash
+        )
+        snapshot["resolved_context"] = record.execution_snapshot.get("resolved_context", [])
+        try:
+            execution = await asyncio.to_thread(self.execution.get, prepared.child_run_id)
+        except ExecutionConflict:
+            execution = await asyncio.to_thread(
+                self.execution.register,
+                prepared.child_run_id,
+                snapshot,
+                root_run_id=context.root_run_id,
             )
-            # 5. 以委托任务描述为输入创建新的 server run。
-            server_run = await self.client.create_run(
-                thread_id=prepared.child_thread_id,
-                assistant_id=profile.agent_id,
-                input={"messages": [{"role": "user", "content": prepared.arguments["task"]}]},
-                context=context.model_dump(mode="json"),
-                metadata={
-                    **context.trace_metadata(),
-                    "application_run_id": prepared.child_run_id,
-                    "target_kind": "agent_delegation",
-                    "agent_id": profile.agent_id,
-                    "agent_profile_version": profile.version,
-                    "parent_run_id": prepared.parent_run_id,
-                    "delegation_id": prepared.delegation_id,
-                },
-            )
-        # 6. 绑定 child 映射与状态。
+        verify_agent_snapshot(profile, execution["snapshot"])
+        arguments = record.arguments.get("arguments", {})
+        if profile.input_schema is not None:
+            try:
+                arguments = profile.input_schema.model_validate(arguments).model_dump(mode="json")
+            except ValidationError as exc:
+                missing = [
+                    str(error["loc"][0]) for error in exc.errors() if error["type"] == "missing"
+                ]
+                if len(missing) != len(exc.errors()) or profile.output_schema is None:
+                    return await self._transition(
+                        prepared, DelegationStatus.FAILED, error="invalid delegated input"
+                    )
+                clarification = {
+                    "outcome": "needs_clarification",
+                    "missing_fields": missing,
+                    "question": "Please provide: " + ", ".join(missing),
+                }
+                try:
+                    output = profile.output_schema.model_validate(clarification).model_dump(
+                        mode="json"
+                    )
+                except ValidationError:
+                    return await self._transition(
+                        prepared,
+                        DelegationStatus.FAILED,
+                        error="Agent output schema cannot represent missing input",
+                    )
+                # 低成本提槽：旧 child 已完成；根会话提问后必须创建新 Turn 和新 child。
+                return await self._transition(prepared, DelegationStatus.COMPLETED, output=output)
+        await self.client.create_thread(prepared.child_thread_id)
+        task = {
+            "task": record.arguments["task"],
+            "arguments": arguments,
+            "authorized_context": execution["snapshot"].get("resolved_context", []),
+        }
+        submit_context = snapshot_context(execution["snapshot"], scopes)
+        server = await self.operations.submit(
+            prepared.child_run_id,
+            "start",
+            thread_id=prepared.child_thread_id,
+            assistant_id=execution["snapshot"]["assistant_id"],
+            input={"messages": [{"role": "user", "content": json.dumps(task, ensure_ascii=False)}]},
+            context=submit_context.model_dump(mode="json"),
+            metadata={
+                **submit_context.trace_metadata(),
+                "application_run_id": prepared.child_run_id,
+                "target_kind": "agent_delegation",
+                "agent_id": profile.agent_id,
+                "agent_profile_version": profile.version,
+                "parent_run_id": record.parent_run_id,
+                "delegation_id": record.delegation_id,
+            },
+        )
+        if server is None:
+            return prepared
         bound = await asyncio.to_thread(
             self.repository.bind_child,
             prepared.delegation_id,
             child_run_id=prepared.child_run_id,
             child_thread_id=prepared.child_thread_id,
-            child_server_run_id=server_run.run_id,
-            status=_delegation_status(server_run.status),
+            child_server_run_id=server.run_id,
+            status=DelegationStatus.RUNNING,
         )
-        # 7. 写 STARTED 审计。
-        await self._audit(bound, AuditEventType.DELEGATION_STARTED, decision="child_started")
+        if record.child_server_run_id is None:
+            await self._audit(bound, AuditEventType.DELEGATION_STARTED, decision="child_started")
         return bound
 
     async def _agent_status(self, record: DelegationRecord) -> DelegationRecord:
-        """查询领域 Agent 子运行的 server 状态并翻译为 delegation 状态转移。
-
-        Args:
-            record: delegation 记录（须已绑定子线程与 server run）。
-
-        Returns:
-            状态转移后的 delegation 记录。
-
-        """
+        """先分类中断，再按 Profile 声明的 state 字段校验领域结果。"""
         if record.child_thread_id is None or record.child_server_run_id is None:
             return record
         server = await self.client.get_run(
-            thread_id=record.child_thread_id,
-            run_id=record.child_server_run_id,
+            thread_id=record.child_thread_id, run_id=record.child_server_run_id
         )
-        status = str(server.get("status", record.status.value))
-        if status in {"success", "completed"}:
-            # 成功：取回最终回复作为输出。
+        observation = observe_run(server)
+        if observation.kind == "completed":
             raw = await self.client.join_run(
-                thread_id=record.child_thread_id,
-                run_id=record.child_server_run_id,
+                thread_id=record.child_thread_id, run_id=record.child_server_run_id
             )
-            output = {"message": _final_assistant_content(raw) or ""}
+            observation = observe_run(raw)
+            if observation.kind == "completed":
+                profile = self.agent_profiles.resolve(record.target_id, record.target_version)
+                execution = await asyncio.to_thread(self.execution.get, record.child_run_id)
+                verify_agent_snapshot(profile, execution["snapshot"])
+                try:
+                    if profile.output_schema is not None:
+                        candidate = raw.get(profile.output_state_key)
+                        output = profile.output_schema.model_validate(candidate).model_dump(
+                            mode="json"
+                        )
+                    else:
+                        message = _final_assistant_content(raw)
+                        if message is None:
+                            raise ValueError("missing final Agent result")
+                        output = {"message": message}
+                except (ValueError, TypeError):
+                    return await self._transition(
+                        record,
+                        DelegationStatus.FAILED,
+                        error="invalid domain Agent structured result",
+                    )
+                return await self._transition(record, DelegationStatus.COMPLETED, output=output)
+        if observation.kind == "failed":
+            return await self._transition(
+                record, DelegationStatus.FAILED, error="domain Agent child run failed"
+            )
+        if observation.kind != "running":
+            # A/B 不接受任意 Agent-child 原位恢复，也不将其挂起伪装为成功。
             return await self._transition(
                 record,
-                DelegationStatus.COMPLETED,
-                output=output,
+                DelegationStatus.INTERRUPTED,
+                error="unsupported_child_interaction; cancel or use clarification outcome",
             )
-        if status in {"error", "failed"}:
-            # 失败：记录失败原因。
-            return await self._transition(
-                record,
-                DelegationStatus.FAILED,
-                error="domain Agent child run failed",
-            )
-        if status == "interrupted":
-            # 中断：子 Agent 在等待其自身的审批。
-            return await self._transition(record, DelegationStatus.INTERRUPTED)
-        return await self._transition(record, _delegation_status(status))
+        return await self._transition(record, DelegationStatus.RUNNING)
 
     async def _sync_child_status(
         self, record: DelegationRecord, child: RunStatusResponse
@@ -553,7 +688,14 @@ class DelegationService:
         """
         status = _delegation_status(child.status)
         error = "delegated Workflow failed" if status is DelegationStatus.FAILED else None
-        return await self._transition(record, status, output=child.output, error=error)
+        output = child.output
+        if status is DelegationStatus.INTERRUPTED:
+            output = {
+                **(child.output or {}),
+                "waiting_reason": child.waiting_reason,
+                "pending_interactions": list(child.pending_interactions),
+            }
+        return await self._transition(record, status, output=output, error=error)
 
     async def _transition(
         self,
@@ -605,13 +747,14 @@ class DelegationService:
         await self._transition(record, DelegationStatus.FAILED, error=error)
 
     def _resolve(
-        self, handoff: HandoffRequest, scopes: frozenset[str]
+        self, handoff: HandoffRequest, scopes: frozenset[str], parent_snapshot: dict[str, Any]
     ) -> tuple[DelegationKind, str, str, dict[str, Any]]:
         """解析 handoff 目标并校验权限，返回四元组供落库使用。
 
         Args:
             handoff: typed handoff 请求。
             scopes: 调用方权限范围。
+            parent_snapshot: 父 Profile 的工具版本绑定，不从 latest 选择。
 
         Returns:
             （目标类型, 目标 ID, 目标版本, 归一化后参数）四元组。
@@ -622,9 +765,26 @@ class DelegationService:
 
         """
         try:
+            target = (
+                handoff.workflow_id if isinstance(handoff, WorkflowHandoff) else handoff.agent_id
+            )
+            tool_name = f"delegate_{handoff.kind.value}__{target}"
+            versions = {
+                ref["tool_id"]: ref["version"]
+                for ref in parent_snapshot["profile"]["allowed_tools"]
+            }
+            pinned_version = versions.get(tool_name)
+            if pinned_version is None:
+                raise DelegationInputError("handoff target is not bound in the parent release")
+            if getattr(handoff, "target_version", None) not in {None, pinned_version}:
+                raise DelegationInputError(
+                    "handoff target version differs from parent tool binding"
+                )
             # Workflow handoff：解析已发布定义、校验权限并归一化入参。
             if isinstance(handoff, WorkflowHandoff):
-                definition = self.workflow_service.catalog.resolve(handoff.workflow_id)
+                definition = self.workflow_service.catalog.resolve(
+                    handoff.workflow_id, pinned_version
+                )
                 self._require_scopes(scopes, definition.required_scopes)
                 return (
                     DelegationKind.WORKFLOW,
@@ -633,13 +793,14 @@ class DelegationService:
                     definition.normalize_input(handoff.arguments),
                 )
             # Agent handoff：目标 Profile 必须显式允许被委托（delegatable）。
-            profile = self.agent_profiles.resolve(handoff.agent_id)
+            profile = self.agent_profiles.resolve(handoff.agent_id, pinned_version)
             if not profile.delegatable:
                 raise DelegationInputError("AgentProfile is not available for delegation")
             self._require_scopes(scopes, profile.required_scopes)
             arguments = AgentDelegationInput(
                 task=handoff.task,
                 context_refs=handoff.context_refs,
+                arguments=getattr(handoff, "arguments", {}),
             ).model_dump(mode="json")
             return DelegationKind.AGENT, profile.agent_id, profile.version, arguments
         except DelegationAuthorizationError:
@@ -736,22 +897,10 @@ def extract_handoff_interrupt(value: Mapping[str, Any]) -> HandoffRequest | None
         DelegationInputError: 中断载荷携带了不合法的 typed handoff。
 
     """
-    raw_items = value.get("interrupts") or value.get("__interrupt__") or ()
-    if isinstance(raw_items, Mapping):
-        raw_items = (raw_items,)
-    for item in raw_items if isinstance(raw_items, (list, tuple)) else ():
-        raw = getattr(item, "value", None)
-        if raw is None and isinstance(item, Mapping):
-            raw = item.get("value", item)
-        if not isinstance(raw, Mapping):
-            continue
-        if raw.get("schema_version") != 1 or "handoff_id" not in raw:
-            continue
-        try:
-            return HANDOFF_ADAPTER.validate_python(raw)
-        except ValidationError as exc:
-            raise DelegationInputError("Agent returned an invalid typed handoff") from exc
-    return None
+    observed = observe_run(value)
+    if observed.kind == "unsupported":
+        raise DelegationInputError("unsupported or ambiguous interrupt batch")
+    return observed.handoff
 
 
 def delegation_projection(record: DelegationRecord) -> dict[str, Any]:
@@ -771,6 +920,8 @@ def delegation_projection(record: DelegationRecord) -> dict[str, Any]:
         "target_version": record.target_version,
         "child_run_id": record.child_run_id,
         "status": record.status.value,
+        "execution_status": record.execution_status,
+        "delivery_status": record.delivery_status,
         "output": record.output_payload,
         "error": record.error,
     }

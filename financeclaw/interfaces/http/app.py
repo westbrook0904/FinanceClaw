@@ -443,6 +443,18 @@ def create_app(
                 )
             raise
 
+    @app.post("/v1/runs/{run_id}/cancel", response_model=RunStatusResponse)
+    async def cancel_run(
+        run_id: str,
+        principal: Annotated[AuthenticatedPrincipal, Depends(principal_dep)],
+    ) -> RunStatusResponse:
+        """取消已认证主体拥有的根会话任务，停止确认前不释放活动 Turn。"""
+        if conversation_service is None:
+            raise RunNotFound("conversation cancellation is not configured")
+        return await conversation_service.cancel(
+            run_id, tenant_id=principal.tenant_id, subject_id=principal.subject_id
+        )
+
     @app.post("/v1/runs/{run_id}/resume", response_model=RunStatusResponse)
     async def resume_run(
         run_id: str,
@@ -766,6 +778,8 @@ def create_default_app(settings: FinanceClawSettings | None = None) -> FastAPI:
         workflow_service,
         components.agent_profiles,
         components.audit,
+        conversation_repository=components.conversation_repository,
+        artifact_service=components.artifact_service,
     )
     conversation_service = ConversationService(
         client,

@@ -50,9 +50,19 @@ def completed_stream_event(run_id: str, output: Mapping[str, Any] | None) -> Str
     return StreamEvent(event="assistant.completed", data=data)
 
 
-def interrupted_stream_event(run_id: str) -> StreamEvent:
-    """构造不暴露中断内部载荷的 ``run.interrupted`` 事件。"""
-    return StreamEvent(event="run.interrupted", data={"run_id": run_id})
+def interrupted_stream_event(
+    run_id: str,
+    *,
+    waiting_reason: str | None = None,
+    pending_interactions: tuple[dict[str, Any], ...] = (),
+) -> StreamEvent:
+    """只投影应用层已脱敏的等待原因和审批对象，不透传图内部 state。"""
+    data: dict[str, Any] = {"run_id": run_id}
+    if waiting_reason is not None:
+        data["waiting_reason"] = waiting_reason
+    if pending_interactions:
+        data["pending_interactions"] = list(pending_interactions)
+    return StreamEvent(event="run.interrupted", data=data)
 
 
 def failed_stream_event(run_id: str) -> StreamEvent:

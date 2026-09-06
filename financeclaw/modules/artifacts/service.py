@@ -105,7 +105,10 @@ class ArtifactService:
             size_bytes=len(payload),
             source_type=source_type,
             source_id=source_id,
-            access_policy={"required_scope": "artifacts:read"},
+            access_policy={
+                "required_scope": "artifacts:read",
+                "data_classification": context.data_classification.value,
+            },
             encryption_metadata=self.store.encryption_metadata(),
         )
         self.repository.save(metadata)
@@ -199,7 +202,10 @@ class ArtifactService:
             size_bytes=len(payload),
             source_type=source_type,
             source_id=source_id,
-            access_policy={"required_scope": "artifacts:read"},
+            access_policy={
+                "required_scope": "artifacts:read",
+                "data_classification": context.data_classification.value,
+            },
             encryption_metadata=self.store.encryption_metadata(),
         )
         return self.repository.save(metadata)

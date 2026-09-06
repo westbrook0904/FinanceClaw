@@ -119,7 +119,7 @@ class WorkflowApprovalRow(Base):
 
     __tablename__ = "workflow_approvals"
     __table_args__ = (
-        UniqueConstraint("run_id", "approval_point", name="uq_workflow_approval_point"),
+        Index("ix_workflow_approval_point", "run_id", "approval_point"),
         Index("ix_workflow_approvals_owner", "tenant_id", "subject_id", "approval_id"),
         Index("ix_workflow_approvals_pending", "status", "expires_at"),
     )

@@ -65,6 +65,9 @@ class TurnStatus(StrEnum):
     INTERRUPTED = "interrupted"
     COMPLETED = "completed"
     FAILED = "failed"
+    CANCELLATION_REQUESTED = "cancellation_requested"
+    CANCELLED = "cancelled"
+    NEEDS_ATTENTION = "needs_attention"
 
 
 class MessageRole(StrEnum):

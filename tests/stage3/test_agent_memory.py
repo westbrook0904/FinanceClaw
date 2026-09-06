@@ -309,6 +309,24 @@ async def test_expired_memory_approval_cannot_resume(tmp_path: Path) -> None:
     assert repository is not None
     # 准备 context and _，供后续步骤使用。
     context, _ = conversation_context(repository, key="expired-memory")
+    from datetime import UTC, datetime, timedelta
+
+    from financeclaw.application.execution_service import agent_snapshot
+
+    repository.execution.register(
+        context.run_id,
+        agent_snapshot(
+            components.default_agent_profile, context, thread_id="expired", input_hash="0" * 64
+        ),
+    )
+    repository.execution.set_waiting(
+        context.run_id,
+        {
+            "key": "expired",
+            "kind": "hitl",
+            "expires_at": (datetime.now(UTC) - timedelta(seconds=1)).isoformat(),
+        },
+    )
     # 前置条件满足后调用 update turn status。
     repository.update_turn_status(context.run_id, "interrupted")
     # 准备 service，供后续步骤使用。
@@ -332,7 +350,7 @@ async def test_expired_memory_approval_cannot_resume(tmp_path: Path) -> None:
         repository.get_turn_owned(
             context.run_id, context.tenant_id, context.subject_id
         ).status.value
-        == "failed"
+        == "interrupted"
     )
     # 显式处理 `components.database is not None` 分支。
     if components.database is not None:

@@ -103,6 +103,7 @@ class WorkflowHandoff(FrozenDelegationModel):
     conversation_id: str = Field(min_length=1, max_length=128)
     workflow_id: str = Field(min_length=1, max_length=128)
     arguments: dict[str, Any]
+    target_version: str | None = None
 
 
 class AgentHandoff(FrozenDelegationModel):
@@ -138,9 +139,19 @@ class AgentHandoff(FrozenDelegationModel):
     context_refs: tuple[ContextReference, ...] = Field(default=(), max_length=32)
 
 
-# typed handoff 判别联合：按 ``kind`` 字段在 WorkflowHandoff 与 AgentHandoff
-# 之间自动区分，供服务层统一解析两种委派请求。
-HandoffRequest = Annotated[WorkflowHandoff | AgentHandoff, Field(discriminator="kind")]
+class AgentHandoffV2(AgentHandoff):
+    """任务与领域参数分离的 v2；版本由委派 Tool 固定，不让模型选择 release。"""
+
+    schema_version: Literal[2] = 2
+    target_version: str
+    arguments: dict[str, Any] = Field(default_factory=dict)
+
+
+# 先按 kind，再按 schema_version 判别，避免重复 kind 造成联合解析歧义。
+AgentHandoffRequest = Annotated[
+    AgentHandoff | AgentHandoffV2, Field(discriminator="schema_version")
+]
+HandoffRequest = Annotated[WorkflowHandoff | AgentHandoffRequest, Field(discriminator="kind")]
 # HandoffRequest 的可复用 TypeAdapter，用于解析并校验 JSON 形式的 handoff 载荷。
 HANDOFF_ADAPTER = TypeAdapter(HandoffRequest)
 
@@ -171,6 +182,8 @@ class DelegationResult(FrozenDelegationModel):
     target_id: str
     target_version: str
     child_run_id: str
+    parent_run_id: str | None = None
+    arguments_hash: str | None = None
     status: Literal["completed", "rejected", "failed"]
     output: dict[str, Any] | None = None
     error: str | None = None
@@ -236,6 +249,13 @@ class DelegationRecord(FrozenDelegationModel):
     updated_at: datetime
     completed_at: datetime | None = None
     delivered_at: datetime | None = None
+    execution_snapshot: dict[str, Any] | None = None
+    execution_status: str = "unknown"
+
+    @property
+    def delivery_status(self) -> str:
+        """交付不覆盖执行终态；原子领取及未决提交见 run_operations。"""
+        return "delivered" if self.delivered_at is not None else "pending"
 
     @property
     def terminal(self) -> bool:
@@ -265,3 +285,4 @@ class AgentDelegationInput(BaseModel):
 
     task: str = Field(min_length=1, max_length=8_000)
     context_refs: tuple[ContextReference, ...] = Field(default=(), max_length=32)
+    arguments: dict[str, Any] = Field(default_factory=dict)

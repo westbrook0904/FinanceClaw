@@ -9,7 +9,7 @@ AgentProfileCatalog 以不可变映射管理全部档案并提供版本解析。
 from collections.abc import Iterable, Iterator, Mapping
 from types import MappingProxyType
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
 
 from financeclaw.infrastructure.llm import ModelProfileRef
 
@@ -70,6 +70,38 @@ class AgentProfile(BaseModel):
     memory_policy: str = "none"
     max_model_calls: int = Field(default=8, ge=1, le=64)
     max_tool_calls: int = Field(default=12, ge=1, le=128)
+    max_tool_batch: int = Field(default=8, ge=1, le=32)
+    max_tree_model_calls: int = Field(default=64, ge=1, le=256)
+    max_tree_tool_calls: int = Field(default=128, ge=1, le=1024)
+    max_tree_operations: int = Field(default=64, ge=1, le=256)
+    assistant_id: str | None = None
+    deployment_revision: str = "stage6fix-ab/1"
+    configuration_fingerprint: str | None = None
+    input_schema: type[BaseModel] | None = Field(default=None, exclude=True)
+    output_schema: type[BaseModel] | None = Field(default=None, exclude=True)
+    output_state_key: str = "structured_response"
+
+    @field_serializer("required_scopes")
+    def serialize_required_scopes(self, value: frozenset[str]) -> list[str]:
+        """发布快照在不同进程中保持确定性。"""
+        return sorted(value)
+
+    @model_validator(mode="after")
+    def validate_bindings(self) -> "AgentProfile":
+        """同名工具只能绑定一次；领域运行禁止根历史和长期记忆策略。"""
+        names = [ref.tool_id for ref in self.allowed_tools]
+        if len(names) != len(set(names)):
+            raise ValueError("AgentProfile cannot bind multiple versions of the same tool name")
+        if self.context_policy not in {"stage2-journal-v1", "delegated-task-only-v1"}:
+            raise ValueError("unsupported Agent context policy")
+        if self.delegatable and self.memory_policy != "none":
+            raise ValueError("delegated Agents cannot recall root long-term memory")
+        return self
+
+    @property
+    def execution_assistant_id(self) -> str:
+        """服务端图映射；未声明的旧档案仅供兼容，发布档案必须显式固定。"""
+        return self.assistant_id or self.agent_id
 
     @property
     def key(self) -> tuple[str, str]:

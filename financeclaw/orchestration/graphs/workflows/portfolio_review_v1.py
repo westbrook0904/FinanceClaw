@@ -23,6 +23,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from financeclaw.kernel import ArtifactReference, ExecutionContext
 from financeclaw.modules.artifacts import ArtifactService
 from financeclaw.modules.audit import AuditEventType, AuditRecord, AuditRepository
+from financeclaw.modules.execution import ExecutionConflict, ExecutionRepository
 from financeclaw.modules.workflows import (
     ApprovalPoint,
     WorkflowDefinition,
@@ -328,6 +329,7 @@ def build_portfolio_review_graph(
     checkpointer: Any = None,
     read_max_attempts: int = 3,
     clock: Callable[[], datetime] | None = None,
+    execution: ExecutionRepository | None = None,
 ) -> Any:
     """装配并编译 portfolio_review@1.0.0 的固定流程图。
 
@@ -343,6 +345,7 @@ def build_portfolio_review_graph(
         checkpointer: LangGraph checkpoint 后端，支撑审批中断恢复；可为 None。
         read_max_attempts: 行情读取遇瞬时错误的最大尝试次数，默认 3。
         clock: 注入时钟，返回当前时间；缺省为系统 UTC 时间（测试可注入）。
+        execution: 根任务树预算与授权仓储；业务运行必须配置。
 
     Returns:
         编译后的 LangGraph 图，图名为 portfolio_review_v1。
@@ -471,6 +474,11 @@ def build_portfolio_review_graph(
             )
             # 3. 调用行情工具并校验返回：必须是 JSON 对象，价格正数、时点带时区。
             try:
+                if runtime.context.root_run_id is not None:
+                    if execution is None:
+                        raise ExecutionConflict("Workflow execution budget is not configured")
+                    execution.verify_context(runtime.context)
+                    execution.consume(runtime.context.run_id, "tool")
                 result = managed_market.tool.invoke(arguments)
                 payload = json.loads(result) if isinstance(result, str) else result
                 if not isinstance(payload, Mapping):
@@ -702,6 +710,13 @@ def build_portfolio_review_graph(
             "disclaimer": "Point-in-time analytical report; not investment advice.",
         }
         # 2. 以 run+审批点级幂等键持久化，重放恢复时天然命中同一制品。
+        if runtime.context.root_run_id is not None:
+            if execution is None:
+                raise ExecutionConflict("Workflow execution budget is not configured")
+            execution.verify_context(runtime.context)
+            if execution.get(runtime.context.root_run_id)["side_effects_denied"]:
+                raise ExecutionConflict("publication is denied after rejection")
+            execution.consume(runtime.context.run_id, "tool")
         metadata = artifact_service.persist(
             report,
             context=runtime.context,
@@ -816,6 +831,7 @@ def portfolio_review_definition(
     run_timeout_seconds: int = 300,
     approval_timeout_seconds: int = 900,
     clock: Callable[[], datetime] | None = None,
+    execution: ExecutionRepository | None = None,
 ) -> WorkflowDefinition:
     """把流程图封装为可注册进工作流目录的发布定义。
 
@@ -833,6 +849,7 @@ def portfolio_review_definition(
         run_timeout_seconds: 单次运行超时（秒），默认 300。
         approval_timeout_seconds: 审批等待超时（秒），默认 900。
         clock: 注入时钟，透传给 build_portfolio_review_graph。
+        execution: 共享根预算，覆盖行情重试和报告发布。
 
     Returns:
         状态为 ACTIVE 的 WorkflowDefinition，含输入输出契约与权限域要求。
@@ -846,6 +863,7 @@ def portfolio_review_definition(
         checkpointer=checkpointer,
         read_max_attempts=read_max_attempts,
         clock=clock,
+        execution=execution,
     )
     return WorkflowDefinition(
         workflow_id=WORKFLOW_ID,
@@ -868,6 +886,6 @@ def portfolio_review_definition(
             approval_timeout_seconds=approval_timeout_seconds,
         ),
         status=WorkflowStatus.ACTIVE,
-        deployment_revision="portfolio-review-v1/revision-1",
+        deployment_revision="portfolio-review-v1/stage6fix-ab-1",
         required_scopes=frozenset({"portfolio:review", "market:read"}),
     )

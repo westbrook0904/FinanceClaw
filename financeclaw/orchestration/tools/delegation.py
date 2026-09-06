@@ -21,6 +21,7 @@ from financeclaw.kernel import DataClassification, ExecutionContext
 from financeclaw.modules.delegation.models import (
     AgentDelegationInput,
     AgentHandoff,
+    AgentHandoffV2,
     DelegationKind,
     DelegationResult,
     WorkflowHandoff,
@@ -84,6 +85,8 @@ class DelegationTool(BaseTool):
 
     handoff_kind: DelegationKind
     target_id: str
+    target_version: str
+    use_typed_arguments: bool = False
 
     def _run(
         self,
@@ -131,9 +134,11 @@ class DelegationTool(BaseTool):
                 conversation_id=context.conversation_id,
                 workflow_id=self.target_id,
                 arguments=arguments,
+                target_version=self.target_version,
             )
         else:
-            handoff = AgentHandoff(
+            handoff_type = AgentHandoffV2 if self.use_typed_arguments else AgentHandoff
+            handoff = handoff_type(
                 handoff_id=handoff_id,
                 parent_run_id=context.run_id,
                 parent_turn_id=context.turn_id,
@@ -141,6 +146,14 @@ class DelegationTool(BaseTool):
                 agent_id=self.target_id,
                 task=str(arguments["task"]),
                 context_refs=tuple(arguments.get("context_refs", ())),
+                **(
+                    {
+                        "target_version": self.target_version,
+                        "arguments": arguments.get("arguments", {}),
+                    }
+                    if self.use_typed_arguments
+                    else {}
+                ),
             )
         # 4. 通过 LangGraph interrupt 挂起本工具，等编排层启动子运行后回填结果。
         resumed = interrupt(handoff.model_dump(mode="json"))
@@ -150,8 +163,19 @@ class DelegationTool(BaseTool):
             result.delegation_id != handoff_id
             or result.kind is not self.handoff_kind
             or result.target_id != self.target_id
+            or result.target_version != self.target_version
         ):
             raise ValueError("delegation result does not match the suspended handoff")
+        if self.use_typed_arguments:
+            from financeclaw.modules.execution.repository import digest
+
+            expected = {
+                "task": handoff.task,
+                "context_refs": list(handoff.context_refs),
+                "arguments": handoff.arguments,
+            }
+            if result.parent_run_id != context.run_id or result.arguments_hash != digest(expected):
+                raise ValueError("delegation result does not match the pinned parent and input")
         return result.model_dump_json()
 
     async def _arun(
@@ -198,11 +222,12 @@ def workflow_delegation_tool(definition: WorkflowDefinition) -> ManagedTool:
         args_schema=input_schema,
         handoff_kind=DelegationKind.WORKFLOW,
         target_id=definition.workflow_id,
+        target_version=definition.version,
     )
     # 2. 与固定治理元数据一起包装为受治理 Tool。
     return ManagedTool(
         tool=tool,
-        governance=_governance(name, definition.required_scopes),
+        governance=_governance(name, definition.required_scopes, definition.version),
     )
 
 
@@ -227,16 +252,27 @@ def agent_delegation_tool(profile: AgentProfile) -> ManagedTool:
         name=name,
         description=(
             f"Delegate a bounded task to domain Agent {profile.agent_id}: {profile.description}"
+            + (
+                " Domain arguments contract (omit missing facts for clarification; "
+                "never invent them): "
+                + json.dumps(profile.input_schema.model_json_schema(), ensure_ascii=False)
+                if profile.input_schema is not None
+                else ""
+            )
         ),
         args_schema=AgentDelegationToolInput,
         handoff_kind=DelegationKind.AGENT,
         target_id=profile.agent_id,
+        target_version=profile.version,
+        use_typed_arguments=profile.input_schema is not None,
     )
     # 2. 与固定治理元数据一起包装为受治理 Tool，作用域沿用 Agent 配置。
-    return ManagedTool(tool=tool, governance=_governance(name, profile.required_scopes))
+    return ManagedTool(
+        tool=tool, governance=_governance(name, profile.required_scopes, profile.version)
+    )
 
 
-def _governance(tool_id: str, required_scopes: frozenset[str]) -> ToolGovernance:
+def _governance(tool_id: str, required_scopes: frozenset[str], version: str) -> ToolGovernance:
     """构造 delegation Tool 的固定治理元数据。
 
     委托类 Tool 统一禁止 API 直连调用，副作用记为 delegation；
@@ -245,6 +281,7 @@ def _governance(tool_id: str, required_scopes: frozenset[str]) -> ToolGovernance
     Args:
         tool_id: 委托工具名，作为治理 tool_id。
         required_scopes: 被委托目标（Workflow 或 Agent）要求的作用域。
+        version: 此委派工具实际绑定的目标发布版本。
 
     Returns:
         配置完成的 ToolGovernance 实例。
@@ -252,7 +289,7 @@ def _governance(tool_id: str, required_scopes: frozenset[str]) -> ToolGovernance
     """
     return ToolGovernance(
         tool_id=tool_id,
-        version="1.0.0",
+        version=version,
         side_effect=SideEffect.DELEGATION,
         idempotency=Idempotency.KEY_REQUIRED,
         risk_level=RiskLevel.MEDIUM,

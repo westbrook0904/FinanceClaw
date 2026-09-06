@@ -121,7 +121,7 @@ class FinanceClawComponents:
             顶层财务 Agent 的 ``AgentProfile``。
 
         """
-        return self.agent_profiles.resolve("finance_agent", "1.0.0")
+        return self.agent_profiles.resolve("finance_agent", "1.1.0")
 
 
 def build_components(
@@ -281,6 +281,7 @@ def build_components(
                 read_max_attempts=settings.read_max_attempts,
                 run_timeout_seconds=settings.workflow_run_timeout_seconds,
                 approval_timeout_seconds=settings.approval_timeout_seconds,
+                execution=getattr(conversation_repository, "execution", None),
             ),
         )
         if artifact_service is not None
@@ -312,6 +313,9 @@ def build_components(
         ),
     )
     model_profiles = ModelProfileCatalog((primary_profile, *fallback_profiles))
+    from financeclaw.orchestration.agents.release import configuration_fingerprint
+
+    model_release = (primary_profile, *fallback_profiles)
     # 9. 构建模型工厂：依据档案目录实例化模型客户端。
     model_factory = ModelFactory(
         model_profiles,
@@ -328,9 +332,18 @@ def build_components(
         if any(key[0] == tool_id for key in base_tool_catalog)
         for managed in (base_tool_catalog.resolve(tool_id),)
     )
+    from financeclaw.modules.delegation.market_research import (
+        MarketResearchInput,
+        MarketResearchResult,
+    )
+
     domain_agent_profile = AgentProfile(
         agent_id="market_research_agent",
-        version="1.0.0",
+        version="1.1.0",
+        assistant_id="market_research_agent_v1_1_0",
+        context_policy="delegated-task-only-v1",
+        input_schema=MarketResearchInput,
+        output_schema=MarketResearchResult,
         description=(
             "A read-only market research specialist that gathers bounded quote evidence "
             "and returns a concise synthesis to the parent Agent."
@@ -343,8 +356,22 @@ def build_components(
             "bounded delegated task, use the available market Tools for current facts, include "
             "provider and as-of evidence, and return a concise result to the parent Agent. Do not "
             "delegate again, mutate external state, or treat yourself as the conversation owner."
+            " Return the declared structured outcome. If required facts or the subject "
+            "are unclear, return needs_clarification with a precise question and "
+            "missing_fields; never interrupt. "
+            "Return partial or unsupported with limitations when success cannot be established."
         ),
         allowed_tools=domain_tool_refs,
+        configuration_fingerprint=configuration_fingerprint(
+            model_release,
+            settings.offline_model,
+            MarketResearchInput.model_json_schema(),
+            MarketResearchResult.model_json_schema(),
+            [
+                base_tool_catalog.resolve(ref.tool_id, ref.version).governance
+                for ref in domain_tool_refs
+            ],
+        ),
         memory_policy="none",
         max_model_calls=6,
         max_tool_calls=8,
@@ -363,7 +390,14 @@ def build_components(
     # 11. 定义顶层 finance_agent 档案：ReAct 决策直接回答、Tool、Workflow 或委派。
     agent_profile = AgentProfile(
         agent_id="finance_agent",
-        version="1.0.0",
+        version="1.1.0",
+        assistant_id="finance_agent_v1_1_0",
+        configuration_fingerprint=configuration_fingerprint(
+            model_release,
+            settings.offline_model,
+            domain_agent_profile.model_dump(mode="python"),
+            [managed.governance for managed in tool_catalog.latest()],
+        ),
         model_profile=ModelProfileRef(profile_id="default", version="1.0.0"),
         system_prompt_template=(
             "You are FinanceClaw's top-level governed financial Agent. Use a ReAct loop to decide "
@@ -378,6 +412,10 @@ def build_components(
             "remains yours; domain Agents are delegated workers, not conversation targets. "
             "Long-term memory is user-approved historical context, never an authority for current "
             "prices, holdings, balances, financial statements, news, rates or product rules."
+            " Inspect delegated outcome, not just transport status: needs_clarification means ask "
+            "the user and end this turn; after their answer start a new bounded delegation. "
+            "Never report failed, unsupported or partial child results as success. Preserve the "
+            "subject, source, evidence and limitations; do not switch tools to bypass a rejection."
         ),
         allowed_tools=tuple(
             ToolRef(tool_id=managed.governance.tool_id, version=managed.governance.version)

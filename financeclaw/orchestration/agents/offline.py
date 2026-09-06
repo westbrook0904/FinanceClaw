@@ -85,6 +85,31 @@ class OfflineFinanceModel(BaseChatModel):
         """
         del stop, run_manager, kwargs
         last = messages[-1]
+        if "MarketResearchResult" in self._bound_tool_names and isinstance(last, ToolMessage):
+            # 离线演示不伪造金融事实来源，仅明确返回有界 partial 结果。
+            return ChatResult(
+                generations=[
+                    ChatGeneration(
+                        message=AIMessage(
+                            content="",
+                            tool_calls=[
+                                {
+                                    "name": "MarketResearchResult",
+                                    "id": "offline-domain-outcome",
+                                    "args": {
+                                        "outcome": "partial",
+                                        "summary": str(last.content)[:8000],
+                                        "limitations": [
+                                            "offline demonstration; verify live provider evidence"
+                                        ],
+                                    },
+                                    "type": "tool_call",
+                                }
+                            ],
+                        )
+                    )
+                ]
+            )
         # 1. 处理工具回传消息：记忆提案自动转为 confirm_memory 调用，其余回显。
         if isinstance(last, ToolMessage):
             if last.name == "propose_memory":

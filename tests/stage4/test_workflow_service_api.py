@@ -151,8 +151,10 @@ async def test_durable_idempotency_interrupt_restart_approve_and_audit(tmp_path:
 
 
 @pytest.mark.asyncio
-async def test_run_and_approval_timeouts_are_durable_terminal_states(tmp_path: Path) -> None:
-    """验证函数名所描述的业务场景符合预期。"""
+async def test_run_and_approval_timeouts_remain_visible_without_false_completion(
+    tmp_path: Path,
+) -> None:
+    """本地超时不等于远程已停止，审批到期也不能把底层工作流改写成失败。"""
     # 准备 database and repository and _ and audit and
     # fake and clock and
     # service，供后续步骤使用。
@@ -170,7 +172,11 @@ async def test_run_and_approval_timeouts_are_durable_terminal_states(tmp_path: P
     # 准备 timed_out，供后续步骤使用。
     timed_out = await service.status(first.run_id, tenant_id="tenant-a", subject_id="subject-a")
     # 继续执行前验证内部不变量。
-    assert timed_out.status == "failed"
+    assert timed_out.status == "interrupted"
+    assert timed_out.waiting_reason == "execution_timeout"
+    assert (
+        await service.status(first.run_id, tenant_id="tenant-a", subject_id="subject-a")
+    ).waiting_reason == "execution_timeout"
 
     # 准备 clock.value，供后续步骤使用。
     clock.value = datetime.now(UTC)
@@ -198,7 +204,7 @@ async def test_run_and_approval_timeouts_are_durable_terminal_states(tmp_path: P
             scopes=SCOPES,
         )
     # 继续执行前验证内部不变量。
-    assert repository.get_owned(second.run_id, "tenant-a", "subject-a").status == "failed"
+    assert repository.get_owned(second.run_id, "tenant-a", "subject-a").status == "interrupted"
     # 继续执行前验证内部不变量。
     assert repository.get_approval(second.run_id).status is WorkflowApprovalStatus.EXPIRED
     # 继续执行前验证内部不变量。

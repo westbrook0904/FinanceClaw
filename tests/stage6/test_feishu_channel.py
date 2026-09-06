@@ -37,6 +37,7 @@ class _FakeAgentClient:
         self.stream_order: list[str] = []
         self.active_streams = 0
         self.max_active_streams = 0
+        self.stream_barrier: asyncio.Barrier | None = None
 
     async def create_thread(self, thread_id: str) -> None:
         """幂等创建线程；替身无需持久化。"""
@@ -125,6 +126,8 @@ class _FakeAgentClient:
                 }
                 if self.delay:
                     await asyncio.sleep(self.delay)
+                if self.stream_barrier is not None:
+                    await asyncio.wait_for(self.stream_barrier.wait(), timeout=5)
                 yield {
                     "event": "messages",
                     "data": [{"type": "AIMessageChunk", "content": message}, {}],
@@ -310,6 +313,7 @@ async def test_same_chat_is_serial_and_different_chats_are_isolated(tmp_path: Pa
 
     client.stream_order.clear()
     client.max_active_streams = 0
+    client.stream_barrier = asyncio.Barrier(2)
     await asyncio.gather(
         service.process(_message("om_3", "用户 A", chat="oc_a"), gateway),
         service.process(

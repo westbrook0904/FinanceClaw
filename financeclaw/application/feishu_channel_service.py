@@ -10,6 +10,7 @@ from typing import Protocol
 from uuid import NAMESPACE_URL, uuid5
 
 from financeclaw.kernel import ConversationTurnRequest, StreamEvent
+from financeclaw.modules.conversation import ConversationConflict
 
 from .conversation_service import ConversationService
 
@@ -212,6 +213,15 @@ class FeishuChannelService:
                         await self._send_plain(gateway, message, self.EMPTY_TEXT, suffix="empty")
                         return "empty"
                     return await self._process_text(message, normalized, gateway)
+                except ConversationConflict:
+                    await self._send_plain(
+                        gateway,
+                        message,
+                        "当前会话仍有未完成任务。请在 Web/API 查看等待原因、对指定动作作出决定，"
+                        "或通过该任务的取消接口确认停止后再发送新消息。普通文字“同意”不会批准动作。",
+                        suffix="active-turn",
+                    )
+                    return "waiting_active_turn"
                 except Exception as exc:
                     LOGGER.warning(
                         "Feishu message processing failed",

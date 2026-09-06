@@ -13,7 +13,7 @@ from hashlib import sha256
 from typing import Any, Protocol
 from uuid import uuid4
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session, sessionmaker
 
 from .models import DelegationKind, DelegationRecord, DelegationStatus
@@ -57,6 +57,7 @@ class DelegationRepository(Protocol):
         target_id: str,
         target_version: str,
         arguments: dict[str, Any],
+        execution_snapshot: dict[str, Any] | None = None,
     ) -> tuple[DelegationRecord, bool]:
         """幂等受理委派请求：已存在则校验一致性，否则新建 REQUESTED 记录。
 
@@ -71,6 +72,7 @@ class DelegationRepository(Protocol):
             target_id: 目标标识。
             target_version: 目标版本号。
             arguments: 委派参数字典。
+            execution_snapshot: 首次受理冻结的授权、发布和引用内容。
 
         Returns:
             ``(委派记录, 是否新建)`` 二元组；记录已存在时返回既有记录与 False。
@@ -238,6 +240,8 @@ def _record(row: DelegationRow) -> DelegationRecord:
         updated_at=row.updated_at,
         completed_at=row.completed_at,
         delivered_at=row.delivered_at,
+        execution_snapshot=row.execution_snapshot,
+        execution_status=row.execution_status,
     )
 
 
@@ -256,6 +260,9 @@ class SqlAlchemyDelegationRepository:
 
         """
         self._sessions = sessions
+        from financeclaw.modules.execution import ExecutionRepository
+
+        self.execution = ExecutionRepository(sessions)
 
     def ensure_requested(
         self,
@@ -270,6 +277,7 @@ class SqlAlchemyDelegationRepository:
         target_id: str,
         target_version: str,
         arguments: dict[str, Any],
+        execution_snapshot: dict[str, Any] | None = None,
     ) -> tuple[DelegationRecord, bool]:
         """幂等受理委派请求，返回记录与是否新建的标记。
 
@@ -284,6 +292,7 @@ class SqlAlchemyDelegationRepository:
             target_id: 目标标识。
             target_version: 目标版本号。
             arguments: 委派参数字典。
+            execution_snapshot: 首次受理冻结的授权、发布和引用内容。
 
         Returns:
             ``(委派记录, 是否新建)`` 二元组；重复受理同一请求时返回
@@ -309,6 +318,15 @@ class SqlAlchemyDelegationRepository:
         )
         with self._sessions.begin() as session:
             # 2. 检查 handoff ID 是否已被占用。
+            from financeclaw.modules.conversation.tables import ConversationRow
+
+            session.execute(
+                update(ConversationRow)
+                .where(
+                    ConversationRow.conversation_id == conversation_id,
+                )
+                .values(updated_at=ConversationRow.updated_at)
+            )
             existing = session.get(DelegationRow, delegation_id)
             if existing is not None:
                 # 3. 已存在：租户、主体与指纹必须完全一致，否则判定为复用冲突。
@@ -319,6 +337,14 @@ class SqlAlchemyDelegationRepository:
                 ):
                     raise DelegationConflict("handoff ID was reused for another delegation")
                 return _record(existing), False
+            active = session.scalar(
+                select(DelegationRow.delegation_id).where(
+                    DelegationRow.parent_run_id == parent_run_id,
+                    DelegationRow.delivered_at.is_(None),
+                )
+            )
+            if active is not None:
+                raise DelegationConflict("parent already has an undelivered delegation")
             # 4. 不存在：以 REQUESTED 状态新建记录并提交事务。
             now = datetime.now(UTC)
             row = DelegationRow(
@@ -337,6 +363,8 @@ class SqlAlchemyDelegationRepository:
                 authorization_decision="allowed",
                 policy_version="delegation-policy/1.0.0",
                 status=DelegationStatus.REQUESTED.value,
+                execution_status=DelegationStatus.REQUESTED.value,
+                execution_snapshot=execution_snapshot,
                 created_at=now,
                 updated_at=now,
             )
@@ -358,6 +386,13 @@ class SqlAlchemyDelegationRepository:
 
         """
         with self._sessions.begin() as session:
+            session.execute(
+                update(DelegationRow)
+                .where(
+                    DelegationRow.delegation_id == delegation_id,
+                )
+                .values(updated_at=DelegationRow.updated_at)
+            )
             row = session.get(DelegationRow, delegation_id)
             if row is None:
                 raise DelegationNotFound("delegation was not found")
@@ -369,6 +404,7 @@ class SqlAlchemyDelegationRepository:
                 row.child_run_id = f"run-{uuid4().hex}"
                 row.child_thread_id = str(uuid4())
                 row.status = DelegationStatus.PENDING.value
+                row.execution_status = DelegationStatus.PENDING.value
                 row.updated_at = datetime.now(UTC)
         return _record(row)
 
@@ -400,6 +436,13 @@ class SqlAlchemyDelegationRepository:
 
         """
         with self._sessions.begin() as session:
+            session.execute(
+                update(DelegationRow)
+                .where(
+                    DelegationRow.delegation_id == delegation_id,
+                )
+                .values(updated_at=DelegationRow.updated_at)
+            )
             row = session.get(DelegationRow, delegation_id)
             if row is None:
                 raise DelegationNotFound("delegation was not found")
@@ -414,12 +457,15 @@ class SqlAlchemyDelegationRepository:
                 and row.child_server_run_id != child_server_run_id
             ):
                 raise DelegationConflict("delegation is already bound to another server run")
+            if row.completed_at is not None or row.delivered_at is not None:
+                return _record(row)
             # 2. 写入绑定信息与目标状态；server run 允许为 None 留待后补。
             row.child_run_id = child_run_id
             row.child_thread_id = child_thread_id
             if child_server_run_id is not None:
                 row.child_server_run_id = child_server_run_id
             row.status = status.value
+            row.execution_status = status.value
             row.updated_at = datetime.now(UTC)
         return _record(row)
 
@@ -449,6 +495,14 @@ class SqlAlchemyDelegationRepository:
 
         """
         with self._sessions.begin() as session:
+            # 子状态轮询与父交付会并发；先锁行，再决定是否允许推进。
+            session.execute(
+                update(DelegationRow)
+                .where(
+                    DelegationRow.delegation_id == delegation_id,
+                )
+                .values(updated_at=DelegationRow.updated_at)
+            )
             row = session.get(DelegationRow, delegation_id)
             if row is None:
                 raise DelegationNotFound("delegation was not found")
@@ -463,13 +517,17 @@ class SqlAlchemyDelegationRepository:
             if current in terminal and not (
                 current is not DelegationStatus.DELIVERED and status is DelegationStatus.DELIVERED
             ):
-                if current is status:
+                if current is status or status.value == row.execution_status:
                     return _record(row), False
+                if status not in terminal:
+                    return _record(row), False  # 晚到的 running/interrupted 不能回退终态。
                 raise DelegationConflict("terminal delegation status cannot be changed")
             # 2. 写入新状态与可选的输出载荷、错误信息。
             changed = current is not status
             now = datetime.now(UTC)
             row.status = status.value
+            if status is not DelegationStatus.DELIVERED:
+                row.execution_status = status.value
             row.updated_at = now
             if output_payload is not None:
                 row.output_payload = output_payload
@@ -567,8 +625,10 @@ class SqlAlchemyDelegationRepository:
             .order_by(DelegationRow.created_at.desc())
         )
         with self._sessions() as session:
-            row = session.scalar(statement)
-            return _record(row) if row is not None else None
+            rows = tuple(session.scalars(statement.limit(2)))
+            if len(rows) > 1:
+                raise DelegationConflict("multiple undelivered delegations require reconciliation")
+            return _record(rows[0]) if rows else None
 
     def list_undelivered(self) -> tuple[DelegationRecord, ...]:
         """列出全部未交付的委派记录，按创建时间升序返回。"""

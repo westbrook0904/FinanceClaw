@@ -17,6 +17,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -207,6 +208,13 @@ class ConversationMessageRow(Base):
     __table_args__ = (
         UniqueConstraint("conversation_id", "sequence", name="uq_messages_conversation_sequence"),
         Index("ix_messages_turn_role", "turn_id", "role"),
+        Index(
+            "uq_messages_final_assistant",
+            "turn_id",
+            unique=True,
+            sqlite_where=text("role = 'assistant' AND parent_message_id IS NULL"),
+            postgresql_where=text("role = 'assistant' AND parent_message_id IS NULL"),
+        ),
     )
 
     message_id: Mapped[str] = mapped_column(String(128), primary_key=True)

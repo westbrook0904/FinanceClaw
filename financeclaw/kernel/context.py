@@ -7,7 +7,7 @@
 from enum import StrEnum
 from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
 
 class DataClassification(StrEnum):
@@ -54,9 +54,18 @@ class ExecutionContext(BaseModel):
     conversation_id: Identifier | None = None
     turn_id: Identifier
     run_id: Identifier
+    root_run_id: Identifier | None = None
+    parent_run_id: Identifier | None = None
+    delegation_id: Identifier | None = None
+    request_clock: str | None = None
     data_classification: DataClassification = DataClassification.INTERNAL
     locale: Annotated[str, Field(min_length=2, max_length=32)] = "zh-CN"
     timezone: Annotated[str, Field(min_length=1, max_length=64)] = "Asia/Shanghai"
+
+    @field_serializer("scopes")
+    def serialize_scopes(self, value: frozenset[str]) -> list[str]:
+        """跨进程生成同一快照，不能依赖 frozenset 的随机迭代顺序。"""
+        return sorted(value)
 
     def trace_metadata(self) -> dict[str, str]:
         """生成供分布式追踪使用的元数据字典，租户与主体 ID 经哈希脱敏。

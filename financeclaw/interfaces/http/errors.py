@@ -22,6 +22,7 @@ from financeclaw.application import (
 from financeclaw.kernel import ErrorResponse
 from financeclaw.modules.conversation import ConversationConflict, ConversationNotFound
 from financeclaw.modules.delegation import DelegationConflict
+from financeclaw.modules.execution import ExecutionConflict
 from financeclaw.modules.workflows import WorkflowConflict
 
 
@@ -36,6 +37,13 @@ def install_error_handlers(app: FastAPI) -> None:
         app: 待安装错误处理器的 FastAPI 应用。
 
     """
+
+    @app.exception_handler(ExecutionConflict)
+    async def execution_conflict(_request: Request, exc: ExecutionConflict) -> JSONResponse:
+        """快照缺失、提交不确定或旧版本不可恢复时返回可定位的冲突。"""
+        return JSONResponse(
+            status_code=409, content={"code": "EXECUTION_CONFLICT", "message": str(exc)}
+        )
 
     @app.exception_handler(TargetResolutionError)
     async def target_error(_request: Request, exc: TargetResolutionError) -> JSONResponse:

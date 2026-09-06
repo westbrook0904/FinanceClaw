@@ -21,9 +21,10 @@ from financeclaw.interfaces.http import create_app
 from financeclaw.interfaces.http.auth import AuthenticatedPrincipal, StaticBearerAuthenticator
 from financeclaw.kernel import ConversationTurnRequest
 from financeclaw.modules.conversation import SqlAlchemyConversationRepository
+from tests.receipt_client import ReceiptClientMixin
 
 
-class FakeAgentServerClient:
+class FakeAgentServerClient(ReceiptClientMixin):
     """`FakeAgentServerClient` 封装外部服务的调用边界。"""
 
     def __init__(self) -> None:

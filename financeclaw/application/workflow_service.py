@@ -24,6 +24,7 @@ from financeclaw.kernel import (
     WorkflowTarget,
 )
 from financeclaw.modules.audit import AuditEventType, AuditRecord, AuditRepository
+from financeclaw.modules.execution import ExecutionConflict, snapshot_context
 from financeclaw.modules.workflows import (
     WorkflowApproval,
     WorkflowApprovalStatus,
@@ -36,7 +37,9 @@ from financeclaw.modules.workflows import (
     WorkflowRunStatus,
 )
 
+from .execution_service import ExecutionService
 from .ports import AgentServerClient
+from .run_observation import observe_run
 from .run_service import IdempotencyConflict, RunNotFound
 from .streaming import (
     completed_stream_event,
@@ -107,6 +110,8 @@ class WorkflowService:
         self.catalog = catalog
         self.audit = audit
         self._clock = clock or (lambda: datetime.now(UTC))
+        self.execution = repository.execution
+        self.operations = ExecutionService(client, self.execution)
 
     async def start(
         self,
@@ -116,6 +121,8 @@ class WorkflowService:
         subject_id: str,
         scopes: frozenset[str],
         idempotency_key: str,
+        parent_snapshot: dict[str, Any] | None = None,
+        parent_run_id: str | None = None,
     ) -> RunAccepted:
         """受治理地启动一次工作流运行（幂等）。
 
@@ -125,6 +132,8 @@ class WorkflowService:
             subject_id: 主体 ID。
             scopes: 调用方权限范围，用于工作流鉴权。
             idempotency_key: 客户端幂等键，重复提交需保持一致。
+            parent_snapshot: 委派来源的冻结授权；独立工作流可不提供。
+            parent_run_id: 父运行 ID，使工作流归入根任务树。
 
         Returns:
             受理结果：业务 run/thread 标识与是否幂等重放。
@@ -174,35 +183,59 @@ class WorkflowService:
                 decision="started",
                 payload_hash=arguments_hash,
             )
-        # 6. 尚未绑定 server run：创建线程与执行上下文。
+        if not replay:
+            context = (
+                snapshot_context(parent_snapshot, scopes).model_copy(
+                    update={
+                        "run_id": record.run_id,
+                        "parent_run_id": parent_run_id,
+                        "root_run_id": snapshot_context(parent_snapshot).root_run_id
+                        or parent_run_id,
+                    }
+                )
+                if parent_snapshot
+                else self._context(record, scopes).model_copy(
+                    update={
+                        "root_run_id": record.run_id,
+                        "request_clock": self._now().isoformat(),
+                    }
+                )
+            )
+            await asyncio.to_thread(
+                self.execution.register,
+                record.run_id,
+                {
+                    "context": context.model_dump(mode="json"),
+                    "thread_id": record.thread_id,
+                    "assistant_id": record.assistant_id,
+                    "input_hash": record.arguments_hash,
+                    "release": self._release(definition),
+                    "limits": {"model": 64, "tool": 128, "operation": 64},
+                },
+                root_run_id=context.root_run_id,
+            )
+        execution = await asyncio.to_thread(self.execution.get, record.run_id)
+        if execution["snapshot"]["release"] != self._release(definition):
+            raise ExecutionConflict("pinned workflow release is unavailable")
+        context = snapshot_context(execution["snapshot"], scopes)
         if record.server_run_id is None:
             await self.client.create_thread(record.thread_id)
-            context = self._context(record, scopes)
-            # 重放路径先按 application_run_id 找回既有 server run，避免重复执行。
-            server_run = (
-                await self.client.find_run(
-                    thread_id=record.thread_id,
-                    application_run_id=record.run_id,
-                )
-                if replay
-                else None
-            )
-            if server_run is None:
-                # 7. 以归一化入参为输入创建新的 server run。
-                server_run = await self.client.create_run(
-                    thread_id=record.thread_id,
-                    assistant_id=record.assistant_id,
-                    input=record.input_payload,
-                    context=context.model_dump(mode="json"),
-                    metadata=self._metadata(record, context),
-                )
-            # 8. 绑定 server run 并落库最新状态。
-            record = await asyncio.to_thread(
-                self.repository.bind_server_run,
+            server_run = await self.operations.submit(
                 record.run_id,
-                server_run.run_id,
-                server_run.status,
+                "start",
+                thread_id=record.thread_id,
+                assistant_id=record.assistant_id,
+                input=record.input_payload,
+                context=context.model_dump(mode="json"),
+                metadata=self._metadata(record, context),
             )
+            if server_run is not None:
+                record = await asyncio.to_thread(
+                    self.repository.bind_server_run,
+                    record.run_id,
+                    server_run.run_id,
+                    server_run.status,
+                )
         # 9. 返回受理结果。
         return RunAccepted(
             run_id=record.run_id,
@@ -231,34 +264,31 @@ class WorkflowService:
         # 1. 终态或尚未绑定 server run：直接返回当前记录。
         if record.status in _TERMINAL:
             return self._response(record)
-        if record.server_run_id is None:
-            return self._response(record)
-        # 2. 非中断运行超过 run_timeout_seconds：置 FAILED 并审计 run_timeout。
-        if record.status is not WorkflowRunStatus.INTERRUPTED and self._now() >= _aware(
-            record.started_at
-        ) + timedelta(seconds=record.run_timeout_seconds):
-            failed, changed = await asyncio.to_thread(
-                self.repository.set_status, record.run_id, WorkflowRunStatus.FAILED
+        uncertain = await self.operations.reconcile(run_id)
+        execution = await asyncio.to_thread(self.execution.get, run_id)
+        if execution["cancellation_requested"]:
+            return self._response(record).model_copy(
+                update={
+                    "waiting_reason": "execution_stop_not_confirmed",
+                    "status": "cancellation_requested",
+                }
             )
-            if changed:
-                await self._audit(
-                    failed,
-                    AuditEventType.WORKFLOW_FAILED,
-                    decision="run_timeout",
-                    payload_hash=failed.arguments_hash,
-                )
-            return self._response(failed)
+        server_id = execution["server_run_id"]
+        if server_id is None or uncertain:
+            return self._response(record).model_copy(
+                update={"waiting_reason": "submission_uncertain"}
+            )
 
         # 3. 查询 server 状态并按结果分派处理。
         server = await self.client.get_run(
             thread_id=record.thread_id,
-            run_id=record.server_run_id,
+            run_id=server_id,
         )
         server_status = str(server.get("status", record.status.value))
         if server_status == "interrupted":
             # 3a. 中断：校验并登记审批单。
             return await self._record_interrupt(record, server)
-        if server_status in {"error", "failed"}:
+        if server_status in {"error", "failed", "timeout"}:
             # 3b. 失败：置 FAILED 并审计 server_failed。
             failed, changed = await asyncio.to_thread(
                 self.repository.set_status, record.run_id, WorkflowRunStatus.FAILED
@@ -275,9 +305,29 @@ class WorkflowService:
             # 3c. 成功：取回最终输出并校验落库。
             output = await self.client.join_run(
                 thread_id=record.thread_id,
-                run_id=record.server_run_id,
+                run_id=server_id,
             )
+            if output.get("interrupts") or output.get("__interrupt__"):
+                return await self._record_interrupt(record, output)
             return await self._complete(record, output)
+        # 软超时只提示仍需确认停止。每次实际执行尝试独立计时，不消耗审批等待时间。
+        operations = await asyncio.to_thread(self.execution.operations_for_run, run_id)
+        attempt = next((item for item in operations if item["server_run_id"] == server_id), None)
+        started_at = attempt["created_at"] if attempt else record.started_at
+        if self._now() >= _aware(started_at) + timedelta(seconds=record.run_timeout_seconds):
+            waiting, changed = await asyncio.to_thread(
+                self.repository.set_status, run_id, WorkflowRunStatus.INTERRUPTED
+            )
+            if changed:
+                await self._audit(
+                    waiting,
+                    AuditEventType.WORKFLOW_INTERRUPTED,
+                    decision="run_timeout",
+                    payload_hash=record.arguments_hash,
+                )
+            return self._response(waiting).model_copy(
+                update={"waiting_reason": "execution_timeout"}
+            )
         # 3d. 其余状态同步为 PENDING/RUNNING。
         pending, _ = await asyncio.to_thread(
             self.repository.set_status,
@@ -316,47 +366,35 @@ class WorkflowService:
 
         """
         record = await self._owned(run_id, tenant_id, subject_id)
-        # 1. 终态短路；仅 INTERRUPTED 且已绑定 server run 可恢复。
-        if record.status in _TERMINAL:
-            return self._response(record)
-        if record.status is not WorkflowRunStatus.INTERRUPTED or record.server_run_id is None:
-            raise WorkflowConflict("workflow run is not waiting for approval")
-        # 2. 加载审批单并复验调用方持有审批点所需权限。
-        approval = await asyncio.to_thread(self.repository.get_approval, record.run_id)
+        execution = await asyncio.to_thread(self.execution.get, run_id)
+        if execution["cancellation_requested"]:
+            raise WorkflowConflict("cancellation requested; approval cannot resume execution")
+        waiting = execution["waiting"]
+        if not waiting or waiting["kind"] != "workflow":
+            raise WorkflowConflict("workflow has no uniquely bound pending approval")
+        approval = await asyncio.to_thread(
+            self.repository.get_approval, run_id, approval_id=waiting["payload"]["approval_id"]
+        )
         self._require_scopes(scopes, frozenset({approval.required_scope}))
-        current = self._now()
-        # 3. 审批过期：标记 EXPIRED、置 FAILED 并审计后抛出。
-        if current >= _aware(approval.expires_at):
-            await asyncio.to_thread(
-                self.repository.decide_approval,
-                approval.approval_id,
-                status=WorkflowApprovalStatus.EXPIRED,
-                decided_by=subject_id,
-                reason="approval timeout",
-                decided_at=current,
-            )
-            failed, changed = await asyncio.to_thread(
-                self.repository.set_status, record.run_id, WorkflowRunStatus.FAILED
-            )
-            if changed:
-                await self._audit(
-                    failed,
-                    AuditEventType.WORKFLOW_FAILED,
-                    decision="approval_timeout",
-                    payload_hash=approval.arguments_hash,
-                    resource_id=approval.approval_id,
-                    resource_type="workflow_approval",
-                )
+        if self._now() >= _aware(approval.expires_at):
+            await self._expire_approval(record, approval)
             raise WorkflowApprovalExpired("workflow approval window has expired")
-        # 4. 复验决定：拒绝 EDIT、不在允许列表的决定，以及与发布入参不符的 hash。
         if decision.type is ApprovalDecisionType.EDIT:
             raise WorkflowInputError("published workflow approval does not allow input edits")
-        if decision.type.value not in approval.allowed_decisions:
-            raise WorkflowInputError("unsupported workflow approval decision")
-        if decision.arguments_hash != approval.arguments_hash:
-            raise WorkflowConflict("approval hash does not match the published workflow input")
-
-        # 5. 落审批决定（APPROVED/REJECTED）并审计。
+        if (
+            decision.type.value not in approval.allowed_decisions
+            or decision.arguments_hash != approval.arguments_hash
+            or (
+                decision.interrupt_id != waiting["key"]
+                and (waiting["interrupt_id"] is not None or decision.interrupt_id is not None)
+            )
+        ):
+            raise WorkflowConflict("approval decision does not match the pinned interrupt")
+        definition = self.catalog[(record.workflow_id, record.workflow_version)]
+        if self._release(definition) != execution["snapshot"]["release"]:
+            raise ExecutionConflict("pinned workflow release is unavailable")
+        context = snapshot_context(execution["snapshot"], scopes)
+        self._require_scopes(context.scopes, definition.required_scopes)
         approval_status = (
             WorkflowApprovalStatus.APPROVED
             if decision.type is ApprovalDecisionType.APPROVE
@@ -368,44 +406,81 @@ class WorkflowService:
             status=approval_status,
             decided_by=subject_id,
             reason=decision.reason,
-            decided_at=current,
+            decided_at=self._now(),
         )
         if changed:
             await self._audit(
                 record,
-                (
-                    AuditEventType.WORKFLOW_APPROVED
-                    if approval_status is WorkflowApprovalStatus.APPROVED
-                    else AuditEventType.WORKFLOW_REJECTED
-                ),
+                AuditEventType.WORKFLOW_APPROVED
+                if approval_status is WorkflowApprovalStatus.APPROVED
+                else AuditEventType.WORKFLOW_REJECTED,
                 decision=approval_status.value,
                 payload_hash=approval.arguments_hash,
                 resource_id=decided.approval_id,
                 resource_type="workflow_approval",
             )
-        # 6. 恢复 server 运行。
-        context = self._context(record, scopes)
-        result = await self.client.resume_run(
+        if approval_status is WorkflowApprovalStatus.REJECTED:
+            await asyncio.to_thread(self.execution.deny_side_effects, run_id)
+        payload = {
+            "decisions": [
+                {
+                    "type": decision.type.value,
+                    "arguments_hash": decision.arguments_hash,
+                    **({"message": decision.reason} if decision.reason else {}),
+                }
+            ]
+        }
+        command = {
+            "resume": {waiting["interrupt_id"]: payload} if waiting["interrupt_id"] else payload
+        }
+        key = "approval:" + waiting["key"]
+        server_run = await self.operations.submit(
+            run_id,
+            key,
             thread_id=record.thread_id,
             assistant_id=record.assistant_id,
-            command={
-                "resume": {
-                    "decisions": [
-                        {
-                            "type": decision.type.value,
-                            "arguments_hash": decision.arguments_hash,
-                            **({"message": decision.reason} if decision.reason else {}),
-                        }
-                    ]
-                }
-            },
+            command=command,
             context=context.model_dump(mode="json"),
             metadata=self._metadata(record, context),
+            predecessor=waiting["server_run_id"],
         )
-        # 7. 再次中断则登记新审批；否则完成并校验输出。
-        if result.get("__interrupt__"):
-            return await self._record_interrupt(record, result)
-        return await self._complete(record, result)
+        result = await self.operations.result(run_id, key) if server_run is not None else None
+        if result is None:
+            return self._response(record).model_copy(
+                update={
+                    "status": "running" if server_run else "interrupted",
+                    "waiting_reason": "resume_pending" if server_run else "submission_uncertain",
+                }
+            )
+        if observe_run(result).kind == "completed":
+            return await self._complete(record, result)
+        if observe_run(result).kind == "failed":
+            if result.get("workflow_id") == record.workflow_id:
+                return await self._complete(record, result)
+            failed, _ = await asyncio.to_thread(
+                self.repository.set_status, run_id, WorkflowRunStatus.FAILED
+            )
+            return self._response(failed)
+        return await self._record_interrupt(record, result)
+
+    @staticmethod
+    def _release(definition: Any) -> dict[str, Any]:
+        """发布快照覆盖图身份、Schema、工具绑定和审批策略，而不保存图执行器。"""
+        return {
+            "workflow_id": definition.workflow_id,
+            "version": definition.version,
+            "assistant_id": definition.assistant_id,
+            "deployment_revision": definition.deployment_revision,
+            "required_scopes": sorted(definition.required_scopes),
+            "timeout_policy": definition.timeout_policy.model_dump(mode="json"),
+            "input_schema": definition.input_schema.model_json_schema(),
+            "output_schema": definition.output_schema.model_json_schema(),
+            "model_profile_id": definition.model_profile_id,
+            "tools": [ref.model_dump(mode="json") for ref in definition.allowed_tools],
+            "approval_points": [
+                point.model_dump(mode="json") for point in definition.approval_points
+            ],
+        }
 
     async def reconcile_incomplete(self) -> tuple[str, ...]:
         """对账所有未完成的工作流运行：刷新状态但不触发审批派发。
@@ -417,8 +492,6 @@ class WorkflowService:
         records = await asyncio.to_thread(self.repository.list_incomplete)
         reconciled: list[str] = []
         for record in records:
-            if record.server_run_id is None:
-                continue
             # 1. 逐条触发状态同步（内部会处理超时、中断与完成落库）。
             await self.status(
                 record.run_id,
@@ -458,11 +531,13 @@ class WorkflowService:
 
         """
         record = await self._owned(run_id, tenant_id, subject_id)
-        if record.server_run_id is not None and record.status not in _TERMINAL:
+        execution = await asyncio.to_thread(self.execution.get, run_id)
+        server_id = execution["server_run_id"]
+        if server_id is not None and record.status not in _TERMINAL:
             try:
                 async for part in self.client.stream_run(
                     thread_id=record.thread_id,
-                    run_id=record.server_run_id,
+                    run_id=server_id,
                 ):
                     projected = project_server_part(part)
                     if projected is not None:
@@ -479,7 +554,11 @@ class WorkflowService:
         if final.status == "completed":
             yield completed_stream_event(run_id, final.output or {})
         elif final.status == "interrupted":
-            yield interrupted_stream_event(run_id)
+            yield interrupted_stream_event(
+                run_id,
+                waiting_reason=final.waiting_reason,
+                pending_interactions=final.pending_interactions,
+            )
         elif final.status in {"failed", "rejected"}:
             yield failed_stream_event(run_id)
         else:
@@ -502,7 +581,16 @@ class WorkflowService:
 
         """
         # 1. 提取审批载荷，并复验 workflow_id/版本/参数 hash 与业务运行一致。
+        observation = observe_run(server)
+        if observation.kind != "workflow":
+            waiting, _ = await asyncio.to_thread(
+                self.repository.set_status, record.run_id, WorkflowRunStatus.INTERRUPTED
+            )
+            return self._response(waiting).model_copy(
+                update={"waiting_reason": "unsupported_interruption"}
+            )
         payload = _interrupt_payload(server)
+        execution = await asyncio.to_thread(self.execution.get, record.run_id)
         if (
             payload.get("workflow_id") != record.workflow_id
             or payload.get("workflow_version") != record.workflow_version
@@ -544,6 +632,19 @@ class WorkflowService:
             expires_at=requested_at + timedelta(seconds=record.approval_timeout_seconds),
         )
         saved, created = await asyncio.to_thread(self.repository.ensure_approval, approval)
+        await asyncio.to_thread(
+            self.execution.set_waiting,
+            record.run_id,
+            {
+                "key": observation.interrupt_id or saved.approval_id,
+                "interrupt_id": observation.interrupt_id,
+                "kind": "workflow",
+                "server_run_id": execution["server_run_id"],
+                "payload": payload,
+                "payload_hash": _hash(payload),
+                "expires_at": _aware(saved.expires_at).isoformat(),
+            },
+        )
         interrupted, changed = await asyncio.to_thread(
             self.repository.set_status, record.run_id, WorkflowRunStatus.INTERRUPTED
         )
@@ -558,15 +659,51 @@ class WorkflowService:
                 resource_type="workflow_approval",
             )
         # 6. 返回携带审批载荷与过期时间的响应。
+        expired = self._now() >= _aware(saved.expires_at)
+        if expired and saved.status is WorkflowApprovalStatus.PENDING:
+            await self._expire_approval(record, saved)
         return RunStatusResponse(
             run_id=record.run_id,
             thread_id=record.thread_id,
             status=WorkflowRunStatus.INTERRUPTED.value,
+            waiting_reason="approval_expired" if expired else "approval_required",
+            pending_interactions=(
+                {
+                    "interrupt_id": observation.interrupt_id or saved.approval_id,
+                    "kind": "approval",
+                    "approval_id": saved.approval_id,
+                    "arguments_hash": saved.arguments_hash,
+                    "allowed_decisions": list(saved.allowed_decisions),
+                    "expires_at": _aware(saved.expires_at).isoformat(),
+                },
+            ),
             output={
                 "approval": saved.request_payload,
                 "expires_at": _aware(saved.expires_at).isoformat(),
             },
         )
+
+    async def _expire_approval(self, record: WorkflowRun, approval: WorkflowApproval) -> None:
+        """审批超时只结束该决定窗口，不虚构远程执行失败或取消。"""
+        if approval.status is not WorkflowApprovalStatus.PENDING:
+            return
+        _, changed = await asyncio.to_thread(
+            self.repository.decide_approval,
+            approval.approval_id,
+            status=WorkflowApprovalStatus.EXPIRED,
+            decided_by=record.subject_id,
+            reason="approval timeout",
+            decided_at=self._now(),
+        )
+        if changed:
+            await self._audit(
+                record,
+                AuditEventType.WORKFLOW_INTERRUPTED,
+                decision="approval_timeout",
+                payload_hash=approval.arguments_hash,
+                resource_id=approval.approval_id,
+                resource_type="workflow_approval",
+            )
 
     async def _complete(
         self, record: WorkflowRun, raw_output: Mapping[str, Any]
@@ -591,6 +728,12 @@ class WorkflowService:
         try:
             # 2. 按 output_schema 校验，并复核与业务运行的绑定关系。
             definition = self.catalog[(record.workflow_id, record.workflow_version)]
+            # SDK 按确切 Run 返回完整 checkpoint state；仅提取已发布的输出投影。
+            output = {
+                key: value
+                for key, value in output.items()
+                if key in definition.output_schema.model_fields
+            }
             validated = definition.output_schema.model_validate(output).model_dump(mode="json")
             if (
                 validated.get("workflow_id") != record.workflow_id
@@ -885,7 +1028,7 @@ def _interrupt_payload(server: Mapping[str, Any]) -> dict[str, Any]:
 
     """
     interrupts = server.get("interrupts", server.get("__interrupt__"))
-    if not isinstance(interrupts, list | tuple) or not interrupts:
+    if not isinstance(interrupts, list | tuple) or len(interrupts) != 1:
         raise WorkflowConflict("workflow interruption is missing approval payload")
     first = interrupts[0]
     if hasattr(first, "value"):

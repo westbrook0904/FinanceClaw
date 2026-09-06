@@ -85,6 +85,8 @@ class DelegationRow(Base):
     child_thread_id: Mapped[str | None] = mapped_column(String(128))
     child_server_run_id: Mapped[str | None] = mapped_column(String(128))
     status: Mapped[str] = mapped_column(String(32), nullable=False)
+    execution_status: Mapped[str] = mapped_column(String(32), default="unknown", nullable=False)
+    execution_snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSON)
     output_payload: Mapped[dict[str, Any] | None] = mapped_column(JSON)
     error: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(

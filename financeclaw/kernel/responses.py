@@ -221,6 +221,8 @@ class RunStatusResponse(ContractModel):
     thread_id: str
     status: str
     output: dict[str, Any] | list[Any] | None = None
+    waiting_reason: str | None = None
+    pending_interactions: tuple[dict[str, Any], ...] = ()
 
 
 class AgentResponse(ContractModel):
@@ -318,6 +320,7 @@ class ApprovalDecision(ContractModel):
 
     type: ApprovalDecisionType
     arguments_hash: str | None = None
+    interrupt_id: str | None = None
     arguments: dict[str, Any] | None = None
     reason: Annotated[str, Field(max_length=500)] | None = None
 

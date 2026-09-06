@@ -10,7 +10,7 @@ from hashlib import sha256
 from typing import Protocol
 from uuid import UUID, uuid4
 
-from sqlalchemy import Select, func, select
+from sqlalchemy import Select, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -324,6 +324,9 @@ class SqlAlchemyConversationRepository:
     def __init__(self, sessions: sessionmaker[Session]) -> None:
         """保存会话工厂；所有读写操作都经由该工厂获取数据库会话。"""
         self._sessions = sessions
+        from financeclaw.modules.execution import ExecutionRepository
+
+        self.execution = ExecutionRepository(sessions)
 
     def create_conversation(
         self,
@@ -575,6 +578,17 @@ class SqlAlchemyConversationRepository:
 
         """
         with self._sessions.begin() as session:
+            # 首次读之前取得数据库写锁；SQLite 不实现 SELECT FOR UPDATE，
+            # no-op UPDATE 同样串行化同一会话，避免双受理和 MAX(sequence) 竞争。
+            session.execute(
+                update(ConversationRow)
+                .where(
+                    ConversationRow.conversation_id == conversation_id,
+                    ConversationRow.tenant_id == tenant_id,
+                    ConversationRow.subject_id == subject_id,
+                )
+                .values(updated_at=ConversationRow.updated_at)
+            )
             # 1. 按（租户，主体，幂等键）查询既有 turn，命中则校验后重放返回。
             existing = session.scalar(
                 select(ConversationTurnRow).where(
@@ -617,6 +631,16 @@ class SqlAlchemyConversationRepository:
                 raise ConversationNotFound("conversation was not found for authenticated owner")
             if conversation.status != ConversationStatus.ACTIVE.value:
                 raise ConversationConflict("conversation is not active")
+            active = session.scalar(
+                select(ConversationTurnRow.run_id).where(
+                    ConversationTurnRow.conversation_id == conversation_id,
+                    ConversationTurnRow.status.not_in(("completed", "failed", "cancelled")),
+                )
+            )
+            if active is not None:
+                raise ConversationConflict(
+                    f"run {active} is still active; finish or cancel it before sending a new turn"
+                )
             # 5. 计算会话内下一个消息序号，构造 turn 与用户消息记录。
             max_sequence = session.scalar(
                 select(func.max(ConversationMessageRow.sequence)).where(
@@ -724,11 +748,20 @@ class SqlAlchemyConversationRepository:
         """
         normalized = _normalize_turn_status(status)
         with self._sessions.begin() as session:
+            session.execute(
+                update(ConversationTurnRow)
+                .where(
+                    ConversationTurnRow.run_id == run_id,
+                )
+                .values(status=ConversationTurnRow.status)
+            )
             row = session.scalar(
                 select(ConversationTurnRow).where(ConversationTurnRow.run_id == run_id)
             )
             if row is None:
                 raise ConversationNotFound("turn was not found")
+            if row.status in {"completed", "failed", "cancelled", "cancellation_requested"}:
+                return _turn(row)
             row.status = normalized.value
             if normalized in {TurnStatus.COMPLETED, TurnStatus.FAILED}:
                 row.completed_at = row.completed_at or datetime.now(UTC)
@@ -761,6 +794,16 @@ class SqlAlchemyConversationRepository:
         """
         digest = content_hash(content)
         with self._sessions.begin() as session:
+            session.execute(
+                update(ConversationRow)
+                .where(
+                    ConversationRow.conversation_id
+                    == select(ConversationTurnRow.conversation_id)
+                    .where(ConversationTurnRow.run_id == run_id)
+                    .scalar_subquery(),
+                )
+                .values(updated_at=ConversationRow.updated_at)
+            )
             # 1. 行锁读取 turn，并查找同父消息的既有 assistant 回复。
             turn = session.scalar(
                 select(ConversationTurnRow)
@@ -781,6 +824,8 @@ class SqlAlchemyConversationRepository:
                 if existing.content_hash != digest:
                     raise ConversationConflict("assistant message reconciliation conflict")
                 return _message(existing)
+            if turn.status in {"failed", "cancelled", "cancellation_requested"}:
+                raise ConversationConflict("cancelled or failed turn cannot append a final answer")
             # 3. 计算会话内下一个序号并写入消息，同时收敛 turn 与会话更新时间。
             conversation = session.get(ConversationRow, turn.conversation_id)
             if conversation is None:
@@ -808,6 +853,32 @@ class SqlAlchemyConversationRepository:
             conversation.updated_at = now
             session.add(row)
         return _message(row)
+
+    def confirm_cancel(self, run_id: str) -> ConversationTurn:
+        """全树停止后结束 Turn 并换干净线程；旧检查点保留，禁止意外再执行。"""
+        with self._sessions.begin() as session:
+            session.execute(
+                update(ConversationRow)
+                .where(
+                    ConversationRow.conversation_id
+                    == select(ConversationTurnRow.conversation_id)
+                    .where(ConversationTurnRow.run_id == run_id)
+                    .scalar_subquery(),
+                )
+                .values(updated_at=ConversationRow.updated_at)
+            )
+            turn = session.scalar(
+                select(ConversationTurnRow).where(ConversationTurnRow.run_id == run_id)
+            )
+            if turn.status == "cancelled":
+                return _turn(turn)
+            if turn.status != "cancellation_requested":
+                raise ConversationConflict("turn cancellation has not been requested")
+            turn.status = "cancelled"
+            turn.completed_at = datetime.now(UTC)
+            conversation = session.get(ConversationRow, turn.conversation_id)
+            conversation.agent_thread_id = str(uuid4())
+            return _turn(turn)
 
     def append_branch_message(
         self,
@@ -1074,5 +1145,8 @@ def _normalize_turn_status(status: str) -> TurnStatus:
         "completed": TurnStatus.COMPLETED,
         "error": TurnStatus.FAILED,
         "failed": TurnStatus.FAILED,
+        "cancellation_requested": TurnStatus.CANCELLATION_REQUESTED,
+        "cancelled": TurnStatus.CANCELLED,
+        "needs_attention": TurnStatus.NEEDS_ATTENTION,
     }
     return mapping.get(status, TurnStatus.PENDING)

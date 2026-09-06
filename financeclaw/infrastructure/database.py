@@ -19,6 +19,7 @@ from financeclaw.infrastructure.orm import Base
 from financeclaw.modules.audit import tables as _audit_tables  # noqa: F401
 from financeclaw.modules.conversation import tables as _conversation_tables  # noqa: F401
 from financeclaw.modules.delegation import tables as _delegation_tables  # noqa: F401
+from financeclaw.modules.execution import tables as _execution_tables  # noqa: F401
 from financeclaw.modules.outbox import tables as _outbox_tables  # noqa: F401
 from financeclaw.modules.workflows import tables as _workflow_tables  # noqa: F401
 

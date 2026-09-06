@@ -10,7 +10,8 @@ from datetime import UTC, datetime
 from typing import Any, Protocol
 from uuid import uuid4
 
-from sqlalchemy import select
+from sqlalchemy import select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
 from .models import (
@@ -226,6 +227,9 @@ class SqlAlchemyWorkflowRepository:
 
         """
         self._sessions = sessions
+        from financeclaw.modules.execution import ExecutionRepository
+
+        self.execution = ExecutionRepository(sessions)
 
     def begin_run(
         self,
@@ -248,27 +252,7 @@ class SqlAlchemyWorkflowRepository:
 
         """
         with self._sessions.begin() as session:
-            # 1. 幂等查询：同一租户、流程、版本与幂等键的既有运行。
-            existing = session.scalar(
-                select(WorkflowRunRow).where(
-                    WorkflowRunRow.tenant_id == tenant_id,
-                    WorkflowRunRow.workflow_id == definition.workflow_id,
-                    WorkflowRunRow.workflow_version == definition.version,
-                    WorkflowRunRow.client_idempotency_key == idempotency_key,
-                )
-            )
-            # 2. 指纹或主体不一致说明同键不同请求，属于幂等冲突。
-            if existing is not None:
-                if (
-                    existing.subject_id != subject_id
-                    or existing.request_fingerprint != request_fingerprint
-                ):
-                    raise WorkflowIdempotencyConflict(
-                        "workflow idempotency key was already used for another request"
-                    )
-                # 3. 命中且归属一致时复用既有运行。
-                return _run(existing), True
-            # 4. 未命中则创建新运行：分配 run_id 与独占 thread_id，状态为 ACCEPTED。
+            # 先 INSERT 再读取唯一键胜出者，避免并发首次受理的 read/write 升锁竞争。
             now = datetime.now(UTC)
             row = WorkflowRunRow(
                 run_id=f"run-{uuid4().hex}",
@@ -291,7 +275,29 @@ class SqlAlchemyWorkflowRepository:
                 started_at=now,
                 updated_at=now,
             )
-            session.add(row)
+            try:
+                with session.begin_nested():
+                    session.add(row)
+                    session.flush()
+            except IntegrityError:
+                existing = session.scalar(
+                    select(WorkflowRunRow).where(
+                        WorkflowRunRow.tenant_id == tenant_id,
+                        WorkflowRunRow.workflow_id == definition.workflow_id,
+                        WorkflowRunRow.workflow_version == definition.version,
+                        WorkflowRunRow.client_idempotency_key == idempotency_key,
+                    )
+                )
+                if existing is None:
+                    raise
+                if (
+                    existing.subject_id != subject_id
+                    or existing.request_fingerprint != request_fingerprint
+                ):
+                    raise WorkflowIdempotencyConflict(
+                        "workflow idempotency key was already used for another request"
+                    ) from None
+                return _run(existing), True
         return _run(row), False
 
     def bind_server_run(self, run_id: str, server_run_id: str, status: str) -> WorkflowRun:
@@ -303,6 +309,13 @@ class SqlAlchemyWorkflowRepository:
 
         """
         with self._sessions.begin() as session:
+            session.execute(
+                update(WorkflowRunRow)
+                .where(
+                    WorkflowRunRow.run_id == run_id,
+                )
+                .values(updated_at=WorkflowRunRow.updated_at)
+            )
             row = session.get(WorkflowRunRow, run_id)
             if row is None:
                 raise WorkflowNotFound("workflow run was not found")
@@ -351,6 +364,13 @@ class SqlAlchemyWorkflowRepository:
 
         """
         with self._sessions.begin() as session:
+            session.execute(
+                update(WorkflowRunRow)
+                .where(
+                    WorkflowRunRow.run_id == run_id,
+                )
+                .values(updated_at=WorkflowRunRow.updated_at)
+            )
             row = session.get(WorkflowRunRow, run_id)
             if row is None:
                 raise WorkflowNotFound("workflow run was not found")
@@ -361,6 +381,8 @@ class SqlAlchemyWorkflowRepository:
                 WorkflowRunStatus.FAILED.value,
             }
             if row.status in terminal and row.status != status.value:
+                if status.value not in terminal:
+                    return _run(row), False
                 raise WorkflowConflict("terminal workflow status cannot be changed")
             # 2. 记录状态变化，并按需写入输出与去重后的制品引用。
             changed = row.status != status.value
@@ -405,11 +427,18 @@ class SqlAlchemyWorkflowRepository:
 
         """
         with self._sessions.begin() as session:
-            # 1. 幂等查询：同一运行的同一审批点只允许一条审批。
+            session.execute(
+                update(WorkflowRunRow)
+                .where(
+                    WorkflowRunRow.run_id == approval.run_id,
+                )
+                .values(updated_at=WorkflowRunRow.updated_at)
+            )
+            # 1. 同一个原生审批实例幂等；同一发布审批点可以在不同实例再次出现。
             existing = session.scalar(
                 select(WorkflowApprovalRow).where(
                     WorkflowApprovalRow.run_id == approval.run_id,
-                    WorkflowApprovalRow.approval_point == approval.approval_point,
+                    WorkflowApprovalRow.approval_id == approval.approval_id,
                 )
             )
             # 2. 既有审批必须与本次标识及参数哈希一致，防止检查点漂移。
@@ -417,6 +446,7 @@ class SqlAlchemyWorkflowRepository:
                 if (
                     existing.approval_id != approval.approval_id
                     or existing.arguments_hash != approval.arguments_hash
+                    or existing.request_payload != approval.request_payload
                 ):
                     raise WorkflowConflict("workflow approval checkpoint changed unexpectedly")
                 return _approval(existing), False
@@ -439,7 +469,7 @@ class SqlAlchemyWorkflowRepository:
             session.add(row)
         return _approval(row), True
 
-    def get_approval(self, run_id: str) -> WorkflowApproval:
+    def get_approval(self, run_id: str, *, approval_id: str | None = None) -> WorkflowApproval:
         """读取指定运行最近一次（按请求时间）审批请求。
 
         Raises:
@@ -447,14 +477,21 @@ class SqlAlchemyWorkflowRepository:
 
         """
         with self._sessions() as session:
-            row = session.scalar(
-                select(WorkflowApprovalRow)
-                .where(WorkflowApprovalRow.run_id == run_id)
-                .order_by(WorkflowApprovalRow.requested_at.desc())
+            rows = tuple(
+                session.scalars(
+                    select(WorkflowApprovalRow)
+                    .where(WorkflowApprovalRow.run_id == run_id)
+                    .where(WorkflowApprovalRow.approval_id == approval_id if approval_id else True)
+                    .limit(2)
+                )
             )
-            if row is None:
+            if not rows:
                 raise WorkflowNotFound("workflow approval was not found")
-            return _approval(row)
+            if len(rows) != 1:
+                raise WorkflowConflict(
+                    "approval ID is required when a run has multiple approval instances"
+                )
+            return _approval(rows[0])
 
     def decide_approval(
         self,
@@ -476,12 +513,23 @@ class SqlAlchemyWorkflowRepository:
 
         """
         with self._sessions.begin() as session:
+            session.execute(
+                update(WorkflowApprovalRow)
+                .where(
+                    WorkflowApprovalRow.approval_id == approval_id,
+                )
+                .values(approval_id=approval_id)
+            )
             row = session.get(WorkflowApprovalRow, approval_id)
             if row is None:
                 raise WorkflowNotFound("workflow approval was not found")
             # 1. 非待定状态：同一决定幂等重放，其他情况视为重复决定冲突。
             if row.status != WorkflowApprovalStatus.PENDING.value:
-                if row.status == status.value and row.decided_by == decided_by:
+                if (
+                    row.status == status.value
+                    and row.decided_by == decided_by
+                    and row.decision_reason == reason
+                ):
                     return _approval(row), False
                 raise WorkflowConflict("workflow approval has already been decided")
             # 2. 待定状态：落成决定状态、决定人、理由与决定时间。

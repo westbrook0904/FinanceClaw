@@ -7,6 +7,7 @@
 """
 
 from collections.abc import Mapping
+from threading import BoundedSemaphore
 from typing import Any
 
 from langchain.agents import create_agent
@@ -38,8 +39,10 @@ from financeclaw.orchestration.tools import (
 )
 
 from .artifact_middleware import ToolResultArtifactMiddleware
+from .batch_middleware import ToolBatchMiddleware
 from .context_middleware import ConversationContextMiddleware
 from .directive_middleware import InvocationDirectiveMiddleware
+from .execution_middleware import ExecutionBudgetMiddleware
 from .memory_middleware import MemoryRecallMiddleware
 from .middleware import ContextTraceMiddleware, FullIODebugMiddleware, ToolGovernanceMiddleware
 from .profiles import AgentProfile
@@ -86,6 +89,7 @@ class AgentFactory:
         memory_service: LongTermMemoryService | None = None,
         memory_recall_tokens: int = 768,
         memory_recall_limit: int = 5,
+        resource_concurrency: int = 8,
     ) -> None:
         """保存全部装配依赖，供后续按档案构建 Agent 时使用。
 
@@ -102,8 +106,11 @@ class AgentFactory:
             memory_service: 长期记忆服务，可选。
             memory_recall_tokens: 记忆召回 token 预算。
             memory_recall_limit: 记忆召回条数上限。
+            resource_concurrency: 同一 Factory 所构建 Agent 的共享工具 I/O 并发上限。
 
         """
+        if resource_concurrency < 1:
+            raise ValueError("resource concurrency must be positive")
         self.model_factory = model_factory
         self.tool_catalog = tool_catalog
         self.tool_policy = tool_policy
@@ -116,6 +123,7 @@ class AgentFactory:
         self.memory_service = memory_service
         self.memory_recall_tokens = memory_recall_tokens
         self.memory_recall_limit = memory_recall_limit
+        self.resource_gate = BoundedSemaphore(resource_concurrency)
 
     def build(
         self,
@@ -144,6 +152,8 @@ class AgentFactory:
             self.tool_catalog.resolve(ref.tool_id, ref.version) for ref in profile.allowed_tools
         )
         allowed_keys = frozenset(managed.key for managed in resolved_tools)
+        # 整个运行只使用这一份版本绑定，治理、HITL 与 Manifest 不再分别取 latest。
+        pinned_catalog = ToolCatalog(resolved_tools)
         # 2. 解析主模型、模型档案与兜底模型列表。
         primary = model or self.model_factory.create(profile.model_profile)
         model_profile = self.model_factory.catalog.resolve(profile.model_profile)
@@ -169,7 +179,7 @@ class AgentFactory:
             )
             tool_call = request.tool_call
             try:
-                managed = self.tool_catalog.resolve(str(tool_call["name"]))
+                managed = pinned_catalog.resolve(str(tool_call["name"]))
             except LookupError:
                 return False
             # 不在档案允许集合内的工具不触发审批，由治理中间件拒绝。
@@ -203,7 +213,7 @@ class AgentFactory:
         middleware.extend(
             [
                 ToolGovernanceMiddleware(
-                    self.tool_catalog,
+                    pinned_catalog,
                     self.tool_policy,
                     self.audit,
                     allowed_keys=allowed_keys,
@@ -214,7 +224,11 @@ class AgentFactory:
         # 6. 可选挂载工件 offload、记忆召回与会话上下文中间件。
         if self.artifact_service is not None:
             middleware.append(ToolResultArtifactMiddleware(self.artifact_service))
-        if self.memory_service is not None and profile.memory_policy != "none":
+        if (
+            self.memory_service is not None
+            and profile.memory_policy != "none"
+            and not profile.delegatable
+        ):
             middleware.append(
                 MemoryRecallMiddleware(
                     self.memory_service,
@@ -222,12 +236,17 @@ class AgentFactory:
                     max_memories=self.memory_recall_limit,
                 )
             )
-        if self.context_builder is not None and self.conversation_repository is not None:
+        if (
+            profile.context_policy == "stage2-journal-v1"
+            and not profile.delegatable
+            and self.context_builder is not None
+            and self.conversation_repository is not None
+        ):
             middleware.append(
                 ConversationContextMiddleware(
                     builder=self.context_builder,
                     repository=self.conversation_repository,
-                    tool_catalog=self.tool_catalog,
+                    tool_catalog=pinned_catalog,
                     agent_profile_version=profile.version,
                     model_profile_version=model_profile.version,
                     prompt_template_version=f"{profile.agent_id}-system/{profile.version}",
@@ -271,6 +290,22 @@ class AgentFactory:
                 ToolCallLimitMiddleware(run_limit=profile.max_tool_calls, exit_behavior="error"),
             ]
         )
+        middleware.append(
+            ToolBatchMiddleware(
+                pinned_catalog,
+                self.tool_policy,
+                max_batch=profile.max_tool_batch,
+                execution=getattr(self.conversation_repository, "execution", None),
+            )
+        )
+        middleware.append(
+            ExecutionBudgetMiddleware(
+                getattr(self.conversation_repository, "execution", None),
+                pinned_catalog,
+                self.resource_gate,
+                profile=profile,
+            )
+        )
         # 11. 解析 Checkpointer（缺省用内存实现），交给 create_agent 装配。
         resolved_checkpointer = (
             InMemorySaver() if checkpointer is _DEFAULT_CHECKPOINTER else checkpointer
@@ -284,4 +319,5 @@ class AgentFactory:
             checkpointer=resolved_checkpointer,
             store=store,
             name=profile.agent_id,
+            response_format=profile.output_schema,
         )

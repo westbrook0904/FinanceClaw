@@ -27,13 +27,14 @@ from financeclaw.modules.delegation import (
     WorkflowHandoff,
 )
 from financeclaw.orchestration.agents import OfflineFinanceModel
+from tests.receipt_client import ReceiptClientMixin
 
 from .support import workflow_arguments
 
 SCOPES = frozenset({"market:read", "portfolio:review", "workflows:approve"})
 
 
-class FakeDelegationClient:
+class FakeDelegationClient(ReceiptClientMixin):
     """`FakeDelegationClient` 封装外部服务的调用边界。"""
 
     def __init__(self) -> None:
@@ -69,7 +70,7 @@ class FakeDelegationClient:
         # 前置条件满足后调用 append。
         self.create_calls.append(call)
         # 显式处理 `assistant_id == 'finance_agent'` 分支。
-        if assistant_id == "finance_agent":
+        if assistant_id == "finance_agent_v1_1_0":
             handoff = AgentHandoff(
                 handoff_id=f"delegation-{context['run_id']}",
                 parent_run_id=context["run_id"],
@@ -85,7 +86,14 @@ class FakeDelegationClient:
         else:
             state = {
                 "status": "pending",
-                "output": {"messages": [AIMessage(content="AAPL evidence summary")]},
+                "output": {
+                    "messages": [AIMessage(content="AAPL evidence summary")],
+                    "structured_response": {
+                        "outcome": "partial",
+                        "summary": "AAPL evidence summary",
+                        "limitations": ["test evidence only"],
+                    },
+                },
             }
         # 准备 working state，供后续步骤使用。
         self.runs[server_run_id] = {"run_id": server_run_id, **call, **state}
@@ -244,7 +252,11 @@ def test_domain_agent_directive_emits_and_consumes_a_typed_handoff() -> None:
         version="v2",
     )
     # 准备 handoff，供后续步骤使用。
-    handoff = AgentHandoff.model_validate(interrupted.interrupts[0].value)
+    from financeclaw.modules.delegation import HANDOFF_ADAPTER
+    from financeclaw.modules.execution.repository import digest
+
+    handoff = HANDOFF_ADAPTER.validate_python(interrupted.interrupts[0].value)
+    assert handoff.schema_version == 2
     # 继续执行前验证内部不变量。
     assert handoff.parent_run_id == context.run_id
     # 继续执行前验证内部不变量。
@@ -257,7 +269,9 @@ def test_domain_agent_directive_emits_and_consumes_a_typed_handoff() -> None:
                 delegation_id=handoff.handoff_id,
                 kind="agent",
                 target_id=handoff.agent_id,
-                target_version="1.0.0",
+                target_version=handoff.target_version,
+                parent_run_id=context.run_id,
+                arguments_hash=digest({"task": handoff.task, "context_refs": [], "arguments": {}}),
                 child_run_id="child-run-a",
                 status="completed",
                 output={"message": "bounded child result"},
@@ -504,6 +518,26 @@ async def test_workflow_handoff_is_revalidated_and_bound_to_an_independent_run(
         target_type="agent",
         target_id="finance_agent",
         target_version="1.0.0",
+    )
+    from financeclaw.application.execution_service import agent_snapshot
+
+    context = ExecutionContext(
+        tenant_id="tenant-a",
+        subject_id="subject-a",
+        scopes=SCOPES,
+        run_id=turn.run_id,
+        root_run_id=turn.run_id,
+        turn_id=turn.turn_id,
+        conversation_id=conversation.conversation_id,
+    )
+    components.conversation_repository.execution.register(
+        turn.run_id,
+        agent_snapshot(
+            components.default_agent_profile,
+            context,
+            thread_id=conversation.agent_thread_id,
+            input_hash=turn.request_hash,
+        ),
     )
     # 准备 handoff，供后续步骤使用。
     handoff = WorkflowHandoff(

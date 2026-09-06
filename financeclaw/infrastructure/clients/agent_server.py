@@ -93,6 +93,7 @@ class LangGraphAgentServerClient:
                 context=context,
                 metadata=metadata,
                 stream_mode=("messages", "updates", "values"),
+                multitask_strategy="reject",
             )
         return ServerRun(run_id=str(run["run_id"]), status=str(run.get("status", "pending")))
 
@@ -112,31 +113,48 @@ class LangGraphAgentServerClient:
 
         """
         run = await self._client.runs.get(thread_id, run_id)
-        # 1. 运行未完成时直接返回原始状态。
-        if str(run.get("status")) not in {"success", "completed"}:
+        if str(run.get("status")) not in {"success", "completed", "interrupted"}:
             return run
-
-        # 2. 已完成：读取线程状态，确认中断是否由本次运行触发。
-        state = await self._client.threads.get_state(thread_id)
-        metadata = state.get("metadata", {})
-        state_run_id = metadata.get("run_id") if isinstance(metadata, Mapping) else None
-        # 3. 线程状态归属本次运行且存在中断时，转译为 interrupted 透出。
-        if state_run_id == run_id and state.get("interrupts"):
-            return {**run, "status": "interrupted", "interrupts": state["interrupts"]}
+        state = await self._run_state(thread_id, run_id)
+        interrupts = self._state_interrupts(state)
+        if interrupts or state.get("next"):
+            return {
+                **run,
+                "status": "interrupted",
+                "interrupts": interrupts,
+                "checkpoint": state.get("checkpoint"),
+            }
         return run
 
+    async def _run_state(self, thread_id: str, run_id: str) -> Mapping[str, Any]:
+        """读取属于指定尝试的最新检查点，绝不把共享 thread 的最新值冒充旧结果。"""
+        state = await self._client.threads.get_state(thread_id)
+        if state.get("metadata", {}).get("run_id") == run_id:
+            return state
+        history = await self._client.threads.get_history(
+            thread_id, metadata={"run_id": run_id}, limit=1
+        )
+        if not history or history[0].get("metadata", {}).get("run_id") != run_id:
+            raise RuntimeError("cannot locate a checkpoint owned by the requested server run")
+        return history[0]
+
+    @staticmethod
+    def _state_interrupts(state: Mapping[str, Any]) -> list[Any]:
+        """兼容 SDK 顶层与 task 投影；同一 interrupt ID 只返回一次。"""
+        items = list(state.get("interrupts") or ())
+        if not items:
+            items = [item for task in state.get("tasks", ()) for item in task.get("interrupts", ())]
+        return items
+
     async def join_run(self, *, thread_id: str, run_id: str) -> Mapping[str, Any]:
-        """阻塞等待指定运行结束并返回其最终输出。
-
-        Args:
-            thread_id: 目标线程 ID。
-            run_id: 目标运行 ID。
-
-        Returns:
-            运行结束后的结果映射。
-
-        """
-        return await self._client.runs.join(thread_id, run_id)
+        """等待确切尝试后取其检查点输出，不读取其他 Turn 的最后一条助手消息。"""
+        await self._client.runs.join(thread_id, run_id)
+        state = await self._run_state(thread_id, run_id)
+        values = dict(state.get("values") or {})
+        interrupts = self._state_interrupts(state)
+        if interrupts:
+            values["__interrupt__"] = interrupts
+        return values
 
     async def find_run(self, *, thread_id: str, application_run_id: str) -> ServerRun | None:
         """在线程的最近运行列表中按业务侧运行 ID 反查服务端运行。
@@ -188,13 +206,73 @@ class LangGraphAgentServerClient:
             恢复后运行完成的结果映射。
 
         """
-        return await self._client.runs.wait(
-            thread_id,
-            assistant_id,
+        run = await self.submit_resume(
+            thread_id=thread_id,
+            assistant_id=assistant_id,
             command=command,
             context=context,
             metadata=metadata,
         )
+        await self._client.runs.join(thread_id, run.run_id)
+        state = await self.get_run(thread_id=thread_id, run_id=run.run_id)
+        if state.get("interrupts"):
+            return {"__interrupt__": state["interrupts"]}
+        return await self.join_run(thread_id=thread_id, run_id=run.run_id)
+
+    async def submit_resume(
+        self,
+        *,
+        thread_id: str,
+        assistant_id: str,
+        command: dict[str, Any],
+        context: dict[str, Any],
+        metadata: dict[str, Any],
+        predecessor: str | None = None,
+    ) -> ServerRun:
+        """runs.create(command=...) 返回新的执行尝试身份；SDK 没有提交幂等承诺。"""
+        checkpoint = None
+        if predecessor is not None:
+            state = await self._client.threads.get_state(thread_id)
+            if state.get("metadata", {}).get("run_id") != predecessor:
+                raise RuntimeError("thread advanced beyond the pinned resume predecessor")
+            checkpoint = state.get("checkpoint")
+            if not checkpoint:
+                raise RuntimeError("resume predecessor has no addressable checkpoint")
+        run = await self._client.runs.create(
+            thread_id,
+            assistant_id,
+            command=command,
+            checkpoint=checkpoint,
+            context=context,
+            metadata=metadata,
+            multitask_strategy="reject",
+            stream_mode=("messages", "updates", "values"),
+        )
+        return ServerRun(str(run["run_id"]), str(run.get("status", "pending")))
+
+    async def find_operation(self, *, thread_id: str, operation_id: str) -> ServerRun | None:
+        """分页按 operation_id 对账，不能用相同业务 run 的另一次 resume 顶替。"""
+        offset = 0
+        matches = []
+        while True:
+            runs = await self._client.runs.list(thread_id, limit=100, offset=offset)
+            matches.extend(
+                run for run in runs if run.get("metadata", {}).get("operation_id") == operation_id
+            )
+            if len(runs) < 100:
+                break
+            offset += len(runs)
+        if len(matches) > 1:
+            raise RuntimeError("duplicate server attempts for one execution operation")
+        return ServerRun(str(matches[0]["run_id"]), str(matches[0]["status"])) if matches else None
+
+    async def cancel_run(self, *, thread_id: str, run_id: str) -> bool:
+        """停止确切尝试；保留检查点，不删除线程、不伪装回滚外部副作用。"""
+        state = await self._client.runs.get(thread_id, run_id)
+        if state.get("status") in {"pending", "running"}:
+            await self._client.runs.cancel(thread_id, run_id, wait=True, action="interrupt")
+            state = await self._client.runs.get(thread_id, run_id)
+        return state.get("status") in {"success", "error", "interrupted", "timeout"}
 
     def stream_run(self, *, thread_id: str, run_id: str) -> AsyncIterator[Any]:
         """通过 ``runs.join_stream`` 订阅指定运行的真实异步事件流。

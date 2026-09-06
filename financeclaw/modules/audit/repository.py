@@ -109,53 +109,57 @@ class SqlAlchemyAuditRepository:
             raise TypeError("record must be AuditRecord")
         # 1. 把审计记录映射为 ORM 行，与 Outbox 事件写入同一事务，保证原子落盘。
         with self._sessions.begin() as session:
+            self.append_in_session(session, record)
+
+    def append_in_session(self, session, record: AuditRecord) -> None:
+        """在调用方业务事务内追加 Audit 与 Outbox，避免交付事实和审计分离。"""
+        session.add(
+            AuditRecordRow(
+                audit_id=record.audit_id,
+                event_type=record.event_type.value,
+                occurred_at=record.occurred_at,
+                tenant_id=record.tenant_id,
+                subject_id=record.subject_id,
+                conversation_id=record.conversation_id,
+                turn_id=record.turn_id,
+                run_id=record.run_id,
+                tool_call_id=record.tool_call_id,
+                resource_type=record.resource_type,
+                resource_id=record.resource_id,
+                resource_version=record.resource_version,
+                action=record.action,
+                decision=record.decision,
+                policy_version=record.policy_version,
+                payload_hash=record.payload_hash,
+                evidence_refs=list(record.evidence_refs),
+                artifact_refs=list(record.artifact_refs),
+                metadata_json=record.metadata,
+            )
+        )
+        # 2. 需要投递时，写入一条 pending 的 Outbox 事件，供发布器异步分发。
+        if self._emit_outbox:
             session.add(
-                AuditRecordRow(
-                    audit_id=record.audit_id,
+                OutboxEventRow(
+                    event_id=f"outbox-{record.audit_id}",
                     event_type=record.event_type.value,
-                    occurred_at=record.occurred_at,
+                    aggregate_type=record.resource_type,
+                    aggregate_id=record.resource_id,
                     tenant_id=record.tenant_id,
                     subject_id=record.subject_id,
-                    conversation_id=record.conversation_id,
-                    turn_id=record.turn_id,
-                    run_id=record.run_id,
-                    tool_call_id=record.tool_call_id,
-                    resource_type=record.resource_type,
-                    resource_id=record.resource_id,
-                    resource_version=record.resource_version,
-                    action=record.action,
-                    decision=record.decision,
-                    policy_version=record.policy_version,
-                    payload_hash=record.payload_hash,
-                    evidence_refs=list(record.evidence_refs),
-                    artifact_refs=list(record.artifact_refs),
-                    metadata_json=record.metadata,
+                    payload={
+                        "audit_id": record.audit_id,
+                        "run_id": record.run_id,
+                        "event_type": record.event_type.value,
+                        "resource_type": record.resource_type,
+                        "resource_id": record.resource_id,
+                        "payload_hash": record.payload_hash,
+                    },
+                    status="pending",
+                    attempts=0,
+                    available_at=record.occurred_at,
+                    created_at=record.occurred_at,
                 )
             )
-            # 2. 需要投递时，写入一条 pending 的 Outbox 事件，供发布器异步分发。
-            if self._emit_outbox:
-                session.add(
-                    OutboxEventRow(
-                        event_id=f"outbox-{record.audit_id}",
-                        event_type=record.event_type.value,
-                        aggregate_type=record.resource_type,
-                        aggregate_id=record.resource_id,
-                        tenant_id=record.tenant_id,
-                        subject_id=record.subject_id,
-                        payload={
-                            "audit_id": record.audit_id,
-                            "run_id": record.run_id,
-                            "event_type": record.event_type.value,
-                            "resource_type": record.resource_type,
-                            "resource_id": record.resource_id,
-                            "payload_hash": record.payload_hash,
-                        },
-                        status="pending",
-                        attempts=0,
-                        available_at=record.occurred_at,
-                        created_at=record.occurred_at,
-                    )
-                )
 
     def records(
         self, *, tenant_id: str | None = None, subject_id: str | None = None

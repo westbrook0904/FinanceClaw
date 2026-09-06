@@ -11,8 +11,6 @@ from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from typing import Any
 
-from langchain_core.messages import AIMessage
-
 from financeclaw.kernel import (
     ApprovalDecision,
     ApprovalDecisionType,
@@ -35,14 +33,17 @@ from financeclaw.modules.conversation import (
     IdempotencyConflict as JournalIdempotencyConflict,
 )
 from financeclaw.modules.delegation import DelegationConflict, DelegationRecord, DelegationStatus
+from financeclaw.modules.execution import ExecutionConflict, snapshot_context
+from financeclaw.modules.execution.repository import digest
 from financeclaw.orchestration.agents import AgentProfileCatalog
 
 from .delegation_service import (
     DelegationService,
     delegation_projection,
-    extract_handoff_interrupt,
 )
+from .execution_service import ExecutionService, agent_snapshot, verify_agent_snapshot
 from .ports import AgentServerClient
+from .run_observation import observe_run
 from .run_service import IdempotencyConflict, RunNotFound
 from .streaming import (
     completed_stream_event,
@@ -51,6 +52,7 @@ from .streaming import (
     progress_stream_event,
     project_server_part,
 )
+from .streaming import final_assistant_content as _final_assistant_content
 
 LOGGER = logging.getLogger(__name__)
 
@@ -119,6 +121,8 @@ class ConversationService:
         self.summary_service = summary_service
         self.approval_timeout = timedelta(seconds=approval_timeout_seconds)
         self._clock = clock or (lambda: datetime.now(UTC))
+        self.execution = repository.execution
+        self.operations = ExecutionService(client, self.execution)
 
     async def create(
         self,
@@ -322,6 +326,14 @@ class ConversationService:
             subject_id,
         )
         # 2. 计算请求指纹：绑定会话、消息与 Agent 版本，用于幂等冲突判定。
+        try:
+            profile = self.agent_profiles.resolve(
+                conversation.agent_id, conversation.agent_profile_version
+            )
+        except LookupError as exc:
+            raise ExecutionConflict(
+                "conversation release is no longer deployed; create a new conversation"
+            ) from exc
         request_hash = sha256(
             json.dumps(
                 {
@@ -350,9 +362,8 @@ class ConversationService:
             )
         except JournalIdempotencyConflict as exc:
             raise IdempotencyConflict(str(exc)) from exc
-        # 4. 首次执行（Turn 尚未绑定 server run）：创建 Agent 线程与执行上下文。
-        if turn.server_run_id is None:
-            await self.client.create_thread(conversation.agent_thread_id)
+        # 首次远程提交前冻结授权；旧 Turn 缺快照不得借幂等重放补成新权限。
+        if not replay:
             context = ExecutionContext(
                 tenant_id=tenant_id,
                 subject_id=subject_id,
@@ -360,41 +371,44 @@ class ConversationService:
                 conversation_id=conversation.conversation_id,
                 turn_id=turn.turn_id,
                 run_id=turn.run_id,
+                root_run_id=turn.run_id,
+                request_clock=self._clock().isoformat(),
             )
-            # 5. 重放路径先按 application_run_id 找回既有 server run，避免重复执行。
-            server_run = (
-                await self.client.find_run(
+            await asyncio.to_thread(
+                self.execution.register,
+                turn.run_id,
+                agent_snapshot(
+                    profile,
+                    context,
                     thread_id=conversation.agent_thread_id,
-                    application_run_id=turn.run_id,
-                )
-                if replay
-                else None
+                    input_hash=request_hash,
+                ),
             )
-            # 6. 找不到则以用户消息为输入创建新的 server run。
-            if server_run is None:
-                server_run = await self.client.create_run(
-                    thread_id=conversation.agent_thread_id,
-                    assistant_id=conversation.agent_id,
-                    input={"messages": [{"role": "user", "content": request.message}]},
-                    context=context.model_dump(mode="json"),
-                    metadata=_server_metadata(
-                        context,
-                        stage="4",
-                        conversation_id=conversation.conversation_id,
-                        agent_profile_version=conversation.agent_profile_version,
-                    ),
-                )
-            # 7. 把 server run 绑定回 Turn，落库映射与最新状态。
-            turn = await asyncio.to_thread(
-                self.repository.bind_server_run,
-                turn.turn_id,
-                server_run.run_id,
-                server_run.status,
+        execution = await asyncio.to_thread(self.execution.get, turn.run_id)
+        verify_agent_snapshot(profile, execution["snapshot"])
+        context = snapshot_context(execution["snapshot"], scopes)
+        if turn.server_run_id is None:
+            await self.client.create_thread(execution["snapshot"]["thread_id"])
+            server_run = await self.operations.submit(
+                turn.run_id,
+                "start",
+                thread_id=execution["snapshot"]["thread_id"],
+                assistant_id=execution["snapshot"]["assistant_id"],
+                input={"messages": [{"role": "user", "content": request.message}]},
+                context=context.model_dump(mode="json"),
+                metadata=_server_metadata(context, stage="6fix"),
             )
+            if server_run is not None:
+                turn = await asyncio.to_thread(
+                    self.repository.bind_server_run,
+                    turn.turn_id,
+                    server_run.run_id,
+                    server_run.status,
+                )
         # 8. 返回受理结果。
         return RunAccepted(
             run_id=turn.run_id,
-            thread_id=conversation.agent_thread_id,
+            thread_id=execution["snapshot"]["thread_id"],
             status=turn.status.value,
             target_kind="agent",
             idempotent_replay=replay,
@@ -408,27 +422,11 @@ class ConversationService:
         *,
         tenant_id: str,
         subject_id: str,
-        scopes: frozenset[str] = frozenset(),
+        scopes: frozenset[str] | None = None,
         allow_dispatch: bool = True,
         allow_parent_resume: bool = True,
     ) -> RunStatusResponse:
-        """轮询 Turn 对应 run 的最新状态，并在必要时推进 delegation 派发。
-
-        Args:
-            run_id: 业务 run ID。
-            tenant_id: 租户 ID。
-            subject_id: 主体 ID。
-            scopes: 调用方权限范围，用于 delegation 鉴权。
-            allow_dispatch: 是否允许在 server 中断时派发 delegation。
-            allow_parent_resume: 子运行到终态后是否允许恢复父运行。
-
-        Returns:
-            最新状态响应；delegation 场景附带子运行投影。
-
-        Raises:
-            RunNotFound: run 不存在或不属于当前主体。
-
-        """
+        """按精确 Server Run 观察；等待、未知提交与中断都不能误报完成。"""
         try:
             turn, conversation = await asyncio.to_thread(
                 self._owned_turn_and_conversation,
@@ -438,14 +436,39 @@ class ConversationService:
             )
         except ConversationNotFound as exc:
             raise RunNotFound(str(exc)) from exc
-        # 1. 已完成的 Turn 直接短路返回。
-        if turn.status.value == "completed":
+        if turn.status.value in {"completed", "failed", "cancelled"}:
+            try:
+                saved = await asyncio.to_thread(self.execution.get, run_id)
+                thread_id = saved["snapshot"]["thread_id"]
+            except ExecutionConflict:
+                thread_id = conversation.agent_thread_id  # 已完成的旧 Journal 仍允许只读查询。
+            content = await self.assistant_content(
+                run_id, tenant_id=tenant_id, subject_id=subject_id
+            )
+            return RunStatusResponse(
+                run_id=run_id,
+                thread_id=thread_id,
+                status=turn.status.value,
+                output={"messages": [{"type": "assistant", "content": content}]}
+                if content
+                else None,
+            )
+        uncertain = await self.operations.reconcile(run_id)
+        execution = await asyncio.to_thread(self.execution.get, run_id)
+        if execution["cancellation_requested"]:
             return RunStatusResponse(
                 run_id=run_id,
                 thread_id=conversation.agent_thread_id,
-                status="completed",
+                status="cancellation_requested",
+                waiting_reason="execution_stop_not_confirmed",
             )
-        # 2. 存在未交付的 delegation：推进子运行并回传父状态。
+        if uncertain:
+            return RunStatusResponse(
+                run_id=run_id,
+                thread_id=conversation.agent_thread_id,
+                status=turn.status.value,
+                waiting_reason="submission_uncertain",
+            )
         active = (
             await self.delegation_service.latest_for_parent(
                 run_id,
@@ -463,75 +486,140 @@ class ConversationService:
                 scopes=scopes,
                 allow_parent_resume=allow_parent_resume,
             )
-        # 3. 尚未绑定 server run：维持当前业务状态。
-        if turn.server_run_id is None:
+        server_id = execution["server_run_id"]
+        if server_id is None:
             return RunStatusResponse(
                 run_id=run_id,
                 thread_id=conversation.agent_thread_id,
                 status=turn.status.value,
+                waiting_reason="submission_uncertain",
             )
-        # 4. 查询 server run 状态并按结果分派处理。
         server = await self.client.get_run(
-            thread_id=conversation.agent_thread_id, run_id=turn.server_run_id
+            thread_id=execution["snapshot"]["thread_id"], run_id=server_id
         )
-        server_status = str(server.get("status", turn.status.value))
-        output: Mapping[str, Any] | None = None
-        if server_status in {"success", "completed"}:
-            # 4a. 成功：取回最终输出，落库助手回复并补摘要。
-            output = await self.client.join_run(
-                thread_id=conversation.agent_thread_id, run_id=turn.server_run_id
+        if observe_run(server).kind == "completed":
+            server = await self.client.join_run(
+                thread_id=execution["snapshot"]["thread_id"],
+                run_id=server_id,
             )
-            final_content = _final_assistant_content(output)
+        return await self._observe_parent(
+            turn,
+            conversation,
+            server,
+            server_id=server_id,
+            scopes=scopes,
+            allow_dispatch=allow_dispatch,
+            allow_parent_resume=allow_parent_resume,
+        )
+
+    async def _observe_parent(
+        self,
+        turn: Any,
+        conversation: Any,
+        result: Mapping[str, Any],
+        *,
+        server_id: str,
+        scopes: frozenset[str] | None,
+        allow_dispatch: bool = True,
+        allow_parent_resume: bool = True,
+    ) -> RunStatusResponse:
+        """启动、轮询和所有恢复路径使用同一分类，不依据流结束或缺少 handoff 判终态。"""
+        observed = observe_run(result)
+        if observed.kind == "completed":
+            await asyncio.to_thread(
+                self.execution.set_waiting, turn.run_id, None, server_run_id=server_id
+            )
             await asyncio.to_thread(
                 self._record_completed,
-                run_id,
+                turn.run_id,
                 conversation.conversation_id,
-                final_content,
+                _final_assistant_content(result),
             )
-            status = "completed"
-        elif server_status in {"error", "failed"}:
-            # 4b. 失败：把 Turn 置为 failed。
-            await asyncio.to_thread(self.repository.update_turn_status, run_id, "failed")
-            status = "failed"
-        elif server_status == "interrupted":
-            # 4c. 中断：typed handoff 且允许派发时启动 delegation；否则标记等待审批。
-            handoff = extract_handoff_interrupt(server)
-            if handoff is not None and allow_dispatch:
-                if self.delegation_service is None:
-                    raise RuntimeError("delegation service is not configured")
-                delegation = await self.delegation_service.start(
-                    handoff,
-                    parent_run_id=run_id,
-                    parent_turn_id=turn.turn_id,
-                    conversation_id=conversation.conversation_id,
-                    tenant_id=tenant_id,
-                    subject_id=subject_id,
-                    scopes=scopes,
-                )
-                await asyncio.to_thread(
-                    self.repository.update_turn_status,
-                    run_id,
-                    "waiting_child",
-                )
-                return await self._advance_delegation(
-                    turn,
-                    conversation,
-                    delegation,
-                    scopes=scopes,
-                    allow_parent_resume=allow_parent_resume,
-                )
-            await asyncio.to_thread(self.repository.update_turn_status, run_id, "interrupted")
-            status = "interrupted"
-        else:
-            # 4d. 其余状态原样同步到 Turn。
-            await asyncio.to_thread(self.repository.update_turn_status, run_id, server_status)
-            status = server_status
-        serializable_output = _jsonable_output(output)
+            return RunStatusResponse(
+                run_id=turn.run_id,
+                thread_id=conversation.agent_thread_id,
+                status="completed",
+                output=_public_output(result),
+            )
+        if observed.kind == "failed":
+            await asyncio.to_thread(self.repository.update_turn_status, turn.run_id, "failed")
+            return RunStatusResponse(
+                run_id=turn.run_id, thread_id=conversation.agent_thread_id, status="failed"
+            )
+        if observed.kind == "running":
+            await asyncio.to_thread(self.repository.update_turn_status, turn.run_id, "running")
+            return RunStatusResponse(
+                run_id=turn.run_id, thread_id=conversation.agent_thread_id, status="running"
+            )
+        payload = observed.payload or {}
+        waiting = {
+            "key": observed.interrupt_id or digest([server_id, payload]),
+            "interrupt_id": observed.interrupt_id,
+            "server_run_id": server_id,
+            "kind": observed.kind,
+            "payload": payload,
+            "payload_hash": digest(payload),
+            "expires_at": (self._clock() + self.approval_timeout).isoformat(),
+        }
+        waiting = await asyncio.to_thread(
+            self.execution.set_waiting, turn.run_id, waiting, server_run_id=server_id
+        )
+        if observed.kind == "handoff" and allow_dispatch:
+            if self.delegation_service is None:
+                raise ExecutionConflict("delegation service is not configured")
+            execution = await asyncio.to_thread(self.execution.get, turn.run_id)
+            profile = self.agent_profiles.resolve(
+                conversation.agent_id, conversation.agent_profile_version
+            )
+            verify_agent_snapshot(profile, execution["snapshot"])
+            context = snapshot_context(execution["snapshot"], scopes)
+            record = await self.delegation_service.start(
+                observed.handoff,
+                parent_run_id=turn.run_id,
+                parent_turn_id=turn.turn_id,
+                conversation_id=conversation.conversation_id,
+                tenant_id=turn.tenant_id,
+                subject_id=turn.subject_id,
+                scopes=context.scopes,
+                parent_snapshot=execution["snapshot"],
+                parent_server_run_id=server_id,
+                parent_interrupt_id=observed.interrupt_id,
+            )
+            return await self._advance_delegation(
+                turn,
+                conversation,
+                record,
+                scopes=scopes,
+                allow_parent_resume=allow_parent_resume,
+            )
+        await asyncio.to_thread(self.repository.update_turn_status, turn.run_id, "interrupted")
+        reason = "approval_required" if observed.kind == "hitl" else "unsupported_interruption"
+        projection = ()
+        if observed.kind == "hitl":
+            from financeclaw.orchestration.agents.middleware import redact_sensitive
+
+            action = payload["action_requests"][0]
+            reason = (
+                "approval_expired"
+                if self._clock() >= datetime.fromisoformat(waiting["expires_at"])
+                else "approval_required"
+            )
+            projection = (
+                {
+                    "interrupt_id": waiting["key"],
+                    "kind": "approval",
+                    "action": redact_sensitive(action),
+                    "arguments_hash": digest(action),
+                    "allowed_decisions": ["approve", "reject"],
+                    "expires_at": waiting["expires_at"],
+                },
+            )
         return RunStatusResponse(
-            run_id=run_id,
+            run_id=turn.run_id,
             thread_id=conversation.agent_thread_id,
-            status=status,
-            output=serializable_output,
+            status="interrupted",
+            waiting_reason=reason,
+            pending_interactions=projection,
         )
 
     async def resume(
@@ -543,24 +631,7 @@ class ConversationService:
         subject_id: str,
         scopes: frozenset[str],
     ) -> RunStatusResponse:
-        """提交顶层审批决定并恢复（或继续推进）对应 run。
-
-        Args:
-            run_id: 业务 run ID。
-            decision: 审批决定（approve/reject/edit 及理由、参数 hash）。
-            tenant_id: 租户 ID。
-            subject_id: 主体 ID。
-            scopes: 调用方权限范围，随执行上下文下发。
-
-        Returns:
-            恢复后的最新状态响应。
-
-        Raises:
-            RunNotFound: run 不存在或不属于当前主体。
-            DelegationConflict: 子运行未处于等待审批状态。
-            ApprovalExpired: 顶层审批窗口已超时。
-
-        """
+        """只恢复一个已登记且未变化的审批位置，执行权限与审批权限分开校验。"""
         try:
             turn, conversation = await asyncio.to_thread(
                 self._owned_turn_and_conversation,
@@ -570,7 +641,9 @@ class ConversationService:
             )
         except ConversationNotFound as exc:
             raise RunNotFound(str(exc)) from exc
-        # 1. 存在未交付 delegation：把决定转发给子运行，再推进父 Turn。
+        execution = await asyncio.to_thread(self.execution.get, run_id)
+        if execution["cancellation_requested"]:
+            raise ExecutionConflict("cancellation requested; no further resume is allowed")
         active = (
             await self.delegation_service.latest_for_parent(
                 run_id,
@@ -585,69 +658,128 @@ class ConversationService:
                 active.delegation_id,
                 tenant_id=tenant_id,
                 subject_id=subject_id,
+                scopes=scopes,
             )
             if current.status is not DelegationStatus.INTERRUPTED:
                 raise DelegationConflict("delegated child is not waiting for approval")
-            current = await self.delegation_service.resume(
-                current,
-                decision,
-                scopes=scopes,
-            )
+            current = await self.delegation_service.resume(current, decision, scopes=scopes)
             return await self._advance_delegation(
-                turn,
-                conversation,
-                current,
-                scopes=scopes,
-                allow_parent_resume=True,
+                turn, conversation, current, scopes=scopes, allow_parent_resume=True
             )
-        # 2. 校验顶层审批窗口：超时则置 failed 并抛出。
-        created_at = turn.created_at
-        if created_at.tzinfo is None:
-            created_at = created_at.replace(tzinfo=UTC)
-        if self._clock() >= created_at + self.approval_timeout:
-            await asyncio.to_thread(self.repository.update_turn_status, run_id, "failed")
-            raise ApprovalExpired("approval window has expired; start a new memory proposal")
-        # 3. 把决定映射为 server 端 resume 命令（EDIT 附带修改后的参数）。
-        mapped: dict[str, Any] = {"type": decision.type.value}
+        waiting = execution["waiting"]
+        if not waiting or waiting["kind"] != "hitl":
+            raise ExecutionConflict("run has no single supported pending approval")
+        if self._clock() >= datetime.fromisoformat(waiting["expires_at"]):
+            raise ApprovalExpired(
+                "approval window has expired; cancel or start an independent conversation"
+            )
+        if decision.type is ApprovalDecisionType.EDIT:
+            raise ExecutionConflict("edited actions require a new snapshot and approval")
+        action = waiting["payload"]["action_requests"][0]
+        if decision.interrupt_id != waiting["key"] and (
+            waiting["interrupt_id"] is not None or decision.interrupt_id is not None
+        ):
+            raise ExecutionConflict("approval refers to another interrupt instance")
+        if decision.arguments_hash != digest(action):
+            raise ExecutionConflict("approval hash does not match the pending action")
+        profile = self.agent_profiles.resolve(
+            conversation.agent_id, conversation.agent_profile_version
+        )
+        verify_agent_snapshot(profile, execution["snapshot"])
+        context = snapshot_context(execution["snapshot"], scopes)
+        # 审批不赋予执行权限。实际 Tool 仍会在执行前按冻结版本再次治理。
+        if not context.scopes:
+            raise ExecutionConflict("current authorization does not permit resuming this action")
+        mapped = {"type": decision.type.value}
         if decision.reason is not None:
             mapped["message"] = decision.reason
-        if decision.arguments_hash is not None:
-            mapped["arguments_hash"] = decision.arguments_hash
-        if decision.type is ApprovalDecisionType.EDIT:
-            mapped["arguments"] = decision.arguments
-        # 4. 携带执行上下文恢复 server 运行。
-        context = ExecutionContext(
-            tenant_id=tenant_id,
-            subject_id=subject_id,
-            scopes=scopes,
-            conversation_id=conversation.conversation_id,
-            turn_id=turn.turn_id,
-            run_id=run_id,
-        )
-        result = await self.client.resume_run(
-            thread_id=conversation.agent_thread_id,
-            assistant_id=conversation.agent_id,
-            command={"resume": {"decisions": [mapped]}},
+        key = "approval:" + waiting["key"]
+        server_run = await self.operations.submit(
+            run_id,
+            key,
+            thread_id=execution["snapshot"]["thread_id"],
+            assistant_id=execution["snapshot"]["assistant_id"],
+            command=self._resume_command(waiting["interrupt_id"], {"decisions": [mapped]}),
             context=context.model_dump(mode="json"),
-            metadata=_server_metadata(context, stage="4"),
+            metadata=_server_metadata(context, stage="6fix"),
+            predecessor=waiting["server_run_id"],
         )
-        # 5. 仍在等待审批则置 interrupted；完成则落最终回复并补摘要。
-        status = "interrupted" if result.get("__interrupt__") else "completed"
-        if status == "completed":
-            final_content = _final_assistant_content(result)
-            await asyncio.to_thread(
-                self._record_completed,
-                run_id,
-                conversation.conversation_id,
-                final_content,
+        result = await self.operations.result(run_id, key) if server_run is not None else None
+        if result is None:
+            return RunStatusResponse(
+                run_id=run_id,
+                thread_id=conversation.agent_thread_id,
+                status="running" if server_run else "interrupted",
+                waiting_reason="resume_pending" if server_run else "submission_uncertain",
             )
-        else:
-            await asyncio.to_thread(self.repository.update_turn_status, run_id, status)
+        return await self._observe_parent(
+            turn, conversation, result, server_id=server_run.run_id, scopes=scopes
+        )
+
+    @staticmethod
+    def _resume_command(interrupt_id: str | None, payload: dict[str, Any]) -> dict[str, Any]:
+        """优先按原生 interrupt ID 恢复；无 ID 的旧单中断只保留唯一目标兼容路径。"""
+        return {"resume": {interrupt_id: payload} if interrupt_id else payload}
+
+    async def cancel(self, run_id: str, *, tenant_id: str, subject_id: str) -> RunStatusResponse:
+        """先封闭派发，再逐一确认子树停止；不会把本地取消当作副作用回滚。"""
+        try:
+            turn, conversation = await asyncio.to_thread(
+                self._owned_turn_and_conversation,
+                run_id,
+                tenant_id,
+                subject_id,
+            )
+        except ConversationNotFound as exc:
+            raise RunNotFound(str(exc)) from exc
+        if turn.status.value in {"completed", "failed", "cancelled"}:
+            return RunStatusResponse(
+                run_id=run_id, thread_id=conversation.agent_thread_id, status=turn.status.value
+            )
+        await asyncio.to_thread(self.execution.request_cancel, run_id)
+        await asyncio.to_thread(
+            self.repository.update_turn_status, run_id, "cancellation_requested"
+        )
+        executions = await asyncio.to_thread(self.execution.tree, run_id)
+        confirmed = bool(executions)
+        for execution in executions:
+            # 未绑定回执的操作可能已经到达远程；不因 server_run_id 为空就释放线程。
+            operations = await asyncio.to_thread(
+                self.execution.operations_for_run, execution["run_id"]
+            )
+            for operation in operations:
+                if operation["status"] == "prepared":
+                    continue
+                server_id = operation["server_run_id"]
+                if server_id is None:
+                    found = await self.client.find_operation(
+                        thread_id=operation["request"]["thread_id"],
+                        operation_id=operation["operation_id"],
+                    )
+                    if found is None:
+                        confirmed = False
+                        continue
+                    server_id = found.run_id
+                    await asyncio.to_thread(
+                        self.execution.bind, operation["operation_id"], server_id
+                    )
+                try:
+                    stopped = await self.client.cancel_run(
+                        thread_id=operation["request"]["thread_id"],
+                        run_id=server_id,
+                    )
+                except Exception:
+                    stopped = False
+                confirmed = confirmed and stopped
+            if confirmed:
+                await asyncio.to_thread(self.execution.confirm_cancel, execution["run_id"])
+        if confirmed:
+            await asyncio.to_thread(self.repository.confirm_cancel, run_id)
         return RunStatusResponse(
             run_id=run_id,
             thread_id=conversation.agent_thread_id,
-            status=status,
-            output=_jsonable_output(result),
+            status="cancelled" if confirmed else "cancellation_requested",
+            waiting_reason=None if confirmed else "execution_stop_not_confirmed",
         )
 
     async def stream(
@@ -682,11 +814,18 @@ class ConversationService:
             )
         except ConversationNotFound as exc:
             raise RunNotFound(str(exc)) from exc
-        if turn.server_run_id is not None and turn.status.value not in {"completed", "failed"}:
+        execution = await asyncio.to_thread(self.execution.get, run_id)
+        server_run_id = execution["server_run_id"]
+        if server_run_id is not None and turn.status.value not in {
+            "completed",
+            "failed",
+            "cancelled",
+            "cancellation_requested",
+        }:
             try:
                 async for part in self.client.stream_run(
-                    thread_id=conversation.agent_thread_id,
-                    run_id=turn.server_run_id,
+                    thread_id=execution["snapshot"]["thread_id"],
+                    run_id=server_run_id,
                 ):
                     projected = project_server_part(part)
                     if projected is not None:
@@ -719,7 +858,11 @@ class ConversationService:
                 output = {**output, "messages": [{"type": "assistant", "content": content}]}
             yield completed_stream_event(run_id, output)
         elif final.status == "interrupted":
-            yield interrupted_stream_event(run_id)
+            yield interrupted_stream_event(
+                run_id,
+                waiting_reason=final.waiting_reason,
+                pending_interactions=final.pending_interactions,
+            )
         elif final.status == "failed":
             yield failed_stream_event(run_id)
         else:
@@ -751,8 +894,6 @@ class ConversationService:
         # 1. 拉取所有未完成 Turn。
         turns = await asyncio.to_thread(self.repository.list_incomplete_turns)
         for turn in turns:
-            if turn.server_run_id is None:
-                continue
             # 2. 按归属刷新状态；禁用派发与父恢复，避免对账产生新副作用。
             await self.status(
                 turn.run_id,
@@ -771,109 +912,108 @@ class ConversationService:
         conversation: Any,
         record: DelegationRecord,
         *,
-        scopes: frozenset[str],
+        scopes: frozenset[str] | None,
         allow_parent_resume: bool,
     ) -> RunStatusResponse:
-        """推进 delegation：同步子运行状态，到终态时把结果交付回父运行。
-
-        Args:
-            turn: 父业务 Turn 记录。
-            conversation: 父会话记录。
-            record: 当前 delegation 记录。
-            scopes: 调用方权限范围，随执行上下文下发。
-            allow_parent_resume: 是否允许在子运行到终态后恢复父运行。
-
-        Returns:
-            父运行最新的状态响应。
-
-        Raises:
-            RuntimeError: delegation 服务未装配。
-
-        """
+        """子终态与父结果交付分离；并发查询共享同一个持久化恢复操作。"""
         if self.delegation_service is None:
             raise RuntimeError("delegation service is not configured")
-        # 1. 读取 delegation 最新状态。
+        execution = await asyncio.to_thread(self.execution.get, turn.run_id)
+        if execution["cancellation_requested"]:
+            return RunStatusResponse(
+                run_id=turn.run_id,
+                thread_id=conversation.agent_thread_id,
+                status="cancellation_requested",
+                waiting_reason="execution_stop_not_confirmed",
+            )
         current = await self.delegation_service.status(
             record.delegation_id,
             tenant_id=record.tenant_id,
             subject_id=record.subject_id,
+            scopes=scopes,
         )
-        terminal = {
-            DelegationStatus.COMPLETED,
-            DelegationStatus.REJECTED,
-            DelegationStatus.FAILED,
-        }
-        # 2. 子运行未到终态（或不允许父恢复）：父 Turn 置为 waiting_child/interrupted。
+        terminal = {DelegationStatus.COMPLETED, DelegationStatus.REJECTED, DelegationStatus.FAILED}
+        if current.status is DelegationStatus.DELIVERED:
+            # 另一请求已完成原子交付；刷新当前 Server Run，不能回退 waiting_child。
+            return await self.status(
+                turn.run_id, tenant_id=turn.tenant_id, subject_id=turn.subject_id, scopes=scopes
+            )
         if current.status not in terminal or not allow_parent_resume:
-            parent_status = (
+            status = (
                 "interrupted" if current.status is DelegationStatus.INTERRUPTED else "waiting_child"
             )
-            await asyncio.to_thread(
-                self.repository.update_turn_status,
-                turn.run_id,
-                parent_status,
+            await asyncio.to_thread(self.repository.update_turn_status, turn.run_id, status)
+            reason = (
+                "unsupported_child_interaction"
+                if current.kind.value == "agent" and status == "interrupted"
+                else "child_approval_required"
+                if status == "interrupted"
+                else "waiting_child"
             )
+            interactions = ()
+            if (
+                current.kind.value == "workflow"
+                and status == "interrupted"
+                and current.output_payload
+            ):
+                reason = current.output_payload.get("waiting_reason") or reason
+                interactions = tuple(current.output_payload.get("pending_interactions", ()))
             return RunStatusResponse(
                 run_id=turn.run_id,
                 thread_id=conversation.agent_thread_id,
-                status=parent_status,
+                status=status,
+                waiting_reason=reason,
+                pending_interactions=interactions,
                 output={"delegation": delegation_projection(current)},
             )
-
-        # 3. 子运行到终态：以 delegation 结果作为 resume 命令恢复父运行。
-        context = ExecutionContext(
-            tenant_id=record.tenant_id,
-            subject_id=record.subject_id,
-            scopes=scopes,
-            conversation_id=conversation.conversation_id,
-            turn_id=turn.turn_id,
-            run_id=turn.run_id,
+        profile = self.agent_profiles.resolve(
+            conversation.agent_id, conversation.agent_profile_version
         )
-        result = await self.client.resume_run(
-            thread_id=conversation.agent_thread_id,
-            assistant_id=conversation.agent_id,
-            command={"resume": self.delegation_service.result(current).model_dump(mode="json")},
-            context=context.model_dump(mode="json"),
-            metadata=_server_metadata(
-                context,
-                stage="4",
-                delegation_id=current.delegation_id,
-            ),
-        )
-        # 4. 标记 delegation 已交付父运行。
-        await self.delegation_service.mark_delivered(current)
-        # 5. 父运行又发出新的 handoff：递归派发下一个 delegation。
-        next_handoff = extract_handoff_interrupt(result)
-        if next_handoff is not None:
-            next_record = await self.delegation_service.start(
-                next_handoff,
-                parent_run_id=turn.run_id,
-                parent_turn_id=turn.turn_id,
-                conversation_id=conversation.conversation_id,
-                tenant_id=record.tenant_id,
-                subject_id=record.subject_id,
-                scopes=scopes,
-            )
-            return await self._advance_delegation(
-                turn,
-                conversation,
-                next_record,
-                scopes=scopes,
-                allow_parent_resume=allow_parent_resume,
-            )
-        # 6. 父运行完成：落最终回复并补摘要。
-        final_content = _final_assistant_content(result)
-        await asyncio.to_thread(
-            self._record_completed,
+        verify_agent_snapshot(profile, execution["snapshot"])
+        context = snapshot_context(execution["snapshot"], scopes)
+        if not current.execution_snapshot:
+            raise ExecutionConflict("delegation execution snapshot is missing")
+        if current.status is DelegationStatus.REJECTED:
+            await asyncio.to_thread(self.execution.deny_side_effects, turn.run_id)
+        key = "delivery:" + current.delegation_id
+        server_run = await self.operations.submit(
             turn.run_id,
-            conversation.conversation_id,
-            final_content,
+            key,
+            thread_id=execution["snapshot"]["thread_id"],
+            assistant_id=execution["snapshot"]["assistant_id"],
+            command=self._resume_command(
+                current.execution_snapshot.get("parent_interrupt_id"),
+                self.delegation_service.result(current).model_dump(mode="json"),
+            ),
+            context=context.model_dump(mode="json"),
+            metadata=_server_metadata(context, stage="6fix", delegation_id=current.delegation_id),
+            predecessor=current.execution_snapshot.get("parent_server_run_id"),
         )
-        return RunStatusResponse(
-            run_id=turn.run_id,
-            thread_id=conversation.agent_thread_id,
-            status="completed",
-            output=_jsonable_output(result),
+        result = (
+            await self.operations.result(
+                turn.run_id,
+                key,
+                delegation_id=current.delegation_id,
+                audit=self.delegation_service.audit,
+            )
+            if server_run is not None
+            else None
+        )
+        if result is None:
+            return RunStatusResponse(
+                run_id=turn.run_id,
+                thread_id=conversation.agent_thread_id,
+                status="waiting_child",
+                waiting_reason="delivery_pending" if server_run else "submission_uncertain",
+                output={"delegation": delegation_projection(current)},
+            )
+        return await self._observe_parent(
+            turn,
+            conversation,
+            result,
+            server_id=server_run.run_id,
+            scopes=scopes,
+            allow_parent_resume=allow_parent_resume,
         )
 
     def _owned_turn_and_conversation(
@@ -953,51 +1093,9 @@ def _server_metadata(context: ExecutionContext, **extra: str) -> dict[str, str]:
     return metadata
 
 
-def _final_assistant_content(output: Mapping[str, Any]) -> str | None:
-    """从运行输出的消息列表中取最后一条 AI/assistant 消息的文本内容。
-
-    Args:
-        output: 运行输出映射（含 "messages" 键时生效）。
-
-    Returns:
-        最终回复文本；非字符串内容序列化为 JSON，找不到时为 None。
-
-    """
-    messages = output.get("messages")
-    if not isinstance(messages, list):
-        return None
-    for message in reversed(messages):
-        if isinstance(message, AIMessage):
-            return (
-                message.content if isinstance(message.content, str) else json.dumps(message.content)
-            )
-        if isinstance(message, Mapping) and message.get("type") in {"ai", "assistant"}:
-            content = message.get("content")
-            return content if isinstance(content, str) else json.dumps(content, default=str)
-    return None
-
-
-def _jsonable_output(output: Mapping[str, Any] | None) -> dict[str, Any] | None:
-    """把输出映射转换为可 JSON 序列化的字典（Pydantic 模型逐个导出）。
-
-    Args:
-        output: 原始输出映射；None 原样返回。
-
-    Returns:
-        转换后的字典；入参为 None 时返回 None。
-
-    """
+def _public_output(output: Mapping[str, Any] | None) -> dict[str, Any] | None:
+    """公开结果仅含最终助手文本，不返回 checkpoint、工具往返、Prompt 或推理块。"""
     if output is None:
         return None
-    converted: dict[str, Any] = {}
-    for key, value in output.items():
-        if isinstance(value, list):
-            converted[key] = [
-                item.model_dump(mode="json") if hasattr(item, "model_dump") else item
-                for item in value
-            ]
-        elif hasattr(value, "model_dump"):
-            converted[key] = value.model_dump(mode="json")
-        else:
-            converted[key] = value
-    return converted
+    content = _final_assistant_content(output)
+    return {"messages": [{"type": "assistant", "content": content}]} if content else {}
