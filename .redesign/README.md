@@ -2,7 +2,7 @@
 
 状态：已确认的架构基线继续有效；新增阶段按各文档状态评审，Proposed 设计不自动成为冻结决议。
 
-更新时间：2026-09-06
+更新时间：2026-09-07
 
 ## 目的
 
@@ -54,6 +54,7 @@
 - [Stage 7：Ziwei Domain Agent 设计（候选实现中）](./stages/Stage-7-Ziwei-Domain-Agent-设计说明.md)
   - [Stage 7 设计审视与待确认决议](./stages/Stage-7-设计审视与待确认决议.md)
   - [Stage 7 实施与验证记录](./stages/Stage-7-实施与验证.md)
+- [Stage 8：后台自主推进、只读查询与可靠渠道通知实施方案（Proposed）](./stages/Stage-8-Background-Run-Coordination-实施方案.md)
 
 迁移材料：
 
