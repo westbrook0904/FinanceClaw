@@ -16,7 +16,7 @@ from financeclaw.application import (
 )
 from financeclaw.application.execution_service import json_value
 from financeclaw.kernel import ConversationTurnRequest, ExecutionContext
-from financeclaw.orchestration.agents import OfflineFinanceModel
+from financeclaw.orchestration.agents import AgentProfileCatalog, OfflineFinanceModel
 from financeclaw.orchestration.agents.ziwei_offline import OfflineZiweiModel
 from financeclaw.orchestration.graphs.ziwei_agent import build_ziwei_agent
 from tests.stage4.test_delegation import FakeDelegationClient
@@ -32,7 +32,8 @@ class RootZiweiModel(OfflineFinanceModel):
         """第一次委派固定合成任务，恢复时原样表达 outcome。"""
         if isinstance(messages[-1], ToolMessage):
             payload = json.loads(messages[-1].content)
-            message = AIMessage(content="紫微子任务结果：" + payload["output"]["outcome"])
+            outcome = (payload.get("output") or {}).get("outcome", payload["status"])
+            message = AIMessage(content="紫微子任务结果：" + outcome)
         else:
             message = AIMessage(
                 content="",
@@ -51,10 +52,18 @@ class RootZiweiModel(OfflineFinanceModel):
 class LocalGraphClient(FakeDelegationClient):
     """执行真实图和 checkpoint，沿用现有 fake 的运行身份／回执查询。"""
 
-    def __init__(self, graphs):
+    def __init__(self, graphs, *, damaged_result=False):
         """不同 assistant 使用不同图，thread 由会话／委派服务分配。"""
         super().__init__()
         self.graphs = graphs
+        self.damaged_result = damaged_result
+
+    async def join_run(self, **kwargs):
+        """模拟传输边界返回损坏的协议；子图内部曾通过校验也不能直接信任。"""
+        result = await super().join_run(**kwargs)
+        if self.damaged_result and "ziwei_result" in result:
+            return {**result, "ziwei_result": {**result["ziwei_result"], "schema_version": 99}}
+        return result
 
     async def create_run(self, **kwargs):
         """实际执行模型、工具与 interrupt，不手写伪造的成功盘面。"""
@@ -93,15 +102,20 @@ class LocalGraphClient(FakeDelegationClient):
 
 
 @pytest.mark.parametrize("missing", [False, True])
+@pytest.mark.parametrize("damaged_result", [False, True])
+@pytest.mark.parametrize("root_version,child_version", [("1.3.0", "1.0.0"), ("1.4.0", "2.0.0")])
 @pytest.mark.asyncio
-async def test_native_root_child_delivery_and_persistent_budget(tmp_path, missing):
+async def test_native_root_child_delivery_and_persistent_budget(
+    tmp_path, missing, damaged_result, root_version, child_version
+):
     """验证真实 input envelope、独立线程、完整结果、原授权恢复和重复轮询幂等。"""
     stack = components(tmp_path)
     query = request(mode="interpretation", **({"birth": {}} if missing else {}))
+    root_profile = stack.agent_profiles.resolve("finance_agent", root_version)
     root = stack.agent_factory.build(
-        stack.default_agent_profile, model=RootZiweiModel(parameters=query.model_dump(mode="json"))
+        root_profile, model=RootZiweiModel(parameters=query.model_dump(mode="json"))
     )
-    profile = stack.agent_profiles.resolve("ziwei_doushu_agent")
+    profile = stack.agent_profiles.resolve("ziwei_doushu_agent", child_version)
     child = build_ziwei_agent(
         stack.agent_factory,
         profile,
@@ -109,7 +123,10 @@ async def test_native_root_child_delivery_and_persistent_budget(tmp_path, missin
         model=OfflineZiweiModel(),
         checkpointer=InMemorySaver(),
     )
-    client = LocalGraphClient({"finance_agent_v1_3_0": root, "ziwei_doushu_agent_v1_0_0": child})
+    client = LocalGraphClient(
+        {root_profile.execution_assistant_id: root, profile.execution_assistant_id: child},
+        damaged_result=damaged_result,
+    )
     workflow = WorkflowService(
         client, stack.workflow_repository, stack.workflow_catalog, stack.audit
     )
@@ -123,7 +140,14 @@ async def test_native_root_child_delivery_and_persistent_budget(tmp_path, missin
         artifact_service=stack.artifact_service,
     )
     service = ConversationService(
-        client, stack.conversation_repository, stack.agent_profiles, delegation_service=delegation
+        client,
+        stack.conversation_repository,
+        AgentProfileCatalog(
+            profile
+            for profile in stack.agent_profiles.values()
+            if profile.agent_id != "finance_agent" or profile.version == root_version
+        ),
+        delegation_service=delegation,
     )
     owner = {"tenant_id": "synthetic-tenant", "subject_id": "synthetic-owner"}
     scopes = frozenset({"ziwei:read", "artifacts:read"})
@@ -145,7 +169,17 @@ async def test_native_root_child_delivery_and_persistent_budget(tmp_path, missin
         payload = client.resume_calls[-1]["command"]["resume"]
         assert len(payload) == 1
         payload = next(iter(payload.values()))
-        assert payload["output"]["outcome"] == ("needs_clarification" if missing else "answer")
+        if damaged_result:
+            assert payload["status"] == "failed"
+            assert payload["output"] is None
+            assert payload["error"] == "invalid domain Agent structured result"
+        else:
+            assert payload["output"]["outcome"] == ("needs_clarification" if missing else "answer")
+        if child_version == "2.0.0" and not damaged_result:
+            assert payload["output"]["schema_version"] == 2
+            if not missing:
+                assert "离线测试" in payload["output"]["answer_text"]
+                assert "interpretations" not in payload["output"]
         assert len(client.create_calls) == 2 and len(client.resume_calls) == 1
         assert client.create_calls[0]["thread_id"] != client.create_calls[1]["thread_id"]
         assert all(

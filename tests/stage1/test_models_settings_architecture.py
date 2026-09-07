@@ -112,8 +112,14 @@ def test_production_dependency_graph_has_no_stage1_legacy_runtime() -> None:
         "finance_agent_v1_3_0": (
             "./financeclaw/orchestration/graphs/server_graphs.py:finance_agent_stage7"
         ),
+        "finance_agent_v1_4_0": (
+            "./financeclaw/orchestration/graphs/server_graphs.py:finance_agent_stage7_text"
+        ),
         "ziwei_doushu_agent_v1_0_0": (
             "./financeclaw/orchestration/graphs/server_graphs.py:ziwei_doushu_agent"
+        ),
+        "ziwei_doushu_agent_v2_0_0": (
+            "./financeclaw/orchestration/graphs/server_graphs.py:ziwei_doushu_agent_text"
         ),
         "market_research_agent_v1_2_0": (
             "./financeclaw/orchestration/graphs/server_graphs.py:market_research_agent"

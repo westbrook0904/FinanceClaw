@@ -2,7 +2,12 @@
 
 from financeclaw.infrastructure.llm import ModelProfileRef
 from financeclaw.kernel import DataClassification
-from financeclaw.modules.ziwei.models import LEVELS, ZiweiAgentResult, ZiweiAnalysisRequest
+from financeclaw.modules.ziwei.models import (
+    LEVELS,
+    ZiweiAgentResult,
+    ZiweiAnalysisRequest,
+    ZiweiTextResult,
+)
 
 from .profiles import AgentProfile, ToolRef
 
@@ -18,8 +23,8 @@ ZIWEI_PROMPT = """你是 FinanceClaw 的只读紫微斗数领域助手。
 """
 
 
-def ziwei_profile(configuration_fingerprint: str) -> AgentProfile:
-    """结构化结果由领域 graph 的 finalize 节点生成，而非合成业务工具。"""
+def legacy_ziwei_profile(configuration_fingerprint: str) -> AgentProfile:
+    """保持旧发布配置不变，旧会话与检查点不能静默改用新结果协议。"""
     return AgentProfile(
         agent_id="ziwei_doushu_agent",
         version="1.0.0",
@@ -45,4 +50,18 @@ def ziwei_profile(configuration_fingerprint: str) -> AgentProfile:
         output_state_key="ziwei_result",
         max_model_calls=8,
         max_tool_calls=6,
+    )
+
+
+def ziwei_profile(configuration_fingerprint: str) -> AgentProfile:
+    """文本解读使用独立发布；温度、取证工具及权限保持不变。"""
+    return legacy_ziwei_profile(configuration_fingerprint).model_copy(
+        update={
+            "version": "2.0.0",
+            "assistant_id": "ziwei_doushu_agent_v2_0_0",
+            "deployment_revision": "stage7-text/1",
+            "output_schema": ZiweiTextResult,
+            # 仍最多 6 次取证模型轮次，只为文本解读预留 1 次，不再修复 JSON。
+            "max_model_calls": 7,
+        }
     )

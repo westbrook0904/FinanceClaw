@@ -458,7 +458,7 @@ def build_components(
     from financeclaw.kernel import DataClassification
     from financeclaw.modules.ziwei.models import ZiweiConvention
     from financeclaw.modules.ziwei.service import ZiweiCalculationService
-    from financeclaw.orchestration.agents.ziwei import ziwei_profile
+    from financeclaw.orchestration.agents.ziwei import legacy_ziwei_profile, ziwei_profile
     from financeclaw.orchestration.tools.ziwei import ziwei_tools
 
     ziwei_service = None
@@ -474,7 +474,7 @@ def build_components(
             projection_bytes=settings.ziwei_projection_bytes,
         )
     chart_tools = ziwei_tools(ziwei_service)
-    specialist = ziwei_profile(
+    legacy_specialist = legacy_ziwei_profile(
         configuration_fingerprint(
             model_release,
             settings.offline_model,
@@ -488,9 +488,16 @@ def build_components(
             [managed.governance for managed in chart_tools],
         )
     )
-    ziwei_delegate = agent_delegation_tool(specialist)
+    specialist = ziwei_profile(
+        configuration_fingerprint(
+            legacy_specialist.configuration_fingerprint, "ziwei-text-result-v2"
+        )
+    )
+    ziwei_delegate = agent_delegation_tool(legacy_specialist)
     ziwei_delegate.tool.metadata = {"preserve_result": True}
-    profiles = [agent_profile, domain_agent_profile, specialist]
+    text_ziwei_delegate = agent_delegation_tool(specialist)
+    text_ziwei_delegate.tool.metadata = {"preserve_result": True}
+    profiles = [agent_profile, domain_agent_profile, legacy_specialist, specialist]
     if settings.ziwei_enabled:
         stage7_root = agent_profile.model_copy(
             update={
@@ -502,12 +509,12 @@ def build_components(
                     *agent_profile.allowed_tools,
                     ToolRef(
                         tool_id=ziwei_delegate.tool.name,
-                        version=specialist.version,
+                        version=legacy_specialist.version,
                     ),
                 ),
                 "configuration_fingerprint": configuration_fingerprint(
                     agent_profile.configuration_fingerprint,
-                    specialist.model_dump(mode="json"),
+                    legacy_specialist.model_dump(mode="json"),
                     ziwei_delegate.governance,
                     "protected-structured-result-v1",
                 ),
@@ -523,8 +530,36 @@ def build_components(
             }
         )
         profiles.append(stage7_root)
+        # 新会话选择新发布；保留根 1.3.0 与 child 1.0.0 的配置及实际行为。
+        profiles.append(
+            stage7_root.model_copy(
+                update={
+                    "version": "1.4.0",
+                    "assistant_id": "finance_agent_v1_4_0",
+                    "deployment_revision": "stage7-text/1",
+                    "allowed_tools": (
+                        *agent_profile.allowed_tools,
+                        ToolRef(tool_id=text_ziwei_delegate.tool.name, version=specialist.version),
+                    ),
+                    "configuration_fingerprint": configuration_fingerprint(
+                        stage7_root.configuration_fingerprint,
+                        specialist.model_dump(mode="json"),
+                        text_ziwei_delegate.governance,
+                        "ziwei-text-result-v2",
+                    ),
+                    "system_prompt_template": stage7_root.system_prompt_template
+                    + (
+                        " Ziwei answer_text is free-form traditional interpretation, "
+                        "not a verified prediction. charts_used records calculated sources, "
+                        "not proof of every claim."
+                    ),
+                }
+            )
+        )
     agent_profiles = AgentProfileCatalog(profiles)
-    tool_catalog = ToolCatalog((*tool_catalog.values(), *chart_tools, ziwei_delegate))
+    tool_catalog = ToolCatalog(
+        (*tool_catalog.values(), *chart_tools, ziwei_delegate, text_ziwei_delegate)
+    )
 
     # 12. 构建 Agent 工厂：绑定模型、工具、策略、审计与各类服务。
     agent_factory = AgentFactory(

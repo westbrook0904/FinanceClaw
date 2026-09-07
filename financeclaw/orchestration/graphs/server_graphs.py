@@ -39,7 +39,7 @@ market_research_agent = components.agent_factory.build(
     model=OfflineFinanceModel() if settings.offline_model else None,
     checkpointer=None,
 )
-# 根 1.2.0 与市场 Agent 不被替换；仅新会话在启用时选择根 1.3.0。
+# 旧根和旧紫微图继续服务冻结会话；新会话在启用时选择根 1.4.0／紫微 2.0.0。
 finance_agent_stage7 = (
     components.agent_factory.build(
         components.agent_profiles.resolve("finance_agent", "1.3.0"),
@@ -52,6 +52,22 @@ finance_agent_stage7 = (
 ziwei_doushu_agent = build_ziwei_agent(
     components.agent_factory,
     components.agent_profiles.resolve("ziwei_doushu_agent", "1.0.0"),
+    components.ziwei_service,
+    model=OfflineZiweiModel() if settings.offline_model else None,
+    input_budget=min(24_000, settings.context_input_limit - settings.context_reserved_output),
+)
+finance_agent_stage7_text = (
+    components.agent_factory.build(
+        components.agent_profiles.resolve("finance_agent", "1.4.0"),
+        model=OfflineFinanceModel() if settings.offline_model else None,
+        checkpointer=None,
+    )
+    if settings.ziwei_enabled
+    else build_disabled_stage7_root()
+)
+ziwei_doushu_agent_text = build_ziwei_agent(
+    components.agent_factory,
+    components.agent_profiles.resolve("ziwei_doushu_agent", "2.0.0"),
     components.ziwei_service,
     model=OfflineZiweiModel() if settings.offline_model else None,
     input_budget=min(24_000, settings.context_input_limit - settings.context_reserved_output),

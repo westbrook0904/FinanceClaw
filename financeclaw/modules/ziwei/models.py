@@ -309,6 +309,7 @@ class InterpretationDraft(ZiweiModel):
     interpretations: tuple[Interpretation, ...] = Field(min_length=1, max_length=8)
 
 
+# 冻结 V1 的 Schema（包括描述），仅供已发布的旧 Agent／检查点继续读取。
 class ZiweiAgentResult(ZiweiModel):
     """外层 completed 不等于完成解读；澄清和不支持也是合法终态。"""
 
@@ -344,4 +345,40 @@ class ZiweiAgentResult(ZiweiModel):
             raise ValueError("interpretation references unavailable evidence")
         if self.outcome in {"unsupported", "needs_clarification"} and self.interpretations:
             raise ValueError("incomplete requests cannot contain interpretations")
+        return self
+
+
+class ZiweiTextResult(ZiweiModel):
+    """V2 由代码装配可信外壳，LLM 只提供不解析的解读正文。
+
+    不校验文风、段落字段或逐句引用；charts_used 仅表明实际使用的盘面，
+    不能当作对 answer_text 中各项传统解释的逐条证明。
+    """
+
+    schema_version: Literal[2] = 2
+    outcome: Literal["answer", "chart_only", "needs_clarification", "unsupported"]
+    question: str = ""
+    subject_label: str = "本次排盘对象"
+    answer_text: str = ""
+    charts_used: tuple[ChartProjection, ...] = ()
+    missing_fields: tuple[str, ...] = ()
+    warnings: tuple[str, ...] = ()
+    error_code: str | None = None
+
+    @model_validator(mode="after")
+    def valid_envelope(self) -> Self:
+        """只检查业务终态与真实盘面外壳，不验证模型论断。"""
+        if self.outcome == "needs_clarification" and (not self.question or not self.missing_fields):
+            raise ValueError("clarification requires question and missing_fields")
+        if self.outcome == "unsupported" and (not self.warnings or not self.error_code):
+            raise ValueError("unsupported requires warnings and error_code")
+        if self.outcome in {"answer", "chart_only"} and not self.charts_used:
+            raise ValueError("successful result requires calculated charts")
+        if self.outcome == "answer" and not self.answer_text.strip():
+            raise ValueError("answer requires nonempty text")
+        if self.outcome != "answer" and self.answer_text:
+            raise ValueError("non-answer outcome cannot contain interpretation text")
+        identities = {(c.birth_fingerprint, c.convention_ref) for c in self.charts_used}
+        if len(identities) > 1:
+            raise ValueError("result cannot mix birth identities or conventions")
         return self

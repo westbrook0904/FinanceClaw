@@ -54,6 +54,7 @@
 - [Stage 7：Ziwei Domain Agent 设计（候选实现中）](./stages/Stage-7-Ziwei-Domain-Agent-设计说明.md)
   - [Stage 7 设计审视与待确认决议](./stages/Stage-7-设计审视与待确认决议.md)
   - [Stage 7 实施与验证记录](./stages/Stage-7-实施与验证.md)
+  - [Stage 7 文本解读热修复：移除解读 JSON 与逐条引用硬约束](./stages/Stage-7-文本解读热修复-实施与验证.md)
 - [Stage 8：后台自主推进、只读查询与可靠渠道通知实施方案（Proposed）](./stages/Stage-8-Background-Run-Coordination-实施方案.md)
 
 迁移材料：
