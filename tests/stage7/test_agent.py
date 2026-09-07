@@ -13,17 +13,22 @@ from tests.stage7.support import components, context, envelope, request, setting
 
 
 def test_default_disabled_root_and_explicit_root_allowlist():
-    """默认没有紫微委派；启用后原始五工具仍不可见，旧 Profile 不被修改。"""
+    """开关两侧都使用根 1.4.0，只有启用后才允许紫微委派。"""
     base = build_components(
         FinanceClawSettings(
             _env_file=None, environment="test", offline_model=True, debug_full_io=False
         )
     )
-    assert base.default_agent_profile.version == "1.2.0"
+    assert base.default_agent_profile.version == "1.4.0"
     assert not any("ziwei" in ref.tool_id for ref in base.default_agent_profile.allowed_tools)
     active = components()
     assert active.default_agent_profile.version == "1.4.0"
-    assert active.agent_profiles.resolve("finance_agent", "1.2.0") == base.default_agent_profile
+    for stack in (base, active):
+        with pytest.raises(LookupError):
+            stack.agent_profiles.resolve("finance_agent", "1.2.0")
+        assert [key for key in stack.agent_profiles if key[0] == "finance_agent"] == [
+            ("finance_agent", "1.4.0")
+        ]
     names = {ref.tool_id for ref in active.default_agent_profile.allowed_tools}
     assert {name for name in names if "ziwei" in name} == {"delegate_agent__ziwei_doushu_agent"}
     specialist = active.agent_profiles.resolve("ziwei_doushu_agent")
@@ -95,12 +100,11 @@ def test_irrelevant_calendar_and_fold_parameters_cannot_be_silently_ignored():
 
 
 @pytest.mark.parametrize("mode", ["chart_only", "interpretation"])
-@pytest.mark.parametrize("version", ["1.0.0", "2.0.0"])
 @pytest.mark.asyncio
-async def test_real_graph_produces_validated_evidence_and_result(mode, version):
+async def test_real_graph_produces_validated_evidence_and_result(mode):
     """子 Agent 一次取日盘，最终结构化结果保留实际盘面与证据。"""
     stack = components()
-    profile = stack.agent_profiles.resolve("ziwei_doushu_agent", version)
+    profile = stack.agent_profiles.resolve("ziwei_doushu_agent", "2.0.0")
     graph = build_ziwei_agent(
         stack.agent_factory, profile, stack.ziwei_service, model=OfflineZiweiModel()
     )
@@ -110,12 +114,7 @@ async def test_real_graph_produces_validated_evidence_and_result(mode, version):
     assert len(value.charts_used) == 1 and value.charts_used[0].level == "daily"
     assert sum(m.type == "tool" for m in result["messages"]) == 1
     assert result["ziwei_model_calls"] == (3 if mode == "interpretation" else 2)
-    if mode == "interpretation" and version == "1.0.0":
-        damaged = value.model_dump(mode="json")
-        damaged["interpretations"][0]["evidence_refs"] = ["fabricated/fact"]
-        with pytest.raises(ValidationError):
-            profile.output_schema.model_validate(damaged)
-    elif mode == "interpretation":
+    if mode == "interpretation":
         assert value.answer_text and value.schema_version == 2
         assert "interpretations" not in result["ziwei_result"]
 

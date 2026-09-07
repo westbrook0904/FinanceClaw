@@ -1,6 +1,5 @@
 """事实、输出预算、错误审计和发布恢复的故障回归。"""
 
-import json
 from types import SimpleNamespace
 
 import pytest
@@ -16,19 +15,6 @@ from financeclaw.orchestration.agents.middleware import ToolGovernanceMiddleware
 from financeclaw.orchestration.agents.ziwei_offline import OfflineZiweiModel
 from financeclaw.orchestration.graphs.ziwei_agent import build_ziwei_agent
 from tests.stage7.support import components, context, envelope, request
-
-
-class ForgedEvidenceModel(OfflineZiweiModel):
-    """两次都使用不存在的引用，必须失败，不能由最后文本蒙混过关。"""
-
-    def _generate(self, messages, stop=None, run_manager=None, **kwargs):
-        """只污染 finalization，其余步骤仍取得真实盘面。"""
-        result = super()._generate(messages, stop=stop, run_manager=run_manager, **kwargs)
-        if kwargs.get("response_format"):
-            value = json.loads(result.generations[0].message.content)
-            value["interpretations"][0]["evidence_refs"] = ["forged/chart"]
-            result.generations[0].message.content = json.dumps(value)
-        return result
 
 
 class NoEvidenceModel(OfflineZiweiModel):
@@ -65,23 +51,15 @@ async def test_oversized_final_result_fails_before_parent_delivery():
     assert error.value.code == "ZIWEI_CONTEXT_BUDGET_EXCEEDED"
 
 
-@pytest.mark.parametrize(
-    "model,version",
-    [
-        (ForgedEvidenceModel(), "1.0.0"),
-        (NoEvidenceModel(), "1.0.0"),
-        (NoEvidenceModel(), "2.0.0"),
-    ],
-)
 @pytest.mark.asyncio
-async def test_fabricated_evidence_or_absent_chart_fails(model, version):
-    """无盘在两种发布都失败，逐条引用硬校验仅保留于冻结 V1。"""
+async def test_absent_chart_fails():
+    """模型没有调用排盘工具时，正文不能冒充真实盘面。"""
     stack = components()
     graph = build_ziwei_agent(
         stack.agent_factory,
-        stack.agent_profiles.resolve("ziwei_doushu_agent", version),
+        stack.agent_profiles.resolve("ziwei_doushu_agent", "2.0.0"),
         stack.ziwei_service,
-        model=model,
+        model=NoEvidenceModel(),
     )
     with pytest.raises(ZiweiError) as error:
         await graph.ainvoke(envelope(request(mode="interpretation")), context=context())

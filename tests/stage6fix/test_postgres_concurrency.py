@@ -50,7 +50,7 @@ async def test_postgres_turn_journal_operation_and_budget_cas(tmp_path):
         )
         repository = components.conversation_repository
         conversation = repository.create_conversation(
-            **OWNER, agent_id="finance_agent", agent_profile_version="1.2.0"
+            **OWNER, agent_id="finance_agent", agent_profile_version="1.4.0"
         )
         requests = await asyncio.gather(
             *(
@@ -63,7 +63,7 @@ async def test_postgres_turn_journal_operation_and_budget_cas(tmp_path):
                     message="bounded test",
                     target_type="agent",
                     target_id="finance_agent",
-                    target_version="1.2.0",
+                    target_version="1.4.0",
                 )
                 for _ in range(20)
             )

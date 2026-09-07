@@ -17,31 +17,8 @@ class OfflineZiweiModel(OfflineFinanceModel):
         return "financeclaw-stage7-offline"
 
     def _generate(self, messages, stop=None, run_manager=None, **kwargs) -> ChatResult:
-        """模拟取证与文本解读，仍支持旧发布的 JSON finalization。"""
-        if kwargs.get("response_format"):
-            payload = next(
-                json.loads(message.content)
-                for message in messages
-                if message.type == "human" and str(message.content).startswith("{")
-            )
-            chart = payload["charts"][0]
-            content = json.dumps(
-                {
-                    "answer_summary": "离线测试取得真实盘面，仅验证证据引用，不是正式命理解读。",
-                    "interpretations": [
-                        {
-                            "topic": payload["focus"],
-                            "text": "请在规则批准和真实模型评测后进行传统文化解读。",
-                            "evidence_refs": [
-                                f"{chart['chart_id']}/{chart['facts'][0]['fact_id']}"
-                            ],
-                        }
-                    ],
-                },
-                ensure_ascii=False,
-            )
-            message = AIMessage(content=content)
-        elif not self._bound_tool_names:
+        """模拟取证与文本解读，只覆盖当前文本结果协议。"""
+        if not self._bound_tool_names:
             # finalize 不绑定工具，也不要求 JSON；只返回清晰标识的合成正文。
             message = AIMessage(
                 content=(

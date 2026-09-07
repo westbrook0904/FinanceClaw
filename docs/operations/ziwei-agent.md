@@ -62,11 +62,13 @@ LANGSMITH_HIDE_OUTPUTS=false
 按既有机制配置开发 BFF scopes 或飞书白名单身份 scopes，保留原有合法权限，不使用 `*` 兜底。
 本轮没有自动扩大任一用户的权限。
 
-候选启用后，新建会话绑定根 `finance_agent@1.3.0`，它只增加紫微委派工具。
-已有会话继续使用根 `1.2.0`，不会自动迁移或突然获得新工具。
-`ziwei_doushu_agent_v1_0_0` 与 `finance_agent_v1_3_0` 已登记在 `langgraph.json`；
-若使用独立的本地 graph 配置，也需同步这两个映射。Agent Server 仍必须是受保护的内部执行平面。
-配置关闭时新根 graph 名只是拒绝执行的占位，不会冒充已启用的发布。
+新建会话统一绑定根 `finance_agent@1.4.0`。候选启用时增加紫微委派工具；
+关闭时仍可执行普通金融请求，工具白名单不包含紫微委派。
+`ziwei_doushu_agent_v2_0_0` 与 `finance_agent_v1_4_0` 已登记在 `langgraph.json`；
+若使用独立的本地 graph 配置，也必须同步这两个映射，否则 BFF 会成功创建 thread、但提交
+run 时收到 422，thread 将保持 idle。旧紫微 `1.0.0` 以及金融根 `1.2.0/1.3.0` 已移除。
+Agent Server 仍必须是受保护的内部执行平面。
+旧版本会话不能继续提交新任务，应新建会话；已有运行的冻结配置不自动迁移。
 
 已有 `0007_stage6fix_ab`、`0008_stage6fix_c` 提供快照、预算和可靠交付。本功能没有新增 migration；
 升级旧部署仍要先按既有流程执行 `alembic upgrade head`。
@@ -110,7 +112,7 @@ LANGSMITH_HIDE_OUTPUTS=false
 默认 `OfflineFinanceModel` 不是通用自然语言解析器，不能用它来验收上述任意消息的自动路由。
 `tests/stage7/test_conversation.py` 使用明确的根模型测试替身，真正运行父子 graph 和恢复流程；
 `OfflineZiweiModel` 只用于闭环测试，生成带实际引用的测试文本，不代表真实解读质量。
-真实模型自动提取参数及 JSON mode 的兼容性仍待单独联调。
+真实模型自动提取参数仍待单独联调；当前文本解读不使用 JSON mode。
 
 ## 当前限制与故障判断
 
@@ -135,5 +137,5 @@ LANGSMITH_HIDE_OUTPUTS=false
 不要通过共享 Tool 实例保存“当前用户命盘”，也不要把 Artifact ID 当成跨用户读取授权。
 
 停止候选需先排空运行，随后两侧关闭 `FINANCECLAW_ZIWEI_ENABLED`。
-关闭后旧根 1.3.0／紫微任务不会静默改交给根 1.2.0；已有绑定会话需要保留对应发布或显式迁移，
-普通新会话重新走根 1.2.0。不要删除旧检查点或篡改发布快照来强行恢复。
+关闭后普通金融请求继续使用根 1.4.0，紫微委派不再可见。开关变化会改变发布配置指纹，
+不能用新配置恢复旧的在途任务；须先排空任务并同步重启 BFF 与 Agent Server。

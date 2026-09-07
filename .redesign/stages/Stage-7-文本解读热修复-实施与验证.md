@@ -55,28 +55,29 @@ Markdown，不再要求生成 `answer_summary`、`interpretations[]`、`topic` �
 测试包含“子图完成后，远程返回的领域 schema_version 被改成 99”：接收端必须交付 failed，
 不能因为子图之前执行成功就把损坏结果交给父模型作为成功事实。
 
-## 4. 发布绑定与旧会话
+## 4. 发布绑定
 
 | 组合 | 根发布 | 紫微发布／服务端 graph | 结果协议 |
 |---|---|---|---|
-| 冻结旧版 | `finance_agent@1.3.0` | `ziwei_doushu_agent@1.0.0`／`ziwei_doushu_agent_v1_0_0` | V1 JSON 解读 |
-| 本次新版 | `finance_agent@1.4.0` | `ziwei_doushu_agent@2.0.0`／`ziwei_doushu_agent_v2_0_0` | V2 文本解读 |
+| 当前发布 | `finance_agent@1.4.0` | `ziwei_doushu_agent@2.0.0`／`ziwei_doushu_agent_v2_0_0` | V2 文本解读 |
 
-`langgraph.json` 同时注册新旧图；新根绑定新委派 Tool 版本，旧根仍绑定旧版本。
-旧 V1 Schema、配置指纹和 JSON 分支保留用于旧会话／检查点，不能因原地改类定义或替换 graph 内容
-造成恢复时静默换协议。新版本不进入旧 JSON 分支；测试覆盖两种发布的真实根子图闭环。
+`langgraph.json` 只注册当前根与当前紫微图。旧 `finance_agent@1.2.0/1.3.0`、
+`ziwei_doushu_agent@1.0.0`、V1 Schema 及 JSON 兼容分支已在本地数据库重建后移除。
+测试覆盖当前发布的真实根子图闭环。
 
-**推送代码不等于旧会话已升级。** 显式启用紫微后的新会话选择根 1.4.0；已保存的 1.3.0 会话
-（含复用绑定的飞书单聊）仍固定旧版本。本次不自动修改数据库／渠道绑定，不迁移运行中的检查点。
+新会话统一选择根 1.4.0；紫微关闭时保留普通金融能力，开启时增加紫微委派工具。
+本次不新增 `finance_agent` 版本。如果部署中仍存在绑定 1.2.0/1.3.0 的会话，
+必须先排空任务并新建会话再使用当前发布；不能让旧检查点
+静默改用新协议。
 
 部署时：
 
-1. BFF 与 Agent Server 同步部署并保留旧发布，确认新根／子 graph 均可用。
-2. 用新会话验证 V2。需要让既有飞书绑定使用新版时，先排空或明确取消旧活动任务，再单独授权
-   执行显式会话迁移；不能把根 version 改为 latest，或在每个 Turn 自动切换。
-3. 若部署使用自定义 graph 配置（例如工作区未提交的 `langgraph.local.json`），需同步新增
-   `finance_agent_v1_4_0` → `server_graphs.py:finance_agent_stage7_text` 与
-   `ziwei_doushu_agent_v2_0_0` → `server_graphs.py:ziwei_doushu_agent_text`，保留旧映射。
+1. BFF 与 Agent Server 同步部署，确认当前根／子 graph 均可用。
+2. 用新会话验证 V2。需要让既有飞书绑定使用当前版本时，先排空或明确取消旧活动任务，再单独授权
+   执行显式会话迁移；不能在每个 Turn 自动切换。
+3. 若部署使用自定义 graph 配置（例如 `langgraph.local.json`），需同步新增
+   `finance_agent_v1_4_0` → `server_graphs.py:finance_agent` 与
+   `ziwei_doushu_agent_v2_0_0` → `server_graphs.py:ziwei_doushu_agent_text`，并移除旧映射。
 4. 未将自定义本地 Compose、环境变量或飞书身份配置夹带入本次提交。此热修复不包含 Stage 8 后台推进。
 
 ## 5. 验证
@@ -90,8 +91,8 @@ Markdown，不再要求生成 `answer_summary`、`interpretations[]`、`topic` �
 - 不启用 JSON mode、不调温；解读只调用一次，无格式修复。
 - 空文本、reasoning-only、生成截断、平台中断和意外工具调用不冒充完整答案。
 - 无真实盘面、权限／发布漂移、完整结果超限及持久根预算耗尽仍失败。
-- 新旧根／child 的真实图委派与恢复、损坏结果的委派边界拒绝。
-- 热修复前后旧根／child Profile 和 V1 输出 Schema 的配置指纹保持一致。
+- 当前根／child 的真实图委派与恢复、损坏结果的委派边界拒绝。
+- 旧根／child Profile 不再可解析，避免旧映射被误注册。
 
 实际执行：
 

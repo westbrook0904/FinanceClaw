@@ -134,7 +134,7 @@ async def test_internal_default_agent_dispatch_and_bff_idempotency() -> None:
     assert replay.json()["idempotent_replay"]
     assert conflict.status_code == 409
     assert len(fake.runs) == 1
-    assert fake.runs[0]["assistant_id"] == "finance_agent_v1_2_0"
+    assert fake.runs[0]["assistant_id"] == "finance_agent_v1_4_0"
     assert "tenant_id" not in fake.runs[0]["input"]
 
 

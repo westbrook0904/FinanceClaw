@@ -1,4 +1,4 @@
-"""文本解读热修复：自由正文、可信外壳、预算与冻结发布兼容。"""
+"""文本解读热修复：自由正文、可信外壳与有界预算。"""
 
 import pytest
 from langchain_core.messages import AIMessage
@@ -6,8 +6,7 @@ from langchain_core.outputs import ChatGeneration, ChatResult
 from pydantic import ValidationError
 
 from financeclaw.modules.ziwei.errors import ZiweiError
-from financeclaw.modules.ziwei.models import ZiweiAgentResult, ZiweiTextResult
-from financeclaw.orchestration.agents.release import configuration_fingerprint
+from financeclaw.modules.ziwei.models import ZiweiTextResult
 from financeclaw.orchestration.agents.ziwei_offline import OfflineZiweiModel
 from financeclaw.orchestration.graphs.ziwei_agent import (
     ZiweiEvidenceMiddleware,
@@ -152,40 +151,23 @@ def test_v2_envelope_still_rejects_missing_charts_or_wrong_protocol():
 
 
 def test_evidence_budget_does_not_expand_when_json_repair_is_removed():
-    """新发布最多 6 次取证＋1 次文本，旧发布仍为 6＋2。"""
+    """当前发布最多 6 次取证＋1 次文本。"""
     stack = components()
-    for version, reserve in [("1.0.0", 2), ("2.0.0", 1)]:
-        profile = stack.agent_profiles.resolve("ziwei_doushu_agent", version)
-        middleware = ZiweiEvidenceMiddleware(
-            max_calls=profile.max_model_calls, input_budget=24_000, finalization_calls=reserve
-        )
-        assert middleware.before_model({"ziwei_model_calls": 5}, None)["ziwei_model_calls"] == 6
-        with pytest.raises(ZiweiError, match="取证调用预算"):
-            middleware.before_model({"ziwei_model_calls": 6}, None)
+    profile = stack.agent_profiles.resolve("ziwei_doushu_agent", "2.0.0")
+    middleware = ZiweiEvidenceMiddleware(
+        max_calls=profile.max_model_calls, input_budget=24_000, finalization_calls=1
+    )
+    assert middleware.before_model({"ziwei_model_calls": 5}, None)["ziwei_model_calls"] == 6
+    with pytest.raises(ZiweiError, match="取证调用预算"):
+        middleware.before_model({"ziwei_model_calls": 6}, None)
 
 
-def test_legacy_release_fingerprints_and_output_schema_are_unchanged():
-    """基线为热修复前同一组合根的合成配置，旧检查点不能静默绑定新行为。"""
+def test_removed_legacy_releases_are_not_resolvable():
+    """当前目录只发布 finance 1.4.0 与紫微 2.0.0，不保留旧紫微组合。"""
     stack = components()
-    expected = {
-        (
-            "finance_agent",
-            "1.3.0",
-        ): "e4afd7d8c0a97e5deb55046c790d1380b0fc80969a607d5b09a5c8710aabab2e",
-        (
-            "ziwei_doushu_agent",
-            "1.0.0",
-        ): "7bdfa02b4d63fe55ed40974adbf863579b905ae0b4628845e71cf0fb8904bfde",
-    }
-    for key, fingerprint in expected.items():
-        assert configuration_fingerprint(stack.agent_profiles.resolve(*key)) == fingerprint
-    assert configuration_fingerprint(ZiweiAgentResult.model_json_schema()) == (
-        "f87091cfa1fd794fd514dcf80dde4cd1d49fab7ac3365ce9dbe650b901786dbe"
-    )
-    assert (
-        stack.agent_profiles.resolve("ziwei_doushu_agent", "1.0.0").output_schema
-        is ZiweiAgentResult
-    )
-    assert (
-        stack.agent_profiles.resolve("ziwei_doushu_agent", "2.0.0").output_schema is ZiweiTextResult
-    )
+    with pytest.raises(LookupError):
+        stack.agent_profiles.resolve("finance_agent", "1.3.0")
+    with pytest.raises(LookupError):
+        stack.agent_profiles.resolve("ziwei_doushu_agent", "1.0.0")
+    assert stack.agent_profiles.resolve("finance_agent").version == "1.4.0"
+    assert stack.agent_profiles.resolve("ziwei_doushu_agent").output_schema is ZiweiTextResult

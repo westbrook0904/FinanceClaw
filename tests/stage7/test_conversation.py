@@ -103,19 +103,16 @@ class LocalGraphClient(FakeDelegationClient):
 
 @pytest.mark.parametrize("missing", [False, True])
 @pytest.mark.parametrize("damaged_result", [False, True])
-@pytest.mark.parametrize("root_version,child_version", [("1.3.0", "1.0.0"), ("1.4.0", "2.0.0")])
 @pytest.mark.asyncio
-async def test_native_root_child_delivery_and_persistent_budget(
-    tmp_path, missing, damaged_result, root_version, child_version
-):
+async def test_native_root_child_delivery_and_persistent_budget(tmp_path, missing, damaged_result):
     """验证真实 input envelope、独立线程、完整结果、原授权恢复和重复轮询幂等。"""
     stack = components(tmp_path)
     query = request(mode="interpretation", **({"birth": {}} if missing else {}))
-    root_profile = stack.agent_profiles.resolve("finance_agent", root_version)
+    root_profile = stack.agent_profiles.resolve("finance_agent", "1.4.0")
     root = stack.agent_factory.build(
         root_profile, model=RootZiweiModel(parameters=query.model_dump(mode="json"))
     )
-    profile = stack.agent_profiles.resolve("ziwei_doushu_agent", child_version)
+    profile = stack.agent_profiles.resolve("ziwei_doushu_agent", "2.0.0")
     child = build_ziwei_agent(
         stack.agent_factory,
         profile,
@@ -145,7 +142,7 @@ async def test_native_root_child_delivery_and_persistent_budget(
         AgentProfileCatalog(
             profile
             for profile in stack.agent_profiles.values()
-            if profile.agent_id != "finance_agent" or profile.version == root_version
+            if profile.agent_id != "finance_agent" or profile.version == "1.4.0"
         ),
         delegation_service=delegation,
     )
@@ -175,7 +172,7 @@ async def test_native_root_child_delivery_and_persistent_budget(
             assert payload["error"] == "invalid domain Agent structured result"
         else:
             assert payload["output"]["outcome"] == ("needs_clarification" if missing else "answer")
-        if child_version == "2.0.0" and not damaged_result:
+        if not damaged_result:
             assert payload["output"]["schema_version"] == 2
             if not missing:
                 assert "离线测试" in payload["output"]["answer_text"]

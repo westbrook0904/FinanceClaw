@@ -1,6 +1,6 @@
 {
   "$schema": "https://langgra.ph/schema.json",
-  "dependencies": ["."],
+  "dependencies": [".", "x-iztro==0.4.0", "tzdata==2026.3"],
   "graphs": {
     "finance_agent_v1_4_0": "./financeclaw/orchestration/graphs/server_graphs.py:finance_agent",
     "ziwei_doushu_agent_v2_0_0": "./financeclaw/orchestration/graphs/server_graphs.py:ziwei_doushu_agent_text",
@@ -8,6 +8,6 @@
     "direct_tool": "./financeclaw/orchestration/graphs/server_graphs.py:direct_tool",
     "portfolio_review_v1": "./financeclaw/orchestration/graphs/server_graphs.py:portfolio_review_v1"
   },
-  "env": ".env",
+  "env": ".env.agent-server.local",
   "python_version": "3.13"
 }

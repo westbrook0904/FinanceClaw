@@ -108,15 +108,8 @@ def test_production_dependency_graph_has_no_stage1_legacy_runtime() -> None:
     assert all(name not in pyproject for name in removed)
     # 继续执行前验证内部不变量。
     assert config["graphs"] == {
-        "finance_agent_v1_2_0": "./financeclaw/orchestration/graphs/server_graphs.py:finance_agent",
-        "finance_agent_v1_3_0": (
-            "./financeclaw/orchestration/graphs/server_graphs.py:finance_agent_stage7"
-        ),
         "finance_agent_v1_4_0": (
-            "./financeclaw/orchestration/graphs/server_graphs.py:finance_agent_stage7_text"
-        ),
-        "ziwei_doushu_agent_v1_0_0": (
-            "./financeclaw/orchestration/graphs/server_graphs.py:ziwei_doushu_agent"
+            "./financeclaw/orchestration/graphs/server_graphs.py:finance_agent"
         ),
         "ziwei_doushu_agent_v2_0_0": (
             "./financeclaw/orchestration/graphs/server_graphs.py:ziwei_doushu_agent_text"
@@ -129,3 +122,5 @@ def test_production_dependency_graph_has_no_stage1_legacy_runtime() -> None:
             "./financeclaw/orchestration/graphs/server_graphs.py:portfolio_review_v1"
         ),
     }
+    local_config = json.loads((ROOT / "langgraph.local.json").read_text())
+    assert local_config["graphs"] == config["graphs"]

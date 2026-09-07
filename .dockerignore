@@ -1,5 +1,6 @@
 .conda
 .env
+.env.*
 .git
 .idea
 .langgraph_api

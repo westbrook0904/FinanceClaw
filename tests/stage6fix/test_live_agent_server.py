@@ -56,7 +56,7 @@ def live_server(tmp_path_factory):
         PYTHONPATH=str(root),
     )
     graphs = {
-        "finance_agent_v1_2_0": "finance_agent",
+        "finance_agent_v1_4_0": "finance_agent",
         "market_research_agent_v1_2_0": "market_research_agent",
         "portfolio_review_v1": "portfolio_review_v1",
     }

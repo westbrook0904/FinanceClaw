@@ -70,7 +70,7 @@ class FakeDelegationClient(ReceiptClientMixin):
         # 前置条件满足后调用 append。
         self.create_calls.append(call)
         # 显式处理 `assistant_id == 'finance_agent'` 分支。
-        if assistant_id == "finance_agent_v1_2_0":
+        if assistant_id == "finance_agent_v1_4_0":
             handoff = AgentHandoff(
                 handoff_id=f"delegation-{context['run_id']}",
                 parent_run_id=context["run_id"],

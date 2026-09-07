@@ -6,7 +6,7 @@ class ZiweiError(ValueError):
 
     code 是稳定分类，message 是可展示说明，fields 是需要补充的输入路径
     （如 birth.time）。调用方不得把原始出生资料或第三方异常正文拼入这些字段；
-    graph 使用它们构造 ZiweiAgentResult，而不是向父 Agent 泄漏内部异常。
+    graph 使用它们构造 ZiweiTextResult，而不是向父 Agent 泄漏内部异常。
     """
 
     def __init__(self, code: str, message: str, fields: tuple[str, ...] = ()) -> None:
