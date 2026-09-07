@@ -33,7 +33,15 @@ def export(row: PendingInteractionRow) -> dict[str, Any]:
 
 
 class InteractionRepository:
-    """在根执行行上序列化决定与取消；远程 I/O 不进入事务。"""
+    """以根执行行为互斥点保存交互实例、用户决定和恢复命令。
+
+    register 按 owner/server run/interrupt 三元组去重，轮询同一问题不会
+    延长有效期。decide 在同一事务内写回答、准备出站操作、更新 Workflow
+    审批镜像并追加 Audit/Outbox，避免回答已生效却缺失可恢复命令。
+
+    返回值是供应用层使用的内部记录，公开接口需要另做字段投影。归属、
+    时效和执行位置在本层复验；回答 Schema 与发布版本由应用服务校验。
+    """
 
     def __init__(self, execution: ExecutionRepository) -> None:
         """决定、操作和审计使用同一个数据库会话工厂。"""
@@ -44,6 +52,8 @@ class InteractionRepository:
     @staticmethod
     def _lock(session, root_run_id: str) -> RunExecutionRow:
         """根行是交互决定与取消的公共互斥位置，支持部署数据库行锁。"""
+        # 写回相同主键是为了取得写锁；父、子运行必须锁同一 root，
+        # 才能让跨渠道回答、交互替换与任务取消按同一顺序生效。
         session.execute(
             update(RunExecutionRow)
             .where(RunExecutionRow.run_id == root_run_id)
@@ -262,6 +272,8 @@ class InteractionRepository:
             if owner.server_run_id != row.server_run_id:
                 raise InteractionConflict("interaction owner moved to another execution attempt")
             operation_id = "operation-" + digest([row.owner_run_id, "interaction:" + identifier])
+            # 与决定共享事务，但尚未发送网络请求；进程此时退出后仍可通过
+            # operation_id 找回冻结命令，而无需重新解释用户的回答。
             self.execution.prepare(operation_id, row.owner_run_id, operation, session=session)
             row.response_key, row.response_hash, row.response = response_key, fingerprint, response
             row.decided_at, row.decided_by, row.operation_id = now, subject_id, operation_id

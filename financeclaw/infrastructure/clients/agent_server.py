@@ -18,7 +18,7 @@ from financeclaw.application.ports import ServerRun
 class LangGraphAgentServerClient:
     """内部 LangGraph Agent Server 的 HTTP 客户端适配器。
 
-    使用场景：由 bootstrap.py 组合根构造并注入应用层服务，用于创建会话
+    使用场景：由 HTTP 入口的 create_default_app 构造并注入应用层服务，用于创建会话
     线程、发起与恢复运行、查询运行状态、订阅流式输出以及健康检查；
     应用层仅依赖 ``AgentServerClient`` 协议，不感知 SDK 细节。
 
@@ -229,7 +229,13 @@ class LangGraphAgentServerClient:
         metadata: dict[str, Any],
         predecessor: str | None = None,
     ) -> ServerRun:
-        """runs.create(command=...) 返回新的执行尝试身份；SDK 没有提交幂等承诺。"""
+        """提交恢复命令并返回新的服务端运行回执，不等待运行完成。
+
+        predecessor 是产生原中断的 server_run_id；提供时先验证线程仍在
+        该尝试的检查点，并显式绑定 checkpoint，避免恢复到后续 Turn。
+        metadata 中的 operation_id 供应用层丢失回执后对账；本方法自身
+        不实现提交去重，持久化提交权由 ExecutionService 负责。
+        """
         checkpoint = None
         if predecessor is not None:
             state = await self._client.threads.get_state(thread_id)

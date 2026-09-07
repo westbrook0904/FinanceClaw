@@ -1,7 +1,8 @@
 """Agent Server 侧的顶层 graph 工厂函数。
 
 位于 orchestration/graphs 图装配层：提供顶层金融 ReAct Agent 与直连
-工具图两个延迟装配工厂，供 Agent Server（langgraph.json）按需调用。
+工具图两个延迟装配工厂。当前 langgraph.json 注册的是 server_graphs
+模块级 graph；只有显式改用工厂入口时才调用本模块，不应从业务模块导入装配。
 """
 
 from typing import Any
@@ -15,7 +16,7 @@ from financeclaw.orchestration.graphs.direct_tool import build_direct_tool_graph
 
 
 def make_finance_agent(config: RunnableConfig) -> Any:
-    """装配顶层金融 ReAct Agent graph（finance_agent@1.0.0）。
+    """按当前组件目录的默认档案装配顶层金融 ReAct Agent graph。
 
     使用场景：Agent Server 注册顶层助手时调用；完成设置加载、组件
     装配，离线模式下换用本地确定性模型，最终按默认档案装配 Agent。
@@ -39,10 +40,11 @@ def make_finance_agent(config: RunnableConfig) -> Any:
 
 
 def make_direct_tool_graph(config: RunnableConfig) -> Any:
-    """装配 ``/tool <id>`` 直连工具调用 graph。
+    """装配内部直连工具调用 graph。
 
     使用场景：Agent Server 注册直连工具助手时调用；用与顶层 Agent
     同源的组件集合装配 direct_tool 图，保证治理与审计口径一致。
+    用户消息中的 ``/tool`` 是顶层 Agent 的调用偏好，不直接路由到此图。
 
     Args:
         config: Agent Server 传入的运行配置；本工厂不消费，显式丢弃。

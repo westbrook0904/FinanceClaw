@@ -89,8 +89,12 @@ class RunRecord:
 class RunService:
     """轻量 Run 编排服务：受理 RunRequest 并在 Agent Server 上执行。
 
-    使用场景：阶段一（stage=1）直通通道，供非会话用例直接运行 Agent 与工具
-    目标；发布型 Workflow 不走本服务，必须使用持久化的 WorkflowService 通道。
+    使用场景：仅供具有 internal:invoke 权限的 HTTP 内部直连入口运行 Agent
+    与工具目标；权限检查在接口层完成。发布型 Workflow 使用 WorkflowService，
+    产品会话使用 ConversationService，不经过本服务。
+
+    本服务的 run 映射、幂等索引和锁均在进程内，重启后不会恢复；其保证范围
+    与持久化会话/工作流不同，不能作为产品入口的通用执行基类。
 
     Attributes:
         client: Agent Server 客户端 Port。

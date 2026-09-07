@@ -42,7 +42,15 @@ def _fact(
 
 
 class ZiweiCalculationService:
-    """无数据库、模型或可变用户缓存的领域服务。"""
+    """把固定历法引擎结果转换为可引用、可复现的盘面事实。
+
+    只依赖 ZiweiEngine Port 和版本化规则：一次读取本命盘，再按日期读取
+    所需流运层级，将相同事实覆盖的相邻日期合并为半开区间。max_segments
+    限制事实变化产生的分段数，超限要求缩小问题，不截断成功结果。
+
+    返回完整 ChartCalculation；主题裁剪由 project 完成，身份授权与
+    Artifact 写入由应用层完成，本服务不访问数据库、模型或用户缓存。
+    """
 
     def __init__(
         self, engine: ZiweiEngine, convention: ZiweiConvention, *, max_segments=32

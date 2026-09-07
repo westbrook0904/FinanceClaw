@@ -56,7 +56,7 @@ ziwei_doushu_agent = build_ziwei_agent(
     model=OfflineZiweiModel() if settings.offline_model else None,
     input_budget=min(24_000, settings.context_input_limit - settings.context_reserved_output),
 )
-# 直连工具图助手，承载 /tool <id> 的校验、授权、审批与执行链路。
+# 内部直连工具图助手；产品消息中的 /tool 仍先进入顶层 Agent 的指令中间件。
 direct_tool = build_direct_tool_graph(
     catalog=components.tool_catalog,
     policy=components.tool_policy,

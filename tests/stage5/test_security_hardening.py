@@ -63,13 +63,17 @@ async def test_oidc_verifier_projects_trusted_claims_and_rejects_tampering() -> 
 
 
 def test_production_settings_require_oidc_internal_auth_s3_and_telemetry() -> None:
-    """验证函数名所描述的业务场景符合预期。"""
-    # 限定依赖资源的生命周期，并确保资源能够可靠释放。
-    with pytest.raises(ValidationError, match="oidc_issuer"):
-        FinanceClawSettings(environment="production", debug_full_io=False)
+    """未配 OIDC 的生产配置被拒绝，完整认证、存储和观测配置可以加载。"""
+    with pytest.raises(ValidationError) as error:
+        FinanceClawSettings(_env_file=None, environment="production", debug_full_io=False)
+    assert (
+        "oidc_issuer, oidc_audience and oidc_jwks_url are required"
+        in error.value.errors()[0]["msg"]
+    )
 
     # 准备 settings，供后续步骤使用。
     settings = FinanceClawSettings(
+        _env_file=None,
         environment="production",
         debug_full_io=False,
         oidc_issuer="https://id.example.test/",

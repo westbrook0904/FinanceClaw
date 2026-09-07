@@ -70,6 +70,11 @@ class DelegationService:
         workflow_service: 工作流服务，负责 Workflow 类子运行的启动与审批。
         agent_profiles: Agent Profile 目录，用于解析领域 Agent 目标。
         audit: 审计仓储，记录 delegation 全生命周期的审计事件。
+        execution: 父子运行共用的执行事实与根任务预算仓储。
+        operations: 子运行启动及父结果交付的出站操作协调器。
+        interactions: 子运行交互服务；问题归原 owner，父 Agent 不代答。
+        conversation_repository: 解析已授权消息引用，不自动注入根会话完整历史。
+        artifact_service: 按可信身份读取委派显式引用的制品。
 
     """
 

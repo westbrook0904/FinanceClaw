@@ -82,6 +82,9 @@ class ConversationService:
         summary_service: 会话摘要服务，Turn 完成后补齐分段与层级摘要；
             未启用摘要时可为 None。
         approval_timeout: 顶层审批窗口时长，超时后 resume 将拒绝恢复。
+        execution: 与 Journal 共库的执行事实仓储，保存授权快照和根预算。
+        operations: start/resume 的持久化提交协调器，负责回执未知时的对账。
+        interactions: 用户交互服务，验证回答并恢复实际挂起的 owner 运行。
 
     """
 

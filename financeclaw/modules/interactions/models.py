@@ -11,12 +11,16 @@ class InteractionPoint(BaseModel):
     """Agent 发布时固定的交互点，问题正文可变化但权限、类型与回答结构不可变化。"""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
+    # point_id 标识发布声明，可产生多个运行期实例；它不是 interaction_id。
     point_id: str = Field(pattern=r"^[a-z][a-z0-9_]{0,63}$")
     kind: Literal["input", "choice", "approval"]
     question: str = Field(min_length=1, max_length=2000)
+    # input 使用自包含的对象 Schema，choice 使用精确 options；approval
+    # 的动作快照在运行期登记，并由 required_scope 约束回答者权限。
     response_schema: dict[str, Any] = Field(default_factory=dict)
     options: tuple[str, ...] = Field(default=(), max_length=20)
     required_scope: str | None = Field(default=None, min_length=1, max_length=128)
+    # 有效期从首次登记计算，重复观察不能给同一中断续期。
     timeout_seconds: int = Field(default=900, ge=1, le=604800)
 
     @model_validator(mode="after")
@@ -60,9 +64,11 @@ class InteractionResponse(BaseModel):
     """客户端必须回传实例版本；回答不是授权，审批必须绑定完整动作摘要。"""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
+    # 必须回传所见问题的 revision；服务端会同时比对当前 owner 的执行尝试。
     revision: int = Field(ge=1)
     kind: Literal["input", "choice", "approval"]
     answer: Any = None
+    # approval 只接受 decision + action_hash；input/choice 只接受 answer。
     decision: Literal["approve", "reject"] | None = None
     action_hash: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     reason: str | None = Field(default=None, max_length=2000)

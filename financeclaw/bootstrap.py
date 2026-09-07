@@ -1,8 +1,9 @@
 """组合根（composition root）：把业务模块的 Port 与具体基础设施实现装配起来。
 
-本模块是全应用唯一的“接口到实现”绑定点：application 与 orchestration 只依赖
-抽象（Port/Catalog/Factory），数据库、对象存储、模型与 Agent 的具体实现在此
-依据配置选择并注入，最终产出 ``FinanceClawComponents`` 供入口层使用。
+本模块集中选择数据库、对象存储、模型与 Agent 的实现，产出
+``FinanceClawComponents``。HTTP 的 ``create_default_app`` 继续装配客户端、
+认证器、应用服务和生命周期；Agent Server 的 graph 入口负责加载组件并注册图。
+当前仓储实现随领域模块组织，不能把这个组合根理解为全项目已实现纯 Port 依赖。
 """
 
 from dataclasses import dataclass
@@ -92,6 +93,7 @@ class FinanceClawComponents:
         workflow_repository: Workflow 仓储；未启用持久化时为 None。
         delegation_repository: Agent 委派记录仓储；未启用持久化时为 None。
         outbox_repository: Outbox 仓储，支撑事件最终一致外发；未启用持久化时为 None。
+        ziwei_service: 紫微预检、计算与制品用例；候选功能未启用时为 None。
 
     """
 
@@ -117,7 +119,10 @@ class FinanceClawComponents:
 
     @property
     def default_agent_profile(self) -> AgentProfile:
-        """返回默认顶层 Agent（finance_agent 1.0.0）的档案。
+        """返回目录中当前可用的最高版本 finance_agent 档案。
+
+        候选功能开关决定装配哪些版本；已创建会话使用它保存的固定版本，
+        不应在每轮调用时重新选择默认档案。
 
         Returns:
             顶层财务 Agent 的 ``AgentProfile``。

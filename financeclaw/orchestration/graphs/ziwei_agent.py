@@ -38,17 +38,22 @@ def merge_charts(left: list[dict], right: list[dict]) -> list[dict]:
 class ZiweiGraphInput(TypedDict):
     """Agent Server 输入只允许原委派消息，不接受调用方伪造的出生 state 或计算结果。"""
 
+    # preflight 从委派 task envelope 提取参数，图内部字段不会作为公开输入。
     messages: list[Any]
 
 
 class ZiweiState(AgentState):
     """只在独立 child checkpoint 保存资料，不借用根会话的当前命盘。"""
 
+    # preflight 写入已校验请求和规范化资料；工具只读这些字段，不重猜生日。
     ziwei_request: NotRequired[dict]
     ziwei_birth: NotRequired[dict]
     ziwei_target: NotRequired[dict | None]
+    # 多个只读工具可并发产证据；reducer 按 chart_id 去重并拒绝同 ID 内容漂移。
     ziwei_charts: Annotated[list[dict], merge_charts]
+    # 本图模型轮次数用于预留 finalize 额度；持久根预算另计真实调用与重试。
     ziwei_model_calls: NotRequired[int]
+    # 由可信图节点生成并按 ZiweiAgentResult 校验，供委派服务提取领域结果。
     ziwei_result: NotRequired[dict]
 
 
@@ -63,7 +68,13 @@ def check_prompt(messages: list, *, limit: int, tools: list | None = None) -> No
 
 
 class ZiweiEvidenceMiddleware(AgentMiddleware):
-    """取证模型预留两次 finalize 预算，并校验实际下发消息不丢失证据。"""
+    """为紫微取证循环预留最终解读额度，并检查实际模型输入大小。
+
+    before_model 在子图 state 中累计轮次，保留两次 finalize 调用空间；
+    wrap_model_call 同时计入系统消息和工具 Schema 的 UTF-8 字节大小。
+    超限直接返回领域错误，不截断盘面事实。根任务树的持久预算仍由
+    ExecutionBudgetMiddleware 负责，两种限制约束不同范围。
+    """
 
     state_schema = ZiweiState
 

@@ -20,7 +20,11 @@ LOGGER = logging.getLogger(__name__)
 
 
 class FeishuMarkdownStream(Protocol):
-    """飞书 Markdown 流控制器的最小应用层契约。"""
+    """应用层写入飞书卡片所需的最小流控制协议。
+
+    append 用于展示增量文本，set_content 用 Journal 的完整答案最终校正。
+    SDK 卡片对象只由接口适配器持有，应用服务不依赖其具体类型。
+    """
 
     async def append(self, chunk: str) -> None:
         """追加一段助手文本。"""
@@ -35,7 +39,12 @@ MarkdownProducer = Callable[[FeishuMarkdownStream], Awaitable[None]]
 
 
 class FeishuReplyGateway(Protocol):
-    """应用服务发送飞书流式卡片与降级文本所依赖的最小 Port。"""
+    """飞书回复的出站 Port，由 Channel SDK 适配器实现。
+
+    stream_markdown 调用 producer 持续生成卡片正文；返回 False 或发生
+    异常时，应用服务可转用 send_text。布尔值描述发送结果，不代表 Agent
+    运行成功；普通文本的 idempotency_key 用于同一消息的重复发送去重。
+    """
 
     async def stream_markdown(
         self,
@@ -89,7 +98,12 @@ class FeishuInboundMessage:
 
 @dataclass(slots=True)
 class _ReplyState:
-    """单次飞书回复在流式展示与最终校正之间共享的可变状态。"""
+    """单条入站消息的流式回复状态，不能跨消息或 chat 复用。
+
+    live_text 累积已观察到的增量，final_text 保存 Journal 校正结果；
+    terminal_status 决定是否结束等待，showing_progress 区分占位提示和
+    正式答案，避免把进度文字拼接进用户最终收到的内容。
+    """
 
     live_text: str = ""
     final_text: str | None = None
@@ -102,6 +116,8 @@ class FeishuChannelService:
 
     同一个 chat 通过内存锁串行，不同 chat 受全局信号量限制并行；消息 ID
     同时进入持久化 Turn 幂等键，SDK 重推不会重复执行或追加 Journal。
+    内存锁只覆盖本服务实例，持久化幂等负责重放保护，不能据此推导出多实例
+    Channel 的全局串行保证。流式卡片只是展示，最终正文以 Journal 为准。
     """
 
     UNSUPPORTED_TEXT = "当前仅支持文本消息。"

@@ -62,7 +62,15 @@ def json_value(value: Any) -> Any:
 
 
 class ExecutionService:
-    """所有可能重复投递的 start/resume 共用持久化原子领取。"""
+    """协调业务操作与 Agent Server 执行尝试之间的可靠提交和对账。
+
+    Conversation、Workflow 和 Delegation 共用本服务：先持久化冻结请求，
+    再原子领取提交权，最后绑定 server_run_id。一个业务 run 可以有多次
+    start/resume 操作；operation_id 才是一次出站命令的稳定身份。
+
+    本地超时或取消不能证明远程未执行，因此回执未知时只查找原操作，
+    不重新发送命令。仓储负责短事务，客户端负责事务外的远程 I/O。
+    """
 
     def __init__(self, client: AgentServerClient, repository: ExecutionRepository) -> None:
         """注入出站 Port 与事务仓储，不持有内存锁作为正确性依据。"""
@@ -82,7 +90,15 @@ class ExecutionService:
         command: dict[str, Any] | None = None,
         predecessor: str | None = None,
     ) -> ServerRun | None:
-        """首次提交或找回同一操作；未知回执保持等待，绝不自动重发。"""
+        """冻结并提交一个逻辑操作，重放时复用相同的提交记录。
+
+        key 在 run_id 内标识操作，例如首次启动或某次交互恢复；同键请求
+        内容发生变化时由仓储拒绝。command 为 None 时创建运行，否则提交
+        恢复命令，predecessor 固定该恢复所对应的上一次服务端运行。
+
+        返回值只表示服务端已受理；None 表示回执尚未确认，调用方应继续
+        对账，不能据此把业务运行标记为失败或使用新 key 重试。
+        """
         operation_id = f"operation-{digest([run_id, key])}"
         request = {
             "thread_id": thread_id,
@@ -132,6 +148,8 @@ class ExecutionService:
                 )
                 return None
         else:
+            # 未领取到提交权可能是并发调用，也可能是上次进程失去回执。
+            # 两者都只能按稳定操作 ID 查找，不能把“查无结果”当成重发许可。
             server = await self.client.find_operation(
                 thread_id=thread_id, operation_id=operation_id
             )

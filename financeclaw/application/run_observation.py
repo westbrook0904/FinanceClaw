@@ -11,7 +11,13 @@ from .execution_service import json_value
 
 @dataclass(frozen=True)
 class RunObservation:
-    """只保留分派需要的事实；载荷不是可直接向用户公开的内部 state。"""
+    """供会话、委派与工作流选择后续动作的统一运行观察。
+
+    kind 优先表达挂起的 handoff、审批或资料交互，再表达执行终态；
+    unsupported 表示无法安全识别的中断，调用方必须保留阻塞状态。
+    payload 保存内部中断载荷，interrupt_id 用于精确恢复；仅 handoff
+    分类会附带已验证的委派契约。此对象仍需投影后才能对用户公开。
+    """
 
     kind: Literal[
         "running",

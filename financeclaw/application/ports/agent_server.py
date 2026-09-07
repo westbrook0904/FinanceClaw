@@ -136,11 +136,20 @@ class AgentServerClient(Protocol):
         metadata: dict[str, Any],
         predecessor: str | None = None,
     ) -> ServerRun:
-        """提交恢复并立即返回新 Server Run 回执，不把等待结果当作提交身份。"""
+        """提交恢复并返回新的 ServerRun，执行结果由后续观察取得。
+
+        predecessor 固定原中断所属的 server run；实现应拒绝已经推进到
+        其他尝试的线程。metadata 中的 operation_id 标识出站命令，供回执
+        丢失后精确对账。调用方不能因超时或取消就假定恢复命令未生效。
+        """
         ...
 
     async def find_operation(self, *, thread_id: str, operation_id: str) -> ServerRun | None:
-        """按出站操作 metadata 精确对账，发现重复尝试时必须报错。"""
+        """按出站操作 metadata 精确对账，发现重复尝试时必须报错。
+
+        None 仅表示当前查不到关联记录，不证明远程命令从未执行，也不授予
+        重新提交权限。不能拿同一业务 run 的其他 start/resume 尝试代替。
+        """
         ...
 
     async def cancel_run(self, *, thread_id: str, run_id: str) -> bool:

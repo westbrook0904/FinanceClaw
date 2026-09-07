@@ -83,6 +83,9 @@ class WorkflowService:
         repository: 工作流仓储，持久化运行、审批单与状态。
         catalog: 已发布工作流目录，提供定义解析与输出 schema。
         audit: 审计仓储，记录工作流全生命周期事件。
+        execution: 工作流执行快照与预算仓储，委派运行共享父任务的根预算。
+        operations: 持久化 start/resume 协调器，区分提交回执和最终执行结果。
+        interactions: 将工作流审批映射为统一交互，并与原审批单原子更新决定。
         _clock: （私有）可注入的 UTC 时钟，便于测试超时逻辑。
 
     """

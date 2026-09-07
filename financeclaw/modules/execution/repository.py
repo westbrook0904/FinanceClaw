@@ -58,7 +58,16 @@ def _operation(row: RunOperationRow) -> dict[str, Any]:
 
 
 class ExecutionRepository:
-    """复用业务数据库，不在远程调用期间持有事务锁。"""
+    """持久化运行授权、出站操作、根任务预算和取消事实。
+
+    run_executions 保存每个业务 run 的冻结快照，run_operations 保存其
+    各次 start/resume 命令。领取操作与扣减根预算在同一事务中完成，
+    子任务、恢复和重试因此不能各自获得一份新的根预算。
+
+    方法返回脱离 Session 的字典，供可信应用层使用；涉及用户访问时，
+    调用方仍需校验归属。接受 session 的方法可以参与交互决定等外层事务，
+    其余写方法自行提交短事务，所有远程 I/O 均由应用服务在事务外执行。
+    """
 
     def __init__(self, sessions: sessionmaker[Session]) -> None:
         """绑定与会话、委派、Workflow 相同的事务数据库。"""
@@ -123,6 +132,8 @@ class ExecutionRepository:
         limit = root.snapshot.get("limits", {}).get(
             kind, {"model": 64, "tool": 128, "operation": 64}[kind]
         )
+        # 将限额和取消条件放进 UPDATE，避免两个 worker 同时读到剩余额度
+        # 后都成功扣减；rowcount 是本次是否获得额度的判断依据。
         changed = session.execute(
             update(RunExecutionRow)
             .where(
@@ -189,6 +200,7 @@ class ExecutionRepository:
             if result.rowcount != 1:
                 return False
             row = session.get(RunOperationRow, operation_id)
+            # 扣减失败会回滚上面的 claimed，不能留下未获预算的提交权。
             self.consume(row.run_id, "operation", session=session)
             resume = (row.request.get("command") or {}).get("resume", {})
             if isinstance(resume, Mapping) and len(resume) == 1 and "decisions" not in resume:

@@ -54,9 +54,12 @@ class ExecutionContext(BaseModel):
     conversation_id: Identifier | None = None
     turn_id: Identifier
     run_id: Identifier
+    # 根运行指向自身，子运行指向同一预算根；None 兼容未登记持久预算的图调用。
     root_run_id: Identifier | None = None
+    # 父运行和委派 ID 用于核验执行链，不能由模型生成的工具参数覆盖。
     parent_run_id: Identifier | None = None
     delegation_id: Identifier | None = None
+    # 服务端固定的带时区 ISO 时间，供“今年”等相对时间解析及恢复重放使用。
     request_clock: str | None = None
     data_classification: DataClassification = DataClassification.INTERNAL
     locale: Annotated[str, Field(min_length=2, max_length=32)] = "zh-CN"
@@ -78,7 +81,7 @@ class ExecutionContext(BaseModel):
 
         def digest(value: str) -> str:
             """对标识符取 SHA-256 摘要，仅保留前 16 位十六进制用于脱敏。"""
-            # 仅保留摘要前 16 位十六进制，避免完整哈希被反推或滥用。
+            # 截取固定长度便于关联追踪；无密钥哈希不能保证低熵身份不可被猜测。
             return sha256(value.encode()).hexdigest()[:16]
 
         return {

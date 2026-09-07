@@ -38,6 +38,7 @@ class ZiweiToolInput(BaseModel):
     """仅允许当前任务主题；目标和出生资料从已冻结的 runtime 注入。"""
 
     model_config = ConfigDict(extra="forbid", arbitrary_types_allowed=True)
+    # focus 只能省略或与冻结请求一致；ToolRuntime 由框架注入，不向模型索要身份。
     focus: Focus | None = None
     runtime: ToolRuntime[ExecutionContext]
 
@@ -46,6 +47,7 @@ class ZiweiChartTool(BaseTool):
     """统一薄门面，无当前用户或当前命盘的共享可变状态。"""
 
     args_schema: type[BaseModel] = ZiweiToolInput
+    # 每个实例在装配时固定一个分析层级；共享 service 不缓存当前用户资料。
     level: ChartLevel
     service: Any = Field(exclude=True, repr=False)
 
@@ -70,6 +72,8 @@ class ZiweiChartTool(BaseTool):
             else None
         )
         projection = self.service.calculate(birth, target, self.level, request.focus, context)
+        # 同一份证据同时写入 checkpoint 与 ToolMessage，finalize 才能检查
+        # 模型引用的事实确实来自本次计算，而不是仅存在于未展示的内部 state。
         return Command(
             update={
                 "ziwei_charts": [projection.model_dump(mode="json")],

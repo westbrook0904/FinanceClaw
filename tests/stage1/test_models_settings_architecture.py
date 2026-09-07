@@ -37,11 +37,21 @@ def test_deepseek_openai_compatible_configuration_is_explicit() -> None:
 
 
 def test_production_rejects_debug_or_missing_oidc_authentication() -> None:
-    """验证函数名所描述的业务场景符合预期。"""
-    with pytest.raises(ValidationError, match="debug_full_io"):
-        FinanceClawSettings(environment="production", offline_model=False, debug_full_io=True)
-    with pytest.raises(ValidationError, match="oidc_issuer"):
-        FinanceClawSettings(environment="production", offline_model=False, debug_full_io=False)
+    """生产先拒绝完整调试输出，关闭调试后仍必须配置 OIDC 认证。"""
+    with pytest.raises(ValidationError) as debug_error:
+        FinanceClawSettings(
+            _env_file=None, environment="production", offline_model=False, debug_full_io=True
+        )
+    # 错误回显也含 debug_full_io 字段名，必须验证校验器消息而非整个异常文本。
+    assert "debug_full_io must be disabled in production" in debug_error.value.errors()[0]["msg"]
+    with pytest.raises(ValidationError) as auth_error:
+        FinanceClawSettings(
+            _env_file=None, environment="production", offline_model=False, debug_full_io=False
+        )
+    assert (
+        "oidc_issuer, oidc_audience and oidc_jwks_url are required"
+        in auth_error.value.errors()[0]["msg"]
+    )
 
 
 def test_model_fallback_governance_rejects_capability_downgrade() -> None:

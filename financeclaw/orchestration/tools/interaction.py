@@ -64,12 +64,17 @@ def request_user_interaction(
 class UserQuestionInput(BaseModel):
     """模型只能提供有界的问题正文，不能指定回答 Schema、权限或审批决定。"""
 
+    # 回答结构取自装配工具时固定的 InteractionPoint；模型生成的问题不授予权限。
+
     model_config = ConfigDict(extra="forbid")
     question: str = Field(min_length=1, max_length=2000)
 
 
 class UserQuestionTool(BaseTool):
     """资料／选项提问独占工具批次，恢复后继续当前 Agent 的工具循环。"""
+
+    # interrupt 暂停当前 owner，用户回答经应用服务验证后恢复同一工具；
+    # 与委派工具不同，这里不创建 child run，也不由父 Agent 自动代答。
 
     point: InteractionPoint
     args_schema: type[BaseModel] = UserQuestionInput

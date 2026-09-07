@@ -33,8 +33,24 @@ FINANCECLAW_LANGSMITH_HIDE_OUTPUTS=true
 不要复制测试 fixture 密钥，不要把密钥写入仓库。BFF 和 Agent Server 需使用同一把密钥和版本。
 密钥轮换必须增加 key version，并保留旧配置供旧运行完成或先排空；不能在相同版本下静默换 key。
 
-候选配置未明确、依赖不匹配、原文调试仍打开或环境为 staging/production 时启动会被拒绝。
+候选配置未明确、依赖不匹配、未显式放行的原文调试或环境为 staging/production 时启动会被拒绝。
 设置隐藏 trace 不等于模型提供方不接收模型输入；真实资料接入仍需单独确认模型数据处理与用户告知。
+
+开发/测试联调需要查看完整输入输出时，可在 BFF 与 Agent Server 两份环境文件中显式配置：
+
+```dotenv
+FINANCECLAW_ZIWEI_ALLOW_FULL_IO=true
+FINANCECLAW_DEBUG_FULL_IO=true
+FINANCECLAW_LANGSMITH_HIDE_INPUTS=false
+FINANCECLAW_LANGSMITH_HIDE_OUTPUTS=false
+LANGSMITH_HIDE_INPUTS=false
+LANGSMITH_HIDE_OUTPUTS=false
+```
+
+`ZIWEI_ALLOW_FULL_IO` 默认 false，只放行这项启动校验，不自动修改日志、隐藏或追踪开关。
+完整 I/O 可能包含出生资料；启用 LangSmith tracing 时完整输入输出会发送到 LangSmith。
+该开关仅允许 development/test；规则、密钥、权限和其他校验仍然有效。
+配置变更后重启两侧服务；Docker Agent Server 需重新构建以包含支持该开关的代码。
 
 本轮没有修改当前运行环境。基础启动方式见[根 README](../../README.md#运行)，
 请使用隔离开发环境，不要直接开启真实出生资料测试。

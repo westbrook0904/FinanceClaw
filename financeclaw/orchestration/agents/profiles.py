@@ -72,17 +72,24 @@ class AgentProfile(BaseModel):
     memory_policy: str = "none"
     max_model_calls: int = Field(default=8, ge=1, le=64)
     max_tool_calls: int = Field(default=12, ge=1, le=128)
+    # 单次模型输出的工具批次上限；整批准入通过后才进入 HITL 和 ToolNode。
     max_tool_batch: int = Field(default=8, ge=1, le=32)
+    # 根任务树持久预算，覆盖所有子任务、恢复及真实重试；区别于单 Agent 限额。
     max_tree_model_calls: int = Field(default=64, ge=1, le=256)
     max_tree_tool_calls: int = Field(default=128, ge=1, le=1024)
     max_tree_operations: int = Field(default=64, ge=1, le=256)
+    # assistant_id 定位已部署图；revision 与配置指纹共同阻止旧检查点静默升级。
     assistant_id: str | None = None
     deployment_revision: str = "stage6fix-c/1"
     configuration_fingerprint: str | None = None
+    # Schema 类本身不做 JSON 序列化，其 model_json_schema 另写入执行快照。
     input_schema: type[BaseModel] | None = Field(default=None, exclude=True)
     output_schema: type[BaseModel] | None = Field(default=None, exclude=True)
+    # 领域结果从该 state 字段提取并校验，不从任意最后一条模型消息猜测成功。
     output_state_key: str = "structured_response"
+    # 可提问的类型、选项、Schema 和权限在发布时声明，模型只提供问题正文。
     interaction_points: tuple[InteractionPoint, ...] = ()
+    # 领域运行采用声明的资料分级；内部默认值省略序列化以保持旧发布快照兼容。
     data_classification: DataClassification = Field(
         default=DataClassification.INTERNAL,
         exclude_if=lambda value: value == DataClassification.INTERNAL,

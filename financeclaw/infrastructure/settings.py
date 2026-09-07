@@ -141,8 +141,9 @@ class FinanceClawSettings(BaseSettings):
     provider_api_key: SecretStr | None = None
     offline_model: bool = False
     ziwei_enabled: bool = False
-    # 开发/测试联调可显式允许完整 I/O；日志和 tracing 的实际开关仍分别控制。
-    ziwei_allow_full_io: bool = True
+    # 默认不放行紫微完整 I/O；开发/测试联调需显式开启此例外，
+    # 日志和 tracing 的实际开关仍分别控制，正式环境始终禁止该例外。
+    ziwei_allow_full_io: bool = False
     ziwei_convention: str | None = None
     ziwei_hmac_key: SecretStr | None = None
     ziwei_key_version: str = Field(default="1", min_length=1, max_length=32)

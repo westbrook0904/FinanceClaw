@@ -20,7 +20,15 @@ from financeclaw.modules.ziwei.service import ZiweiCalculationService, project
 
 
 class ZiweiService:
-    """共享实例只持有服务和配置，不持有当前用户、出生资料或命盘。"""
+    """协调紫微预检、确定性计算与制品存储的应用用例。
+
+    preflight 把用户资料规范化为带归属指纹的出生快照和绝对日期区间；
+    calculate 复验权限及快照归属，调用领域服务，裁定投影大小后才保存
+    完整制品。规则与事实计算归 ZiweiCalculationService，模型解读归 graph。
+
+    实例只持有服务和固定配置，可被多个请求复用；出生资料和命盘始终
+    通过参数传入，不写入共享实例。projection_bytes 是 UTF-8 字节预算。
+    """
 
     def __init__(
         self,
@@ -40,6 +48,7 @@ class ZiweiService:
         self._hmac_key = hmac_key
         self.key_version = key_version
         self.artifacts = artifacts
+        # 为制品引用与返回信封预留空间，防止投影本身合规却在包装后被 offload。
         self.projection_bytes = (
             min(projection_bytes, artifacts.inline_bytes - 1024) if artifacts else projection_bytes
         )

@@ -22,7 +22,15 @@ from .execution_service import ExecutionService, verify_agent_snapshot
 
 
 class InteractionService:
-    """HTTP、兼容 resume 和飞书共用同一决定表与 CAS 出站操作。"""
+    """把原生中断转成可回答的交互，并恢复实际提出问题的业务运行。
+
+    HTTP、旧审批 resume 入口和飞书共用同一校验流程：按冻结的 Agent 或
+    Workflow 发布契约登记问题，验证回答的类型、版本、动作摘要与当前权限，
+    再由仓储原子保存决定和待提交命令，交给 ExecutionService 发送。
+
+    root_run_id 用于整棵任务树的交互互斥，owner_run_id 则决定恢复位置；
+    子 Agent 提问时恢复的是子运行，父 Agent 仍等待委派结果。
+    """
 
     def __init__(
         self, client, execution, *, agent_profiles=None, workflow_catalog=None, clock=None
@@ -240,6 +248,8 @@ class InteractionService:
         self._validate_response(row, response)
         snapshot = (await asyncio.to_thread(self.execution.get, row["owner_run_id"]))["snapshot"]
         required = self._validate_release(snapshot)
+        # 回答交互不会授予新权限：当前 scopes 必须与最初的授权上界取交集，
+        # 同时检查 owner 的执行权限和该交互单独要求的审批权限。
         context = snapshot_context(snapshot, scopes)
         approval_scope = row["request"].get("required_scope")
         if (

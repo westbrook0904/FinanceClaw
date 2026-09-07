@@ -36,19 +36,54 @@ def test_default_disabled_root_and_explicit_root_allowlist():
 
 
 @pytest.mark.parametrize(
-    "changes",
+    ("changes", "expected_error"),
     [
-        {"ziwei_convention": None},
-        {"ziwei_hmac_key": "short"},
-        {"debug_full_io": True},
-        {"langsmith_hide_inputs": False},
-        {"environment": "staging"},
+        ({"ziwei_convention": None}, "explicit ziwei_convention"),
+        ({"ziwei_hmac_key": "short"}, "ziwei_hmac_key must contain at least 32 bytes"),
+        ({"debug_full_io": True}, "Ziwei requires debug_full_io=false"),
+        ({"langsmith_hide_inputs": False}, "Ziwei requires debug_full_io=false"),
+        ({"langsmith_hide_outputs": False}, "Ziwei requires debug_full_io=false"),
+        ({"environment": "staging"}, "Ziwei candidate is restricted to development/test"),
     ],
 )
-def test_candidate_configuration_fails_closed(changes):
+def test_candidate_configuration_fails_closed(changes, expected_error, monkeypatch):
     """规则、密钥、原文保护与环境未明确配置时不允许开启。"""
-    with pytest.raises(ValidationError):
+    # 验证未显式放行的默认行为，避免本地调试环境变量改变用例语义。
+    monkeypatch.delenv("FINANCECLAW_ZIWEI_ALLOW_FULL_IO", raising=False)
+    with pytest.raises(ValidationError) as error:
         settings(**changes)
+    # 只检查校验器消息，避免入参回显中的字段名误命中错误断言。
+    assert expected_error in error.value.errors()[0]["msg"]
+
+
+@pytest.mark.parametrize("environment", ["development", "test"])
+def test_candidate_full_io_can_be_explicitly_enabled(environment, monkeypatch):
+    """环境变量只放行日志保护校验，不覆盖用户的具体 tracing 设置。"""
+    monkeypatch.setenv("FINANCECLAW_ZIWEI_ALLOW_FULL_IO", "true")
+    configured = settings(
+        environment=environment,
+        debug_full_io=True,
+        langsmith_hide_inputs=False,
+        langsmith_hide_outputs=False,
+    )
+    assert configured.ziwei_allow_full_io
+    assert configured.debug_full_io
+    assert not configured.langsmith_hide_inputs
+    assert not configured.langsmith_hide_outputs
+
+
+@pytest.mark.parametrize("environment", ["staging", "production"])
+def test_candidate_full_io_override_is_restricted_to_local_environments(environment):
+    """即使紫微未启用，正式环境也不能保留完整 I/O 放行开关。"""
+    with pytest.raises(ValidationError, match="ziwei_allow_full_io is restricted"):
+        settings(environment=environment, ziwei_enabled=False, ziwei_allow_full_io=True)
+
+
+@pytest.mark.parametrize("changes", [{"ziwei_convention": None}, {"ziwei_hmac_key": "short"}])
+def test_candidate_full_io_override_keeps_other_validation(changes):
+    """放行日志校验不绕过规则与密钥校验。"""
+    with pytest.raises(ValidationError):
+        settings(ziwei_allow_full_io=True, **changes)
 
 
 def test_irrelevant_calendar_and_fold_parameters_cannot_be_silently_ignored():

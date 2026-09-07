@@ -143,6 +143,8 @@ class AgentHandoffV2(AgentHandoff):
     """任务与领域参数分离的 v2；版本由委派 Tool 固定，不让模型选择 release。"""
 
     schema_version: Literal[2] = 2
+    # target_version 由受治理工具装配时固定；arguments 再按该版本的
+    # input_schema 校验。继承的 task 仍是有界任务说明，不替代结构化领域参数。
     target_version: str
     arguments: dict[str, Any] = Field(default_factory=dict)
 
@@ -182,6 +184,7 @@ class DelegationResult(FrozenDelegationModel):
     target_id: str
     target_version: str
     child_run_id: str
+    # 与挂起 handoff 的父运行、参数摘要共同核验，防止串用另一委派的结果。
     parent_run_id: str | None = None
     arguments_hash: str | None = None
     status: Literal["completed", "rejected", "failed"]
@@ -249,7 +252,9 @@ class DelegationRecord(FrozenDelegationModel):
     updated_at: datetime
     completed_at: datetime | None = None
     delivered_at: datetime | None = None
+    # 保存发布、授权及父原生中断位置，为子运行重放和父恢复提供固定依据。
     execution_snapshot: dict[str, Any] | None = None
+    # 保留子执行终态；status 可进一步转为 delivered，不能用它覆盖执行结果。
     execution_status: str = "unknown"
 
     @property
