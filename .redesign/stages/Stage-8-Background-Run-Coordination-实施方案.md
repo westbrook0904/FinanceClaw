@@ -1,8 +1,11 @@
 # Stage 8：Coordinator Service、Webhook 接入与显式委派协议实施方案
 
-状态：Proposed（服务方向与共享数据库已确认；详细协议、调度引擎及发布门禁待实施验证）
+状态：8.0 协议与技术验证完成；PostgreSQL 持久化，coordination 自行推进；8A／8B／8C 待实施验收。
 
-初版日期：2026-09-07；重写日期：2026-09-08；方案修订：2。
+初版日期：2026-09-07；重写日期：2026-09-08；方案修订：4（基础能力优先，由 coordination 自主演进）。
+
+已交付范围、当前版本 Webhook 能力缺口与复现证据见
+[Stage-8 实施与验证](./Stage-8-实施与验证.md)。基础能力优先；后续增强直接在 coordination 内实现。
 
 适用基线：Stage 6 Fix A/B/C 的持久化执行与交互，以及 Stage 7 紫微领域 Agent 候选实现。
 本文件保留原路径以兼容已有链接，内容替代初版“后台 Worker＋可选 Webhook”方案。
@@ -29,8 +32,8 @@
   Coordinator Worker。渠道通知发送器是独立职责，可按负载与渠道凭证边界部署。
 - 保留现有单活动根 Turn、单待交互位置、串行委派和根预算。协议预留父子任务分别绑定 backend，
   首期生产只接 LangGraph；跨 backend 真实委派、并行和递归不因接口预留自动开放。
-- Temporal 与 PostgreSQL Worker 是调度实现候选，先完成相同故障场景的技术验证再选一条。
-  调度引擎尚未定案；本方案既不预先排除 Temporal，也不将其写成既定依赖。
+- 使用 PostgreSQL 持久化协调责任，由 coordination 自己实现有界推进和恢复。先交付基础闭环，
+  后续按实际需求在该包内增强续租、退避、并发控制和运维能力，决议见 RD-032。
 
 ### 1.3 成功标准与边界
 
@@ -65,7 +68,8 @@ Coordinator 不决定用户应使用哪个 Agent，不从自然语言猜测新�
 现有助手消息与 Turn 完成已有同事务原子性；本阶段扩展该事务，不误称原子性完全缺失。
 摘要应在最终结果提交后生成，摘要失败不能阻止结果交付。
 
-以上是仓库静态事实；尚未验证当前部署的 Webhook 行为、性能或真实飞书回执。
+以上为产品现状。8.0 已验证本机 Agent Server 的 Webhook 行为；目标生产部署、性能和
+真实飞书回执仍需后续验收。
 
 ### 2.2 对初版方案的替代
 
@@ -75,7 +79,7 @@ Coordinator 不决定用户应使用哪个 Agent，不从自然语言猜测新�
 | 8A 先轮询，8C 可选 Webhook | 首期完成 LangGraph Webhook 接入，事件唤醒优先，定时核对负责补偿 |
 | 协调逻辑直接依赖 AgentServerClient | Coordinator 核心使用 Backend Adapter，LangGraph 原生类型留在适配侧 |
 | handoff 隐含在状态观察分支内 | Delegation 是显式、可单独验收的业务协议与生命周期 |
-| 默认按数据库租约设计全部调度结构 | 调度引擎先验证后定案，业务记录与引擎内部调度记录分开 |
+| 默认按数据库租约设计全部调度结构 | PostgreSQL 保存有限协调责任；业务操作与租约分开，增强在 coordination 内演进 |
 | 数据库使用方式未体现服务边界 | 明确共享同一业务数据库、有限跨模块事务和逻辑写入入口 |
 
 [最终架构](../00-最终架构设计.md)中原生运行时、顶层 Agent、治理与审计原则继续保留。
@@ -148,7 +152,6 @@ Webhook Ingress，也不提供任意公开 Target。首期不强制为了进程�
 
 BFF 与 Coordinator 连接同一个 `financeclaw_app`。LangGraph 的原生数据库、checkpoint、
 Store 和队列仍按 backend 自身部署管理；共享业务数据库不授权直接读写 backend 内部表。
-如果最终选择 Temporal，它的服务端持久化同样属于引擎内部，不与业务表混合。
 
 领域拥有事实和写入规则，应用服务组合必要事务。“模块所有权”指唯一逻辑写入接口，
 不要求整张表只能由某一个进程修改。例如 BFF 通过会话仓储追加用户消息，Coordinator 完成
@@ -445,9 +448,9 @@ root 的渠道绑定；不能误恢复 parent 或为审批新建一个用户 Tur
 领域结果 `needs_clarification` 保持既有语义：child 返回结果、父 Agent 追问，本 Turn 结束，
 用户补充后开启新 Turn；不把所有自然语言追问都改造成原生暂停。
 
-## 9. Coordinator Worker 与调度引擎选型
+## 9. Coordinator 基础推进与后续增强
 
-### 9.1 与引擎无关的推进规则
+### 9.1 有界推进规则
 
 每次推进有界执行：
 
@@ -461,35 +464,19 @@ root 的渠道绑定；不能误恢复 parent 或为审批新建一个用户 Tur
 不能在一个数据库事务或一个活动协程内阻塞等待整段 LLM 输出。
 观察重试、同一命令的回执恢复、用户新 Turn 的业务重试必须分开计数和处理。
 
-### 9.2 不随引擎改变的安全边界
+### 9.2 基础正确性边界
 
 现有操作日志中 `prepared` 可被唯一领取；`claimed/uncertain` 不能因 Worker 租约、
-Activity timeout 或进程重启直接退回可重发状态。查不到远端记录不证明从未执行。
+远程超时或进程重启直接退回可重发状态。查不到远端记录不证明从未执行。
 没有经验证的远端幂等保证时，保留对账／需要处理状态，不能更换键来“自动修复”。
 
-即使观察任务或 Activity 可重复执行，数据库仍以固定 operation、请求 hash、精确前驱、
+即使观察任务或 Worker 步骤可重复执行，数据库仍以固定 operation、请求 hash、精确前驱、
 根取消／预算条件和 Journal 唯一性防止重复业务副作用。
 旧推进者不能覆盖新 revision；已经发出的 HTTP 无法仅靠数据库租约撤回。
 
-### 9.3 Temporal 候选
+### 9.3 PostgreSQL 支撑的协调责任
 
-推荐技术验证以一个 root task 对应一个持久化协调 Workflow，LangGraph Run 仍由原 backend
-执行；与数据库、Agent Server 和渠道的交互放在 Activity 或专门发送器。
-Webhook／command inbox 通过可靠桥接启动或唤醒固定 Workflow，重复信号按稳定事件／请求 ID
-处理。共享业务受理事务不能与 Temporal RPC 假装成原子提交，未完成桥接必须可恢复。
-
-Temporal 承担协调的等待、定时器、调度与恢复；如果选择它，不再同时实现数据库根任务
-到期扫描租约作为第二套正式协调引擎。业务操作日志、授权、预算、投影与通知回执仍保留。
-运行中的 Workflow 要有回放兼容和版本策略，不能把全部现有服务直接搬入确定性 Workflow。
-
-Temporal 仍需要应用 Worker，且 Activity 可执行多次，外部操作幂等不能移交给框架自动解决。
-依据：[Workers](https://docs.temporal.io/workers)、
-[Activity 幂等](https://docs.temporal.io/activity-definition)及
-[Workflow 确定性](https://docs.temporal.io/workflow-definition)。
-
-### 9.4 PostgreSQL Worker 候选
-
-若选择数据库驱动，增加有限的到期责任记录：root、下次核对时间、ready／parked／stopped、
+增加有限的到期责任记录：root、下次核对时间、ready／parked／stopped、
 单调唤醒序号、租约 owner／epoch／截止时间。短事务使用
 `FOR UPDATE SKIP LOCKED` 领取，随后释放锁；所有后续写入校验租约和业务前驱。
 语义依据：[PostgreSQL SELECT](https://www.postgresql.org/docs/16/sql-select.html)。
@@ -501,20 +488,28 @@ Temporal 仍需要应用 Worker，且 Activity 可执行多次，外部操作幂
 Webhook 为正常唤醒来源，扫描只领取到期活跃责任及异常待办，不全表高频扫描历史任务。
 SQLite 只用于确定性单 Worker 测试，不能代替 PostgreSQL 多进程领取和失效写入验证。
 
-### 9.5 选型交付与门禁
+### 9.4 基础闭环优先，增强在 coordination 内演进
 
-| 对比项 | 两条候选必须提供的证据 |
+8A 首先具备明确的受理事务、认证 Webhook Ingress、持久化 Inbox／到期责任、固定操作领取、
+串行父子委派与交互恢复、原子最终结果和只读查询。幂等、权限、取消与回执不确定性是基础
+正确性的一部分，不能为了简化而依赖进程内状态或盲目重发。
+
+后续根据实际负载在 coordination 内增强调度：批次领取、续租、自适应退避、租户公平性、
+故障诊断和运维指标。通知交付按 8B 增加独立职责，生产迁移和容量按 8C 验收。
+不引入 Temporal，不保留候选调度器或通用 Scheduler SPI，也不重新实现 backend 的 Graph 运行时。
+
+### 9.5 验证门禁
+
+| 验证项 | 必须提供的证据 |
 |---|---|
 | 无前台连接的主子闭环 | 首次提交、委派、交互、子结果交付和根完成 |
 | 故障正确性 | 回调丢失／重复／乱序，远端成功但本地回执丢失，多实例竞争，取消与授权过期 |
-| 开发维护成本 | 实际业务代码、调度代码、接入桥接代码、故障测试和运维工作量 |
-| 部署成本 | 本地启动、生产依赖、服务／数据库资源与恢复流程；不能用假设价格下结论 |
-| 发布演进 | 运行中任务跨版本继续、老版本隔离、迁移和回滚 |
+| 事务与责任 | 受理、完成同进同退；新唤醒不丢；旧租约不写；未知操作不重发 |
+| 发布演进 | 冻结输入／release、兼容 driver 继续、迁移和回滚 |
 | 后端适配 | 核心不依赖 LangGraph 原生对象，能力不足明确拒绝 |
 
-在正式建设引擎专用表和完整调度循环前，产出选型记录与可复现证据，选择唯一正式引擎。
-选型实验与正式引入依赖分别记录；本次文档重写不涉及依赖安装或外部服务开通。
-不要为未来可替换性开发完整通用 Scheduler SPI；保留业务协调边界即可。
+8.0 交付契约、共享事务方法和可复现验证；8A 将基础闭环接入正式 Coordinator 服务。
+实验表和合成图不代替生产迁移与目标部署验收。
 
 ## 10. 持久化模型建议
 
@@ -531,7 +526,7 @@ SQLite 只用于确定性单 Worker 测试，不能代替 PostgreSQL 多进程�
 | `run_progress` | 归属、当前尝试引用、revision、status、waiting_reason、交互和结果引用、更新时间 |
 | `run_progress_events` | root＋revision 唯一，安全业务事件和引用；用于 SSE 回放与结果交付 |
 | `run_notification_targets/deliveries` | 固定渠道身份、目标＋事件唯一、固定内容／分片、发送键、租约、回执及结果 |
-| 引擎专用记录 | PostgreSQL 路线的协调租约／到期责任，或 Temporal 路线的 Workflow 绑定／桥接记录；选型后确定 |
+| 协调责任记录 | 协调租约、到期时间、单调 wake 序号与 driver 版本 |
 
 任务层记录引用现有业务 Run，不复制 Graph messages／checkpoint；业务进度是可重建投影。
 无变化查询不增加 revision；事件只保存业务进度，不建设逐 token 权威历史。
@@ -628,7 +623,7 @@ Coordinator 在状态提交事务中通过通知模块写入待投递意图，�
 
 | 阶段 | 实施内容 | 可验收产物 |
 |---|---|---|
-| 8.0：协议与技术验证 | 共享库受理／完成事务、Delegation 与 Continuation、LangGraph 回调能力、Temporal／PostgreSQL 对比 | 契约、能力矩阵、故障验证、唯一调度引擎的决议；不计为功能发布完成 |
+| 8.0：协议与技术验证 | 共享库受理／完成事务、Delegation 与 Continuation、LangGraph 回调能力、基础推进故障验证 | 契约、能力矩阵、共享事务与基础推进验证；不计为功能发布完成 |
 | 8A：Coordinator 与 LangGraph 闭环 | 独立 Ingress／Worker、持久化 Inbox、首次提交、显式委派、用户决定、精确恢复、后台授权与取消、Journal／终态原子提交、只读查询及补偿 | 不访问 GET／SSE 也可 root → child → root；回调接入与回调全丢场景均通过 |
 | 8B：结果与渠道交付 | 扩展状态／完成事务写入通知意图、业务事件订阅、SSE 恢复、固定通知目标和发送器、回执／不确定性处理 | 展示断开后仍有最终结果与待交互通知的持久化责任 |
 | 8C：迁移与生产收敛 | 旧根接管、唯一驱动、真实多进程／多实例故障演练、滚动发布、容量与运维门禁 | 清退查询驱动并完成正式环境验收 |
@@ -650,7 +645,7 @@ Stage-8 前置分包已完成，采用[三包布局](../../docs/architecture/pac
 | `coordination/application/admission.py`（新增） | 共享数据库受理 Facade，显式 session，无远程执行，通过公开 API 供 BFF 调用 |
 | `coordination/application/coordinator.py`（新增） | 有界业务推进与请求处理 |
 | `coordination/application/query.py`、`authorization.py`（新增） | 纯查询与有界授权用例 |
-| `coordination/backends/ports/agent_backend.py`（新增） | 中立任务操作与能力契约；保留 AgentServerClient 为 LangGraph 底层 |
+| `coordination/backends/ports/backend.py`（8.0 已新增） | 中立任务操作与能力契约；保留 AgentServerClient 为 LangGraph 底层 |
 | `coordination/` 内的协议和持久化模块（新增） | Inbox、请求索引、执行/等待引用及协调责任；跨服务契约进入 `kernel` |
 | `shared/execution_ledger/`、`coordination/delegation/`、`interactions/` | 演进已有事实、状态和提交保护，保留组合事务 |
 | `coordination/backends/langgraph.py` | 扩展已有 SDK 适配，规范化 Webhook、interrupt/resume 与请求/响应 |
@@ -658,7 +653,7 @@ Stage-8 前置分包已完成，采用[三包布局](../../docs/architecture/pac
 | `coordination/delegation/service.py`、Workflow/Interaction 服务 | 供 Coordinator 调用的命令与观察能力，废除查询驱动 |
 | `agent_server/tools/delegation.py`、`agent_server/middleware/` | 显式请求版本、稳定 ID、结果校验及在途授权/预算/取消 |
 | `bff/notifications/`（新增）、渠道适配器 | 待办、目标、发送回执与可靠投递；通知意图纳入共享完成事务 |
-| `coordination/worker/`（新增） | Worker 启动、调度、优雅停机与巡检，引擎专用实现于选型后确定 |
+| `coordination/worker/`（新增） | Worker 启动、有限的 PostgreSQL 责任领取、优雅停机与巡检 |
 | 三包各自的 `bootstrap.py` | 继续按角色装配；Coordinator 独立进程不依赖 BFF 或执行端代码 |
 | `shared/infrastructure/migrations/`、配置、部署文档、`tests/stage8/` | 统一增量迁移、角色配置和真实故障门禁 |
 
@@ -668,10 +663,10 @@ Worker 不能依赖某个 BFF app 实例才能装配，BFF 也不能导入会启
 
 ### 14.2 迁移
 
-当前迁移头为 `0008_stage6fix_c`；开工时再次检查，建议按协调协议／Inbox、引擎专用结构、
+当前迁移头为 `0008_stage6fix_c`；开工时再次检查，建议按协调协议／Inbox、协调责任结构、
 通知记录分批新增迁移，不提前占用或覆盖并行迁移号。
 
-每个 root 固定 `driver_mode=legacy/coordinator`；选定引擎后另有版本化 engine binding。
+每个 root 固定 `driver_mode=legacy/coordinator`；另保存协议与 driver 版本，恢复时校验兼容性。
 原方案中的 worker 模式如已在外部分支出现，必须显式映射，不静默创建第二种驱动身份。
 
 1. 先扩展 schema；新接管关闭，迁移脚本不发网络请求、不启动历史任务。
@@ -690,7 +685,7 @@ Stage 7 的冻结资料与时钟／时区快照不因迁移重算。
 先关闭新根接入和新命令领取，保留只读查询、已在途操作核对与诊断。
 不能自动将已接管根改回 legacy，不能回滚到忽略新授权／continuation 的旧代码。
 保留新增表、Inbox 和操作证据；默认不执行破坏性 downgrade。
-如果采用 Temporal，保留可继续现有 Workflow 的兼容 Worker／版本，不重新启动相同业务任务。
+保留兼容原 driver／协议版本的 Worker，从原持久化责任继续，不重新启动相同业务任务。
 共享数据库的迁移与回滚统一协调，不能只回滚某个进程并假设旧 schema 仍兼容。
 
 ## 15. 配置、观测和运维
@@ -707,12 +702,12 @@ Stage 7 的冻结资料与时钟／时区快照不因迁移重算。
 | 事件与补偿 | 事件尽快唤醒；建议活跃尝试无回调时 5～30 秒分级核对，异常退避；紧迫恢复按单独策略 |
 | 授权 | 建议任务 TTL 上限 1800 秒，HTTP 不超过 JWT 到期；不延长交互窗口 |
 | 渠道通知 | 单独开关；最多次数只适用于明确可重试失败，uncertain 受回执与幂等窗口约束 |
-| 引擎专用参数 | 租约／续期，或 Temporal namespace／task queue／版本策略，在选型后给出正式值 |
+| 协调参数 | 租约／续期、责任扫描间隔和 driver 版本；根据基本闭环的实际调用边界设定 |
 
 健康检查分层：Ingress 可持久化接收、Worker 可处理已受理责任、backend 可观察／提交、
 通知可投递分别报告。BFF ready 必须识别“允许 Coordinator 新受理但没有兼容处理者”的异常；
-已持久化事实不丢弃，但不能继续宣称系统可正常推进。若用 Temporal，桥接积压和 Worker
-可用性都要纳入检查，只有 Temporal Service 健康不够。
+已持久化事实不丢弃，但不能继续宣称系统可正常推进。协调责任积压和兼容 Worker 的可用性
+必须纳入检查。
 
 最小指标包括：Inbox／未关联事件积压与年龄、接收到推进延迟、回调覆盖和补偿探测比例、
 每 task 的 backend 请求量、重复／迟到事件、continuation 无法确认、子结果待交付、
@@ -740,7 +735,7 @@ INFO 记录状态变化、命令与回执、交互和异常；无变化观察使
 | S8-08 | callback run 与 thread 最新 checkpoint 不对应 | 不取错结果／interrupt，不恢复错误 owner |
 | S8-09 | 节点重放、Webhook 与定时观察同时发现 handoff | 相同稳定请求仅受理一次；不同输入同 ID 报冲突 |
 | S8-10 | 未知请求类型、伪造 Target／权限、缺 continuation | 保持可见阻塞或拒绝；不猜测委派／审批 |
-| S8-11 | child 远端创建成功、本地回执丢失 | 原 operation 查证；不因租约／Activity 重试创建第二个 child |
+| S8-11 | child 远端创建成功、本地回执丢失 | 原 operation 查证；不因重新领取协调责任创建第二个 child |
 | S8-12 | child 完成，父恢复准备／提交／确认各边界崩溃 | 原交付操作恢复；submitted、applied 与 child 终态分开 |
 | S8-13 | 子结果 ID／parent／版本／输入 hash 不匹配 | 拒绝错误交付，不因收到终态回调直接完成根 |
 | S8-14 | 父连续顺序委派、历史 failed、迟到旧结果 | 仅推进当前请求；历史不复活，新用户重试走新 Turn |
@@ -756,7 +751,7 @@ INFO 记录状态变化、命令与回执、交互和异常；无变化观察使
 | S8-24 | 目标撤销、过期交互、分片、卡片与最终文本 | 不泄漏错误目标，不发送过时批准请求，不双份最终发送 |
 | S8-25 | SSE 重连、多订阅者、事件过期 | 独立游标、快照恢复，不承诺全部 token 回放 |
 | S8-26 | 不支持 continuation 的 backend 桩、异构父子引用 | 能力门禁成立；原生 LangGraph 对象不进入核心，绑定不自动迁移 |
-| S8-27 | Temporal 候选的 DB 提交后桥接失败／重复 Signal／版本回放 | 若选该引擎，原工作流可靠启动／唤醒，Activity 重试不重发未知业务操作 |
+| S8-27 | DB 已提交而进程崩溃、重复唤醒或 driver 版本不兼容 | 原责任可恢复；重复 wake 不重发业务操作；不兼容版本拒绝写入 |
 | S8-28 | 共享库锁竞争、schema 不兼容、旧新驱动混合与回滚 | 兼容性门控、唯一驱动、固定事务边界与保留证据 |
 | S8-29 | Ingress／Worker／backend／数据库各自故障后恢复 | 状态延迟可见，保留原任务，不谎报成功或自动重建 |
 | S8-30 | Stage 7 合成资料、跨时区／跨日恢复、原始回调载荷 | 资料与时钟快照不漂移，日志／Inbox／事件不扩散敏感正文 |
@@ -767,7 +762,7 @@ INFO 记录状态变化、命令与回执、交互和异常；无变化观察使
 - 契约与应用集成：可控时钟、脚本化 Agent 和能力受限的 Adapter 桩。
 - 真实 PostgreSQL：独立 BFF、Ingress 和至少两个 Worker 进程，验证共享事务、命令保护和故障。
 - 真实 LangGraph：隔离发布、真实 Run 回调、interrupt/resume、精确尝试与回执丢失；无需先用真实资料。
-- 调度候选：以同一闭环和故障矩阵比较；仅选定路线形成正式生产依赖。
+- 基础调度：直接验证 coordination 的 PostgreSQL 责任领取、恢复和固定操作语义。
 - 飞书：测试单聊与合成内容，验证 SDK 真实回执和幂等窗口，不以布尔 gateway 桩代替。
 - 回归：现有 stage4／stage5／stage6／stage6fix／stage6fixc／stage7 与架构测试；
   将旧“status 推进”断言改为 Coordinator 推进，并新增 GET 只读负向断言。
@@ -787,9 +782,10 @@ INFO 记录状态变化、命令与回执、交互和异常；无变化观察使
 已确定：Coordinator Service、Webhook Ingress＋Worker、首个 LangGraph Adapter、
 BFF 与 Coordinator 共享 `financeclaw_app`。
 
-正式实现前的技术产物：调度引擎选型、部署 Webhook 能力矩阵、Continuation／交付证据契约、
+正式实现前的技术产物：基础推进边界、部署 Webhook 能力矩阵、Continuation／交付证据契约、
 共享事务清单与迁移兼容策略。跨 backend 真实委派先保持扩展预留，首期生产能力不自动扩大。
 授权 TTL、回调补偿频率、事件保留、飞书投递模式和容量值是可验证的初始建议。
 
-本轮只重写本实施方案并更新架构决议说明与导航；不修改业务代码、数据库、依赖、运行配置或部署。
-后续使用 `Stage-8-实施与验证.md` 记录选型、实际改动、命令、证据、能力缺口及发布状态。
+8.0 已交付协议、共享事务方法与隔离验证，正式推进能力由 coordination 基于 PostgreSQL 实现。
+`Stage-8-实施与验证.md` 记录实际改动、命令、证据、能力缺口及发布状态。
+当前未接入产品后台 Worker，也未新增正式数据库迁移；下一阶段从 8A 开始。

@@ -5,6 +5,7 @@
 """
 
 from collections.abc import Sequence
+from contextlib import nullcontext
 from datetime import UTC, datetime
 from hashlib import sha256
 from typing import Protocol
@@ -550,6 +551,7 @@ class SqlAlchemyConversationRepository:
         target_type: str,
         target_id: str,
         target_version: str,
+        session: Session | None = None,
     ) -> tuple[ConversationTurn, ConversationMessage, bool]:
         """幂等开启 turn 并写入用户消息，返回（turn，用户消息，是否幂等重放）。
 
@@ -566,6 +568,7 @@ class SqlAlchemyConversationRepository:
             target_type: 目标对象类型。
             target_id: 目标对象标识。
             target_version: 目标对象版本。
+            session: 外层组合事务；提供时不另建连接、不自行提交。
 
         Returns:
             tuple[ConversationTurn, ConversationMessage, bool]:
@@ -577,7 +580,7 @@ class SqlAlchemyConversationRepository:
             ConversationConflict: 会话非活跃，或幂等 turn 缺少用户消息时抛出。
 
         """
-        with self._sessions.begin() as session:
+        with nullcontext(session) if session is not None else self._sessions.begin() as session:
             # 首次读之前取得数据库写锁；SQLite 不实现 SELECT FOR UPDATE，
             # no-op UPDATE 同样串行化同一会话，避免双受理和 MAX(sequence) 竞争。
             session.execute(
@@ -773,6 +776,7 @@ class SqlAlchemyConversationRepository:
         run_id: str,
         content: str,
         parent_message_id: str | None = None,
+        session: Session | None = None,
     ) -> ConversationMessage:
         """为 turn 追加 assistant 回复消息并收敛 turn 状态，幂等可重放。
 
@@ -783,6 +787,7 @@ class SqlAlchemyConversationRepository:
             run_id: 平台运行标识。
             content: assistant 回复原文。
             parent_message_id: 父消息标识；普通回复为 None，分支消息指定父消息。
+            session: 外层组合事务；提供时不另建连接、不自行提交。
 
         Returns:
             ConversationMessage: 新建或既有的 assistant 消息记录。
@@ -793,7 +798,7 @@ class SqlAlchemyConversationRepository:
 
         """
         digest = content_hash(content)
-        with self._sessions.begin() as session:
+        with nullcontext(session) if session is not None else self._sessions.begin() as session:
             session.execute(
                 update(ConversationRow)
                 .where(

@@ -1,0 +1,12 @@
+# Experimental only; deliberately excluded from pyproject.toml production dependencies.
+langgraph==1.2.11
+langgraph-api==0.13.3
+langgraph-cli==0.4.31
+langgraph-sdk==0.4.4
+langgraph-runtime-inmem==0.33.3
+langgraph-checkpoint==4.2.0
+pydantic==2.13.5
+sqlalchemy==2.0.52
+psycopg[binary]==3.3.5
+httpx==0.28.1
+jsonschema==4.26.0

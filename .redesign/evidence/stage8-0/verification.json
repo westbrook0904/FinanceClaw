@@ -1,0 +1,109 @@
+{
+  "verified_at": "2026-09-08T13:11:53+08:00",
+  "scope": "Stage-8.0 protocol, shared-transaction composition, and PostgreSQL-backed coordination probes; production 8A wiring remains pending",
+  "baseline_commit": "804b722c5d859dcbff10c66d8e7f79f036372186",
+  "working_tree": "Uncommitted Stage-8 changes; existing local deployment changes and four Feishu lifecycle tests preserved",
+  "environment": {
+    "python": "3.13.15",
+    "platform": "Darwin",
+    "machine": "x86_64",
+    "packages": {
+      "langgraph": "1.2.11",
+      "langgraph-api": "0.13.3",
+      "langgraph-cli": "0.4.31",
+      "langgraph-sdk": "0.4.4",
+      "langgraph-runtime-inmem": "0.33.3",
+      "langgraph-checkpoint": "4.2.0",
+      "pydantic": "2.13.5",
+      "sqlalchemy": "2.0.52",
+      "psycopg": "3.3.5",
+      "httpx": "0.28.1",
+      "jsonschema": "4.26.0",
+      "pytest": "9.1.1",
+      "ruff": "0.16.5"
+    },
+    "postgresql": "16.15 (Debian 16.15-1.pgdg13+2)",
+    "postgres_container_image": "postgres:16@sha256:f1c3376c26f2609ab9f29f71f824103fe2fcd8ee0346485cb6122a4f93df6f94",
+    "agent_server": "Actual local dev/inmem HTTP server with native interrupts and checkpoints; synthetic graphs without LLM calls"
+  },
+  "checks": [
+    {
+      "command": ".venv/bin/python -m pytest -q -m 'not external'",
+      "exit_code": 0,
+      "passed": 276,
+      "skipped": 7,
+      "deselected": 2,
+      "warnings": 2,
+      "seconds": 48.08,
+      "stage8_tests": 22,
+      "preexisting_untracked_feishu_tests": 4
+    },
+    {
+      "command": ".venv/bin/python -m experiments.stage8.run --output /tmp/financeclaw-stage8-coordination-final",
+      "exit_code": 0,
+      "report": "report.json"
+    },
+    {
+      "command": ".venv/bin/ruff check financeclaw tests scripts experiments",
+      "exit_code": 0
+    },
+    {
+      "command": ".venv/bin/ruff format --check financeclaw tests scripts experiments",
+      "exit_code": 0,
+      "files": 264
+    },
+    {
+      "command": ".venv/bin/python scripts/check_secret_leaks.py",
+      "exit_code": 0
+    },
+    {
+      "check": "Same credential patterns applied to experiments/ and .redesign/",
+      "exit_code": 0
+    },
+    {
+      "command": "git diff --check",
+      "exit_code": 0
+    }
+  ],
+  "limitations": [
+    "No production Coordinator bootstrap, HTTP admission changes, or database migrations in 8.0",
+    "No production Postgres/Redis Agent Server deployment or HA/capacity validation",
+    "LangGraph API 0.13.3 outbound allowed_fields startup fails; authenticated ingress minimizes persisted notification fields",
+    "The probe uses a short lease and has no complete long-HTTP-call renewal policy; 8A must define lease/timeouts while preserving operation claims",
+    "Unresolved submission receipts remain uncertain and are not resent or falsely marked cancelled",
+    "Probe elapsed_seconds are fault-scenario durations, not performance benchmarks"
+  ],
+  "report_sha256": "024ee5f6170b291873ec0de72b3d7d9f75418e458f65a688c29893d18d21590a",
+  "source_sha256": {
+    ".redesign/00-最终架构设计.md": "8b055a2744af8e3ad810ee2520138944f56f59daf62ff4d05db0b7a268107adf",
+    ".redesign/01-架构决议汇总.md": "53c542d7ffc5184691ba6e96eafa035d7c2c935954f812b026c8853f7a112a42",
+    ".redesign/README.md": "cb2c8a275f49f71371367dc9c8c146f35cc7c6417544d9a7dc531a1237fff04d",
+    ".redesign/stages/Stage-8-Background-Run-Coordination-实施方案.md": "7c334e7be76feb83db860021eff175579a193130c0d6d3d2bd8721b863dc92e3",
+    ".redesign/stages/Stage-8-实施与验证.md": "3a5c20316a6b4d9ead2f135a77ab3cdb2d09e324896a735e975d0f84fa961a30",
+    "experiments/__init__.py": "f51059de8ffd00cfaba4013b9375610816b961c24480867a153f7a4310547130",
+    "experiments/stage8/README.md": "286cb32df82322031abe6c725560a5114119f6902c7820b1b78df4b282529253",
+    "experiments/stage8/__init__.py": "f84c1343e23df6b3708b843604b99037229cebbc997fd3c217b781131f70fcfe",
+    "experiments/stage8/backend.py": "47a62f3385db0d9eeba9f2cb1d96c199dd7a6d22d7806d63a5db4ccfd68c2691",
+    "experiments/stage8/driver.py": "dfbda26f04650790ddc5bffb7575531b57ab8f6496f5767573f2db46eaa2fb16",
+    "experiments/stage8/environment.py": "af6e5a3b5297be525c274b7d0d7bd826633546a25b2f0fc21ebc8a424c836344",
+    "experiments/stage8/graphs.py": "b2acde9efeff51acf075bada4f08a1cec050e4c9c5f61ecb54c3630c36871113",
+    "experiments/stage8/postgres_worker.py": "27e36376aab176fb56e1db109bbe6783a92f149ed61b2c34286f6a2787c3c062",
+    "experiments/stage8/processes.py": "b0c6aff753d7f3136e74be219551f8d079da2dcef7af83b1de51743b29356531",
+    "experiments/stage8/requirements.txt": "a664eb7d9cb04133d6071e78ad189425d90e9d0a5101b45c4e66c42720dfd399",
+    "experiments/stage8/run.py": "d21d49cdab3c8f122bb4c97e27820ed6c9a74f5cc0fc4cca09b3e7522210122f",
+    "experiments/stage8/store.py": "58c2ac158abc1279934c25a0df92c7642acad342aec702ec9d68608f5fd8fd07",
+    "experiments/stage8/transaction_probe.py": "3b786829014d6cd4b68b6166953c87d81f97461a469a1ff2c05b7089016172cf",
+    "experiments/stage8/webhook_probe.py": "9a2c8e01cd31750976dc8d8024649c482b514e578ff63aae999e7d5f189c03a4",
+    "financeclaw/coordination/backends/langgraph_protocol.py": "b9d64f0c32c9130dd47a77a1b8fc72308156887ec9f3365ba25758d5155c831f",
+    "financeclaw/coordination/backends/ports/backend.py": "e91ffcaf303e4a4cd408777c2e1a9399146b823526f01d56624851d68e0005f6",
+    "financeclaw/kernel/coordination.py": "503b980c4a1239c4af3d1bc1221041bc94ed1104ebf5363b5fba3fa02a84e8b3",
+    "financeclaw/shared/conversation/repository.py": "469e2a99edf389278547eafa06f30137f0c1979c1ba10cf25645fc3f127b09db",
+    "financeclaw/shared/execution_ledger/repository.py": "72f0ade530a1dca96c964e06689d7ff8ee9772c6b996c5aba634e7c8875fed7b",
+    "pyproject.toml": "553b4c05f1a010cdc403b869d12e5d6794cff382b1dda185acaffca4de7d3843",
+    "tests/stage8/__init__.py": "9a7b8d55b407f025eecc0019a745060bf5b428725fb0f1104d17ba8d8f995533",
+    "tests/stage8/test_protocol.py": "7489720533bbeeadd1c22b5971aed59ccfbac8d545c80f0998c0730587bbca97",
+    "tests/stage8/test_shared_session.py": "9558b645e39b9812b6b2cd06b3302d62a89f1ad642a4ec242101ead8921b34b5",
+    "uv.lock": "7e77bd34c9d2f0150f951daa74a23ae67f6223a71cfa321ae2b9d2c1e0b69a9b"
+  },
+  "source_note": "Source digests refer to the Stage-8 commit content; preexisting Stage-6 navigation additions remain outside this commit."
+}

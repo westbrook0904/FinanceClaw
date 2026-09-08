@@ -2,6 +2,7 @@
 
 import json
 from collections.abc import Mapping
+from contextlib import nullcontext
 from datetime import UTC, datetime
 from hashlib import sha256
 from typing import Any
@@ -56,6 +57,19 @@ def _operation(row: RunOperationRow) -> dict[str, Any]:
     return {column.name: getattr(row, column.name) for column in row.__table__.columns}
 
 
+def _ensure_savepoint_transaction(session: Session) -> None:
+    """SQLite legacy 模式首次 SAVEPOINT 前显式 BEGIN，避免 RELEASE 提前提交。
+
+    Session 仍唯一拥有外层 commit／rollback。PostgreSQL 已有真实事务，不需补发。
+    """
+    connection = session.connection()
+    if (
+        connection.dialect.name == "sqlite"
+        and not connection.connection.dbapi_connection.in_transaction
+    ):
+        connection.exec_driver_sql("BEGIN")
+
+
 class ExecutionRepository:
     """持久化运行授权、出站操作、根任务预算和取消事实。
 
@@ -73,23 +87,35 @@ class ExecutionRepository:
         self.sessions = sessions
 
     def register(
-        self, run_id: str, snapshot: dict[str, Any], *, root_run_id: str | None = None
+        self,
+        run_id: str,
+        snapshot: dict[str, Any],
+        *,
+        root_run_id: str | None = None,
+        session: Session | None = None,
     ) -> dict[str, Any]:
-        """首次远程提交前固定权限和发布版本，绝不覆盖已有快照。"""
-        with self.sessions.begin() as session:
-            try:
-                with session.begin_nested():
-                    session.add(
-                        RunExecutionRow(
-                            run_id=run_id, root_run_id=root_run_id or run_id, snapshot=snapshot
-                        )
+        """固定权限、发布和根归属；显式 Session 参与受理事务且不自行提交。"""
+        if session is None:
+            with self.sessions.begin() as transaction:
+                return self.register(run_id, snapshot, root_run_id=root_run_id, session=transaction)
+        _ensure_savepoint_transaction(session)
+        try:
+            with session.begin_nested():
+                session.add(
+                    RunExecutionRow(
+                        run_id=run_id, root_run_id=root_run_id or run_id, snapshot=snapshot
                     )
-                    session.flush()
-            except IntegrityError:
-                existing = session.get(RunExecutionRow, run_id)
-                if existing is None or existing.snapshot != snapshot:
-                    raise ExecutionConflict("execution snapshot cannot be replaced") from None
-            return _execution(session.get(RunExecutionRow, run_id))
+                )
+                session.flush()
+        except IntegrityError:
+            existing = session.get(RunExecutionRow, run_id)
+            if (
+                existing is None
+                or existing.snapshot != snapshot
+                or existing.root_run_id != (root_run_id or run_id)
+            ):
+                raise ExecutionConflict("execution snapshot or root cannot be replaced") from None
+        return _execution(session.get(RunExecutionRow, run_id))
 
     def get(self, run_id: str) -> dict[str, Any]:
         """读取执行快照；旧记录没有授权证明时 fail closed。"""
@@ -167,6 +193,7 @@ class ExecutionRepository:
             with self.sessions.begin() as transaction:
                 return self.prepare(operation_id, run_id, request, session=transaction)
         fingerprint = digest(request)
+        _ensure_savepoint_transaction(session)
         try:
             with session.begin_nested():
                 session.add(
@@ -185,38 +212,70 @@ class ExecutionRepository:
             raise ExecutionConflict("operation key reused with a different command or snapshot")
         return _operation(row)
 
-    def claim(self, operation_id: str) -> bool:
+    def claim(self, operation_id: str, *, session: Session | None = None) -> bool:
         """只有一个进程获得提交权；领取与根预算扣减属于同一事务。"""
-        with self.sessions.begin() as session:
-            result = session.execute(
-                update(RunOperationRow)
-                .where(
-                    RunOperationRow.operation_id == operation_id,
-                    RunOperationRow.status == "prepared",
-                )
-                .values(status="claimed", updated_at=datetime.now(UTC))
+        if session is None:
+            with self.sessions.begin() as transaction:
+                return self.claim(operation_id, session=transaction)
+        return self._claim_in_session(operation_id, session)
+
+    def _claim_in_session(self, operation_id: str, session: Session) -> bool:
+        """在调用方的授权、租约和预算事务中唯一领取，不打开第二个连接。"""
+        result = session.execute(
+            update(RunOperationRow)
+            .where(
+                RunOperationRow.operation_id == operation_id,
+                RunOperationRow.status == "prepared",
             )
-            if result.rowcount != 1:
-                return False
-            row = session.get(RunOperationRow, operation_id)
-            # 扣减失败会回滚上面的 claimed，不能留下未获预算的提交权。
-            self.consume(row.run_id, "operation", session=session)
-            resume = (row.request.get("command") or {}).get("resume", {})
-            if isinstance(resume, Mapping) and len(resume) == 1 and "decisions" not in resume:
-                resume = next(iter(resume.values()))
-            if isinstance(resume, Mapping) and (
-                resume.get("status") == "rejected"
-                or any(item.get("type") == "reject" for item in resume.get("decisions", ()))
-            ):
-                execution = session.get(RunExecutionRow, row.run_id)
-                session.execute(
-                    update(RunExecutionRow)
-                    .where(
-                        RunExecutionRow.run_id == execution.root_run_id,
-                    )
-                    .values(side_effects_denied=True)
+            .values(status="claimed", updated_at=datetime.now(UTC))
+        )
+        if result.rowcount != 1:
+            return False
+        row = session.get(RunOperationRow, operation_id)
+        # 扣减失败会回滚上面的 claimed，不能留下未获预算的提交权。
+        self.consume(row.run_id, "operation", session=session)
+        resume = (row.request.get("command") or {}).get("resume", {})
+        if isinstance(resume, Mapping) and len(resume) == 1 and "decisions" not in resume:
+            resume = next(iter(resume.values()))
+        if isinstance(resume, Mapping) and (
+            resume.get("status") == "rejected"
+            or any(item.get("type") == "reject" for item in resume.get("decisions", ()))
+        ):
+            execution = session.get(RunExecutionRow, row.run_id)
+            session.execute(
+                update(RunExecutionRow)
+                .where(
+                    RunExecutionRow.run_id == execution.root_run_id,
                 )
-            return True
+                .values(side_effects_denied=True)
+            )
+        return True
+
+    def observe_in_session(
+        self,
+        session: Session,
+        operation_id: str,
+        *,
+        server_run_id: str,
+        result: dict[str, Any],
+    ) -> None:
+        """完成事务的确切尝试证据；Journal／投影失败时与观察结果一同回滚。"""
+        row = session.scalar(
+            select(RunOperationRow)
+            .where(RunOperationRow.operation_id == operation_id)
+            .with_for_update()
+        )
+        if (
+            row is None
+            or row.server_run_id != server_run_id
+            or row.status not in {"submitted", "observed"}
+        ):
+            raise ExecutionConflict("terminal evidence does not match the submitted operation")
+        if row.status == "observed" and row.result != result:
+            raise ExecutionConflict("terminal evidence cannot be replaced")
+        row.status = "observed"
+        row.result = result
+        row.updated_at = datetime.now(UTC)
 
     def operation(self, operation_id: str) -> dict[str, Any]:
         """按稳定身份读取操作，不按最新记录猜测恢复目标。"""
@@ -276,9 +335,11 @@ class ExecutionRepository:
                 and result.get("delegation_id") == delegation_id
             )
 
-    def bind(self, operation_id: str, server_run_id: str) -> None:
+    def bind(
+        self, operation_id: str, server_run_id: str, *, session: Session | None = None
+    ) -> None:
         """幂等绑定提交回执；不同的 Server Run 不能覆盖原提交。"""
-        with self.sessions.begin() as session:
+        with nullcontext(session) if session is not None else self.sessions.begin() as session:
             changed = session.execute(
                 update(RunOperationRow)
                 .where(
@@ -305,9 +366,9 @@ class ExecutionRepository:
             if execution.server_run_id in {None, predecessor, server_run_id}:
                 execution.server_run_id = server_run_id
 
-    def uncertain(self, operation_id: str) -> None:
+    def uncertain(self, operation_id: str, *, session: Session | None = None) -> None:
         """回执未知时保留原操作；不能把本地异常当作远程未执行。"""
-        with self.sessions.begin() as session:
+        with nullcontext(session) if session is not None else self.sessions.begin() as session:
             session.execute(
                 update(RunOperationRow)
                 .where(
@@ -394,9 +455,9 @@ class ExecutionRepository:
             row.waiting = waiting
             return waiting
 
-    def request_cancel(self, root_run_id: str) -> None:
+    def request_cancel(self, root_run_id: str, *, session: Session | None = None) -> None:
         """先关闭整个任务树的新派发；底层停止确认由应用服务另行处理。"""
-        with self.sessions.begin() as session:
+        with nullcontext(session) if session is not None else self.sessions.begin() as session:
             session.execute(
                 update(RunExecutionRow)
                 .where(RunExecutionRow.root_run_id == root_run_id)

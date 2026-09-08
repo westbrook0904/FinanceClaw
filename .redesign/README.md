@@ -40,9 +40,9 @@ Stage-8 前置分包已完成：`bff`、`coordination`、`agent_server`，同库
 暂时共享同一个 `financeclaw_app`，通过明确的模块接口组合受理与完成事务。
 
 Coordinator 统一负责已受理任务的远程提交、委派和恢复；BFF 负责受理与只读展示。
-多 backend 通过有限 Adapter 预留，首期生产仍只有 LangGraph。调度引擎在 Temporal 与
-PostgreSQL Worker 的技术验证后确定，不预先引入依赖或维护两套正式调度实现。
-这些是目标方向；详细实施方案仍为 Proposed，当前代码尚未完成该迁移。
+多 backend 通过有限 Adapter 预留，首期生产仍只有 LangGraph。8.0 已完成基础推进的真实服务验证。
+PostgreSQL 保存协调责任，推进与后续增强直接在 coordination 内实现。
+协议和共享事务接口已交付，产品后台迁移从 8A 开始；见 [实施与验证](./stages/Stage-8-实施与验证.md)。
 与既有基线的关系见 [RD-031](./01-架构决议汇总.md#rd-031coordinator-service-与共享业务数据库)。
 
 ## 文档导航
@@ -70,7 +70,8 @@ PostgreSQL Worker 的技术验证后确定，不预先引入依赖或维护两�
   - [Stage 7 设计审视与待确认决议](./stages/Stage-7-设计审视与待确认决议.md)
   - [Stage 7 实施与验证记录](./stages/Stage-7-实施与验证.md)
   - [Stage 7 文本解读热修复：移除解读 JSON 与逐条引用硬约束](./stages/Stage-7-文本解读热修复-实施与验证.md)
-- [Stage 8：Coordinator Service、Webhook 接入与显式委派协议（Proposed，2026-09-08 重写）](./stages/Stage-8-Background-Run-Coordination-实施方案.md)
+- [Stage 8：Coordinator Service、Webhook 接入与显式委派协议（8.0 完成，8A 待实施）](./stages/Stage-8-Background-Run-Coordination-实施方案.md)
+- [Stage 8 实施与验证：协议、事务与基础协调证据](./stages/Stage-8-实施与验证.md)
 
 迁移材料：
 
