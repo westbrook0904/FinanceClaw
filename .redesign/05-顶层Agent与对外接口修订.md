@@ -4,6 +4,10 @@
 
 日期：2026-09-03
 
+2026-09-09 补充：message-only 和顶层 Agent 入口继续有效；本文中的 Workflow／领域 Agent handoff
+由 [Stage 8 Hotfix](./stages/stage-8-hotfix-实施方案.md)调整为顶层 Tool 内的子图调用，运行控制归 BFF。
+下文旧委托描述保留供追溯，hotfix 代码待实施。
+
 ## 1. 修订原因
 
 此前设计把 `ToolTarget`、`WorkflowTarget` 和 `AgentTarget` 暴露给产品调用方，导致两类问题：

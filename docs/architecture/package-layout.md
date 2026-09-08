@@ -1,5 +1,9 @@
 # FinanceClaw 包结构与依赖规则
 
+2026-09-09 方向修订：本页记录既有分包及 Stage-8 边界；新的运行控制归 BFF，subagent／workflow
+在 Agent Server 内作为 Tool 调用子图。后续模块调整以
+[Stage 8 Hotfix](../../.redesign/stages/stage-8-hotfix-实施方案.md#71-模块落点)为准，hotfix 代码尚未实施。
+
 Stage-8 开始前，代码已按 **BFF、Coordination、AgentServer** 三个职责包组织。
 目前仍是一个 Python 分发包；BFF 进程内装配 Coordination 应用服务，AgentServer 独立运行。
 独立 Coordinator Service、Webhook Ingress 和持续 Worker 属于 Stage-8 后续交付。

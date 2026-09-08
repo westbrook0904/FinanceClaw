@@ -2,10 +2,11 @@
 
 状态：已确认的架构基线继续有效；新增阶段按各文档状态评审，Proposed 设计不自动成为冻结决议。
 
-更新时间：2026-09-08
+更新时间：2026-09-09
 
 Stage-8 前置分包已完成：`bff`、`coordination`、`agent_server`，同库与共享模块边界见
-[包结构设计](../docs/architecture/package-layout.md)。独立协调进程与后台能力仍按 Stage-8 方案实施。
+[包结构设计](../docs/architecture/package-layout.md)。Stage-8 独立协调服务已实现；后续方向按
+[Stage 8 Hotfix](./stages/stage-8-hotfix-实施方案.md)调整为 BFF 运行控制与顶层内部子图，HF-0 已完成，生产路径待迁移。
 
 ## 目的
 
@@ -23,7 +24,7 @@ Stage-8 前置分包已完成：`bff`、`coordination`、`agent_server`，同库
 ## 已冻结的关键决议
 
 1. 运行时统一使用稳定的 CPython `>=3.13,<3.14`。
-2. 所有产品会话消息统一进入默认顶层 Agent，由其在 ReAct 循环中回答、调用 Tool、调用 Workflow 或委派领域 Agent；对外 API 不接受 Agent/Tool/Workflow Target。
+2. 所有产品会话消息统一进入默认顶层 Agent，由其在 ReAct 循环中回答、调用 Tool，并通过 Tool 调用 Workflow／领域 Agent 子图；对外 API 不接受 Agent/Tool/Workflow Target。
 3. 不再要求 LLM 构造复杂 `PlanDraft`；确定性业务流程发布为版本化 LangGraph Workflow。
 4. Tool 统一使用 LangChain `BaseTool`；Capability、Provider Registry、通用 Selection 和旧 Invoker 退出。
 5. LangChain 没有通用 Tool 业务 RBAC/ABAC；FinanceClaw 只保留薄 `ToolGovernance` 与确定性 Policy 函数，并通过 Middleware/HITL 落地。
@@ -35,15 +36,15 @@ Stage-8 前置分包已完成：`bff`、`coordination`、`agent_server`，同库
 
 ## Stage 8 方向调整
 
-2026-09-08 已确认新增 Coordinator Service，由 Webhook Ingress＋Coordinator Worker 组成，
-首期接入 LangGraph Run Webhook，并将 Delegation 提升为显式协调协议。BFF 与 Coordinator
-暂时共享同一个 `financeclaw_app`，通过明确的模块接口组合受理与完成事务。
+2026-09-09 用户要求取消跨顶层 ReAct 的委托，把 start／resume 等运行控制归还 BFF。
+所有 subagent／workflow 改为顶层 Agent 调用的 Tool，实际在 Agent Server 内调用子图。
+建议保留 Webhook 接收能力并合入 BFF，以回调加后台核对保证断连后结果写入 Journal；
+不再保留独立 Coordinator 的新运行编排职责，继续共用 `financeclaw_app`，不引入 Temporal。
 
-Coordinator 统一负责已受理任务的远程提交、委派和恢复；BFF 负责受理与只读展示。
-多 backend 通过有限 Adapter 预留，首期生产仍只有 LangGraph。8.0 已完成基础推进的真实服务验证。
-PostgreSQL 保存协调责任，推进与后续增强直接在 coordination 内实现。
-协议和共享事务接口已交付，产品后台迁移从 8A 开始；见 [实施与验证](./stages/Stage-8-实施与验证.md)。
-与既有基线的关系见 [RD-031](./01-架构决议汇总.md#rd-031coordinator-service-与共享业务数据库)。
+当前代码仍是已交付的 Stage 8A／8B／8C；hotfix 方案和分阶段验收见
+[实施方案](./stages/stage-8-hotfix-实施方案.md)及
+[RD-033](./01-架构决议汇总.md#rd-033顶层-react-内部子图与-bff-运行控制)。
+旧 Stage 8 方案与验证记录保留为历史资料，其中跨 Run 委托和 Coordinator 执行所有权不再作为新实施方向。
 
 ## 文档导航
 
@@ -70,7 +71,9 @@ PostgreSQL 保存协调责任，推进与后续增强直接在 coordination 内�
   - [Stage 7 设计审视与待确认决议](./stages/Stage-7-设计审视与待确认决议.md)
   - [Stage 7 实施与验证记录](./stages/Stage-7-实施与验证.md)
   - [Stage 7 文本解读热修复：移除解读 JSON 与逐条引用硬约束](./stages/Stage-7-文本解读热修复-实施与验证.md)
-- [Stage 8：Coordinator Service、Webhook 接入与显式委派协议（8.0 完成，8A 基础闭环已实现）](./stages/Stage-8-Background-Run-Coordination-实施方案.md)
+- [Stage 8 Hotfix：BFF 运行控制与顶层 ReAct 内的子图调用（HF-0 完成，HF-1～HF-3 待实施）](./stages/stage-8-hotfix-实施方案.md)
+  - [HF-0 实施与验证：原生子图调用、顶层恢复与发布预留](./stages/stage-8-hotfix-HF-0-实施与验证.md)
+- [Stage 8 原方案：Coordinator Service、Webhook 接入与显式委派协议（历史方案，方向已被 hotfix 替代）](./stages/Stage-8-Background-Run-Coordination-实施方案.md)
 - [Stage 8 实施与验证：协议、事务与基础协调证据](./stages/Stage-8-实施与验证.md)
 - [Stage 8A 实施与验证：正式 Coordinator 与 LangGraph 闭环](./stages/Stage-8A-实施与验证.md)
 - [Stage 8B 实施与验证：持久通知、独立飞书发送器与 SSE 恢复](./stages/Stage-8B-实施与验证.md)

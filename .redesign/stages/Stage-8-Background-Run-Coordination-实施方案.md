@@ -1,5 +1,9 @@
 # Stage 8：Coordinator Service、Webhook 接入与显式委派协议实施方案
 
+方案状态（2026-09-09）：**跨 Run 委托与 Coordinator 独占运行控制的方向已被
+[Stage 8 Hotfix](./stage-8-hotfix-实施方案.md)替代。** 下文保留旧方案供代码与历史验证追溯，
+不继续指导新功能实施。当前运行代码尚未切换到 hotfix。
+
 状态：8.0 完成；8A／8B／8C 代码及隔离验收已实现。生产与真实渠道门禁分别见
 [8A 记录](Stage-8A-实施与验证.md)、[8B 记录](Stage-8B-实施与验证.md)、[8C 记录](Stage-8C-实施与验证.md)。
 
