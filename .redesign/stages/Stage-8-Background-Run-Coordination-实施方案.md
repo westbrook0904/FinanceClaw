@@ -1,628 +1,791 @@
-# Stage 8：后台自主推进、只读查询与可靠渠道通知实施方案
+# Stage 8：Coordinator Service、Webhook 接入与显式委派协议实施方案
 
-状态：Proposed（用户已确认总体方向并要求输出实施方案；尚未实现或通过发布验收）
+状态：Proposed（服务方向与共享数据库已确认；详细协议、调度引擎及发布门禁待实施验证）
 
-编制日期：2026-09-07
+初版日期：2026-09-07；重写日期：2026-09-08；方案修订：2。
 
-适用基线：Stage 6 Fix A/B/C 持久化执行与交互，以及 Stage 7 紫微领域 Agent 候选实现。
+适用基线：Stage 6 Fix A/B/C 的持久化执行与交互，以及 Stage 7 紫微领域 Agent 候选实现。
+本文件保留原路径以兼容已有链接，内容替代初版“后台 Worker＋可选 Webhook”方案。
+本文描述目标设计，不代表 Coordinator Service、Webhook 或多 backend 已实现。
 
-本文是实施设计，不是已完成功能清单。参数为初始建议值，真实 Agent Server、PostgreSQL、
-飞书及生产授权策略须按本文门禁验证。本文不批准 Stage 7 的规则、真实资料灰度或隐私例外。
+## 1. 本次决议与目标
 
-## 1. 目标与现状
+### 1.1 已确认方向
 
-### 1.1 本阶段要解决的问题
+1. 新增可独立部署的 **Coordinator Service**，包含 **Webhook Ingress＋Coordinator Worker**。
+   它持续负责已受理任务从首次启动、委派、交互恢复到结果提交的协调。
+2. 首个接入后端为 LangGraph Agent Server；原生 Run Webhook 是首期正式接入面，
+   不再作为最后阶段才考虑的可选功能。后台观察与对账补足回调覆盖和投递缺口。
+3. Coordinator 面向多种 Agent backend 设计小范围适配协议。模型循环、Graph 节点和原生
+   checkpoint 仍由 backend 拥有，Coordinator 只管理业务任务及执行边界。
+4. BFF 与 Coordinator **暂时使用同一个业务数据库 `financeclaw_app`**，允许通过明确的
+   模块接口共享事务。此次不要求分库，也不为同库流程强制增加远程双写。
 
-将执行责任从“有人查询就顺便推进”改为“请求被持久化受理后，由后台持续负责推进”。
-用户关闭页面、SSE 断开、飞书展示等待结束，不应成为主子任务停止衔接的原因。
+### 1.2 本方案的推荐实施选择
 
-目标承诺有明确前提：数据库和 Agent Server 可用、执行版本仍部署、授权有效且预算未耗尽。
-满足前提时，已受理任务独立推进到完成、失败或等待用户；依赖故障与未知提交状态必须可见，
-不能以后台重试为由承诺任何故障下都自动完成。
+- Delegation 使用独立、版本化、可持久化的协调请求和结果契约；复用已有 HandoffRequest /
+  DelegationResult 的语义。LangGraph 首期通过原生 interrupt 承载，不把状态字符串当委派协议。
+- BFF 与 Coordinator 保持同代码库和协调发布；生产分别运行 BFF、Coordinator Ingress、
+  Coordinator Worker。渠道通知发送器是独立职责，可按负载与渠道凭证边界部署。
+- 保留现有单活动根 Turn、单待交互位置、串行委派和根预算。协议预留父子任务分别绑定 backend，
+  首期生产只接 LangGraph；跨 backend 真实委派、并行和递归不因接口预留自动开放。
+- Temporal 与 PostgreSQL Worker 是调度实现候选，先完成相同故障场景的技术验证再选一条。
+  调度引擎尚未定案；本方案既不预先排除 Temporal，也不将其写成既定依赖。
 
-### 1.2 当前代码事实
+### 1.3 成功标准与边界
 
-| 位置 | 当前行为 | Stage 8 调整 |
+受理事务成功后，无需 GET、SSE 或飞书展示连接来驱动任务；数据库、backend、兼容执行版本、
+有效授权与预算满足条件时，任务能推进到完成、失败或明确的等待状态。
+
+Coordinator 不决定用户应使用哪个 Agent，不从自然语言猜测新委派，不生成任意 DAG。
+未知提交必须先对账，通知失败不重跑模型，子任务完成不等于父任务或根任务完成。
+依赖不可用、授权失效和结果交付未确认必须可见，不能以自动重试承诺任何故障下必定完成。
+
+本阶段不扩大 Stage 7 工具、排盘口径、默认开关或真实资料处理范围，也不批准生产发布。
+
+## 2. 现状、变化与既有基线
+
+### 2.1 当前代码事实
+
+| 位置 | 当前实现 | 调整方向 |
 |---|---|---|
-| `application/feishu_channel_service.py` 的 `_resolve_final()` | 默认每 0.25 秒调用会话状态，展示等待上限 300 秒 | 展示与推进解耦；停止 250 ms 驱动式轮询 |
-| `application/conversation_service.py` 的 `status()` | 默认允许派发 child 和恢复 parent，还调用交互恢复、执行对账 | 分离纯查询与内部推进，不能仅修改两个布尔默认值 |
-| 同文件 `_observe_parent()`、`_advance_delegation()` | 接收 handoff、启动 child、交付子结果和恢复 parent | 保留业务语义，改由受租约保护的推进入口调用 |
-| 同文件 `stream()` | 一次 Server Run 流结束后调用 `status()` 校正并可能推进 | 订阅不再承担派发、恢复或完成落库 |
-| `interfaces/http/app.py` 的 lifespan | 启动时执行一次补偿，不存在持续的根任务协调 Worker | 装配持续 Worker；启动扫描只负责恢复可调度性 |
-| `application/interaction_service.py` 的 `reconcile_owner()` | 无当前 scopes 时不领取尚未提交的交互恢复操作 | 增加有界后台授权依据，不能直接传 `None` 或 `*` |
-| `modules/execution/tables.py`、`repository.py` | 固定执行快照、原子命令领取、未知提交对账、根预算与取消保护 | 继续作为事实与提交安全边界，不改成可超时重领的命令队列 |
-| `modules/outbox/` | 已有 outbox 结构与单轮发布器，但不自动运行，也没有根结果到飞书的可靠投递闭环 | 复用事务发件箱模式；为通知定义独立投递记录与执行入口 |
+| `application/conversation_service.py` 的 `status()` | 查询会触发交互恢复、执行对账、child 派发和 parent 恢复 | 查询与推进彻底分离，所有持久化任务的写动作归 Coordinator |
+| 同文件 `stream()`、`_advance_delegation()` | 流结束会调用状态校正；父子衔接依赖调用方继续观察 | 流只展示；Coordinator 持久化跟踪父子衔接 |
+| `orchestration/tools/delegation.py` | 已有稳定 handoff ID、typed request、原生 interrupt 和结果校验 | 提升为服务边界上的显式协调协议，保留原生持久化 |
+| `application/run_observation.py` | 已区分 handoff、HITL、资料交互和未知中断 | LangGraph 细节收敛到 Adapter，输出可验证的中立观察 |
+| `application/ports/agent_server.py` | 出站 Port 暴露 thread、assistant、原生 command | 保留为 LangGraph 适配实现，核心依赖业务任务操作 |
+| `modules/execution/` | 快照、固定命令、未知提交、预算与取消保护已存在 | 继续作为业务执行事实与防重复边界 |
+| `interfaces/http/app.py` lifespan | 启动补偿，没有持续根任务协调服务 | BFF 不负责后续远程推进，新增 Coordinator 独立入口 |
+| `application/feishu_channel_service.py` | 展示等待默认每 0.25 秒调用会话状态 | 短受理、只读展示、可靠通知 |
+| `modules/outbox/` | 审计 outbox 与单轮发布器存在 | 新增有明确消费者的业务事件和通知投递责任 |
 
-另有两个实施前必须处理的事务边界：
+当前 `start_turn()` 的 Turn 受理、执行快照与首次操作准备仍有多个持久化边界。
+现有助手消息与 Turn 完成已有同事务原子性；本阶段扩展该事务，不误称原子性完全缺失。
+摘要应在最终结果提交后生成，摘要失败不能阻止结果交付。
 
-1. `start_turn()` 当前依次调用 `begin_turn()`、`execution.register()` 和首次提交准备；
-   各自持久化之间的崩溃窗口不能仅靠新增 Worker 消除。
-2. `_record_completed()` 当前串联 Journal、Turn 状态及摘要构建；新增结果投影、事件和通知时，
-   必须明确同事务边界，摘要失败不能阻止用户结果交付。
+以上是仓库静态事实；尚未验证当前部署的 Webhook 行为、性能或真实飞书回执。
 
-现有 `append_assistant_message()` 已将助手消息与 Turn 完成放在同一事务；Stage 8 应扩展这个
-已有边界承载投影／待通知事实，不把已有原子性误说成缺失，也不在事务之外再补一个可能丢失的事件。
+### 2.2 对初版方案的替代
 
-上述为当前工作树静态核对，不代表已定位某次线上日志或验证真实飞书负载。
+| 初版 | 本修订 |
+|---|---|
+| BFF 应用层新增可独立运行的 Worker | 新增有明确服务边界的 Coordinator，Ingress 与 Worker 可分别扩容 |
+| 8A 先轮询，8C 可选 Webhook | 首期完成 LangGraph Webhook 接入，事件唤醒优先，定时核对负责补偿 |
+| 协调逻辑直接依赖 AgentServerClient | Coordinator 核心使用 Backend Adapter，LangGraph 原生类型留在适配侧 |
+| handoff 隐含在状态观察分支内 | Delegation 是显式、可单独验收的业务协议与生命周期 |
+| 默认按数据库租约设计全部调度结构 | 调度引擎先验证后定案，业务记录与引擎内部调度记录分开 |
+| 数据库使用方式未体现服务边界 | 明确共享同一业务数据库、有限跨模块事务和逻辑写入入口 |
 
-### 1.3 与既有架构的关系
+[最终架构](../00-最终架构设计.md)中原生运行时、顶层 Agent、治理与审计原则继续保留。
+本修订显式调整“BFF 直接推进”的应用边界；多 backend 的扩展见
+[RD-031](../01-架构决议汇总.md#rd-031coordinator-service-与共享业务数据库)。
+既有单 LangGraph 实现仍是当前运行事实，协议预留不等于已交付第二种运行时。
 
-[最终架构设计](../00-最终架构设计.md)继续有效：LangGraph Agent Server 承担图执行、队列、
-checkpoint 和 interrupt/resume；FinanceClaw 只处理业务归属、授权及跨父子 Run 的衔接。
+## 3. 服务、进程与依赖
 
-[Stage 6 Fix](./stage-6-fix.md)和 [C 实施记录](./Stage-6-Fix-C-实施与验证.md)明确采用查询驱动，
-并将离线自主推进、可靠通知排除在原范围外。本阶段显式扩展该范围，不把原选择描述为已承诺却未实现的功能。
+### 3.1 目标部署
 
-新增 Worker 与 BFF 同代码库、同业务数据库，可以独立进程部署；它不是新建一个通用调度微服务，
-不执行模型循环、不调度 Graph 节点、不保存第二套 checkpoint，也不生成任意 DAG。
+```mermaid
+flowchart TB
+    U["Web / API / 飞书用户"] --> B["FinanceClaw BFF<br/>认证、会话、用户决定、只读展示"]
+    B --> F["共享 Admission Facade<br/>同事务受理命令，禁止远程执行"]
 
-## 2. 范围与分阶段交付
+    subgraph C["Coordinator Service"]
+        H["Webhook Ingress<br/>验证来源、解析、持久化确认"]
+        W["Coordinator Worker<br/>协调任务、委派、恢复与对账"]
+        A["Backend Adapters"]
+        W --> A
+    end
 
-### 2.1 必须保留的不变量
+    F --> DB[("共享 financeclaw_app<br/>Journal / 命令与事件 Inbox / 执行与委派<br/>授权 / 进度 / Audit / Outbox / 通知记录")]
+    H --> DB
+    W <--> DB
+    B -->|"只读状态与结果"| DB
+    DB --> N["渠道通知发送器"]
+    N -->|"结果与待处理通知"| U
 
-1. 用户消息仍只进入根 `finance_agent`；模型通过受治理委派工具提出 handoff。
-   协调器落实这个已存在的请求，不自行选择 Agent、编造参数或扩大任务。
-2. 保留单活动根 Turn、单待交互位置、串行委派和根预算。一个 Turn 内仍可存在多次顺序委派。
-3. 身份、原授权上界、实际发布版本、输入、request_clock、时区及工具绑定不得在恢复时漂移。
-4. 子运行完成不等于根任务完成；交付失败、未知提交和待确认停止均不得误报 completed。
-5. 查询、打开页面、接收 SSE、重复 webhook 和通知重试不产生新的业务委托。
-6. 执行命令未知时先对账；绝不通过租约到期、换幂等键或重建 child 绕过不确定性。
-7. 人工批准只覆盖原交互的具体动作；拒绝和取消后不允许用新委派绕过。
-8. 渠道投递失败不改变任务结果，不触发模型重跑。内部 Audit 与用户通知独立。
+    A --> L["LangGraph Agent Server"]
+    A -.-> X["其他 Agent backend：未来接入"]
+    L -->|"原生 Run Webhook"| H
+    X -.->|"回调或适配器观察"| H
+    L --> R[("backend 私有运行时存储<br/>checkpoint / Store / 队列")]
+```
 
-### 2.2 交付阶段
+图中的共享 Facade 是 Coordinator 提供的受理代码入口，在 BFF 的业务事务中调用，不是另一个
+需要部署的服务。Webhook Ingress 和 Coordinator Worker 使用独立启动与健康检查入口。
+图不展开既有 LLM、Tool、Artifact Store、LangSmith 与 OpenTelemetry；它们仍按原边界接入。
 
-| 阶段 | 实施范围 | 可验收承诺 |
+### 3.2 各角色职责
+
+| 角色 | 拥有的职责 | 不得承担的职责 |
 |---|---|---|
-| 8A：后台自主推进 | 原子受理、持久化协调、后台授权、状态投影、只读 GET/SSE、退避对账、迁移接管 | 不调用任何状态接口，任务也可完成主子闭环；进程重启可安全继续 |
-| 8B：可靠结果与交互通知 | 持久化通知目标、待办投递、飞书回执、幂等与错误隔离、可恢复进度事件 | 展示连接断开后，已受理任务的最终结果及需要用户处理的交互仍有持久化投递责任 |
-| 8C：唤醒加速与发布收敛 | 可选 Run webhook、查询与事件性能优化、压测、故障演练、旧驱动清退 | 事件优先、对账兜底；多实例与滚动发布通过正式环境门禁 |
+| BFF | 认证、租户与对象归属、message-only 入口、用户决定、Journal 读取、SSE 与渠道展示 | 对 Coordinator 管理的任务直接调用 backend start/resume/cancel |
+| Admission Facade | 固定受理依据、命令、授权与幂等键；与 BFF 消息／决定共享事务 | 远程 HTTP、LLM 执行、无限等待 |
+| Webhook Ingress | 校验 backend 部署身份、限制载荷、保存最小通知和唤醒责任 | 在回调请求栈中派发 child、恢复 parent 或直接确认根完成 |
+| Coordinator Worker | 唯一远程提交权、父子映射、交互登记、结果交付、取消确认与补偿 | 模型决策、Graph 节点调度、自动批准、改写冻结输入 |
+| Backend Adapter | 将任务操作、回调和精确运行观察映射到特定 backend | 任意扩大权限、重选目标、覆盖业务授权结论 |
+| 渠道通知发送器 | 消费固定通知记录、核对渠道目标、发送和保存回执 | 再次委派、生成新的模型回答、改变执行结果 |
+| Agent backend | 原生 Agent/Workflow 执行、checkpoint、暂停及继续 | 修改 Coordinator 的父子关联或渠道通知目标 |
 
-8A 是本次修复的最小闭环；8B 完成前不能对用户承诺“结束后一定通过飞书主动通知”。
-8C 中 webhook 是可选加速器，不是 8A/8B 的正确性前提；不兼容时继续使用后台退避对账。
+Coordinator 同代码库独立部署，当前有意与 BFF 在数据层耦合。独立扩容、独立健康检查与有限
+服务职责已经成立，但不声称它具备任意独立升级或无需迁移即可分库的能力。
+数据库迁移统一使用现有 Alembic 链；BFF、Ingress、Worker 必须检查兼容的 schema 与协议版本。
 
-### 2.3 不包含
+### 3.3 写入入口
 
-- 多个领域 Agent 并行委派、递归委派、通用任务 DAG、定时命理分析或自动重新提问。
-- 替换 LangGraph Runtime，或一期引入 Kafka、Celery、Temporal 等新的执行平台。
-- 自动重启历史 failed 委托；用户要求重新尝试仍通过新 Turn 的模型决策发起。
-- 根模型最终措辞与实际委派次数逐项校验；“重试了两个委托”的叙述准确性是独立问题。
-- 扩大 Stage 7 五工具、计算规则、默认开关、模型权限或真实资料处理范围。
-- 撤销已发生的外部副作用，或未经验证的远程 exactly-once 承诺。
-- 完整渠道消息平台、任意通知订阅方、任意公网 webhook 目标和新审批 Web 页面。
+BFF 首期使用共享 Admission Facade 持久化命令，避免“先写 Turn、再调用 Coordinator HTTP”
+形成新的双写窗口。公开接口的 202 表示完整受理事实已提交，不表示 backend 已经启动。
 
-## 3. 关键实施决议
+未来其他内部调用方可增加 Command HTTP API，复用相同受理逻辑和幂等键；该入口不会替代
+Webhook Ingress，也不提供任意公开 Target。首期不强制为了进程分离给 BFF 增加这一跳。
+若调用方同时写自己的数据库，必须通过其事务 outbox 可靠交付，不能持有数据库事务等待 HTTP。
 
-以下决议为推荐实施基线，正式实现时记录 Accepted／调整及证据，不因文档存在自动冻结。
+## 4. 共享数据库与事务归属
 
-| 编号 | 推荐决议 | 主要代价与约束 |
+### 4.1 共享范围
+
+BFF 与 Coordinator 连接同一个 `financeclaw_app`。LangGraph 的原生数据库、checkpoint、
+Store 和队列仍按 backend 自身部署管理；共享业务数据库不授权直接读写 backend 内部表。
+如果最终选择 Temporal，它的服务端持久化同样属于引擎内部，不与业务表混合。
+
+领域拥有事实和写入规则，应用服务组合必要事务。“模块所有权”指唯一逻辑写入接口，
+不要求整张表只能由某一个进程修改。例如 BFF 通过会话仓储追加用户消息，Coordinator 完成
+任务时通过同一仓储的完成接口追加助手消息；两端都不能绕过仓储任意改写 Journal。
+
+| 事实／建议落点 | 逻辑归属与允许入口 |
+|---|---|
+| Conversation、Turn、Journal、摘要、Manifest | `conversation` 模块；受理与完成使用公开组合事务方法 |
+| 执行快照、操作日志、预算、取消、授权 | `execution` 模块；Facade 保存依据，Worker 唯一领取远程命令 |
+| Inbox、协调责任、BackendRef／ContinuationRef | `coordination` 模块；受理与 Ingress 写入，Worker 消费 |
+| 委派请求、父子映射、子结果、交付状态 | `delegation` 模块；Coordinator 推进 |
+| 交互定义、待办、唯一用户决定 | `interactions` 模块；Worker 登记，BFF 验证并受理决定 |
+| 进度投影与业务事件 | Coordinator 提交；BFF 只读，不能用查询补写 |
+| 固定渠道目标、通知内容版本、回执 | `notifications` 模块；受理时绑定，发送器只更新投递事实 |
+| Audit 与审计 Outbox | 既有审计接口；与对应业务变更同事务 |
+
+### 4.2 必须落地的组合事务
+
+| 边界 | 同一个数据库事务内提交的内容 |
+|---|---|
+| 根任务受理 | Turn＋用户 Journal＋不可变执行输入／发布快照＋初始授权＋固定 start 操作＋command inbox／推进责任＋初始投影；渠道请求另含已验证通知目标 |
+| 用户决定受理 | 决定、原交互版本与审批镜像＋固定响应／resume 操作＋本次授权依据＋根唤醒＋Audit/outbox |
+| Webhook 接收 | 已验证的最小通知或待关联记录＋去重依据＋待处理／唤醒责任；提交成功后才能返回成功回执 |
+| Delegation 受理 | 唯一请求＋固定目标和输入＋ContinuationRef＋child 快照与 start 操作＋父等待投影＋Audit／唤醒 |
+| 子结果交付确认 | 与确切父恢复操作对应的交付证据＋delivery 状态＋原 child execution 状态＋投影／事件 |
+| 交互或等待状态提交 | 待交互／等待事实＋投影＋业务事件；通知阶段开启后同时保存对应投递意图 |
+| 根任务完成 | 助手 Journal 幂等写入＋Turn 终态及释放单活动位置＋结果引用＋执行终态／投影＋业务事件；通知阶段同时保存最终待办 |
+| 取消／撤销 | 关闭后续派发的标记或授权变更＋固定命令／唤醒＋Audit/outbox |
+
+组合服务通过显式 `session` 传入仓储；子方法不能自行 commit，也不能把一个事务拆为多个
+独立连接。数据库锁按根任务及相关记录的固定顺序获取，跨进程并发必须使用数据库约束验证。
+任何远程请求、模型调用、对象上传、飞书发送或摘要生成都不能放入这些事务。
+
+需要外部 Artifact 的结果先写入不可变对象并校验可读引用，再提交完成事务；失败重试复用
+内容与操作键，不能重跑模型。未被业务引用的对象通过已有／新增清理策略单独回收。
+完成后的摘要是可重建派生工作，摘要失败不撤销最终结果或通知意图。
+
+### 4.3 Inbox／Outbox 的范围
+
+同库已提交的 command inbox 本身就是可靠交付，不需要再给 BFF → Coordinator 复制一份
+相同 outbox。Webhook inbox 与业务命令使用不同种类、唯一键和消费语义，不能混淆来源。
+可用数据库通知等机制降低唤醒延迟，但持久化记录始终是恢复依据。
+
+Audit、SSE 业务进度和渠道通知拥有不同消费语义。一个 `published` 标记不能代表所有订阅者
+收到消息；每个通知目标有独立投递记录，每个 SSE 客户端有自己的游标。
+未来分库需要替换受理／完成组合事务为显式可靠交付，属于后续迁移，不隐藏在本阶段承诺中。
+
+## 5. 协调协议：通知、请求与命令
+
+### 5.1 标识与关联
+
+- `task_id` 复用现有业务 `run_id`；根 task 对应 Turn，child task 对应委派执行。
+  不为相同业务对象再建设第二套 Task 真相表。
+- `backend_instance_id` 标识受信任部署；`BackendExecutionRef` 标识某个精确执行尝试。
+  同一业务 task 在 start/resume 后可对应多次 backend 尝试。
+- `request_id` 标识一次业务协调请求；Delegation 复用原稳定 handoff ID，
+  不随 Webhook 投递、观察次数或节点重放生成新 ID。
+- `operation_id` 标识固定的出站命令；`event_id`／接收 ID 标识消息投递。
+  消息去重不能替代命令幂等，旧投递也不能代表新的委派。
+- `continuation_ref` 指向父任务的确切等待位置，由可信适配器建立并与请求绑定。
+
+### 5.2 三类契约
+
+| 契约 | 方向与语义 | 处理规则 |
 |---|---|---|
-| ADR-8-01 | 持久化根任务协调；Agent Server 继续拥有原生运行时 | 需要业务数据库迁移与 Worker 运维，不增加 Graph 调度抽象 |
-| ADR-8-02 | 产品 GET 只读；POST 受理并持久化唤醒；Worker 负责后续提交 | 状态成为有版本的最终一致投影，需展示更新时间 |
-| ADR-8-03 | 数据库到期领取与退避对账先落地，webhook 后置 | 最终状态发现存在可配置延迟，不能承诺零轮询 |
-| ADR-8-04 | 协调租约可接管，执行命令领取不可因超时重领 | 未知提交可能保持待对账，牺牲部分自动恢复可用性以避免重复执行 |
-| ADR-8-05 | 根任务具备有界、可撤销的执行授权；交互批准单独绑定 | 需要补充认证证据和重新授权入口，不能只复用过期 scopes |
-| ADR-8-06 | 最终状态、Journal 引用和待通知事实原子提交 | 需给现有仓储增加明确的共享事务能力，不建设通用事务框架 |
-| ADR-8-07 | 飞书优先可靠最终文本；流式卡片只作为可降级展示 | 未验证卡片重启恢复前，不能承诺恢复同一张卡片 |
-| ADR-8-08 | 每个根任务持久化唯一驱动归属；混合发布需门控 | 旧二进制不能理解归属字段，不能直接与新 Worker 竞争同一根任务 |
+| BackendNotification | backend → Coordinator：某次执行可能发生变化 | 是观察线索；验证映射后取得足够证据，不直接等价为业务完成 |
+| CoordinationRequest | Agent/backend → Coordinator：请求执行一项协调动作 | 版本化、有稳定 ID、固定输入、明确 owner 和等待位置；验证后才受理 |
+| BackendCommand | Coordinator → backend：启动、交付响应或取消 | 只有 Worker 可提交；记录固定 operation、前驱、授权与参数摘要 |
 
-## 4. 服务职责与对外契约
+业务事件如 `delegation.accepted`、`interaction.opened`、`task.completed` 是 Coordinator
+事务提交后的事实，和收到原始通知不同。未知契约或无法识别的暂停保留为可见阻塞，
+不能解析模型自然语言来猜测动作，也不能因为一次 Run 流结束而判根任务完成。
 
-### 4.1 内部服务拆分
+### 5.3 显式 DelegationRequest
 
-- `RunQueryService.get_status()`：校验租户／主体／对象归属，读取业务状态投影与已保存结果。
-  不向 Agent Server 查询，不登记中断，不写终态，不提交任何 start/resume。
-- `RunCoordinator.advance(root_run_id, lease_token)`：执行一次有界观察与衔接，返回后续调度建议。
-  调用已有 Conversation／Delegation／Workflow／Interaction／Execution 服务中的内部命令能力。
-- `RunDriveRepository`：持久化唤醒、到期领取、租约与防丢唤醒控制，只知道根任务工作责任。
-- `RunAuthorizationService`：签发、收窄、撤销和校验有界业务执行授权，不负责身份登录。
-- `RunNotificationService` 与发送 Worker：把已提交业务事件投递到固定渠道，不调用模型或委派服务。
+以下是 Coordinator 边界的建议字段；最终 Schema 应从已有 HandoffRequest 演进，避免重复维护
+两份相互漂移的权威输入。
 
-内部 observe／advance 方法必须显式命名；不能保留“调用 status 后顺便修复”的隐式约定。
-`advance()` 不能通过公开 HTTP GET 绕回应用服务，也不能递归循环到整个任务结束才释放 Worker。
-
-### 4.2 写入与读取接口
-
-| 入口 | Stage 8 语义 |
+| 字段 | 含义和可信来源 |
 |---|---|
-| `POST /v1/conversations/{id}/turns` | 保持 message-only；事务受理根 Turn、执行依据和唤醒，返回 202；不等待主子任务完成 |
-| `POST /v1/interactions/{id}/responses` | 当前认证校验具体决定；原子保存决定、固定恢复操作和唤醒；202 不代表恢复已执行 |
-| `POST /v1/runs/{id}/resume` | 保留兼容入口，路由至同一决定／恢复受理逻辑；不形成第二条自主提交链 |
-| `POST /v1/runs/{id}/cancel` | 先持久化关闭后续派发及唤醒；Worker 确认整树停止后才投影 cancelled |
-| `POST /v1/runs/{id}/reauthorize`（新增） | 同主体当前认证与幂等键下刷新有界执行授权；不接受目标、权限列表或任意 resume payload |
-| `GET /v1/runs/{id}` | 只读状态、结果和安全交互投影；增加 `revision`、`updated_at`、`last_observed_at` |
-| `GET /v1/interactions/{id}` | 只读已登记交互；过期可在响应中派生显示，持久化过期由后台处理 |
-| `GET /v1/runs/{id}/events` | 只订阅，不创建／恢复 Run；连接断开不改变驱动归属或执行状态 |
+| `schema_version`、`kind=delegation` | 区分协议与协调类型；旧 Agent／Workflow handoff 由 LangGraph Adapter 映射 |
+| `request_id`、`root_task_id`、`parent_task_id` | 复用稳定身份；父子归属由 Coordinator 核对 |
+| `source_execution_ref` | 当前发出请求的 backend 尝试；绑定原操作和发布 |
+| `target` | Agent／Workflow 的逻辑 ID 与 release；由受治理工具绑定及已发布配置复验 |
+| `input` 或 `input_ref`、`input_hash` | 有界结构化参数或受治理引用，按目标版本的输入 Schema 校验 |
+| `result_contract_ref` | 固定的结果类型／版本；不能把任意 child 文本当作合法工具结果 |
+| `continuation_ref` | 父任务的等待位置；Coordinator 根据持久化运行证据固定 |
 
-状态沿用现有 `accepted`／`pending`／`running`／`waiting_child`／`interrupted`／`completed`／`failed`／
-`cancellation_requested`／`cancelled` 的兼容口径；补充有限 `waiting_reason` 表达
-`authorization_required`、`submission_uncertain`、`release_unavailable` 等原因。
-驱动停用和基础设施故障与业务 failed 分开，展示“状态更新延迟”而不是猜测已完成或已失败。
+身份、授权、backend 地址与恢复凭据不由模型声明。目标解析得到的 backend／release 需永久
+固定，不能恢复时切到 latest 或自动迁移到另一后端。相同 request ID、不同输入摘要必须报冲突。
 
-终态回答来自 Journal 或受治理的结果引用。无变化查询不增加 revision；ETag/304 可选，
-它只降低传输与解析成本，不负责推动任务。
+### 5.4 交互和恢复位置
 
-### 4.3 必须覆盖所有查询分支
+CoordinationRequest 同时预留 `kind=interaction`，表达 input／choice／approval 的问题、
+安全展示、输入 Schema、截止期和 owner；它与 Delegation 使用不同的响应契约。
+保留现有原生 HITL 与声明式交互映射，未知类型不能自动批准。
 
-HTTP 当前按 RunService、WorkflowService、ConversationService、child 查询分支选路。
-不能只改 Conversation 的状态方法，然后允许 Workflow 查询或 child 查询继续恢复执行。
-所有产品可达的持久化根／子查询、交互查询和 stream-finalize 都纳入只读测试。
+ContinuationRef 对核心是带类型和版本的引用。LangGraph 适配侧保存 task、backend 实例、
+原 server run、thread、interrupt ID，以及可验证的 checkpoint／前驱关系和绑定摘要；
+这些信息不是公开 API 参数。若实际后端不能提供足够的定位证据，适配器必须明确报不支持，
+不能以同 thread 的“最新 state”猜测原等待位置。
 
-旧内部 smoke／兼容 RunService 不在本阶段改造为新持久化任务产品；若仍可被公共路由访问，
-必须明确隔离或提供无派发副作用的兼容查询，不把它计入自主推进承诺。
+## 6. Backend Adapter 与首个 LangGraph 适配
 
-## 5. 持久化模型与事务边界
+### 6.1 最小能力面
 
-### 5.1 `run_drives`：8A，根任务推进责任
-
-每个持久化根任务至多一行；child 不另开竞争的根驱动。
-
-| 字段组 | 建议字段与约束 |
+| 能力 | 返回或约束 |
 |---|---|
-| 归属 | `root_run_id` 主键，tenant、subject、conversation，受信任 root kind |
-| 驱动模式 | `driver_mode=legacy/worker`，接管版本；对现存根显式迁移，不由查询者选择 |
-| 调度 | `mode=ready/parked/stopped`、`next_check_at`、`park_reason`、`unchanged_count`、`last_error_code` |
-| 租约 | `lease_owner`、`lease_until`、单调 `lease_epoch`；续租和提交必须匹配 token |
-| 唤醒 | 单调 `wake_seq`、`handled_wake_seq`；唤醒与完成更新不能互相覆盖 |
-| 授权与诊断 | 当前 `authorization_id`、`last_progress_at`、`last_checked_at`、created/updated |
+| `submit_task` | 固定任务／operation → BackendExecutionRef 或提交结果不确定 |
+| `observe_execution` | 精确尝试 → 活动／暂停／终态证据，以及可验证的协调请求和结果引用 |
+| `deliver_response` | 固定响应＋ContinuationRef＋operation → 恢复尝试引用及可查询回执 |
+| `request_cancel`／取消观察 | 明确区分取消已请求、停止已确认和能力不足 |
+| `lookup_operation` | 按原 operation 找回提交证据；查不到不等于从未执行 |
+| `decode_notification` | 把已认证回调转换为最小观察线索，不调用远程 backend |
 
-为 `(driver_mode, mode, next_check_at)` 建索引，并支持过期租约的到期领取；外部观察必须绑定精确
-`server_run_id` 和前驱。UTC 数据库时间用于租约／截止期判定，进程单调时钟只用于本地等待。
+可选的只读流订阅只负责展示。核心不得依赖 `thread_id`、`assistant_id`、
+`Command(resume=...)` 或 LangChain 消息类型来判断任务关系；这些留在 LangGraph Adapter。
+现有 AgentServerClient 是该 Adapter 的底层客户端，不只改名后继续让原生类型向外扩散。
 
-`ready/parked/stopped` 是检查责任状态，不是复制 Graph 节点状态；不保存模型 messages 或出生资料。
-parked 若具有交互／授权等截止期，仍须被到期扫描唤醒；只有没有定时责任的 parked 才允许
-`next_check_at=NULL`。stopped 不参加正常领取，不能依靠反复查询将它改回 ready。
+### 6.2 能力声明和接入门禁
 
-### 5.2 `run_authorizations`：8A，后台授权依据
+每个 backend 发布绑定需声明并通过契约测试验证：精确尝试观察、持久化暂停／继续、
+请求可恢复发现、提交去重或精确回执查询、取消及确认、回调覆盖、响应应用证据、可选 streaming。
+声明是经过验证的能力记录，不是相信任意远程自报参数。
 
-建议保存：`authorization_id`、root/tenant/subject、revision、原始授权来源与摘要、有限 scopes、
-issued/expires/revoked 时间、策略版本、允许操作类别、原快照摘要及是否替代旧授权。
-有效授权指针在根驱动中；变更生成新版本，不覆盖原执行快照或已准备操作的请求。
+能执行一次性任务的 backend 可以只作为 child；缺少持久化 continuation 的 backend 不能作为
+需要外部委派后继续的 parent。无法安全确认执行身份的 backend 不进入可靠自动提交链路。
+静态发布配置绑定目标与 backend，不引入动态 Plugin 生命周期、通用 Provider Registry 或 LLM 路由器。
 
-不保存用户 Bearer/JWT、刷新令牌、飞书 app secret 或任意凭据。
-模型只能获得原 `ExecutionContext` 的必要字段；新增授权引用由可信装配层注入，不能成为工具参数。
+父与 child 各自保存 backend 绑定，结果统一校验后交给父 Adapter。首期以契约桩验证这种分离，
+真实生产仍只启用 LangGraph；跨后端真实集成、跨服务身份和资料边界另有发布验收。
 
-### 5.3 `run_progress`：8A，可重建的产品投影
+### 6.3 LangGraph 映射
 
-每个对外可见业务 Run 保存：归属、root/owner 关联、revision、公开 status、waiting_reason、
-交互 ID/版本引用、最终 Journal／Artifact 引用、精确观察尝试、updated/last_observed 时间。
+1. 业务 task 对应已有 root／child run；LangGraph thread/run/assistant 进入 BackendExecutionRef。
+2. 受治理 DelegationTool 继续生成稳定 HandoffRequest，通过原生 interrupt 持久化；
+   Adapter 将其投影为 CoordinationRequest，不解析自然语言答案。
+3. `deliver_response` 将已校验 DelegationResult 或用户决定转换为精确 interrupt 的
+   `Command(resume=...)`，沿用 operation metadata、固定输入 hash 与前驱保护。
+4. 每次 start/resume 都使用已配置的 Webhook 目标；父恢复生成新 server run 后仍需带回调。
+5. 终态、暂停和结果的观察证据必须绑定指定尝试。原生 Webhook 的 `values` 文档口径是 thread
+   的最新 checkpoint 值，不能仅因 payload 带 run ID 就认定该值必然属于该次尝试。
+6. 不能在 Ingress 中查询 backend。Worker 需要时读取精确 Run 及可关联 checkpoint／interrupt；
+   无法关联时进入待对账，不把最新 thread state 或空中断列表当作完成证据。
 
-投影以执行日志、委派记录、交互和 Journal 为事实源，不保存第二份权威 Graph State。
-根投影的 revision 在用户可见内容变化时递增；child 变化若影响根等待原因，也更新根投影。
-旧记录没有投影时只能只读聚合已有事实，不能在 GET 中触发远程补偿或补写业务数据。
+首次执行所需的 thread ID 可预分配并保存，Worker 在提交 start 前幂等确保 thread 存在。
+会话受理不依赖远程 thread 创建；需验证实际后端对同 ID 已存在和回执丢失的行为，
+thread 创建成功不能替代 Run 提交回执。
 
-### 5.4 `run_progress_events` 与通知记录：8B
+原生 interrupt 的持久化、JSON 载荷和恢复行为依据
+[LangGraph Interrupts](https://docs.langchain.com/oss/python/langgraph/interrupts)；
+实际 Agent Server API 的返回格式和中断定位必须单独联调，不把库内示例直接当部署保证。
 
-- `run_progress_events`：`(root_run_id, revision)` 唯一；保存事件种类、归属、安全摘要与引用。
-  用于提交后事件补发和 SSE 业务进度回放，不记录 token、完整输入或完整命盘。
-- `run_notification_targets`：持久化 app、channel、tenant、subject、chat、原消息、root 和投递模式；
-  只能从验证后的渠道事件／已有绑定派生，不允许模型或公开请求体任意指定接收者。
-- `run_notification_deliveries`：`(target_id, event_key)` 唯一；保存固定内容摘要／版本、可读取的
-  安全内容引用、发送幂等键、分片索引、回执、尝试次数、下次重试、租约 token 与状态。
+## 7. Webhook Ingress、持久化接收与补偿
 
-以上是命名建议，允许经评审合并存储，但不能丢失独立投递者、目标身份、稳定内容和回执语义。
-普通 audit outbox 的单次 published 标记不能同时充当所有 SSE 订阅者和飞书发送器的消费游标。
+### 7.1 正式接入面
 
-### 5.5 必须落地的同事务边界
+首期提供建议路由 `POST /internal/coordinator/webhooks/langgraph/{backend_instance_id}`。
+它属于 Coordinator 的内部 HTTP 应用；BFF 仍是用户产品入口。
+通过内部网络或受控网关开放给已配置 backend，不向公众开放任意执行或通知 API。
 
-| 事务 | 必须一起提交的事实 |
+LangGraph 原生 Run API 的 Webhook 是运行处理结束回调，其状态、元数据、配置与状态值格式
+见[官方 Use webhooks](https://docs.langchain.com/langsmith/use-webhooks)。
+该文档并未提供本项目所需的完整 Delegation 生命周期协议；中断覆盖、错误回调与重投行为
+都必须按实际服务版本验收。这里不是 LangSmith Trace 自动化 Webhook。
+
+### 7.2 接收规则
+
+1. 校验来源凭证与路由 backend 实例一致、请求体大小和格式；以本地绑定核对 operation、
+   thread/run/assistant。请求体自报 tenant、subject 或 Target 不产生授权。
+2. 首选受支持的静态认证头和固定回调目的地址。官方记录部分配置有版本要求，实施须验证；
+   不假设服务自动提供 HMAC 签名，不把共享密钥放入查询串或把模型生成 URL 当回调地址。
+3. 默认只保存 ID、来源、接收时间、必要状态提示、摘要和待关联信息。原始 kwargs／values
+   可能含完整输入、配置或敏感数据，不直接进入日志、trace、Audit 或长期 Inbox。
+4. 同事务保存通知与待处理责任后返回 2xx；数据库提交失败返回可重试错误。
+   成功回执只证明 Coordinator 已接收，不证明 child 已派发或父任务已恢复。
+5. 回调早于 start/resume 回执绑定时，保存有界、短期的待关联记录，由 Worker 对原 operation
+   查证后关联；不创建新任务，不根据回调补造执行授权。
+6. 未认证或格式非法请求直接拒绝；合法来源但无法关联的通知单独诊断，设置容量与保留期，
+   不能让任意孤立事件永久积压。
+
+若部分 backend 无法从运行时重新读取协调请求，需单独定义最小安全持久化载荷；
+不得直接扩大为保存全部模型 state。
+
+### 7.3 去重、乱序与尝试切换
+
+原生回调不保证有可直接使用的稳定 event ID。存在可信事件 ID 时按 backend 实例作用域去重；
+否则可对已验证语义字段做有界合并，或逐条保存接收 ID，由相同请求／operation 防重复。
+不能仅按 `thread_id + status` 去重，不能用每次变化的发送时间制造新的业务委派。
+
+事件时间和到达顺序不决定业务状态顺序。本地当前尝试、原操作前驱、请求 ID 和投影 revision
+共同约束更新；旧尝试的迟到回调只能补充原尝试证据，不能回退父状态或复活终态任务。
+回调可与定时观察同时发现同一个请求，两条路径必须进入同一个幂等受理入口。
+
+### 7.4 对账的职责
+
+Webhook 是正常路径的主要唤醒来源；定时观察负责未覆盖的暂停、丢失回调、未知提交和恢复扫描。
+创建尝试时就持久化下一次核对责任，收到事件后可以提前执行并合并，无事件也不能永久休眠。
+等待用户只保留截止期、授权、取消和必要核对责任，不持续高频查询同一个暂停。
+
+首期必须真实验证成功、失败、Delegation interrupt、用户交互 interrupt、resume 后结束、
+认证失败及重复投递。若某种中断没有回调，记录能力缺口并用后台观察补足；若部署完全不支持
+所需 Webhook，不能把纯轮询实现标为 Stage-8 Webhook 已验收。
+
+健康状态下，所有回调丢失仍应能在配置的补偿窗口内发现已有任务变化。
+Worker 不要求每一条通知都远程探测：已可信绑定且证据足够可直接归一化，否则精确核对；
+无论哪种模式，都不采信通知触发的新授权或新的执行目标。
+
+## 8. Delegation 完整生命周期
+
+### 8.1 首期主子闭环
+
+```mermaid
+sequenceDiagram
+    participant P as Parent backend
+    participant I as Webhook Ingress
+    participant C as Coordinator Worker
+    participant D as Shared DB
+    participant S as Child backend
+    P->>P: 稳定请求 ID，持久化 interrupt
+    P->>I: 原生 Run Webhook
+    I->>D: 最小通知与唤醒同事务保存
+    I-->>P: 接收确认
+    C->>P: 观察确切尝试和持久化请求
+    P-->>C: DelegationRequest 与等待位置证据
+    C->>D: 受理委派、child 快照和固定 start
+    C->>S: 提交 child
+    S->>I: 子运行变化回调
+    I->>D: 保存通知与唤醒
+    C->>S: 核对 child 终态及结果
+    C->>D: 保存结果，准备唯一交付操作
+    C->>P: 向原 continuation 交付 DelegationResult
+    C->>P: 核对恢复及响应应用证据
+    C->>D: 确认交付，继续观察 parent
+```
+
+图中 backend 可以是同一部署，但 parent 与 child 仍是不同任务和执行引用。
+Webhook 缺失时由到期观察进入相同流程，不存在第二个委派创建入口。
+
+### 8.2 请求受理与结果校验
+
+- 只有请求版本、父归属、等待位置、目标版本、输入、授权、预算和取消状态全部有效，才受理
+  Delegation。一个 request ID 最多创建一个 child 身份，重放返回原记录。
+- 委派被策略拒绝时保存确定的拒绝事实，按原请求的安全结果契约处理或进入明确等待；
+  不能改换目标绕过拒绝。授权暂失效时等待重新授权，不扩大原上界。
+- child 的成功、失败、拒绝都形成类型明确的结果；校验 delegation ID、目标版本、
+  child／parent、输入 hash 和结果契约。原生 child 文本可作为合法结果中的内容，
+  但自然语言“我已完成”不能证明生命周期完成。
+- 父恢复使用固定 `delivery:<request_id>` 业务操作键；回执丢失时查询原操作，
+  不新建 child、不换恢复键、不重发未经确认可安全重试的命令。
+- parent 可在收到结果后继续回答或再次顺序委派；一次 Turn 不是最多只能委派一次。
+  历史失败委派不会因为查询、重启或旧通知自动重新执行。
+
+### 8.3 分开记录执行与交付
+
+| 维度 | 建议状态与含义 |
 |---|---|
-| 根任务受理 | Turn＋用户 Journal＋不可变执行快照＋初始授权＋固定 start 操作＋drive＋初始投影；8B 开启后，来自飞书时还包含固定通知目标 |
-| handoff 受理 | 唯一委派记录＋child 快照＋固定 child start 准备＋父 waiting 投影＋根唤醒 |
-| 用户决定受理 | 交互决定与既有审批镜像＋固定 resume 操作＋本次授权依据＋Audit/outbox＋根唤醒 |
-| 子结果交付观察 | 精确父恢复回执观察＋delegation delivered 事实及原 execution_status＋Audit＋下一投影／唤醒 |
-| 业务状态提交 | 交互／等待／终态事实＋更新投影；8B 同时保存进度事件及对应通知待办 |
-| 根完成 | 最终助手 Journal 幂等写入＋Turn 终态／释放单活动位置＋结果引用＋投影；8B 同时保存最终事件与投递意图 |
-| 取消／撤销 | 关闭后续派发的持久化标记＋授权状态或取消意图＋Audit＋唤醒 |
+| 委派受理 | `requested / accepted / denied`，表达请求是否成为合法业务委托 |
+| child 执行 | `pending / running / interrupted / completed / failed / rejected / cancelled`，表达 child 实际执行结果 |
+| 结果交付 | `pending / submitted / uncertain / applied`，表达结果是否已在原父等待位置应用 |
 
-通过现有 session factory 与仓储显式 `session` 参数完成必要组合；禁止远程 HTTP、LLM、
-飞书发送、摘要生成跨入这些数据库事务。事务提交失败不能先给用户一个“已持久化受理”的 202。
+上述为领域语义，迁移时演进现有 DelegationRecord，不能另建不一致的第二套父子映射。
+已有 `DELIVERED` 与 `execution_status` 的兼容投影需记录映射规则。
 
-首次执行所需 thread ID 预先确定并持久化；Worker 可以幂等确保 thread 存在，再提交固定 start。
-必须验证实际 Agent Server 对同 thread ID 的创建／已存在行为，thread 创建回执不等于 Run 提交回执。
-重复受理只返回原 Turn，不得用本次较高权限补齐旧缺失快照。
+`submitted` 只表示 backend 已受理恢复；`applied` 需要 Adapter 提供绑定原 operation、
+原请求和 continuation 的应用证据。对 LangGraph，应验证匹配的工具响应／已提交后继
+checkpoint 等实际证据，不能仅以 HTTP 200 或新 Run ID 认定模型已消费子结果。
+若 backend 只能确认受理而无法确认应用，应明确能力和交付状态，不伪造更强确认。
 
-摘要构建移至完成事务之后的已有可重建补偿路径；摘要异常不回滚最终回答，不使模型重新运行。
-纯扫描“存在 Turn 但缺快照”的旧数据只能报告问题，不能猜测其身份、输入或历史授权。
+结果已应用后 parent 仍可能失败；child 成功不覆盖 parent 失败。结果交付失败不修改 child
+的原成功／失败事实，也不直接把根投影成 completed。
+公开根完成只在最终回答和 Turn／投影完成事务成功后成立。
 
-## 6. 协调 Worker 与执行算法
+### 8.4 显式请求不等于必须新增直连 HTTP
 
-### 6.1 部署与领取
+LangGraph 首期的显式协议通过已持久化的 interrupt 承载。Coordinator 观察后受理；
+不要求 Agent 工具额外向 Coordinator POST 一遍相同请求。
 
-生产推荐新增同包入口 `python -m financeclaw.operations.run_worker`，与 BFF 使用相同的服务装配、
-业务数据库与发布目录；Worker 不需要启动飞书长连接、HTTP 服务或一套额外模型循环。
-开发允许在 lifespan 中托管相同 Worker，但持久化协议完全一致，不能依赖进程内任务集合保活。
+若其他 backend 不能被动读取持久化请求，可以增加建议的内部请求入口
+`POST /internal/coordinator/requests`，但在实际需要前不启用第二套传输：
 
-PostgreSQL 用短事务 `FOR UPDATE SKIP LOCKED` 领取到期责任，写入租约并返回后释放锁；
-该机制适合多消费者的队列式工作领取，不用于用户状态查询的一致性快照。
-依据：[PostgreSQL SELECT 文档](https://www.postgresql.org/docs/16/sql-select.html)。
+1. backend 先固定请求 ID，并有崩溃后可重发的记录；
+2. 提前上报的请求只能进入 `awaiting_continuation`，不能立即触发 child；
+3. backend 或 Adapter 提供持久化等待位置已成立的证据，Coordinator 才受理执行；
+4. 结果交付必须绑定原请求、原等待位置和稳定操作，重复 POST 与原生观察去重到同一请求。
 
-SQLite 用确定性单 Worker／CAS 测试路径；不以 SQLite 通过代替 PostgreSQL 多进程并发验收。
-限制全局并发并避免单租户长期占满领取批次；租约续期与优雅停机必须显式实现。
+仅“工具先发 HTTP，再调用 interrupt”不满足要求：发送成功、checkpoint 未提交和节点重放
+都可能留下不一致窗口。该入口不接受模型自报凭证、任意 backend URL 或新的执行权限。
 
-### 6.2 一次 `advance()` 的顺序
+### 8.5 交互与终态的边界
 
-1. 校验根驱动模式、租约 token、归属和当前精确执行位置。
-2. 若有取消请求，进入停止确认分支，不派发任何新 start/resume；对账已在途尝试。
-3. 对 claimed/uncertain 操作按固定 operation metadata 查回执；无法确认时只安排对账。
-4. 观察当前根或活动 child 的精确 Server Run，不用共享 thread 的“最新 state”代替目标尝试。
-5. 若有新命令待领取，复核发布绑定、原快照、后台授权、交互期限及预算，再调用现有 ExecutionService。
-6. 按已观察事实受理 handoff、登记交互、校验子结果、准备父恢复或提交根最终结果。
-7. 以租约／前驱／revision 条件提交投影和下一次调度建议；每次限制远程请求数和业务转移次数。
+原生 HITL／声明式交互属于原任务暂停，用户决定恢复精确 owner。child 等待审批时通知沿用
+root 的渠道绑定；不能误恢复 parent 或为审批新建一个用户 Turn。
+领域结果 `needs_clarification` 保持既有语义：child 返回结果、父 Agent 追问，本 Turn 结束，
+用户补充后开启新 Turn；不把所有自然语言追问都改造成原生暂停。
 
-本阶段不以一条长事务覆盖整个链路，也不在一个 Worker 协程中长时间等待 LLM 输出。
-观察一个远程状态所需的 get/join 请求数应计入实际探测指标，不能假设一次 advance 只有一次 HTTP。
+## 9. Coordinator Worker 与调度引擎选型
 
-### 6.3 各类状态的调度
+### 9.1 与引擎无关的推进规则
 
-| 观察类别 | 处理及下次检查 |
+每次推进有界执行：
+
+1. 核对驱动归属、当前任务／尝试、版本、取消与授权依据。
+2. 取消优先关闭新派发；已领取或未知提交继续查证，不立即假设远端停止。
+3. 消费命令和通知，查明原操作回执与确切执行位置；不把通知本身当执行授权。
+4. 读取或使用已核验的 BackendObservation，识别请求、交互、子结果和父恢复。
+5. 同事务准备固定操作，提交前重新检查原授权、当前策略、截止期和根预算。
+6. 通过 Adapter 执行少量有界远程调用，保存观察／投影及后续责任。
+
+不能在一个数据库事务或一个活动协程内阻塞等待整段 LLM 输出。
+观察重试、同一命令的回执恢复、用户新 Turn 的业务重试必须分开计数和处理。
+
+### 9.2 不随引擎改变的安全边界
+
+现有操作日志中 `prepared` 可被唯一领取；`claimed/uncertain` 不能因 Worker 租约、
+Activity timeout 或进程重启直接退回可重发状态。查不到远端记录不证明从未执行。
+没有经验证的远端幂等保证时，保留对账／需要处理状态，不能更换键来“自动修复”。
+
+即使观察任务或 Activity 可重复执行，数据库仍以固定 operation、请求 hash、精确前驱、
+根取消／预算条件和 Journal 唯一性防止重复业务副作用。
+旧推进者不能覆盖新 revision；已经发出的 HTTP 无法仅靠数据库租约撤回。
+
+### 9.3 Temporal 候选
+
+推荐技术验证以一个 root task 对应一个持久化协调 Workflow，LangGraph Run 仍由原 backend
+执行；与数据库、Agent Server 和渠道的交互放在 Activity 或专门发送器。
+Webhook／command inbox 通过可靠桥接启动或唤醒固定 Workflow，重复信号按稳定事件／请求 ID
+处理。共享业务受理事务不能与 Temporal RPC 假装成原子提交，未完成桥接必须可恢复。
+
+Temporal 承担协调的等待、定时器、调度与恢复；如果选择它，不再同时实现数据库根任务
+到期扫描租约作为第二套正式协调引擎。业务操作日志、授权、预算、投影与通知回执仍保留。
+运行中的 Workflow 要有回放兼容和版本策略，不能把全部现有服务直接搬入确定性 Workflow。
+
+Temporal 仍需要应用 Worker，且 Activity 可执行多次，外部操作幂等不能移交给框架自动解决。
+依据：[Workers](https://docs.temporal.io/workers)、
+[Activity 幂等](https://docs.temporal.io/activity-definition)及
+[Workflow 确定性](https://docs.temporal.io/workflow-definition)。
+
+### 9.4 PostgreSQL Worker 候选
+
+若选择数据库驱动，增加有限的到期责任记录：root、下次核对时间、ready／parked／stopped、
+单调唤醒序号、租约 owner／epoch／截止时间。短事务使用
+`FOR UPDATE SKIP LOCKED` 领取，随后释放锁；所有后续写入校验租约和业务前驱。
+语义依据：[PostgreSQL SELECT](https://www.postgresql.org/docs/16/sql-select.html)。
+
+唤醒事务不能删除其他 Worker 的有效租约；旧检查结束不能覆盖更新的唤醒序号。
+等待交互／授权期限的 parked 任务仍必须具有到期责任。命令领取与协调租约是不同记录，
+重领协调责任不能重领已经提交结果不明的命令。
+
+Webhook 为正常唤醒来源，扫描只领取到期活跃责任及异常待办，不全表高频扫描历史任务。
+SQLite 只用于确定性单 Worker 测试，不能代替 PostgreSQL 多进程领取和失效写入验证。
+
+### 9.5 选型交付与门禁
+
+| 对比项 | 两条候选必须提供的证据 |
 |---|---|
-| 新受理／已授权 prepared 命令 | 尽快领取提交；提交后按精确回执观察 |
-| pending／running | 仅检查活跃尝试，按 1 → 2 → 5 秒退避并加抖动 |
-| 新合法 handoff | 同事务固定 child 请求，尽快安排下一步；不读取历史失败记录重新派发 |
-| child 已完成／失败／拒绝但未交付 | 按唯一 `delivery:<delegation_id>` 准备或对账父恢复 |
-| 原生 HITL／声明式交互 | 登记并投影 `interrupted`；停止执行状态的高频探测，安排交互截止期检查 |
-| 用户回答已受理 | 唤醒原 root，恢复确切 owner 的原 interrupt；不是新 Turn |
-| 领域 `needs_clarification` | 保持已有领域结果交付语义；根追问后本 Turn 结束，补充后新 Turn |
-| 授权过期／撤销 | 停止新命令，展示 `authorization_required`；已提交尝试继续有限观察 |
-| 交互过期且恢复未提交 | 保留已受理决定并展示过期原因，不自动延长批准期限 |
-| claimed／uncertain | 只对账；超出对账告警阈值后降频并显示需要处理，不改 failed/未执行 |
-| 发布缺失／不支持的中断 | 可见的需处理原因；禁止换 latest 或猜测恢复位置 |
-| Agent Server／数据库暂不可用 | 有界重试、退避与告警；不转换成业务成功或悄悄新建 Run |
-| 已确认根终态 | 停止正常推进；通知由独立发送器继续；重复事件不能复活该根任务 |
+| 无前台连接的主子闭环 | 首次提交、委派、交互、子结果交付和根完成 |
+| 故障正确性 | 回调丢失／重复／乱序，远端成功但本地回执丢失，多实例竞争，取消与授权过期 |
+| 开发维护成本 | 实际业务代码、调度代码、接入桥接代码、故障测试和运维工作量 |
+| 部署成本 | 本地启动、生产依赖、服务／数据库资源与恢复流程；不能用假设价格下结论 |
+| 发布演进 | 运行中任务跨版本继续、老版本隔离、迁移和回滚 |
+| 后端适配 | 核心不依赖 LangGraph 原生对象，能力不足明确拒绝 |
 
-状态变化重置退避；根任务有执行在途时，授权过期也不能停止回执对账。
-等待用户的根任务只保留期限、取消、撤销等检查责任；时间到期不等于远端任务已经停止。
+在正式建设引擎专用表和完整调度循环前，产出选型记录与可复现证据，选择唯一正式引擎。
+选型实验与正式引入依赖分别记录；本次文档重写不涉及依赖安装或外部服务开通。
+不要为未来可替换性开发完整通用 Scheduler SPI；保留业务协调边界即可。
 
-### 6.4 防止租约接管与唤醒丢失
+## 10. 持久化模型建议
 
-- 领取时保存 `lease_epoch` 与读取到的 `wake_seq`，续租／投影提交／调度完成都做 CAS。
-- 外部唤醒原子递增 `wake_seq`，将到期时间提前，但不擅自删除其他 Worker 的有效租约。
-- 完成本次检查时，若有更大 `wake_seq`，保持立即可检查，不能用旧的“无变化，5 秒后再查”覆盖。
-- 旧 Worker 租约失效后禁止新准备／领取命令及覆盖状态。各提交仓储必须真正检查 token，
-  不能仅在 `advance()` 开始检查一次，然后允许后续旧 Worker 无条件写入。
-- 远程请求前已成功领取操作、但随后租约过期的情况，由稳定 operation 与回执对账保护；
-  fence 不能撤回已经发出的远程 HTTP，不承诺瞬时终止所有在途请求。
-- 同一时刻只能有一个合法根协调者，但仍保留操作级唯一性、精确前驱及 Journal 幂等约束，
-  不把根租约当成唯一防重复机制。
+所有新增名称为建议；可按现有表演进，但必须保留事实语义、唯一约束和消费责任。
 
-### 6.5 明确区分三种“重试”
-
-1. 观察重试：查询同一精确 Run，不触发新的模型／工具执行。
-2. 提交恢复：prepared 可以被唯一领取；claimed/uncertain 只能查找原回执，不能定时退回 prepared。
-3. 业务重试：用户新 Turn 经主 Agent 决策产生新的 handoff，使用新的业务身份并计入预算。
-
-`run_drives` 租约可重新领取，`run_operations.claimed` 不因租约到期重新领取。
-保持现有 ExecutionService 固定请求哈希与操作键的边界，不让后台“修复”重复触发历史失败委托。
-
-## 7. 后台授权、交互与取消
-
-### 7.1 授权签发与有效范围
-
-当前 `AuthenticatedPrincipal` 只保留 tenant/subject/scopes；需从认证适配层传递经验证的
-授权来源、到期时间及必要证据摘要，不接受客户端自报这些字段。
-
-8A 推荐采用保守的有界授权：
-
-- HTTP：后台授权到期不晚于已验证 JWT 的 `exp` 与配置的任务授权上限，两者取早。
-  若未来希望超出登录令牌期限执行，必须另行批准明确的任务能力授权，不能自动延长旧 token。
-- 飞书：由已验证事件身份、app、单聊绑定及允许列表签发有限期任务授权；执行时再检查当前
-  允许列表、scopes 和配置版本。开发静态 token 同样必须有任务 TTL，不产生永久后台授权。
-- 有效执行范围为原快照上界、有效任务授权以及当前可验证策略限制的交集；新增审批权限不进入
-  普通执行上下文。服务身份只用于连接 Agent Server，不代表任意用户执行权限。
-- 本地授权撤销与策略失效立即阻止新的命令领取。仅靠自包含 JWT 无法承诺外部 IdP 权限变更
-  即时同步；没有已验证撤销／在线校验通路时，明确使用有限期语义，不能声称实时复验外部权限。
-
-建议初始任务授权 TTL 上限为 30 分钟，属于待验收配置，不延长现有审批／交互窗口。
-权限来源无法证明的旧根任务先停在 `authorization_required`；不得迁移出一个 `*` grant。
-
-### 7.2 重新授权与已准备操作
-
-新增 POST 重新授权入口仅限原主体，使用当前可信身份与幂等键生成新 grant，保留原上界。
-它不替换输入、执行版本、request_clock、已接受决定或固定 operation payload，也不重新批准过期动作。
-飞书可以增加显式 `/reauthorize <root_run_id>` 命令，继续验证原单聊归属；普通自然语言不默认为续权。
-该入口只唤醒仍可继续的非终态任务；如果原执行已因权限拒绝等原因形成终态，重新授权不能复活它，
-仍需按新的用户 Turn 处理。不得以新增 grant 作为任意失败运行重新执行的凭据。
-
-已经 prepared 的请求可能绑定较宽 scopes，不能在恢复时静默改写请求导致同键不同哈希。
-当前授权不足以覆盖固定命令时，保持等待重新授权或明确取消；本阶段不自动制造替代操作。
-对于尚未形成操作的新 handoff，可以在原上界内固定收窄后的授权上下文。
-
-交互回答先通过当前权限、版本、action hash、截止期与 owner 位置校验。
-持久化的授权依据使 Worker 能继续提交“已合法接受、仍在有效窗口内”的决定，
-不等于允许 Worker 自行回答或给任意 pending 交互批准。
-
-### 7.3 在途执行的权限与预算
-
-不能只在 Worker 提交 Run 时检查授权，否则一个长 Run 中后续 Tool 仍可能使用过期快照。
-Stage 8 的新执行版本应在现有模型／工具治理与执行 Middleware 边界校验有效 grant、撤销、
-取消和根预算；root/child 均使用可信 grant 引用，不能接受模型覆盖。
-
-权限到期阻止后续受治理动作，但不声称能撤销刚刚发出的网络请求或已完成副作用。
-旧已提交运行若不支持这类检查，必须保持旧版本的已知限制并排空，不能靠新增字段宣称即时生效。
-授权检查失败仍允许系统只读对账和向原授权接收者展示安全状态，不再调用模型生成新的解释。
-
-### 7.4 取消优先级
-
-取消事务与命令领取使用同一根取消／预算保护边界：
-
-- 取消先获胜，后续命令不可领取。
-- 命令已领取或在途时，记录并确认停止，不将取消标记当成“从未执行”。
-- 只有整棵已登记子树和未知提交均得到明确处理，才可投影 `cancelled` 并释放会话执行位置。
-- BFF 重启、用户打开页面或再次收到相同 webhook 不得清除取消／拒绝标记。
-
-## 8. 查询、SSE 与飞书展示
-
-### 8.1 8A 的最低体验保证
-
-GET 读本地投影；SSE 订阅当前已绑定尝试的只读流与根进度投影，parent 恢复到新 Server Run 后，
-订阅方按绑定变化重新附着。根 Run ID 始终稳定，不能把一段 Server Run 流结束当根任务完成。
-
-第一阶段允许订阅服务按较低频率读取本地 revision；不能每个浏览器分别对 Agent Server 高频查状态。
-子 Agent 中间文字、工具原始结果、HITL 完整动作和 confidential 出生信息仍不直接投到根用户流。
-流式 token 可最佳努力丢失；最终文本以已提交 Journal 为准，订阅无权自己补写 Journal。
-
-飞书 `_resolve_final()` 不再调用推进方法。8A 可暂时使用 1～5 秒的只读投影退避等待，
-等待超时仅结束展示并提示可查看结果；不取消执行、不返回虚假的失败，也不承诺尚未实现的后续通知。
-单聊内存锁与全局信号量只覆盖短受理工作，不再等待整个 LLM 执行；数据库继续守住单活动 Turn。
-这样等待期间用户可提交明确的审批／取消命令，不被长时间展示锁挡住。
-
-### 8.2 8B 的业务事件订阅
-
-提交后的 `run_progress_events` 支持根任务级事件与 `Last-Event-ID`；游标至少绑定 root 与 revision。
-每个订阅者独立读取，不用“某消费者 published”代替所有客户端已经收到。
-重连先发当前安全快照，再按协议补发可用业务事件；游标超过保留窗口时明确要求快照重置。
-
-只对业务进度／交互／终态承诺可恢复事件，不建设全量 token 回放仓库。
-事件默认建议保留 7 天，需在 8B 发布前确认；事件清理不能删除 Journal、执行证据或未投递通知。
-SSE 心跳可为 15 秒的注释帧，不查询 Agent Server，也不增加业务 revision。
-
-### 8.3 飞书通知目标与交互提示
-
-任务受理时保存原单聊及原消息目标；交互响应沿用根目标，不因每次 `/approve` 消息创建第二套
-最终答案订阅。命令受理回执可单独回复该命令消息，但不能形成两个最终发送者。
-
-需可靠投递的事件至少包括：根 completed/failed/cancelled、需要用户处理的 pending 交互、
-授权失效或明确需要处理的停顿。事件键使用稳定终态键或具体 interaction ID＋revision。
-`cancellation_requested` 与 `cancelled` 不共用最终文案；普通轮询进度不逐条发送飞书消息。
-
-发送前重新检查 app／chat／subject 绑定和渠道准入，防止目标撤销后仍推送敏感结果。
-已经过期、已决定或已取消的交互通知应抑制或改为当前安全状态，不能晚到一条仍要求批准的过时提示。
-
-### 8.4 投递回执与流式卡片边界
-
-当前 `FeishuReplyGateway.send_text()` 返回布尔值，`stream_markdown()` 不持久化卡片身份。
-8B 应增加最小发送回执类型，保存可用的消息 ID、稳定幂等键和错误类别；具体字段由 SDK 联调确认。
-当前适配器会传 `uuid`，但不据此推断服务端无限期去重、跨方法去重或任意失败后的 exactly-once。
-
-默认优先落实可恢复的最终文本通知；大文本按固定规则分片，每片有稳定内容摘要和发送键。
-流式卡片可保留作实时预览，但最终通知必须由统一投递记录领取：
-
-- 能持久化并恢复同一卡片时，保存 card/message ID，用固定内容进行幂等最终更新。
-- 尚不能验证卡片恢复时，预览不冒充可靠最终交付；最终文本是单独明确的通知，不让实时展示器
-  和 outbox Worker 同时发送完整最终答案。
-- 8B 灰度前选择并固定每个目标的 delivery mode；不在回执不明时随意换方法、换键再次发送。
-
-通知状态建议 `pending/sending/sent/uncertain/dead_letter/suppressed`。
-响应丢失进入 uncertain；优先按原键／回执对账，仅在已验证的幂等窗口内安全重试。
-超出已验证窗口或无法判定时展示投递异常并告警，不无限重发，也不重新运行 Agent。
-
-现有 audit outbox 的领取实现不能直接当作通知多实例安全证明；通知领取必须带 owner/epoch，
-防止旧发送器覆盖新租约。复用模式和必要代码，不把金融审计消费者改造成渠道消息消费者。
-
-### 8.5 可靠性的起点
-
-8A/8B 的执行承诺从“受理事务成功提交”开始。当前飞书 SDK 回调先排入内存任务，
-回调返回与业务受理之间仍有进程故障窗口；不得把本阶段描述成保证所有收到的 SDK 回调都不丢。
-8B 联调需明确 SDK 确认／重投语义；若产品要求覆盖受理前窗口，另行扩展持久化 inbound inbox，
-不能在未验证平台重投行为时声称端到端不丢消息。
-
-## 9. 唤醒来源与可选 webhook
-
-### 9.1 必需的持久化唤醒
-
-根任务受理、具体交互决定受理、重新授权、取消、执行回执绑定、子结果交付及内部状态变化，
-均在业务事务中更新到期责任。周期扫描发现可恢复但缺失的责任时，只为可证明的已有执行事实修复索引。
-
-不使用仅内存 `Event`、仅 Redis Pub/Sub 或仅 PostgreSQL NOTIFY 作为可靠事实；
-这些机制即使后续引入，也只负责加速读取数据库。重启扫描分页处理，不能每秒全表扫描全部历史 Run。
-
-### 9.2 Run webhook：8C 可选加速
-
-Agent Server Run 接口支持指定完成回调；文档说明回调载荷还可能包含输入、配置和 state values。
-出处：[LangChain 官方 Use webhooks](https://docs.langchain.com/langsmith/use-webhooks)。
-
-新增受内部服务认证保护的回调入口，建议 `/internal/agent-server/run-events`；不对公众开放任意
-执行／通知能力。回调只持久化唤醒意图，不直接提交 child/resume，也不直接采信回调中的终态内容。
-
-处理规则：
-
-1. 验证内部来源、认证头、负载大小和部署身份；使用配置的回调 URL allowlist，禁止模型提供 URL。
-2. 通过本地 operation／Server Run 映射确认 thread、assistant、root 归属，不信任请求体自报 tenant。
-3. 重复和乱序事件最多触发合并后的观察；旧尝试事件不能回退新投影或复活终态任务。
-4. 回调可能早于 create/resume 回执落库：可以暂存有界、受认证的最小信号待绑定，或依赖到期扫描
-   补偿；不能因为暂未映射就创建新业务执行。
-5. 仅保存核验所需标识和安全摘要；HTTP access log、应用日志、审计、trace 均不保存完整载荷。
-   不将真实出生资料发到公网 webhook 测试站，不将共享密钥放在 URL 查询参数。
-6. 持久化成功后再确认回调；回调失败、遗漏或关闭时，后台退避对账仍必须完成同样闭环。
-
-真实部署必须分别验证成功、异常、handoff interrupt、用户交互 interrupt、resume 后完成以及回调
-重试／认证支持。锁文件版本或文档描述不能替代实际部署能力；不保证每个中间状态都有 webhook。
-此处指 Agent Server Run 回调，不是 LangSmith trace 自动化 webhook。
-
-## 10. 实施顺序、迁移与回滚
-
-### 10.1 8A 的实施包
-
-1. **A1 契约和行为抽取**：补现状回归；将 observe／advance 从查询路径抽出，明确所有 HTTP 分支。
-2. **A2 持久化受理与授权**：迁移核心表；支持共享事务；补认证证据、grant 校验与重新授权入口。
-3. **A3 Worker 与防重复**：有界推进、到期领取、fencing、防丢唤醒、取消／不确定操作对账。
-4. **A4 查询与渠道解耦**：GET／SSE 只读投影；飞书短受理与只读展示；接管不依赖前台。
-5. **A5 验证与灰度**：无 GET 场景、PostgreSQL 并发、宕机窗口、授权期限与混合部署验证。
-
-8B 在 A 的同事务投影基础上增加业务事件、通知目标与发送器；8C 最后接入可选信号加速。
-每包交付独立测试和说明，不能等最后一次联调才发现授权和事务协议尚未实现。
-
-### 10.2 Alembic 与旧记录处理
-
-当前迁移头为 `0008_stage6fix_c`。建议后续使用 `0009_stage8_coordination` 与
-`0010_stage8_notifications`；真正开工前再次检查 head，禁止覆盖并行新增的迁移。
-
-- 先扩展 schema，默认关闭新 Worker 提交；不在 Alembic 升级脚本中发网络请求或启动历史任务。
-- 历史终态可批量只读重建投影，不唤醒、不补发未经明确授权的历史飞书通知。
-- 活跃旧根只有快照、版本、前驱与授权都可证明时才接管；缺 grant 的旧根不因升级自动获得离线执行权限。
-- 建立分页巡检报告：可接管、需重新授权、未知提交、发布缺失、缺快照／输入；问题分类不能都写成 failed。
-- Stage 7 已有 chart/request_clock/时区与出生上下文快照不改写，不重新计算历史资料作为迁移补偿。
-
-### 10.3 单驱动切换
-
-1. 先部署理解 `driver_mode` 与命令保护的兼容版本到所有 BFF／渠道／恢复入口；此时仍由旧驱动负责。
-2. 在隔离测试或只读 shadow 模式验证新协调器。shadow 不调用有副作用的旧 status，不领取执行操作，
-   不写正式进度 revision／Journal／通知。
-3. 确认 Worker 就绪、数据库迁移与授权策略完整后，按根任务 CAS 切换模式；新根从受理时固定模式。
-4. 切换前处理旧路径在途提交；已 claimed 的操作由固定日志继续对账，不重新提交。
-5. 对 worker 根，所有 GET／SSE／飞书路径即时只读；待 legacy 根排空后删除旧驱动开关。
-
-无法理解模式的旧二进制不能与 Worker 同时处理相同根。若不能证明兼容滚动切换，安排受控停受理、
-排空／记录在途操作、统一升级，再开启 Worker；不以“已有幂等”替代迁移所有权验证。
-
-### 10.4 回滚
-
-优先关闭新根接入、暂停新命令领取并保持只读查询／在途对账，不自动把 driver_mode 改回 legacy。
-已迁移根必须由理解新授权与快照的兼容版本继续处理；禁止回滚到会忽略这些约束的旧二进制。
-默认保留新增表和操作证据，完成排空与备份审查前不做 destructive downgrade。
-回滚不清空租约以强迫命令重发，不解除用户拒绝／取消，不为恢复可用性换执行版本。
-
-## 11. 模块与文件落点
-
-以下是实施时的建议落点，本轮只新增设计文档与导航。
-
-| 落点 | 内容 |
+| 记录 | 内容和约束 |
 |---|---|
-| `application/run_coordinator.py`（新增） | 有界根任务推进和结果分类衔接 |
-| `application/run_query_service.py`（新增） | 所有持久化产品运行的纯状态／结果投影 |
-| `application/run_authorization_service.py`（新增） | 有界任务授权及重新授权 |
-| `modules/execution/` | 新驱动／授权／投影仓储；原操作日志增加必要的提交保护与事务参数，不改变未知重发语义 |
-| `modules/conversation/repository.py` | Turn 受理与完成组合事务、幂等及序号分配 |
-| `application/conversation_service.py` | 移除查询副作用，抽取受理／观察／完成能力 |
-| `application/delegation_service.py`、`workflow_service.py` | child 与 Workflow 同样受根驱动、授权与精确尝试约束 |
-| `application/interaction_service.py`、`modules/interactions/` | 决定＋授权依据＋唤醒同事务；查询不恢复 |
-| `interfaces/http/auth.py`、`kernel/context.py` | 可信认证证据及必要的 grant 引用，兼容旧冻结快照 |
-| `orchestration/agents/execution_middleware.py` 及既有治理入口 | 在途模型／工具动作的授权、取消及预算复验 |
-| `interfaces/http/app.py`、`bootstrap.py` | 服务装配、只读路由、重新授权、Worker 健康与生命周期 |
-| `operations/run_worker.py`（新增） | 独立 Worker 入口、优雅停机、巡检／接管诊断 |
-| `application/feishu_channel_service.py`、`interfaces/channels/feishu.py` | 短受理、纯展示、授权命令、固定目标和发送回执 |
-| `modules/notifications/`、通知应用服务与发送入口（8B 新增） | 业务事件、通知目标、投递记录与安全重试；不新建通用事件框架 |
-| `application/ports/agent_server.py`、`infrastructure/clients/agent_server.py`（8C） | 可选回调参数与部署能力验证，不放宽公开 API Target |
-| `infrastructure/migrations/versions/` | 增量迁移、索引、升级／回滚保护 |
-| `infrastructure/settings.py`、`config/environments/`、部署文档 | 开关、轮询／租约／授权／通知配置及生产启动说明 |
-| `tests/stage8/`（新增） | 单元、故障窗口、并发、查询只读、真实组件和渠道验收 |
+| 既有 execution snapshots／run_operations | 原身份、输入、release、request_clock、时区、operation/hash、前驱、预算与取消；禁止用新任务替换未知操作 |
+| `coordination_inbox` | command／backend_notification 分型；稳定来源键或接收 ID、最小载荷／引用、task／attempt 关联、待处理与处理结果 |
+| `coordination_requests` | 协调请求索引、Schema、owner、固定输入摘要、continuation、受理结果；Delegation 内容复用既有 delegation 记录，不能双份权威存储 |
+| `backend_execution_refs` | task、operation、backend 实例、原生执行引用及观察证据；原生 ID 在部署范围内唯一 |
+| `continuations` | 原 owner／尝试、等待类型、适配器私有位置、请求／版本／输入绑定、失效／响应状态 |
+| `run_authorizations` | 原授权上界、有限 scopes、可信来源摘要、期限、撤销、revision；不保存 bearer token |
+| `run_progress` | 归属、当前尝试引用、revision、status、waiting_reason、交互和结果引用、更新时间 |
+| `run_progress_events` | root＋revision 唯一，安全业务事件和引用；用于 SSE 回放与结果交付 |
+| `run_notification_targets/deliveries` | 固定渠道身份、目标＋事件唯一、固定内容／分片、发送键、租约、回执及结果 |
+| 引擎专用记录 | PostgreSQL 路线的协调租约／到期责任，或 Temporal 路线的 Workflow 绑定／桥接记录；选型后确定 |
 
-不引入旧 `.design` 的 Runtime／Planner／Registry，不以工作线程池包装长期阻塞循环。
-实施时保留当前工作树已有本地部署文档、Compose 与飞书生命周期测试的独立改动。
+任务层记录引用现有业务 Run，不复制 Graph messages／checkpoint；业务进度是可重建投影。
+无变化查询不增加 revision；事件只保存业务进度，不建设逐 token 权威历史。
 
-## 12. 配置、观测与运维
+永久 Journal、操作／委派证据、正式 Audit 和未解决的交付责任不随短期 Inbox 清理。
+已处理最小通知与进度事件可采用建议 7 天保留；未关联通知采用独立有界期限和诊断，
+期限与清理策略须在发布配置中明确。过期游标回到安全快照，不伪造完整事件回放。
 
-所有配置通过 `FINANCECLAW_` 前缀设置；字段命名在实现时与现有 Settings 对齐。
+## 11. 后台授权、交互与取消
 
-| 建议配置 | 初始建议 | 说明 |
+### 11.1 授权来源
+
+受理时从可信认证适配层保存身份来源、有效期、原权限上界与有限任务授权。
+当前 AuthenticatedPrincipal 只保留的 tenant/subject/scopes 不足以证明长期授权，需补充证据。
+默认建议任务授权上限 30 分钟；HTTP 不超过已验证 JWT 的 exp，飞书由已验证事件身份、
+单聊绑定和准入配置签发有限期依据，开发静态 token 同样有期限。
+
+有效范围是原快照、当前任务授权和可验证策略限制的交集。Service credential 只授权连接
+backend，不代表任意用户执行权限。不保存 JWT／刷新令牌／渠道 secret 到授权表或模型上下文。
+没有外部 IdP 撤销同步能力时，只能承诺本地撤销与有限期限语义。
+
+### 11.2 运行与恢复校验
+
+- 新 start／交付响应和后续受治理模型／工具动作都检查有效 grant、取消、预算与发布绑定。
+  不能只在 Worker 发起 Run 前检查一次。
+- 用户决定单独绑定 interaction 版本、具体 action hash、owner、截止期和当次认证；
+  Worker 只能继续已合法受理的决定，不能自己批准 pending 请求。
+- 重新授权由原主体通过明确入口完成，只更新有界 grant，不改输入、版本、request_clock、
+  已准备命令 hash 或已接受决定，不复活终态任务，不延长过期审批。
+- 权限不足以覆盖固定操作时保留等待或明确取消，不能原键改参；新请求可在原上界内收窄。
+- 后端不能在在途动作边界执行必要校验时，记录其能力限制，不开放需要该保证的执行角色。
+
+### 11.3 取消优先
+
+BFF 受理取消的事务与 Worker 命令领取使用相同的根取消／预算保护边界。
+取消先提交则禁止后续派发；已有在途操作继续核对或请求停止。
+仅确认全部已登记子任务及未知操作得到处理后，才投影 cancelled 并释放单活动根位置。
+通知、GET、重启、重复决定和旧回调都不能清除取消／拒绝标记。
+
+## 12. 产品 API、SSE 与渠道通知
+
+### 12.1 产品契约
+
+| 入口 | 新语义 |
+|---|---|
+| `POST /v1/conversations/{id}/turns` | message-only，同库原子受理后返回 202；目标与 backend 由可信发布绑定确定 |
+| `POST /v1/interactions/{id}/responses` | 原子保存合法决定与固定命令，返回 202，不表示恢复已完成 |
+| `POST /v1/runs/{id}/resume` | 兼容到同一受理入口，不另建直接 backend 提交链 |
+| `POST /v1/runs/{id}/cancel` | 保存禁止派发与取消意图，Worker 核对停止 |
+| `POST /v1/runs/{id}/reauthorize` | 原主体明确重新授权，不接受任意权限列表、目标或 resume payload |
+| `GET /v1/runs/{id}` | 校验归属后只读本地投影／结果，返回 revision、updated_at、last_observed_at |
+| `GET /v1/interactions/{id}` | 只读已登记交互；期限可派生显示，持久化变更由后台处理 |
+| `GET /v1/runs/{id}/events` | 只读业务进度／展示订阅，不能提交执行或完成 Journal |
+
+保留 accepted、pending、running、waiting_child、interrupted、completed、failed、
+cancellation_requested、cancelled 的兼容投影；用 waiting_reason 区分 authorization_required、
+submission_uncertain、delivery_pending、unsupported_continuation、release_unavailable 等原因。
+基础设施延迟不能直接转成业务失败；根完成必须已有最终 Journal／结果引用。
+
+根、child、Workflow、交互和 stream-finalize 所有公开分支都须只读。
+旧内部 smoke／兼容 RunService 如果仍可公共访问，必须隔离或提供无提交副作用的查询。
+
+### 12.2 展示不驱动执行
+
+SSE 可订阅当前绑定尝试的只读流，并读本地进度；parent 恢复后按绑定变化重新附着。
+业务 root ID 稳定，单段 server run 流结束不表示根结束。
+可按 root＋revision 支持 Last-Event-ID；客户端独立游标、重连快照和保留期外重置。
+token 预览可最佳努力丢失，最终答案以 Journal 为准，不暴露 child 中间文字、原始工具结果、
+完整 HITL 动作或敏感资料。
+
+飞书内存锁与并发限制只覆盖短受理；展示超时不取消任务、不返回虚假失败。
+一旦受理事务完成，BFF／WebSocket 展示进程退出也不影响 Coordinator 推进。
+原飞书 SDK 回调进入内存到业务受理之前的窗口仍需单独验证，不能将执行 Inbox 当作渠道
+入站消息已持久化的证明。
+
+### 12.3 可靠通知
+
+Coordinator 在状态提交事务中通过通知模块写入待投递意图，渠道发送器使用固定目标和内容。
+目标只来自已验证的 app／tenant／subject／chat／原消息绑定，审批消息不创建第二份最终订阅。
+通知覆盖根终态、待处理交互、重新授权与明确需要处理的停顿，普通无变化探测不逐条推送。
+
+发送前核对目标仍有效；过期、已回答、取消的交互提示应抑制或改成当前安全状态。
+优先实现可恢复最终文本；流式卡片是可降级预览。卡片与文本的最终交付模式必须按目标固定，
+不能让展示线程与发送器分别发送同一份最终答案。
+
+投递使用目标＋事件／分片唯一性、固定内容版本和发送键，保存消息 ID 和错误类别。
+明确失败可按策略重试；响应丢失进入 uncertain，在已验证的幂等窗口内对账／恢复，
+不能换键、换发送方法或重跑 Agent 来处理不确定性。保留 sent、dead_letter、suppressed 等结果。
+通知发送器的租约同样需防止旧发送者覆盖新回执；审计 outbox 的成功标记不充当通知回执。
+
+## 13. 实施阶段与交付
+
+本修订重新定义阶段顺序，不沿用旧版“8C 才接入 Webhook”的划分。
+
+| 阶段 | 实施内容 | 可验收产物 |
 |---|---|---|
-| `RUN_COORDINATION_ENABLED` | 默认 false，灰度后开启 | 关闭表示不接入新 worker 根，不代表允许旧查询接管 |
-| `RUN_WORKER_CONCURRENCY` | 8 | 根据连接池、Agent Server 配额和租户分布压测 |
-| `RUN_DRIVE_BATCH_SIZE` | 不超过可用执行槽位的有界批次 | 避免领取后排队到租约失效 |
-| `RUN_POLL_INITIAL_SECONDS`／`MAX_SECONDS` | 1／5 | 活跃尝试无变化退避；约 ±20% 抖动 |
-| `RUN_DRIVE_LEASE_SECONDS` | 60 | 与远程超时和续租设计联动，不照搬为操作重发期限 |
-| `RUN_DRIVE_RENEW_SECONDS` | 15 | 续租失败后停止新领取并交回检查责任 |
-| `RUN_RECONCILE_INTERVAL_SECONDS` | 30 | 分页检查遗漏／异常责任，不扫描历史终态大表 |
-| `RUN_AUTHORIZATION_TTL_SECONDS` | 1800 上限 | HTTP 不超过已验证 JWT 到期；不延长审批窗口 |
-| `RUN_WEBHOOK_ENABLED` | false | 真实部署行为和安全验收通过后可开 |
-| `RUN_NOTIFICATIONS_ENABLED` | 8B 前 false | 不影响执行驱动开关 |
-| `RUN_NOTIFICATION_MAX_ATTEMPTS` | 8，明确失败适用 | 受幂等窗口／uncertain 约束，不能仅按次数盲重发 |
+| 8.0：协议与技术验证 | 共享库受理／完成事务、Delegation 与 Continuation、LangGraph 回调能力、Temporal／PostgreSQL 对比 | 契约、能力矩阵、故障验证、唯一调度引擎的决议；不计为功能发布完成 |
+| 8A：Coordinator 与 LangGraph 闭环 | 独立 Ingress／Worker、持久化 Inbox、首次提交、显式委派、用户决定、精确恢复、后台授权与取消、Journal／终态原子提交、只读查询及补偿 | 不访问 GET／SSE 也可 root → child → root；回调接入与回调全丢场景均通过 |
+| 8B：结果与渠道交付 | 扩展状态／完成事务写入通知意图、业务事件订阅、SSE 恢复、固定通知目标和发送器、回执／不确定性处理 | 展示断开后仍有最终结果与待交互通知的持久化责任 |
+| 8C：迁移与生产收敛 | 旧根接管、唯一驱动、真实多进程／多实例故障演练、滚动发布、容量与运维门禁 | 清退查询驱动并完成正式环境验收 |
 
-Worker 空闲等待需可被停机／唤醒中断；停机停止领取、等待有界在途调用，未确认的提交留给对账。
-BFF 就绪检查应识别“新 worker 根已启用但没有兼容 Worker 心跳”的异常；已有持久化受理可保留，
-但不能继续对外报告系统可正常推进。Worker 可用性和 Agent Server 可用性分别观测。
+8A 包含显式 Delegation 的完整闭环，不只交付 Webhook 转发器。
+8B 未验收不承诺结束后可靠主动飞书通知。第二种真实 backend 不作为本阶段默认交付，
+但必须以能力受限的适配器桩验证核心没有依赖 LangGraph 原生恢复对象。
 
-最小指标：到期任务积压／最老年龄、领取与过期接管次数、唤醒到开始推进延迟、状态无变化探测比、
-精确 Agent Server 请求数、主子衔接延迟、uncertain 数量／年龄、授权等待、交互等待、
-取消确认耗时、投递积压／失败／不确定回执。run/tenant 等高基数字段放受控日志，不用作无限指标标签。
+## 14. 代码落点、迁移与回滚
 
-INFO 记录业务状态变化、命令受理／回执、交互、终态与投递异常；无变化探测采用 DEBUG／采样。
-分别检查 BFF HTTP access log、出站 httpx／SDK 和 Agent Server access log 的来源；不能仅降低
-应用日志等级就声称 250 ms 负载已消失，也不能为降噪关闭安全 Audit 或错误日志。
+### 14.1 建议文件与职责
 
-初始性能目标是受控负载下唤醒到领取 P95 不超过 2 秒、无事件时单次终态发现通常不超过最大
-轮询间隔加一次探测耗时；数据库／网络故障不在该延迟承诺内。最终 SLO 必须用真实部署压测确定。
+沿用[现有包布局](../../docs/architecture/package-layout.md)，不恢复早期扁平目录或旧 Harness。
 
-## 13. 验收矩阵与发布门禁
+| 落点 | 改造 |
+|---|---|
+| `interfaces/coordinator/app.py`（新增） | 独立 Webhook Ingress、来源认证、健康检查；未来内部请求 API 的受控入口 |
+| `application/coordination/admission.py`（新增） | 共享数据库受理 Facade，显式 session，无远程执行 |
+| `application/coordination/coordinator.py`（新增） | 有界业务推进与请求处理 |
+| `application/coordination/query.py`、`authorization.py`（新增） | 纯查询与有界授权用例 |
+| `application/ports/agent_backend.py`（新增） | 小范围任务操作和能力契约；保留 AgentServerClient 为 LangGraph 底层 |
+| `modules/coordination/`（新增） | Inbox、请求索引、执行／等待位置引用、协调责任及仓储 |
+| `modules/execution/`、`delegation/`、`interactions/` | 演进现有事实、状态和提交保护，不复制业务 Run 或父子真相 |
+| `infrastructure/backends/langgraph.py`（新增） | 原生 Run、Webhook、interrupt/resume 与请求／响应的适配 |
+| `application/conversation_service.py`、会话仓储 | 受理／完成共享事务；删除产品查询的远程推进副作用 |
+| `application/delegation_service.py`、Workflow／Interaction 服务 | 抽取可被 Coordinator 调用的命令与观察能力，废除查询驱动 |
+| `orchestration/tools/delegation.py`、执行治理 Middleware | 显式请求版本、稳定 ID、结果校验及在途授权／预算／取消 |
+| `modules/notifications/`、通知应用服务与渠道适配器 | 待办、目标、发送回执与可靠投递 |
+| `operations/coordinator_worker.py`（新增） | Worker 启动、优雅停机、巡检；引擎专用实现于选型后确定 |
+| `bootstrap.py`、HTTP 装配与 Settings | 按角色装配最小资源，避免 Worker 启动飞书接收长连接 |
+| Alembic、配置样例、部署文档、`tests/stage8/` | 增量迁移、角色配置、真实组件和故障门禁 |
 
-### 13.1 自动化必测
+协议模块属于服务／持久化边界，不复制每个 backend 的 messages、checkpoint 或 Tool Schema。
+Worker 不能依赖某个 BFF app 实例才能装配，BFF 也不能导入会启动 Worker 的模块。
+
+### 14.2 迁移
+
+当前迁移头为 `0008_stage6fix_c`；开工时再次检查，建议按协调协议／Inbox、引擎专用结构、
+通知记录分批新增迁移，不提前占用或覆盖并行迁移号。
+
+每个 root 固定 `driver_mode=legacy/coordinator`；选定引擎后另有版本化 engine binding。
+原方案中的 worker 模式如已在外部分支出现，必须显式映射，不静默创建第二种驱动身份。
+
+1. 先扩展 schema；新接管关闭，迁移脚本不发网络请求、不启动历史任务。
+2. 所有 BFF、渠道、Workflow、交互和恢复入口先升级到理解驱动归属的兼容版本。
+3. 分页盘点旧根的输入／发布快照、原尝试、未知操作、授权和单活动位置；缺证据保持可见等待。
+4. 在只读 shadow 下验证请求发现和映射；shadow 不调用有写副作用的旧 status，也不写正式投影。
+5. 处理旧路径在途操作，按根 CAS 转交唯一驱动；新根在受理时固定模式，所有产品读取即时只读。
+6. Coordinator 承接后删除旧派发路径；混合期不能让旧二进制以同根身份发出 start/resume。
+
+如果滚动兼容无法证明，受控停止新受理、记录／排空在途操作后统一升级。
+历史终态可重建投影，但不复活、不自动补发未经授权的历史通知。
+Stage 7 的冻结资料与时钟／时区快照不因迁移重算。
+
+### 14.3 回滚
+
+先关闭新根接入和新命令领取，保留只读查询、已在途操作核对与诊断。
+不能自动将已接管根改回 legacy，不能回滚到忽略新授权／continuation 的旧代码。
+保留新增表、Inbox 和操作证据；默认不执行破坏性 downgrade。
+如果采用 Temporal，保留可继续现有 Workflow 的兼容 Worker／版本，不重新启动相同业务任务。
+共享数据库的迁移与回滚统一协调，不能只回滚某个进程并假设旧 schema 仍兼容。
+
+## 15. 配置、观测和运维
+
+配置统一通过 `FINANCECLAW_` 前缀或现有 backend 专用配置管理，名称在实现时与 Settings 对齐。
+初始值是待压测建议，不是已达成 SLO。
+
+| 配置类别 | 建议约束 |
+|---|---|
+| Coordinator 接管 | 默认关闭新根接管；停用不把现有根还给 GET 驱动 |
+| backend 发布绑定 | instance、adapter、release、可信回调目标和能力矩阵固定；凭证通过 Secret 配置注入 |
+| Ingress | 限制体积、请求率、未关联记录数量／期限；认证头不得出现在日志 |
+| Worker | 有界全局／单租户并发、批次不超过可用槽位、远程超时、优雅停机 |
+| 事件与补偿 | 事件尽快唤醒；建议活跃尝试无回调时 5～30 秒分级核对，异常退避；紧迫恢复按单独策略 |
+| 授权 | 建议任务 TTL 上限 1800 秒，HTTP 不超过 JWT 到期；不延长交互窗口 |
+| 渠道通知 | 单独开关；最多次数只适用于明确可重试失败，uncertain 受回执与幂等窗口约束 |
+| 引擎专用参数 | 租约／续期，或 Temporal namespace／task queue／版本策略，在选型后给出正式值 |
+
+健康检查分层：Ingress 可持久化接收、Worker 可处理已受理责任、backend 可观察／提交、
+通知可投递分别报告。BFF ready 必须识别“允许 Coordinator 新受理但没有兼容处理者”的异常；
+已持久化事实不丢弃，但不能继续宣称系统可正常推进。若用 Temporal，桥接积压和 Worker
+可用性都要纳入检查，只有 Temporal Service 健康不够。
+
+最小指标包括：Inbox／未关联事件积压与年龄、接收到推进延迟、回调覆盖和补偿探测比例、
+每 task 的 backend 请求量、重复／迟到事件、continuation 无法确认、子结果待交付、
+uncertain 数与年龄、授权／交互等待、取消确认、通知投递与数据库锁等待／连接池占用。
+任务 ID 放日志或 trace，不作为无界指标标签。
+
+INFO 记录状态变化、命令与回执、交互和异常；无变化观察使用采样／DEBUG。
+覆盖 BFF、Ingress、Worker、出站客户端与 backend 各自日志，不能通过关闭审计隐藏探测负载。
+可设受控负载下事件持久化后到推进 P95 ≤ 2 秒的初始目标；回调全丢的发现延迟按配置补偿
+上限加一次探测时间测量，基础设施故障另记，不承诺零轮询或无条件实时。
+
+## 16. 验收矩阵与发布门禁
+
+### 16.1 必测场景
 
 | 编号 | 场景 | 必须断言 |
 |---|---|---|
-| S8-01 | 仅 POST 根请求，之后不调用 GET、不打开 SSE | root → child → root 完成或进入可见交互；外部查询调用次数为零 |
-| S8-02 | 0、1、10 个观察者查看同一根 | 业务 start/resume 数相同；Agent Server 状态探测不随观察者数成倍增长 |
-| S8-03 | 根受理每个持久化边界故障 | 202 前完整提交或整体回滚；幂等重放不补新权限、不重复 Journal |
-| S8-04 | child 准备前后／提交响应前后进程退出 | 恢复原委派和固定操作；未知时不创建第二个 child |
-| S8-05 | child 完成、父恢复准备或响应丢失后重启 | 原父恢复被精确对账；delivered 与执行终态不混淆 |
-| S8-06 | 两个独立进程并发领取，旧 Worker 租约过期后返回 | 旧 token 不能覆盖投影／领取新操作；操作预算与 Journal 无重复 |
-| S8-07 | Worker 检查结束与外部唤醒同时发生 | 新 wake_seq 不被延迟调度覆盖，不出现永久休眠 |
-| S8-08 | 有效交互决定已提交事务，BFF 在远程提交前退出 | Worker 在有效授权／窗口内恢复精确 owner，不需再次 GET 或再次批准 |
-| S8-09 | 无决定、已过期决定、错误 owner/hash/revision | 不自动批准、不换检查点；保持安全等待／冲突原因 |
-| S8-10 | 授权到期、撤销、权限收窄、重新授权 | 不扩权；固定操作不改哈希；审批到期不因重新授权复活 |
-| S8-11 | 长 Run 中后续模型／工具跨授权截止期 | 新执行边界拒绝后续受治理动作，已在途请求仍按事实对账 |
-| S8-12 | 取消与命令领取并发、未知提交中取消 | 取消优先规则成立；未确认停止前不释放单活动根位置 |
-| S8-13 | 主／子／Workflow／交互所有 GET 与 SSE-finalize | 除基础设施日志外不写执行事实；不调用 create/resume、不扣预算 |
-| S8-14 | 父连续两次顺序委派，历史存在失败记录 | 仅处理当前精确 handoff；不重启历史失败；不错误限制为每 Turn 必定一个 child |
-| S8-15 | SSE 断线、父恢复换 Server Run、飞书展示超时 | 后台持续；最终文本与 Journal 一致；child 中间消息不泄漏 |
-| S8-16 | 最终结果提交各边界异常、摘要构建失败 | 无“completed 但答案／通知意图丢失”；摘要失败不重跑模型 |
-| S8-17 | 飞书发送明确失败／响应丢失／sender 重启 | 仅重试原投递；稳定键与内容；uncertain 不盲换键，不增加模型／委派数 |
-| S8-18 | 重复渠道事件、交互命令、通知回执及大文本分片 | 同目标事件／分片只有一条逻辑投递；最终输出不由两条路径重复发送 |
-| S8-19 | 已过期交互通知排队、通知目标撤销或跨租户伪造 | 抑制过时提示、拒绝错误目标；不泄露问题／结果正文 |
-| S8-20 | SSE 重连、事件游标过期和多个订阅者 | 独立业务事件回放／快照重置；不承诺 token 全量回放 |
-| S8-21 | webhook 重复、乱序、回执绑定前到达、全部丢失 | 不直接执行；映射与权威观察成立；全部丢失仍能后台完成 |
-| S8-22 | Agent Server／DB 暂不可用、Worker 全部停止再恢复 | 状态延迟可见；恢复后继续原操作，不重建执行 |
-| S8-23 | legacy/worker 混合与二进制回滚 | 单根唯一驱动；未知提交不重发；旧版本不能绕过授权接管 |
-| S8-24 | 完成／失败根收到迟到事件，再收到用户“重试” | 终态不复活；新用户 Turn 与旧任务严格区分 |
-| S8-25 | Stage 7 合成出生资料及跨时区／跨日恢复 | 时间上下文不漂移；日志／回调／事件／通知遵守已有数据分级 |
+| S8-01 | 仅 POST，随后无 GET／SSE，BFF 退出 | Coordinator 完成 root → child → root 或进入明确交互 |
+| S8-02 | 同库根受理各写入边界崩溃 | 全部提交或回滚；202 前保存完整依据，重复请求不增权限、不重复 Journal |
+| S8-03 | Webhook 持久化失败、处理前 Ingress 退出 | 未提交不返回成功；已确认事件重启后可处理 |
+| S8-04 | 重复回调、相同状态的不同请求、乱序事件 | 不重复 child；不错误合并新请求，不回退当前状态 |
+| S8-05 | 回调早于命令回执绑定、未知 run／错误部署 | 待关联核对、容量有界；不能从通知创建新委托或身份 |
+| S8-06 | 原生 success／error／委派中断／交互中断／恢复回调 | 真实能力逐项记录；缺口由后台观察补足 |
+| S8-07 | 全部 Webhook 丢失、回调不覆盖暂停 | 无前台访问也能发现请求和终态；补偿延迟符合配置 |
+| S8-08 | callback run 与 thread 最新 checkpoint 不对应 | 不取错结果／interrupt，不恢复错误 owner |
+| S8-09 | 节点重放、Webhook 与定时观察同时发现 handoff | 相同稳定请求仅受理一次；不同输入同 ID 报冲突 |
+| S8-10 | 未知请求类型、伪造 Target／权限、缺 continuation | 保持可见阻塞或拒绝；不猜测委派／审批 |
+| S8-11 | child 远端创建成功、本地回执丢失 | 原 operation 查证；不因租约／Activity 重试创建第二个 child |
+| S8-12 | child 完成，父恢复准备／提交／确认各边界崩溃 | 原交付操作恢复；submitted、applied 与 child 终态分开 |
+| S8-13 | 子结果 ID／parent／版本／输入 hash 不匹配 | 拒绝错误交付，不因收到终态回调直接完成根 |
+| S8-14 | 父连续顺序委派、历史 failed、迟到旧结果 | 仅推进当前请求；历史不复活，新用户重试走新 Turn |
+| S8-15 | child 交互、用户决定提交后 BFF 退出 | 恢复确切 child owner；不新增父委派或自行批准 |
+| S8-16 | 过期／撤销／收窄／重新授权、长 Run 跨期限 | 原上界和固定操作不漂移；在途受治理动作按策略受限 |
+| S8-17 | 取消与命令领取竞争、未知提交时取消 | 禁止新派发；整树停止未确认前不释放单活动根 |
+| S8-18 | 多个 Worker 并发、旧工作在超时／接管后返回 | 不覆盖新 revision，不重复 operation、预算或 Journal |
+| S8-19 | 处理结束与新事件同时到达 | 新唤醒不丢，不出现永久等待 |
+| S8-20 | 根／child／Workflow／交互 GET 和 SSE finalize | 除观测日志外不写执行事实，不调用 start/resume/cancel，不扣预算 |
+| S8-21 | 0、1、10 个观察者与飞书展示超时 | 业务执行数相同，backend 探测不随观察者成倍增长 |
+| S8-22 | 结果提交边界失败、Artifact／摘要异常 | 不出现 completed 但答案／待通知事实永久丢失；不重跑模型 |
+| S8-23 | 通知明确失败、响应丢失、sender 重启 | 固定目标／内容／键；仅恢复原投递，uncertain 不盲重发 |
+| S8-24 | 目标撤销、过期交互、分片、卡片与最终文本 | 不泄漏错误目标，不发送过时批准请求，不双份最终发送 |
+| S8-25 | SSE 重连、多订阅者、事件过期 | 独立游标、快照恢复，不承诺全部 token 回放 |
+| S8-26 | 不支持 continuation 的 backend 桩、异构父子引用 | 能力门禁成立；原生 LangGraph 对象不进入核心，绑定不自动迁移 |
+| S8-27 | Temporal 候选的 DB 提交后桥接失败／重复 Signal／版本回放 | 若选该引擎，原工作流可靠启动／唤醒，Activity 重试不重发未知业务操作 |
+| S8-28 | 共享库锁竞争、schema 不兼容、旧新驱动混合与回滚 | 兼容性门控、唯一驱动、固定事务边界与保留证据 |
+| S8-29 | Ingress／Worker／backend／数据库各自故障后恢复 | 状态延迟可见，保留原任务，不谎报成功或自动重建 |
+| S8-30 | Stage 7 合成资料、跨时区／跨日恢复、原始回调载荷 | 资料与时钟快照不漂移，日志／Inbox／事件不扩散敏感正文 |
+| S8-31 | thread 确保存在前后崩溃、创建回执丢失 | 复用原 thread 身份，不把 thread 回执当作 Run 已提交，不重复 start |
 
-### 13.2 分层验证
+### 16.2 验证层次
 
-- 单元与应用集成：脚本化模型、Fake Agent Server、可控时钟和通知回执桩，验证状态与故障窗口。
-- PostgreSQL：至少两个独立 Worker 进程，用真实事务验证领取、fencing、取消、预算及幂等；
-  不能仅用同进程 asyncio Lock 或 SQLite 得出多实例安全结论。
-- 真实 Agent Server：验证 thread 创建、精确 Run、interrupt/resume、回执丢失对账和服务重启；
-  优先使用隔离发布与脚本化模型，线上供应商性能另行测量。
-- 飞书：合成消息与测试单聊验证 SDK 回执、uuid 去重窗口、卡片模式、分片及进程退出；
-  不以布尔 gateway 桩通过代替真实投递可靠性验收。
-- 回归：现有 `tests/stage4`、`stage5`、`stage6`、`stage6fix`、`stage6fixc`、`stage7` 及架构测试；
-  旧测试中“调用 status 推进”的断言需改为 Worker 推进，另保留 GET 只读的负向断言。
+- 契约与应用集成：可控时钟、脚本化 Agent 和能力受限的 Adapter 桩。
+- 真实 PostgreSQL：独立 BFF、Ingress 和至少两个 Worker 进程，验证共享事务、命令保护和故障。
+- 真实 LangGraph：隔离发布、真实 Run 回调、interrupt/resume、精确尝试与回执丢失；无需先用真实资料。
+- 调度候选：以同一闭环和故障矩阵比较；仅选定路线形成正式生产依赖。
+- 飞书：测试单聊与合成内容，验证 SDK 真实回执和幂等窗口，不以布尔 gateway 桩代替。
+- 回归：现有 stage4／stage5／stage6／stage6fix／stage6fixc／stage7 与架构测试；
+  将旧“status 推进”断言改为 Coordinator 推进，并新增 GET 只读负向断言。
 
-### 13.3 发布阻断
+### 16.3 发布阻断
 
-以下任何一项未解决都不能开启对应能力：
+无观察者无法闭环、共享事务有受理漏洞、任何产品查询仍有执行副作用、并发重复派发、
+未知提交自动重发、错误等待位置恢复、授权／取消绕过、完成事实与 Journal 永久分叉、
+通知不确定性靠模型重跑解决、真实敏感资料进入不符合原策略的载荷／日志，均阻断发布。
 
-- 无观察者时不能闭环，或任何产品查询仍触发新执行。
-- 跨进程重复派发、未知提交自动重发、旧租约覆盖新状态。
-- 任务授权／审批／取消／发布版本存在绕过，或靠 `*`、latest 恢复。
-- 202 前未完整持久化受理依据，或完成事实与最终用户结果／待通知事实发生永久分叉。
-- 未知回执下无法安全处理却声称通知 exactly-once；飞书交互通知可丢失且没有持久化责任。
-- 真实出生资料进入不符合原策略的日志、回调、模型或错误渠道目标。
+原生 Webhook 未通过不能宣称 8A 接入完成；通知未通过不能宣称 8B 可靠主动通知；
+多实例／旧根接管未通过不能宣称 8C 生产收敛完成。
+所有阶段都需分别记录代码实现、仓库验证和真实环境验收，不能混为“已完成”。
 
-8B 未通过不能宣称可靠主动通知；8C webhook 未通过可以保持关闭，但必须记录退避对账的性能边界。
+## 17. 待验证决议与本轮交付
 
-## 14. 待确认项与本轮交付
+已确定：Coordinator Service、Webhook Ingress＋Worker、首个 LangGraph Adapter、
+BFF 与 Coordinator 共享 `financeclaw_app`。
 
-不阻塞设计与隔离验证的推荐选择：
+正式实现前的技术产物：调度引擎选型、部署 Webhook 能力矩阵、Continuation／交付证据契约、
+共享事务清单与迁移兼容策略。跨 backend 真实委派先保持扩展预留，首期生产能力不自动扩大。
+授权 TTL、回调补偿频率、事件保留、飞书投递模式和容量值是可验证的初始建议。
 
-1. **后台执行期限**：先采用 30 分钟上限且 HTTP 不超过 JWT 到期；更长离线执行另行定义授权。
-2. **飞书最终交付**：先保证可靠文本，流式卡片保留可降级预览；卡片原位恢复经 SDK 验证后开放。
-3. **发布范围**：8A 先解决执行依赖查询，8B 紧接着补结果／交互通知；不等待 webhook 才切断前台依赖。
-4. **旧任务接管**：可证明的任务明确迁移；缺授权先重新授权，缺快照／发布的任务保持可见停顿。
-5. **受理前消息不丢**：本阶段不默认承诺 SDK 回调到数据库之前的窗口；若产品要求则单独扩展 inbox。
-
-实现开始时优先确认授权期限、飞书交付模式及是否需要受理前 inbox。涉及超出原授权、真实渠道发送、
-生产迁移或既有 Stage 7 隐私例外时，必须单独确认，不能把本次“输出方案”作为实施／发布授权。
-
-本轮交付：本 Stage 8 实施方案与 `.redesign/README.md` 导航；未修改业务代码、数据库、依赖、
-部署或远程仓库。后续实施另建 `Stage-8-实施与验证.md`，记录实际范围、命令、测试证据、未决项和发布状态。
+本轮只重写本实施方案并更新架构决议说明与导航；不修改业务代码、数据库、依赖、运行配置或部署。
+后续使用 `Stage-8-实施与验证.md` 记录选型、实际改动、命令、证据、能力缺口及发布状态。

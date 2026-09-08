@@ -2,7 +2,7 @@
 
 状态：已确认的架构基线继续有效；新增阶段按各文档状态评审，Proposed 设计不自动成为冻结决议。
 
-更新时间：2026-09-07
+更新时间：2026-09-08
 
 ## 目的
 
@@ -30,6 +30,18 @@
 9. 调用链观测以 LangSmith 为主；OpenTelemetry 只补充 HTTP、数据库、队列等基础设施观测；金融 Audit 独立永久保存。
 10. LangGraph Agent Server 是内部执行平面，FinanceClaw API/BFF 是唯一产品与业务安全入口。
 
+## Stage 8 方向调整
+
+2026-09-08 已确认新增 Coordinator Service，由 Webhook Ingress＋Coordinator Worker 组成，
+首期接入 LangGraph Run Webhook，并将 Delegation 提升为显式协调协议。BFF 与 Coordinator
+暂时共享同一个 `financeclaw_app`，通过明确的模块接口组合受理与完成事务。
+
+Coordinator 统一负责已受理任务的远程提交、委派和恢复；BFF 负责受理与只读展示。
+多 backend 通过有限 Adapter 预留，首期生产仍只有 LangGraph。调度引擎在 Temporal 与
+PostgreSQL Worker 的技术验证后确定，不预先引入依赖或维护两套正式调度实现。
+这些是目标方向；详细实施方案仍为 Proposed，当前代码尚未完成该迁移。
+与既有基线的关系见 [RD-031](./01-架构决议汇总.md#rd-031coordinator-service-与共享业务数据库)。
+
 ## 文档导航
 
 - [最终架构设计](./00-最终架构设计.md)
@@ -55,7 +67,7 @@
   - [Stage 7 设计审视与待确认决议](./stages/Stage-7-设计审视与待确认决议.md)
   - [Stage 7 实施与验证记录](./stages/Stage-7-实施与验证.md)
   - [Stage 7 文本解读热修复：移除解读 JSON 与逐条引用硬约束](./stages/Stage-7-文本解读热修复-实施与验证.md)
-- [Stage 8：后台自主推进、只读查询与可靠渠道通知实施方案（Proposed）](./stages/Stage-8-Background-Run-Coordination-实施方案.md)
+- [Stage 8：Coordinator Service、Webhook 接入与显式委派协议（Proposed，2026-09-08 重写）](./stages/Stage-8-Background-Run-Coordination-实施方案.md)
 
 迁移材料：
 
