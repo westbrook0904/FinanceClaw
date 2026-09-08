@@ -4,10 +4,10 @@ import json
 
 import pytest
 
-from financeclaw.bootstrap import build_components
-from financeclaw.infrastructure import FinanceClawSettings
-from financeclaw.kernel import ExecutionContext
-from financeclaw.modules.ziwei.models import ZiweiAnalysisRequest
+from financeclaw.kernel.context import ExecutionContext
+from financeclaw.kernel.ziwei import ZiweiAnalysisRequest
+from financeclaw.shared.infrastructure.settings import FinanceClawSettings
+from tests.support import build_components
 
 KEY = "synthetic-stage7-fixture-key-not-for-real-use"
 

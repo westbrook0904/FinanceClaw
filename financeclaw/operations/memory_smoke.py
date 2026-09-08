@@ -15,13 +15,15 @@ from uuid import uuid4
 
 from pydantic import SecretStr
 
-from financeclaw.application import ConversationService
-from financeclaw.bootstrap import build_components
-from financeclaw.infrastructure import FinanceClawSettings
-from financeclaw.infrastructure.clients import LangGraphAgentServerClient
-from financeclaw.kernel import ApprovalDecision, ConversationTurnRequest
-from financeclaw.modules.audit import AuditEventType, SqlAlchemyAuditRepository
-from financeclaw.modules.conversation import SqlAlchemyConversationRepository
+from financeclaw.agent_server.bootstrap import build_components
+from financeclaw.bff.application.conversation_service import ConversationService
+from financeclaw.coordination.api import ConversationRunService
+from financeclaw.coordination.backends.langgraph import LangGraphAgentServerClient
+from financeclaw.kernel.responses import ApprovalDecision, ConversationTurnRequest
+from financeclaw.shared.audit.models import AuditEventType
+from financeclaw.shared.audit.repository import SqlAlchemyAuditRepository
+from financeclaw.shared.conversation.repository import SqlAlchemyConversationRepository
+from financeclaw.shared.infrastructure.settings import FinanceClawSettings
 
 
 async def _wait_for(
@@ -103,11 +105,15 @@ async def probe_memory(
     # 2. 构造会话服务，并用随机 smoke_id 生成隔离的租户、主体与记忆作用域。
     client = LangGraphAgentServerClient(url=url)
     service = ConversationService(
-        client,
         repository,
         components.agent_profiles,
-        summary_service=components.summary_service,
-        approval_timeout_seconds=settings.approval_timeout_seconds,
+        runs=ConversationRunService(
+            client,
+            repository,
+            components.agent_profiles,
+            summary_service=components.summary_service,
+            approval_timeout_seconds=settings.approval_timeout_seconds,
+        ),
     )
     smoke_id = uuid4().hex
     tenant_id = f"stage3-smoke-{smoke_id}"

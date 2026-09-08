@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from financeclaw.infrastructure.clients.agent_server import LangGraphAgentServerClient
+from financeclaw.coordination.backends.langgraph import LangGraphAgentServerClient
 
 
 class _Runs:

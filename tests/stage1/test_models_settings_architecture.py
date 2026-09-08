@@ -6,14 +6,10 @@ from pathlib import Path
 import pytest
 from pydantic import SecretStr, ValidationError
 
-from financeclaw.bootstrap import build_components
-from financeclaw.infrastructure import FinanceClawSettings
-from financeclaw.infrastructure.llm import (
-    ModelFactory,
-    ModelProfile,
-    ModelProfileCatalog,
-    ModelProfileRef,
-)
+from financeclaw.agent_server.llm.factory import ModelFactory
+from financeclaw.kernel.models import ModelProfile, ModelProfileCatalog, ModelProfileRef
+from financeclaw.shared.infrastructure.settings import FinanceClawSettings
+from tests.support import build_components
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -109,17 +105,17 @@ def test_production_dependency_graph_has_no_stage1_legacy_runtime() -> None:
     # 继续执行前验证内部不变量。
     assert config["graphs"] == {
         "finance_agent_v1_4_0": (
-            "./financeclaw/orchestration/graphs/server_graphs.py:finance_agent"
+            "./financeclaw/agent_server/graphs/server_graphs.py:finance_agent"
         ),
         "ziwei_doushu_agent_v2_0_0": (
-            "./financeclaw/orchestration/graphs/server_graphs.py:ziwei_doushu_agent_text"
+            "./financeclaw/agent_server/graphs/server_graphs.py:ziwei_doushu_agent_text"
         ),
         "market_research_agent_v1_2_0": (
-            "./financeclaw/orchestration/graphs/server_graphs.py:market_research_agent"
+            "./financeclaw/agent_server/graphs/server_graphs.py:market_research_agent"
         ),
-        "direct_tool": "./financeclaw/orchestration/graphs/server_graphs.py:direct_tool",
+        "direct_tool": "./financeclaw/agent_server/graphs/server_graphs.py:direct_tool",
         "portfolio_review_v1": (
-            "./financeclaw/orchestration/graphs/server_graphs.py:portfolio_review_v1"
+            "./financeclaw/agent_server/graphs/server_graphs.py:portfolio_review_v1"
         ),
     }
     local_config = json.loads((ROOT / "langgraph.local.json").read_text())

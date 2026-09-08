@@ -5,14 +5,14 @@ from langchain_core.messages import AIMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 from pydantic import ValidationError
 
-from financeclaw.modules.ziwei.errors import ZiweiError
-from financeclaw.modules.ziwei.models import ZiweiTextResult
-from financeclaw.orchestration.agents.ziwei_offline import OfflineZiweiModel
-from financeclaw.orchestration.graphs.ziwei_agent import (
+from financeclaw.agent_server.agents.ziwei_offline import OfflineZiweiModel
+from financeclaw.agent_server.domains.ziwei.errors import ZiweiError
+from financeclaw.agent_server.graphs.ziwei_agent import (
     ZiweiEvidenceMiddleware,
     build_ziwei_agent,
     interpretation_text,
 )
+from financeclaw.kernel.ziwei import ZiweiTextResult
 from tests.stage7.support import components, context, envelope, request
 
 

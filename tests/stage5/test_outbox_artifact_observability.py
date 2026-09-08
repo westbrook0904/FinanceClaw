@@ -6,12 +6,17 @@ import json
 import pytest
 from sqlalchemy import func, select
 
-from financeclaw.infrastructure import ApplicationDatabase
-from financeclaw.infrastructure.observability import JsonLogFormatter, redact_sensitive
-from financeclaw.modules.artifacts import S3ArtifactStore
-from financeclaw.modules.audit import AuditEventType, AuditRecord, SqlAlchemyAuditRepository
-from financeclaw.modules.outbox import OutboxPublisher, SqlAlchemyOutboxRepository
-from financeclaw.modules.outbox.tables import OutboxEventRow
+from financeclaw.shared.artifacts.storage import S3ArtifactStore
+from financeclaw.shared.audit.models import AuditEventType, AuditRecord
+from financeclaw.shared.audit.repository import SqlAlchemyAuditRepository
+from financeclaw.shared.infrastructure.database import ApplicationDatabase
+from financeclaw.shared.infrastructure.observability.logging import (
+    JsonLogFormatter,
+    redact_sensitive,
+)
+from financeclaw.shared.outbox.publisher import OutboxPublisher
+from financeclaw.shared.outbox.repository import SqlAlchemyOutboxRepository
+from financeclaw.shared.outbox.tables import OutboxEventRow
 
 
 def _audit_record() -> AuditRecord:

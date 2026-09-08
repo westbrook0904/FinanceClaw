@@ -13,12 +13,14 @@ from langgraph.store.memory import InMemoryStore
 from langgraph.types import Command
 from pydantic import PrivateAttr, SecretStr
 
-from financeclaw.application import ApprovalExpired, ConversationService
-from financeclaw.bootstrap import build_components
-from financeclaw.infrastructure import FinanceClawSettings
-from financeclaw.kernel import ApprovalDecision
-from financeclaw.modules.audit import InMemoryAuditRepository
-from financeclaw.modules.memory import MemoryDraft
+from financeclaw.agent_server.memory.models import MemoryDraft
+from financeclaw.bff.application.conversation_service import ConversationService
+from financeclaw.coordination.api import ConversationRunService
+from financeclaw.coordination.application.conversation_runs import ApprovalExpired
+from financeclaw.kernel.responses import ApprovalDecision
+from financeclaw.shared.audit.repository import InMemoryAuditRepository
+from financeclaw.shared.infrastructure.settings import FinanceClawSettings
+from tests.support import build_components
 
 from .support import conversation_context
 
@@ -311,7 +313,7 @@ async def test_expired_memory_approval_cannot_resume(tmp_path: Path) -> None:
     context, _ = conversation_context(repository, key="expired-memory")
     from datetime import UTC, datetime, timedelta
 
-    from financeclaw.application.execution_service import agent_snapshot
+    from financeclaw.shared.execution_ledger.snapshots import agent_snapshot
 
     repository.execution.register(
         context.run_id,
@@ -331,10 +333,14 @@ async def test_expired_memory_approval_cannot_resume(tmp_path: Path) -> None:
     repository.update_turn_status(context.run_id, "interrupted")
     # 准备 service，供后续步骤使用。
     service = ConversationService(
-        NoResumeClient(),  # type: ignore[arg-type]
         repository,
         components.agent_profiles,
-        approval_timeout_seconds=0,
+        runs=ConversationRunService(
+            NoResumeClient(),  # type: ignore[arg-type]
+            repository,
+            components.agent_profiles,
+            approval_timeout_seconds=0,
+        ),
     )
     # 限定依赖资源的生命周期，并确保资源能够可靠释放。
     with pytest.raises(ApprovalExpired):

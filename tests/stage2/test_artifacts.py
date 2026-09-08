@@ -4,13 +4,11 @@ from pathlib import Path
 
 import pytest
 
-from financeclaw.infrastructure import ApplicationDatabase
-from financeclaw.kernel import ExecutionContext
-from financeclaw.modules.artifacts import (
-    ArtifactService,
-    InMemoryArtifactStore,
-    SqlAlchemyArtifactRepository,
-)
+from financeclaw.kernel.context import ExecutionContext
+from financeclaw.shared.artifacts.repository import SqlAlchemyArtifactRepository
+from financeclaw.shared.artifacts.service import ArtifactService
+from financeclaw.shared.artifacts.storage import InMemoryArtifactStore
+from financeclaw.shared.infrastructure.database import ApplicationDatabase
 
 
 def context(*scopes: str, tenant_id: str = "tenant-a") -> ExecutionContext:

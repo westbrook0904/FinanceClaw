@@ -7,9 +7,9 @@ import pytest
 from cryptography.hazmat.primitives.asymmetric import rsa
 from pydantic import SecretStr, ValidationError
 
-from financeclaw.infrastructure import FinanceClawSettings
-from financeclaw.infrastructure.security import EgressDenied, EgressPolicy
-from financeclaw.interfaces.http.auth import OIDCJWTAuthenticator
+from financeclaw.bff.http.auth import OIDCJWTAuthenticator
+from financeclaw.shared.infrastructure.security.egress import EgressDenied, EgressPolicy
+from financeclaw.shared.infrastructure.settings import FinanceClawSettings
 
 
 @pytest.mark.asyncio

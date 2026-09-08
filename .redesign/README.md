@@ -4,6 +4,9 @@
 
 更新时间：2026-09-08
 
+Stage-8 前置分包已完成：`bff`、`coordination`、`agent_server`，同库与共享模块边界见
+[包结构设计](../docs/architecture/package-layout.md)。独立协调进程与后台能力仍按 Stage-8 方案实施。
+
 ## 目的
 
 本目录把 FinanceClaw 从“自研通用 Agent Harness”收敛为“成熟 Agent 运行时之上的金融领域核心”。核心原则是：

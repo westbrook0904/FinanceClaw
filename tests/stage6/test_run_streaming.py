@@ -5,8 +5,11 @@ from typing import Any
 
 import pytest
 
-from financeclaw.application.streaming import completed_stream_event, project_server_part
-from financeclaw.infrastructure.clients import LangGraphAgentServerClient
+from financeclaw.coordination.application.streaming import (
+    completed_stream_event,
+    project_server_part,
+)
+from financeclaw.coordination.backends.langgraph import LangGraphAgentServerClient
 
 
 class _FakeRuns:

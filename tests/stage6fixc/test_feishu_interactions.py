@@ -5,9 +5,9 @@ from datetime import datetime, timedelta
 
 import pytest
 
-from financeclaw.application import FeishuChannelService
-from financeclaw.application.feishu_interactions import parse_response
-from financeclaw.modules.interactions import InteractionConflict
+from financeclaw.bff.application.feishu_channel_service import FeishuChannelService
+from financeclaw.bff.application.feishu_interactions import parse_response
+from financeclaw.coordination.interactions.repository import InteractionConflict
 from tests.stage4.test_delegation import FakeDelegationClient
 from tests.stage6.test_feishu_channel import _FakeGateway, _message
 from tests.stage6fix.test_execution_recovery import stack
@@ -101,7 +101,7 @@ async def test_stale_or_foreign_channel_command_never_resumes(tmp_path, fault):
             message, text=f"/approve {item['interaction_id']} {item['revision']} {'0' * 64}"
         )
     if fault == "expired":
-        conversations._clock = lambda: (
+        conversations.runs._clock = lambda: (
             datetime.fromisoformat(item["expires_at"]) + timedelta(seconds=1)
         )
     if fault == "cancelled":
@@ -125,7 +125,7 @@ def test_question_command_preserves_json_and_never_infers_approval():
 
 def test_long_action_is_not_presented_as_a_complete_approval():
     """无法完整呈现动作时只给定位 API 和取消入口，不把截断摘要当成完整确认。"""
-    from financeclaw.application.feishu_interactions import format_interactions
+    from financeclaw.bff.application.feishu_interactions import format_interactions
 
     message = format_interactions(
         (

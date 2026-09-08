@@ -81,7 +81,7 @@ include = ["financeclaw*"]
 [tool.setuptools.package-data]
 financeclaw = [
     "py.typed",
-    "infrastructure/migrations/*.py",
-    "infrastructure/migrations/*.mako",
-    "infrastructure/migrations/versions/*.py",
+    "shared/infrastructure/migrations/*.py",
+    "shared/infrastructure/migrations/*.mako",
+    "shared/infrastructure/migrations/versions/*.py",
 ]

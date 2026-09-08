@@ -15,10 +15,11 @@ from langsmith import traceable
 from langsmith.run_helpers import get_current_run_tree
 from pydantic import BaseModel, Field
 
-from financeclaw.bootstrap import build_components
-from financeclaw.infrastructure import FinanceClawSettings
-from financeclaw.kernel import ExecutionContext
-from financeclaw.modules.audit import AuditEventType, InMemoryAuditRepository
+from financeclaw.agent_server.bootstrap import build_components
+from financeclaw.kernel.context import ExecutionContext
+from financeclaw.shared.audit.models import AuditEventType
+from financeclaw.shared.audit.repository import InMemoryAuditRepository
+from financeclaw.shared.infrastructure.settings import FinanceClawSettings
 
 
 class QuoteIntent(BaseModel):

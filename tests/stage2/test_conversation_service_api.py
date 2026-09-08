@@ -9,19 +9,19 @@ import pytest
 from langchain_core.messages import AIMessage
 from pydantic import SecretStr
 
-from financeclaw.application import (
-    ConversationService,
-    RunService,
-    ServerRun,
-    TargetResolver,
-)
-from financeclaw.bootstrap import build_components
-from financeclaw.infrastructure import ApplicationDatabase, FinanceClawSettings
-from financeclaw.interfaces.http import create_app
-from financeclaw.interfaces.http.auth import AuthenticatedPrincipal, StaticBearerAuthenticator
-from financeclaw.kernel import ConversationTurnRequest
-from financeclaw.modules.conversation import SqlAlchemyConversationRepository
+from financeclaw.bff.application.conversation_service import ConversationService
+from financeclaw.bff.http.app import create_app
+from financeclaw.bff.http.auth import AuthenticatedPrincipal, StaticBearerAuthenticator
+from financeclaw.coordination.api import ConversationRunService
+from financeclaw.coordination.application.run_service import RunService
+from financeclaw.coordination.application.target_resolver import TargetResolver
+from financeclaw.coordination.backends.ports.agent_server import ServerRun
+from financeclaw.kernel.responses import ConversationTurnRequest
+from financeclaw.shared.conversation.repository import SqlAlchemyConversationRepository
+from financeclaw.shared.infrastructure.database import ApplicationDatabase
+from financeclaw.shared.infrastructure.settings import FinanceClawSettings
 from tests.receipt_client import ReceiptClientMixin
+from tests.support import build_components
 
 
 class FakeAgentServerClient(ReceiptClientMixin):
@@ -151,10 +151,14 @@ async def test_restart_reconciliation_thread_mapping_profile_pin_and_ownership(
     fake = FakeAgentServerClient()
     # 准备 service，供后续步骤使用。
     service = ConversationService(
-        fake,
         repository,
         components.agent_profiles,
-        summary_service=components.summary_service,
+        runs=ConversationRunService(
+            fake,
+            repository,
+            components.agent_profiles,
+            summary_service=components.summary_service,
+        ),
     )
     # 准备 conversation，供后续步骤使用。
     conversation = await service.create(tenant_id="tenant-a", subject_id="subject-a")
@@ -194,9 +198,13 @@ async def test_restart_reconciliation_thread_mapping_profile_pin_and_ownership(
     restarted_repository = SqlAlchemyConversationRepository(restarted_database.session_factory)
     # 准备 restarted，供后续步骤使用。
     restarted = ConversationService(
-        fake,
         restarted_repository,
         components.agent_profiles,
+        runs=ConversationRunService(
+            fake,
+            restarted_repository,
+            components.agent_profiles,
+        ),
     )
     # 继续执行前验证内部不变量。
     assert await restarted.reconcile_incomplete() == (accepted.run_id,)
@@ -246,7 +254,11 @@ async def test_conversation_http_contract_and_cross_tenant_isolation(tmp_path: P
     # 准备 fake，供后续步骤使用。
     fake = FakeAgentServerClient()
     # 准备 conversation_service，供后续步骤使用。
-    conversation_service = ConversationService(fake, repository, components.agent_profiles)
+    conversation_service = ConversationService(
+        repository,
+        components.agent_profiles,
+        runs=ConversationRunService(fake, repository, components.agent_profiles),
+    )
     # 准备 run_service，供后续步骤使用。
     run_service = RunService(
         fake,
@@ -380,7 +392,11 @@ async def test_replay_recovers_server_run_created_before_local_bind(
     # 准备 fake，供后续步骤使用。
     fake = FakeAgentServerClient()
     # 准备 service，供后续步骤使用。
-    service = ConversationService(fake, repository, components.agent_profiles)
+    service = ConversationService(
+        repository,
+        components.agent_profiles,
+        runs=ConversationRunService(fake, repository, components.agent_profiles),
+    )
     # 准备 conversation，供后续步骤使用。
     conversation = await service.create(tenant_id="tenant-a", subject_id="subject-a")
     # 准备 request，供后续步骤使用。

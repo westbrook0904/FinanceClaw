@@ -1,6 +1,6 @@
 """旧测试 Fake 的新提交回执适配，只用于测试，不在生产降级为 runs.wait。"""
 
-from financeclaw.application.ports import ServerRun
+from financeclaw.coordination.backends.ports.agent_server import ServerRun
 
 
 class ReceiptClientMixin:

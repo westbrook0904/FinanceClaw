@@ -6,11 +6,13 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from langchain_core.messages import AIMessage
 
-from financeclaw.application import ConversationService, DelegationService, WorkflowService
-from financeclaw.kernel import ApprovalDecision, ConversationTurnRequest
-from financeclaw.modules.conversation import ConversationConflict
-from financeclaw.modules.execution import ExecutionConflict
-from financeclaw.modules.execution.repository import digest
+from financeclaw.bff.application.conversation_service import ConversationService
+from financeclaw.coordination.api import ConversationRunService
+from financeclaw.coordination.delegation.service import DelegationService
+from financeclaw.coordination.workflows.service import WorkflowService
+from financeclaw.kernel.responses import ApprovalDecision, ConversationTurnRequest
+from financeclaw.shared.conversation.repository import ConversationConflict
+from financeclaw.shared.execution_ledger.repository import ExecutionConflict, digest
 from tests.stage4.test_delegation import SCOPES, FakeDelegationClient, _components
 
 OWNER = {"tenant_id": "tenant-a", "subject_id": "subject-a"}
@@ -33,10 +35,14 @@ def stack(tmp_path, fake=None):
         artifact_service=components.artifact_service,
     )
     conversations = ConversationService(
-        client,
         components.conversation_repository,
         components.agent_profiles,
-        delegation_service=delegation,
+        runs=ConversationRunService(
+            client,
+            components.conversation_repository,
+            components.agent_profiles,
+            delegation_service=delegation,
+        ),
     )
     return components, client, delegation, conversations
 
@@ -118,7 +124,7 @@ async def test_child_delivery_then_parent_hitl_is_not_completed(tmp_path):
     assert fake.resume_calls[-1]["command"]["resume"]["parent-approval"]["decisions"] == [
         {"type": "approve"}
     ]
-    execution = service.execution.get(accepted.run_id)
+    execution = service.runs.execution.get(accepted.run_id)
     assert execution["server_run_id"].startswith("server-resume-")
     assert len(components.conversation_repository.list_messages(accepted.conversation_id)) == 2
     assert (await service.status(accepted.run_id, **OWNER)).status == "completed"
@@ -224,7 +230,7 @@ async def test_changed_action_and_expired_approval_cannot_resume(tmp_path):
             scopes=SCOPES,
             **OWNER,
         )
-    service._clock = lambda: datetime.now(UTC) + timedelta(days=1)
+    service.runs._clock = lambda: datetime.now(UTC) + timedelta(days=1)
     expired = await service.status(accepted.run_id, scopes=SCOPES, **OWNER)
     assert expired.waiting_reason == "approval_expired"
     assert len(fake.resume_calls) == 1
@@ -238,7 +244,7 @@ class ChainedClient(ParentApprovalClient):
 
     async def resume_run(self, **kwargs):
         """保留每次恢复身份，生成两个不同 handoff 实例。"""
-        from financeclaw.modules.delegation import AgentHandoffV2
+        from financeclaw.kernel.delegation.models import AgentHandoffV2
 
         payload = kwargs["command"]["resume"]
         if payload.get("delegation_id") == "second-child":

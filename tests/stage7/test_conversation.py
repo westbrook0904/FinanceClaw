@@ -8,17 +8,18 @@ from langchain_core.outputs import ChatGeneration, ChatResult
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.types import Command
 
-from financeclaw.application import (
-    ConversationService,
-    DelegationService,
-    ServerRun,
-    WorkflowService,
-)
-from financeclaw.application.execution_service import json_value
-from financeclaw.kernel import ConversationTurnRequest, ExecutionContext
-from financeclaw.orchestration.agents import AgentProfileCatalog, OfflineFinanceModel
-from financeclaw.orchestration.agents.ziwei_offline import OfflineZiweiModel
-from financeclaw.orchestration.graphs.ziwei_agent import build_ziwei_agent
+from financeclaw.agent_server.agents.offline import OfflineFinanceModel
+from financeclaw.agent_server.agents.ziwei_offline import OfflineZiweiModel
+from financeclaw.agent_server.graphs.ziwei_agent import build_ziwei_agent
+from financeclaw.bff.application.conversation_service import ConversationService
+from financeclaw.coordination.api import ConversationRunService
+from financeclaw.coordination.backends.ports.agent_server import ServerRun
+from financeclaw.coordination.delegation.service import DelegationService
+from financeclaw.coordination.execution.service import json_value
+from financeclaw.coordination.workflows.service import WorkflowService
+from financeclaw.kernel.agents import AgentProfileCatalog
+from financeclaw.kernel.context import ExecutionContext
+from financeclaw.kernel.responses import ConversationTurnRequest
 from tests.stage4.test_delegation import FakeDelegationClient
 from tests.stage7.support import components, request
 
@@ -137,14 +138,22 @@ async def test_native_root_child_delivery_and_persistent_budget(tmp_path, missin
         artifact_service=stack.artifact_service,
     )
     service = ConversationService(
-        client,
         stack.conversation_repository,
         AgentProfileCatalog(
             profile
             for profile in stack.agent_profiles.values()
             if profile.agent_id != "finance_agent" or profile.version == "1.4.0"
         ),
-        delegation_service=delegation,
+        runs=ConversationRunService(
+            client,
+            stack.conversation_repository,
+            AgentProfileCatalog(
+                profile
+                for profile in stack.agent_profiles.values()
+                if profile.agent_id != "finance_agent" or profile.version == "1.4.0"
+            ),
+            delegation_service=delegation,
+        ),
     )
     owner = {"tenant_id": "synthetic-tenant", "subject_id": "synthetic-owner"}
     scopes = frozenset({"ziwei:read", "artifacts:read"})
@@ -185,7 +194,7 @@ async def test_native_root_child_delivery_and_persistent_budget(tmp_path, missin
         assert all(
             set(c["context"]["scopes"]) == scopes for c in client.create_calls + client.resume_calls
         )
-        execution = service.execution.get(accepted.run_id)
+        execution = service.runs.execution.get(accepted.run_id)
         # 根委派与根汇总 2 次；正常子取证 2 次＋finalization 1 次。
         assert execution["model_calls"] == (2 if missing else 5)
         await service.status(accepted.run_id, scopes=scopes, **owner)

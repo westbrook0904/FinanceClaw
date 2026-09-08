@@ -5,17 +5,21 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from financeclaw.application import ServerRun, WorkflowService
-from financeclaw.infrastructure import ApplicationDatabase
-from financeclaw.modules.artifacts import (
-    ArtifactService,
-    InMemoryArtifactStore,
-    SqlAlchemyArtifactRepository,
+from financeclaw.agent_server.graphs.workflows.portfolio_review_v1 import (
+    portfolio_review_definition,
 )
-from financeclaw.modules.audit import InMemoryAuditRepository
-from financeclaw.modules.workflows import SqlAlchemyWorkflowRepository, WorkflowCatalog
-from financeclaw.orchestration.graphs.workflows import portfolio_review_definition
-from financeclaw.orchestration.tools import ToolCatalog, ToolPolicy, default_local_tools
+from financeclaw.agent_server.tools.catalog import ToolCatalog
+from financeclaw.agent_server.tools.local import default_local_tools
+from financeclaw.agent_server.tools.policy import ToolPolicy
+from financeclaw.coordination.backends.ports.agent_server import ServerRun
+from financeclaw.coordination.workflows.repository import SqlAlchemyWorkflowRepository
+from financeclaw.coordination.workflows.service import WorkflowService
+from financeclaw.kernel.workflows.catalog import WorkflowCatalog
+from financeclaw.shared.artifacts.repository import SqlAlchemyArtifactRepository
+from financeclaw.shared.artifacts.service import ArtifactService
+from financeclaw.shared.artifacts.storage import InMemoryArtifactStore
+from financeclaw.shared.audit.repository import InMemoryAuditRepository
+from financeclaw.shared.infrastructure.database import ApplicationDatabase
 from tests.receipt_client import ReceiptClientMixin
 
 

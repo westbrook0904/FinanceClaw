@@ -1,71 +1,122 @@
 # FinanceClaw 包结构与依赖规则
 
-FinanceClaw 采用面向业务模块的模块化单体，外围按协议、应用用例、Agent 编排和基础设施划分。
-当前领域包内同时包含模型、规则与持久化实现，属于务实的模块内聚设计，并非所有依赖都通过 Port
-倒置的纯领域架构。本文描述现状及新增代码应遵循的边界；具体问题和调整顺序见
-[2026-09-07 分包复查](package-review-2026-09-07.md)。
+Stage-8 开始前，代码已按 **BFF、Coordination、AgentServer** 三个职责包组织。
+目前仍是一个 Python 分发包；BFF 进程内装配 Coordination 应用服务，AgentServer 独立运行。
+独立 Coordinator Service、Webhook Ingress 和持续 Worker 属于 Stage-8 后续交付。
 
-`.redesign/02-目标模块与依赖设计.md` 中的早期扁平目录已被本布局替代；领域职责与原生框架优先
-的原则仍有效，不应据该早期目录重新创建旧包。
+## 目录与职责
 
-## 顶层包职责
+```text
+financeclaw/
+├─ bff/
+│  ├─ http/                    # 路由、认证、错误投影、SSE
+│  ├─ channels/                # 飞书 WebSocket / Markdown 适配
+│  ├─ application/             # 会话创建/读取、渠道交互与展示
+│  └─ bootstrap.py             # HTTP、认证、Channel 的装配
+├─ coordination/
+│  ├─ application/             # 会话 Run 生命周期、目标解析、状态/流投影
+│  ├─ execution/               # 持久化 start/resume 提交、回执与对账
+│  ├─ delegation/              # 父子映射、上下文授权、派发与结果交付
+│  ├─ interactions/            # 发布交互校验、用户决定与恢复
+│  ├─ workflows/               # 工作流运行记录、审批和生命周期
+│  ├─ backends/                # 出站 Port 及 LangGraph SDK 适配
+│  ├─ api.py                   # BFF 可调用的公开应用入口与异常
+│  └─ bootstrap.py             # 后端与协调服务装配
+├─ agent_server/
+│  ├─ agents/                  # AgentFactory、调用指令、离线模型
+│  ├─ graphs/                  # LangGraph 图、节点、工作流与注册入口
+│  ├─ tools/                   # 本地、MCP、记忆、交互与委派 Tool 实现
+│  ├─ middleware/              # 治理、执行预算、上下文、制品与记忆中间件
+│  ├─ context/                 # 模型上下文选择与预算组装
+│  ├─ memory/                  # LangGraph Store 上的长期记忆策略与服务
+│  ├─ domains/ziwei/           # 紫微用例、规范化、计算及 x-iztro 适配
+│  ├─ llm/                    # ModelFactory
+│  └─ bootstrap.py             # 模型、工具和执行图装配
+├─ kernel/                     # 跨服务契约、发布类型、输入/输出 Schema
+├─ shared/
+│  ├─ releases/                # 唯一发布声明、工具治理、配置指纹
+│  ├─ conversation/            # 永久 Journal、摘要、Manifest 及其持久化
+│  ├─ execution_ledger/        # 执行快照、操作/预算/取消事实及共用表映射
+│  ├─ artifacts/              # 制品元数据、内容读写及存储后端
+│  ├─ audit/                  # 永久审计、同事务 Outbox 追加
+│  ├─ outbox/                 # 事件外发、租约、重试和死信
+│  └─ infrastructure/         # Settings、DB、统一 Alembic、安全和观测
+├─ operations/                 # 运维 smoke、在线探针及数据命令
+└─ evaluation/                 # 离线评测和发布门禁
+```
 
-| 包 | 职责 | 当前依赖边界 |
-|---|---|---|
-| `kernel` | 身份、执行上下文、Target、API 共享契约 | Pydantic 与标准库 |
-| `modules` | 会话、执行、交互、委派、记忆、制品、审计、Outbox、Workflow、紫微 | `kernel`、SQLAlchemy 等模块所需库、共享 ORM、明确的模块协作 |
-| `application` | 跨模块用例、提交/恢复协调和出站 Port | `kernel`、`modules`、Agent/Tool 目录；仍有待移出的中间件工具函数依赖 |
-| `orchestration` | ReAct Agent、LangGraph、Tool 治理与工作流 Graph | `kernel`、`modules`、应用用例、LLM 配置/工厂；graph 入口另做装配 |
-| `infrastructure` | 配置、数据库、迁移、LLM、Agent Server 客户端、观测和安全适配 | 上层定义的 Port、领域模型/表与第三方 SDK |
-| `interfaces` | HTTP/SSE 与飞书 WebSocket 的协议适配、输入规范化和生命周期 | `application`、公开契约/异常；HTTP 装配函数还依赖具体基础设施 |
-| `operations` | 运维 smoke、在线探针和评测数据命令 | 正式公开的应用/基础设施接口 |
-| `evaluation` | 离线回归集、评分和发布门禁 | 稳定数据契约与 LangSmith SDK |
+`operations`、`evaluation` 是开发与运维支持包，不是新增运行服务。未实现的 Ingress、Worker、
+通知模块不预建空壳；Stage-8 分别放入 `coordination/ingress`、`coordination/worker` 和
+`bff/notifications`，具体细分随实现确定。
 
-## 领域模块职责
+## 依赖边界
 
-| 模块 | 拥有的事实或规则 | 与邻近模块的界限 |
-|---|---|---|
-| `conversation` | 永久会话/Turn/消息 Journal、摘要、上下文选择与 Manifest | Journal 是历史依据，checkpoint 是运行恢复状态；两者不互相替代 |
-| `execution` | 授权与发布快照、start/resume 操作日志、根任务预算、取消事实 | 记录提交与观察事实；节点执行、队列和 checkpoint 仍由 Agent Server 管理 |
-| `interactions` | 发布交互点、待回答实例、唯一用户决定 | 决定落盘不等于远程恢复完成；实际提交交给应用层执行服务 |
-| `delegation` | 父子运行关联、目标版本、输入摘要、子执行与结果交付状态 | 子运行独占 thread，父 Agent 等待结构化结果；不能把已交付当作执行成功 |
-| `workflows` | 发布定义、运行记录、固定审批单 | 业务流程节点位于 `orchestration/graphs/workflows`，目录和运行事实留在模块内 |
-| `memory` | 长期记忆类型、证据、写入/召回策略和生命周期 | 当前直接使用 LangGraph Store；与永久会话原文和短期 checkpoint 分开 |
-| `artifacts` | 大结果元数据、归属校验、内容完整性与存储服务 | 存储后端当前位于本模块；元数据表暂留在 conversation，是待纠正的归属偏差 |
-| `audit` | 永久审计事件与追加记录 | 同事务追加 Outbox；普通日志、trace 和事件投递结果不替代审计事实 |
-| `outbox` | 待投递事件、租约、重试、死信 | 只负责可靠外发，不承担业务图调度 |
-| `ziwei` | 出生资料规范化、固定规则、确定性盘面及解读契约 | 引擎经 Port 注入；制品持久化归 application，模型取证/解读归 orchestration |
+```mermaid
+flowchart TD
+    B[BFF] -->|公开应用 API| C[Coordination]
+    C -->|Backend Port / LangGraph SDK| S[AgentServer 进程]
+    B --> R[shared / kernel]
+    C --> R
+    A[AgentServer 代码] --> R
+```
 
-## 新增代码的依赖原则
+图中的 SDK 调用是进程通信，不是 Coordination 导入 AgentServer Python 实现。
 
-1. `application` 拥有 `AgentServerClient` 等出站 Port，基础设施只负责实现，不反向定义业务接口。
-2. HTTP 与 Channel 层只完成协议适配，不复制 Conversation、Workflow 或 Delegation 业务规则。
-3. `bootstrap.py` 集中选择组件实现；`interfaces/http/app.py:create_default_app` 装配 HTTP 客户端、
-   认证、服务与生命周期；`orchestration/graphs/server_graphs.py` 装配并注册服务端图。具体实现的
-   选择应集中在这些装配入口，业务代码不得导入会在导入时启动资源的 graph 注册模块。
-4. 模块间优先通过稳定模型与公开服务协作。现有跨表事务包括 Audit/Outbox、交互决定/Workflow
-   审批/执行操作、委派交付/执行观察；这些耦合必须明确记录，不能以“同一个数据库”为由任意跨表写入。
-5. 运维命令不放入 `application`，避免生产用例包混入可执行脚本和环境探针。
-6. 新模块必须说明职责与依赖；类和函数注释解释意图、状态含义、归属、单位和事务约束，避免复述代码。
-   Pydantic 模型、Tool 输入和结构化输出的类 docstring 可能进入 JSON Schema 或模型提示，因此纯可读性
-   补充优先使用普通 `#` 注释。修改 Schema 描述也应当作为契约变更审查。
-7. `kernel` 仅保存真正跨领域的稳定契约，不能成为通用工具函数和领域 DTO 的堆放处。现有 API 请求/响应
-   与核心身份混放在此属于历史折中，后续按调用方迁移，禁止继续扩大。
+| 调用方 | 允许的 FinanceClaw 依赖 |
+|---|---|
+| `kernel` | 仅 `kernel`；外部依赖限契约所需的 Pydantic 与标准库 |
+| `shared` | `shared`、`kernel`，以及数据库/存储等适配依赖 |
+| `agent_server` | 本包、`shared`、`kernel` |
+| `coordination` | 本包、`shared`、`kernel`；应用用例依赖 backend Port |
+| `bff` | 本包、`shared`、`kernel`、`coordination.api`；装配入口可调用 `coordination.bootstrap` |
 
-## 阅读入口
+不得通过包级聚合导出或相对导入绕过边界。`financeclaw/__init__.py` 和服务包的
+`__init__.py` 不装配资源；只有显式调用 bootstrap 或加载正式 graph 注册入口才装配。
 
-- 产品会话：`interfaces/http/app.py` → `application/conversation_service.py` →
-  `application/execution_service.py` → `application/ports/agent_server.py`。
-- 用户回答：`application/interaction_service.py` 校验发布与权限 →
-  `modules/interactions/repository.py` 同事务保存决定和命令 → `ExecutionService` 提交恢复。
-- Agent 执行：`orchestration/graphs/server_graphs.py` → `agents/factory.py` → 各 Middleware 和 Tool。
-- 紫微领域：`orchestration/graphs/ziwei_agent.py` → `application/ziwei_service.py` →
-  `modules/ziwei/service.py` → `modules/ziwei/ports.py`，具体引擎在 `infrastructure/ziwei`。
+- BFF 的 `ConversationService` 拥有会话创建、绑定和读取，用显式注入的
+  `ConversationRunService` 处理 Turn 提交、状态、恢复、取消和订阅。
+- Coordination 拥有父子推进和用户决定；它读取静态发布目录，不构造 AgentFactory、BaseTool 或图。
+- AgentServer 的 Tool 可发出 typed handoff；请求和结果契约位于 `kernel/delegation`，
+  父子生命周期服务位于 `coordination/delegation`，执行侧不导入协调服务。
+- `kernel` 中的 Agent/Model/Workflow 发布类型与领域输入/输出 Schema 是跨服务契约。
+  领域计算、Prompt 组装、LangChain 消息操作和 Store 生命周期留在 AgentServer。
+- `shared/releases` 是发布声明的唯一来源。`WorkflowRelease` 不含 graph，执行端的
+  `WorkflowDefinition` 才绑定已编译图；协调端的 `ToolRelease` 不含可调用的 Tool。
 
-包级 `__init__.py` 目前存在聚合导出，导入一个目录类型可能同时加载工厂、中间件和仓储。阅读或
-判断依赖时需要追踪这些导出，不能只根据调用点的 `from ... import ...` 判断依赖是否轻量。
+## 同库与事务归属
 
-## 兼容性策略
+BFF 与 Coordinator 暂时共用 `financeclaw_app`，沿用一个 Alembic 迁移序列。
+AgentServer 框架的 checkpoint/store 数据库职责保持不变；FinanceClaw 执行中间件仍按既有行为访问
+共享 Journal、执行账本、审计和制品，不复制这些业务事实。
 
-此前包布局迁移已同步更新仓内调用方，不保留旧包路径的转发壳。旧路径如果继续保留，会掩盖错误依赖并让
-新代码继续引用废弃边界。外部调用方应直接迁移到本文列出的正式包路径；本次注释复查未再次迁移包路径。
+| 事实 | 主要写入职责与共享原因 |
+|---|---|
+| 会话、消息、Turn、摘要、Manifest | BFF 创建/查询会话，Coordination 记录运行结果，执行端记录模型上下文 |
+| 执行操作、授权快照、根预算、取消 | Coordination 准备/提交/观察，执行端校验身份并扣减预算 |
+| Delegation、Workflow、Interaction | 生命周期仓储和用例归 Coordination；表映射在共享账本中供原子事务复用 |
+| 制品 | 各执行路径共享；`ArtifactMetadataRow` 已归 `shared/artifacts/tables.py` |
+| Audit / Outbox | 共用追加审计与事件外发实现，业务事实不能以投递状态替代 |
+
+委派交付与执行观察、交互决定与审批/恢复操作、Audit 与 Outbox 的原子提交继续保留。
+共享表映射不代表允许任意跨表写入；新增写入须明确所属用例和事务边界。
+本次没有改变表名、列、约束或迁移版本，迁移头仍为 `0008_stage6fix_c`。
+
+## 入口与兼容性
+
+- BFF：`main.py` → `bff/bootstrap.py:create_default_app` → `bff/http/app.py:create_app`。
+- Coordination：`coordination/bootstrap.py:build_coordination`；当前由 BFF 显式装配，尚无持续 Worker。
+- AgentServer：`langgraph.json` / `langgraph.local.json` → `agent_server/graphs/server_graphs.py`。
+- 迁移：`alembic.ini` → `shared/infrastructure/migrations`。
+- 跨服务测试使用 `tests/support.py` 组合夹具；生产入口各自装配，不复用测试组合根。
+
+旧 `interfaces`、`application`、`modules`、`orchestration`、`infrastructure` 和根
+`bootstrap.py` 已删除，不保留导入转发壳。仓内导入、graph 配置、测试和打包资源已同步迁移；
+外部 Python 调用者需要采用新路径。HTTP 路由、graph/assistant ID、Schema 和发布版本保持一致。
+
+本次只完成分包与职责拆分。既有 `status()`/SSE 仍可能推进执行；纯查询、Webhook、后台 Worker、
+显式协调协议的服务化与调度引擎选型继续以 [Stage-8 方案](../../.redesign/stages/Stage-8-Background-Run-Coordination-实施方案.md) 为准。
+
+依赖检查覆盖真实目录存在性、绝对/相对导入和聚合导出；独立进程测试验证冷导入及 BFF 装配不加载
+执行端。发布一致性测试比较协调端与执行端的目录，并验证两者复用同一应用数据库 Session 工厂。
+
+本轮改动与验证结果见[2026-09-08 分包记录](package-refactor-2026-09-08.md)。

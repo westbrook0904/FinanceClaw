@@ -7,26 +7,27 @@ from pathlib import Path
 import httpx
 import pytest
 
-from financeclaw.application import (
+from financeclaw.agent_server.tools.catalog import ToolCatalog
+from financeclaw.agent_server.tools.local import default_local_tools
+from financeclaw.bff.http.app import create_app
+from financeclaw.bff.http.auth import AuthenticatedPrincipal, StaticBearerAuthenticator
+from financeclaw.coordination.application.run_service import (
     IdempotencyConflict,
     RunNotFound,
     RunService,
-    TargetResolver,
+)
+from financeclaw.coordination.application.target_resolver import TargetResolver
+from financeclaw.coordination.workflows.repository import SqlAlchemyWorkflowRepository
+from financeclaw.coordination.workflows.service import (
     WorkflowApprovalExpired,
     WorkflowService,
 )
-from financeclaw.interfaces.http import create_app
-from financeclaw.interfaces.http.auth import AuthenticatedPrincipal, StaticBearerAuthenticator
-from financeclaw.kernel import ApprovalDecision, WorkflowTarget
-from financeclaw.modules.audit import AuditEventType
-from financeclaw.modules.workflows import (
-    SqlAlchemyWorkflowRepository,
-    WorkflowApprovalStatus,
-    WorkflowCatalog,
-    WorkflowStatus,
-)
-from financeclaw.orchestration.agents import AgentProfileCatalog
-from financeclaw.orchestration.tools import ToolCatalog, default_local_tools
+from financeclaw.kernel.agents import AgentProfileCatalog
+from financeclaw.kernel.responses import ApprovalDecision
+from financeclaw.kernel.targets import WorkflowTarget
+from financeclaw.kernel.workflows.catalog import WorkflowCatalog
+from financeclaw.kernel.workflows.models import WorkflowApprovalStatus, WorkflowStatus
+from financeclaw.shared.audit.models import AuditEventType
 
 from .support import workflow_arguments, workflow_stack
 

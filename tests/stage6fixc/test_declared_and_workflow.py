@@ -5,14 +5,15 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from pydantic import ValidationError
 
-from financeclaw.application.execution_service import agent_snapshot
-from financeclaw.application.interaction_service import InteractionService
-from financeclaw.application.run_observation import observe_run
-from financeclaw.kernel import ExecutionContext, WorkflowTarget
-from financeclaw.modules.execution import ExecutionConflict
-from financeclaw.modules.interactions import InteractionPoint, InteractionResponse
-from financeclaw.modules.workflows import WorkflowConflict
-from financeclaw.orchestration.agents import AgentProfileCatalog
+from financeclaw.coordination.application.run_observation import observe_run
+from financeclaw.coordination.interactions.service import InteractionService
+from financeclaw.coordination.workflows.repository import WorkflowConflict
+from financeclaw.kernel.agents import AgentProfileCatalog
+from financeclaw.kernel.context import ExecutionContext
+from financeclaw.kernel.interactions import InteractionPoint, InteractionResponse
+from financeclaw.kernel.targets import WorkflowTarget
+from financeclaw.shared.execution_ledger.repository import ExecutionConflict
+from financeclaw.shared.execution_ledger.snapshots import agent_snapshot
 from tests.stage4.support import workflow_arguments
 from tests.stage6fix.test_execution_recovery import OWNER, stack
 from tests.stage6fixc.test_interactions import SCOPES, question
@@ -35,7 +36,7 @@ async def test_declared_approval_scope_does_not_expand_execution_scopes(tmp_path
         turn_id="t",
         scopes=frozenset({"market:read"}),
     )
-    execution = conversations.execution
+    execution = conversations.runs.execution
     execution.register(
         "declared", agent_snapshot(profile, context, thread_id="t", input_hash="hash")
     )

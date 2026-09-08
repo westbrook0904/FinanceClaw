@@ -9,25 +9,26 @@ from langchain_core.messages import AIMessage
 from langgraph.types import Command
 from pydantic import SecretStr
 
-from financeclaw.application import (
-    ConversationService,
-    DelegationService,
-    ServerRun,
-    WorkflowService,
-)
-from financeclaw.bootstrap import build_components
-from financeclaw.infrastructure import FinanceClawSettings
-from financeclaw.kernel import ApprovalDecision, ConversationTurnRequest, ExecutionContext
-from financeclaw.modules.audit import AuditEventType, InMemoryAuditRepository
-from financeclaw.modules.delegation import (
+from financeclaw.agent_server.agents.offline import OfflineFinanceModel
+from financeclaw.bff.application.conversation_service import ConversationService
+from financeclaw.coordination.api import ConversationRunService
+from financeclaw.coordination.backends.ports.agent_server import ServerRun
+from financeclaw.coordination.delegation.repository import SqlAlchemyDelegationRepository
+from financeclaw.coordination.delegation.service import DelegationService
+from financeclaw.coordination.workflows.service import WorkflowService
+from financeclaw.kernel.context import ExecutionContext
+from financeclaw.kernel.delegation.models import (
     AgentHandoff,
     DelegationResult,
     DelegationStatus,
-    SqlAlchemyDelegationRepository,
     WorkflowHandoff,
 )
-from financeclaw.orchestration.agents import OfflineFinanceModel
+from financeclaw.kernel.responses import ApprovalDecision, ConversationTurnRequest
+from financeclaw.shared.audit.models import AuditEventType
+from financeclaw.shared.audit.repository import InMemoryAuditRepository
+from financeclaw.shared.infrastructure.settings import FinanceClawSettings
 from tests.receipt_client import ReceiptClientMixin
+from tests.support import build_components
 
 from .support import workflow_arguments
 
@@ -252,8 +253,8 @@ def test_domain_agent_directive_emits_and_consumes_a_typed_handoff() -> None:
         version="v2",
     )
     # 准备 handoff，供后续步骤使用。
-    from financeclaw.modules.delegation import HANDOFF_ADAPTER
-    from financeclaw.modules.execution.repository import digest
+    from financeclaw.kernel.delegation.models import HANDOFF_ADAPTER
+    from financeclaw.shared.execution_ledger.repository import digest
 
     handoff = HANDOFF_ADAPTER.validate_python(interrupted.interrupts[0].value)
     assert handoff.schema_version == 2
@@ -363,10 +364,14 @@ async def test_parent_child_mapping_survives_restart_and_resumes_parent(tmp_path
     )
     # 准备 conversations，供后续步骤使用。
     conversations = ConversationService(
-        fake,
         components.conversation_repository,
         components.agent_profiles,
-        delegation_service=delegation_service,
+        runs=ConversationRunService(
+            fake,
+            components.conversation_repository,
+            components.agent_profiles,
+            delegation_service=delegation_service,
+        ),
     )
     # 准备 conversation，供后续步骤使用。
     conversation = await conversations.create(tenant_id="tenant-a", subject_id="subject-a")
@@ -418,10 +423,14 @@ async def test_parent_child_mapping_survives_restart_and_resumes_parent(tmp_path
     )
     # 准备 restarted_conversations，供后续步骤使用。
     restarted_conversations = ConversationService(
-        fake,
         components.conversation_repository,
         components.agent_profiles,
-        delegation_service=restarted_delegations,
+        runs=ConversationRunService(
+            fake,
+            components.conversation_repository,
+            components.agent_profiles,
+            delegation_service=restarted_delegations,
+        ),
     )
     # 准备 child_server_run_id，供后续步骤使用。
     child_server_run_id = child_call["metadata"]["application_run_id"]
@@ -519,7 +528,7 @@ async def test_workflow_handoff_is_revalidated_and_bound_to_an_independent_run(
         target_id="finance_agent",
         target_version="1.0.0",
     )
-    from financeclaw.application.execution_service import agent_snapshot
+    from financeclaw.shared.execution_ledger.snapshots import agent_snapshot
 
     context = ExecutionContext(
         tenant_id="tenant-a",

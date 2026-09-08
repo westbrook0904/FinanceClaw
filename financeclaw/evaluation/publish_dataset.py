@@ -11,7 +11,7 @@ from pathlib import Path
 
 from langsmith import Client
 
-from .regression import load_cases, publish_cases
+from financeclaw.evaluation.regression import load_cases, publish_cases
 
 
 def main() -> None:

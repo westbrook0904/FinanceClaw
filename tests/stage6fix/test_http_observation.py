@@ -5,10 +5,11 @@ import asyncio
 import httpx
 import pytest
 
-from financeclaw.application import RunService, TargetResolver
-from financeclaw.application.run_observation import observe_run
-from financeclaw.interfaces.http import create_app
-from financeclaw.interfaces.http.auth import AuthenticatedPrincipal, StaticBearerAuthenticator
+from financeclaw.bff.http.app import create_app
+from financeclaw.bff.http.auth import AuthenticatedPrincipal, StaticBearerAuthenticator
+from financeclaw.coordination.application.run_observation import observe_run
+from financeclaw.coordination.application.run_service import RunService
+from financeclaw.coordination.application.target_resolver import TargetResolver
 from tests.stage4.test_delegation import SCOPES
 from tests.stage6fix.test_execution_recovery import (
     OWNER,
@@ -40,7 +41,7 @@ def test_unknown_or_multiple_interrupts_are_never_completed():
 
 def test_public_completion_excludes_checkpoint_and_reasoning_blocks():
     """对外完成结果与 Journal 使用同一文本提取，不返回整个执行状态。"""
-    from financeclaw.application.conversation_service import _public_output
+    from financeclaw.coordination.application.conversation_runs import _public_output
 
     output = _public_output(
         {

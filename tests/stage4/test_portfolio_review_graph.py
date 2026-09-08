@@ -8,25 +8,21 @@ from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.types import Command
 from pydantic import ValidationError
 
-from financeclaw.infrastructure import ApplicationDatabase
-from financeclaw.kernel import ExecutionContext
-from financeclaw.modules.artifacts import (
-    ArtifactService,
-    InMemoryArtifactStore,
-    SqlAlchemyArtifactRepository,
-)
-from financeclaw.modules.audit import AuditEventType, InMemoryAuditRepository
-from financeclaw.modules.workflows import WorkflowCatalog
-from financeclaw.orchestration.graphs.workflows import (
-    PortfolioReviewInput,
+from financeclaw.agent_server.graphs.workflows.portfolio_review_v1 import (
     portfolio_review_definition,
 )
-from financeclaw.orchestration.tools import (
-    MarketSnapshotTool,
-    ToolCatalog,
-    ToolPolicy,
-    default_local_tools,
-)
+from financeclaw.agent_server.tools.catalog import ToolCatalog
+from financeclaw.agent_server.tools.local import MarketSnapshotTool, default_local_tools
+from financeclaw.agent_server.tools.policy import ToolPolicy
+from financeclaw.kernel.context import ExecutionContext
+from financeclaw.kernel.workflows.catalog import WorkflowCatalog
+from financeclaw.kernel.workflows.portfolio_review import PortfolioReviewInput
+from financeclaw.shared.artifacts.repository import SqlAlchemyArtifactRepository
+from financeclaw.shared.artifacts.service import ArtifactService
+from financeclaw.shared.artifacts.storage import InMemoryArtifactStore
+from financeclaw.shared.audit.models import AuditEventType
+from financeclaw.shared.audit.repository import InMemoryAuditRepository
+from financeclaw.shared.infrastructure.database import ApplicationDatabase
 
 
 def _context(*scopes: str, run_id: str = "run-workflow") -> ExecutionContext:

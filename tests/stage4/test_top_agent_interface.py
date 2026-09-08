@@ -5,15 +5,13 @@ from typing import Any
 from langchain_core.messages import AIMessage, ToolMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 
-from financeclaw.bootstrap import build_components
-from financeclaw.infrastructure import FinanceClawSettings
-from financeclaw.kernel import ExecutionContext
-from financeclaw.orchestration.agents import (
-    InvocationKind,
-    OfflineFinanceModel,
-    parse_invocation_directive,
-)
-from financeclaw.orchestration.tools import MarketSnapshotTool, ToolCatalog, default_local_tools
+from financeclaw.agent_server.agents.directives import InvocationKind, parse_invocation_directive
+from financeclaw.agent_server.agents.offline import OfflineFinanceModel
+from financeclaw.agent_server.tools.catalog import ToolCatalog
+from financeclaw.agent_server.tools.local import MarketSnapshotTool, default_local_tools
+from financeclaw.kernel.context import ExecutionContext
+from financeclaw.shared.infrastructure.settings import FinanceClawSettings
+from tests.support import build_components
 
 
 def _settings() -> FinanceClawSettings:

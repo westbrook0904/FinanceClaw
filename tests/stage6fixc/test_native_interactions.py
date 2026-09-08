@@ -7,9 +7,9 @@ from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command
 
-from financeclaw.modules.execution.repository import digest
-from financeclaw.modules.interactions import InteractionPoint
-from financeclaw.orchestration.tools.interaction import request_user_interaction
+from financeclaw.agent_server.tools.interaction import request_user_interaction
+from financeclaw.kernel.interactions import InteractionPoint
+from financeclaw.shared.execution_ledger.repository import digest
 
 
 class State(TypedDict, total=False):

@@ -47,17 +47,19 @@ Coordinator 不决定用户应使用哪个 Agent，不从自然语言猜测新�
 
 ### 2.1 当前代码事实
 
+以下路径已同步 Stage-8 前置分包；运行推进逻辑未因目录迁移改为后台执行。
+
 | 位置 | 当前实现 | 调整方向 |
 |---|---|---|
-| `application/conversation_service.py` 的 `status()` | 查询会触发交互恢复、执行对账、child 派发和 parent 恢复 | 查询与推进彻底分离，所有持久化任务的写动作归 Coordinator |
+| `coordination/application/conversation_runs.py` 的 `status()` | 查询会触发交互恢复、执行对账、child 派发和 parent 恢复 | 查询与推进彻底分离，所有持久化任务的写动作归 Coordinator |
 | 同文件 `stream()`、`_advance_delegation()` | 流结束会调用状态校正；父子衔接依赖调用方继续观察 | 流只展示；Coordinator 持久化跟踪父子衔接 |
-| `orchestration/tools/delegation.py` | 已有稳定 handoff ID、typed request、原生 interrupt 和结果校验 | 提升为服务边界上的显式协调协议，保留原生持久化 |
-| `application/run_observation.py` | 已区分 handoff、HITL、资料交互和未知中断 | LangGraph 细节收敛到 Adapter，输出可验证的中立观察 |
-| `application/ports/agent_server.py` | 出站 Port 暴露 thread、assistant、原生 command | 保留为 LangGraph 适配实现，核心依赖业务任务操作 |
-| `modules/execution/` | 快照、固定命令、未知提交、预算与取消保护已存在 | 继续作为业务执行事实与防重复边界 |
-| `interfaces/http/app.py` lifespan | 启动补偿，没有持续根任务协调服务 | BFF 不负责后续远程推进，新增 Coordinator 独立入口 |
-| `application/feishu_channel_service.py` | 展示等待默认每 0.25 秒调用会话状态 | 短受理、只读展示、可靠通知 |
-| `modules/outbox/` | 审计 outbox 与单轮发布器存在 | 新增有明确消费者的业务事件和通知投递责任 |
+| `agent_server/tools/delegation.py` | 已有稳定 handoff ID、typed request、原生 interrupt 和结果校验 | 提升为服务边界上的显式协调协议，保留原生持久化 |
+| `coordination/application/run_observation.py` | 已区分 handoff、HITL、资料交互和未知中断 | LangGraph 细节收敛到 Adapter，输出可验证的中立观察 |
+| `coordination/backends/ports/agent_server.py` | 出站 Port 暴露 thread、assistant、原生 command | 保留为 LangGraph 适配实现，核心依赖业务任务操作 |
+| `shared/execution_ledger/` | 快照、固定命令、未知提交、预算与取消保护已存在 | 继续作为业务执行事实与防重复边界 |
+| `bff/http/app.py` lifespan | 启动补偿，没有持续根任务协调服务 | BFF 不负责后续远程推进，新增 Coordinator 独立入口 |
+| `bff/application/feishu_channel_service.py` | 展示等待默认每 0.25 秒调用会话状态 | 短受理、只读展示、可靠通知 |
+| `shared/outbox/` | 审计 outbox 与单轮发布器存在 | 新增有明确消费者的业务事件和通知投递责任 |
 
 当前 `start_turn()` 的 Turn 受理、执行快照与首次操作准备仍有多个持久化边界。
 现有助手消息与 Turn 完成已有同事务原子性；本阶段扩展该事务，不误称原子性完全缺失。
@@ -639,27 +641,29 @@ Coordinator 在状态提交事务中通过通知模块写入待投递意图，�
 
 ### 14.1 建议文件与职责
 
-沿用[现有包布局](../../docs/architecture/package-layout.md)，不恢复早期扁平目录或旧 Harness。
+Stage-8 前置分包已完成，采用[三包布局](../../docs/architecture/package-layout.md)。
+当前 Coordination 应用服务仍由 BFF 进程装配；下表的 Ingress、Worker、Inbox 和通知能力属于后续实现。
 
-| 落点 | 改造 |
+| 落点（相对于 `financeclaw/`） | 改造 |
 |---|---|
-| `interfaces/coordinator/app.py`（新增） | 独立 Webhook Ingress、来源认证、健康检查；未来内部请求 API 的受控入口 |
-| `application/coordination/admission.py`（新增） | 共享数据库受理 Facade，显式 session，无远程执行 |
-| `application/coordination/coordinator.py`（新增） | 有界业务推进与请求处理 |
-| `application/coordination/query.py`、`authorization.py`（新增） | 纯查询与有界授权用例 |
-| `application/ports/agent_backend.py`（新增） | 小范围任务操作和能力契约；保留 AgentServerClient 为 LangGraph 底层 |
-| `modules/coordination/`（新增） | Inbox、请求索引、执行／等待位置引用、协调责任及仓储 |
-| `modules/execution/`、`delegation/`、`interactions/` | 演进现有事实、状态和提交保护，不复制业务 Run 或父子真相 |
-| `infrastructure/backends/langgraph.py`（新增） | 原生 Run、Webhook、interrupt/resume 与请求／响应的适配 |
-| `application/conversation_service.py`、会话仓储 | 受理／完成共享事务；删除产品查询的远程推进副作用 |
-| `application/delegation_service.py`、Workflow／Interaction 服务 | 抽取可被 Coordinator 调用的命令与观察能力，废除查询驱动 |
-| `orchestration/tools/delegation.py`、执行治理 Middleware | 显式请求版本、稳定 ID、结果校验及在途授权／预算／取消 |
-| `modules/notifications/`、通知应用服务与渠道适配器 | 待办、目标、发送回执与可靠投递 |
-| `operations/coordinator_worker.py`（新增） | Worker 启动、优雅停机、巡检；引擎专用实现于选型后确定 |
-| `bootstrap.py`、HTTP 装配与 Settings | 按角色装配最小资源，避免 Worker 启动飞书接收长连接 |
-| Alembic、配置样例、部署文档、`tests/stage8/` | 增量迁移、角色配置、真实组件和故障门禁 |
+| `coordination/ingress/app.py`（新增） | 独立 Webhook Ingress、来源认证、健康检查；未来内部请求 API 的受控入口 |
+| `coordination/application/admission.py`（新增） | 共享数据库受理 Facade，显式 session，无远程执行，通过公开 API 供 BFF 调用 |
+| `coordination/application/coordinator.py`（新增） | 有界业务推进与请求处理 |
+| `coordination/application/query.py`、`authorization.py`（新增） | 纯查询与有界授权用例 |
+| `coordination/backends/ports/agent_backend.py`（新增） | 中立任务操作与能力契约；保留 AgentServerClient 为 LangGraph 底层 |
+| `coordination/` 内的协议和持久化模块（新增） | Inbox、请求索引、执行/等待引用及协调责任；跨服务契约进入 `kernel` |
+| `shared/execution_ledger/`、`coordination/delegation/`、`interactions/` | 演进已有事实、状态和提交保护，保留组合事务 |
+| `coordination/backends/langgraph.py` | 扩展已有 SDK 适配，规范化 Webhook、interrupt/resume 与请求/响应 |
+| `bff/application/conversation_service.py`、`coordination/application/conversation_runs.py` 与共享 Journal | 受理/完成共享事务；移除产品查询的远程推进副作用 |
+| `coordination/delegation/service.py`、Workflow/Interaction 服务 | 供 Coordinator 调用的命令与观察能力，废除查询驱动 |
+| `agent_server/tools/delegation.py`、`agent_server/middleware/` | 显式请求版本、稳定 ID、结果校验及在途授权/预算/取消 |
+| `bff/notifications/`（新增）、渠道适配器 | 待办、目标、发送回执与可靠投递；通知意图纳入共享完成事务 |
+| `coordination/worker/`（新增） | Worker 启动、调度、优雅停机与巡检，引擎专用实现于选型后确定 |
+| 三包各自的 `bootstrap.py` | 继续按角色装配；Coordinator 独立进程不依赖 BFF 或执行端代码 |
+| `shared/infrastructure/migrations/`、配置、部署文档、`tests/stage8/` | 统一增量迁移、角色配置和真实故障门禁 |
 
-协议模块属于服务／持久化边界，不复制每个 backend 的 messages、checkpoint 或 Tool Schema。
+发布目录已与可执行 Tool/Graph 分离，共享声明位于 `shared/releases`，不能在 Coordinator 中重新
+导入 AgentFactory 或编译图。协议模块不复制各 backend 的 messages、checkpoint 或 Tool Schema。
 Worker 不能依赖某个 BFF app 实例才能装配，BFF 也不能导入会启动 Worker 的模块。
 
 ### 14.2 迁移

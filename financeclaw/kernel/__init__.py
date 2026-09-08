@@ -4,8 +4,8 @@
 其他分层只允许从本包导入 kernel 契约，保证依赖方向清晰。
 """
 
-from .context import DataClassification, ExecutionContext
-from .responses import (
+from financeclaw.kernel.context import DataClassification, ExecutionContext
+from financeclaw.kernel.responses import (
     AgentResponse,
     ApprovalDecision,
     ApprovalDecisionType,
@@ -25,7 +25,7 @@ from .responses import (
     ToolInvokeRequest,
     WorkflowInvokeRequest,
 )
-from .targets import AgentTarget, RunTarget, ToolTarget, WorkflowTarget
+from financeclaw.kernel.targets import AgentTarget, RunTarget, ToolTarget, WorkflowTarget
 
 # 包对外导出的符号清单。
 __all__ = [

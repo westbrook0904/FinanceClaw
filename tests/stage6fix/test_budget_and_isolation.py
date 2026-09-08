@@ -9,12 +9,12 @@ import pytest
 from langchain_core.messages import AIMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 
-from financeclaw.application.execution_service import agent_snapshot
-from financeclaw.kernel import ExecutionContext
-from financeclaw.modules.execution import ExecutionConflict
-from financeclaw.orchestration.agents import OfflineFinanceModel
-from financeclaw.orchestration.agents.execution_middleware import ExecutionBudgetMiddleware
-from financeclaw.orchestration.tools import MarketSnapshotTool
+from financeclaw.agent_server.agents.offline import OfflineFinanceModel
+from financeclaw.agent_server.middleware.execution_middleware import ExecutionBudgetMiddleware
+from financeclaw.agent_server.tools.local import MarketSnapshotTool
+from financeclaw.kernel.context import ExecutionContext
+from financeclaw.shared.execution_ledger.repository import ExecutionConflict
+from financeclaw.shared.execution_ledger.snapshots import agent_snapshot
 from tests.stage1.test_agent import components_with_tools, context
 from tests.stage6fix.test_batch_tools import BatchModel, call
 from tests.stage6fix.test_execution_recovery import OWNER, stack
@@ -26,11 +26,13 @@ async def test_retries_and_children_share_persistent_root_budget(tmp_path):
     persisted, _, _, service = stack(tmp_path)
     market = MarketSnapshotTool(fail_first=1)
     components, _ = components_with_tools(market=market)
-    components.agent_factory.conversation_repository = SimpleNamespace(execution=service.execution)
+    components.agent_factory.conversation_repository = SimpleNamespace(
+        execution=service.runs.execution
+    )
     profile = components.default_agent_profile.model_copy(update={"max_tree_tool_calls": 2})
     root = context("market:read").model_copy(update={"root_run_id": "run-agent"})
     snapshot = agent_snapshot(profile, root, thread_id="budget", input_hash="hash")
-    service.execution.register(root.run_id, snapshot)
+    service.runs.execution.register(root.run_id, snapshot)
     graph = components.agent_factory.build(profile, model=OfflineFinanceModel())
     result = await graph.ainvoke(
         {"messages": [{"role": "user", "content": "read AAPL"}]},
@@ -38,16 +40,16 @@ async def test_retries_and_children_share_persistent_root_budget(tmp_path):
         context=root,
     )
     assert result["messages"][-1].content and market.call_count == 2
-    assert service.execution.get(root.run_id)["tool_calls"] == 2
+    assert service.runs.execution.get(root.run_id)["tool_calls"] == 2
     child = root.model_copy(update={"run_id": "child", "parent_run_id": root.run_id})
-    service.execution.register(
+    service.runs.execution.register(
         child.run_id,
         agent_snapshot(profile, child, thread_id="child", input_hash="other"),
         root_run_id=root.run_id,
     )
     with pytest.raises(ExecutionConflict, match="budget exhausted"):
-        service.execution.consume(child.run_id, "tool")
-    assert service.execution.get(root.run_id)["tool_calls"] == 2
+        service.runs.execution.consume(child.run_id, "tool")
+    assert service.runs.execution.get(root.run_id)["tool_calls"] == 2
     persisted.database.close()
 
 
@@ -60,11 +62,11 @@ async def test_atomic_budget_and_operation_claim_across_repository_instances(tmp
         components.default_agent_profile, root, thread_id="t", input_hash="hash"
     )
     snapshot["limits"]["tool"] = 7
-    service.execution.register(root.run_id, snapshot)
+    service.runs.execution.register(root.run_id, snapshot)
 
     async def consume():
         """每个调用建立独立仓储实例，模拟不同 worker。"""
-        repository = type(service.execution)(components.database.session_factory)
+        repository = type(service.runs.execution)(components.database.session_factory)
         try:
             await asyncio.to_thread(repository.consume, root.run_id, "tool")
             return True
@@ -72,22 +74,25 @@ async def test_atomic_budget_and_operation_claim_across_repository_instances(tmp
             return False
 
     assert sum(await asyncio.gather(*(consume() for _ in range(30)))) == 7
-    service.execution.prepare(
+    service.runs.execution.prepare(
         "one-operation", root.run_id, {"command": {"resume": {"decisions": [{"type": "reject"}]}}}
     )
     assert (
         sum(
             await asyncio.gather(
-                *(asyncio.to_thread(service.execution.claim, "one-operation") for _ in range(20))
+                *(
+                    asyncio.to_thread(service.runs.execution.claim, "one-operation")
+                    for _ in range(20)
+                )
             )
         )
         == 1
     )
-    assert service.execution.get(root.run_id)["operation_calls"] == 1
-    assert service.execution.get(root.run_id)["side_effects_denied"]
-    service.execution.request_cancel(root.run_id)
+    assert service.runs.execution.get(root.run_id)["operation_calls"] == 1
+    assert service.runs.execution.get(root.run_id)["side_effects_denied"]
+    service.runs.execution.request_cancel(root.run_id)
     with pytest.raises(ExecutionConflict, match="cancellation"):
-        service.execution.consume(root.run_id, "model")
+        service.runs.execution.consume(root.run_id, "model")
     components.database.close()
 
 
@@ -167,7 +172,7 @@ def test_batch_limit_and_rejection_do_not_reach_hitl(tmp_path):
         update={"max_tool_batch": 1, "context_policy": "delegated-task-only-v1"}
     )
     root = context("tools:read", "watchlist:write").model_copy(update={"root_run_id": "run-agent"})
-    service.execution.register(
+    service.runs.execution.register(
         root.run_id, agent_snapshot(profile, root, thread_id="guard", input_hash="hash")
     )
     calls = [call("calculate", i, operation="add", left=i, right=1) for i in (1, 2)]
@@ -178,7 +183,7 @@ def test_batch_limit_and_rejection_do_not_reach_hitl(tmp_path):
         context=root,
     )
     assert "configured limit" in result["messages"][-1].content
-    service.execution.deny_side_effects(root.run_id)
+    service.runs.execution.deny_side_effects(root.run_id)
     graph = components.agent_factory.build(
         profile, model=BatchModel(calls=[call("watchlist_add", 1, symbol="AAPL", note="refused")])
     )
@@ -188,5 +193,5 @@ def test_batch_limit_and_rejection_do_not_reach_hitl(tmp_path):
         context=root,
     )
     assert "user rejected" in result["messages"][-1].content and not result.get("__interrupt__")
-    assert service.execution.get(root.run_id)["tool_calls"] == 0
+    assert service.runs.execution.get(root.run_id)["tool_calls"] == 0
     components.database.close()

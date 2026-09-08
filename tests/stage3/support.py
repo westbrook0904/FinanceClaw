@@ -2,9 +2,9 @@
 
 from pathlib import Path
 
-from financeclaw.infrastructure import ApplicationDatabase
-from financeclaw.kernel import ExecutionContext
-from financeclaw.modules.conversation import SqlAlchemyConversationRepository
+from financeclaw.kernel.context import ExecutionContext
+from financeclaw.shared.conversation.repository import SqlAlchemyConversationRepository
+from financeclaw.shared.infrastructure.database import ApplicationDatabase
 
 
 def journal(path: Path) -> tuple[ApplicationDatabase, SqlAlchemyConversationRepository]:

@@ -1,0 +1,193 @@
+"""工具治理的唯一发布声明；BFF/Coordinator 无须加载工具实现。"""
+
+from financeclaw.kernel.context import DataClassification
+from financeclaw.kernel.tools import (
+    ApprovalMode,
+    AuditLevel,
+    Egress,
+    Idempotency,
+    RetryProfile,
+    RiskLevel,
+    Sensitivity,
+    SideEffect,
+    ToolGovernance,
+)
+from financeclaw.kernel.ziwei import LEVELS
+
+
+def local_tool_governance() -> tuple[ToolGovernance, ...]:
+    """返回 local 工具的治理声明，不创建执行实例。"""
+    common_data_classes = frozenset(
+        {DataClassification.PUBLIC, DataClassification.INTERNAL, DataClassification.CONFIDENTIAL}
+    )
+    return (
+        ToolGovernance(
+            tool_id="market_snapshot",
+            version="1.0.0",
+            side_effect=SideEffect.READ,
+            idempotency=Idempotency.IDEMPOTENT,
+            risk_level=RiskLevel.LOW,
+            required_scopes=frozenset({"market:read"}),
+            approval=ApprovalMode.NONE,
+            egress=Egress.INTERNAL,
+            sensitivity=Sensitivity.CONFIDENTIAL,
+            retry_profile=RetryProfile.TRANSIENT_READ,
+            audit_level=AuditLevel.FULL,
+            allowed_data_classes=common_data_classes,
+        ),
+        ToolGovernance(
+            tool_id="watchlist_add",
+            version="1.0.0",
+            side_effect=SideEffect.WRITE,
+            idempotency=Idempotency.KEY_REQUIRED,
+            risk_level=RiskLevel.MEDIUM,
+            required_scopes=frozenset({"watchlist:write"}),
+            approval=ApprovalMode.ALWAYS,
+            egress=Egress.INTERNAL,
+            sensitivity=Sensitivity.CONFIDENTIAL,
+            retry_profile=RetryProfile.NONE,
+            audit_level=AuditLevel.FULL,
+            allowed_data_classes=common_data_classes,
+        ),
+        ToolGovernance(
+            tool_id="calculate",
+            version="1.0.0",
+            side_effect=SideEffect.READ,
+            idempotency=Idempotency.IDEMPOTENT,
+            risk_level=RiskLevel.LOW,
+            required_scopes=frozenset({"tools:read"}),
+            approval=ApprovalMode.NONE,
+            egress=Egress.NONE,
+            sensitivity=Sensitivity.INTERNAL,
+            retry_profile=RetryProfile.NONE,
+            audit_level=AuditLevel.EXECUTION,
+        ),
+    )
+
+
+def mcp_quote_governance() -> ToolGovernance:
+    """返回 mcp 工具的治理声明，不创建执行实例。"""
+    return ToolGovernance(
+        tool_id="get_demo_quote",
+        version="1.0.0",
+        side_effect=SideEffect.READ,
+        idempotency=Idempotency.IDEMPOTENT,
+        risk_level=RiskLevel.LOW,
+        required_scopes=frozenset({"market:read"}),
+        approval=ApprovalMode.NONE,
+        egress=Egress.INTERNAL,
+        sensitivity=Sensitivity.CONFIDENTIAL,
+        retry_profile=RetryProfile.TRANSIENT_READ,
+        audit_level=AuditLevel.FULL,
+        allowed_data_classes=frozenset(
+            {
+                DataClassification.PUBLIC,
+                DataClassification.INTERNAL,
+                DataClassification.CONFIDENTIAL,
+            }
+        ),
+    )
+
+
+def memory_tool_governance() -> tuple[ToolGovernance, ...]:
+    """返回 memory 工具的治理声明，不创建执行实例。"""
+    readable_classes = frozenset({DataClassification.INTERNAL, DataClassification.CONFIDENTIAL})
+    internal = dict(
+        version="1.0.0",
+        direct_invocation=False,
+        egress=Egress.INTERNAL,
+        sensitivity=Sensitivity.CONFIDENTIAL,
+        retry_profile=RetryProfile.NONE,
+        audit_level=AuditLevel.FULL,
+        allowed_data_classes=readable_classes,
+    )
+    return (
+        ToolGovernance(
+            tool_id="search_memories",
+            side_effect=SideEffect.READ,
+            idempotency=Idempotency.IDEMPOTENT,
+            risk_level=RiskLevel.LOW,
+            required_scopes=frozenset({"memory:read"}),
+            approval=ApprovalMode.NONE,
+            **internal,
+        ),
+        ToolGovernance(
+            tool_id="propose_memory",
+            side_effect=SideEffect.READ,
+            idempotency=Idempotency.IDEMPOTENT,
+            risk_level=RiskLevel.LOW,
+            required_scopes=frozenset({"memory:write"}),
+            approval=ApprovalMode.NONE,
+            **internal,
+        ),
+        ToolGovernance(
+            tool_id="confirm_memory",
+            side_effect=SideEffect.WRITE,
+            idempotency=Idempotency.KEY_REQUIRED,
+            risk_level=RiskLevel.MEDIUM,
+            required_scopes=frozenset({"memory:write"}),
+            approval=ApprovalMode.ALWAYS,
+            **internal,
+        ),
+        ToolGovernance(
+            tool_id="forget_memory",
+            side_effect=SideEffect.WRITE,
+            idempotency=Idempotency.IDEMPOTENT,
+            risk_level=RiskLevel.MEDIUM,
+            required_scopes=frozenset({"memory:delete"}),
+            approval=ApprovalMode.ALWAYS,
+            **internal,
+        ),
+    )
+
+
+def ziwei_tool_governance() -> tuple[ToolGovernance, ...]:
+    """返回 ziwei 工具的治理声明，不创建执行实例。"""
+    result = []
+    for level in LEVELS:
+        name = f"ziwei_{level.value}_chart"
+        result.append(
+            ToolGovernance(
+                tool_id=name,
+                version="1.0.0",
+                side_effect=SideEffect.READ,
+                idempotency=Idempotency.IDEMPOTENT,
+                risk_level=RiskLevel.LOW,
+                required_scopes=frozenset({"ziwei:read"}),
+                approval=ApprovalMode.NONE,
+                egress=Egress.NONE,
+                sensitivity=Sensitivity.CONFIDENTIAL,
+                retry_profile=RetryProfile.NONE,
+                audit_level=AuditLevel.FULL,
+                direct_invocation=False,
+                allowed_data_classes=frozenset({DataClassification.CONFIDENTIAL}),
+            )
+        )
+    return tuple(result)
+
+
+def delegation_governance(
+    tool_id: str, required_scopes: frozenset[str], version: str
+) -> ToolGovernance:
+    """返回 delegation 工具的治理声明，不创建执行实例。"""
+    return ToolGovernance(
+        tool_id=tool_id,
+        version=version,
+        side_effect=SideEffect.DELEGATION,
+        idempotency=Idempotency.KEY_REQUIRED,
+        risk_level=RiskLevel.MEDIUM,
+        required_scopes=required_scopes,
+        approval=ApprovalMode.NONE,
+        egress=Egress.INTERNAL,
+        sensitivity=Sensitivity.CONFIDENTIAL,
+        retry_profile=RetryProfile.NONE,
+        audit_level=AuditLevel.FULL,
+        direct_invocation=False,
+        allowed_data_classes=frozenset(
+            {
+                DataClassification.PUBLIC,
+                DataClassification.INTERNAL,
+                DataClassification.CONFIDENTIAL,
+            }
+        ),
+    )

@@ -12,7 +12,7 @@ from dataclasses import dataclass
 
 from langgraph_sdk import get_client
 
-from financeclaw.kernel import ExecutionContext
+from financeclaw.kernel.context import ExecutionContext
 
 
 @dataclass(frozen=True, slots=True)

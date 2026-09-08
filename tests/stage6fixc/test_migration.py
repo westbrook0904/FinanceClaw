@@ -7,10 +7,10 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy import inspect, text
 
-from financeclaw.infrastructure import ApplicationDatabase
-from financeclaw.kernel import ExecutionContext
-from financeclaw.modules.execution import ExecutionRepository
-from financeclaw.modules.interactions import InteractionRepository
+from financeclaw.coordination.interactions.repository import InteractionRepository
+from financeclaw.kernel.context import ExecutionContext
+from financeclaw.shared.execution_ledger.repository import ExecutionRepository
+from financeclaw.shared.infrastructure.database import ApplicationDatabase
 
 
 @pytest.mark.parametrize("with_facts", [False, True])

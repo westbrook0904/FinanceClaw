@@ -2,7 +2,8 @@
 
 import pytest
 
-from financeclaw.orchestration.tools import Egress, SideEffect, managed_mcp_quote_tool
+from financeclaw.agent_server.tools.mcp import managed_mcp_quote_tool
+from financeclaw.kernel.tools import Egress, SideEffect
 
 
 @pytest.mark.asyncio

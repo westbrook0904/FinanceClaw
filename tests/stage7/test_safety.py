@@ -6,14 +6,14 @@ import pytest
 from langchain_core.messages import AIMessage, ToolMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 
-from financeclaw.application.execution_service import agent_snapshot
-from financeclaw.modules.audit import AuditEventType
-from financeclaw.modules.execution import ExecutionConflict
-from financeclaw.modules.ziwei.errors import ZiweiError
-from financeclaw.orchestration.agents.artifact_middleware import ToolResultArtifactMiddleware
-from financeclaw.orchestration.agents.middleware import ToolGovernanceMiddleware
-from financeclaw.orchestration.agents.ziwei_offline import OfflineZiweiModel
-from financeclaw.orchestration.graphs.ziwei_agent import build_ziwei_agent
+from financeclaw.agent_server.agents.ziwei_offline import OfflineZiweiModel
+from financeclaw.agent_server.domains.ziwei.errors import ZiweiError
+from financeclaw.agent_server.graphs.ziwei_agent import build_ziwei_agent
+from financeclaw.agent_server.middleware.artifact_middleware import ToolResultArtifactMiddleware
+from financeclaw.agent_server.middleware.middleware import ToolGovernanceMiddleware
+from financeclaw.shared.audit.models import AuditEventType
+from financeclaw.shared.execution_ledger.repository import ExecutionConflict
+from financeclaw.shared.execution_ledger.snapshots import agent_snapshot
 from tests.stage7.support import components, context, envelope, request
 
 

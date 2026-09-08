@@ -6,7 +6,7 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy import create_engine, inspect, text
 
-from financeclaw.infrastructure import ApplicationDatabase, normalize_database_url
+from financeclaw.shared.infrastructure.database import ApplicationDatabase, normalize_database_url
 
 STAGE2_TABLES = {
     "alembic_version",

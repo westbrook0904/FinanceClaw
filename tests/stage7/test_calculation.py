@@ -5,8 +5,8 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
-from financeclaw.modules.ziwei.errors import ZiweiError
-from financeclaw.modules.ziwei.models import ChartLevel, ZiweiAnalysisRequest
+from financeclaw.agent_server.domains.ziwei.errors import ZiweiError
+from financeclaw.kernel.ziwei import ChartLevel, ZiweiAnalysisRequest
 from tests.stage7.support import components, context, request
 
 

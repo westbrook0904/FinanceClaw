@@ -13,11 +13,15 @@ import httpx
 import pytest
 from pydantic import SecretStr
 
-from financeclaw.application import ConversationService, DelegationService, WorkflowService
-from financeclaw.infrastructure import FinanceClawSettings
-from financeclaw.infrastructure.clients.agent_server import LangGraphAgentServerClient
-from financeclaw.kernel import ApprovalDecision, ConversationTurnRequest, WorkflowTarget
-from financeclaw.modules.interactions import InteractionResponse
+from financeclaw.bff.application.conversation_service import ConversationService
+from financeclaw.coordination.api import ConversationRunService
+from financeclaw.coordination.backends.langgraph import LangGraphAgentServerClient
+from financeclaw.coordination.delegation.service import DelegationService
+from financeclaw.coordination.workflows.service import WorkflowService
+from financeclaw.kernel.interactions import InteractionResponse
+from financeclaw.kernel.responses import ApprovalDecision, ConversationTurnRequest
+from financeclaw.kernel.targets import WorkflowTarget
+from financeclaw.shared.infrastructure.settings import FinanceClawSettings
 from tests.stage4.support import workflow_arguments
 from tests.stage6fix.test_execution_recovery import OWNER
 from tests.stage6fixc.live_components import build_live_components
@@ -151,10 +155,14 @@ def live_stack(live_server):
         artifact_service=components.artifact_service,
     )
     service = ConversationService(
-        client,
         components.conversation_repository,
         components.agent_profiles,
-        delegation_service=delegation,
+        runs=ConversationRunService(
+            client,
+            components.conversation_repository,
+            components.agent_profiles,
+            delegation_service=delegation,
+        ),
     )
     return components, client, workflow, service
 
@@ -182,7 +190,7 @@ async def test_real_parent_child_hitl_attempt_ownership(live_server):
         idempotency_key="live-parent",
         **OWNER,
     )
-    initial = service.execution.get(accepted.run_id)["server_run_id"]
+    initial = service.runs.execution.get(accepted.run_id)["server_run_id"]
     approval = await until_status(service, accepted.run_id, "interrupted", scopes=SCOPES)
     assert approval.waiting_reason == "approval_required"
     assert len(components.conversation_repository.list_messages(accepted.conversation_id)) == 1
@@ -206,10 +214,10 @@ async def test_real_parent_child_hitl_attempt_ownership(live_server):
     assert len(components.conversation_repository.list_messages(accepted.conversation_id)) == 2
     old = await client.get_run(thread_id=accepted.thread_id, run_id=initial)
     assert old["status"] == "interrupted" and old["interrupts"]
-    execution = service.execution.get(accepted.run_id)
+    execution = service.runs.execution.get(accepted.run_id)
     assert execution["server_run_id"] != initial
     assert execution["tool_calls"] >= 3 and execution["model_calls"] >= 5
-    operations = service.execution.operations_for_run(accepted.run_id)
+    operations = service.runs.execution.operations_for_run(accepted.run_id)
     assert len(operations) == 3 and len({item["server_run_id"] for item in operations}) == 3
     components.database.close()
 
@@ -287,7 +295,7 @@ async def test_real_cancel_retains_checkpoint_and_rotates_thread(live_server):
         **OWNER,
     )
     await until_status(service, accepted.run_id, "interrupted", scopes=SCOPES)
-    current = service.execution.get(accepted.run_id)["server_run_id"]
+    current = service.runs.execution.get(accepted.run_id)["server_run_id"]
     cancelled = await service.cancel(accepted.run_id, **OWNER)
     assert cancelled.status == "cancelled"
     assert (await client.get_run(thread_id=accepted.thread_id, run_id=current))[
@@ -325,13 +333,13 @@ async def test_real_child_input_choice_and_approval_resume_original_owner(
         await until_status(service, accepted.run_id, "interrupted", scopes=SCOPES)
     ).pending_interactions[0]
     child_id = first["owner_run_id"]
-    initial_child = service.execution.get(child_id)
+    initial_child = service.runs.execution.get(child_id)
     child_thread, first_attempt = (
         initial_child["snapshot"]["thread_id"],
         initial_child["server_run_id"],
     )
     assert child_id != accepted.run_id and first["kind"] == "input"
-    await service.interactions.respond(
+    await service.runs.interactions.respond(
         first["interaction_id"],
         InteractionResponse(
             revision=first["revision"], kind="input", answer={"analysis_period": "最近一个月"}
@@ -344,7 +352,7 @@ async def test_real_child_input_choice_and_approval_resume_original_owner(
         await until_status(service, accepted.run_id, "interrupted", scopes=SCOPES)
     ).pending_interactions[0]
     assert second["owner_run_id"] == child_id and second["kind"] == "choice"
-    await service.interactions.respond(
+    await service.runs.interactions.respond(
         second["interaction_id"],
         InteractionResponse(revision=second["revision"], kind="choice", answer="风险与限制"),
         scopes=SCOPES,
@@ -356,8 +364,8 @@ async def test_real_child_input_choice_and_approval_resume_original_owner(
     ).pending_interactions[0]
     assert third["owner_run_id"] == child_id and third["kind"] == "approval"
     assert len(components.conversation_repository.list_messages(conversation.conversation_id)) == 1
-    assert len(service.execution.operations_for_run(accepted.run_id)) == 1
-    await service.interactions.respond(
+    assert len(service.runs.execution.operations_for_run(accepted.run_id)) == 1
+    await service.runs.interactions.respond(
         third["interaction_id"],
         InteractionResponse(
             revision=third["revision"],
@@ -374,7 +382,7 @@ async def test_real_child_input_choice_and_approval_resume_original_owner(
             await until_status(service, accepted.run_id, "interrupted", scopes=SCOPES)
         ).pending_interactions[0]
         assert parent["owner_run_id"] == accepted.run_id
-        await service.interactions.respond(
+        await service.runs.interactions.respond(
             parent["interaction_id"],
             InteractionResponse(
                 revision=parent["revision"],
@@ -389,10 +397,10 @@ async def test_real_child_input_choice_and_approval_resume_original_owner(
     final = await until_status(service, accepted.run_id, "completed", scopes=SCOPES)
     assert final.status == "completed"
     assert len(components.conversation_repository.list_messages(conversation.conversation_id)) == 2
-    assert len(service.execution.operations_for_run(child_id)) == 4
+    assert len(service.runs.execution.operations_for_run(child_id)) == 4
     old = await client.get_run(thread_id=child_thread, run_id=first_attempt)
     assert old["interrupts"][0]["id"] == first["interrupt_id"]
-    assert service.execution.get(child_id)["snapshot"]["thread_id"] == child_thread
+    assert service.runs.execution.get(child_id)["snapshot"]["thread_id"] == child_thread
     if child_decision == "reject":
-        assert service.execution.get(accepted.run_id)["side_effects_denied"]
+        assert service.runs.execution.get(accepted.run_id)["side_effects_denied"]
     components.database.close()

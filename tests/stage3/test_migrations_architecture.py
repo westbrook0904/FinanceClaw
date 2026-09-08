@@ -8,13 +8,19 @@ from alembic.config import Config
 from pydantic import SecretStr
 from sqlalchemy import create_engine, inspect
 
-from financeclaw.application import TargetResolutionError, TargetResolver
-from financeclaw.bootstrap import build_components
-from financeclaw.infrastructure import ApplicationDatabase, FinanceClawSettings
-from financeclaw.kernel import RunRequest, ToolTarget
-from financeclaw.modules.audit import AuditEventType, SqlAlchemyAuditRepository
-from financeclaw.modules.memory import MemoryDraft
+from financeclaw.agent_server.memory.models import MemoryDraft
+from financeclaw.coordination.application.target_resolver import (
+    TargetResolutionError,
+    TargetResolver,
+)
+from financeclaw.kernel.responses import RunRequest
+from financeclaw.kernel.targets import ToolTarget
 from financeclaw.operations.memory_eval_seed import SAMPLES
+from financeclaw.shared.audit.models import AuditEventType
+from financeclaw.shared.audit.repository import SqlAlchemyAuditRepository
+from financeclaw.shared.infrastructure.database import ApplicationDatabase
+from financeclaw.shared.infrastructure.settings import FinanceClawSettings
+from tests.support import build_components
 
 from .support import conversation_context
 

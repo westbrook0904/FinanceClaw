@@ -7,7 +7,7 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy import create_engine, inspect
 
-from financeclaw.evaluation import EvaluationResult, RegressionGate, load_cases
+from financeclaw.evaluation.regression import EvaluationResult, RegressionGate, load_cases
 
 ROOT = Path(__file__).resolve().parents[2]
 

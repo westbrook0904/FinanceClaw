@@ -9,7 +9,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from .targets import RunTarget
+from financeclaw.kernel.targets import RunTarget
 
 
 class ContractModel(BaseModel):

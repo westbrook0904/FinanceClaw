@@ -5,8 +5,8 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy import inspect, text
 
-from financeclaw.infrastructure import ApplicationDatabase
-from financeclaw.modules.execution import ExecutionRepository
+from financeclaw.shared.execution_ledger.repository import ExecutionRepository
+from financeclaw.shared.infrastructure.database import ApplicationDatabase
 
 
 def test_migration_preserves_execution_facts_on_downgrade(tmp_path, monkeypatch) -> None:

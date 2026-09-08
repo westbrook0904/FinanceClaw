@@ -6,17 +6,18 @@ from langchain_core.messages import AIMessage, ToolMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 from langgraph.types import Command
 
-from financeclaw.bootstrap import build_components
-from financeclaw.infrastructure import FinanceClawSettings
-from financeclaw.kernel import ExecutionContext
-from financeclaw.modules.audit import AuditEventType, InMemoryAuditRepository
-from financeclaw.orchestration.agents import OfflineFinanceModel
-from financeclaw.orchestration.tools import (
+from financeclaw.agent_server.agents.offline import OfflineFinanceModel
+from financeclaw.agent_server.tools.catalog import ToolCatalog
+from financeclaw.agent_server.tools.local import (
     MarketSnapshotTool,
-    ToolCatalog,
     WatchlistWriteTool,
     default_local_tools,
 )
+from financeclaw.kernel.context import ExecutionContext
+from financeclaw.shared.audit.models import AuditEventType
+from financeclaw.shared.audit.repository import InMemoryAuditRepository
+from financeclaw.shared.infrastructure.settings import FinanceClawSettings
+from tests.support import build_components
 
 
 def settings() -> FinanceClawSettings:

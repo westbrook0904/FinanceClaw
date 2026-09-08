@@ -7,16 +7,17 @@ import httpx
 import pytest
 from sqlalchemy import select
 
-from financeclaw.application import RunService, TargetResolver
-from financeclaw.application.interaction_service import InteractionService
-from financeclaw.interfaces.http import create_app
-from financeclaw.interfaces.http.auth import AuthenticatedPrincipal, StaticBearerAuthenticator
-from financeclaw.modules.interactions import (
+from financeclaw.bff.http.app import create_app
+from financeclaw.bff.http.auth import AuthenticatedPrincipal, StaticBearerAuthenticator
+from financeclaw.coordination.application.run_service import RunService
+from financeclaw.coordination.application.target_resolver import TargetResolver
+from financeclaw.coordination.interactions.repository import (
     InteractionConflict,
     InteractionNotFound,
-    InteractionResponse,
 )
-from financeclaw.modules.interactions.tables import PendingInteractionRow
+from financeclaw.coordination.interactions.service import InteractionService
+from financeclaw.kernel.interactions import InteractionResponse
+from financeclaw.shared.execution_ledger.interaction_tables import PendingInteractionRow
 from tests.stage4.test_delegation import SCOPES, FakeDelegationClient
 from tests.stage6fix.test_execution_recovery import (
     OWNER,
@@ -56,7 +57,7 @@ async def test_concurrent_same_answer_is_one_decision_and_one_resume(tmp_path):
     components, fake, _, service, accepted, item = await parent_approval(tmp_path)
     responses = await asyncio.gather(
         *(
-            service.interactions.respond(
+            service.runs.interactions.respond(
                 item["interaction_id"],
                 reply(item),
                 scopes=SCOPES,
@@ -73,7 +74,7 @@ async def test_concurrent_same_answer_is_one_decision_and_one_resume(tmp_path):
     with components.database.session() as session:
         row = session.scalar(select(PendingInteractionRow))
         assert row.response_key == "same-answer" and row.operation_id
-        assert service.execution.operation(row.operation_id)["status"] == "observed"
+        assert service.runs.execution.operation(row.operation_id)["status"] == "observed"
 
 
 @pytest.mark.parametrize("fault", ["revision", "hash", "identity", "kind", "revoked"])
@@ -96,7 +97,7 @@ async def test_invalid_or_unauthorized_answers_do_not_submit(tmp_path, fault):
     if fault == "revoked":
         scopes = frozenset()
     with pytest.raises((InteractionConflict, InteractionNotFound)):
-        await service.interactions.respond(
+        await service.runs.interactions.respond(
             item["interaction_id"], response, scopes=scopes, idempotency_key="bad", **owner
         )
     assert len(fake.resume_calls) == 1
@@ -108,21 +109,23 @@ async def test_stale_interaction_is_never_resumed(tmp_path, close):
     """旧命令／卡片只能查到终态，不会自动批准新的动作实例。"""
     _, fake, _, service, accepted, item = await parent_approval(tmp_path)
     if close == "expired":
-        service._clock = lambda: datetime.fromisoformat(item["expires_at"]) + timedelta(seconds=1)
+        service.runs._clock = lambda: (
+            datetime.fromisoformat(item["expires_at"]) + timedelta(seconds=1)
+        )
         await service.status(accepted.run_id, scopes=SCOPES, **OWNER)
     elif close == "cancelled":
         await service.cancel(accepted.run_id, **OWNER)
     else:
-        current = service.execution.get(accepted.run_id)["server_run_id"]
+        current = service.runs.execution.get(accepted.run_id)["server_run_id"]
         fake.runs[current]["interrupts"][0]["id"] = "replacement-native-id"
         new = await service.status(accepted.run_id, scopes=SCOPES, **OWNER)
         assert new.pending_interactions[0]["revision"] == item["revision"] + 1
-    row = service.interactions.repository.get_owned(
-        item["interaction_id"], **OWNER, now=service.interactions.clock()
+    row = service.runs.interactions.repository.get_owned(
+        item["interaction_id"], **OWNER, now=service.runs.interactions.clock()
     )
     assert row["status"] == close
     with pytest.raises(InteractionConflict):
-        await service.interactions.respond(
+        await service.runs.interactions.respond(
             item["interaction_id"], reply(item), scopes=SCOPES, idempotency_key="stale", **OWNER
         )
     assert len(fake.resume_calls) == 1
@@ -132,25 +135,25 @@ async def test_stale_interaction_is_never_resumed(tmp_path, close):
 async def test_accepted_answer_survives_crash_before_claim(tmp_path, monkeypatch):
     """决定与 prepared 操作必须同事务；带当前授权的查询可在重启后继续。"""
     _, fake, _, service, accepted, item = await parent_approval(tmp_path)
-    original = service.interactions.operations.submit_prepared
+    original = service.runs.interactions.operations.submit_prepared
 
     async def crash(_operation):
         """模拟回答提交事务之后、CAS 领取之前进程中断。"""
         raise RuntimeError("crash before claim")
 
-    monkeypatch.setattr(service.interactions.operations, "submit_prepared", crash)
+    monkeypatch.setattr(service.runs.interactions.operations, "submit_prepared", crash)
     with pytest.raises(RuntimeError, match="before claim"):
-        await service.interactions.respond(
+        await service.runs.interactions.respond(
             item["interaction_id"], reply(item), scopes=SCOPES, idempotency_key="crash", **OWNER
         )
-    row = service.interactions.repository.get_owned(
-        item["interaction_id"], **OWNER, now=service.interactions.clock()
+    row = service.runs.interactions.repository.get_owned(
+        item["interaction_id"], **OWNER, now=service.runs.interactions.clock()
     )
     assert row["status"] == "resolved"
-    assert service.execution.operation(row["operation_id"])["status"] == "prepared"
-    monkeypatch.setattr(service.interactions.operations, "submit_prepared", original)
-    service.interactions = InteractionService(
-        fake, service.execution, agent_profiles=service.agent_profiles
+    assert service.runs.execution.operation(row["operation_id"])["status"] == "prepared"
+    monkeypatch.setattr(service.runs.interactions.operations, "submit_prepared", original)
+    service.runs.interactions = InteractionService(
+        fake, service.runs.execution, agent_profiles=service.agent_profiles
     )
     assert (await service.status(accepted.run_id, scopes=SCOPES, **OWNER)).status == "completed"
     assert len(fake.resume_calls) == 2
@@ -160,7 +163,7 @@ async def test_accepted_answer_survives_crash_before_claim(tmp_path, monkeypatch
 async def test_conflicting_second_answer_cannot_override_first(tmp_path):
     """决定不是可编辑草稿，换幂等键或换内容都不能撤回已经受理的授权。"""
     _, fake, _, service, _, item = await parent_approval(tmp_path)
-    await service.interactions.respond(
+    await service.runs.interactions.respond(
         item["interaction_id"], reply(item), scopes=SCOPES, idempotency_key="first", **OWNER
     )
     for key, response in (
@@ -168,7 +171,7 @@ async def test_conflicting_second_answer_cannot_override_first(tmp_path):
         ("first", reply(item).model_copy(update={"decision": "reject"})),
     ):
         with pytest.raises(InteractionConflict):
-            await service.interactions.respond(
+            await service.runs.interactions.respond(
                 item["interaction_id"], response, scopes=SCOPES, idempotency_key=key, **OWNER
             )
     assert len(fake.resume_calls) == 2
@@ -226,14 +229,14 @@ async def test_child_input_then_choice_resume_same_child_and_keep_parent_waiting
     first = waiting.pending_interactions[0]
     assert waiting.waiting_reason == "input_required" and first["owner_run_id"] != accepted.run_id
     with pytest.raises(InteractionConflict):
-        await service.interactions.respond(
+        await service.runs.interactions.respond(
             first["interaction_id"],
             reply(first, answer={"wrong": True}),
             scopes=SCOPES,
             idempotency_key="wrong",
             **OWNER,
         )
-    await service.interactions.respond(
+    await service.runs.interactions.respond(
         first["interaction_id"],
         reply(first, answer={"analysis_period": "最近一个月"}),
         scopes=SCOPES,
@@ -249,7 +252,7 @@ async def test_child_input_then_choice_resume_same_child_and_keep_parent_waiting
     )
     assert len(components.conversation_repository.list_messages(accepted.conversation_id)) == 1
     assert len(fake.create_calls) == 2 and len(fake.resume_calls) == 1
-    await service.interactions.respond(
+    await service.runs.interactions.respond(
         second["interaction_id"],
         reply(second, answer="风险与限制"),
         scopes=SCOPES,

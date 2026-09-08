@@ -7,13 +7,14 @@ import pytest
 from langchain_core.messages import AIMessage
 from pydantic import BaseModel, ConfigDict, ValidationError
 
-from financeclaw.application.delegation_context import resolve_context_refs
-from financeclaw.application.execution_service import agent_snapshot, verify_agent_snapshot
-from financeclaw.kernel import ConversationTurnRequest, DataClassification, ExecutionContext
-from financeclaw.modules.delegation import HANDOFF_ADAPTER, AgentHandoff, AgentHandoffV2
-from financeclaw.modules.delegation.market_research import MarketResearchResult
-from financeclaw.modules.execution import ExecutionConflict, snapshot_context
-from financeclaw.orchestration.agents import AgentProfileCatalog
+from financeclaw.coordination.delegation.context import resolve_context_refs
+from financeclaw.kernel.agents import AgentProfileCatalog
+from financeclaw.kernel.context import DataClassification, ExecutionContext
+from financeclaw.kernel.delegation.market_research import MarketResearchResult
+from financeclaw.kernel.delegation.models import HANDOFF_ADAPTER, AgentHandoff, AgentHandoffV2
+from financeclaw.kernel.responses import ConversationTurnRequest
+from financeclaw.shared.execution_ledger.repository import ExecutionConflict, snapshot_context
+from financeclaw.shared.execution_ledger.snapshots import agent_snapshot, verify_agent_snapshot
 from tests.stage4.test_delegation import SCOPES
 from tests.stage6fix.test_execution_recovery import OWNER, stack, started_child
 
@@ -52,7 +53,7 @@ async def test_context_refs_are_owned_bounded_versioned_and_forwarded(tmp_path):
     """B01/B02：任务只收显式片段；猜测跨会话 ID、过期摘要和 URL 都不能读取。"""
     components, fake, delegation, service = stack(tmp_path)
     accepted, _, child = await started_child(service, fake)
-    context = snapshot_context(service.execution.get(accepted.run_id)["snapshot"])
+    context = snapshot_context(service.runs.execution.get(accepted.run_id)["snapshot"])
     message = components.conversation_repository.list_messages(accepted.conversation_id)[0]
     reference = f"message:{message.message_id}@{sha256(message.content.encode()).hexdigest()}"
     resolver = dict(
@@ -219,7 +220,7 @@ def test_release_and_authorization_cannot_drift(tmp_path):
             snapshot,
         )
     with pytest.raises(ExecutionConflict):
-        service.execution.get("legacy-without-snapshot")
+        service.runs.execution.get("legacy-without-snapshot")
     components.database.close()
 
 

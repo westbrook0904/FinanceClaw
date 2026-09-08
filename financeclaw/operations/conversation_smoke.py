@@ -13,12 +13,13 @@ import json
 
 from pydantic import SecretStr
 
-from financeclaw.application import ConversationService
-from financeclaw.bootstrap import build_components
-from financeclaw.infrastructure import FinanceClawSettings
-from financeclaw.infrastructure.clients import LangGraphAgentServerClient
-from financeclaw.kernel import ConversationTurnRequest
-from financeclaw.modules.conversation import SqlAlchemyConversationRepository
+from financeclaw.agent_server.bootstrap import build_components
+from financeclaw.bff.application.conversation_service import ConversationService
+from financeclaw.coordination.api import ConversationRunService
+from financeclaw.coordination.backends.langgraph import LangGraphAgentServerClient
+from financeclaw.kernel.responses import ConversationTurnRequest
+from financeclaw.shared.conversation.repository import SqlAlchemyConversationRepository
+from financeclaw.shared.infrastructure.settings import FinanceClawSettings
 
 
 async def probe_conversation(
@@ -65,10 +66,14 @@ async def probe_conversation(
     # 2. 构造 Agent Server 客户端与会话服务。
     client = LangGraphAgentServerClient(url=url)
     service = ConversationService(
-        client,
         repository,
         components.agent_profiles,
-        summary_service=components.summary_service,
+        runs=ConversationRunService(
+            client,
+            repository,
+            components.agent_profiles,
+            summary_service=components.summary_service,
+        ),
     )
     try:
         # 3. 未指定会话 ID 时创建新会话，否则同步读取既有会话以验证持久化。

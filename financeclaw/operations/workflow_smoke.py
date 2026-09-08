@@ -15,13 +15,15 @@ from uuid import uuid4
 
 from pydantic import SecretStr
 
-from financeclaw.application import WorkflowService
-from financeclaw.bootstrap import build_components
-from financeclaw.infrastructure import FinanceClawSettings
-from financeclaw.infrastructure.clients import LangGraphAgentServerClient
-from financeclaw.kernel import ApprovalDecision, WorkflowTarget
-from financeclaw.modules.audit import AuditEventType, SqlAlchemyAuditRepository
-from financeclaw.modules.workflows import SqlAlchemyWorkflowRepository
+from financeclaw.agent_server.bootstrap import build_components
+from financeclaw.coordination.backends.langgraph import LangGraphAgentServerClient
+from financeclaw.coordination.workflows.repository import SqlAlchemyWorkflowRepository
+from financeclaw.coordination.workflows.service import WorkflowService
+from financeclaw.kernel.responses import ApprovalDecision
+from financeclaw.kernel.targets import WorkflowTarget
+from financeclaw.shared.audit.models import AuditEventType
+from financeclaw.shared.audit.repository import SqlAlchemyAuditRepository
+from financeclaw.shared.infrastructure.settings import FinanceClawSettings
 
 
 async def _wait_for_interrupt(
@@ -95,9 +97,10 @@ async def probe_workflow(
         artifact_root=artifact_root,
     )
     components = build_components(settings, enable_persistence=True)
+    workflow_repository = SqlAlchemyWorkflowRepository(components.database.session_factory)
     if components.database is None:
         raise RuntimeError("application database is unavailable")
-    if not isinstance(components.workflow_repository, SqlAlchemyWorkflowRepository):
+    if not isinstance(workflow_repository, SqlAlchemyWorkflowRepository):
         raise RuntimeError("persistent WorkflowRepository is unavailable")
     if components.workflow_catalog is None:
         raise RuntimeError("published WorkflowCatalog is unavailable")
@@ -107,7 +110,7 @@ async def probe_workflow(
     client = LangGraphAgentServerClient(url=url)
     service = WorkflowService(
         client,
-        components.workflow_repository,
+        workflow_repository,
         components.workflow_catalog,
         components.audit,
     )

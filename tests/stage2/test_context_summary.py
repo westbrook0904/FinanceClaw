@@ -6,16 +6,14 @@ from pathlib import Path
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from pydantic import SecretStr
 
-from financeclaw.bootstrap import build_components
-from financeclaw.infrastructure import ApplicationDatabase, FinanceClawSettings
-from financeclaw.kernel import ExecutionContext
-from financeclaw.modules.conversation import (
-    ContextBudget,
-    ConversationContextBuilder,
-    SqlAlchemyConversationRepository,
-    SummaryService,
-)
-from financeclaw.orchestration.agents import OfflineFinanceModel
+from financeclaw.agent_server.agents.offline import OfflineFinanceModel
+from financeclaw.agent_server.context.builder import ContextBudget, ConversationContextBuilder
+from financeclaw.kernel.context import ExecutionContext
+from financeclaw.shared.conversation.repository import SqlAlchemyConversationRepository
+from financeclaw.shared.conversation.summaries import SummaryService
+from financeclaw.shared.infrastructure.database import ApplicationDatabase
+from financeclaw.shared.infrastructure.settings import FinanceClawSettings
+from tests.support import build_components
 
 
 def make_journal(path: Path):

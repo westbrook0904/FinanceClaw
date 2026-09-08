@@ -5,13 +5,13 @@ from uuid import UUID
 
 import pytest
 
-from financeclaw.infrastructure import ApplicationDatabase
-from financeclaw.modules.conversation import (
+from financeclaw.shared.conversation.repository import (
     ConversationConflict,
     ConversationNotFound,
     IdempotencyConflict,
     SqlAlchemyConversationRepository,
 )
+from financeclaw.shared.infrastructure.database import ApplicationDatabase
 
 
 def repository(path: Path) -> tuple[ApplicationDatabase, SqlAlchemyConversationRepository]:

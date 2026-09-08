@@ -5,9 +5,9 @@ from datetime import datetime, timedelta
 
 import pytest
 
-from financeclaw.application.interaction_service import InteractionService
-from financeclaw.kernel import ApprovalDecision
-from financeclaw.modules.execution import ExecutionConflict
+from financeclaw.coordination.interactions.service import InteractionService
+from financeclaw.kernel.responses import ApprovalDecision
+from financeclaw.shared.execution_ledger.repository import ExecutionConflict
 from tests.stage6fix.test_execution_recovery import OWNER
 from tests.stage6fixc.test_interactions import SCOPES, parent_approval, reply
 
@@ -26,15 +26,15 @@ async def test_interaction_receipt_loss_never_resubmits(tmp_path, monkeypatch, a
         raise TimeoutError("injected missing response")
 
     monkeypatch.setattr(fake, "submit_resume", lose_receipt)
-    first = await service.interactions.respond(
+    first = await service.runs.interactions.respond(
         item["interaction_id"], reply(item), scopes=SCOPES, idempotency_key="lost", **OWNER
     )
     assert first["resume_status"] == "uncertain"
-    service.interactions = InteractionService(
-        fake, service.execution, agent_profiles=service.agent_profiles
+    service.runs.interactions = InteractionService(
+        fake, service.runs.execution, agent_profiles=service.agent_profiles
     )
     for _ in range(3):
-        await service.interactions.respond(
+        await service.runs.interactions.respond(
             item["interaction_id"], reply(item), scopes=SCOPES, idempotency_key="lost", **OWNER
         )
         state = await service.status(accepted.run_id, scopes=SCOPES, **OWNER)
@@ -52,20 +52,22 @@ async def test_prepared_answer_cannot_bypass_expiry_cancel_or_revocation(
 ):
     """已接受不等于已提交；宕机期间发生的过期、取消和撤权必须再次检查。"""
     _, fake, _, service, accepted, item = await parent_approval(tmp_path)
-    submit = service.interactions.operations.submit_prepared
+    submit = service.runs.interactions.operations.submit_prepared
 
     async def crash(_operation):
         """事务已提交，但还没领取出站提交权。"""
         raise RuntimeError("injected before claim")
 
-    monkeypatch.setattr(service.interactions.operations, "submit_prepared", crash)
+    monkeypatch.setattr(service.runs.interactions.operations, "submit_prepared", crash)
     with pytest.raises(RuntimeError):
-        await service.interactions.respond(
+        await service.runs.interactions.respond(
             item["interaction_id"], reply(item), scopes=SCOPES, idempotency_key="prepared", **OWNER
         )
-    monkeypatch.setattr(service.interactions.operations, "submit_prepared", submit)
+    monkeypatch.setattr(service.runs.interactions.operations, "submit_prepared", submit)
     if after_acceptance == "expiry":
-        service._clock = lambda: datetime.fromisoformat(item["expires_at"]) + timedelta(seconds=1)
+        service.runs._clock = lambda: (
+            datetime.fromisoformat(item["expires_at"]) + timedelta(seconds=1)
+        )
         result = await service.status(accepted.run_id, scopes=SCOPES, **OWNER)
         assert result.waiting_reason == "expired_before_submission"
     elif after_acceptance == "cancel":
@@ -74,7 +76,7 @@ async def test_prepared_answer_cannot_bypass_expiry_cancel_or_revocation(
         with pytest.raises(ExecutionConflict, match="authorization"):
             await service.status(accepted.run_id, scopes=frozenset(), **OWNER)
         with pytest.raises(ExecutionConflict, match="authorization"):
-            await service.interactions.respond(
+            await service.runs.interactions.respond(
                 item["interaction_id"],
                 reply(item),
                 scopes=frozenset(),
@@ -82,7 +84,7 @@ async def test_prepared_answer_cannot_bypass_expiry_cancel_or_revocation(
                 **OWNER,
             )
     if after_acceptance != "revoked":
-        repeated = await service.interactions.respond(
+        repeated = await service.runs.interactions.respond(
             item["interaction_id"], reply(item), scopes=SCOPES, idempotency_key="prepared", **OWNER
         )
         assert repeated["status"] == "resolved"
@@ -105,7 +107,7 @@ async def test_cancel_between_claim_and_receipt_does_not_release_active_turn(tmp
 
     monkeypatch.setattr(fake, "submit_resume", blocked_submit)
     responding = asyncio.create_task(
-        service.interactions.respond(
+        service.runs.interactions.respond(
             item["interaction_id"], reply(item), scopes=SCOPES, idempotency_key="race", **OWNER
         )
     )
@@ -116,7 +118,7 @@ async def test_cancel_between_claim_and_receipt_does_not_release_active_turn(tmp
         proceed.set()
         await responding
     assert (await service.cancel(accepted.run_id, **OWNER)).status == "cancelled"
-    await service.interactions.respond(
+    await service.runs.interactions.respond(
         item["interaction_id"], reply(item), scopes=SCOPES, idempotency_key="race", **OWNER
     )
     assert len(fake.resume_calls) == 2
@@ -130,12 +132,12 @@ async def test_legacy_approval_replays_original_instance_after_receipt_changes(t
         type="approve", interrupt_id=item["interrupt_id"], arguments_hash=item["arguments_hash"]
     )
     for _ in range(3):
-        assert await service.interactions.resume_legacy(
+        assert await service.runs.interactions.resume_legacy(
             accepted.run_id, decision, scopes=SCOPES, **OWNER
         )
     assert len(fake.resume_calls) == 2
     with pytest.raises(ExecutionConflict):
-        await service.interactions.resume_legacy(
+        await service.runs.interactions.resume_legacy(
             accepted.run_id,
             decision.model_copy(update={"interrupt_id": "not-the-instance"}),
             scopes=SCOPES,

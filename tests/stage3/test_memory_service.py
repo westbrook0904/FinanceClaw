@@ -8,16 +8,15 @@ import pytest
 from langgraph.store.memory import InMemoryStore
 from pydantic import ValidationError
 
-from financeclaw.kernel import ExecutionContext
-from financeclaw.modules.audit import AuditEventType, InMemoryAuditRepository
-from financeclaw.modules.memory import (
+from financeclaw.agent_server.memory.models import MemoryDraft, MemoryStatus
+from financeclaw.agent_server.memory.policy import MemoryPolicy, MemoryPolicyViolation
+from financeclaw.agent_server.memory.service import (
     LongTermMemoryService,
     MemoryConfirmationRequired,
-    MemoryDraft,
-    MemoryPolicy,
-    MemoryPolicyViolation,
-    MemoryStatus,
 )
+from financeclaw.kernel.context import ExecutionContext
+from financeclaw.shared.audit.models import AuditEventType
+from financeclaw.shared.audit.repository import InMemoryAuditRepository
 
 from .support import conversation_context, journal
 

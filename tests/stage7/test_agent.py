@@ -3,13 +3,13 @@
 import pytest
 from pydantic import ValidationError
 
-from financeclaw.bootstrap import build_components
-from financeclaw.infrastructure import FinanceClawSettings
-from financeclaw.modules.ziwei.errors import ZiweiError
-from financeclaw.modules.ziwei.models import BirthTime, TargetSelector, ZiweiTextResult
-from financeclaw.orchestration.agents.ziwei_offline import OfflineZiweiModel
-from financeclaw.orchestration.graphs.ziwei_agent import build_ziwei_agent
+from financeclaw.agent_server.agents.ziwei_offline import OfflineZiweiModel
+from financeclaw.agent_server.domains.ziwei.errors import ZiweiError
+from financeclaw.agent_server.graphs.ziwei_agent import build_ziwei_agent
+from financeclaw.kernel.ziwei import BirthTime, TargetSelector, ZiweiTextResult
+from financeclaw.shared.infrastructure.settings import FinanceClawSettings
 from tests.stage7.support import components, context, envelope, request, settings
+from tests.support import build_components
 
 
 def test_default_disabled_root_and_explicit_root_allowlist():

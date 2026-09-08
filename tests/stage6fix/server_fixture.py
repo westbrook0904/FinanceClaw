@@ -7,11 +7,11 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 from pydantic import SecretStr
 
-from financeclaw.infrastructure import FinanceClawSettings
-from financeclaw.orchestration.agents import OfflineFinanceModel
-from financeclaw.orchestration.graphs.workflows.portfolio_review_v1 import (
+from financeclaw.agent_server.agents.offline import OfflineFinanceModel
+from financeclaw.agent_server.graphs.workflows.portfolio_review_v1 import (
     build_portfolio_review_graph,
 )
+from financeclaw.shared.infrastructure.settings import FinanceClawSettings
 from tests.stage6fixc.live_components import build_live_components
 
 

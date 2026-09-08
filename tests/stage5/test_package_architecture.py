@@ -1,58 +1,92 @@
-"""`test_package_architecture` 模块提供`stage5`相关能力。"""
+"""检查真实包依赖，包括相对导入、聚合导出与废弃入口。"""
 
 import ast
+from importlib.util import resolve_name
 from pathlib import Path
+
+import pytest
 
 ROOT = Path(__file__).parents[2]
 PACKAGE = ROOT / "financeclaw"
 
 
-def _imports(path: Path) -> set[str]:
-    """处理 `当前操作`，并返回边界约定的结果。"""
-    tree = ast.parse(path.read_text(encoding="utf-8"))
+def _imports(path: Path, package_root: Path = PACKAGE) -> set[str]:
+    """将绝对与相对导入解析成模块全名，并检查 from-package 子模块导入。"""
+    module = ".".join(path.relative_to(package_root.parent).with_suffix("").parts)
+    parent = (
+        module.removesuffix(".__init__")
+        if path.name == "__init__.py"
+        else module.rpartition(".")[0]
+    )
     names: set[str] = set()
-    for node in ast.walk(tree):
+    for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
         if isinstance(node, ast.Import):
             names.update(alias.name for alias in node.names)
-        elif isinstance(node, ast.ImportFrom) and node.module:
-            names.add(node.module)
+        elif isinstance(node, ast.ImportFrom):
+            imported = (
+                resolve_name("." * node.level + (node.module or ""), parent)
+                if node.level
+                else node.module or ""
+            )
+            names.add(imported)
+            for alias in node.names:
+                candidate = imported + "." + alias.name
+                candidate_path = package_root.parent / candidate.replace(".", "/")
+                if candidate_path.is_dir() or candidate_path.with_suffix(".py").is_file():
+                    names.add(candidate)
     return names
 
 
-def _assert_no_dependency(package: str, forbidden: tuple[str, ...]) -> None:
-    """处理 `no_dependency`，并返回边界约定的结果。"""
-    violations: list[str] = []
-    for path in (PACKAGE / package).rglob("*.py"):
-        for imported in _imports(path):
-            if imported.startswith(forbidden):
+def test_service_dependency_direction_is_enforced() -> None:
+    """三包不得互相穿透，共享包不得回指服务；BFF 只依赖公开协调入口。"""
+    allowed = {
+        "kernel": {"kernel"},
+        "shared": {"kernel", "shared"},
+        "agent_server": {"kernel", "shared", "agent_server"},
+        "coordination": {"kernel", "shared", "coordination"},
+        "bff": {"kernel", "shared", "bff"},
+    }
+    violations = []
+    for owner, dependencies in allowed.items():
+        paths = list((PACKAGE / owner).rglob("*.py"))
+        assert paths, f"missing required package: {owner}"
+        for path in paths:
+            for imported in _imports(path):
+                if not imported.startswith("financeclaw."):
+                    continue
+                if imported.split(".")[1] in dependencies:
+                    continue
+                if owner == "bff" and imported == "financeclaw.coordination.api":
+                    continue
+                if (
+                    path == PACKAGE / "bff/bootstrap.py"
+                    and imported == "financeclaw.coordination.bootstrap"
+                ):
+                    continue
                 violations.append(f"{path.relative_to(ROOT)} -> {imported}")
     assert not violations, "invalid package dependencies:\n" + "\n".join(violations)
+    for path in (PACKAGE / "coordination/application").rglob("*.py"):
+        assert "financeclaw.coordination.backends.langgraph" not in _imports(path)
 
 
-def test_enterprise_dependency_direction_is_enforced() -> None:
-    """验证函数名所描述的业务场景符合预期。"""
-    # 共享内核是最内层，不得依赖其他 FinanceClaw 包。
-    _assert_no_dependency("kernel", ("financeclaw.",))
-    # 业务模块不得调用 HTTP、应用用例或 Agent 运行时代码。
-    _assert_no_dependency(
-        "modules",
-        (
-            "financeclaw.interfaces",
-            "financeclaw.application",
-            "financeclaw.orchestration",
-        ),
-    )
-    # 应用服务拥有出站 Port，因此不得导入具体基础设施适配器。
-    _assert_no_dependency(
+def test_relative_and_aggregate_imports_cannot_hide_dependencies(tmp_path: Path) -> None:
+    """防止把绝对导入改成相对导入或包导出后绕过依赖检查。"""
+    package = tmp_path / "financeclaw"
+    (package / "bff").mkdir(parents=True)
+    (package / "agent_server").mkdir()
+    path = package / "bff/__init__.py"
+    path.write_text("from ..agent_server import agents\nfrom .. import agent_server\n")
+    assert "financeclaw.agent_server" in _imports(path, package)
+
+
+@pytest.mark.parametrize(
+    "root",
+    [
         "application",
-        ("financeclaw.interfaces", "financeclaw.infrastructure"),
-    )
-
-
-def test_deprecated_package_roots_are_absent() -> None:
-    """验证函数名所描述的业务场景符合预期。"""
-    # 准备 deprecated，供后续步骤使用。
-    deprecated = (
+        "modules",
+        "orchestration",
+        "infrastructure",
+        "interfaces",
         "agents",
         "api",
         "artifacts",
@@ -68,9 +102,12 @@ def test_deprecated_package_roots_are_absent() -> None:
         "security",
         "tools",
         "workflows",
-    )
-    # 继续执行前验证内部不变量。
-    assert all(not (PACKAGE / name).exists() for name in deprecated)
+    ],
+)
+def test_deprecated_package_roots_are_absent(root: str) -> None:
+    """废弃路径必须实际移除，避免兼容壳继续掩盖错误依赖。"""
+    assert not (PACKAGE / root).exists()
+    assert not (PACKAGE / "bootstrap.py").exists()
 
 
 def test_all_python_definitions_are_documented() -> None:

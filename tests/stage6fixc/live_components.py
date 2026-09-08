@@ -2,10 +2,9 @@
 
 from dataclasses import replace
 
-from financeclaw.bootstrap import build_components
-from financeclaw.orchestration.agents import AgentProfileCatalog
-from financeclaw.orchestration.agents.profiles import ToolRef
-from financeclaw.orchestration.agents.release import configuration_fingerprint
+from financeclaw.kernel.agents import AgentProfileCatalog, ToolRef
+from financeclaw.shared.releases.fingerprint import configuration_fingerprint
+from tests.support import build_components
 
 
 def build_live_components(settings):

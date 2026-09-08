@@ -6,11 +6,13 @@ from typing import Any
 import httpx
 import pytest
 
-from financeclaw.application import RunService, ServerRun, TargetResolver
-from financeclaw.bootstrap import build_components
-from financeclaw.infrastructure import FinanceClawSettings
-from financeclaw.interfaces.http import create_app
-from financeclaw.interfaces.http.auth import AuthenticatedPrincipal, StaticBearerAuthenticator
+from financeclaw.bff.http.app import create_app
+from financeclaw.bff.http.auth import AuthenticatedPrincipal, StaticBearerAuthenticator
+from financeclaw.coordination.application.run_service import RunService
+from financeclaw.coordination.application.target_resolver import TargetResolver
+from financeclaw.coordination.backends.ports.agent_server import ServerRun
+from financeclaw.shared.infrastructure.settings import FinanceClawSettings
+from tests.support import build_components
 
 
 class FakeAgentServerClient:

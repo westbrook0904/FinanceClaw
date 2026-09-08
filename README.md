@@ -89,10 +89,13 @@ Contracts 空壳和示例实现均已从生产构建删除。验证证据见
 
 ## 代码结构
 
-正式代码按企业级模块化单体组织：`interfaces` 承接 HTTP 协议，`application` 协调用例，
-`modules` 聚合领域模块，`orchestration` 承载 Agent/Graph/Tool 运行时，`infrastructure` 提供数据库、
-外部客户端、LLM、安全和观测适配，`kernel` 保存稳定共享契约，`operations` 只保存运维命令。
-完整职责及依赖规则见 [包结构设计](docs/architecture/package-layout.md)。
+正式代码按三个职责包组织：`bff` 承接 HTTP、飞书和会话入口；`coordination` 管理执行提交、
+委派、交互和恢复；`agent_server` 承载模型、Agent、Graph、Tool 与领域实现。
+`kernel` 保存跨服务契约，`shared` 保存发布声明、共享业务事实和基础设施，`operations` 与
+`evaluation` 提供运维和评测工具。完整职责及依赖规则见 [包结构设计](docs/architecture/package-layout.md)。
+
+分包是 Stage-8 的前置整理，当前 BFF 仍在进程内装配协调服务。独立 Coordinator Service、
+Webhook Ingress 和后台 Worker 尚待实施；BFF 与 Coordinator 暂时共用 `financeclaw_app`。
 
 ## 环境
 

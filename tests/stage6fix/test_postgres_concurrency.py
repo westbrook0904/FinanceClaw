@@ -11,14 +11,14 @@ from sqlalchemy import create_engine
 from sqlalchemy.engine import make_url
 from sqlalchemy.schema import CreateSchema, DropSchema
 
-from financeclaw.application.execution_service import agent_snapshot
-from financeclaw.bootstrap import build_components
-from financeclaw.infrastructure import FinanceClawSettings
-from financeclaw.infrastructure.database import normalize_database_url
-from financeclaw.kernel import ExecutionContext
-from financeclaw.modules.execution import ExecutionConflict
-from financeclaw.modules.interactions import InteractionRepository
+from financeclaw.coordination.interactions.repository import InteractionRepository
+from financeclaw.kernel.context import ExecutionContext
+from financeclaw.shared.execution_ledger.repository import ExecutionConflict
+from financeclaw.shared.execution_ledger.snapshots import agent_snapshot
+from financeclaw.shared.infrastructure.database import normalize_database_url
+from financeclaw.shared.infrastructure.settings import FinanceClawSettings
 from tests.stage6fix.test_execution_recovery import OWNER
+from tests.support import build_components
 
 pytestmark = pytest.mark.skipif(
     not os.environ.get("FINANCECLAW_TEST_POSTGRES_URL"),

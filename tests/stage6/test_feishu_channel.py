@@ -14,16 +14,17 @@ from lark_channel import Conversation, Identity, InboundMessage, TextContent
 from pydantic import SecretStr, ValidationError
 from sqlalchemy import create_engine, inspect
 
-from financeclaw.application import (
-    ConversationService,
+from financeclaw.bff.application.conversation_service import ConversationService
+from financeclaw.bff.application.feishu_channel_service import (
     FeishuChannelService,
     FeishuInboundMessage,
-    ServerRun,
 )
-from financeclaw.bootstrap import build_components
-from financeclaw.infrastructure import FinanceClawSettings
-from financeclaw.interfaces.channels import FeishuChannelAdapter
-from financeclaw.modules.conversation import SqlAlchemyConversationRepository
+from financeclaw.bff.channels.feishu import FeishuChannelAdapter
+from financeclaw.coordination.api import ConversationRunService
+from financeclaw.coordination.backends.ports.agent_server import ServerRun
+from financeclaw.shared.conversation.repository import SqlAlchemyConversationRepository
+from financeclaw.shared.infrastructure.settings import FinanceClawSettings
+from tests.support import build_components
 
 
 class _FakeAgentClient:
@@ -222,7 +223,11 @@ def _stack(tmp_path: Path, *, delay: float = 0.0):
     repository = components.conversation_repository
     assert isinstance(repository, SqlAlchemyConversationRepository)
     client = _FakeAgentClient(delay=delay)
-    conversations = ConversationService(client, repository, components.agent_profiles)
+    conversations = ConversationService(
+        repository,
+        components.agent_profiles,
+        runs=ConversationRunService(client, repository, components.agent_profiles),
+    )
     service = FeishuChannelService(
         conversations,
         app_id="cli_test",
