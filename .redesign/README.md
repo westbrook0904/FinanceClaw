@@ -70,8 +70,9 @@ PostgreSQL 保存协调责任，推进与后续增强直接在 coordination 内�
   - [Stage 7 设计审视与待确认决议](./stages/Stage-7-设计审视与待确认决议.md)
   - [Stage 7 实施与验证记录](./stages/Stage-7-实施与验证.md)
   - [Stage 7 文本解读热修复：移除解读 JSON 与逐条引用硬约束](./stages/Stage-7-文本解读热修复-实施与验证.md)
-- [Stage 8：Coordinator Service、Webhook 接入与显式委派协议（8.0 完成，8A 待实施）](./stages/Stage-8-Background-Run-Coordination-实施方案.md)
+- [Stage 8：Coordinator Service、Webhook 接入与显式委派协议（8.0 完成，8A 基础闭环已实现）](./stages/Stage-8-Background-Run-Coordination-实施方案.md)
 - [Stage 8 实施与验证：协议、事务与基础协调证据](./stages/Stage-8-实施与验证.md)
+- [Stage 8A 实施与验证：正式 Coordinator 与 LangGraph 闭环](./stages/Stage-8A-实施与验证.md)
 
 迁移材料：
 

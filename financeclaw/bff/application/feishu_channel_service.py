@@ -6,6 +6,7 @@ import asyncio
 import logging
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from typing import Protocol
 from uuid import NAMESPACE_URL, uuid5
 
@@ -15,8 +16,10 @@ from financeclaw.coordination.api import (
     InteractionConflict,
     InteractionNotFound,
 )
+from financeclaw.kernel.authorization import AuthorizationEvidence
 from financeclaw.kernel.responses import ConversationTurnRequest, StreamEvent
 from financeclaw.shared.conversation.repository import ConversationConflict, ConversationNotFound
+from financeclaw.shared.execution_ledger.repository import digest
 
 LOGGER = logging.getLogger(__name__)
 
@@ -322,6 +325,28 @@ class FeishuChannelService:
         """解析会话绑定、幂等开启 Turn，并交付流式回复。"""
         tenant_id = f"feishu:{message.tenant_key}"
         subject_id = f"feishu:{message.sender_open_id}"
+        authorization_kwargs = {}
+        if getattr(getattr(self.conversation_service, "runs", None), "coordinated", False):
+            current = datetime.now(UTC)
+            authorization_kwargs = {
+                "authorization": AuthorizationEvidence(
+                    source="feishu",
+                    source_hash=digest(
+                        [
+                            self.app_id,
+                            message.tenant_key,
+                            message.sender_open_id,
+                            message.chat_id,
+                            message.message_id,
+                        ]
+                    ),
+                    issued_at=current,
+                    expires_at=current
+                    + timedelta(
+                        seconds=self.conversation_service.runs.settings.coordinator_grant_seconds
+                    ),
+                )
+            }
         conversation = await self.conversation_service.get_or_create_channel_conversation(
             channel="feishu",
             app_id=self.app_id,
@@ -342,6 +367,7 @@ class FeishuChannelService:
                 scopes=self.scopes,
                 conversation_id=conversation.conversation_id,
                 idempotency_key=f"feishu:{self.app_id}:{message.message_id}",
+                **authorization_kwargs,
             )
             return await self._deliver_run(
                 accepted_response["root_run_id"],
@@ -350,10 +376,10 @@ class FeishuChannelService:
                 tenant_id=tenant_id,
                 subject_id=subject_id,
             )
-        if normalized.split(maxsplit=1)[0] == "/cancel":
+        if normalized.split(maxsplit=1)[0] in {"/cancel", "/authorize", "/revoke"}:
             parts = normalized.split()
             if len(parts) != 2:
-                raise InteractionConflict("取消命令必须携带一个明确的根任务 ID。")
+                raise InteractionConflict("命令必须携带一个明确的根任务 ID。")
             try:
                 turn = await asyncio.to_thread(
                     self.conversation_service.repository.get_turn_owned,
@@ -364,7 +390,33 @@ class FeishuChannelService:
             except ConversationNotFound as exc:
                 raise InteractionNotFound("root task not found") from exc
             if turn.conversation_id != conversation.conversation_id:
-                raise InteractionConflict("取消请求不属于当前单聊。")
+                raise InteractionConflict("任务不属于当前单聊。")
+            if parts[0] in {"/authorize", "/revoke"}:
+                if not authorization_kwargs:
+                    raise InteractionConflict("此任务未启用后台协调授权。")
+                if parts[0] == "/authorize":
+                    result = await self.conversation_service.runs.reauthorize(
+                        parts[1],
+                        tenant_id=tenant_id,
+                        subject_id=subject_id,
+                        scopes=self.scopes,
+                        **authorization_kwargs,
+                    )
+                else:
+                    result = await self.conversation_service.runs.revoke_authorization(
+                        parts[1],
+                        tenant_id=tenant_id,
+                        subject_id=subject_id,
+                    )
+                await self._send_plain(
+                    gateway,
+                    message,
+                    "已更新任务的有限后台授权。"
+                    if parts[0] == "/authorize"
+                    else "已撤销任务的后台授权。",
+                    suffix=parts[0][1:],
+                )
+                return result.status
             result = await self.conversation_service.cancel(
                 parts[1], tenant_id=tenant_id, subject_id=subject_id
             )
@@ -386,6 +438,7 @@ class FeishuChannelService:
             subject_id=subject_id,
             scopes=self.scopes,
             idempotency_key=f"feishu:{self.app_id}:{message.message_id}",
+            **authorization_kwargs,
         )
         return await self._deliver_run(
             accepted.run_id, message, gateway, tenant_id=tenant_id, subject_id=subject_id

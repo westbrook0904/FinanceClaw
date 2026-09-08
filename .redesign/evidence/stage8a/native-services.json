@@ -1,0 +1,133 @@
+{
+  "business_database": "PostgreSQL 16",
+  "worker_processes": 2,
+  "agent_runtime": "langgraph dev / runtime-inmem",
+  "frontend_observers": 0,
+  "versions": {
+    "langgraph-api": "0.13.3",
+    "langgraph": "1.2.11",
+    "langgraph-sdk": "0.4.4",
+    "sqlalchemy": "2.0.52",
+    "psycopg": "3.3.5"
+  },
+  "cases": {
+    "root": {
+      "status": "completed",
+      "operations": 1,
+      "backend_attempts": 1,
+      "callbacks_persisted": 1,
+      "journal_messages": 2,
+      "applied_continuations": 0,
+      "elapsed_seconds": 3.16
+    },
+    "child_question": {
+      "status": "completed",
+      "operations": 4,
+      "backend_attempts": 4,
+      "callbacks_persisted": 4,
+      "journal_messages": 2,
+      "applied_continuations": 2,
+      "elapsed_seconds": 7.88
+    },
+    "lost_callbacks": {
+      "status": "completed",
+      "operations": 4,
+      "backend_attempts": 4,
+      "callbacks_persisted": 0,
+      "journal_messages": 2,
+      "applied_continuations": 2,
+      "elapsed_seconds": 8.3
+    },
+    "lost_receipts": {
+      "status": "completed",
+      "operations": 4,
+      "backend_attempts": 4,
+      "callbacks_persisted": 4,
+      "journal_messages": 2,
+      "applied_continuations": 2,
+      "elapsed_seconds": 9.61
+    },
+    "worker_restart": {
+      "status": "completed",
+      "operations": 4,
+      "backend_attempts": 4,
+      "callbacks_persisted": 4,
+      "journal_messages": 2,
+      "applied_continuations": 2,
+      "elapsed_seconds": 8.07
+    },
+    "cancel": {
+      "status": "cancelled",
+      "operations": 2,
+      "backend_attempts": 2,
+      "callbacks_persisted": 2,
+      "journal_messages": 1,
+      "applied_continuations": 0,
+      "elapsed_seconds": 6.39
+    },
+    "workflow_approve": {
+      "status": "completed",
+      "operations": 4,
+      "backend_attempts": 4,
+      "callbacks_persisted": 4,
+      "journal_messages": 2,
+      "applied_continuations": 2,
+      "elapsed_seconds": 8.55
+    },
+    "workflow_reject": {
+      "status": "completed",
+      "operations": 4,
+      "backend_attempts": 4,
+      "callbacks_persisted": 4,
+      "journal_messages": 2,
+      "applied_continuations": 2,
+      "elapsed_seconds": 8.17
+    }
+  },
+  "source_digests": {
+    "financeclaw/coordination/__init__.py": "28d5243c272fde903b926a89486739937547362c9f0a27d459d0e25a60b5488d",
+    "financeclaw/coordination/api.py": "f56c66174a35ebf11cd0b490af833317567b11cec3777f21922637faea57f34d",
+    "financeclaw/coordination/application/__init__.py": "256ddd2586fd795a79b4e365c3429bdf9fa7c46266db44faeb1ad11e0b20533d",
+    "financeclaw/coordination/application/admission.py": "3147a4c58f8330901dac3f4a55e036b6d9813d86b640f7e7336ca9decb3f61de",
+    "financeclaw/coordination/application/conversation_runs.py": "0f0a571ffa0a30fa09d1ec6db820d1aad4f898bb75842575d76a5c5a4f5f8c67",
+    "financeclaw/coordination/application/coordinator.py": "6fde4ba1bca996cbf280b767ea593c520467ad886d0ccde6818db9c9596820a5",
+    "financeclaw/coordination/application/decisions.py": "e14ad2a5e4e81bc3ebcfd70ad67204a489b62492c997bb6210e0a4b5e2d20bbc",
+    "financeclaw/coordination/application/releases.py": "1afe6549ae4a828a4db453a2def8bc59df7fd4dfbce272022029dcd8ac250384",
+    "financeclaw/coordination/application/run_observation.py": "64511a24b71ab4538b5cde93e604afb769c911d768e9572fb9bb358ca30c82da",
+    "financeclaw/coordination/application/run_service.py": "b1a9636d605b4d86bf897e6a841975108111906ba12f29e82479696cd3a1e3e2",
+    "financeclaw/coordination/application/streaming.py": "ae480da776c4a145ce29c623290b1f04101b494d9850309d60da3a5a474abade",
+    "financeclaw/coordination/application/target_resolver.py": "ed8999db10891a114ce95ce33e4dd04505d7ac706147e3b35e10d317365efc14",
+    "financeclaw/coordination/application/transitions.py": "803ef882b9f531d65a66bf85517a464075dd0d2d16085bc37fc04bfe86c3fc63",
+    "financeclaw/coordination/backends/__init__.py": "bc88a848f70426b3861a8b466f493c1995367e6481caa1e321a3a7a1f01e6a7c",
+    "financeclaw/coordination/backends/langgraph.py": "ff945a3a3df8677150304972d1b51084128be55f06197bdab90a0054651a5b32",
+    "financeclaw/coordination/backends/langgraph_backend.py": "f2f1078bed7c3488bcabda80f3470a149f85bd54ac7fd20d34c504e55f503bd3",
+    "financeclaw/coordination/backends/langgraph_protocol.py": "08c668f56013547d084c2cf9500c4f62098d12e9d5b5935b3abc8c16e9bd2a7e",
+    "financeclaw/coordination/backends/ports/__init__.py": "cd169910ec0a9019943f7d5990e90f4bed053e316b3aca2bc6171d14a021ddce",
+    "financeclaw/coordination/backends/ports/agent_server.py": "a5198e9214b424316b10bf278d83c4a199b52dd2c685a55ca3335b11ed0d3c83",
+    "financeclaw/coordination/backends/ports/backend.py": "2b87ddf6db50717aa5e4471be01692fdf52cc80c9dd2466f8664ca8195da737e",
+    "financeclaw/coordination/bootstrap.py": "1ff33643afb1e6706a571cde720da857d1c02ddeb430fc4dbd1cd8cb2be2561c",
+    "financeclaw/coordination/delegation/__init__.py": "694b71357495413a71de331b26d5f44a3f5a1544b314e5aa5b6504001a866d78",
+    "financeclaw/coordination/delegation/context.py": "6852d39d48175b8191879131d0f6d36043d2b1d1fc31575576e1ca8b00248440",
+    "financeclaw/coordination/delegation/repository.py": "2bdc208f073dd86ff255d9a7f500df615c9e0b5082a42e364fa50c645fa48a86",
+    "financeclaw/coordination/delegation/service.py": "0df6306e057dda541f4d4dd20ee8e09dea79597caa6efbe7d326b52d4ed88b98",
+    "financeclaw/coordination/execution/__init__.py": "1d20bc064fdf80f64fc316351f61c97640ad5f71b29c48e9c2aa02683dd018be",
+    "financeclaw/coordination/execution/service.py": "d4cb3688bcfed680c90a1e2be2ec093847807c91b6837ce4c9d4a9a7c0a0485d",
+    "financeclaw/coordination/ingress/__init__.py": "314e7009ff1930f9ec183e21f5520bc801a3e186412798a566eb8597bcaa7333",
+    "financeclaw/coordination/ingress/app.py": "4539c9f62538c0dcfec1c11d19d09db49808a1caa4ca15ab344ef961c0c2242a",
+    "financeclaw/coordination/interactions/__init__.py": "4e9aba522f60606e7960794767e76545d7ca14e33a6745b219c4ff4872f9c8c6",
+    "financeclaw/coordination/interactions/repository.py": "5851ae959050c636030a8c8c14fd704e410cf36be8b22e6219dc07fab6546222",
+    "financeclaw/coordination/interactions/service.py": "2046b3b7315153548edadfdead7fe31cbc053dbb278959ffa650e3f752ef07b1",
+    "financeclaw/coordination/repository.py": "52f99a65df47f07ef30980b5e3da0977e7a32dbea1a61117999a7e16edf33d9f",
+    "financeclaw/coordination/worker/__init__.py": "13624eada5c146119bf014f2bc4ac7217d75704cd1b88e2b47cd6068884325a0",
+    "financeclaw/coordination/worker/__main__.py": "86fb7c9263c2d0a880f2dabc0472bf38fe12ecc49925451ccb9f490b39569e3b",
+    "financeclaw/coordination/workflows/__init__.py": "590ededdadcd1d450868a26e5974fa1ae4c2e2f44b10eb629bb9d31c8f1a30a3",
+    "financeclaw/coordination/workflows/repository.py": "f91e115eff3a4c699ae59a2566a836eebd94da9577c84e17469369d592283f4d",
+    "financeclaw/coordination/workflows/service.py": "be68ad5bb230275de9b1af02c40c3a54094a4a489c0889da699f3e97d327470e",
+    "experiments/stage8a/__init__.py": "74d0e8c9dce50b70ee6df018fd3c30e358febdaec2c7ee532888565dab34a048",
+    "experiments/stage8a/docker_environment.py": "56b2565a5958b416e75af3c60c613b61239f07ce5ebbb4f7aa1c20c61ec272ba",
+    "experiments/stage8a/environment.py": "dbf5325b0f132aab9e63ac22e4fb49b4263a6623fd013a71559877db6b95935d",
+    "experiments/stage8a/graphs.py": "6840f06113e5290f1edc5c29e81d4d6abb3c2ec01aa824acaa8e44bb7a7c904b",
+    "experiments/stage8a/receipt_worker.py": "7d37ba55277cc948615e515ba2e8a77b70d34e0722a318587cd5b7d498d49aa3",
+    "experiments/stage8a/run.py": "5abdd70be22f45f71f1d43d16fde3c1bca9f9c249621ee691208e1ce3277ede2"
+  }
+}

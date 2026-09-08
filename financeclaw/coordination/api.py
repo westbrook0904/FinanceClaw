@@ -1,5 +1,8 @@
 """BFF 可调用的 Coordination 应用入口；内部 backend、表与仓储不在此导出。"""
 
+from financeclaw.coordination.application.admission import (
+    CoordinatorAdmission as CoordinatorAdmission,
+)
 from financeclaw.coordination.application.conversation_runs import (
     ApprovalExpired as ApprovalExpired,
 )

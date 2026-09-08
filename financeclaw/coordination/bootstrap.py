@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 from financeclaw.coordination.api import (
     ConversationRunService,
+    CoordinatorAdmission,
     DelegationService,
     RunService,
     TargetResolver,
@@ -28,7 +29,9 @@ class CoordinationServices:
     runs: RunService
     workflows: WorkflowService
     delegations: DelegationService
-    conversations: ConversationRunService
+    conversations: ConversationRunService | CoordinatorAdmission
+    background_repository: object | None = None
+    background_releases: object | None = None
 
 
 def build_coordination(
@@ -78,6 +81,20 @@ def build_coordination(
         summary_service=resources.summary_service,
         approval_timeout_seconds=settings.approval_timeout_seconds,
     )
+    background_repository = background_releases = None
+    if settings.coordinator_enabled:
+        from financeclaw.coordination.application.releases import CoordinationReleases
+        from financeclaw.coordination.repository import CoordinatorRepository
+
+        background_repository = CoordinatorRepository(
+            resources.database.session_factory,
+            backend_instance_id=settings.coordinator_backend_instance_id,
+        )
+        background_repository.require_schema()
+        background_releases = CoordinationReleases(
+            releases.agent_profiles, releases.workflow_catalog, delegation_service
+        )
+        conversations = CoordinatorAdmission(background_repository, background_releases, settings)
     return CoordinationServices(
         resources,
         releases,
@@ -86,4 +103,28 @@ def build_coordination(
         workflow_service,
         delegation_service,
         conversations,
+        background_repository,
+        background_releases,
     )
+
+
+def build_coordinator(settings: FinanceClawSettings | None = None):
+    """独立 Worker 的装配入口；不导入 BFF，不启动渠道或模型。"""
+    from financeclaw.coordination.application.coordinator import Coordinator
+    from financeclaw.coordination.backends.langgraph_backend import LangGraphBackend
+
+    settings = settings or FinanceClawSettings()
+    if not settings.coordinator_enabled:
+        raise RuntimeError("coordinator_enabled must be true for the Coordinator role")
+    services = build_coordination(settings)
+    backend = LangGraphBackend(
+        settings, services.background_repository, services.background_releases
+    )
+    coordinator = Coordinator(
+        services.background_repository,
+        services.background_releases,
+        backend,
+        settings,
+        artifacts=services.resources.artifact_service,
+    )
+    return services, coordinator

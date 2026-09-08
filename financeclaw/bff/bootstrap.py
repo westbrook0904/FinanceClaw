@@ -139,6 +139,8 @@ def create_default_app(settings: FinanceClawSettings | None = None) -> FastAPI:
         "artifact_store": artifact_ready,
         "agent_server": client.health,
     }
+    if getattr(conversation_service.runs, "coordinated", False):
+        readiness_checks["coordinator"] = conversation_service.runs.healthy
     if feishu_channel is not None:
         startup_hooks = (feishu_channel.start,)
         shutdown_hooks.append(feishu_channel.stop)

@@ -4,7 +4,7 @@ import asyncio
 from collections.abc import AsyncIterator
 from typing import Any
 
-from financeclaw.coordination.api import ConversationRunService
+from financeclaw.coordination.api import ConversationRunService, CoordinatorAdmission
 from financeclaw.kernel.agents import AgentProfileCatalog
 from financeclaw.kernel.responses import (
     ApprovalDecision,
@@ -29,7 +29,7 @@ class ConversationService:
         repository: SqlAlchemyConversationRepository,
         agent_profiles: AgentProfileCatalog,
         *,
-        runs: ConversationRunService,
+        runs: ConversationRunService | CoordinatorAdmission,
     ) -> None:
         """复用 Journal 与发布目录，并显式注入同库的运行协调服务。"""
         self.repository = repository
@@ -189,6 +189,7 @@ class ConversationService:
         subject_id: str,
         scopes: frozenset[str],
         idempotency_key: str,
+        authorization=None,
     ) -> RunAccepted:
         """通过 Coordination 的公开会话运行接口处理本次请求。"""
         return await self.runs.start_turn(
@@ -198,6 +199,9 @@ class ConversationService:
             subject_id=subject_id,
             scopes=scopes,
             idempotency_key=idempotency_key,
+            **(
+                {"authorization": authorization} if getattr(self.runs, "coordinated", False) else {}
+            ),
         )
 
     async def status(
@@ -228,10 +232,18 @@ class ConversationService:
         tenant_id: str,
         subject_id: str,
         scopes: frozenset[str],
+        authorization=None,
     ) -> RunStatusResponse:
         """通过 Coordination 的公开会话运行接口处理本次请求。"""
         return await self.runs.resume(
-            run_id, decision, tenant_id=tenant_id, subject_id=subject_id, scopes=scopes
+            run_id,
+            decision,
+            tenant_id=tenant_id,
+            subject_id=subject_id,
+            scopes=scopes,
+            **(
+                {"authorization": authorization} if getattr(self.runs, "coordinated", False) else {}
+            ),
         )
 
     async def cancel(self, run_id: str, *, tenant_id: str, subject_id: str) -> RunStatusResponse:

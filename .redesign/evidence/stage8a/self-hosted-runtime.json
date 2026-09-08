@@ -1,0 +1,13 @@
+{
+  "date": "2026-09-08",
+  "image": "financeclaw-langgraph-api:latest",
+  "image_id_prefix": "2c4c64b59673",
+  "langgraph_api": "0.13.4",
+  "runtime": "PostgreSQL / Redis",
+  "status": "awaiting_explicit_credential_authorization",
+  "verified": ["isolated PostgreSQL and Redis connectivity", "native database migrations"],
+  "unverified": ["native run webhooks", "full root-child-root coordination on this runtime"],
+  "startup_failure": "License verification failed without a valid LangSmith API key or license",
+  "approval_review": "Rejected injecting existing local license credentials into the selected container without explicit user authorization; container may communicate externally",
+  "contains_credentials_or_raw_payloads": false
+}

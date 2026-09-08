@@ -108,6 +108,7 @@ def create_app(
         配置好路由、错误处理、可观测性与 lifespan 的 FastAPI 应用。
 
     """
+    background = bool(getattr(getattr(conversation_service, "runs", None), "coordinated", False))
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
@@ -119,12 +120,12 @@ def create_app(
         """
         # 1. 启动补偿：依次对 Workflow、委派与会话做未完成任务对账；
         #    失败仅记录日志并延后重试，不阻断进程启动。
-        if workflow_service is not None:
+        if workflow_service is not None and not background:
             try:
                 await workflow_service.reconcile_incomplete()
             except Exception:
                 LOGGER.exception("workflow reconciliation deferred after startup failure")
-        if delegation_service is not None:
+        if delegation_service is not None and not background:
             try:
                 await delegation_service.reconcile_incomplete()
             except Exception:
@@ -213,6 +214,7 @@ def create_app(
             subject_id=principal.subject_id,
             scopes=principal.scopes,
             idempotency_key=idempotency_key,
+            **({"authorization": principal.authorization} if background else {}),
         )
 
     @app.get("/health")
@@ -289,6 +291,10 @@ def create_app(
         """
         # 1. 鉴权：直连入口只对内部服务身份开放。
         _require_internal_invocation(principal)
+        if background and (
+            request.conversation_id is None or isinstance(request.target, WorkflowTarget)
+        ):
+            raise HTTPException(409, "Coordinator requires a conversation turn")
         # 2. 委派用例：按目标类型路由到 Workflow、会话轮次或通用 Run 通道。
         if isinstance(request.target, WorkflowTarget):
             if request.conversation_id is not None:
@@ -314,6 +320,7 @@ def create_app(
                 subject_id=principal.subject_id,
                 scopes=principal.scopes,
                 idempotency_key=idempotency_key,
+                **({"authorization": principal.authorization} if background else {}),
             )
         return await run_service.start(
             request,
@@ -358,6 +365,8 @@ def create_app(
         """
         # 1. 鉴权：直连入口只对内部服务身份开放。
         _require_internal_invocation(principal)
+        if background:
+            raise HTTPException(409, "use a workflow delegation inside a conversation turn")
         # 2. 委派用例：组装目标并交由 WorkflowService 受理。
         if workflow_service is None:
             raise RuntimeError("workflow service is not configured")
@@ -405,6 +414,8 @@ def create_app(
         """
         # 1. 鉴权：直连入口只对内部服务身份开放。
         _require_internal_invocation(principal)
+        if background:
+            raise HTTPException(409, "use a tool invocation inside a conversation turn")
         # 2. 委派用例：把工具目标包装为 RunRequest 后交由 RunService 受理。
         run_request = RunRequest(
             message=f"Direct invocation of {tool_id}",
@@ -441,6 +452,10 @@ def create_app(
             RunNotFound: 全部通道都查不到该 ID（经错误映射返回 404）。
 
         """
+        if background:
+            return await conversation_service.status(
+                run_id, tenant_id=principal.tenant_id, subject_id=principal.subject_id
+            )
         try:
             # 1. 先查通用 Run 通道。
             return await run_service.status(
@@ -481,12 +496,44 @@ def create_app(
                 )
             raise
 
+    @app.post("/v1/runs/{run_id}/authorization", response_model=RunStatusResponse, status_code=202)
+    async def authorize_run(
+        run_id: str, principal: Annotated[AuthenticatedPrincipal, Depends(principal_dep)]
+    ):
+        """原主体显式重新授权，范围与期限仍受原快照和当次认证约束。"""
+        if not background:
+            raise HTTPException(409, "run is not managed by Coordinator")
+        return await conversation_service.runs.reauthorize(
+            run_id,
+            tenant_id=principal.tenant_id,
+            subject_id=principal.subject_id,
+            scopes=principal.scopes,
+            authorization=principal.authorization,
+        )
+
+    @app.delete(
+        "/v1/runs/{run_id}/authorization", response_model=RunStatusResponse, status_code=202
+    )
+    async def revoke_run_authorization(
+        run_id: str, principal: Annotated[AuthenticatedPrincipal, Depends(principal_dep)]
+    ):
+        """原主体显式撤销本地后台授权。"""
+        if not background:
+            raise HTTPException(409, "run is not managed by Coordinator")
+        return await conversation_service.runs.revoke_authorization(
+            run_id, tenant_id=principal.tenant_id, subject_id=principal.subject_id
+        )
+
     @app.post("/v1/runs/{run_id}/cancel", response_model=RunStatusResponse)
     async def cancel_run(
         run_id: str,
         principal: Annotated[AuthenticatedPrincipal, Depends(principal_dep)],
     ) -> RunStatusResponse:
         """取消拥有的根会话或独立 Workflow；子任务须通过根运行统一停止。"""
+        if background:
+            return await conversation_service.cancel(
+                run_id, tenant_id=principal.tenant_id, subject_id=principal.subject_id
+            )
         if conversation_service is not None:
             try:
                 return await conversation_service.cancel(
@@ -523,6 +570,15 @@ def create_app(
             RunNotFound: 全部通道都查不到该运行（经错误映射返回 404）。
 
         """
+        if background:
+            return await conversation_service.resume(
+                run_id,
+                decision,
+                tenant_id=principal.tenant_id,
+                subject_id=principal.subject_id,
+                scopes=principal.scopes,
+                authorization=principal.authorization,
+            )
         try:
             # 1. 先在通用 Run 通道恢复。
             return await run_service.resume(
@@ -576,6 +632,17 @@ def create_app(
             RunNotFound: 全部通道都查不到该运行（经错误映射返回 404）。
 
         """
+        if background:
+            await conversation_service.status(
+                run_id, tenant_id=principal.tenant_id, subject_id=principal.subject_id
+            )
+            events = conversation_service.stream(
+                run_id,
+                tenant_id=principal.tenant_id,
+                subject_id=principal.subject_id,
+                scopes=principal.scopes,
+            )
+            return StreamingResponse(project_sse(events), media_type="text/event-stream")
         try:
             # 1. 归属校验并接入通用 Run 通道的事件流。
             run_service.assert_owned(
@@ -691,6 +758,7 @@ def create_app(
                 subject_id=principal.subject_id,
                 scopes=principal.scopes,
                 idempotency_key=idempotency_key,
+                **({"authorization": principal.authorization} if background else {}),
             )
             # 2. 回执完整性兜底：会话 ID 与轮次 ID 必须齐备才对外返回。
             if accepted.conversation_id is None or accepted.turn_id is None:

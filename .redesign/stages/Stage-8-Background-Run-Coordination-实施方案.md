@@ -1,6 +1,6 @@
 # Stage 8：Coordinator Service、Webhook 接入与显式委派协议实施方案
 
-状态：8.0 协议与技术验证完成；PostgreSQL 持久化，coordination 自行推进；8A／8B／8C 待实施验收。
+状态：8.0 完成；8A 正式服务基础闭环已实现，PostgreSQL／原生 LangGraph 验收见 [8A 记录](Stage-8A-实施与验证.md)；8B／8C 待实施。
 
 初版日期：2026-09-07；重写日期：2026-09-08；方案修订：4（基础能力优先，由 coordination 自主演进）。
 
@@ -788,4 +788,6 @@ BFF 与 Coordinator 共享 `financeclaw_app`。
 
 8.0 已交付协议、共享事务方法与隔离验证，正式推进能力由 coordination 基于 PostgreSQL 实现。
 `Stage-8-实施与验证.md` 记录实际改动、命令、证据、能力缺口及发布状态。
-当前未接入产品后台 Worker，也未新增正式数据库迁移；下一阶段从 8A 开始。
+8.0 的历史证据保持不变。8A 已新增正式迁移 `0009_stage8a`，并提供独立 Ingress／Worker、
+同库受理、显式用户决定与纯读查询；实现范围、真实服务版本和剩余发布门禁见
+[Stage-8A 实施与验证](Stage-8A-实施与验证.md)。

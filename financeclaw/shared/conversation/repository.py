@@ -733,7 +733,9 @@ class SqlAlchemyConversationRepository:
                 raise ConversationNotFound("turn was not found for authenticated owner")
             return _turn(row)
 
-    def update_turn_status(self, run_id: str, status: str) -> ConversationTurn:
+    def update_turn_status(
+        self, run_id: str, status: str, *, session: Session | None = None
+    ) -> ConversationTurn:
         """按 run_id 更新 turn 状态，到达终态时补记完成时间。
 
         使用场景：Agent Server 执行过程中推进状态机；COMPLETED/FAILED 视为终态。
@@ -741,6 +743,8 @@ class SqlAlchemyConversationRepository:
         Args:
             run_id: 平台运行标识。
             status: 目标状态字符串（经 _normalize_turn_status 归一化）。
+
+            session: 外层组合事务；提供时不另开连接或自行提交。
 
         Returns:
             ConversationTurn: 更新后的 turn 记录。
@@ -750,7 +754,7 @@ class SqlAlchemyConversationRepository:
 
         """
         normalized = _normalize_turn_status(status)
-        with self._sessions.begin() as session:
+        with nullcontext(session) if session is not None else self._sessions.begin() as session:
             session.execute(
                 update(ConversationTurnRow)
                 .where(
@@ -859,9 +863,9 @@ class SqlAlchemyConversationRepository:
             session.add(row)
         return _message(row)
 
-    def confirm_cancel(self, run_id: str) -> ConversationTurn:
+    def confirm_cancel(self, run_id: str, *, session: Session | None = None) -> ConversationTurn:
         """全树停止后结束 Turn 并换干净线程；旧检查点保留，禁止意外再执行。"""
-        with self._sessions.begin() as session:
+        with nullcontext(session) if session is not None else self._sessions.begin() as session:
             session.execute(
                 update(ConversationRow)
                 .where(

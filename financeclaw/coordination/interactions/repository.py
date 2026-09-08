@@ -1,9 +1,11 @@
 """根任务树串行的交互事实：决定、审批镜像、操作准备及审计同事务提交。"""
 
+from contextlib import nullcontext
 from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import func, select, update
+from sqlalchemy.orm import Session
 
 from financeclaw.shared.audit.models import AuditEventType, AuditRecord
 from financeclaw.shared.audit.repository import SqlAlchemyAuditRepository
@@ -129,11 +131,22 @@ class InteractionRepository:
         expires_at: datetime,
         now: datetime,
         checkpoint_id: str | None = None,
+        session: Session | None = None,
+        identifier: str | None = None,
     ) -> dict[str, Any]:
         """同原生实例幂等；只有实际新位置才替换旧请求，不把轮询当作续期。"""
-        execution = self.execution.get(owner_run_id)
+        execution = (
+            self.execution.get(owner_run_id)
+            if session is None
+            else {
+                c.name: getattr(session.get(RunExecutionRow, owner_run_id), c.name)
+                for c in RunExecutionRow.__table__.columns
+            }
+        )
         context = snapshot_context(execution["snapshot"])
-        identifier = "interaction-" + digest([owner_run_id, server_run_id, interrupt_id])
+        identifier = identifier or "interaction-" + digest(
+            [owner_run_id, server_run_id, interrupt_id]
+        )
         request_hash = digest(
             {
                 "source": source,
@@ -143,7 +156,7 @@ class InteractionRepository:
                 "request": request,
             }
         )
-        with self.sessions.begin() as session:
+        with nullcontext(session) if session is not None else self.sessions.begin() as session:
             root = self._lock(session, execution["root_run_id"])
             owner = session.get(RunExecutionRow, owner_run_id)
             if owner.server_run_id != server_run_id:
@@ -213,13 +226,22 @@ class InteractionRepository:
             return export(row)
 
     def get_owned(
-        self, identifier: str, tenant_id: str, subject_id: str, *, now: datetime
+        self,
+        identifier: str,
+        tenant_id: str,
+        subject_id: str,
+        *,
+        now: datetime,
+        session: Session | None = None,
+        read_only: bool = False,
     ) -> dict[str, Any]:
         """按归属查询并惰性关闭过期窗口，不宣称远程已经停止。"""
-        with self.sessions() as session:
+        with nullcontext(session) if session is not None else self.sessions() as session:
             row = session.get(PendingInteractionRow, identifier)
             if row is None or (row.tenant_id, row.subject_id) != (tenant_id, subject_id):
                 raise InteractionNotFound("interaction not found")
+            if read_only:
+                return export(row)
             root_id = row.root_run_id
         with self.sessions.begin() as session:
             root = self._lock(session, root_id)
@@ -253,11 +275,14 @@ class InteractionRepository:
         response: dict[str, Any],
         operation: dict[str, Any],
         now: datetime,
+        session: Session | None = None,
     ) -> dict[str, Any]:
         """响应幂等身份、Schema 等在服务层校验；此处再次 CAS 验证时效和原生位置。"""
-        current = self.get_owned(identifier, tenant_id, subject_id, now=now)
+        current = self.get_owned(
+            identifier, tenant_id, subject_id, now=now, session=session, read_only=True
+        )
         fingerprint = digest(response)
-        with self.sessions.begin() as session:
+        with nullcontext(session) if session is not None else self.sessions.begin() as session:
             root = self._lock(session, current["root_run_id"])
             row = session.get(PendingInteractionRow, identifier)
             if row.revision != revision:
@@ -326,9 +351,11 @@ class InteractionRepository:
             self._event(session, row, AuditEventType.INTERACTION_DECIDED, now)
             return export(row)
 
-    def cancel_tree(self, root_run_id: str, *, now: datetime) -> None:
+    def cancel_tree(
+        self, root_run_id: str, *, now: datetime, session: Session | None = None
+    ) -> None:
         """在封闭根执行的同一事务关闭待交互窗口；远程停止仍由取消协调器确认。"""
-        with self.sessions.begin() as session:
+        with nullcontext(session) if session is not None else self.sessions.begin() as session:
             self._lock(session, root_run_id)
             session.execute(
                 update(RunExecutionRow)

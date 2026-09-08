@@ -94,8 +94,10 @@ Contracts 空壳和示例实现均已从生产构建删除。验证证据见
 `kernel` 保存跨服务契约，`shared` 保存发布声明、共享业务事实和基础设施，`operations` 与
 `evaluation` 提供运维和评测工具。完整职责及依赖规则见 [包结构设计](docs/architecture/package-layout.md)。
 
-分包是 Stage-8 的前置整理，当前 BFF 仍在进程内装配协调服务。独立 Coordinator Service、
-Webhook Ingress 和后台 Worker 尚待实施；BFF 与 Coordinator 暂时共用 `financeclaw_app`。
+Stage-8A 提供独立的 Webhook Ingress 与 Coordinator Worker；启用协调模式后，BFF 原子受理、
+GET／SSE 只读，后台独立完成 root → child → root。BFF 与 Coordinator 暂时共用
+`financeclaw_app`。默认不开启旧根接管；启动、授权与验收边界见
+[Coordinator 运维说明](docs/operations/coordinator.md)。
 
 ## 环境
 

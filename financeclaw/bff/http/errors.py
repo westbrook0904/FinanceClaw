@@ -53,6 +53,17 @@ def install_error_handlers(app: FastAPI) -> None:
             status_code=409, content={"code": "EXECUTION_CONFLICT", "message": str(exc)}
         )
 
+    @app.exception_handler(PermissionError)
+    async def authorization_denied(_request: Request, _exc: PermissionError) -> JSONResponse:
+        """后台受理缺少执行或交互权限时拒绝，不输出任何请求载荷。"""
+        return JSONResponse(
+            status_code=403,
+            content={
+                "code": "AUTHORIZATION_DENIED",
+                "message": "required authorization is missing",
+            },
+        )
+
     @app.exception_handler(TargetResolutionError)
     async def target_error(_request: Request, exc: TargetResolutionError) -> JSONResponse:
         """目标解析失败（目录中无此工具/流程/Agent）映射为 404。"""

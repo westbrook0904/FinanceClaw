@@ -8,6 +8,7 @@ child 运行的租户隔离查询。
 from __future__ import annotations
 
 import json
+from contextlib import nullcontext
 from datetime import UTC, datetime
 from hashlib import sha256
 from typing import Any, Protocol
@@ -278,6 +279,7 @@ class SqlAlchemyDelegationRepository:
         target_version: str,
         arguments: dict[str, Any],
         execution_snapshot: dict[str, Any] | None = None,
+        session: Session | None = None,
     ) -> tuple[DelegationRecord, bool]:
         """幂等受理委派请求，返回记录与是否新建的标记。
 
@@ -293,6 +295,8 @@ class SqlAlchemyDelegationRepository:
             target_version: 目标版本号。
             arguments: 委派参数字典。
             execution_snapshot: 首次受理冻结的授权、发布和引用内容。
+
+            session: 外层组合事务；提供时不另开连接或自行提交。
 
         Returns:
             ``(委派记录, 是否新建)`` 二元组；重复受理同一请求时返回
@@ -316,7 +320,7 @@ class SqlAlchemyDelegationRepository:
                 "arguments": arguments,
             }
         )
-        with self._sessions.begin() as session:
+        with nullcontext(session) if session is not None else self._sessions.begin() as session:
             # 2. 检查 handoff ID 是否已被占用。
             from financeclaw.shared.conversation.tables import ConversationRow
 
@@ -371,11 +375,15 @@ class SqlAlchemyDelegationRepository:
             session.add(row)
         return _record(row), True
 
-    def prepare_agent_child(self, delegation_id: str) -> DelegationRecord:
+    def prepare_agent_child(
+        self, delegation_id: str, *, session: Session | None = None
+    ) -> DelegationRecord:
         """为 Agent 委派生成本地 child 身份并把状态推进到 PENDING。
 
         Args:
             delegation_id: 委派唯一标识。
+
+            session: 外层组合事务；提供时不另开连接或自行提交。
 
         Returns:
             已分配 child_run_id 与 child_thread_id 的最新委派记录。
@@ -385,7 +393,7 @@ class SqlAlchemyDelegationRepository:
             DelegationConflict: 非 Agent 类委派不允许自备 child run。
 
         """
-        with self._sessions.begin() as session:
+        with nullcontext(session) if session is not None else self._sessions.begin() as session:
             session.execute(
                 update(DelegationRow)
                 .where(
@@ -416,6 +424,7 @@ class SqlAlchemyDelegationRepository:
         child_thread_id: str,
         child_server_run_id: str | None,
         status: DelegationStatus,
+        session: Session | None = None,
     ) -> DelegationRecord:
         """把 child run/thread（及可选 server run）绑定到委派并更新状态。
 
@@ -426,6 +435,8 @@ class SqlAlchemyDelegationRepository:
             child_server_run_id: agent server 侧运行 ID，可为 None 后补。
             status: 绑定后要写入的委派状态（如 RUNNING 或 INTERRUPTED）。
 
+            session: 外层组合事务；提供时不另开连接或自行提交。
+
         Returns:
             绑定完成后的最新委派记录。
 
@@ -435,7 +446,7 @@ class SqlAlchemyDelegationRepository:
                 server run。
 
         """
-        with self._sessions.begin() as session:
+        with nullcontext(session) if session is not None else self._sessions.begin() as session:
             session.execute(
                 update(DelegationRow)
                 .where(
@@ -476,6 +487,7 @@ class SqlAlchemyDelegationRepository:
         *,
         output_payload: dict[str, Any] | None = None,
         error: str | None = None,
+        session: Session | None = None,
     ) -> tuple[DelegationRecord, bool]:
         """推进委派状态并按需记录结果、错误与时间戳。
 
@@ -484,6 +496,8 @@ class SqlAlchemyDelegationRepository:
             status: 目标状态。
             output_payload: 终态输出载荷，None 表示不改写既有值。
             error: 失败或被拒原因，None 表示不改写既有值。
+
+            session: 外层组合事务；提供时不另开连接或自行提交。
 
         Returns:
             ``(最新记录, 状态是否发生变化)`` 二元组。
@@ -494,7 +508,7 @@ class SqlAlchemyDelegationRepository:
                 （交付标记 DELIVERED 除外）。
 
         """
-        with self._sessions.begin() as session:
+        with nullcontext(session) if session is not None else self._sessions.begin() as session:
             # 子状态轮询与父交付会并发；先锁行，再决定是否允许推进。
             session.execute(
                 update(DelegationRow)

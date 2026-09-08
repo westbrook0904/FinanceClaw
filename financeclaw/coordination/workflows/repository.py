@@ -6,6 +6,7 @@ BFF 借助本仓储永久保存业务 run、thread 与 server run 的映射、�
 
 from __future__ import annotations
 
+from contextlib import nullcontext
 from datetime import UTC, datetime
 from typing import Any, Protocol
 from uuid import uuid4
@@ -241,6 +242,7 @@ class SqlAlchemyWorkflowRepository:
         arguments_hash: str,
         request_fingerprint: str,
         input_payload: dict[str, Any],
+        session: Session | None = None,
     ) -> tuple[WorkflowRun, bool]:
         """按幂等键创建运行登记，或在指纹一致时复用既有运行。
 
@@ -251,7 +253,7 @@ class SqlAlchemyWorkflowRepository:
             WorkflowIdempotencyConflict: 幂等键已被不同指纹或主体使用。
 
         """
-        with self._sessions.begin() as session:
+        with nullcontext(session) if session is not None else self._sessions.begin() as session:
             # 先 INSERT 再读取唯一键胜出者，避免并发首次受理的 read/write 升锁竞争。
             now = datetime.now(UTC)
             row = WorkflowRunRow(
@@ -300,7 +302,9 @@ class SqlAlchemyWorkflowRepository:
                 return _run(existing), True
         return _run(row), False
 
-    def bind_server_run(self, run_id: str, server_run_id: str, status: str) -> WorkflowRun:
+    def bind_server_run(
+        self, run_id: str, server_run_id: str, status: str, *, session: Session | None = None
+    ) -> WorkflowRun:
         """把运行绑定到 Agent Server 的 server run 并归一化同步状态。
 
         Raises:
@@ -308,7 +312,7 @@ class SqlAlchemyWorkflowRepository:
             WorkflowConflict: 已绑定到其他 server run。
 
         """
-        with self._sessions.begin() as session:
+        with nullcontext(session) if session is not None else self._sessions.begin() as session:
             session.execute(
                 update(WorkflowRunRow)
                 .where(
@@ -359,6 +363,7 @@ class SqlAlchemyWorkflowRepository:
         *,
         output_payload: dict[str, Any] | None = None,
         artifact_refs: tuple[str, ...] = (),
+        session: Session | None = None,
     ) -> tuple[WorkflowRun, bool]:
         """更新运行状态，可选写入输出与制品引用。
 
@@ -370,7 +375,7 @@ class SqlAlchemyWorkflowRepository:
             WorkflowConflict: 终态被改写为其他状态。
 
         """
-        with self._sessions.begin() as session:
+        with nullcontext(session) if session is not None else self._sessions.begin() as session:
             session.execute(
                 update(WorkflowRunRow)
                 .where(
@@ -426,7 +431,9 @@ class SqlAlchemyWorkflowRepository:
         with self._sessions() as session:
             return tuple(_run(row) for row in session.scalars(statement))
 
-    def ensure_approval(self, approval: WorkflowApproval) -> tuple[WorkflowApproval, bool]:
+    def ensure_approval(
+        self, approval: WorkflowApproval, *, session: Session | None = None
+    ) -> tuple[WorkflowApproval, bool]:
         """登记审批请求；同一运行的同一检查点幂等复用。
 
         Returns:
@@ -436,7 +443,7 @@ class SqlAlchemyWorkflowRepository:
             WorkflowConflict: 既有审批的标识或参数哈希与本次不一致。
 
         """
-        with self._sessions.begin() as session:
+        with nullcontext(session) if session is not None else self._sessions.begin() as session:
             session.execute(
                 update(WorkflowRunRow)
                 .where(

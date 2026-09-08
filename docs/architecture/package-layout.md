@@ -99,12 +99,15 @@ AgentServer 框架的 checkpoint/store 数据库职责保持不变；FinanceClaw
 
 委派交付与执行观察、交互决定与审批/恢复操作、Audit 与 Outbox 的原子提交继续保留。
 共享表映射不代表允许任意跨表写入；新增写入须明确所属用例和事务边界。
-本次没有改变表名、列、约束或迁移版本，迁移头仍为 `0008_stage6fix_c`。
+分包本身未改变数据库。后续 Stage-8A 新增七张协调表，迁移头为 `0009_stage8a`，
+继续使用同一业务 Session 和 Alembic 序列。
 
 ## 入口与兼容性
 
 - BFF：`main.py` → `bff/bootstrap.py:create_default_app` → `bff/http/app.py:create_app`。
-- Coordination：`coordination/bootstrap.py:build_coordination`；当前由 BFF 显式装配，尚无持续 Worker。
+- Coordination 受理：`coordination/bootstrap.py:build_coordination`，由 BFF 显式装配。
+- Coordinator Worker：`python -m financeclaw.coordination.worker`。
+- Webhook Ingress：`coordination/ingress/app.py:create_default_ingress`，独立 Uvicorn 工厂。
 - AgentServer：`langgraph.json` / `langgraph.local.json` → `agent_server/graphs/server_graphs.py`。
 - 迁移：`alembic.ini` → `shared/infrastructure/migrations`。
 - 跨服务测试使用 `tests/support.py` 组合夹具；生产入口各自装配，不复用测试组合根。
@@ -113,8 +116,10 @@ AgentServer 框架的 checkpoint/store 数据库职责保持不变；FinanceClaw
 `bootstrap.py` 已删除，不保留导入转发壳。仓内导入、graph 配置、测试和打包资源已同步迁移；
 外部 Python 调用者需要采用新路径。HTTP 路由、graph/assistant ID、Schema 和发布版本保持一致。
 
-本次只完成分包与职责拆分。既有 `status()`/SSE 仍可能推进执行；纯查询、Webhook、后台 Worker、
-显式协调协议的服务化与调度引擎选型继续以 [Stage-8 方案](../../.redesign/stages/Stage-8-Background-Run-Coordination-实施方案.md) 为准。
+启用 Stage-8A 后，新 Conversation 根由 `CoordinatorAdmission` 受理、独立 Worker 推进，
+GET／SSE 只读。默认关闭的兼容路径继续用于旧部署；开启后不自动接管旧根。
+参见 [Stage-8 方案](../../.redesign/stages/Stage-8-Background-Run-Coordination-实施方案.md)
+和 [Coordinator 运维说明](../operations/coordinator.md)。
 
 依赖检查覆盖真实目录存在性、绝对/相对导入和聚合导出；独立进程测试验证冷导入及 BFF 装配不加载
 执行端。发布一致性测试比较协调端与执行端的目录，并验证两者复用同一应用数据库 Session 工厂。

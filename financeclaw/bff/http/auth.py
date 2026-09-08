@@ -7,12 +7,16 @@ tenant、subject 与 scopes；静态 token 仅允许本地开发使用。
 
 import asyncio
 from collections.abc import Callable, Mapping
+from datetime import UTC, datetime
 from hmac import compare_digest
 from typing import Annotated, Any, Protocol
 
 import jwt
 from fastapi import Header, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
+
+from financeclaw.kernel.authorization import AuthorizationEvidence
+from financeclaw.shared.execution_ledger.repository import digest
 
 
 class AuthenticatedPrincipal(BaseModel):
@@ -33,6 +37,7 @@ class AuthenticatedPrincipal(BaseModel):
     tenant_id: str
     subject_id: str
     scopes: frozenset[str] = Field(default_factory=frozenset)
+    authorization: AuthorizationEvidence | None = None
 
 
 class Authenticator(Protocol):
@@ -220,6 +225,25 @@ class OIDCJWTAuthenticator:
                 tenant_id=tenant_id,
                 subject_id=subject_id,
                 scopes=scopes,
+                authorization=AuthorizationEvidence(
+                    source="oidc",
+                    source_hash=digest(
+                        {
+                            key: claims.get(key)
+                            for key in (
+                                "iss",
+                                "aud",
+                                "jti",
+                                "iat",
+                                "exp",
+                                self._tenant_claim,
+                                self._subject_claim,
+                            )
+                        }
+                    ),
+                    issued_at=datetime.now(UTC),
+                    expires_at=datetime.fromtimestamp(claims["exp"], UTC),
+                ),
             )
         except (jwt.InvalidTokenError, ValueError, TypeError):
             # 任何校验失败都统一退化为认证不通过。

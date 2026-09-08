@@ -74,6 +74,8 @@ class AuditEventType(StrEnum):
     INTERACTION_REQUESTED = "interaction.requested"
     INTERACTION_DECIDED = "interaction.decided"
     INTERACTION_CLOSED = "interaction.closed"
+    COORDINATION_UPDATED = "coordination.updated"
+    RUN_AUTHORIZED = "run.authorized"
 
 
 class AuditRecord(BaseModel):

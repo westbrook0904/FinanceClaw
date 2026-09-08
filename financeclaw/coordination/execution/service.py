@@ -44,6 +44,12 @@ class ExecutionService:
         self.client = client
         self.repository = repository
 
+    async def require_legacy(self, run_id: str) -> None:
+        """兼容驱动不能读取或修改协调根的原生尝试索引。"""
+        execution = await asyncio.to_thread(self.repository.get, run_id)
+        if execution["snapshot"].get("driver_mode") == "coordinator":
+            raise ExecutionConflict("task is exclusively managed by Coordinator")
+
     async def submit(
         self,
         run_id: str,
@@ -66,6 +72,7 @@ class ExecutionService:
         返回值只表示服务端已受理；None 表示回执尚未确认，调用方应继续
         对账，不能据此把业务运行标记为失败或使用新 key 重试。
         """
+        await self.require_legacy(run_id)
         operation_id = f"operation-{digest([run_id, key])}"
         request = {
             "thread_id": thread_id,
@@ -82,6 +89,9 @@ class ExecutionService:
     async def submit_prepared(self, operation_id: str) -> ServerRun | None:
         """恢复与用户决定同事务准备的操作；使用冻结命令，不重新拼接用户回答。"""
         operation = await asyncio.to_thread(self.repository.operation, operation_id)
+        await self.require_legacy(operation["run_id"])
+        if operation["request"].get("kind") in {"start", "response"}:
+            raise ExecutionConflict("coordinated operations may only be dispatched by Coordinator")
         request = operation["request"]
         thread_id, assistant_id = request["thread_id"], request["assistant_id"]
         command, predecessor = request.get("command"), request.get("predecessor")
@@ -129,6 +139,7 @@ class ExecutionService:
         self, run_id: str, key: str, *, delegation_id: str | None = None, audit: Any = None
     ) -> dict[str, Any] | None:
         """只观察已受理尝试；完成、失败和中断统一交给调用方分类。"""
+        await self.require_legacy(run_id)
         operation_id = f"operation-{digest([run_id, key])}"
         operation = await asyncio.to_thread(self.repository.operation, operation_id)
         if operation["result"] is not None:
@@ -166,6 +177,7 @@ class ExecutionService:
         Conversation 和独立 Workflow 共用此边界。取消与外部副作用回滚无关，
         已领取但没有回执的操作必须找到原尝试，不能猜测它未执行。
         """
+        await self.require_legacy(root_run_id)
         executions = await asyncio.to_thread(self.repository.tree, root_run_id)
         confirmed = bool(executions)
         for execution in executions:
@@ -206,6 +218,7 @@ class ExecutionService:
 
     async def reconcile(self, run_id: str) -> bool:
         """补绑定响应丢失的原操作；返回是否仍有无法证明提交结果的操作。"""
+        await self.require_legacy(run_id)
         operations = await asyncio.to_thread(self.repository.operations_for_run, run_id)
         uncertain = False
         for operation in operations:

@@ -149,6 +149,15 @@ class ExecutionRepository:
         root = session.get(RunExecutionRow, row.root_run_id)
         if root is None:
             raise ExecutionConflict("root execution budget is missing")
+        if root.snapshot.get("driver_mode") == "coordinator":
+            from financeclaw.shared.execution_ledger.authorization import check_authorization
+
+            session.execute(
+                update(RunExecutionRow)
+                .where(RunExecutionRow.run_id == root.run_id)
+                .values(run_id=root.run_id)
+            )
+            check_authorization(session, root)
         column = {
             "model": RunExecutionRow.model_calls,
             "tool": RunExecutionRow.tool_calls,
@@ -179,6 +188,11 @@ class ExecutionRepository:
             "*" not in original.scopes and not context.scopes.issubset(original.scopes)
         ):
             raise ExecutionConflict("runtime identity or scopes exceed the execution snapshot")
+        with self.sessions() as session:
+            from financeclaw.shared.execution_ledger.authorization import check_authorization
+
+            root = session.get(RunExecutionRow, context.root_run_id or context.run_id)
+            check_authorization(session, root, scopes=context.scopes)
 
     def prepare(
         self,
@@ -320,6 +334,34 @@ class ExecutionRepository:
             ):
                 return False
             binding = delegation.execution_snapshot or {}
+            if execution.snapshot.get("driver_mode") == "coordinator":
+                from financeclaw.kernel.coordination import DelegationRequest, ResponseDelivery
+                from financeclaw.shared.execution_ledger.coordination_tables import ContinuationRow
+
+                if (
+                    operation.request.get("kind") != "response"
+                    or digest(operation.request) != operation.request_hash
+                ):
+                    return False
+                command = ResponseDelivery.model_validate(operation.request["payload"])
+                request = command.request
+                if not isinstance(request, DelegationRequest):
+                    return False
+                continuation = session.get(
+                    ContinuationRow, request.continuation_ref.continuation_id
+                )
+                return bool(
+                    continuation
+                    and continuation.reference == request.continuation_ref.model_dump(mode="json")
+                    and binding.get("coordination_request") == request.model_dump(mode="json")
+                    and request.request_id == delegation_id
+                    and request.owner_task_id == run_id
+                    and command.responding_task_id == delegation.child_run_id
+                    and operation.request.get("predecessor")
+                    == request.source_execution_ref.operation_id
+                    and execution.server_run_id
+                    in {request.source_execution_ref.operation_id, operation.operation_id}
+                )
             waiting = execution.waiting or {}
             predecessor = binding.get("parent_server_run_id")
             interrupt_id = binding.get("parent_interrupt_id")

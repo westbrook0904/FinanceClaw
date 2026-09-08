@@ -16,3 +16,8 @@ provided HMAC key, hidden LangSmith inputs/outputs and disabled full-I/O debuggi
 Do not enable it for real personal data yet. Follow
 [`docs/operations/ziwei-agent.md`](../../docs/operations/ziwei-agent.md) for matching
 BFF/Agent Server configuration and explicit `ziwei:read` authorization.
+
+Stage 8A adds an opt-in Coordinator profile fragment: [`coordinator.env.example`](coordinator.env.example).
+Apply matching settings to BFF, Ingress and Worker, migrate the shared application database first,
+and configure the Agent Server webhook header separately. See
+[`Coordinator operations`](../../docs/operations/coordinator.md).

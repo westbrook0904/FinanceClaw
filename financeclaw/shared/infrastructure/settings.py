@@ -160,6 +160,18 @@ class FinanceClawSettings(BaseSettings):
     agent_server_url: str = "http://127.0.0.1:2024"
     agent_server_timeout_seconds: float = Field(default=30.0, gt=0, le=300)
     agent_server_service_token: SecretStr | None = None
+    coordinator_enabled: bool = False
+    coordinator_backend_instance_id: str = Field(
+        default="langgraph-primary", pattern=r"^[A-Za-z0-9._-]{1,128}$"
+    )
+    coordinator_callback_url: str | None = None
+    coordinator_webhook_token: SecretStr | None = None
+    coordinator_grant_seconds: int = Field(default=1800, ge=1, le=86400)
+    coordinator_approval_scope: str = Field(default="tools:approve", min_length=1, max_length=128)
+    coordinator_poll_seconds: float = Field(default=1, ge=0.05, le=30)
+    coordinator_reconcile_seconds: float = Field(default=10, ge=0.1, le=300)
+    coordinator_lease_seconds: float = Field(default=60, ge=3, le=600)
+    coordinator_max_step_seconds: float = Field(default=120, ge=1, le=1800)
     feishu_enabled: bool = False
     feishu_app_id: str | None = None
     feishu_app_secret: SecretStr | None = None
@@ -260,6 +272,34 @@ class FinanceClawSettings(BaseSettings):
             ValueError: 生产环境违反安全基线，或通用约束（算法、加密配置）非法。
 
         """
+        if self.coordinator_enabled:
+            callback = urlparse(self.coordinator_callback_url or "")
+            if (
+                callback.scheme not in {"http", "https"}
+                or not callback.hostname
+                or callback.username
+                or callback.password
+                or callback.query
+                or callback.fragment
+            ):
+                raise ValueError(
+                    "coordinator_callback_url must be a fixed URL without credentials or query"
+                )
+            expected_path = f"/internal/webhooks/{self.coordinator_backend_instance_id}"
+            if callback.path != expected_path:
+                raise ValueError(
+                    "coordinator callback must identify the configured backend ingress"
+                )
+            if (
+                self.environment in {Environment.PRODUCTION, Environment.STAGING}
+                and callback.scheme != "https"
+            ):
+                raise ValueError("deployed coordinator callback requires HTTPS")
+            if (
+                self.coordinator_webhook_token is None
+                or len(self.coordinator_webhook_token.get_secret_value()) < 32
+            ):
+                raise ValueError("coordinator_webhook_token requires at least 32 characters")
         # 1. 生产环境基线：禁用调试输出与离线模型。
         if self.ziwei_allow_full_io and self.environment not in {
             Environment.DEVELOPMENT,

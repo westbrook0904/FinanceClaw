@@ -149,6 +149,9 @@ class InteractionRequest(RequestBinding):
     question: Annotated[str, Field(min_length=1, max_length=2000)]
     expires_at: AwareDatetime
     action_hash: Digest | None = None
+    action: dict[str, JsonValue] | None = None
+    approval_id: Identifier | None = None
+    allowed_decisions: tuple[Literal["approve", "reject"], ...] = ("approve", "reject")
 
     @model_validator(mode="after")
     def validate_question(self) -> Self:
@@ -158,6 +161,14 @@ class InteractionRequest(RequestBinding):
         payload = self.model_dump(
             mode="json", include={"point", "revision", "question", "expires_at", "action_hash"}
         )
+        if self.action is not None:
+            if self.point.kind != "approval" or bounded_digest(self.action) != self.action_hash:
+                raise ValueError("approval action hash mismatch")
+            payload["action"] = self.action
+        if self.approval_id is not None:
+            payload["approval_id"] = self.approval_id
+        if self.allowed_decisions != ("approve", "reject"):
+            payload["allowed_decisions"] = list(self.allowed_decisions)
         if bounded_digest(payload) != self.input_hash:
             raise ValueError("interaction input hash mismatch")
         return self
@@ -201,6 +212,10 @@ class ResponseDelivery(CoordinationModel):
                 raise ValueError("answer does not match the published input schema")
         elif request.point.kind == "choice" and response.answer not in request.point.options:
             raise ValueError("answer is not a published choice")
+        elif (
+            request.point.kind == "approval" and response.decision not in request.allowed_decisions
+        ):
+            raise ValueError("approval decision is not permitted by the request")
         bounded_digest(response.model_dump(mode="json"))
         return self
 
@@ -249,6 +264,7 @@ class BackendObservation(CoordinationModel):
     execution_ref: BackendExecutionRef
     status: Literal["active", "waiting", "completed", "failed", "cancelled", "unknown"]
     requests: tuple[CoordinationRequest, ...] = ()
+    continuation_bindings: dict[str, dict[str, JsonValue]] = Field(default_factory=dict)
     result: JsonValue = None
     response_applications: tuple[ResponseApplicationEvidence, ...] = ()
     evidence_ref: Annotated[str, Field(min_length=1, max_length=2048)] | None = None
@@ -260,6 +276,13 @@ class BackendObservation(CoordinationModel):
             raise ValueError("observation contains requests owned by another attempt")
         if self.requests and self.status != "waiting":
             raise ValueError("coordination requests require a waiting observation")
+        references = {
+            request.continuation_ref.continuation_id: request.continuation_ref
+            for request in self.requests
+        }
+        for key, binding in self.continuation_bindings.items():
+            if key not in references or bounded_digest(binding) != references[key].binding_hash:
+                raise ValueError("continuation binding does not match its request")
         if any(proof.execution_ref != self.execution_ref for proof in self.response_applications):
             raise ValueError("response evidence belongs to another execution")
         if self.status == "completed" and self.evidence_ref is None:
