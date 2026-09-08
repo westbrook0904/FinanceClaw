@@ -10,6 +10,7 @@ from langchain.agents.middleware import AgentMiddleware
 from financeclaw.agent_server.middleware.middleware import _context
 from financeclaw.agent_server.tools.catalog import ToolCatalog
 from financeclaw.agent_server.tools.delegation import DelegationTool, delegation_handoff_id
+from financeclaw.agent_server.tools.subgraph_scope import verify_graph_release
 from financeclaw.kernel.tools import SideEffect
 from financeclaw.shared.execution_ledger.repository import ExecutionConflict, ExecutionRepository
 
@@ -38,15 +39,21 @@ class ExecutionBudgetMiddleware(AgentMiddleware):
         """无持久化 root ID 的纯图测试仍受框架限额，产品运行必须有预算快照。"""
         context = _context(request.runtime.context)
         if context.root_run_id is None:
+            if self.profile is not None and (
+                self.profile.worker_manifest or self.profile.context_policy == "worker-task-only-v1"
+            ):
+                raise ExecutionConflict("subgraph releases require a persistent business root")
             return
         if self.repository is None:
             raise ExecutionConflict("persistent execution budget is not configured")
         self.repository.verify_context(context)
-        execution = self.repository.get(context.run_id)
-        if self.profile is not None and execution["snapshot"].get(
-            "profile"
-        ) != self.profile.model_dump(mode="json"):
-            raise ExecutionConflict("executing graph release differs from the pinned profile")
+        if self.profile is not None:
+            if self.profile.context_policy == "worker-task-only-v1":
+                verify_graph_release(self.repository, context, self.profile)
+            elif self.repository.get(context.run_id)["snapshot"].get(
+                "profile"
+            ) != self.profile.model_dump(mode="json"):
+                raise ExecutionConflict("executing graph release differs from the pinned profile")
         root = self.repository.get(context.root_run_id)
         if kind == "tool" and root["side_effects_denied"]:
             managed = self.catalog.resolve(request.tool_call["name"])
@@ -83,6 +90,13 @@ class ExecutionBudgetMiddleware(AgentMiddleware):
 
     async def awrap_tool_call(self, request: Any, handler: Callable) -> Any:
         """可取消的门控等待，不遗留在线程池中永远占用资源的 acquire。"""
+        call = getattr(request, "tool_call", {})
+        if (
+            call.get("name")
+            and self.catalog.resolve(call["name"]).governance.side_effect is SideEffect.COMPOSITE
+        ):
+            await asyncio.to_thread(self._consume, request, "tool")
+            return await handler(request)
         while not self.gate.acquire(blocking=False):
             await asyncio.sleep(0.01)
         try:

@@ -88,8 +88,9 @@ class AgentServerComponents:
 
     @property
     def default_agent_profile(self) -> AgentProfile:
-        """返回目录中当前可用的最高版本 finance_agent 档案。
+        """返回仍由旧 BFF 准入的 finance_agent@1.4.0 档案。
 
+        HF-1 只注册新图，默认版本须等 HF-2 新驱动完成后显式切换。
         候选功能开关决定当前发布的工具配置；已创建会话使用它保存的固定版本，
         不应在每轮调用时重新选择默认档案。
 
@@ -97,7 +98,7 @@ class AgentServerComponents:
             顶层财务 Agent 的 ``AgentProfile``。
 
         """
-        return self.agent_profiles.resolve("finance_agent")
+        return self.agent_profiles.resolve("finance_agent", "1.4.0")
 
 
 def build_components(
@@ -107,6 +108,8 @@ def build_components(
     audit: AuditRepository | None = None,
     enable_persistence: bool = False,
     resources: ApplicationResources | None = None,
+    enable_subgraphs: bool = False,
+    resource_concurrency: int = 8,
 ) -> AgentServerComponents:
     """装配执行端；不创建 Coordinator 客户端、业务服务或飞书连接。"""
     resources = resources or build_resources(
@@ -177,6 +180,7 @@ def build_components(
     releases = build_release_catalogs(
         settings,
         enable_persistence=artifact_service is not None,
+        include_subgraphs=enable_subgraphs,
         base_tool_catalog=ToolReleaseCatalog(
             ToolRelease(item.governance) for item in base_tool_catalog.values()
         ),
@@ -201,7 +205,7 @@ def build_components(
             projection_bytes=settings.ziwei_projection_bytes,
         )
     chart_tools = ziwei_tools(ziwei_service)
-    ziwei_delegate = agent_delegation_tool(agent_profiles.resolve("ziwei_doushu_agent"))
+    ziwei_delegate = agent_delegation_tool(agent_profiles.resolve("ziwei_doushu_agent", "2.0.0"))
     ziwei_delegate.tool.metadata = {"preserve_result": True}
     tool_catalog = ToolCatalog(
         (
@@ -211,7 +215,7 @@ def build_components(
                 for definition in workflow_catalog.published()
                 if definition.status is WorkflowStatus.ACTIVE
             ),
-            agent_delegation_tool(agent_profiles.resolve("market_research_agent")),
+            agent_delegation_tool(agent_profiles.resolve("market_research_agent", "1.2.0")),
             *chart_tools,
             ziwei_delegate,
         )
@@ -230,7 +234,19 @@ def build_components(
         memory_service=memory_service,
         memory_recall_tokens=settings.memory_recall_tokens,
         memory_recall_limit=settings.memory_recall_limit,
+        resource_concurrency=resource_concurrency,
     )
+    if enable_subgraphs:
+        from financeclaw.agent_server.tools.subgraph_assembly import assemble_subgraph_tools
+
+        composites = assemble_subgraph_tools(
+            releases,
+            agent_factory,
+            settings=settings,
+            ziwei_service=ziwei_service,
+        )
+        tool_catalog = ToolCatalog((*tool_catalog.values(), *composites))
+        agent_factory.tool_catalog = tool_catalog
     # 13. 汇总返回组件集合。
     return AgentServerComponents(
         settings=settings,

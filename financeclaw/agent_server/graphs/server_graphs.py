@@ -22,7 +22,7 @@ configure_langsmith(
     hide_inputs=settings.langsmith_hide_inputs,
     hide_outputs=settings.langsmith_hide_outputs,
 )
-components = build_components(settings, enable_persistence=True)
+components = build_components(settings, enable_persistence=True, enable_subgraphs=True)
 
 # 顶层金融 ReAct Agent 助手，面向会话编排工具调用、流程移交与领域委派。
 finance_agent = components.agent_factory.build(
@@ -58,3 +58,10 @@ if components.workflow_catalog is None:
     raise RuntimeError("published workflow catalog was not configured")
 # 首个固定流程助手 portfolio_review@1.0.0，注册后即可经 Agent Server 启动运行。
 portfolio_review_v1 = components.workflow_catalog.resolve("portfolio_review", "1.0.0").graph
+
+# HF-1 candidate; BFF admission remains pinned to 1.4.0 until HF-2 cutover.
+finance_agent_subgraphs = components.agent_factory.build(
+    components.agent_profiles.resolve("finance_agent", "1.5.0"),
+    model=OfflineFinanceModel() if settings.offline_model else None,
+    checkpointer=None,
+)

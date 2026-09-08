@@ -217,10 +217,18 @@ class AgentFactory:
         # 5. 按顺序装配治理类中间件：人工审批、工具治理与调用偏好指令。
         middleware: list[Any] = list(additional_middleware)
         if interrupt_on:
+            hitl_type = HumanInTheLoopMiddleware
+            hitl_options = {}
+            if profile.context_policy == "worker-task-only-v1":
+                from financeclaw.agent_server.middleware.subgraph_hitl import SubgraphHITLMiddleware
+
+                hitl_type = SubgraphHITLMiddleware
+                hitl_options["execution"] = getattr(self.conversation_repository, "execution", None)
             middleware.append(
-                HumanInTheLoopMiddleware(
+                hitl_type(
                     interrupt_on=interrupt_on,
                     description_prefix="FinanceClaw governed action",
+                    **hitl_options,
                 )
             )
         middleware.extend(
@@ -231,9 +239,12 @@ class AgentFactory:
                     self.audit,
                     allowed_keys=allowed_keys,
                 ),
-                InvocationDirectiveMiddleware(),
             ]
         )
+        if profile.context_policy != "worker-task-only-v1":
+            middleware.append(
+                InvocationDirectiveMiddleware(composite=bool(profile.worker_manifest))
+            )
         # 6. 可选挂载工件 offload、记忆召回与会话上下文中间件。
         if self.artifact_service is not None:
             middleware.append(
@@ -250,6 +261,7 @@ class AgentFactory:
             self.memory_service is not None
             and profile.memory_policy != "none"
             and not profile.delegatable
+            and profile.context_policy != "worker-task-only-v1"
         ):
             middleware.append(
                 MemoryRecallMiddleware(
@@ -310,8 +322,20 @@ class AgentFactory:
         # 10. 挂载模型与工具的运行内调用限额中间件。
         middleware.extend(
             [
-                ModelCallLimitMiddleware(run_limit=profile.max_model_calls, exit_behavior="error"),
-                ToolCallLimitMiddleware(run_limit=profile.max_tool_calls, exit_behavior="error"),
+                ModelCallLimitMiddleware(
+                    run_limit=profile.max_model_calls,
+                    exit_behavior="error",
+                    thread_limit=profile.max_model_calls
+                    if profile.context_policy == "worker-task-only-v1"
+                    else None,
+                ),
+                ToolCallLimitMiddleware(
+                    run_limit=profile.max_tool_calls,
+                    exit_behavior="error",
+                    thread_limit=profile.max_tool_calls
+                    if profile.context_policy == "worker-task-only-v1"
+                    else None,
+                ),
             ]
         )
         middleware.append(

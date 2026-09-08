@@ -23,7 +23,9 @@ def check_authorization(session, root, *, scopes=None, now=None):
 
     if root is None:
         raise ExecutionConflict("root execution is unavailable")
-    if root.snapshot.get("driver_mode") != "coordinator":
+    if root.snapshot.get("driver_mode") != "coordinator" and not root.snapshot.get(
+        "profile", {}
+    ).get("worker_manifest"):
         return None
     grant = session.get(RunAuthorizationRow, root.run_id)
     expires = (

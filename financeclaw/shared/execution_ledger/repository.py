@@ -162,7 +162,9 @@ class ExecutionRepository:
         root = session.get(RunExecutionRow, row.root_run_id)
         if root is None:
             raise ExecutionConflict("root execution budget is missing")
-        if root.snapshot.get("driver_mode") == "coordinator":
+        if root.snapshot.get("driver_mode") == "coordinator" or root.snapshot.get(
+            "profile", {}
+        ).get("worker_manifest"):
             from financeclaw.shared.execution_ledger.authorization import check_authorization
 
             session.execute(

@@ -6,7 +6,7 @@
 
 Stage-8 前置分包已完成：`bff`、`coordination`、`agent_server`，同库与共享模块边界见
 [包结构设计](../docs/architecture/package-layout.md)。Stage-8 独立协调服务已实现；后续方向按
-[Stage 8 Hotfix](./stages/stage-8-hotfix-实施方案.md)调整为 BFF 运行控制与顶层内部子图，HF-0 已完成，生产路径待迁移。
+[Stage 8 Hotfix](./stages/stage-8-hotfix-实施方案.md)调整为 BFF 运行控制与顶层内部子图，HF-0／HF-1 已完成，BFF 控制与生产路径切换待实施。
 
 ## 目的
 
@@ -41,7 +41,7 @@ Stage-8 前置分包已完成：`bff`、`coordination`、`agent_server`，同库
 建议保留 Webhook 接收能力并合入 BFF，以回调加后台核对保证断连后结果写入 Journal；
 不再保留独立 Coordinator 的新运行编排职责，继续共用 `financeclaw_app`，不引入 Temporal。
 
-当前代码仍是已交付的 Stage 8A／8B／8C；hotfix 方案和分阶段验收见
+当前默认业务路径仍是 Stage 8A／8B／8C，HF-1 已新增执行端子图候选发布；方案和分阶段验收见
 [实施方案](./stages/stage-8-hotfix-实施方案.md)及
 [RD-033](./01-架构决议汇总.md#rd-033顶层-react-内部子图与-bff-运行控制)。
 旧 Stage 8 方案与验证记录保留为历史资料，其中跨 Run 委托和 Coordinator 执行所有权不再作为新实施方向。
@@ -71,8 +71,9 @@ Stage-8 前置分包已完成：`bff`、`coordination`、`agent_server`，同库
   - [Stage 7 设计审视与待确认决议](./stages/Stage-7-设计审视与待确认决议.md)
   - [Stage 7 实施与验证记录](./stages/Stage-7-实施与验证.md)
   - [Stage 7 文本解读热修复：移除解读 JSON 与逐条引用硬约束](./stages/Stage-7-文本解读热修复-实施与验证.md)
-- [Stage 8 Hotfix：BFF 运行控制与顶层 ReAct 内的子图调用（HF-0 完成，HF-1～HF-3 待实施）](./stages/stage-8-hotfix-实施方案.md)
+- [Stage 8 Hotfix：BFF 运行控制与顶层 ReAct 内的子图调用（HF-0／HF-1 完成，HF-2／HF-3 待实施）](./stages/stage-8-hotfix-实施方案.md)
   - [HF-0 实施与验证：原生子图调用、顶层恢复与发布预留](./stages/stage-8-hotfix-HF-0-实施与验证.md)
+  - [HF-1 实施与验证：正式 Worker 子图、根预算与发布隔离](./stages/stage-8-hotfix-HF-1-实施与验证.md)
 - [Stage 8 原方案：Coordinator Service、Webhook 接入与显式委派协议（历史方案，方向已被 hotfix 替代）](./stages/Stage-8-Background-Run-Coordination-实施方案.md)
 - [Stage 8 实施与验证：协议、事务与基础协调证据](./stages/Stage-8-实施与验证.md)
 - [Stage 8A 实施与验证：正式 Coordinator 与 LangGraph 闭环](./stages/Stage-8A-实施与验证.md)

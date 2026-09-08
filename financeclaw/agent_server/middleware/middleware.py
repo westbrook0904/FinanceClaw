@@ -290,6 +290,10 @@ class ToolGovernanceMiddleware(AgentMiddleware):
             str | None: 与指令冲突时的拒绝理由；无指令或完全一致时返回 None。
 
         """
+        from financeclaw.agent_server.tools.subgraph_scope import active_scope
+
+        if active_scope.get() is not None:
+            return None
         messages = state.get("messages", ()) if isinstance(state, Mapping) else ()
         latest_user_entry = next(
             (
@@ -310,10 +314,11 @@ class ToolGovernanceMiddleware(AgentMiddleware):
         if any(isinstance(message, ToolMessage) for message in messages[latest_user_index + 1 :]):
             return "the explicit directive already produced a Tool result"
         # 3. 被调用工具必须与指令指向的能力一致，否则拒绝。
+        prefix = "call" if tool.name.startswith("call_") else "delegate"
         expected_tool_name = (
             directive.resource_id
             if directive.kind is InvocationKind.TOOL
-            else f"delegate_{directive.kind.value}__{directive.resource_id}"
+            else f"{prefix}_{directive.kind.value}__{directive.resource_id}"
         )
         if expected_tool_name != tool.name:
             return "the model-selected capability does not match the explicit user directive"

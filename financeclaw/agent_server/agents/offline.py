@@ -149,6 +149,10 @@ class OfflineFinanceModel(BaseChatModel):
                 else f"delegate_{directive.kind.value}__{directive.resource_id}"
             )
         )
+        if directive_capability and directive_capability.startswith("delegate_"):
+            composite = directive_capability.replace("delegate_", "call_", 1)
+            if composite in self._bound_tool_names:
+                directive_capability = composite
         # 3. 指令参数缺失或非法时，要求补充参数，不发起工具调用。
         if directive is not None and (directive.parse_error or not directive.payload):
             problem = directive.parse_error or "required arguments"

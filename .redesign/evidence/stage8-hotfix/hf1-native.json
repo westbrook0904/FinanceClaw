@@ -1,0 +1,202 @@
+{
+  "passed": true,
+  "mode": "langgraph_dev_http",
+  "registered_graphs": [
+    "finance_agent_v1_5_0"
+  ],
+  "native_thread_id": "9e44db22-fc8f-4cb3-84ec-02bc655acb74",
+  "native_run_ids": [
+    "01a0820f-0ad9-7811-ba7f-b108cdfc26ce",
+    "01a0820f-0f3e-7c41-9f72-f25ab9c4ca96",
+    "01a0820f-13ce-7c81-a27a-71c995077543",
+    "01a0820f-19a6-7eb0-bddd-50ddbdd9ae50",
+    "01a0820f-1e2e-7e20-b7c7-299bc60f878c"
+  ],
+  "waits": [
+    {
+      "interrupt_id": "d9fefdc186610a1f231c9dc6c3a98a3a",
+      "binding": {
+        "kind": "user_interaction",
+        "schema_version": 1,
+        "point_id": "research_scope",
+        "interaction_kind": "input",
+        "question": "研究区间 1？",
+        "root_run_id": "root",
+        "root_tool_call_id": "call-1",
+        "worker_kind": "agent",
+        "worker_id": "market_research_agent",
+        "worker_version": "1.3.0",
+        "invocation_id": "b7393b60e1e0cc9da503f712b182a490b7ed163d498162d28a64044651c48bf5"
+      },
+      "checkpoint_id": "1f1abaa7-fb0f-620c-8007-c8e58f55608e"
+    },
+    {
+      "interrupt_id": "c2311a4430bca4393575f87c7be89ec0",
+      "binding": {
+        "root_run_id": "root",
+        "root_tool_call_id": "call-2",
+        "worker_kind": "workflow",
+        "worker_id": "portfolio_review",
+        "worker_version": "1.1.0",
+        "invocation_id": "6e22bc0304d463b1a5287715d4d2d7736c367194691640027ae7f2aa0f25c70b",
+        "expires_at": "2026-09-08T17:42:01.279147+00:00",
+        "approval_id": "approval-83f8338a05cdec59a39934e2",
+        "approval_point": "publish_portfolio_report",
+        "workflow_id": "portfolio_review",
+        "workflow_version": "1.1.0",
+        "requested_action": "publish_portfolio_report",
+        "arguments_hash": "2c9324473c9da1639d4e9a6c6865cfeebe94ad6df35c4aef04472dbfaeb98f50",
+        "summary": {
+          "total_market_value": "200.00",
+          "largest_position_weight": "1.0000",
+          "risk_band": "high"
+        },
+        "allowed_decisions": [
+          "approve",
+          "reject"
+        ],
+        "required_scope": "workflows:approve"
+      },
+      "checkpoint_id": "1f1abaa8-06b3-6144-800f-e63cc7347edb"
+    },
+    {
+      "interrupt_id": "7a0a3e8617db64e13656fd3bb1447e65",
+      "binding": {
+        "kind": "user_interaction",
+        "schema_version": 1,
+        "point_id": "research_scope",
+        "interaction_kind": "input",
+        "question": "研究区间 1？",
+        "root_run_id": "root",
+        "root_tool_call_id": "call-4",
+        "worker_kind": "agent",
+        "worker_id": "market_research_agent",
+        "worker_version": "1.3.0",
+        "invocation_id": "cfa6603d769e6e9da7648b27a0622e39c169cfe56c9bbb50096c9da5ccbb3098"
+      },
+      "checkpoint_id": "1f1abaa8-1483-6e86-801f-359acf11a735"
+    },
+    {
+      "interrupt_id": "8d11f2f6654667076bd283e3b9739da8",
+      "binding": {
+        "root_run_id": "root",
+        "root_tool_call_id": "call-5",
+        "worker_kind": "workflow",
+        "worker_id": "portfolio_review",
+        "worker_version": "1.1.0",
+        "invocation_id": "0516f6f552b695bbb752ee766961c9c01dabc44732dc054c71f936a65315a709",
+        "expires_at": "2026-09-08T17:42:03.941246+00:00",
+        "approval_id": "approval-f51d8c33391d26de866c7ba9",
+        "approval_point": "publish_portfolio_report",
+        "workflow_id": "portfolio_review",
+        "workflow_version": "1.1.0",
+        "requested_action": "publish_portfolio_report",
+        "arguments_hash": "2c9324473c9da1639d4e9a6c6865cfeebe94ad6df35c4aef04472dbfaeb98f50",
+        "summary": {
+          "total_market_value": "200.00",
+          "largest_position_weight": "1.0000",
+          "risk_band": "high"
+        },
+        "allowed_decisions": [
+          "approve",
+          "reject"
+        ],
+        "required_scope": "workflows:approve"
+      },
+      "checkpoint_id": "1f1abaa8-201c-6a40-8027-b007283bde7a"
+    }
+  ],
+  "business_roots": 1,
+  "business_children": 0,
+  "native_thread_count": 1,
+  "native_run_count": 5,
+  "child_http_threads": 0,
+  "child_http_runs": 0,
+  "root_tool_call_ids": [
+    "call-1",
+    "call-2",
+    "call-3",
+    "call-4",
+    "call-5"
+  ],
+  "public_outcomes": [
+    "success",
+    "completed",
+    "answer",
+    "success",
+    "rejected"
+  ],
+  "root_budget": {
+    "model_calls": 15,
+    "tool_calls": 19,
+    "operation_calls": 0
+  },
+  "persistent_runtime_restart_verified": false,
+  "source_sha256": {
+    "experiments/stage8_hotfix/hf1_native.py": "0f227fbf22f565b09cdc92df27515a2eba1e27767831ca95e3b2f384b99deda7",
+    "experiments/stage8_hotfix/hf1_server.py": "a8d2509d8bf7db1da70195fcc7d4975d6cb12a325e02d8686a754967ce24fa4f",
+    "financeclaw/agent_server/__init__.py": "bd4cfd5c0ddf08977ab8c3d4a9fa57dcb26fd89d0aaf23deaffd89771bafe727",
+    "financeclaw/agent_server/agents/__init__.py": "7400c1c53239f085363c29680a7651356a2ab2223bd7bdf79c18eee360faa289",
+    "financeclaw/agent_server/agents/directives.py": "b94381b81d07b4c1c5e7fe37d3fe983e0dd1a2ced66a22d2d7a58cb88a7fa7df",
+    "financeclaw/agent_server/agents/factory.py": "1557f36b6f91f998f2c96eb533b744cb62c5ca731dc181a74684584c9c32e86d",
+    "financeclaw/agent_server/agents/offline.py": "58232afd661781319d78b7f39008788d7d1c90a0b687f3db4a28864d290341c3",
+    "financeclaw/agent_server/agents/ziwei_offline.py": "041b80b6565490395d7222d9dc4c9350baa474c34db2fe435c502a95d34de866",
+    "financeclaw/agent_server/bootstrap.py": "5c615965ab4c65797b6aa928dcbb43a23320149efdf49ce80eb2c745f23f9d92",
+    "financeclaw/agent_server/context/__init__.py": "7fb8fca4558074a94ae635f330b9fa99be8a1ac6e9358511fc7df41cf4459bd0",
+    "financeclaw/agent_server/context/builder.py": "b4e5ce40047ba774dd4dccc3e31c6b093cc9c6855e13c1e130d831d0aaef7ae3",
+    "financeclaw/agent_server/domains/__init__.py": "6ada30becde3a3d6a96b5d61076cb28a27f221a3992d1e8b25aa5a57f7eb1e7b",
+    "financeclaw/agent_server/domains/ziwei/__init__.py": "f05becdbc361835723fb938bb55ed9dc14b15bf895f3a7bfdfc0bf20df2f02b4",
+    "financeclaw/agent_server/domains/ziwei/adapters/__init__.py": "da6061b0cfd89315a19557d397d07cae261724afa66651fcad39b67df5befaa1",
+    "financeclaw/agent_server/domains/ziwei/adapters/x_iztro.py": "d5f7f2fb38d887eb6841de181c3bce657ff4fa8117b1eab4b12367b44232937d",
+    "financeclaw/agent_server/domains/ziwei/application.py": "760c9f82a5c9f0bb3fd6fa6eb0be57b7c72749475f888cf62ca626461ef570dd",
+    "financeclaw/agent_server/domains/ziwei/errors.py": "e42427f7ef17c578cafd3bc9132d279d58eee30a70dad8bf96a6e3752cd63f0b",
+    "financeclaw/agent_server/domains/ziwei/normalization.py": "7430551cc29caf8c618a32f2a3b4ec350d1d8bbde2337289c93a5b66b19fae62",
+    "financeclaw/agent_server/domains/ziwei/ports.py": "62b358e77441a2370cd3085992fff22c9fd9db8754c5943932c7fbfeb74511e4",
+    "financeclaw/agent_server/domains/ziwei/service.py": "7a16da5f95c751121205030daccc28391b016a9f0c8951681ef883b43aa5d67d",
+    "financeclaw/agent_server/graphs/__init__.py": "225b2aa43d200e722a590f19605454b3bce68136cb7fcdc4249d23595cc6a57c",
+    "financeclaw/agent_server/graphs/direct_tool.py": "d00e300c525a71da99a4644b202a0910cbf44281d85d1884a3d1a8e1f7a2caf5",
+    "financeclaw/agent_server/graphs/finance_agent.py": "94a9b9545a0718bfb9ed2c02da433191cb2d2778a5e845023ed3d8c168beecf1",
+    "financeclaw/agent_server/graphs/server_graphs.py": "70e827eac471c5beb29723fc4947d92104a47f8f162af5bf6a959abbed43e0ef",
+    "financeclaw/agent_server/graphs/workflows/__init__.py": "8a0acda45f8885d190dca07bc24206a2c4f13c6cb9e0c01fae52f625172d0089",
+    "financeclaw/agent_server/graphs/workflows/definition.py": "62ecd0a0f6d8df1b056b8a0730349430e3fd7867adc396a9a9c2d01facc27397",
+    "financeclaw/agent_server/graphs/workflows/portfolio_review_v1.py": "13ffd471c56ea050f7bc35d4f5af1d7e1bfad7c899d4a7aae541bae4b08aba09",
+    "financeclaw/agent_server/graphs/ziwei_agent.py": "4a8f3960c43e8d30959221cee641372db3e66bf5fa9b6d09d94d2a4009516d4f",
+    "financeclaw/agent_server/llm/__init__.py": "8cf6da71b49ab5a1e9636b9cffd3c1591d99578cf29c52d80cfdbcc4cb0d7646",
+    "financeclaw/agent_server/llm/factory.py": "08497329782255947421df2e9c5dc43e1bd43a8a64f31ee0eb167991d037a626",
+    "financeclaw/agent_server/memory/__init__.py": "086c521770225a01eeb5598660f94c9046ab79c6c1e3bbeb234a6e5e068f27a0",
+    "financeclaw/agent_server/memory/models.py": "24b5e900463b2fe5f4b64e027c383096a99b8e51065cd982c146a94c61c0c67b",
+    "financeclaw/agent_server/memory/policy.py": "abbb7e0efb509edb6d12219383593acc507aaa94f9eaffdcc280b0a9e6b3262b",
+    "financeclaw/agent_server/memory/service.py": "8f7b7cd83c96a5a1425dc2641725d7784b1fc897e9427e96f0ae9845b26a1527",
+    "financeclaw/agent_server/middleware/__init__.py": "975ca3d6a336619da20c86825ef55547a5581ffa4a761479801f64f633f6c4a8",
+    "financeclaw/agent_server/middleware/artifact_middleware.py": "2724cd72c11e2a9dc61bee787d167c8221f162a2af05c42d871968c8eae2721e",
+    "financeclaw/agent_server/middleware/batch_middleware.py": "354d3c8f3f5fcd84f2dddff1ca4b3a6e0fc528041cad6a2de6adccbc9bff90d3",
+    "financeclaw/agent_server/middleware/context_middleware.py": "d19a26eaacb8731683b6a8c3a4562624cf358c5f44bfd74c1bec1c2d3832b857",
+    "financeclaw/agent_server/middleware/directive_middleware.py": "ae5f49bff59b52b6a354c01921da0807ab6efb0949aa7e9e087d818540b2ad55",
+    "financeclaw/agent_server/middleware/execution_middleware.py": "0d35600a6ac88187943ae014843427c7662eacd3462489c734d15a5a79b02cae",
+    "financeclaw/agent_server/middleware/memory_middleware.py": "b473df8056caaabdda9e08b944d18d5edff22dda5f4619a116f7747ad3ce0883",
+    "financeclaw/agent_server/middleware/middleware.py": "61cfa2131c8414126cfcbe987d1930f19b3ec0c32d235d0bc5165d1a29f180e1",
+    "financeclaw/agent_server/middleware/subgraph_hitl.py": "2f3f30b1517028053922632a2763ae3b0804d4c8ba9b8686a3bb260018c5431b",
+    "financeclaw/agent_server/tools/__init__.py": "84516c17094a8704df7886e09c742ad4d8ed1c1fcde4f0698fc1e43fb287ec14",
+    "financeclaw/agent_server/tools/catalog.py": "33a855705481418c0424f0a0cbbe8ba8f16ca0ac85b5e90b4826f4de02c779b5",
+    "financeclaw/agent_server/tools/delegation.py": "678b69ff18cc721883c99e5e0c81d50007605e6e419ee1cbd6849e505d2e58ba",
+    "financeclaw/agent_server/tools/governance.py": "ceecf5973c31f391126f52864676c296f8a66bcba674a2d272766eb5848ebcbd",
+    "financeclaw/agent_server/tools/interaction.py": "d8bc01985dde50f8a1c9eddbc1236cadf74e87eb329412a80800e3191fa6d3af",
+    "financeclaw/agent_server/tools/local.py": "382670d328400c43b366415c1b8c654381472eab662a7e99baf76e2241cf4467",
+    "financeclaw/agent_server/tools/mcp.py": "74022299f4e715c13e3fa306bd8cffb90e6ed8dcad74a0a5b2260e6f32ca0ffc",
+    "financeclaw/agent_server/tools/mcp_server.py": "6e56d7b607a2f204641ab4f5394e32e35c397cfe38a72831e598ceef43874911",
+    "financeclaw/agent_server/tools/memory.py": "0881cd4ee198d9aaf238a39afed61e4fb9300eef6470f73d711cca9a6afc641e",
+    "financeclaw/agent_server/tools/policy.py": "85fc6e4d8f75127ea1e26096be81f5ac2024714f201a08597f17c7a21657f5ef",
+    "financeclaw/agent_server/tools/subgraph_assembly.py": "17525035ca91dd50bd09605aa4929700fcfe770d3adf7f2a54109fa54fc94faf",
+    "financeclaw/agent_server/tools/subgraph_scope.py": "c4218c216890c541bd221ea2de3031bcfdb53989af008912796dc82918bb04dd",
+    "financeclaw/agent_server/tools/subgraphs.py": "e8ad068edb4b96c76c367fcf543afff0343c9cf27b50fb768ff680e3f8ee2837",
+    "financeclaw/agent_server/tools/ziwei.py": "c76f18d869b2b86d7209033c30e833c71db668528fae4bbc2908fd4ddc86ad76",
+    "financeclaw/shared/releases/__init__.py": "d0744e263eb40b4545814104d0a2078aa5a6678dac5521c780d9a23486909ace",
+    "financeclaw/shared/releases/catalog.py": "ccd71993cdadfc5a39c72f0f4f9d0d71141bc872ffa3c733ddf5a9cb0d6ee681",
+    "financeclaw/shared/releases/fingerprint.py": "65667ebe9d42af20381b537161b10d063a09ff64758aa6f7a610bd7fa97823aa",
+    "financeclaw/shared/releases/subgraphs.py": "bd115340dfb09da4a743d13fc94bb56d7fa8c0a57985fa5b58cbbbb16ec01785",
+    "financeclaw/shared/releases/tools.py": "698ef5cf105a4d4b724c84c308e622040b935cc2498e630e286fa39bdb8ee495",
+    "financeclaw/shared/releases/workflows.py": "ddb7a80fd94bcc26f3acba7badd2842b85e1a93f224b52344572f9cc023596b9",
+    "financeclaw/shared/releases/ziwei.py": "d195866d20a4b5b357b3506cd91ac874182f688c5049a19bb54095a9be14a155",
+    "tests/stage8_hotfix/test_production_subgraphs.py": "cbb660cc80daf899272ba80827a32583599a1623d7e8dc30e789865b67822e54"
+  }
+}

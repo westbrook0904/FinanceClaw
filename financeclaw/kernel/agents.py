@@ -83,6 +83,8 @@ class AgentProfile(BaseModel):
     output_state_key: str = "structured_response"
     # 可提问的类型、选项、Schema 和权限在发布时声明，模型只提供问题正文。
     interaction_points: tuple[InteractionPoint, ...] = ()
+    # Canonical JSON declarations keep nested releases immutable; absent on historical releases.
+    worker_manifest: tuple[str, ...] = Field(default=(), exclude_if=lambda value: not value)
     # 领域运行采用声明的资料分级；内部默认值省略序列化以保持旧发布快照兼容。
     data_classification: DataClassification = Field(
         default=DataClassification.INTERNAL,
@@ -103,9 +105,15 @@ class AgentProfile(BaseModel):
             raise ValueError("Agent interaction point IDs must be unique")
         if len(names) != len(set(names)):
             raise ValueError("AgentProfile cannot bind multiple versions of the same tool name")
-        if self.context_policy not in {"stage2-journal-v1", "delegated-task-only-v1"}:
+        if self.context_policy not in {
+            "stage2-journal-v1",
+            "delegated-task-only-v1",
+            "worker-task-only-v1",
+        }:
             raise ValueError("unsupported Agent context policy")
-        if self.delegatable and self.memory_policy != "none":
+        if (
+            self.delegatable or self.context_policy == "worker-task-only-v1"
+        ) and self.memory_policy != "none":
             raise ValueError("delegated Agents cannot recall root long-term memory")
         return self
 

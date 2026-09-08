@@ -167,6 +167,11 @@ def build_ziwei_agent(
         """预检和 finalize 恢复都检查冻结发布，不能只依赖取证子图的模型中间件。"""
         ZiweiService.authorize(context)
         repository = getattr(factory.conversation_repository, "execution", None)
+        if profile.context_policy == "worker-task-only-v1":
+            from financeclaw.agent_server.tools.subgraph_scope import verify_graph_release
+
+            verify_graph_release(repository, context, profile)
+            return repository
         if context.root_run_id:
             if repository is None:
                 raise RuntimeError("persistent execution budget is not configured")

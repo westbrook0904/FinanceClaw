@@ -160,3 +160,9 @@ class PortfolioReviewOutput(_FrozenModel):
         if self.status != "completed" and not self.error:
             raise ValueError("non-completed portfolio review requires an error")
         return self
+
+
+class PortfolioReviewSubgraphOutput(PortfolioReviewOutput):
+    """Internal 1.1.0 release keeps the public result fields and pins its own version."""
+
+    workflow_version: Literal["1.1.0"] = "1.1.0"

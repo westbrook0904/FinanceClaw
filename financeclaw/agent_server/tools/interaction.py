@@ -44,9 +44,16 @@ def request_user_interaction(
         if not action or len(json.dumps(action).encode()) > 16384:
             raise ValueError("approval requires a bounded action snapshot")
         payload["action"] = action
+    from financeclaw.agent_server.tools.subgraph_scope import active_scope
+
+    scope = active_scope.get()
+    if scope is not None:
+        payload.update(scope.interaction_binding())
     result = interrupt(payload)
     if not isinstance(result, dict) or result.get("kind") != point.kind:
         raise ValueError("response does not match the declared interaction kind")
+    if scope is not None and result.get("invocation_id") != scope.identity:
+        raise ValueError("response does not match this Worker invocation")
     if point.kind == "approval":
         if result.get("decision") not in {"approve", "reject"} or result.get(
             "action_hash"

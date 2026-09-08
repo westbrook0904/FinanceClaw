@@ -57,6 +57,7 @@ def build_release_catalogs(
     *,
     enable_persistence: bool = False,
     base_tool_catalog: ToolReleaseCatalog | None = None,
+    include_subgraphs: bool = False,
 ) -> ReleaseCatalogs:
     """根据相同配置固定发布指纹；可注入测试或定制工具的声明目录。"""
     if base_tool_catalog is None:
@@ -289,4 +290,9 @@ def build_release_catalogs(
     agent_profiles = AgentProfileCatalog((agent_profile, domain_agent_profile, specialist))
     tool_catalog = ToolReleaseCatalog((*tool_catalog.values(), *chart_tools, ziwei_delegate))
 
-    return ReleaseCatalogs(model_profiles, agent_profiles, tool_catalog, workflow_catalog)
+    releases = ReleaseCatalogs(model_profiles, agent_profiles, tool_catalog, workflow_catalog)
+    if include_subgraphs:
+        from financeclaw.shared.releases.subgraphs import with_subgraph_releases
+
+        return with_subgraph_releases(releases)
+    return releases

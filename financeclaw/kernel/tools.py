@@ -20,6 +20,7 @@ class SideEffect(StrEnum):
     EXTERNAL_ACTION = "external_action"
     DELEGATION = "delegation"
     INTERACTION = "interaction"
+    COMPOSITE = "composite"
 
 
 class Idempotency(StrEnum):
