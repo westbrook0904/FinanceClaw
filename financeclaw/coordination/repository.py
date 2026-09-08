@@ -20,7 +20,9 @@ from financeclaw.shared.execution_ledger.coordination_tables import (
 from financeclaw.shared.execution_ledger.repository import ExecutionConflict, digest
 from financeclaw.shared.execution_ledger.tables import RunExecutionRow, RunOperationRow
 
-DRIVER_VERSION = 1
+DRIVER_VERSION = 2
+# 8B 保持 8A 已冻结操作的语义；新根标为 2，阻止不写通知的 8A 二进制领取。
+COMPATIBLE_DRIVER_VERSIONS = (1, 2)
 
 
 def now() -> datetime:
@@ -50,6 +52,10 @@ class CoordinatorRepository:
     def require_schema(self) -> None:
         """所有正式角色必须先完成共享迁移，缺表时在受理之前停止启动。"""
         from sqlalchemy import inspect
+
+        from financeclaw.shared.notifications.facts import require_schema
+
+        require_schema(self.sessions)
 
         from financeclaw.shared.execution_ledger.coordination_tables import (
             ContinuationRow,
@@ -111,7 +117,7 @@ class CoordinatorRepository:
             .execution_options(populate_existing=True)
         )
         if (
-            row.driver_version != DRIVER_VERSION
+            row.driver_version not in COMPATIBLE_DRIVER_VERSIONS
             or row.backend_instance_id != self.backend_instance_id
         ):
             raise StaleCoordinator("incompatible coordination binding")
@@ -152,6 +158,9 @@ class CoordinatorRepository:
         if projection == row.projection:
             return
         row.projection, row.revision, row.updated_at = projection, row.revision + 1, now()
+        from financeclaw.shared.notifications.facts import record_progress
+
+        record_progress(session, row)
         safe_event = {
             "run_id": row.run_id,
             "status": projection["status"],
@@ -291,7 +300,7 @@ class CoordinatorRepository:
                 select(CoordinatedRunRow)
                 .where(
                     CoordinatedRunRow.backend_instance_id == self.backend_instance_id,
-                    CoordinatedRunRow.driver_version == DRIVER_VERSION,
+                    CoordinatedRunRow.driver_version.in_(COMPATIBLE_DRIVER_VERSIONS),
                     CoordinatedRunRow.active.is_(True),
                     CoordinatedRunRow.due_at <= now(),
                     or_(
@@ -319,7 +328,7 @@ class CoordinatorRepository:
                     CoordinatedRunRow.owner == claim["owner"],
                     CoordinatedRunRow.epoch == claim["epoch"],
                     CoordinatedRunRow.lease_until > now(),
-                    CoordinatedRunRow.driver_version == DRIVER_VERSION,
+                    CoordinatedRunRow.driver_version.in_(COMPATIBLE_DRIVER_VERSIONS),
                 )
                 .values(lease_until=now() + timedelta(seconds=lease_seconds))
             )

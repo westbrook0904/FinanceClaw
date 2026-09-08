@@ -21,3 +21,8 @@ Stage 8A adds an opt-in Coordinator profile fragment: [`coordinator.env.example`
 Apply matching settings to BFF, Ingress and Worker, migrate the shared application database first,
 and configure the Agent Server webhook header separately. See
 [`Coordinator operations`](../../docs/operations/coordinator.md).
+
+Stage 8B adds [`notifications.env.example`](notifications.env.example) and a separate sender role.
+Keep the notification admission switch disabled until the real Feishu canary passes; configure the
+same app and allowlist as the BFF. The sender has no WebSocket. See
+[`Notification operations`](../../docs/operations/notifications.md).

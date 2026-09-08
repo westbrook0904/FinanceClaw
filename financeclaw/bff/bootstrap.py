@@ -141,6 +141,22 @@ def create_default_app(settings: FinanceClawSettings | None = None) -> FastAPI:
     }
     if getattr(conversation_service.runs, "coordinated", False):
         readiness_checks["coordinator"] = conversation_service.runs.healthy
+    if settings.feishu_notifications_enabled:
+        from financeclaw.bff.notifications.repository import NotificationRepository
+
+        notifications = NotificationRepository(
+            components.database.session_factory,
+            app_id=settings.feishu_app_id,
+            allowed_open_ids=settings.feishu_allowed_open_ids,
+        )
+
+        async def notifications_ready():
+            """独立报告通知发送者存活，不以审计 publisher 成功替代。"""
+            return await asyncio.to_thread(
+                notifications.healthy, maximum_age=settings.notification_lease_seconds
+            )
+
+        readiness_checks["notification_sender"] = notifications_ready
     if feishu_channel is not None:
         startup_hooks = (feishu_channel.start,)
         shutdown_hooks.append(feishu_channel.stop)

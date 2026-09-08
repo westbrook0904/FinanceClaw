@@ -22,6 +22,7 @@ import financeclaw.shared.execution_ledger.delegation_tables as _delegation_tabl
 import financeclaw.shared.execution_ledger.interaction_tables as _interaction_tables  # noqa: F401
 import financeclaw.shared.execution_ledger.tables as _execution_tables  # noqa: F401
 import financeclaw.shared.execution_ledger.workflow_tables as _workflow_tables  # noqa: F401
+import financeclaw.shared.notifications.tables as _notification_tables  # noqa: F401
 import financeclaw.shared.outbox.tables as _outbox_tables  # noqa: F401
 from financeclaw.shared.infrastructure.observability.telemetry import instrument_sqlalchemy_engine
 from financeclaw.shared.infrastructure.orm import Base

@@ -17,7 +17,8 @@ Coordination 使用 PostgreSQL Inbox、到期责任和租约推进，不需要 T
    .venv/bin/alembic upgrade head
    ```
 
-   迁移头为 `0009_stage8a`。部署环境关闭自动建表。迁移只新增七张表，不接管旧任务。
+   当前迁移头为 `0010_stage8b`，包含 8A 的七张协调表和 8B 的四张通知表。
+   部署环境关闭自动建表；迁移不接管旧任务或补发历史通知。
 3. Agent Server 使用 [`langgraph.coordination.json`](../../langgraph.coordination.json)，
    注入 `LG_WEBHOOK_COORDINATOR_TOKEN`，值与 Ingress 的
    `FINANCECLAW_COORDINATOR_WEBHOOK_TOKEN` 一致，至少 32 字符。
@@ -49,7 +50,7 @@ BFF `/ready` 也包含 Coordinator 心跳。Worker 不提供 HTTP 端口。
   第一版支持顺序委派，暂不开放递归委派或多个并行请求。
 - GET、SSE、飞书展示从应用库读取；无人订阅或 BFF 退出不会移除后台责任。
   SSE 提供当前快照与状态变化，保留 `assistant.completed`、`run.interrupted` 等已有事件格式；
-  不承诺 token 回放。订阅恢复时重新发送当前快照。
+  不承诺 token 回放。8B 支持 Last-Event-ID、独立游标及历史缺口的当前快照恢复。
 - Webhook 只唤醒任务。原生 `success` 也可能是中断；Worker 精确查询该 Run 的 checkpoint。
   回调全部丢失时，后台按 `COORDINATOR_RECONCILE_SECONDS` 补偿。
 - 操作一旦领取，即使回执丢失也只查原 operation metadata；查不到保留 `submission_uncertain`。
@@ -111,6 +112,7 @@ Ingress 先认证再限制 64 KiB body，丢弃原始 body，只保留受限标�
 也不能把关闭开关当作任务迁移。回滚先停止新受理并处理已有任务；只要七张新表中存在事实，
 `alembic downgrade` 就拒绝删除，必须另做显式归档／迁移。
 
-8B 负责可靠的飞书主动通知；8A 现有展示仍是尽力交付。
+8B 已实现独立飞书通知责任与发送器，默认关闭新通知受理；启用和真实渠道门禁见
+[通知运维说明](notifications.md)。未订阅的既有展示仍为尽力交付。
 8C 负责旧根接管、滚动发布、生产故障演练与容量验收。
 复现命令、真实服务版本与验收范围见 [Stage-8A 验证记录](../../.redesign/stages/Stage-8A-实施与验证.md)。

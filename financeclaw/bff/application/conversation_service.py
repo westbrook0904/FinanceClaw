@@ -190,6 +190,7 @@ class ConversationService:
         scopes: frozenset[str],
         idempotency_key: str,
         authorization=None,
+        notification_address=None,
     ) -> RunAccepted:
         """通过 Coordination 的公开会话运行接口处理本次请求。"""
         return await self.runs.start_turn(
@@ -200,7 +201,9 @@ class ConversationService:
             scopes=scopes,
             idempotency_key=idempotency_key,
             **(
-                {"authorization": authorization} if getattr(self.runs, "coordinated", False) else {}
+                {"authorization": authorization, "notification_address": notification_address}
+                if getattr(self.runs, "coordinated", False)
+                else {}
             ),
         )
 
@@ -257,10 +260,17 @@ class ConversationService:
         tenant_id: str,
         subject_id: str,
         scopes: frozenset[str] = frozenset(),
+        last_event_id: str | None = None,
     ) -> AsyncIterator[StreamEvent]:
         """通过 Coordination 的公开会话运行接口处理本次请求。"""
         async for event in self.runs.stream(
-            run_id, tenant_id=tenant_id, subject_id=subject_id, scopes=scopes
+            run_id,
+            tenant_id=tenant_id,
+            subject_id=subject_id,
+            scopes=scopes,
+            **(
+                {"last_event_id": last_event_id} if getattr(self.runs, "coordinated", False) else {}
+            ),
         ):
             yield event
 

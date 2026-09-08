@@ -99,6 +99,10 @@ GET／SSE 只读，后台独立完成 root → child → root。BFF 与 Coordina
 `financeclaw_app`。默认不开启旧根接管；启动、授权与验收边界见
 [Coordinator 运维说明](docs/operations/coordinator.md)。
 
+Stage-8B 增加持久通知意图、独立飞书文本发送器和 SSE 游标恢复，结果交付与前台连接分离。
+主动通知默认关闭，配置、回执与真实渠道验收边界见
+[通知交付说明](docs/operations/notifications.md)。
+
 ## 环境
 
 推荐用 conda 管理解释器，用 uv 把锁定依赖安装到同一个项目内环境：

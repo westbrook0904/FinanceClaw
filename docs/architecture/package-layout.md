@@ -96,17 +96,19 @@ AgentServer 框架的 checkpoint/store 数据库职责保持不变；FinanceClaw
 | Delegation、Workflow、Interaction | 生命周期仓储和用例归 Coordination；表映射在共享账本中供原子事务复用 |
 | 制品 | 各执行路径共享；`ArtifactMetadataRow` 已归 `shared/artifacts/tables.py` |
 | Audit / Outbox | 共用追加审计与事件外发实现，业务事实不能以投递状态替代 |
+| 通知目标 / 事件 / 分片回执 | `shared/notifications` 保存同事务事实；BFF 通知模块负责格式、订阅和独立发送 |
 
 委派交付与执行观察、交互决定与审批/恢复操作、Audit 与 Outbox 的原子提交继续保留。
 共享表映射不代表允许任意跨表写入；新增写入须明确所属用例和事务边界。
-分包本身未改变数据库。后续 Stage-8A 新增七张协调表，迁移头为 `0009_stage8a`，
-继续使用同一业务 Session 和 Alembic 序列。
+分包本身未改变数据库。Stage-8A 新增七张协调表，Stage-8B 新增四张通知表，
+当前迁移头为 `0010_stage8b`，继续使用同一业务 Session 和 Alembic 序列。
 
 ## 入口与兼容性
 
 - BFF：`main.py` → `bff/bootstrap.py:create_default_app` → `bff/http/app.py:create_app`。
 - Coordination 受理：`coordination/bootstrap.py:build_coordination`，由 BFF 显式装配。
 - Coordinator Worker：`python -m financeclaw.coordination.worker`。
+- 通知发送器：`python -m financeclaw.bff.notifications.worker`，无需 WebSocket 或 BFF app 实例。
 - Webhook Ingress：`coordination/ingress/app.py:create_default_ingress`，独立 Uvicorn 工厂。
 - AgentServer：`langgraph.json` / `langgraph.local.json` → `agent_server/graphs/server_graphs.py`。
 - 迁移：`alembic.ini` → `shared/infrastructure/migrations`。

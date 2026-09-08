@@ -173,6 +173,14 @@ class FinanceClawSettings(BaseSettings):
     coordinator_lease_seconds: float = Field(default=60, ge=3, le=600)
     coordinator_max_step_seconds: float = Field(default=120, ge=1, le=1800)
     feishu_enabled: bool = False
+    feishu_notifications_enabled: bool = False
+    notification_poll_seconds: float = Field(default=1, ge=0.05, le=30)
+    notification_lease_seconds: float = Field(default=60, ge=15, le=600)
+    notification_timeout_seconds: float = Field(default=10, ge=1, le=30)
+    notification_max_failures: int = Field(default=5, ge=1, le=20)
+    # 0 表示未通过真实服务的幂等窗口验收；uncertain 停留待核对。
+    notification_verified_dedup_seconds: int = Field(default=0, ge=0, le=3600)
+    notification_dedup_evidence: str | None = None
     feishu_app_id: str | None = None
     feishu_app_secret: SecretStr | None = None
     feishu_allowed_open_ids: frozenset[str] = Field(default_factory=frozenset)
@@ -381,7 +389,13 @@ class FinanceClawSettings(BaseSettings):
         if self.artifact_s3_kms_key_id and not self.artifact_s3_sse_algorithm.startswith("aws:kms"):
             raise ValueError("artifact_s3_kms_key_id requires aws:kms encryption")
         # 6. 飞书一期只在显式开启时校验凭证、灰度白名单和最小权限。
-        if self.feishu_enabled:
+        if self.notification_lease_seconds <= self.notification_timeout_seconds * 2:
+            raise ValueError("notification lease must exceed two remote call timeouts")
+        if self.notification_verified_dedup_seconds and not self.notification_dedup_evidence:
+            raise ValueError("notification dedup recovery requires a verified evidence reference")
+        if self.feishu_notifications_enabled and not self.coordinator_enabled:
+            raise ValueError("durable notification admission requires Coordinator")
+        if self.feishu_enabled or self.feishu_notifications_enabled:
             if not self.feishu_app_id or not self.feishu_app_id.strip():
                 raise ValueError("feishu_app_id is required when Feishu channel is enabled")
             if (

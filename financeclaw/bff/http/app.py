@@ -611,10 +611,42 @@ def create_app(
                 )
             raise
 
+    @app.get("/v1/runs/{run_id}/notifications")
+    async def run_notifications(
+        run_id: str,
+        principal: Annotated[AuthenticatedPrincipal, Depends(principal_dep)],
+    ) -> dict:
+        """纯读根任务的通知责任；不把审计事件发布状态当成发送成功。"""
+        if not background:
+            raise RunNotFound("notification subscription not found")
+        return await asyncio.to_thread(
+            conversation_service.runs.notifications,
+            run_id,
+            tenant_id=principal.tenant_id,
+            subject_id=principal.subject_id,
+        )
+
+    @app.delete("/v1/runs/{run_id}/notifications")
+    async def revoke_run_notifications(
+        run_id: str,
+        principal: Annotated[AuthenticatedPrincipal, Depends(principal_dep)],
+    ) -> dict:
+        """撤销原订阅，阻止后续分片；不取消 Agent 或重新绑定接收人。"""
+        if not background:
+            raise RunNotFound("notification subscription not found")
+        return await asyncio.to_thread(
+            conversation_service.runs.notifications,
+            run_id,
+            tenant_id=principal.tenant_id,
+            subject_id=principal.subject_id,
+            revoke=True,
+        )
+
     @app.get("/v1/runs/{run_id}/events")
     async def stream_run(
         run_id: str,
         principal: Annotated[AuthenticatedPrincipal, Depends(principal_dep)],
+        last_event_id: Annotated[str | None, Header(max_length=256)] = None,
     ) -> StreamingResponse:
         """运行事件流端点（GET /v1/runs/{run_id}/events，SSE）。
 
@@ -624,6 +656,7 @@ def create_app(
         Args:
             run_id: 运行 ID（路径参数）。
             principal: 已认证的调用方身份，用于归属校验。
+            last_event_id: 客户端上次收到的根任务 revision，缺口恢复为当前快照。
 
         Returns:
             SSE 流式响应，事件帧由 ``project_sse`` 序列化。
@@ -641,6 +674,7 @@ def create_app(
                 tenant_id=principal.tenant_id,
                 subject_id=principal.subject_id,
                 scopes=principal.scopes,
+                last_event_id=last_event_id,
             )
             return StreamingResponse(project_sse(events), media_type="text/event-stream")
         try:

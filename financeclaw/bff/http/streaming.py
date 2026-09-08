@@ -27,4 +27,5 @@ async def project_sse(events: AsyncIterator[StreamEvent]) -> AsyncIterator[str]:
     """
     async for event in events:
         payload = json.dumps(event.data, ensure_ascii=False, default=str)
-        yield f"event: {event.event}\ndata: {payload}\n\n"
+        identifier = f"id: {event.id}\n" if event.id is not None else ""
+        yield f"{identifier}event: {event.event}\ndata: {payload}\n\n"

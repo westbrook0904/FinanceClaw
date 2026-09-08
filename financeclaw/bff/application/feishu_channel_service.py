@@ -17,6 +17,7 @@ from financeclaw.coordination.api import (
     InteractionNotFound,
 )
 from financeclaw.kernel.authorization import AuthorizationEvidence
+from financeclaw.kernel.notifications import NotificationAddress
 from financeclaw.kernel.responses import ConversationTurnRequest, StreamEvent
 from financeclaw.shared.conversation.repository import ConversationConflict, ConversationNotFound
 from financeclaw.shared.execution_ledger.repository import digest
@@ -376,7 +377,7 @@ class FeishuChannelService:
                 tenant_id=tenant_id,
                 subject_id=subject_id,
             )
-        if normalized.split(maxsplit=1)[0] in {"/cancel", "/authorize", "/revoke"}:
+        if normalized.split(maxsplit=1)[0] in {"/cancel", "/authorize", "/revoke", "/mute"}:
             parts = normalized.split()
             if len(parts) != 2:
                 raise InteractionConflict("命令必须携带一个明确的根任务 ID。")
@@ -391,6 +392,18 @@ class FeishuChannelService:
                 raise InteractionNotFound("root task not found") from exc
             if turn.conversation_id != conversation.conversation_id:
                 raise InteractionConflict("任务不属于当前单聊。")
+            if parts[0] == "/mute":
+                if not authorization_kwargs:
+                    raise InteractionConflict("此任务没有后台通知订阅。")
+                await asyncio.to_thread(
+                    self.conversation_service.runs.notifications,
+                    parts[1],
+                    tenant_id=tenant_id,
+                    subject_id=subject_id,
+                    revoke=True,
+                )
+                await self._send_plain(gateway, message, "已关闭该任务的后续通知。", suffix="mute")
+                return "notifications_muted"
             if parts[0] in {"/authorize", "/revoke"}:
                 if not authorization_kwargs:
                     raise InteractionConflict("此任务未启用后台协调授权。")
@@ -438,6 +451,20 @@ class FeishuChannelService:
             subject_id=subject_id,
             scopes=self.scopes,
             idempotency_key=f"feishu:{self.app_id}:{message.message_id}",
+            **(
+                {
+                    "notification_address": NotificationAddress(
+                        app_id=self.app_id,
+                        tenant_key=message.tenant_key,
+                        open_id=message.sender_open_id,
+                        chat_id=message.chat_id,
+                        message_id=message.message_id,
+                    )
+                }
+                if authorization_kwargs
+                and self.conversation_service.runs.settings.feishu_notifications_enabled
+                else {}
+            ),
             **authorization_kwargs,
         )
         return await self._deliver_run(
@@ -454,6 +481,12 @@ class FeishuChannelService:
         subject_id: str,
     ) -> str:
         """新 Turn 与交互恢复共用展示路径；回答不会追加新的父 Turn。"""
+        runs = getattr(self.conversation_service, "runs", None)
+        if getattr(runs, "coordinated", False) and await asyncio.to_thread(
+            runs.notification_mode, run_id, tenant_id=tenant_id, subject_id=subject_id
+        ):
+            # 短受理结束后由持久发送器交付；此处不创建卡片或第二份最终回复。
+            return "accepted"
         state = _ReplyState()
 
         async def producer(stream: FeishuMarkdownStream) -> None:

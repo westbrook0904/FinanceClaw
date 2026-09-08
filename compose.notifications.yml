@@ -1,0 +1,11 @@
+# Separate sender role. Render .env.notifications from your profile + coordinator and notification
+# settings, with FEISHU_NOTIFICATIONS_ENABLED=true. This file does not connect a WebSocket.
+services:
+  notification-sender:
+    build: .
+    image: financeclaw-coordination:local
+    env_file: [.env.notifications]
+    command: [/opt/financeclaw/.venv/bin/python, -m, financeclaw.bff.notifications.worker]
+    healthcheck: {disable: true}
+    restart: unless-stopped
+    stop_grace_period: 40s

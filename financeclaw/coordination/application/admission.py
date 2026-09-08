@@ -7,7 +7,7 @@ from sqlalchemy import select
 
 from financeclaw.coordination.application.releases import release_ref
 from financeclaw.coordination.application.run_service import IdempotencyConflict, RunNotFound
-from financeclaw.coordination.repository import now
+from financeclaw.coordination.repository import DRIVER_VERSION, now
 from financeclaw.kernel.authorization import AuthorizationEvidence
 from financeclaw.kernel.context import ExecutionContext
 from financeclaw.kernel.coordination import TaskSubmission, bounded_digest
@@ -103,6 +103,7 @@ class CoordinatorAdmission:
         scopes,
         idempotency_key,
         authorization=None,
+        notification_address=None,
     ):
         """202 只在 Turn、Journal、快照、grant、命令、Inbox 与进度共同提交后返回。"""
         return await asyncio.to_thread(
@@ -114,6 +115,7 @@ class CoordinatorAdmission:
             scopes=scopes,
             idempotency_key=idempotency_key,
             authorization=authorization,
+            notification_address=notification_address,
         )
 
     def _admit(
@@ -126,6 +128,7 @@ class CoordinatorAdmission:
         scopes,
         idempotency_key,
         authorization,
+        notification_address=None,
     ):
         """无 I/O 的受理事务；幂等重放不更新原输入、发布或授权。"""
         conversation = self.repository.get_owned(conversation_id, tenant_id, subject_id)
@@ -167,6 +170,18 @@ class CoordinatorAdmission:
                     if row is None:
                         raise ExecutionConflict("existing legacy turn requires explicit migration")
                     snapshot = session.get(RunExecutionRow, turn.run_id).snapshot
+                    if notification_address is not None:
+                        from financeclaw.shared.notifications.facts import bind_target
+
+                        bind_target(
+                            session,
+                            row,
+                            notification_address,
+                            tenant_id=tenant_id,
+                            subject_id=subject_id,
+                            evidence=evidence,
+                            replay=True,
+                        )
                 else:
                     context = ExecutionContext(
                         tenant_id=tenant_id,
@@ -194,6 +209,7 @@ class CoordinatorAdmission:
                         run_id=turn.run_id,
                         conversation_id=conversation_id,
                         backend_instance_id=self.store.backend_instance_id,
+                        driver_version=DRIVER_VERSION,
                         revision=0,
                         projection={},
                         wake=1,
@@ -210,6 +226,19 @@ class CoordinatorAdmission:
                         )
                     )
                     session.flush()
+                    if notification_address is not None:
+                        if not self.settings.feishu_notifications_enabled:
+                            raise ExecutionConflict("notification admission is disabled")
+                        from financeclaw.shared.notifications.facts import bind_target
+
+                        bind_target(
+                            session,
+                            row,
+                            notification_address,
+                            tenant_id=tenant_id,
+                            subject_id=subject_id,
+                            evidence=evidence,
+                        )
                     self.store.authorization_event(
                         session, row, session.get(RunAuthorizationRow, turn.run_id), "admitted"
                     )
@@ -266,6 +295,70 @@ class CoordinatorAdmission:
             self.store.worker_available,
             maximum_age=max(10, self.settings.coordinator_lease_seconds),
         )
+
+    def notification_mode(self, run_id, *, tenant_id, subject_id):
+        """目标模式来自首次受理事实，开关关闭后也不能切回另一最终发送路径。"""
+        from financeclaw.shared.notifications.tables import NotificationTargetRow
+
+        root_id = self.root_for_task(run_id, tenant_id=tenant_id, subject_id=subject_id)
+        with self.store.sessions() as session:
+            target = session.scalar(
+                select(NotificationTargetRow).where(NotificationTargetRow.run_id == root_id)
+            )
+            return target.delivery_mode if target else None
+
+    def notifications(self, run_id, *, tenant_id, subject_id, revoke=False):
+        """按根归属读取投递责任或显式撤销订阅，不暴露目的地址和正文。"""
+        from financeclaw.shared.notifications.tables import (
+            NotificationDeliveryRow,
+            NotificationEventRow,
+            NotificationTargetRow,
+        )
+
+        root_id = self.root_for_task(run_id, tenant_id=tenant_id, subject_id=subject_id)
+        if root_id != run_id:
+            raise RunNotFound("notification subscription belongs to root task")
+        with self.store.sessions.begin() as session:
+            statement = select(NotificationTargetRow).where(NotificationTargetRow.run_id == root_id)
+            target = session.scalar(statement.with_for_update() if revoke else statement)
+            if target is None:
+                return {"run_id": root_id, "subscribed": False, "deliveries": []}
+            if revoke:
+                target.active = False
+            events = list(
+                session.scalars(
+                    select(NotificationEventRow)
+                    .where(NotificationEventRow.target_id == target.target_id)
+                    .order_by(NotificationEventRow.revision)
+                )
+            )
+            deliveries = list(
+                session.scalars(
+                    select(NotificationDeliveryRow)
+                    .join(NotificationEventRow)
+                    .where(NotificationEventRow.target_id == target.target_id)
+                    .order_by(NotificationEventRow.revision, NotificationDeliveryRow.part)
+                )
+            )
+            return {
+                "run_id": root_id,
+                "subscribed": True,
+                "active": target.active,
+                "delivery_mode": target.delivery_mode,
+                "unmaterialized_events": sum(event.materialized_at is None for event in events),
+                "deliveries": [
+                    {
+                        "delivery_id": row.delivery_id,
+                        "part": row.part + 1,
+                        "parts": row.parts,
+                        "status": row.status,
+                        "uncertain": row.uncertain,
+                        "attempts": row.attempts,
+                        "error_class": row.error_class,
+                    }
+                    for row in deliveries
+                ],
+            }
 
     async def status(self, run_id, *, tenant_id, subject_id, scopes=None, **_):
         """GET 只读取数据库投影，不触发 backend、过期写入或业务推进。"""
@@ -509,7 +602,31 @@ class CoordinatorAdmission:
         )
         return await self.status(root_id, tenant_id=tenant_id, subject_id=subject_id)
 
-    async def stream(self, run_id, *, tenant_id, subject_id, scopes=frozenset()):
+    async def stream(
+        self, run_id, *, tenant_id, subject_id, scopes=frozenset(), last_event_id=None
+    ):
+        """根事件使用独立客户端游标；子任务和历史模式保持只读兼容投影。"""
+        if (
+            self.manages(run_id)
+            and self.root_for_task(run_id, tenant_id=tenant_id, subject_id=subject_id) == run_id
+        ):
+            from financeclaw.coordination.application.progress import stream_progress
+
+            async for event in stream_progress(
+                self,
+                run_id,
+                tenant_id=tenant_id,
+                subject_id=subject_id,
+                last_event_id=last_event_id,
+            ):
+                yield event
+        else:
+            async for event in self._status_stream(
+                run_id, tenant_id=tenant_id, subject_id=subject_id, scopes=scopes
+            ):
+                yield event
+
+    async def _status_stream(self, run_id, *, tenant_id, subject_id, scopes=frozenset()):
         """有限的只读状态流；重连、断开或无人订阅都不会影响推进责任。"""
         from financeclaw.coordination.application.streaming import (
             completed_stream_event,

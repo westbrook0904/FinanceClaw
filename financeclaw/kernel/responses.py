@@ -357,6 +357,7 @@ class StreamEvent(ContractModel):
 
     event: str
     data: Any
+    id: str | None = Field(default=None, max_length=256, pattern=r"^[^\r\n\x00]+$")
 
 
 class ErrorResponse(ContractModel):
