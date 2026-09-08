@@ -160,6 +160,7 @@ class DelegationService:
             DelegationAuthorizationError: 缺少目标所需权限范围。
 
         """
+        await asyncio.to_thread(self.execution.require_legacy, parent_run_id)
         # 1. 校验 handoff 中的父 run/turn/会话引用与当前 Turn 一致。
         self._verify_parent(
             handoff,
@@ -278,6 +279,7 @@ class DelegationService:
             delegation 记录（已同步子运行最新状态）。
 
         """
+        await asyncio.to_thread(self.execution.require_legacy)
         record = await asyncio.to_thread(
             self.repository.get_owned, delegation_id, tenant_id, subject_id
         )
@@ -332,6 +334,7 @@ class DelegationService:
             DelegationConflict: 子运行不是 Workflow 或尚未启动，无法恢复。
 
         """
+        await asyncio.to_thread(self.execution.require_legacy)
         if record.child_run_id is None:
             raise DelegationConflict("delegated child does not support approval resume")
         if record.kind is DelegationKind.AGENT:
@@ -461,6 +464,7 @@ class DelegationService:
             本次完成对账的 delegation ID 列表。
 
         """
+        await asyncio.to_thread(self.execution.require_legacy)
         records = await asyncio.to_thread(self.repository.list_undelivered)
         reconciled: list[str] = []
         for record in records:

@@ -74,6 +74,7 @@ PostgreSQL 保存协调责任，推进与后续增强直接在 coordination 内�
 - [Stage 8 实施与验证：协议、事务与基础协调证据](./stages/Stage-8-实施与验证.md)
 - [Stage 8A 实施与验证：正式 Coordinator 与 LangGraph 闭环](./stages/Stage-8A-实施与验证.md)
 - [Stage 8B 实施与验证：持久通知、独立飞书发送器与 SSE 恢复](./stages/Stage-8B-实施与验证.md)
+- [Stage 8C 实施与验证：旧根接管、部署门闩与多进程容量](./stages/Stage-8C-实施与验证.md)
 
 迁移材料：
 

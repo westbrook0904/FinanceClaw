@@ -73,28 +73,20 @@ def build_coordination(
         conversation_repository=resources.conversation_repository,
         artifact_service=resources.artifact_service,
     )
-    conversations = ConversationRunService(
-        client,
-        resources.conversation_repository,
-        releases.agent_profiles,
-        delegation_service=delegation_service,
-        summary_service=resources.summary_service,
-        approval_timeout_seconds=settings.approval_timeout_seconds,
-    )
-    background_repository = background_releases = None
-    if settings.coordinator_enabled:
-        from financeclaw.coordination.application.releases import CoordinationReleases
-        from financeclaw.coordination.repository import CoordinatorRepository
+    from financeclaw.coordination.application.releases import CoordinationReleases
+    from financeclaw.coordination.repository import CoordinatorRepository
 
-        background_repository = CoordinatorRepository(
-            resources.database.session_factory,
-            backend_instance_id=settings.coordinator_backend_instance_id,
-        )
-        background_repository.require_schema()
-        background_releases = CoordinationReleases(
-            releases.agent_profiles, releases.workflow_catalog, delegation_service
-        )
-        conversations = CoordinatorAdmission(background_repository, background_releases, settings)
+    # 生产查询始终经过持久投影；开关仅控制新受理，不重新激活查询驱动。
+    background_repository = CoordinatorRepository(
+        resources.database.session_factory,
+        backend_instance_id=settings.coordinator_backend_instance_id,
+        journal=resources.conversation_repository,
+    )
+    background_repository.require_schema()
+    background_releases = CoordinationReleases(
+        releases.agent_profiles, releases.workflow_catalog, delegation_service
+    )
+    conversations = CoordinatorAdmission(background_repository, background_releases, settings)
     return CoordinationServices(
         resources,
         releases,
@@ -114,8 +106,10 @@ def build_coordinator(settings: FinanceClawSettings | None = None):
     from financeclaw.coordination.backends.langgraph_backend import LangGraphBackend
 
     settings = settings or FinanceClawSettings()
-    if not settings.coordinator_enabled:
-        raise RuntimeError("coordinator_enabled must be true for the Coordinator role")
+    if not settings.coordinator_callback_url or settings.coordinator_webhook_token is None:
+        raise RuntimeError(
+            "Coordinator Worker requires a configured callback even when new admission is disabled"
+        )
     services = build_coordination(settings)
     backend = LangGraphBackend(
         settings, services.background_repository, services.background_releases

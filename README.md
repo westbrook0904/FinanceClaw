@@ -94,7 +94,7 @@ Contracts 空壳和示例实现均已从生产构建删除。验证证据见
 `kernel` 保存跨服务契约，`shared` 保存发布声明、共享业务事实和基础设施，`operations` 与
 `evaluation` 提供运维和评测工具。完整职责及依赖规则见 [包结构设计](docs/architecture/package-layout.md)。
 
-Stage-8A 提供独立的 Webhook Ingress 与 Coordinator Worker；启用协调模式后，BFF 原子受理、
+Stage-8A 提供独立的 Webhook Ingress 与 Coordinator Worker；BFF 原子受理、
 GET／SSE 只读，后台独立完成 root → child → root。BFF 与 Coordinator 暂时共用
 `financeclaw_app`。默认不开启旧根接管；启动、授权与验收边界见
 [Coordinator 运维说明](docs/operations/coordinator.md)。
@@ -102,6 +102,10 @@ GET／SSE 只读，后台独立完成 root → child → root。BFF 与 Coordina
 Stage-8B 增加持久通知意图、独立飞书文本发送器和 SSE 游标恢复，结果交付与前台连接分离。
 主动通知默认关闭，配置、回执与真实渠道验收边界见
 [通知交付说明](docs/operations/notifications.md)。
+
+Stage-8C 统一生产查询为只读，增加旧根盘点／shadow／CAS 接管、部署暂停、唯一驱动隔离和
+有界并发。关闭新受理不会退回 GET 驱动；接管需要停止旧生产者及原主体重新授权。
+操作步骤与隔离验收边界见 [迁移与部署控制](docs/operations/coordinator-cutover.md)。
 
 ## 环境
 
@@ -158,7 +162,9 @@ FINANCECLAW_FEISHU_SECURITY_MODE=audit
 .conda/envs/financeclaw/bin/langgraph dev --no-browser --no-reload --port 2024
 ```
 
-再启动唯一产品入口 BFF：
+完整产品链路还需按 [Coordinator 运维说明](docs/operations/coordinator.md) 配置回调并启动
+独立 Ingress 和 Worker。BFF 默认关闭新受理；应用迁移完成并配置 `COORDINATOR_ENABLED=true`
+后，再启动产品入口 BFF：
 
 ```bash
 .conda/envs/financeclaw/bin/uvicorn main:app --host 127.0.0.1 --port 8000

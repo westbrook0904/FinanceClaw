@@ -46,6 +46,7 @@ class ExecutionService:
 
     async def require_legacy(self, run_id: str) -> None:
         """兼容驱动不能读取或修改协调根的原生尝试索引。"""
+        await asyncio.to_thread(self.repository.require_legacy, run_id)
         execution = await asyncio.to_thread(self.repository.get, run_id)
         if execution["snapshot"].get("driver_mode") == "coordinator":
             raise ExecutionConflict("task is exclusively managed by Coordinator")
@@ -98,7 +99,7 @@ class ExecutionService:
         context, metadata = request["context"], request["metadata"]
         if operation["server_run_id"] is not None:
             return ServerRun(operation["server_run_id"], "pending")
-        claimed = await asyncio.to_thread(self.repository.claim, operation_id)
+        claimed = await asyncio.to_thread(self.repository.claim, operation_id, legacy=True)
         if claimed:
             try:
                 kwargs = {

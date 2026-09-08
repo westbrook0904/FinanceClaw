@@ -22,6 +22,10 @@ Apply matching settings to BFF, Ingress and Worker, migrate the shared applicati
 and configure the Agent Server webhook header separately. See
 [`Coordinator operations`](../../docs/operations/coordinator.md).
 
+Stage 8C makes product reads always use the Coordinator facade. The enabled flag controls only new
+admission. Use [`Cutover operations`](../../docs/operations/coordinator-cutover.md) for legacy inventory,
+read-only shadow checks, stopped-producer evidence, deployment CAS and bounded worker concurrency.
+
 Stage 8B adds [`notifications.env.example`](notifications.env.example) and a separate sender role.
 Keep the notification admission switch disabled until the real Feishu canary passes; configure the
 same app and allowlist as the BFF. The sender has no WebSocket. See

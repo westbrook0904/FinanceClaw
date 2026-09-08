@@ -1,6 +1,6 @@
-# Coordinator 基础运行（Stage 8A）
+# Coordinator 运行（Stage 8A–8C）
 
-启用后，BFF 只受理用户命令并读取持久投影。Coordinator Service 由独立的
+BFF 始终通过 Coordinator Facade 受理用户命令并读取持久投影。Coordinator Service 由独立的
 Webhook Ingress 与 Worker 组成。两者和 BFF 共用 FinanceClaw 应用库；
 Agent Server 自己的 checkpoint/store、队列与图执行仍由 LangGraph 管理。
 Coordination 使用 PostgreSQL Inbox、到期责任和租约推进，不需要 Temporal。
@@ -17,7 +17,7 @@ Coordination 使用 PostgreSQL Inbox、到期责任和租约推进，不需要 T
    .venv/bin/alembic upgrade head
    ```
 
-   当前迁移头为 `0010_stage8b`，包含 8A 的七张协调表和 8B 的四张通知表。
+   当前迁移头为 `0011_stage8c`，包含协调、通知、部署门闩和旧根证据表。
    部署环境关闭自动建表；迁移不接管旧任务或补发历史通知。
 3. Agent Server 使用 [`langgraph.coordination.json`](../../langgraph.coordination.json)，
    注入 `LG_WEBHOOK_COORDINATOR_TOKEN`，值与 Ingress 的
@@ -32,13 +32,13 @@ Coordination 使用 PostgreSQL Inbox、到期责任和租约推进，不需要 T
    .venv/bin/uvicorn financeclaw.bff.bootstrap:create_default_app --factory --host 127.0.0.1 --port 8000
    ```
 
-   每条命令是独立进程。Worker 可以启动多个；每个进程一次推进一个根，短事务领取，
+   每条命令是独立进程。Worker 可以启动多个；默认每进程 4 个槽，按全局与租户上限短事务领取，
    HTTP 等待期间续租。SIGTERM 停止新领取并在配置的一步超时内结束。
    Docker 角色模板见 [`compose.coordination.yml`](../../compose.coordination.yml)，
    BFF 的现有部署也须叠加相同配置。模板不自动迁移数据库或启动 Agent Server。
 
 `/health` 检查进程存活；Ingress `/ready` 区分数据库和兼容 Worker 心跳。
-BFF `/ready` 也包含 Coordinator 心跳。Worker 不提供 HTTP 端口。
+BFF `/ready` 也包含兼容 Coordinator 心跳与积压门禁。Worker 不提供 HTTP 端口。
 本地明文回调只适用于 development/test；可复现验收脚本为 loopback 单独配置 allowlist。
 
 ## 运行语义
@@ -86,6 +86,8 @@ BFF `/ready` 也包含 Coordinator 心跳。Worker 不提供 HTTP 端口。
 | coordination_continuations | 原生等待位置及已应用原响应的证据 |
 | run_progress_events | 安全状态修订事件，不复制回答或原始输出 |
 | coordinator_heartbeats | backend/driver 对应的 Worker 存活证据 |
+| coordination_control | 全库新受理／派发暂停、旧驱动封闭与停止证明摘要 |
+| legacy_adoptions | 原始旧根事实、影子观察摘要与接管 CAS 依据 |
 
 Delegation、Workflow、PendingInteraction、Journal、预算和审计继续复用既有表。
 协调模式下 `run_executions.server_run_id`、`run_operations.server_run_id` 是
@@ -104,7 +106,8 @@ Ingress 先认证再限制 64 KiB body，丢弃原始 body，只保留受限标�
 
 ## 迁移、回滚与后续阶段
 
-`FINANCECLAW_COORDINATOR_ENABLED` 默认 false；开启后只给新受理根分配 Coordinator。
+`FINANCECLAW_COORDINATOR_ENABLED` 默认 false；开启后允许新根受理。关闭不恢复查询驱动，
+已有根仍由独立 Worker 处理。
 旧未完成根显示 `legacy_migration_required`，不自动迁移。内部直连 Tool／Workflow 入口
 在协调模式拒绝创建无法后台管理的根；产品通过 Conversation Turn 表达调用与委派。
 
@@ -114,5 +117,6 @@ Ingress 先认证再限制 64 KiB body，丢弃原始 body，只保留受限标�
 
 8B 已实现独立飞书通知责任与发送器，默认关闭新通知受理；启用和真实渠道门禁见
 [通知运维说明](notifications.md)。未订阅的既有展示仍为尽力交付。
-8C 负责旧根接管、滚动发布、生产故障演练与容量验收。
+8C 已实现接管 CLI、部署门闩、容量限制和隔离演练；操作顺序和真实部署门禁见
+[旧根接管与部署控制](coordinator-cutover.md)。
 复现命令、真实服务版本与验收范围见 [Stage-8A 验证记录](../../.redesign/stages/Stage-8A-实施与验证.md)。

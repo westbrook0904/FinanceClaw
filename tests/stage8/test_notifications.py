@@ -385,7 +385,9 @@ async def test_new_driver_is_fenced_from_old_worker_and_can_read_8a_roots(setup)
 
     _, _, run_id, _ = await admitted(setup)
     with setup.store.sessions() as session:
-        assert session.get(CoordinatedRunRow, run_id).driver_version == 2
+        from financeclaw.coordination.repository import DRIVER_VERSION
+
+        assert session.get(CoordinatedRunRow, run_id).driver_version == DRIVER_VERSION
         assert (
             session.scalar(select(CoordinatedRunRow).where(CoordinatedRunRow.driver_version == 1))
             is None

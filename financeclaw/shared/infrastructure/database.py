@@ -18,6 +18,7 @@ import financeclaw.shared.artifacts.tables as _artifact_tables  # noqa: F401
 import financeclaw.shared.audit.tables as _audit_tables  # noqa: F401
 import financeclaw.shared.conversation.tables as _conversation_tables  # noqa: F401
 import financeclaw.shared.execution_ledger.coordination_tables as _coordination_tables  # noqa: F401
+import financeclaw.shared.execution_ledger.cutover_tables as _cutover_tables  # noqa: F401
 import financeclaw.shared.execution_ledger.delegation_tables as _delegation_tables  # noqa: F401
 import financeclaw.shared.execution_ledger.interaction_tables as _interaction_tables  # noqa: F401
 import financeclaw.shared.execution_ledger.tables as _execution_tables  # noqa: F401

@@ -20,9 +20,9 @@ from financeclaw.shared.execution_ledger.coordination_tables import (
 from financeclaw.shared.execution_ledger.repository import ExecutionConflict, digest
 from financeclaw.shared.execution_ledger.tables import RunExecutionRow, RunOperationRow
 
-DRIVER_VERSION = 2
-# 8B 保持 8A 已冻结操作的语义；新根标为 2，阻止不写通知的 8A 二进制领取。
-COMPATIBLE_DRIVER_VERSIONS = (1, 2)
+DRIVER_VERSION = 3
+# 8C 保持已有命令语义；接管根与新根均为 3，旧 Worker 不能领取。
+COMPATIBLE_DRIVER_VERSIONS = (1, 2, 3)
 
 
 def now() -> datetime:
@@ -42,11 +42,11 @@ class StaleCoordinator(ExecutionConflict):
 class CoordinatorRepository:
     """Conversation → root execution → coordination → operation 的固定锁序。"""
 
-    def __init__(self, sessions, *, backend_instance_id: str):
+    def __init__(self, sessions, *, backend_instance_id: str, journal=None):
         """复用正式 Journal／执行仓储；所有 role 连接同一业务库。"""
         self.sessions = sessions
         self.backend_instance_id = backend_instance_id
-        self.journal = SqlAlchemyConversationRepository(sessions)
+        self.journal = journal or SqlAlchemyConversationRepository(sessions)
         self.execution = self.journal.execution
 
     def require_schema(self) -> None:
@@ -56,10 +56,13 @@ class CoordinatorRepository:
         from financeclaw.shared.notifications.facts import require_schema
 
         require_schema(self.sessions)
-
         from financeclaw.shared.execution_ledger.coordination_tables import (
             ContinuationRow,
             RunAuthorizationRow,
+        )
+        from financeclaw.shared.execution_ledger.cutover_tables import (
+            CoordinationControlRow,
+            LegacyAdoptionRow,
         )
 
         with self.sessions() as session:
@@ -72,9 +75,11 @@ class CoordinatorRepository:
                 ContinuationRow,
                 RunProgressEventRow,
                 CoordinatorHeartbeatRow,
+                CoordinationControlRow,
+                LegacyAdoptionRow,
             ):
                 if not inspector.has_table(table.__tablename__):
-                    raise RuntimeError("Stage-8A database migration is required")
+                    raise RuntimeError("Stage-8C database migration is required")
                 actual = {column["name"] for column in inspector.get_columns(table.__tablename__)}
                 if not set(table.__table__.columns.keys()).issubset(actual):
                     raise RuntimeError("incompatible Coordinator database schema")
@@ -99,6 +104,9 @@ class CoordinatorRepository:
 
     def lock(self, session, root_id: str, claim=None) -> CoordinatedRunRow:
         """业务变更先取得会话与根锁，再校验 fencing；领取本身只锁协调行。"""
+        from financeclaw.shared.execution_ledger.driver import control
+
+        control(session)
         row = session.get(CoordinatedRunRow, root_id)
         if row is None:
             raise ExecutionConflict("run is not owned by Coordinator")
@@ -293,12 +301,61 @@ class CoordinatorRepository:
                     event.processed = True
             return True
 
-    def claim_due(self, owner: str, *, lease_seconds: float) -> dict[str, Any] | None:
+    def claim_due(
+        self,
+        owner: str,
+        *,
+        lease_seconds: float,
+        maximum_inflight: int = 32,
+        tenant_inflight: int = 4,
+    ) -> dict[str, Any] | None:
         """短事务使用 SKIP LOCKED，只领取到期活跃责任，随即释放锁。"""
+        from sqlalchemy.orm import aliased
+
+        from financeclaw.shared.execution_ledger.driver import control
+
         with self.sessions.begin() as session:
+            control(session)
+            if session.get_bind().dialect.name == "postgresql":
+                # 跨进程的容量检查与领取共用短锁，不持有网络 I/O。
+                if not session.scalar(
+                    text("SELECT pg_try_advisory_xact_lock(:key)"),
+                    {
+                        "key": int(digest([self.backend_instance_id, "capacity"])[0:15], 16),
+                    },
+                ):
+                    return None
+            leased = (
+                select(func.count())
+                .select_from(CoordinatedRunRow)
+                .where(
+                    CoordinatedRunRow.backend_instance_id == self.backend_instance_id,
+                    CoordinatedRunRow.lease_until > now(),
+                )
+            )
+            if session.scalar(leased) >= maximum_inflight:
+                return None
+            other, conversation = aliased(CoordinatedRunRow), aliased(ConversationRow)
+            tenant_leased = (
+                select(func.count())
+                .select_from(other)
+                .join(conversation, conversation.conversation_id == other.conversation_id)
+                .where(
+                    other.backend_instance_id == self.backend_instance_id,
+                    other.lease_until > now(),
+                    conversation.tenant_id == ConversationRow.tenant_id,
+                )
+                .correlate(ConversationRow)
+                .scalar_subquery()
+            )
             row = session.scalar(
                 select(CoordinatedRunRow)
+                .join(
+                    ConversationRow,
+                    ConversationRow.conversation_id == CoordinatedRunRow.conversation_id,
+                )
                 .where(
+                    tenant_leased < tenant_inflight,
                     CoordinatedRunRow.backend_instance_id == self.backend_instance_id,
                     CoordinatedRunRow.driver_version.in_(COMPATIBLE_DRIVER_VERSIONS),
                     CoordinatedRunRow.active.is_(True),
@@ -310,7 +367,7 @@ class CoordinatorRepository:
                 )
                 .order_by(CoordinatedRunRow.due_at)
                 .limit(1)
-                .with_for_update(skip_locked=True)
+                .with_for_update(skip_locked=True, of=CoordinatedRunRow)
             )
             if row is None:
                 return None
@@ -353,7 +410,11 @@ class CoordinatorRepository:
 
     def claim_operation(self, claim, operation_id: str) -> bool:
         """租约、授权、取消、精确前驱和业务预算与命令领取共享一次提交。"""
+        from financeclaw.shared.execution_ledger.driver import control
+
         with self.sessions.begin() as session:
+            if control(session).dispatch_paused:
+                return False
             row = self.lock(session, claim["run_id"], claim)
             root = session.get(RunExecutionRow, row.run_id)
             operation = session.get(RunOperationRow, operation_id)

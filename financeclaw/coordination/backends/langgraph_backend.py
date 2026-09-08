@@ -226,8 +226,23 @@ class LangGraphBackend:
         )
         with self.repository.sessions() as session:
             previous = session.get(PendingInteractionRow, identifier)
-            if previous:
+            if previous and "coordination" in previous.request:
                 return InteractionRequest.model_validate(previous.request["coordination"])
+            # 只读 shadow 与接管后观察复用旧实例，保留已展示的 ID／revision／期限。
+            previous = session.scalar(
+                select(PendingInteractionRow).where(
+                    PendingInteractionRow.owner_run_id == source.task_id,
+                    PendingInteractionRow.server_run_id.in_(
+                        [native_run["run_id"], source.operation_id]
+                    ),
+                    PendingInteractionRow.interrupt_id == observation.interrupt_id,
+                )
+            )
+            if previous and "coordination" in previous.request:
+                return InteractionRequest.model_validate(previous.request["coordination"])
+            legacy = previous
+            if legacy:
+                identifier = legacy.interaction_id
             revision = (
                 session.scalar(
                     select(func.max(PendingInteractionRow.revision)).where(
@@ -236,6 +251,8 @@ class LangGraphBackend:
                 )
                 or 0
             ) + 1
+            if legacy:
+                revision = legacy.revision
         definition = self.releases.verify(snapshot)
         payload, action, approval_id = observation.payload, None, None
         allowed = ("approve", "reject")
@@ -302,6 +319,27 @@ class LangGraphBackend:
         expires_at = datetime.fromisoformat(
             state.get("created_at") or native_run["created_at"]
         ) + timedelta(seconds=point.timeout_seconds)
+        if legacy:
+            from financeclaw.coordination.repository import aware
+
+            if observation.kind == "hitl" and legacy.point_id == action["name"]:
+                point = point.model_copy(update={"point_id": legacy.point_id})
+            if observation.kind == "workflow" and legacy.point_id == payload["approval_point"]:
+                point = point.model_copy(update={"point_id": legacy.point_id})
+            if (
+                legacy.point_id != point.point_id
+                or legacy.kind != point.kind
+                or legacy.question != (payload.get("question") or point.question)
+                or legacy.checkpoint_id not in {None, state["checkpoint"]["checkpoint_id"]}
+                or legacy.response is not None
+                or (
+                    "native_payload" in legacy.request
+                    and legacy.request["native_payload"] != payload
+                )
+                or ("action" in legacy.request and legacy.request["action"] != action)
+            ):
+                raise ExecutionConflict("legacy interaction evidence does not match checkpoint")
+            expires_at = aware(legacy.expires_at)
         values = {
             "point": point.model_dump(mode="json"),
             "revision": revision,
@@ -472,7 +510,7 @@ class LangGraphBackend:
     def _application_evidence(self, reference, run, state):
         """父响应必须有原恢复尝试的匹配 ToolMessage；HTTP 接受不足以证明应用。"""
         operation = self.repository.execution.operation(reference.operation_id)
-        if operation["request"]["kind"] != "response":
+        if operation["request"].get("kind") != "response":
             return ()
         command = ResponseDelivery.model_validate(operation["request"]["payload"])
         metadata = run.get("metadata", {})

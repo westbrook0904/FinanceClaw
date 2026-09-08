@@ -1,7 +1,9 @@
 """同库受理 Facade：只提交业务事实，不在 BFF 请求栈中调用 backend。"""
 
 import asyncio
+import json
 from datetime import timedelta
+from hashlib import sha256
 
 from sqlalchemy import select
 
@@ -153,6 +155,37 @@ class CoordinatorAdmission:
         )
         try:
             with self.store.sessions.begin() as session:
+                from financeclaw.shared.execution_ledger.driver import control
+
+                gate = control(session)
+                from financeclaw.shared.conversation.tables import ConversationTurnRow
+                from financeclaw.shared.execution_ledger.cutover_tables import LegacyAdoptionRow
+
+                adopted = session.scalar(
+                    select(ConversationTurnRow)
+                    .join(LegacyAdoptionRow, LegacyAdoptionRow.run_id == ConversationTurnRow.run_id)
+                    .where(
+                        ConversationTurnRow.tenant_id == tenant_id,
+                        ConversationTurnRow.subject_id == subject_id,
+                        ConversationTurnRow.client_idempotency_key == idempotency_key,
+                    )
+                )
+                if adopted:
+                    # 旧 Journal 的中文请求使用 ASCII 转义摘要，接管不能更换幂等键。
+                    legacy_hash = sha256(
+                        json.dumps(
+                            {
+                                "conversation_id": conversation_id,
+                                "message": request.message,
+                                "agent_id": profile.agent_id,
+                                "agent_profile_version": profile.version,
+                            },
+                            sort_keys=True,
+                            separators=(",", ":"),
+                        ).encode()
+                    ).hexdigest()
+                    if adopted.request_hash == legacy_hash:
+                        request_hash = legacy_hash
                 turn, _, replay = self.repository.begin_turn(
                     conversation_id=conversation_id,
                     tenant_id=tenant_id,
@@ -183,6 +216,8 @@ class CoordinatorAdmission:
                             replay=True,
                         )
                 else:
+                    if not self.settings.coordinator_enabled or gate.admission_paused:
+                        raise ExecutionConflict("new coordination admission is paused")
                     context = ExecutionContext(
                         tenant_id=tenant_id,
                         subject_id=subject_id,
@@ -290,10 +325,17 @@ class CoordinatorAdmission:
             return bool(execution and execution.snapshot.get("driver_mode") == "coordinator")
 
     async def healthy(self) -> bool:
-        """BFF 就绪状态包括兼容 Worker 的独立心跳。"""
-        return await asyncio.to_thread(
-            self.store.worker_available,
-            maximum_age=max(10, self.settings.coordinator_lease_seconds),
+        """允许受理或仍有责任时必须有兼容处理者；过度积压不能报就绪。"""
+        from financeclaw.coordination.deployment import diagnostics
+
+        state = await asyncio.to_thread(diagnostics, self.store)
+        needs_worker = state["active_roots"] or (
+            self.settings.coordinator_enabled and not state["control"]["admission_paused"]
+        )
+        return bool(
+            (not needs_worker or state["compatible_workers"])
+            and (state["oldest_due_seconds"] or 0)
+            <= self.settings.coordinator_ready_backlog_seconds
         )
 
     def notification_mode(self, run_id, *, tenant_id, subject_id):
@@ -375,6 +417,52 @@ class CoordinatorAdmission:
             with self.store.sessions() as session:
                 execution = session.get(RunExecutionRow, run_id)
                 if execution is None:
+                    from financeclaw.shared.conversation.tables import ConversationRow
+
+                    legacy = session.scalar(
+                        select(ConversationTurnRow).where(
+                            ConversationTurnRow.run_id == run_id,
+                            ConversationTurnRow.tenant_id == tenant_id,
+                            ConversationTurnRow.subject_id == subject_id,
+                        )
+                    )
+                    if legacy:
+                        terminal = legacy.status in {"completed", "failed", "cancelled"}
+                        conversation = session.get(ConversationRow, legacy.conversation_id)
+                        content = session.scalar(
+                            select(ConversationMessageRow.content).where(
+                                ConversationMessageRow.turn_id == legacy.turn_id,
+                                ConversationMessageRow.role == "assistant",
+                                ConversationMessageRow.parent_message_id.is_(None),
+                            )
+                        )
+                        return RunStatusResponse(
+                            run_id=run_id,
+                            thread_id=conversation.agent_thread_id,
+                            status=legacy.status if terminal else "interrupted",
+                            waiting_reason=None if terminal else "legacy_migration_required",
+                            output={"messages": [{"type": "assistant", "content": content}]}
+                            if terminal and content is not None
+                            else None,
+                        )
+                    workflow = session.get(WorkflowRunRow, run_id)
+                    if workflow and (workflow.tenant_id, workflow.subject_id) == (
+                        tenant_id,
+                        subject_id,
+                    ):
+                        terminal = workflow.status in {
+                            "completed",
+                            "failed",
+                            "cancelled",
+                            "rejected",
+                        }
+                        return RunStatusResponse(
+                            run_id=run_id,
+                            thread_id=workflow.thread_id,
+                            status=workflow.status if terminal else "interrupted",
+                            waiting_reason=None if terminal else "legacy_migration_required",
+                            output=workflow.output_payload if terminal else None,
+                        )
                     raise RunNotFound("run not found")
                 context = snapshot_context(execution.snapshot)
                 if (context.tenant_id, context.subject_id) != (tenant_id, subject_id):

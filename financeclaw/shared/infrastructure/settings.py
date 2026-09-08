@@ -172,6 +172,10 @@ class FinanceClawSettings(BaseSettings):
     coordinator_reconcile_seconds: float = Field(default=10, ge=0.1, le=300)
     coordinator_lease_seconds: float = Field(default=60, ge=3, le=600)
     coordinator_max_step_seconds: float = Field(default=120, ge=1, le=1800)
+    coordinator_worker_concurrency: int = Field(default=4, ge=1, le=32)
+    coordinator_max_inflight: int = Field(default=32, ge=1, le=1024)
+    coordinator_tenant_inflight: int = Field(default=4, ge=1, le=128)
+    coordinator_ready_backlog_seconds: float = Field(default=120, ge=1, le=86400)
     feishu_enabled: bool = False
     feishu_notifications_enabled: bool = False
     notification_poll_seconds: float = Field(default=1, ge=0.05, le=30)
@@ -280,7 +284,11 @@ class FinanceClawSettings(BaseSettings):
             ValueError: 生产环境违反安全基线，或通用约束（算法、加密配置）非法。
 
         """
-        if self.coordinator_enabled:
+        if (
+            self.coordinator_enabled
+            or self.coordinator_callback_url
+            or self.coordinator_webhook_token
+        ):
             callback = urlparse(self.coordinator_callback_url or "")
             if (
                 callback.scheme not in {"http", "https"}

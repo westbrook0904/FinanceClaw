@@ -127,6 +127,19 @@ class ExecutionRepository:
                 )
             return _execution(row)
 
+    def require_legacy(self, run_id: str | None = None) -> None:
+        """兼容旧入口先核对部署门闩和根归属，正式产品读取不使用这些入口。"""
+        from financeclaw.shared.execution_ledger.driver import require_legacy
+
+        with self.sessions() as session:
+            snapshot = {}
+            if run_id is not None:
+                row = session.get(RunExecutionRow, run_id)
+                if row is not None:
+                    root = session.get(RunExecutionRow, row.root_run_id)
+                    snapshot = (root or row).snapshot
+            require_legacy(session, snapshot)
+
     def tree(self, root_run_id: str) -> tuple[dict[str, Any], ...]:
         """列出取消需要确认的整个已登记子树。"""
         with self.sessions() as session:
@@ -226,11 +239,26 @@ class ExecutionRepository:
             raise ExecutionConflict("operation key reused with a different command or snapshot")
         return _operation(row)
 
-    def claim(self, operation_id: str, *, session: Session | None = None) -> bool:
+    def claim(
+        self, operation_id: str, *, session: Session | None = None, legacy: bool = False
+    ) -> bool:
         """只有一个进程获得提交权；领取与根预算扣减属于同一事务。"""
         if session is None:
             with self.sessions.begin() as transaction:
-                return self.claim(operation_id, session=transaction)
+                return self.claim(operation_id, session=transaction, legacy=legacy)
+        if legacy:
+            from financeclaw.shared.execution_ledger.driver import control, require_legacy
+
+            control(session)
+            operation = session.get(RunOperationRow, operation_id)
+            execution = session.get(RunExecutionRow, operation.run_id)
+            root = session.scalar(
+                select(RunExecutionRow)
+                .where(RunExecutionRow.run_id == execution.root_run_id)
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            )
+            require_legacy(session, root.snapshot)
         return self._claim_in_session(operation_id, session)
 
     def _claim_in_session(self, operation_id: str, session: Session) -> bool:

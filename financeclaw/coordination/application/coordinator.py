@@ -19,6 +19,7 @@ from financeclaw.shared.execution_ledger.coordination_tables import (
     BackendAttemptRow,
 )
 from financeclaw.shared.execution_ledger.delegation_tables import DelegationRow
+from financeclaw.shared.execution_ledger.driver import control
 from financeclaw.shared.execution_ledger.interaction_tables import PendingInteractionRow
 from financeclaw.shared.execution_ledger.repository import (
     ExecutionConflict,
@@ -81,6 +82,7 @@ class Coordinator:
                 "cancelled": execution.cancellation_requested,
                 "operations": operations,
                 "scopes": scopes,
+                "dispatch_paused": control(session).dispatch_paused,
             }
 
     def blocked(self, claim, reason):
@@ -133,6 +135,8 @@ class Coordinator:
             return delay
         prepared = next((op for op in state["operations"] if op["status"] == "prepared"), None)
         if prepared:
+            if state["dispatch_paused"]:
+                return delay
             command = self.command(prepared)
             snapshot = await asyncio.to_thread(self.store.execution.get, prepared["run_id"])
             self.releases.verify(snapshot["snapshot"])
@@ -223,8 +227,13 @@ class Coordinator:
                 )
             )
             task_id = root_id
-            if pending and pending.completed_at is None:
-                task_id = pending.child_run_id
+            if pending:
+                delivery_id = "operation-" + digest([root_id, "delivery:" + pending.delegation_id])
+                if (
+                    pending.completed_at is None
+                    or session.get(RunOperationRow, delivery_id) is None
+                ):
+                    task_id = pending.child_run_id
             execution = session.get(RunExecutionRow, task_id)
             attempt = (
                 session.get(BackendAttemptRow, execution.server_run_id)

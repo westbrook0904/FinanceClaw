@@ -238,6 +238,7 @@ class InteractionService:
         conversation_id: str | None = None,
     ) -> dict[str, Any]:
         """先保存决定和操作，再提交；同决定重放不追加 Journal，也不会恢复父检查点。"""
+        await asyncio.to_thread(self.execution.require_legacy)
         if not idempotency_key.strip() or len(idempotency_key) > 256:
             raise InteractionConflict("a bounded response idempotency key is required")
         row = await asyncio.to_thread(
@@ -320,6 +321,7 @@ class InteractionService:
         scopes: frozenset[str],
     ) -> bool:
         """兼容旧单审批入口；资料回答永不通过 ApprovalDecision 路径。"""
+        await asyncio.to_thread(self.execution.require_legacy, run_id)
         rows = await asyncio.to_thread(self.repository.for_owner, run_id)
         candidates = [row for row in rows if row["interrupt_id"] == decision.interrupt_id]
         if not rows:
@@ -408,6 +410,7 @@ class InteractionService:
         领取前中断可以在带当前权限的查询中推进。后台无当前认证时只观察已经
         受理的尝试；窗口过期而未提交的决定也不会被悄悄延期执行。
         """
+        await asyncio.to_thread(self.execution.require_legacy, run_id)
         rows = await asyncio.to_thread(self.repository.for_owner, run_id)
         if rows:
             await self.operations.reconcile(run_id)

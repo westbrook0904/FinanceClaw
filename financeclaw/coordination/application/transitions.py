@@ -28,6 +28,34 @@ from financeclaw.shared.execution_ledger.tables import RunExecutionRow
 from financeclaw.shared.infrastructure.security.redaction import redact_sensitive
 
 
+def interaction_projection(request, status):
+    """当前交互的受治理展示；正常推进与旧根接管使用同一个响应格式。"""
+    result = {
+        "interaction_id": request.request_id,
+        "revision": request.revision,
+        "kind": request.point.kind,
+        "status": status,
+        "question": request.question,
+        "owner_run_id": request.owner_task_id,
+        "root_run_id": request.root_task_id,
+        "expires_at": request.expires_at.isoformat(),
+        "response_url": f"/v1/interactions/{request.request_id}/responses",
+    }
+    if request.point.kind == "input":
+        result["response_schema"] = request.point.response_schema
+    elif request.point.kind == "choice":
+        result["options"] = list(request.point.options)
+    else:
+        result.update(
+            action_hash=request.action_hash,
+            arguments_hash=request.action_hash,
+            allowed_decisions=list(request.allowed_decisions),
+            action=redact_sensitive(request.action),
+            interrupt_id=request.request_id,
+        )
+    return result
+
+
 class CoordinationTransitions:
     """由 Worker 在取得有效根租约后组合短事务；外部输入解析在事务外完成。"""
 
@@ -288,40 +316,7 @@ class CoordinationTransitions:
                 waiting_reason=request.point.kind + "_required"
                 if row["status"] == "pending"
                 else "interaction_" + row["status"],
-                pending_interactions=[
-                    {
-                        "interaction_id": request.request_id,
-                        "revision": request.revision,
-                        "kind": request.point.kind,
-                        "status": row["status"],
-                        "question": request.question,
-                        "owner_run_id": request.owner_task_id,
-                        "root_run_id": root.run_id,
-                        "expires_at": request.expires_at.isoformat(),
-                        "response_url": f"/v1/interactions/{request.request_id}/responses",
-                        **(
-                            {"response_schema": request.point.response_schema}
-                            if request.point.kind == "input"
-                            else {}
-                        ),
-                        **(
-                            {"options": list(request.point.options)}
-                            if request.point.kind == "choice"
-                            else {}
-                        ),
-                        **(
-                            {
-                                "action_hash": request.action_hash,
-                                "arguments_hash": request.action_hash,
-                                "allowed_decisions": list(request.allowed_decisions),
-                                "action": redact_sensitive(request.action),
-                                "interrupt_id": request.request_id,
-                            }
-                            if request.point.kind == "approval"
-                            else {}
-                        ),
-                    }
-                ],
+                pending_interactions=[interaction_projection(request, row["status"])],
             )
 
     def child_completed(self, claim, observation):

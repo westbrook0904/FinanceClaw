@@ -1,6 +1,7 @@
 # Stage 8：Coordinator Service、Webhook 接入与显式委派协议实施方案
 
-状态：8.0 完成；8A 正式服务基础闭环已实现，PostgreSQL／原生 LangGraph 验收见 [8A 记录](Stage-8A-实施与验证.md)；8B／8C 待实施。
+状态：8.0 完成；8A／8B／8C 代码及隔离验收已实现。生产与真实渠道门禁分别见
+[8A 记录](Stage-8A-实施与验证.md)、[8B 记录](Stage-8B-实施与验证.md)、[8C 记录](Stage-8C-实施与验证.md)。
 
 初版日期：2026-09-07；重写日期：2026-09-08；方案修订：4（基础能力优先，由 coordination 自主演进）。
 
@@ -9,7 +10,7 @@
 
 适用基线：Stage 6 Fix A/B/C 的持久化执行与交互，以及 Stage 7 紫微领域 Agent 候选实现。
 本文件保留原路径以兼容已有链接，内容替代初版“后台 Worker＋可选 Webhook”方案。
-本文描述目标设计，不代表 Coordinator Service、Webhook 或多 backend 已实现。
+本文保留目标设计；实际交付范围以各阶段验证记录为准，第二种真实 backend 仍未开放。
 
 ## 1. 本次决议与目标
 
@@ -668,6 +669,7 @@ Worker 不能依赖某个 BFF app 实例才能装配，BFF 也不能导入会启
 ### 14.2 迁移
 
 本阶段开工前迁移头为 `0008_stage6fix_c`；8A 新增 `0009_stage8a`，8B 新增 `0010_stage8b`。
+8C 新增 `0011_stage8c`，接管与驱动封闭均通过显式 CLI，扩表不接管旧根。
 后续开工时仍须再次检查，不提前占用或覆盖并行迁移号。
 
 每个 root 固定 `driver_mode=legacy/coordinator`；另保存协议与 driver 版本，恢复时校验兼容性。
@@ -797,3 +799,8 @@ BFF 与 Coordinator 共享 `financeclaw_app`。
 [Stage-8A 实施与验证](Stage-8A-实施与验证.md)。
 8B 新增四张通知表、独立发送器、原键回执恢复门控与 SSE 游标，仓库验证和真实渠道验收状态见
 [Stage-8B 实施与验证](Stage-8B-实施与验证.md)。
+
+8C 已实现只读旧根盘点、原生 shadow、停止旧生产者后的 CAS 接管、driver 3 隔离、
+全局与租户并发限制，以及隔离环境的真实进程／原生 LangGraph 演练。无法证明的旧 resume、
+独立旧 Workflow 等保持显式 blocked；真实生产切换仍需部署证明与目标环境验收。
+详见 [Stage-8C 实施与验证](Stage-8C-实施与验证.md)。

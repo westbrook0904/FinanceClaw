@@ -179,6 +179,7 @@ class ConversationRunService:
             IdempotencyConflict: 同一幂等键被用于不同请求内容。
 
         """
+        await asyncio.to_thread(self.execution.require_legacy)
         # 1. 校验会话归属并读取会话快照。
         conversation = await asyncio.to_thread(
             self.repository.get_owned,
@@ -289,6 +290,7 @@ class ConversationRunService:
         allow_parent_resume: bool = True,
     ) -> RunStatusResponse:
         """按精确 Server Run 观察；等待、未知提交与中断都不能误报完成。"""
+        await asyncio.to_thread(self.execution.require_legacy, run_id)
         try:
             turn, conversation = await asyncio.to_thread(
                 self._owned_turn_and_conversation,
@@ -512,6 +514,7 @@ class ConversationRunService:
         scopes: frozenset[str],
     ) -> RunStatusResponse:
         """只恢复一个已登记且未变化的审批位置，执行权限与审批权限分开校验。"""
+        await asyncio.to_thread(self.execution.require_legacy, run_id)
         try:
             turn, conversation = await asyncio.to_thread(
                 self._owned_turn_and_conversation,
@@ -609,6 +612,7 @@ class ConversationRunService:
 
     async def cancel(self, run_id: str, *, tenant_id: str, subject_id: str) -> RunStatusResponse:
         """先封闭派发，再逐一确认子树停止；不会把本地取消当作副作用回滚。"""
+        await asyncio.to_thread(self.execution.require_legacy, run_id)
         try:
             turn, conversation = await asyncio.to_thread(
                 self._owned_turn_and_conversation,
@@ -659,6 +663,7 @@ class ConversationRunService:
             RunNotFound: run 不存在或不属于当前主体。
 
         """
+        await asyncio.to_thread(self.execution.require_legacy, run_id)
         try:
             turn, conversation = await asyncio.to_thread(
                 self._owned_turn_and_conversation,
@@ -744,6 +749,7 @@ class ConversationRunService:
             本次完成对账的业务 run ID 列表。
 
         """
+        await asyncio.to_thread(self.execution.require_legacy)
         reconciled: list[str] = []
         # 1. 拉取所有未完成 Turn。
         turns = await asyncio.to_thread(self.repository.list_incomplete_turns)

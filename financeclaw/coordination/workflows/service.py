@@ -156,6 +156,7 @@ class WorkflowService:
             IdempotencyConflict: 幂等键已被不同请求占用。
 
         """
+        await asyncio.to_thread(self.execution.require_legacy, parent_run_id)
         try:
             # 1. 解析已发布定义并按 input_schema 归一化入参。
             definition = self.catalog.resolve(target.workflow_id, target.version)
@@ -275,6 +276,7 @@ class WorkflowService:
             RunNotFound: 运行不存在或不属于当前主体。
 
         """
+        await asyncio.to_thread(self.execution.require_legacy, run_id)
         record = await self._owned(run_id, tenant_id, subject_id)
         # 1. 终态或尚未绑定 server run：直接返回当前记录。
         if record.status in _TERMINAL:
@@ -381,6 +383,7 @@ class WorkflowService:
             WorkflowAuthorizationError: 缺少审批点所需权限范围。
 
         """
+        await asyncio.to_thread(self.execution.require_legacy, run_id)
         record = await self._owned(run_id, tenant_id, subject_id)
         execution = await asyncio.to_thread(self.execution.get, run_id)
         if execution["cancellation_requested"]:
@@ -485,6 +488,7 @@ class WorkflowService:
 
     async def cancel(self, run_id: str, *, tenant_id: str, subject_id: str) -> RunStatusResponse:
         """独立 Workflow 使用与根会话相同的停止确认；子 Workflow 通过根任务取消。"""
+        await asyncio.to_thread(self.execution.require_legacy, run_id)
         record = await self._owned(run_id, tenant_id, subject_id)
         if record.status in _TERMINAL:
             return self._response(record)
@@ -537,6 +541,7 @@ class WorkflowService:
             本次完成对账的业务 run ID 列表。
 
         """
+        await asyncio.to_thread(self.execution.require_legacy)
         records = await asyncio.to_thread(self.repository.list_incomplete)
         reconciled: list[str] = []
         for record in records:
@@ -578,6 +583,7 @@ class WorkflowService:
             RunNotFound: 运行不存在或不属于当前主体。
 
         """
+        await asyncio.to_thread(self.execution.require_legacy, run_id)
         record = await self._owned(run_id, tenant_id, subject_id)
         execution = await asyncio.to_thread(self.execution.get, run_id)
         server_id = execution["server_run_id"]

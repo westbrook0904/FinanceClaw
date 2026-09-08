@@ -12,19 +12,27 @@ from financeclaw.shared.execution_ledger.repository import ExecutionConflict
 LOGGER = logging.getLogger(__name__)
 
 
-async def run_worker(coordinator, stop: asyncio.Event, *, worker_id=None):
-    """有限步进、续租、异常退避和优雅退出；进程丢失不重置业务命令。"""
+async def _run_slot(coordinator, stop: asyncio.Event, *, worker_id):
+    """一个并发槽执行有限步进；每次只领取一根，租约与预算跨进程共享。"""
     store, settings = coordinator.store, coordinator.settings
     worker_id = worker_id or str(uuid4())
     last_heartbeat = 0.0
     try:
         while not stop.is_set():
-            if asyncio.get_running_loop().time() - last_heartbeat >= 2:
-                await asyncio.to_thread(store.heartbeat, worker_id)
-                last_heartbeat = asyncio.get_running_loop().time()
-            claim = await asyncio.to_thread(
-                store.claim_due, worker_id, lease_seconds=settings.coordinator_lease_seconds
-            )
+            try:
+                if asyncio.get_running_loop().time() - last_heartbeat >= 2:
+                    await asyncio.to_thread(store.heartbeat, worker_id)
+                    last_heartbeat = asyncio.get_running_loop().time()
+                claim = await asyncio.to_thread(
+                    store.claim_due,
+                    worker_id,
+                    lease_seconds=settings.coordinator_lease_seconds,
+                    maximum_inflight=settings.coordinator_max_inflight,
+                    tenant_inflight=settings.coordinator_tenant_inflight,
+                )
+            except Exception as exc:
+                LOGGER.warning("coordinator database unavailable (%s)", type(exc).__name__)
+                claim = None
             if claim is None:
                 try:
                     await asyncio.wait_for(stop.wait(), settings.coordinator_poll_seconds)
@@ -35,7 +43,7 @@ async def run_worker(coordinator, stop: asyncio.Event, *, worker_id=None):
             async def renew(current_claim=claim):
                 """远程等待期间使用独立短事务续租，不持有根业务锁。"""
                 while True:
-                    await asyncio.sleep(settings.coordinator_lease_seconds / 3)
+                    await asyncio.sleep(min(2, settings.coordinator_lease_seconds / 3))
                     if not await asyncio.to_thread(
                         store.renew, current_claim, lease_seconds=settings.coordinator_lease_seconds
                     ):
@@ -83,8 +91,29 @@ async def run_worker(coordinator, stop: asyncio.Event, *, worker_id=None):
                 await asyncio.to_thread(store.finish, claim, delay=delay, error=error)
             except StaleCoordinator:
                 pass
+            except Exception as exc:
+                # 数据库在当前步之后失联时保留原租约／操作事实，后续按原回执恢复。
+                LOGGER.warning("coordinator finish deferred (%s)", type(exc).__name__)
     finally:
-        await asyncio.to_thread(store.heartbeat, worker_id, remove=True)
+        try:
+            await asyncio.to_thread(store.heartbeat, worker_id, remove=True)
+        except Exception as exc:
+            LOGGER.warning("coordinator heartbeat cleanup deferred (%s)", type(exc).__name__)
+
+
+async def run_worker(coordinator, stop: asyncio.Event, *, worker_id=None):
+    """有界并发槽共享停止信号；SIGTERM 后停止领取并等待各步有界收尾。"""
+    worker_id = worker_id or str(uuid4())
+    tasks = [
+        asyncio.create_task(_run_slot(coordinator, stop, worker_id=f"{worker_id}:{index}"))
+        for index in range(coordinator.settings.coordinator_worker_concurrency)
+    ]
+    try:
+        await asyncio.gather(*tasks)
+    finally:
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
 
 
 async def main():
