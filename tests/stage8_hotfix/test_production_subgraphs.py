@@ -357,7 +357,7 @@ class ClarifyingRootModel(SerialModel):
 
 
 @pytest.mark.asyncio
-async def test_market_worker_clarification_also_ends_root_before_next_model(stack):
+async def test_market_worker_clarification_interrupts_root_before_next_model(stack):
     """基础安装同样验证通用 Worker 澄清门控，不仅对紫微工具名生效。"""
     calls = [call("call_agent__market_research_agent", 1, task="研究行情")]
     graph, kwargs = root_graph(stack, calls, limits={"model": 2})
@@ -379,7 +379,7 @@ async def test_market_worker_clarification_also_ends_root_before_next_model(stac
         fallback_models=(),
     )
     result = await graph.ainvoke({"messages": [HumanMessage(content="研究行情")]}, **kwargs)
-    assert result["messages"][-1].content == "请问要研究哪只股票？"
+    assert result["__interrupt__"][0].value["question"] == "请问要研究哪只股票？"
     assert stack.conversation_repository.execution.get("root")["model_calls"] == 2
 
 
@@ -388,7 +388,7 @@ async def test_market_worker_clarification_also_ends_root_before_next_model(stac
 async def test_ziwei_evidence_clarification_returns_to_root_with_budget_remaining(
     stack, monkeypatch
 ):
-    """真实根图、Worker Tool 和取证图闭环，不创建 interrupt 或消耗完根预算。"""
+    """真实根图、Worker Tool 和取证图闭环，只在根生成一个 interrupt，保留根预算。"""
     from financeclaw.agent_server.domains.ziwei.errors import ZiweiError
     from financeclaw.agent_server.graphs.ziwei_agent import build_ziwei_agent
     from tests.stage7.test_evidence_exit import RepeatingEvidenceModel
@@ -419,12 +419,12 @@ async def test_ziwei_evidence_clarification_returns_to_root_with_budget_remainin
         limits={"model": 4, "tool": 3},
     )
     result = await graph.ainvoke({"messages": [HumanMessage(content="紫微测试")]}, **kwargs)
-    assert result["messages"][-1].content == "请补充查询日期。"
-    assert not result.get("__interrupt__")
+    assert result["__interrupt__"][0].value["question"] == "请补充查询日期。"
+    assert len(result["__interrupt__"]) == 1
     assert RepeatingEvidenceModel.calls == ["evidence"]
     execution = stack.conversation_repository.execution.get("root")
     assert execution["model_calls"] == 2  # root dispatch + evidence; question needs no model
-    assert execution["tool_calls"] == 2  # Worker entry + chart attempt
+    assert execution["tool_calls"] == 3  # Worker entry + chart attempt + clarification
 
 
 @pytest.mark.parametrize("failure", ["manifest", "budget", "cancel"])

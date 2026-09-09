@@ -10,10 +10,12 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, Tool
 from langchain_core.utils.function_calling import convert_to_openai_tool
 from langgraph.graph import END, START, StateGraph
 from langgraph.runtime import Runtime
+from pydantic import ValidationError
 
 from financeclaw.agent_server.agents.factory import AgentFactory
 from financeclaw.agent_server.domains.ziwei.application import ZiweiService
 from financeclaw.agent_server.domains.ziwei.errors import ZiweiError
+from financeclaw.agent_server.domains.ziwei.validation import schema_error
 from financeclaw.kernel.agents import AgentProfile
 from financeclaw.kernel.context import DataClassification, ExecutionContext
 from financeclaw.kernel.ziwei import ChartProjection, ZiweiAnalysisRequest, ZiweiTextResult
@@ -202,17 +204,39 @@ class ZiweiEvidenceMiddleware(AgentMiddleware):
             },
         )
 
+    def _schema_failure(self, request, result):
+        """框架已按固定 Schema 拒绝且治理已记账后，将格式错误转为聚合问题。"""
+        if (
+            request.tool_call["name"] == "ziwei_chart"
+            and isinstance(result, ToolMessage)
+            and result.status == "error"
+        ):
+            # 治理拒绝同样是 error 回执；不能因调用参数也有错误就改成用户澄清。
+            try:
+                payload = json.loads(result.content)
+            except (ValueError, TypeError):
+                payload = None
+            if isinstance(payload, dict) and payload.get("error") == "tool_not_authorized":
+                return result
+            try:
+                ZiweiAnalysisRequest.model_validate(request.tool_call["args"])
+            except ValidationError as error:
+                return self._failure_message(
+                    request, schema_error(request.tool_call["args"], error)
+                )
+        return result
+
     def wrap_tool_call(self, request: Any, handler: Any) -> Any:
         """治理链先记录实际失败；只转换可公开的紫微领域错误。"""
         try:
-            return handler(request)
+            return self._schema_failure(request, handler(request))
         except ZiweiError as error:
             return self._failure_message(request, error)
 
     async def awrap_tool_call(self, request: Any, handler: Any) -> Any:
         """异步取证保持同一终态，不吞权限、取消或持久预算异常。"""
         try:
-            return await handler(request)
+            return self._schema_failure(request, await handler(request))
         except ZiweiError as error:
             return self._failure_message(request, error)
 
@@ -236,7 +260,7 @@ def build_ziwei_agent(
     *,
     model: Any = None,
     checkpointer: Any = None,
-    input_budget: int = 24_000,
+    input_budget: int = 28_672,
 ) -> Any:
     """装配原生 LangGraph；service 关闭时安全返回 unsupported，不调用模型或引擎。"""
     if (

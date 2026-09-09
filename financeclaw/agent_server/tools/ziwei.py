@@ -7,18 +7,23 @@ from langchain.tools import ToolRuntime
 from langchain_core.messages import ToolMessage
 from langchain_core.tools import BaseTool
 from langgraph.types import Command
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field
 
 from financeclaw.agent_server.domains.ziwei.errors import ZiweiError
-from financeclaw.agent_server.domains.ziwei.validation import schema_error
 from financeclaw.agent_server.tools.governance import ManagedTool
 from financeclaw.kernel.context import ExecutionContext
-from financeclaw.kernel.ziwei import ZiweiAnalysisRequest
+from financeclaw.kernel.ziwei import (
+    BirthInput,
+    ChartLevel,
+    Focus,
+    TargetSelector,
+    ZiweiAnalysisRequest,
+)
 from financeclaw.shared.releases.tools import ziwei_tool_governance
 
 
-class ZiweiToolRuntimeInput(BaseModel):
-    """仅供 ToolNode 识别可信运行时注入，不作为模型参数 Schema。"""
+class ZiweiChartInput(ZiweiAnalysisRequest):
+    """完整排盘参数；运行时由 ToolNode 注入，不进入模型可填写的 Schema。"""
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
     runtime: ToolRuntime[ExecutionContext]
@@ -27,24 +32,42 @@ class ZiweiToolRuntimeInput(BaseModel):
 class ZiweiChartTool(BaseTool):
     """一个完整 Schema 支持所有排盘层级，避免重复传五份出生参数定义。"""
 
-    # 原生 JSON Schema 保留完整字段，同时让工具自己聚合校验问题。
-    args_schema: dict[str, Any] = Field(default_factory=ZiweiAnalysisRequest.model_json_schema)
+    name: str = "ziwei_chart"
+    description: str = (
+        "按出生资料计算紫微盘面。直接结合用户原请求、澄清问题与回答和授权引用填写参数。"
+        "未知资料留空，工具会汇总缺失或歧义，不得编造。"
+        "今年、明年等使用 target.kind=relative_period 与 unit/offset，由固定请求时钟解析。"
+        "流运盘包含上层依据，无需逐层调用。"
+    )
+    args_schema: type[BaseModel] = ZiweiChartInput
     service: Any = Field(exclude=True, repr=False)
 
-    def get_input_schema(self, config=None):
-        """运行时由框架注入；公开 function schema 仍使用 args_schema 的业务字段。"""
-        return ZiweiToolRuntimeInput
-
-    def _run(self, *, runtime: ToolRuntime[ExecutionContext], **arguments) -> Command:
-        """先验证完整调用参数，再生成与本次调用绑定的真实证据。"""
+    def _run(
+        self,
+        question: str = "",
+        subject_label: str = "本次排盘对象",
+        mode: str = "interpretation",
+        birth: BirthInput | None = None,
+        target: TargetSelector | None = None,
+        level: ChartLevel = ChartLevel.NATAL,
+        focus: Focus = "overall",
+        *,
+        runtime: ToolRuntime[ExecutionContext],
+    ) -> Command:
+        """完成类型化参数解析后，聚合业务问题并生成绑定当前调用的真实证据。"""
         if self.service is None:
             raise ZiweiError("ZIWEI_ENGINE_UNAVAILABLE", "紫微候选功能尚未启用。")
         context = ExecutionContext.model_validate(runtime.context)
         self.service.authorize(context)
-        try:
-            request = ZiweiAnalysisRequest.model_validate(arguments)
-        except ValidationError as error:
-            raise schema_error(arguments, error) from None
+        request = ZiweiAnalysisRequest(
+            question=question,
+            subject_label=subject_label,
+            mode=mode,
+            birth=birth or BirthInput(),
+            target=target,
+            level=level,
+            focus=focus,
+        )
         birth, target = self.service.validate_input(request, context)
         projection = self.service.calculate(birth, target, request.level, request.focus, context)
         return Command(
@@ -70,26 +93,13 @@ class ZiweiChartTool(BaseTool):
             }
         )
 
-    async def _arun(self, *, runtime: ToolRuntime[ExecutionContext], **arguments) -> Command:
-        """同步排盘与持久化在线程池中执行，保留每个调用的原生作用域。"""
-        return await asyncio.to_thread(self._run, runtime=runtime, **arguments)
+    async def _arun(self, **arguments) -> Command:
+        """同步排盘与持久化在线程池中执行，复用同一固定输入契约。"""
+        return await asyncio.to_thread(self._run, **arguments)
 
 
 def ziwei_tools(service) -> tuple[ManagedTool, ...]:
     """注册统一只读排盘工具，运行身份与预算不暴露给模型。"""
     return (
-        ManagedTool(
-            tool=ZiweiChartTool(
-                name="ziwei_chart",
-                service=service,
-                description=(
-                    "Calculate Ziwei charts using the supplied birth, level, target and focus. "
-                    "Use task, user_context and authorized context_refs to fill the full schema. "
-                    "Leave unknown facts empty; never invent birth details. "
-                    "Include all known fields. The tool returns all identifiable input issues. "
-                    "Each level includes ancestor facts; do not call every lower level first."
-                ),
-            ),
-            governance=ziwei_tool_governance()[0],
-        ),
+        ManagedTool(tool=ZiweiChartTool(service=service), governance=ziwei_tool_governance()[0]),
     )

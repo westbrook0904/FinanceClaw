@@ -58,7 +58,7 @@ class FabricatingRootModel(OfflineFinanceModel):
 
 @pytest.mark.asyncio
 async def test_root_clarifies_before_model_can_invent_missing_arguments(stack):
-    """根模型只有一次派发额度，澄清必须直接交付且没有第二次工具调用。"""
+    """根模型只有一次派发额度，澄清必须直接中断且没有第二次模型调用。"""
     FabricatingRootModel.rounds = 0
     calls = [call("call_agent__ziwei_doushu_agent", 1, task="请排盘", arguments={})]
     graph, kwargs = root_graph(
@@ -69,31 +69,11 @@ async def test_root_clarifies_before_model_can_invent_missing_arguments(stack):
     assert len(receipts) == 1
     public = json.loads(receipts[0].content)
     assert public["outcome"] == "needs_clarification"
-    assert result["messages"][-1].content == public["question"]
-    assert not result["messages"][-1].tool_calls
+    assert result["__interrupt__"][0].value["question"] == public["question"]
+    assert result["messages"][-1].tool_calls[0]["name"] == "request_user__clarification"
     assert FabricatingRootModel.rounds == 1
-    assert stack.conversation_repository.execution.get("root")["tool_calls"] == 2
-    assert not result.get("__interrupt__")
-
-
-@pytest.mark.asyncio
-async def test_new_user_input_can_continue_after_clarification(stack):
-    """澄清只结束当前轮，用户实际补充资料后可重新调用 Worker。"""
-    FabricatingRootModel.rounds = 0
-    calls = [call("call_agent__ziwei_doushu_agent", 1, task="请排盘", arguments={})]
-    graph, kwargs = root_graph(stack, calls, model=FabricatingRootModel(calls=calls))
-    first = await graph.ainvoke({"messages": [HumanMessage(content="请排盘")]}, **kwargs)
-    assert first["messages"][-1].content.startswith("请补充")
-    result = await graph.ainvoke(
-        {"messages": [HumanMessage(content=request().model_dump_json())]}, **kwargs
-    )
-    assert result["messages"][-1].content == "已完成排盘"
-    assert FabricatingRootModel.rounds == 3
-    receipts = [m for m in result["messages"] if isinstance(m, ToolMessage)]
-    assert [json.loads(m.content)["outcome"] for m in receipts] == [
-        "needs_clarification",
-        "chart_only",
-    ]
+    assert stack.conversation_repository.execution.get("root")["tool_calls"] == 3
+    assert len(result["__interrupt__"]) == 1
 
 
 @pytest.mark.asyncio
@@ -122,9 +102,9 @@ async def test_parallel_clarifications_preserve_all_receipts_and_do_not_retry(
     public = [json.loads(m.content) for m in receipts]
     if second_complete:
         assert public[1]["outcome"] == "chart_only" and public[1]["charts_used"]
-        assert result["messages"][-1].content == public[0]["question"]
+        assert result["__interrupt__"][0].value["question"] == public[0]["question"]
     else:
-        assert result["messages"][-1].content == (
+        assert result["__interrupt__"][0].value["question"] == (
             f"甲：{public[0]['question']}\n\n乙：{public[1]['question']}"
         )
 

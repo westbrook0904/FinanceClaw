@@ -50,9 +50,9 @@ class CalendarDate(ZiweiModel):
     """不使用公历 date 校验农历，避免错误拒绝合法农历二月三十。"""
 
     # 此处只验证数字范围；具体历法与闰月合法性由 ZiweiEngine.solar_date 校验。
-    year: int = Field(ge=1901, le=2099)
-    month: int = Field(ge=1, le=12)
-    day: int = Field(ge=1, le=31)
+    year: int = Field(ge=1901, le=2099, description="出生年份，按 birth.calendar 指定的历法填写。")
+    month: int = Field(ge=1, le=12, description="出生月份；农历闰月另填 birth.is_leap_month。")
+    day: int = Field(ge=1, le=31, description="出生日期中的日，不自行换算农历。")
 
     def text(self) -> str:
         """输出不带隐式时区的历法日期。"""
@@ -63,13 +63,37 @@ class BirthTime(ZiweiModel):
     """保留实际时间精度；区间为同一民用日期内的闭区间。"""
 
     # clock 表示 HH:MM；range 使用 clock/end；shichen 使用独立的时辰标签。
-    # kind 已选择但值缺失时允许进入 preflight，统一返回需要澄清的字段。
-    kind: Literal["clock", "shichen", "range", "unknown"] = "unknown"
-    clock: str | None = Field(default=None, pattern=r"^(?:[01]\d|2[0-3]):[0-5]\d$")
-    shichen: Shichen | None = None
-    end: str | None = Field(default=None, pattern=r"^(?:[01]\d|2[0-3]):[0-5]\d$")
+    # kind 已选择但值缺失时允许进入 Tool 校验，统一返回需要澄清的字段。
+    kind: Literal["clock", "shichen", "range", "unknown"] = Field(
+        default="unknown",
+        description=(
+            "clock=钟表时间；shichen=明确时辰；range=时间区间；不知道时用 unknown，禁止猜测。"
+        ),
+    )
+    clock: str | None = Field(
+        default=None,
+        pattern=r"^(?:[01]\d|2[0-3]):[0-5]\d$",
+        description="出生当地钟表时间 HH:MM；kind=clock 必填，range 时表示区间开始。",
+        examples=["03:30"],
+    )
+    shichen: Shichen | None = Field(
+        default=None,
+        description=(
+            "kind=shichen 时填写：yin=寅时等；zi_early=00:00–"
+            "00:59，zi_late=23:00–23:59。仅知道子时用 zi，需澄清早"
+            "晚，不补造钟表时间。"
+        ),
+    )
+    end: str | None = Field(
+        default=None,
+        pattern=r"^(?:[01]\d|2[0-3]):[0-5]\d$",
+        description="kind=range 时必填，同一出生日期内的区间结束时间 HH:MM，含结束分钟。",
+    )
     # 夏令时回拨产生两个相同民用时刻时，0/1 选择第一次/第二次出现。
-    fold: Literal[0, 1] | None = None
+    fold: Literal[0, 1] | None = Field(
+        default=None,
+        description="夏令时回拨导致同一钟表时间出现两次时，0=第一次，1=第二次；不确定时留空。",
+    )
 
     @model_validator(mode="after")
     def coherent(self) -> Self:
@@ -92,43 +116,150 @@ class BirthTime(ZiweiModel):
 class BirthPlace(ZiweiModel):
     """只收地名和必要位置资料，不需要街道地址。"""
 
-    name: str = Field(min_length=1, max_length=160)
-    country_code: str | None = Field(default=None, pattern=r"^[A-Z]{2}$")
+    name: str = Field(
+        min_length=1,
+        max_length=160,
+        description="出生地名称，例如上海。只需城市或地区，不需要街道地址。",
+    )
+    country_code: str | None = Field(
+        default=None,
+        pattern=r"^[A-Z]{2}$",
+        description="可选的两位国家或地区代码；需与出生地一致。",
+        examples=["CN"],
+    )
     # timezone 使用 IANA 名称；坐标不等于已确认时区，也不自动启用真太阳时。
-    timezone: str | None = Field(default=None, max_length=64)
-    longitude: float | None = Field(default=None, ge=-180, le=180, allow_inf_nan=False)
-    latitude: float | None = Field(default=None, ge=-90, le=90, allow_inf_nan=False)
+    timezone: str | None = Field(
+        default=None,
+        max_length=64,
+        description=(
+            "出生地 IANA 时区，例如 Asia/Shanghai。"
+            "北京、上海、广州、深圳、成都、香港、台北可离线解析，其他地点需明确时区。"
+        ),
+    )
+    longitude: float | None = Field(
+        default=None,
+        ge=-180,
+        le=180,
+        allow_inf_nan=False,
+        description="可选出生地经度；当前民用时间规则不使用它校正真太阳时，无需专门询问。",
+    )
+    latitude: float | None = Field(
+        default=None,
+        ge=-90,
+        le=90,
+        allow_inf_nan=False,
+        description="可选出生地纬度；当前民用时间排盘无需此字段，无需专门询问。",
+    )
 
 
 class BirthInput(ZiweiModel):
-    """允许缺失字段，确定性 preflight 一次返回所有需要补充的资料。"""
+    """排盘所需出生资料；已知资料全部填写，未知字段留空，工具会一次列出需补充或确认的信息。"""
 
-    calendar: Literal["solar", "lunar"] | None = None
-    date: CalendarDate | None = None
+    calendar: Literal["solar", "lunar"] | None = Field(
+        default=None,
+        description="出生日期的历法：solar=公历，lunar=农历；未知留空，不从日期样式猜测。",
+    )
+    date: CalendarDate | None = Field(
+        default=None, description="出生年月日，按用户给出的历法填写，不能使用查询日期替代。"
+    )
     # None 表示尚未确认，False 表示明确非闰月；农历输入需保留这个区别。
-    is_leap_month: bool | None = None
-    time: BirthTime = Field(default_factory=BirthTime)
-    time_basis: Literal["civil", "apparent_solar"] | None = None
-    place: BirthPlace | None = None
+    is_leap_month: bool | None = Field(
+        default=None,
+        description="农历月份是否闰月：true=闰月，false=明确非闰月；未知为 null，公历不填。",
+    )
+    time: BirthTime = Field(
+        default_factory=BirthTime,
+        description="出生时间或时辰，保留实际精度；用户没提供时不能补造 12:00 等默认时间。",
+    )
+    time_basis: Literal["civil", "apparent_solar"] | None = Field(
+        default=None,
+        description=(
+            "出生记录时制：civil=当地民用钟表时间，apparent_solar=真太阳"
+            "时。当前仅支持 civil；未明确时制时留空，不根据时区猜测。"
+        ),
+    )
+    place: BirthPlace | None = Field(
+        default=None, description="出生地点与其时区，用于出生时间换算；不要用当前所在地替代。"
+    )
     # 只用于固定排盘算法的参数，不从姓名、标签或模型猜测。
-    sex_for_chart: Literal["male", "female"] | None = None
+    sex_for_chart: Literal["male", "female"] | None = Field(
+        default=None,
+        description="排盘算法使用的性别：male=男，female=女；只采用用户提供的资料，不根据姓名猜测。",
+    )
 
 
 class TargetSelector(ZiweiModel):
     """区分时点、历法区间、相对区间，全部相对时间由服务端固定。"""
 
+    # 放在嵌套模型上，LangChain 生成不含 runtime 的字段子集时仍保留示例。
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {"kind": "relative_period", "unit": "year", "offset": 0},
+                {"kind": "point", "on_date": "2026-09-09"},
+            ]
+        }
+    )
+
     # on_date、year/month/unit、unit/offset、start/end 分别对应下列四种选择。
     # 这里只描述请求；resolve_target 再依据固定 request_clock 生成绝对区间。
-    kind: Literal["point", "calendar_period", "relative_period", "bounded_range"]
-    calendar: Literal["solar", "lunar"] = "solar"
-    on_date: date | None = None
-    year: int | None = Field(default=None, ge=1901, le=2099)
-    month: int | None = Field(default=None, ge=1, le=12)
-    is_leap_month: bool | None = None
-    unit: Literal["year", "month", "day"] | None = None
-    offset: int = Field(default=0, ge=-10, le=10)
-    start: date | None = None
-    end: date | None = None
+    kind: Literal["point", "calendar_period", "relative_period", "bounded_range"] = Field(
+        description=(
+            "point=具体日期，填 on_date；calendar_period=指定年"
+            "月，填 unit/year（月需 month）；relative_period="
+            "今年、明年、今天等，填 unit/offset；bounded_range=日期"
+            "区间，填 start/end。"
+        )
+    )
+    calendar: Literal["solar", "lunar"] = Field(
+        default="solar", description="查询区间的历法；当前仅支持公历 solar，出生历法仍可为农历。"
+    )
+    on_date: date | None = Field(
+        default=None, description="kind=point 时必填，具体公历日期 YYYY-MM-DD。"
+    )
+    year: int | None = Field(
+        default=None,
+        ge=1901,
+        le=2099,
+        description=(
+            "kind=calendar_period 的明确查询年份。用户说今年时用 relative_period，不猜绝对年份。"
+        ),
+    )
+    month: int | None = Field(
+        default=None,
+        ge=1,
+        le=12,
+        description="kind=calendar_period 且 unit=month 时必填；unit=year 时不填。",
+    )
+    is_leap_month: bool | None = Field(
+        default=None,
+        description="农历月份是否闰月：true=闰月，false=明确非闰月；未知为 null，公历不填。",
+    )
+    unit: Literal["year", "month", "day"] | None = Field(
+        default=None,
+        description=(
+            "期间单位：year=年，month=月，day=日。calendar_perio"
+            "d 支持年/月；relative_period 支持三种。"
+        ),
+    )
+    offset: int = Field(
+        default=0,
+        ge=-10,
+        le=10,
+        description=(
+            "仅 relative_period 使用，相对 time_context.req"
+            "uest_clock 按查询时区解析：0=今年/本月/今天，1=明年/下月/明天"
+            "，-1=去年/上月/昨天；无须调用额外时间工具。"
+        ),
+        examples=[0, 1, -1],
+    )
+    start: date | None = Field(
+        default=None, description="kind=bounded_range 的起始公历日期，包含当天。"
+    )
+    end: date | None = Field(
+        default=None,
+        description="kind=bounded_range 的结束公历日期，不含当天；区间须大于 0 且不超过 366 天。",
+    )
 
     @model_validator(mode="after")
     def coherent(self) -> Self:
@@ -154,15 +285,48 @@ class TargetSelector(ZiweiModel):
 class ZiweiAnalysisRequest(ZiweiModel):
     """排盘 Tool 的完整业务参数；未知资料留空，由工具一次反馈全部可确定问题。"""
 
-    question: str = Field(default="", max_length=4000)
+    question: str = Field(
+        default="",
+        max_length=4000,
+        description="本次要回答的问题；可包含用户对当前对象的澄清补充，留空时沿用子任务目标。",
+    )
     # 标签仅用于展示；授权主体取 ExecutionContext，不能由此标签决定归属。
-    subject_label: str = Field(default="本次排盘对象", min_length=1, max_length=80)
-    mode: Literal["chart_only", "interpretation"] = "interpretation"
-    birth: BirthInput = Field(default_factory=BirthInput)
-    target: TargetSelector | None = None
+    subject_label: str = Field(
+        default="本次排盘对象",
+        min_length=1,
+        max_length=80,
+        description="当前排盘对象的展示标签，用于区分多人的问题；一个子任务只处理一个对象。",
+    )
+    mode: Literal["chart_only", "interpretation"] = Field(
+        default="interpretation",
+        description="chart_only=只给实际盘面；interpretation=盘面和自然语言解读。按用户要求选择。",
+    )
+    birth: BirthInput = Field(
+        default_factory=BirthInput,
+        description=(
+            "结合用户原请求、clarifications 的问题与回答、授权引用，填写所有已"
+            "知出生资料；不能因父 arguments 提示不完整而丢掉已有资料。"
+        ),
+    )
+    target: TargetSelector | None = Field(
+        default=None,
+        description=(
+            "natal 不填；其余层级必须指定目标。relative_period 的 ye"
+            "ar/offset=0 表示今年整年，不需要用户另报年份。"
+        ),
+    )
     # level 是本次 Tool 调用的层级；focus 只筛选展示事实，不改变完整盘面身份。
-    level: ChartLevel = ChartLevel.NATAL
-    focus: Focus = "overall"
+    level: ChartLevel = Field(
+        default=ChartLevel.NATAL,
+        description=(
+            "natal=本命；decadal=按日期定位大限；yearly=流年；month"
+            "ly=流月；daily=流日。明确按所问层级填写，流运盘包含上层依据。"
+        ),
+    )
+    focus: Focus = Field(
+        default="overall",
+        description="overall=综合；career=事业；relationship=关系；wealth=财运。只影响展示主题，不改变完整命盘。",
+    )
 
 
 class ZiweiTaskArguments(RootModel[dict[str, Any]]):

@@ -6,8 +6,12 @@ from financeclaw.kernel.models import ModelProfileRef
 from financeclaw.kernel.ziwei import ZiweiTaskArguments, ZiweiTextResult
 
 ZIWEI_PROMPT = """你是 FinanceClaw 的只读紫微斗数领域助手。
-直接结合 task、arguments 提示、user_context 中的用户原问题和 context_refs 的授权资料，
+直接结合 task、arguments 提示、user_context 中的原始用户问题、clarifications 中历次问题与真实回答，
+以及 context_refs 的授权资料，
 调用 ziwei_chart，完整填写出生资料、查询层级、目标日期、主题和输出模式。
+澄清回答必须结合对应问题理解，不能覆盖或遗忘原请求中其他已知资料；不同对象的回答不能混用。
+今年/明年/去年、本月/下月、今天/明天使用 target.kind=relative_period、unit 和 offset。
+工具按 time_context.request_clock 和查询时区解析，不猜绝对年份，不需要另行获取现在的时间。
 不需要另做一轮参数提取或预检。父任务的结构化提示可能不完整，以用户已提供的事实为准；
 未知资料留空，不能猜测生日、时间、性别、历法或查询年份。规则由工具固定，身份由运行时注入。
 同一对象可按需要调用不同层级，工具包含上层盘面，不必逐层调用；不同对象应拆为独立 Worker。
@@ -26,7 +30,7 @@ def ziwei_profile(configuration_fingerprint: str) -> AgentProfile:
         agent_id="ziwei_doushu_agent",
         version="2.1.0",
         assistant_id="ziwei_doushu_agent_v2_1_0",
-        deployment_revision="ziwei-function-call/1",
+        deployment_revision="ziwei-function-call/2",
         configuration_fingerprint=configuration_fingerprint,
         description=(
             "紫微斗数只读排盘与传统文化解读；支持本命、大限、流年、流月和流日。"

@@ -97,7 +97,7 @@ class SubgraphTool(BaseTool):
         token = active_scope.set(scope)
         try:
             await asyncio.to_thread(verify_scope, self.execution, scope.context, self.declaration)
-            value = self.worker_input(arguments, refs, runtime=runtime)
+            value = await asyncio.to_thread(self.worker_input, arguments, refs, runtime=runtime)
             try:
                 result = await self.graph.ainvoke(
                     value, config=runtime.config, context=scope.context
@@ -124,21 +124,17 @@ class SubagentTool(SubgraphTool):
     args_schema: type[BaseModel] = SubagentInput
 
     def worker_input(self, arguments, refs, *, runtime):
-        """传递当前用户原问题和显式授权引用，不复制整段根历史或模型推理。"""
+        """传递本次任务原问题、历次澄清、固定时钟及显式授权引用。"""
         parsed = self.release.input_schema.model_validate(arguments.get("arguments", {}))
-        user = next(
-            (
-                message
-                for message in reversed(runtime.state.get("messages", []))
-                if isinstance(message, HumanMessage)
-            ),
-            None,
-        )
+        from financeclaw.agent_server.tools.task_context import task_context
+
+        context = ExecutionContext.model_validate(runtime.context)
+        snapshot = self.execution.get(context.root_run_id or context.run_id)["snapshot"]
         envelope = {
             "task": arguments["task"],
             "arguments": parsed.model_dump(mode="json"),
             "context_refs": refs,
-            "user_context": {"message_id": user.id, "content": user.content} if user else None,
+            **task_context(runtime, snapshot),
         }
         encoded = json.dumps(envelope, ensure_ascii=False)
         if len(encoded.encode()) > 48000:

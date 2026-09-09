@@ -65,6 +65,10 @@ class InvocationDirectiveMiddleware(AgentMiddleware):
             )
             return self._override(request, instruction=instruction, tools=[])
         # 5. 依据工具 schema 评估指令槽位是否齐备且合法。
+        from financeclaw.shared.releases.interactions import CLARIFICATION_TOOL
+
+        clarification = self._find_tool(request.tools, CLARIFICATION_TOOL)
+        selected_tools = [selected, *([clarification] if clarification else [])]
         assessment = assess_tool_slots(selected, directive)
         # 6. 参数已给定且校验通过：注入"仅调用该能力、参数逐字使用"的指令。
         if directive.arguments is not None and assessment.complete:
@@ -80,7 +84,7 @@ class InvocationDirectiveMiddleware(AgentMiddleware):
             return self._override(
                 request,
                 instruction=instruction,
-                tools=[selected],
+                tools=selected_tools,
             )
         # 7. 参数以自然语言给出：要求模型从中抽取参数，缺失字段须追问。
         if directive.payload and not directive.payload.startswith("{"):
@@ -90,7 +94,9 @@ class InvocationDirectiveMiddleware(AgentMiddleware):
                 "matching capability if every required schema field is known; otherwise ask one "
                 "concise clarification for the missing fields."
             )
-            return self._override(request, instruction=instruction, tools=[selected])
+            if clarification:
+                instruction += " For missing information, call request_user__clarification."
+            return self._override(request, instruction=instruction, tools=selected_tools)
         # 8. 参数缺失或校验失败：禁止本回合调用工具，要求模型仅追问缺失槽位。
         problems = [*assessment.missing_fields, *assessment.validation_errors]
         detail = ", ".join(problems) if problems else "tool arguments"
@@ -100,7 +106,14 @@ class InvocationDirectiveMiddleware(AgentMiddleware):
             f"or invalid: {detail}. Ask one concise clarification that requests only those values. "
             "Do not call any Tool in this model turn."
         )
-        return self._override(request, instruction=instruction, tools=[])
+        if clarification:
+            instruction = instruction.replace(
+                "Do not call any Tool in this model turn.",
+                "Call only request_user__clarification to obtain the missing information.",
+            )
+        return self._override(
+            request, instruction=instruction, tools=[clarification] if clarification else []
+        )
 
     @staticmethod
     def _find_tool(tools: list[BaseTool | dict[str, Any]], name: str) -> BaseTool | None:

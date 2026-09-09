@@ -68,10 +68,14 @@ LANGSMITH_HIDE_OUTPUTS=false
 完整文本解读通过 Tool 结果交回根 Agent，再由 BFF 写入 Journal。
 业务库使用当前 `0001_initial`，候选能力不新增独立运行表。
 
-子图入口接受自然语言 `task`、可选原始 `arguments` 提示、当前用户原问题 `user_context`，
-以及经归属、内容版本和权限校验的 `context_refs`。历史消息和制品通过显式引用提供，
+子图入口接受自然语言 `task`、可选原始 `arguments` 提示、本次根任务固定的原问题 `user_context`，
+以及 `clarifications` 中历次澄清的问题、真实回答和对应子任务。当前任务原问题由 BFF 的消息 ID
+定位，原生恢复不会改成最后一条简短回答，也不会混入其他任务的澄清。
+`time_context` 提供固定的 `request_clock` 和查询时区；它来自可信运行上下文，模型不能覆盖。
+另可提供经归属、内容版本和权限校验的 `context_refs`。其他历史消息和制品通过显式引用提供，
 不自动复制整段根历史。父 Agent 无需提前抽取或冻结完整出生参数。
-子模型直接调用统一的 `ziwei_chart`，完整 Schema 包含出生资料、层级、目标、主题与输出模式；
+子模型直接调用统一的 `ziwei_chart`，使用常规 Pydantic 类型化输入，完整 Schema 包含出生资料、
+层级、目标、主题与输出模式，每个业务字段均有模型可见的说明；运行时参数由框架注入。
 图中不增加参数提取模型或领域预检节点。参数校验和规范化在同一次 Tool 调用内完成。
 
 ```mermaid
@@ -80,13 +84,25 @@ flowchart LR
     W --> T[ziwei_chart：校验与计算]
     T -->|成功| F[证据汇合与解读]
     T -->|缺资料| E[子图 END]
-    E --> Q[根图汇合当前批次并发问]
+    E --> Q[根图汇合当前批次]
+    Q --> I[统一澄清 Tool：原生 interrupt]
+    I --> A[BFF 验证真实回答并 resume]
+    A --> R
 ```
 
 Tool 一次返回当前能确定的全部缺失／无效资料，包括出生日期、时间歧义、地点时区和查询目标。
 子图返回 `needs_clarification`、`missing_fields`、结构化 `issues` 和问题，
-根图收到该公开结果后直接生成澄清消息并结束本轮，不再调用主模型或允许它补造参数重试。
-并发批次先汇合所有结果，再汇总待澄清问题；成功结果仍保留。用户实际补充资料后可继续调用。
+根图先等待当前并发批次的所有回执，保留成功结果，再直接派发一个 `request_user__clarification`，
+由这个工具触发原生 `interrupt`。汇总与派发不消耗额外模型轮次，不能让主模型自行补造参数重试。
+根 Agent 自己发现缺资料时，也调用同一澄清工具。BFF 将任务和 Turn 标记为 `interrupted`，
+登记 `pending_interactions`，问题不会被误记为已经完成的最终答案。
+用户回答后，由 BFF 按原始 interrupt ID 和 checkpoint 恢复同一根任务；后续子 Agent 接收原问题
+及完整问题／回答记录，仅继续未完成工作。成功 Worker 的结果保留在根 checkpoint 中供复用。
+
+输入型澄清沿用现有交互接口，回答形如 `{"revision":1,"kind":"input","answer":{"text":"公历"}}`。
+实际 revision 取待回答交互，普通新 Turn 不能代替 resume。飞书使用显示的
+`/answer <交互ID> <版本> {"text":"公历"}` 命令；审批仍用原有 approve/reject 契约。
+自然语言 `/agent` 的澄清回复可以继续原 Agent，显式 JSON 参数约束和审批权限检查仍然生效。
 缺失用户事实时，在下一次模型调用之前结束 evidence，外层直接进入 `END`，跳过 `finalize`。
 纯参数格式错误允许基于已有上下文修复一次；连续错误返回 `unsupported`，避免 ReAct 耗尽预算。
 权限、取消和持久预算异常仍按原有机制失败。
@@ -98,7 +114,8 @@ Tool 一次返回当前能确定的全部缺失／无效资料，包括出生日
 避免共享“当前参数”导致覆盖，同一完整命盘的不同主题投影均可保留。
 同一命盘的 Artifact 并发首次写入时复用相同元数据，本地文件以原子替换避免读取到半写内容。
 含写操作、审批或交互中断的 Worker／Workflow 继续独占批次。
-自然语言 `/agent ziwei_doushu_agent` 可拆成多个独立查询；显式 JSON 参数指令仍只执行一次。
+自然语言 `/agent ziwei_doushu_agent` 可拆成多个独立查询；显式 JSON 参数指令每批只允许一次调用，
+真实澄清回答后可继续同一 Agent，仍须保持用户指定的 JSON 参数，通过上下文获得补充资料。
 
 ## 可选依赖与 CI
 
@@ -139,7 +156,9 @@ CI 分别验证基础安装和 `--extra ziwei` 安装；普通子图测试不依
 五种层级为 `natal/decadal/yearly/monthly/daily`。本命不传 target；其余必须指定目标。
 公历整年使用 `{"kind":"calendar_period","unit":"year","year":2026}`，相对今年使用
 `{"kind":"relative_period","unit":"year","offset":0}`。相对时间取可信 Turn 时钟和查询时区，
-不是Worker 执行日期。`bounded_range` 的 `end` 不含当天。
+不是 Worker 执行日期；恢复前后保持同一时间基准，不需要另外调用时间工具。
+明年为 `unit=year, offset=1`，本月为 `unit=month, offset=0`，今天为 `unit=day, offset=0`。
+`bounded_range` 的 `end` 不含当天。
 
 农历出生需 `calendar=lunar` 和明确 `is_leap_month`。只知道时辰时使用 `time.kind=shichen`，
 例如 `shichen=yin`；“子时”仍需区分 `zi_early/zi_late`。不要补造 12:00 或猜测性别。
@@ -147,7 +166,10 @@ CI 分别验证基础安装和 `--extra ziwei` 安装；普通子图测试不依
 默认 `OfflineFinanceModel` 不是通用自然语言解析器，不能用它来验收上述任意消息的自动路由。
 `tests/stage8_hotfix/test_production_subgraphs.py` 使用明确的根模型替身，运行真实根图和紫微子图；
 `OfflineZiweiModel` 只用于闭环测试，生成带实际引用的测试文本，不代表真实解读质量。
-回归测试覆盖真实图中的原问题与授权引用传递、完整 function call、聚合校验与并发澄清。
+回归测试覆盖真实图中的原问题与授权引用传递、完整 function call、聚合校验与并发澄清，
+以及仅回复一个字段、连续补充、重建根图后的原生恢复、BFF 交互登记与最终 Journal 写入。
+紫微模型输入检查包含完整 Schema、任务和证据，采用配置中的输入预算减预留输出额度，超限仍拒绝，
+不会截断出生资料、澄清回答或盘面来绕过预算。
 真实模型的自然语言理解与首次填参准确率仍需单独联调；Schema 和提示词不能保证它不误读原文。
 当前文本解读不使用 JSON mode。
 
@@ -161,7 +183,7 @@ CI 分别验证基础安装和 `--extra ziwei` 安装；普通子图测试不依
 - 大限工具用于日期定位，不支持按第 N 大限索取完整十年日历区间。
 - 单次最多 366 天、逐日最多 31 天、分段最多 32；仍可能因事实体积超限而拒绝。
 - `ZIWEI_CONTEXT_BUDGET_EXCEEDED` 应缩小时间或主题，不通过提高摘要截断阈值隐藏问题。
-- 子图返回结构化 outcome；needs_clarification 由根 Agent 展示缺失信息并继续对话。
+- 子图返回结构化 outcome；needs_clarification 由根图汇总并原生中断，回答后恢复同一任务。
 - 规则仍待独立核验；解释只作传统文化参考，不能作为医疗、投资或其他重大决定依据。
 
 ## 隐私与回滚
@@ -176,3 +198,6 @@ CI 分别验证基础安装和 `--extra ziwei` 安装；普通子图测试不依
 停止候选需先排空运行，随后两侧关闭 `FINANCECLAW_ZIWEI_ENABLED`。
 关闭后普通金融请求继续使用根 1.5.0，紫微 Tool不再可见。开关变化会改变发布配置指纹，
 不能用新配置恢复旧的在途任务；须先排空任务并同步重启 BFF 与 Agent Server。
+
+本次澄清修复同样更新了根与紫微的 deployment revision，BFF 与 Agent Server 必须使用相同版本
+并同步重启。升级前遗留的旧版本待回答任务不能直接恢复，应结束旧任务后重新发起测试。

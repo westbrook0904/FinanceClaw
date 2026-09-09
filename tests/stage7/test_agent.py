@@ -34,9 +34,9 @@ def test_default_disabled_root_and_explicit_root_allowlist():
     assert len(specialist.allowed_tools) == 1 and not specialist.interaction_points
     for ref in specialist.allowed_tools:
         tool = active.tool_catalog.resolve(ref.tool_id, ref.version)
-        assert "runtime" not in tool.tool.tool_call_schema["properties"]
+        assert "runtime" not in tool.tool.tool_call_schema.model_json_schema()["properties"]
         assert {"birth", "target", "level", "focus", "mode"} <= set(
-            tool.tool.tool_call_schema["properties"]
+            tool.tool.tool_call_schema.model_json_schema()["properties"]
         )
 
 

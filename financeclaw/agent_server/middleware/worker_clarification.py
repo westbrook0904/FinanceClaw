@@ -1,4 +1,4 @@
-"""Worker 缺资料时由根图直接发问，不再让模型补造参数或继续执行。"""
+"""Worker 缺资料时由根图汇总后原生中断，用户回答后继续同一根任务。"""
 
 import asyncio
 
@@ -8,8 +8,9 @@ from pydantic import ValidationError
 
 from financeclaw.agent_server.middleware.middleware import _context
 from financeclaw.agent_server.tools.subgraphs import SubagentTool
-from financeclaw.shared.execution_ledger.repository import ExecutionConflict
+from financeclaw.shared.execution_ledger.repository import ExecutionConflict, digest
 from financeclaw.shared.execution_ledger.snapshots import verify_agent_snapshot
+from financeclaw.shared.releases.interactions import CLARIFICATION_TOOL
 
 
 class WorkerClarificationMiddleware(AgentMiddleware):
@@ -21,9 +22,9 @@ class WorkerClarificationMiddleware(AgentMiddleware):
         self.profile = profile
         self.execution = execution
 
-    @hook_config(can_jump_to=["end"])
+    @hook_config(can_jump_to=["tools"])
     def before_model(self, state, runtime):
-        """在下一次模型预算消费之前结束本轮，保留完整 Tool 回执。"""
+        """在下一次模型消费前派发单个根澄清工具，所有 Worker 回执已持久化。"""
         receipts = []
         for message in reversed(state.get("messages", [])):
             if not isinstance(message, ToolMessage):
@@ -41,8 +42,10 @@ class WorkerClarificationMiddleware(AgentMiddleware):
             if isinstance(previous, AIMessage)
             else {}
         )
-        questions = []
+        questions, requests = [], []
         for receipt in reversed(receipts):
+            if receipt.name == CLARIFICATION_TOOL and receipt.status == "error":
+                raise ExecutionConflict("root clarification tool failed; no user answer received")
             if receipt.status != "success" or calls.get(receipt.tool_call_id) != receipt.name:
                 continue
             managed = self.catalog.resolve(receipt.name)
@@ -59,6 +62,15 @@ class WorkerClarificationMiddleware(AgentMiddleware):
                 question = getattr(public, "question", None)
                 if not question or not getattr(public, "missing_fields", None):
                     raise ExecutionConflict("Worker clarification requires a question and fields")
+                requests.append(
+                    {
+                        "tool_call_id": receipt.tool_call_id,
+                        "tool": receipt.name,
+                        "subject_label": getattr(public, "subject_label", ""),
+                        "missing_fields": list(public.missing_fields),
+                        "question": question,
+                    }
+                )
                 item = (getattr(public, "subject_label", ""), question)
                 if item not in questions:
                     questions.append(item)
@@ -80,9 +92,28 @@ class WorkerClarificationMiddleware(AgentMiddleware):
                 f"{label}：{question}" if label else question for label, question in questions
             )
         )
-        return {"messages": [AIMessage(content=content)], "jump_to": "end"}
+        if len(content) > 2000:
+            raise ExecutionConflict("root clarification exceeds the published question limit")
+        # 调用 ID 取根身份与本批回执；重放不能产生另一个待回答实例。
+        identifier = "clarification-" + digest([context.run_id, requests])[:24]
+        return {
+            "messages": [
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {
+                            "name": CLARIFICATION_TOOL,
+                            "args": {"question": content},
+                            "id": identifier,
+                        }
+                    ],
+                    additional_kwargs={"clarification_requests": requests},
+                )
+            ],
+            "jump_to": "tools",
+        }
 
-    @hook_config(can_jump_to=["end"])
+    @hook_config(can_jump_to=["tools"])
     async def abefore_model(self, state, runtime):
-        """异步入口在线程池复验授权，保持与同步入口相同的终止语义。"""
+        """异步入口在线程池复验授权，保持与同步入口相同的中断路由。"""
         return await asyncio.to_thread(self.before_model, state, runtime)

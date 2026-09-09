@@ -310,8 +310,26 @@ class ToolGovernanceMiddleware(AgentMiddleware):
         directive = parse_invocation_directive(latest_user.content)
         if directive is None:
             return None
-        # 2. 指令已产生过工具结果时，禁止再次借同一指令调用工具。
-        if any(isinstance(message, ToolMessage) for message in messages[latest_user_index + 1 :]):
+        # 澄清是当前任务的输入交互，不改变显式指令选中的业务能力。
+        from financeclaw.agent_server.tools.interaction import UserQuestionTool
+        from financeclaw.agent_server.tools.task_context import answered_clarifications
+        from financeclaw.shared.releases.interactions import CLARIFICATION_TOOL
+
+        if isinstance(tool, UserQuestionTool) and tool.name == CLARIFICATION_TOOL:
+            return None
+        # 每次真实回答允许继续一次原 Agent 调用；仍校验目标和显式 JSON 参数。
+        current = messages[latest_user_index + 1 :]
+        answers = answered_clarifications(current) if directive.kind is InvocationKind.AGENT else []
+        if answers:
+            answer_index = next(
+                i
+                for i, message in enumerate(current)
+                if isinstance(message, ToolMessage)
+                and message.tool_call_id == answers[-1]["tool_call_id"]
+            )
+            current = current[answer_index + 1 :]
+        # 2. 指令已产生过工具结果且没有新的真实回答时，不允许再次借同一指令调用工具。
+        if any(isinstance(message, ToolMessage) for message in current):
             return "the explicit directive already produced a Tool result"
         # 3. 被调用工具必须与指令指向的能力一致，否则拒绝。
         expected_tool_name = (

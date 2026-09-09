@@ -197,12 +197,15 @@ def build_release_catalogs(
         *((specialist,) if settings.ziwei_enabled else ()),
     )
     manifest = tuple(worker_declaration(item, tool_catalog, model_profiles) for item in reachable)
+    from financeclaw.shared.releases.interactions import ROOT_CLARIFICATION
+
     root = AgentProfile(
         agent_id="finance_agent",
         version="1.5.0",
         assistant_id="finance_agent_v1_5_0",
-        deployment_revision="subgraphs/2",
+        deployment_revision="subgraphs/3",
         worker_manifest=manifest,
+        interaction_points=(ROOT_CLARIFICATION,),
         data_classification=DataClassification.CONFIDENTIAL
         if settings.ziwei_enabled
         else DataClassification.INTERNAL,
@@ -228,8 +231,11 @@ def build_release_catalogs(
             "Use current market tools for financial facts and preserve provider/as-of evidence. "
             "Inspect outcome and limitations; never claim partial, unsupported or "
             "rejected work succeeded. "
-            "needs_clarification ends this turn with a question for the user; wait for actual "
-            "user input before invoking any Worker again. Never invent missing parameters, facts, "
+            "For missing information, call request_user__clarification and resume this same task "
+            "after the user answers. Worker needs_clarification results are gathered by the root "
+            "before one native question. Reuse successful results; retry only unfinished work. "
+            "Keep each clarification answer bound to its question and subject. "
+            "Never invent missing parameters, facts, "
             "credentials, tool results "
             "or WRITE success before approval. Do not bypass rejection. Independent read-only "
             "Workers explicitly marked parallel-safe may share a batch. Other composites, "
