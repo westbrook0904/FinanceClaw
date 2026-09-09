@@ -7,6 +7,7 @@ S3 兼容三种实现；所有存储键以租户/主体的哈希摘要构造，�
 import base64
 from hashlib import sha256
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 from typing import Any, Protocol
 
 
@@ -136,7 +137,15 @@ class LocalArtifactStore:
         path = self.root / relative
         # 3. 写入内容字节并返回可读取的存储 URI。
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(content)
+        # 原子发布完整内容，避免同一制品并发写入时读取到截断中的文件。
+        with NamedTemporaryFile(dir=path.parent, prefix=f".{artifact_id}.", delete=False) as file:
+            temporary = Path(file.name)
+            try:
+                file.write(content)
+                file.flush()
+                temporary.replace(path)
+            finally:
+                temporary.unlink(missing_ok=True)
         return f"artifact-local:{relative.as_posix()}"
 
     def get(self, storage_uri: str) -> bytes:

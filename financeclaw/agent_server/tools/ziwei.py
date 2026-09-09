@@ -1,4 +1,4 @@
-"""五个只读排盘 Tool；资料来自当前 child state，不让模型重复填写生日。"""
+"""完整业务参数的只读排盘 Tool；校验和计算在同一次 function call 内完成。"""
 
 import asyncio
 from typing import Any
@@ -7,66 +7,58 @@ from langchain.tools import ToolRuntime
 from langchain_core.messages import ToolMessage
 from langchain_core.tools import BaseTool
 from langgraph.types import Command
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from financeclaw.agent_server.domains.ziwei.application import ZiweiService
 from financeclaw.agent_server.domains.ziwei.errors import ZiweiError
+from financeclaw.agent_server.domains.ziwei.validation import schema_error
 from financeclaw.agent_server.tools.governance import ManagedTool
 from financeclaw.kernel.context import ExecutionContext
-from financeclaw.kernel.ziwei import (
-    LEVELS,
-    BirthContext,
-    ChartLevel,
-    Focus,
-    ResolvedTarget,
-    ZiweiAnalysisRequest,
-)
+from financeclaw.kernel.ziwei import ZiweiAnalysisRequest
 from financeclaw.shared.releases.tools import ziwei_tool_governance
 
 
-class ZiweiToolInput(BaseModel):
-    """仅允许当前任务主题；目标和出生资料从已冻结的 runtime 注入。"""
+class ZiweiToolRuntimeInput(BaseModel):
+    """仅供 ToolNode 识别可信运行时注入，不作为模型参数 Schema。"""
 
-    model_config = ConfigDict(extra="forbid", arbitrary_types_allowed=True)
-    # focus 只能省略或与冻结请求一致；ToolRuntime 由框架注入，不向模型索要身份。
-    focus: Focus | None = None
+    model_config = ConfigDict(arbitrary_types_allowed=True)
     runtime: ToolRuntime[ExecutionContext]
 
 
 class ZiweiChartTool(BaseTool):
-    """统一薄门面，无当前用户或当前命盘的共享可变状态。"""
+    """一个完整 Schema 支持所有排盘层级，避免重复传五份出生参数定义。"""
 
-    args_schema: type[BaseModel] = ZiweiToolInput
-    # 每个实例在装配时固定一个分析层级；共享 service 不缓存当前用户资料。
-    level: ChartLevel
+    # 原生 JSON Schema 保留完整字段，同时让工具自己聚合校验问题。
+    args_schema: dict[str, Any] = Field(default_factory=ZiweiAnalysisRequest.model_json_schema)
     service: Any = Field(exclude=True, repr=False)
 
-    def _run(
-        self, *, runtime: ToolRuntime[ExecutionContext], focus: Focus | None = None
-    ) -> Command:
-        """保存真实计算证据到 graph state，返回完整且可识别的结构化消息。"""
+    def get_input_schema(self, config=None):
+        """运行时由框架注入；公开 function schema 仍使用 args_schema 的业务字段。"""
+        return ZiweiToolRuntimeInput
+
+    def _run(self, *, runtime: ToolRuntime[ExecutionContext], **arguments) -> Command:
+        """先验证完整调用参数，再生成与本次调用绑定的真实证据。"""
         if self.service is None:
             raise ZiweiError("ZIWEI_ENGINE_UNAVAILABLE", "紫微候选功能尚未启用。")
         context = ExecutionContext.model_validate(runtime.context)
         self.service.authorize(context)
-        request = ZiweiAnalysisRequest.model_validate(runtime.state["ziwei_request"])
-        if LEVELS.index(self.level) > LEVELS.index(request.level) or (
-            focus and focus != request.focus
-        ):
-            raise ZiweiError("ZIWEI_RANGE_LIMIT", "工具请求超出本次子图调用的层级或主题。")
-        birth = BirthContext.model_validate(runtime.state["ziwei_birth"])
-        raw_target = runtime.state.get("ziwei_target")
-        target = (
-            ResolvedTarget.model_validate(raw_target)
-            if raw_target and self.level is not ChartLevel.NATAL
-            else None
-        )
-        projection = self.service.calculate(birth, target, self.level, request.focus, context)
-        # 同一份证据同时写入 checkpoint 与 ToolMessage，finalize 才能检查
-        # 模型引用的事实确实来自本次计算，而不是仅存在于未展示的内部 state。
+        try:
+            request = ZiweiAnalysisRequest.model_validate(arguments)
+        except ValidationError as error:
+            raise schema_error(arguments, error) from None
+        birth, target = self.service.validate_input(request, context)
+        projection = self.service.calculate(birth, target, request.level, request.focus, context)
         return Command(
             update={
-                "ziwei_charts": [projection.model_dump(mode="json")],
+                "ziwei_evidence": [
+                    {
+                        "tool_call_id": runtime.tool_call_id,
+                        "request": request.model_dump(mode="json"),
+                        "birth_fingerprint": birth.fingerprint,
+                        "convention_ref": birth.convention_ref,
+                        "target": target.model_dump(mode="json") if target else None,
+                        "projection": projection.model_dump(mode="json"),
+                    }
+                ],
                 "messages": [
                     ToolMessage(
                         content=projection.model_dump_json(),
@@ -78,31 +70,26 @@ class ZiweiChartTool(BaseTool):
             }
         )
 
-    async def _arun(
-        self, *, runtime: ToolRuntime[ExecutionContext], focus: Focus | None = None
-    ) -> Command:
-        """计算和 Artifact 存储在工作线程运行，不阻塞 Agent Server 事件循环。"""
-        return await asyncio.to_thread(self._run, runtime=runtime, focus=focus)
+    async def _arun(self, *, runtime: ToolRuntime[ExecutionContext], **arguments) -> Command:
+        """同步排盘与持久化在线程池中执行，保留每个调用的原生作用域。"""
+        return await asyncio.to_thread(self._run, runtime=runtime, **arguments)
 
 
-def ziwei_tools(service: ZiweiService | None) -> tuple[ManagedTool, ...]:
-    """即使默认未启用也可注册无副作用 Schema；根白名单控制可见性。"""
-    result = []
-    for level in LEVELS:
-        name = f"ziwei_{level.value}_chart"
-        result.append(
-            ManagedTool(
-                tool=ZiweiChartTool(
-                    name=name,
-                    level=level,
-                    service=service,
-                    description=(
-                        f"Calculate {level.value} and ancestor charts using the frozen birth "
-                        "and target in this Worker invocation. Do not call lower levels first. "
-                        "To change birth or target, return to the root conversation."
-                    ),
+def ziwei_tools(service) -> tuple[ManagedTool, ...]:
+    """注册统一只读排盘工具，运行身份与预算不暴露给模型。"""
+    return (
+        ManagedTool(
+            tool=ZiweiChartTool(
+                name="ziwei_chart",
+                service=service,
+                description=(
+                    "Calculate Ziwei charts using the supplied birth, level, target and focus. "
+                    "Use task, user_context and authorized context_refs to fill the full schema. "
+                    "Leave unknown facts empty; never invent birth details. "
+                    "Include all known fields. The tool returns all identifiable input issues. "
+                    "Each level includes ancestor facts; do not call every lower level first."
                 ),
-                governance=ziwei_tool_governance()[LEVELS.index(level)],
-            )
-        )
-    return tuple(result)
+            ),
+            governance=ziwei_tool_governance()[0],
+        ),
+    )

@@ -12,7 +12,6 @@ from financeclaw.kernel.tools import (
     SideEffect,
     ToolGovernance,
 )
-from financeclaw.kernel.ziwei import LEVELS
 
 
 def local_tool_governance() -> tuple[ToolGovernance, ...]:
@@ -142,23 +141,19 @@ def memory_tool_governance() -> tuple[ToolGovernance, ...]:
 
 def ziwei_tool_governance() -> tuple[ToolGovernance, ...]:
     """返回 ziwei 工具的治理声明，不创建执行实例。"""
-    result = []
-    for level in LEVELS:
-        name = f"ziwei_{level.value}_chart"
-        result.append(
-            ToolGovernance(
-                tool_id=name,
-                version="1.0.0",
-                side_effect=SideEffect.READ,
-                idempotency=Idempotency.IDEMPOTENT,
-                risk_level=RiskLevel.LOW,
-                required_scopes=frozenset({"ziwei:read"}),
-                approval=ApprovalMode.NONE,
-                egress=Egress.NONE,
-                sensitivity=Sensitivity.CONFIDENTIAL,
-                retry_profile=RetryProfile.NONE,
-                audit_level=AuditLevel.FULL,
-                allowed_data_classes=frozenset({DataClassification.CONFIDENTIAL}),
-            )
-        )
-    return tuple(result)
+    return (
+        ToolGovernance(
+            tool_id="ziwei_chart",
+            version="1.0.0",
+            side_effect=SideEffect.READ,
+            idempotency=Idempotency.IDEMPOTENT,
+            risk_level=RiskLevel.LOW,
+            required_scopes=frozenset({"ziwei:read"}),
+            approval=ApprovalMode.NONE,
+            egress=Egress.NONE,
+            sensitivity=Sensitivity.CONFIDENTIAL,
+            retry_profile=RetryProfile.NONE,
+            audit_level=AuditLevel.FULL,
+            allowed_data_classes=frozenset({DataClassification.CONFIDENTIAL}),
+        ),
+    )

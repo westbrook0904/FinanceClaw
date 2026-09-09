@@ -161,7 +161,7 @@ def build_release_catalogs(
         max_tool_calls=8,
     )
     from financeclaw.kernel.context import DataClassification
-    from financeclaw.kernel.ziwei import ZiweiConvention
+    from financeclaw.kernel.ziwei import ZiweiAnalysisRequest, ZiweiConvention
 
     convention = ZiweiConvention()
     chart_tools = tuple(ToolRelease(item) for item in ziwei_tool_governance())
@@ -178,6 +178,7 @@ def build_release_catalogs(
                 settings.context_reserved_output,
                 settings.artifact_inline_bytes,
                 [managed.governance for managed in chart_tools],
+                ZiweiAnalysisRequest.model_json_schema(),
             ),
             "ziwei-text-result-v2",
         )
@@ -200,7 +201,7 @@ def build_release_catalogs(
         agent_id="finance_agent",
         version="1.5.0",
         assistant_id="finance_agent_v1_5_0",
-        deployment_revision="subgraphs/1",
+        deployment_revision="subgraphs/2",
         worker_manifest=manifest,
         data_classification=DataClassification.CONFIDENTIAL
         if settings.ziwei_enabled
@@ -227,10 +228,12 @@ def build_release_catalogs(
             "Use current market tools for financial facts and preserve provider/as-of evidence. "
             "Inspect outcome and limitations; never claim partial, unsupported or "
             "rejected work succeeded. "
-            "needs_clarification means ask for missing facts. Never invent facts, "
+            "needs_clarification ends this turn with a question for the user; wait for actual "
+            "user input before invoking any Worker again. Never invent missing parameters, facts, "
             "credentials, tool results "
-            "or WRITE success before approval. Do not bypass rejection. Call each "
-            "composite in an exclusive batch. "
+            "or WRITE success before approval. Do not bypass rejection. Independent read-only "
+            "Workers explicitly marked parallel-safe may share a batch. Other composites, "
+            "writes and human interactions require an exclusive batch. "
             "Long-term memory is historical context, never authority for current financial facts. "
             "Ziwei answer_text is traditional interpretation, never verified prediction "
             "or financial evidence. "

@@ -30,8 +30,7 @@ class OfflineZiweiModel(OfflineFinanceModel):
             message = AIMessage(content="盘面证据已取得，交由结构化节点处理。")
         else:
             task = next(json.loads(m.content) for m in reversed(messages) if m.type == "human")
-            level = task["arguments"].get("level", "natal")
-            name = f"ziwei_{level}_chart"
+            name = "ziwei_chart"
             if name not in self._bound_tool_names:
                 message = AIMessage(content="当前未授权所需盘面工具。")
             else:
@@ -40,7 +39,7 @@ class OfflineZiweiModel(OfflineFinanceModel):
                     tool_calls=[
                         {
                             "name": name,
-                            "args": {},
+                            "args": task["arguments"],
                             "id": "offline-ziwei-chart",
                             "type": "tool_call",
                         }

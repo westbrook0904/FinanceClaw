@@ -7,6 +7,7 @@ from datetime import UTC, date, datetime, time, timedelta
 
 from financeclaw.agent_server.domains.ziwei.errors import ZiweiError
 from financeclaw.agent_server.domains.ziwei.ports import ZiweiEngine
+from financeclaw.agent_server.domains.ziwei.validation import missing_error, missing_target_fields
 from financeclaw.kernel.context import ExecutionContext
 from financeclaw.kernel.ziwei import (
     BirthContext,
@@ -48,33 +49,8 @@ def canonical(value: object) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
-def birth_context(
-    request: ZiweiAnalysisRequest,
-    context: ExecutionContext,
-    engine: ZiweiEngine,
-    convention: ZiweiConvention,
-    *,
-    hmac_key: bytes,
-    key_version: str,
-) -> BirthContext:
-    """校验缺失、时区和精度，并给规范化资料生成租户／主体隔离的指纹。"""
-    birth = request.birth
-    missing = tuple(
-        f"birth.{name}"
-        for name in ("calendar", "date", "time_basis", "place", "sex_for_chart")
-        if getattr(birth, name) is None
-    )
-    if birth.time.kind == "unknown":
-        missing += ("birth.time",)
-    if birth.calendar == "lunar" and birth.is_leap_month is None:
-        missing += ("birth.is_leap_month",)
-    if missing:
-        raise ZiweiError("ZIWEI_INPUT_INCOMPLETE", "请补充：" + "、".join(missing), missing)
-    if birth.time_basis != convention.time_basis:
-        raise ZiweiError(
-            "ZIWEI_CONVENTION_UNSUPPORTED", "当前候选仅验证民用钟表时间，尚未支持真太阳时。"
-        )
-    assert birth.place is not None and birth.sex_for_chart is not None
+def _birth_zone(birth, engine):
+    """地点和时区独立校验，不被其他缺失字段阻断。"""
     known = CITY_ZONES.get(birth.place.name.removesuffix("市"))
     zone_name = birth.place.timezone
     if known:
@@ -92,16 +68,13 @@ def birth_context(
             ("birth.place.timezone",),
         )
     zone = engine.zone(zone_name)
-    solar = engine.solar_date(birth)
-    if not 1901 <= solar.year <= 2099:
-        raise ZiweiError("ZIWEI_DATE_UNSUPPORTED", "当前候选日期范围为 1901–2099。")
-    warnings = ["候选排盘规则尚待独立核验；结果仅供传统文化参考。"]
-    if solar.year < 1970:
-        warnings.append("早期历史时区资料可能不完整，请核对出生记录所用时间。")
-    if not known:
-        warnings.append("出生地时区采用用户明确提供的值，未进行地理编码核验。")
-    supplied = birth.time
+    return zone, known
+
+
+def _birth_time(birth, solar, zone, warnings):
+    """在日期、时区可用时校验时间精度和歧义。"""
     instant = None
+    supplied = birth.time
     if supplied.kind == "shichen":
         slot = supplied.shichen
         if slot is None or slot == "zi":
@@ -149,6 +122,79 @@ def birth_context(
         slot = slots.pop()
         if supplied.kind == "range":
             warnings.append("出生区间落在同一排盘时辰；保留区间精度，不虚构精确时刻。")
+    return slot, instant
+
+
+def birth_context(
+    request: ZiweiAnalysisRequest,
+    context: ExecutionContext,
+    engine: ZiweiEngine,
+    convention: ZiweiConvention,
+    *,
+    hmac_key: bytes,
+    key_version: str,
+) -> BirthContext:
+    """聚合当前能确定的出生问题；只有资料完整时才构造可信出生快照。"""
+    birth = request.birth
+    errors = []
+    missing = tuple(
+        f"birth.{name}"
+        for name in ("calendar", "date", "time_basis", "place", "sex_for_chart")
+        if getattr(birth, name) is None
+    )
+    supplied = birth.time
+    if supplied.kind == "unknown":
+        missing += ("birth.time",)
+    if birth.calendar == "lunar" and birth.is_leap_month is None:
+        missing += ("birth.is_leap_month",)
+    if supplied.kind in {"clock", "range"} and (
+        supplied.clock is None or (supplied.kind == "range" and supplied.end is None)
+    ):
+        missing += ("birth.time",)
+    if missing:
+        errors.append(missing_error(missing))
+    if birth.time_basis is not None and birth.time_basis != convention.time_basis:
+        errors.append(
+            ZiweiError(
+                "ZIWEI_CONVENTION_UNSUPPORTED", "当前候选仅验证民用钟表时间，尚未支持真太阳时。"
+            )
+        )
+    zone, known, solar = None, None, None
+    warnings = ["候选排盘规则尚待独立核验；结果仅供传统文化参考。"]
+    if birth.place is not None:
+        try:
+            zone, known = _birth_zone(birth, engine)
+        except ZiweiError as error:
+            errors.append(error)
+    if (
+        birth.date is not None
+        and birth.calendar is not None
+        and not (birth.calendar == "lunar" and birth.is_leap_month is None)
+    ):
+        try:
+            solar = engine.solar_date(birth)
+            if not 1901 <= solar.year <= 2099:
+                raise ZiweiError(
+                    "ZIWEI_DATE_UNSUPPORTED", "当前候选日期范围为 1901–2099。", ("birth.date",)
+                )
+        except ZiweiError as error:
+            errors.append(error)
+    slot, instant = None, None
+    if "birth.time" not in missing and (
+        supplied.kind == "shichen" or (solar is not None and zone is not None)
+    ):
+        try:
+            slot, instant = _birth_time(birth, solar, zone, warnings)
+        except ZiweiError as error:
+            errors.append(error)
+    if errors:
+        raise ZiweiError.combine(errors)
+    assert solar is not None and zone is not None and slot is not None
+    zone_name = zone.key
+    if solar.year < 1970:
+        warnings.append("早期历史时区资料可能不完整，请核对出生记录所用时间。")
+    if not known:
+        warnings.append("出生地时区采用用户明确提供的值，未进行地理编码核验。")
     identity = {
         "tenant": context.tenant_id,
         "subject": context.subject_id,
@@ -203,6 +249,9 @@ def resolve_target(
         raise ZiweiError("ZIWEI_INPUT_INCOMPLETE", "运行的请求时间或时区无效。") from None
     if selector.calendar == "lunar":
         raise ZiweiError("ZIWEI_DATE_UNSUPPORTED", "当前查询区间仅支持公历；出生资料可使用农历。")
+    missing = missing_target_fields(request.level, selector.model_dump(mode="json"))
+    if missing:
+        raise missing_error(missing)
     try:
         if selector.kind == "point":
             if selector.on_date is None:

@@ -24,9 +24,9 @@ from financeclaw.shared.artifacts.service import ArtifactService
 
 
 class ZiweiService:
-    """协调紫微预检、确定性计算与制品存储的应用用例。
+    """协调工具内参数校验、确定性计算与制品存储的应用用例。
 
-    preflight 把用户资料规范化为带归属指纹的出生快照和绝对日期区间；
+    validate_input 在 Tool 内把资料规范化为出生快照和绝对日期区间；
     calculate 复验权限及快照归属，调用领域服务，裁定投影大小后才保存
     完整制品。规则与事实计算归 ZiweiCalculationService，模型解读归 graph。
 
@@ -59,22 +59,32 @@ class ZiweiService:
         if self.projection_bytes < 1024:
             raise ValueError("Ziwei artifact inline budget is too small")
 
-    def preflight(
+    def validate_input(
         self,
         request: ZiweiAnalysisRequest,
         context: ExecutionContext,
     ) -> tuple[BirthContext, ResolvedTarget | None]:
-        """缺失与歧义在任何模型调用前返回，且没有外部网络访问。"""
+        """计算前聚合出生资料与查询目标的问题，不增加模型或独立图节点。"""
         self.authorize(context)
-        birth = birth_context(
-            request,
-            context,
-            self.calculation.engine,
-            self.calculation.convention,
-            hmac_key=self._hmac_key,
-            key_version=self.key_version,
-        )
-        return birth, resolve_target(request, context, self.calculation.engine)
+        errors = []
+        try:
+            birth = birth_context(
+                request,
+                context,
+                self.calculation.engine,
+                self.calculation.convention,
+                hmac_key=self._hmac_key,
+                key_version=self.key_version,
+            )
+        except ZiweiError as error:
+            errors.append(error)
+        try:
+            target = resolve_target(request, context, self.calculation.engine)
+        except ZiweiError as error:
+            errors.append(error)
+        if errors:
+            raise ZiweiError.combine(errors)
+        return birth, target
 
     @staticmethod
     def authorize(context: ExecutionContext) -> None:

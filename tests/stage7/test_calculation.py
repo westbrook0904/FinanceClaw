@@ -18,7 +18,7 @@ def test_all_five_levels_have_consistent_natal_and_atomic_ancestors():
         query = (
             request(level=level, target=None) if level == ChartLevel.NATAL else request(level=level)
         )
-        birth, target = service.preflight(query, context())
+        birth, target = service.validate_input(query, context())
         result = service.calculate(birth, target, level, "overall", context())
         results.append(result)
         assert len(result.model_dump_json().encode()) < 14_000
@@ -41,12 +41,12 @@ def test_solar_and_lunar_equivalence_and_invalid_leap_flag():
     lunar["birth"].update(
         calendar="lunar", date={"year": 2000, "month": 7, "day": 17}, is_leap_month=False
     )
-    a, _ = service.preflight(solar, context())
-    b, _ = service.preflight(ZiweiAnalysisRequest.model_validate(lunar), context())
+    a, _ = service.validate_input(solar, context())
+    b, _ = service.validate_input(ZiweiAnalysisRequest.model_validate(lunar), context())
     assert a.fingerprint == b.fingerprint and a.solar_date == b.solar_date
     lunar["birth"]["is_leap_month"] = True
     with pytest.raises(ZiweiError, match="闰月"):
-        service.preflight(ZiweiAnalysisRequest.model_validate(lunar), context())
+        service.validate_input(ZiweiAnalysisRequest.model_validate(lunar), context())
 
 
 @pytest.mark.parametrize(
@@ -64,7 +64,7 @@ def test_shichen_boundaries_and_single_late_zi_adjustment(clock, slot):
     service = components().ziwei_service
     data = request().model_dump(mode="json")
     data["birth"]["time"]["clock"] = clock
-    birth, _ = service.preflight(ZiweiAnalysisRequest.model_validate(data), context())
+    birth, _ = service.validate_input(ZiweiAnalysisRequest.model_validate(data), context())
     assert birth.shichen == slot and birth.solar_date.isoformat() == "2000-08-16"
 
 
@@ -79,7 +79,7 @@ def test_dst_gap_and_fold_require_clarification(day, clock):
     )
     data["birth"]["time"]["clock"] = clock
     with pytest.raises(ZiweiError) as error:
-        service.preflight(ZiweiAnalysisRequest.model_validate(data), context())
+        service.validate_input(ZiweiAnalysisRequest.model_validate(data), context())
     assert error.value.code == "ZIWEI_TIME_AMBIGUOUS"
 
 
@@ -88,7 +88,7 @@ def test_unknown_and_uncertain_time_are_not_fabricated():
     service = components().ziwei_service
     data = request().model_dump(mode="json")
     data["birth"]["time"] = {"kind": "range", "clock": "03:10", "end": "04:50"}
-    birth, _ = service.preflight(ZiweiAnalysisRequest.model_validate(data), context())
+    birth, _ = service.validate_input(ZiweiAnalysisRequest.model_validate(data), context())
     assert birth.utc_instant is None and birth.shichen == "yin"
     for value in (
         {"kind": "unknown"},
@@ -97,7 +97,7 @@ def test_unknown_and_uncertain_time_are_not_fabricated():
     ):
         data["birth"]["time"] = value
         with pytest.raises(ZiweiError) as error:
-            service.preflight(ZiweiAnalysisRequest.model_validate(data), context())
+            service.validate_input(ZiweiAnalysisRequest.model_validate(data), context())
         assert error.value.fields
 
 
@@ -107,7 +107,7 @@ def test_year_range_is_split_at_real_lunar_year_boundary():
     query = request(
         level="yearly", target={"kind": "calendar_period", "unit": "year", "year": 2026}
     )
-    birth, target = service.preflight(query, context())
+    birth, target = service.validate_input(query, context())
     result = service.calculation.calculate_snapshot(birth, target, query.level)
     assert result.segments[0].start.isoformat() == "2026-01-01"
     assert result.segments[-1].end.isoformat() == "2027-01-01"
@@ -120,17 +120,17 @@ def test_relative_target_uses_request_clock_and_query_timezone():
     """不依赖测试执行机器的当前日期，也不使用出生时区解析今天。"""
     service = components().ziwei_service
     query = request(target={"kind": "relative_period", "unit": "day"})
-    _, target = service.preflight(query, context(timezone="America/New_York"))
+    _, target = service.validate_input(query, context(timezone="America/New_York"))
     assert target.start.isoformat() == "2026-09-05"
     with pytest.raises(ZiweiError):
-        service.preflight(query, context(request_clock=None))
+        service.validate_input(query, context(request_clock=None))
 
 
 def test_no_cross_owner_reuse_and_concurrent_determinism():
     """共享 Tool/Service 不持有当前命盘；跨主体读取冻结出生上下文失败。"""
     service = components().ziwei_service
     query = request()
-    birth, target = service.preflight(query, context())
+    birth, target = service.validate_input(query, context())
     with pytest.raises(PermissionError):
         service.calculate(birth, target, query.level, query.focus, context(subject_id="other"))
 
@@ -148,10 +148,10 @@ def test_artifact_is_idempotent_across_request_clocks_and_protected(tmp_path):
     stack = components(tmp_path)
     service = stack.ziwei_service
     try:
-        first_birth, first_target = service.preflight(request(), context())
+        first_birth, first_target = service.validate_input(request(), context())
         first = service.calculate(first_birth, first_target, ChartLevel.DAILY, "overall", context())
         later = context(request_clock="2026-09-07T01:00:00+08:00")
-        birth, target = service.preflight(request(), later)
+        birth, target = service.validate_input(request(), later)
         second = service.calculate(birth, target, ChartLevel.DAILY, "overall", later)
         assert first.artifact == second.artifact
         metadata = stack.artifact_service.repository.get_owned(
@@ -168,9 +168,9 @@ def test_over_budget_and_unsupported_rules_fail_without_partial_analysis():
     data = request().model_dump(mode="json")
     data["birth"]["time_basis"] = "apparent_solar"
     with pytest.raises(ZiweiError) as error:
-        service.preflight(ZiweiAnalysisRequest.model_validate(data), context())
+        service.validate_input(ZiweiAnalysisRequest.model_validate(data), context())
     assert error.value.code == "ZIWEI_CONVENTION_UNSUPPORTED"
-    birth, target = service.preflight(request(), context())
+    birth, target = service.validate_input(request(), context())
     service.projection_bytes = 1024
     with pytest.raises(ZiweiError) as error:
         service.calculate(birth, target, ChartLevel.DAILY, "overall", context())

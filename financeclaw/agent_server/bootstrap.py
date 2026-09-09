@@ -59,7 +59,7 @@ class AgentServerComponents:
         memory_service: 长期记忆服务；无会话仓储时不可用，为 None。
         workflow_catalog: Workflow 目录，登记已发布的流程定义。
         outbox_repository: Outbox 仓储，支撑事件最终一致外发；未启用持久化时为 None。
-        ziwei_service: 紫微预检、计算与制品用例；候选功能未启用时为 None。
+        ziwei_service: 紫微工具校验、计算与制品用例；候选功能未启用时为 None。
 
     """
 

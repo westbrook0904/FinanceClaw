@@ -93,7 +93,7 @@ async def test_finalization_cannot_bypass_persistent_root_budget(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_preflight_rejects_release_drift_even_for_clarification(tmp_path):
+async def test_initialize_rejects_release_drift_even_for_clarification(tmp_path):
     """没有模型调用的澄清分支也不能用不同发布恢复旧任务。"""
     stack = components(tmp_path)
     profile = stack.agent_profiles.resolve("ziwei_doushu_agent")
@@ -149,7 +149,7 @@ def test_protected_results_are_never_offloaded_or_token_truncated(tmp_path):
 async def test_handled_tool_errors_are_audited_as_failures():
     """同步、异步均检查 ToolMessage.status，不把 ToolException 的已处理结果记成功。"""
     stack = components()
-    managed = stack.tool_catalog.resolve("ziwei_natal_chart", "1.0.0")
+    managed = stack.tool_catalog.resolve("ziwei_chart", "1.0.0")
     middleware = ToolGovernanceMiddleware(
         stack.tool_catalog, stack.tool_policy, stack.audit, allowed_keys=frozenset({managed.key})
     )

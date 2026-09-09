@@ -31,11 +31,13 @@ def test_default_disabled_root_and_explicit_root_allowlist():
     names = {ref.tool_id for ref in active.default_agent_profile.allowed_tools}
     assert {name for name in names if "ziwei" in name} == {"call_agent__ziwei_doushu_agent"}
     specialist = active.agent_profiles.resolve("ziwei_doushu_agent")
-    assert len(specialist.allowed_tools) == 5 and not specialist.interaction_points
+    assert len(specialist.allowed_tools) == 1 and not specialist.interaction_points
     for ref in specialist.allowed_tools:
         tool = active.tool_catalog.resolve(ref.tool_id, ref.version)
-        assert "runtime" not in tool.tool.tool_call_schema.model_json_schema()["properties"]
-        assert "birth" not in tool.tool.tool_call_schema.model_json_schema()["properties"]
+        assert "runtime" not in tool.tool.tool_call_schema["properties"]
+        assert {"birth", "target", "level", "focus", "mode"} <= set(
+            tool.tool.tool_call_schema["properties"]
+        )
 
 
 @pytest.mark.parametrize(
@@ -118,7 +120,7 @@ async def test_real_graph_produces_validated_evidence_and_result(mode):
 
 
 @pytest.mark.asyncio
-async def test_preflight_clarifies_without_any_model_or_tool():
+async def test_tool_clarifies_after_one_function_call():
     """缺资料正常结束，根会话据此发问；不创建 Agent-child interrupt。"""
     stack = components()
     profile = stack.agent_profiles.resolve("ziwei_doushu_agent")
@@ -128,11 +130,12 @@ async def test_preflight_clarifies_without_any_model_or_tool():
     result = await graph.ainvoke(envelope(request(birth={})), context=context())
     value = ZiweiTextResult.model_validate(result["ziwei_result"])
     assert value.outcome == "needs_clarification" and "birth.date" in value.missing_fields
-    assert not result.get("ziwei_model_calls") and not result.get("ziwei_charts")
+    assert result["ziwei_model_calls"] == 1 and not result.get("ziwei_evidence")
+    assert sum(m.type == "tool" for m in result["messages"]) == 1
 
 
 @pytest.mark.asyncio
-async def test_preflight_permissions_and_input_state_cannot_be_forged():
+async def test_initialize_permissions_and_input_state_cannot_be_forged():
     """外部 graph 输入不能注入伪造盘面；缺权限在任何计算前拒绝。"""
     stack = components()
     graph = build_ziwei_agent(
@@ -147,7 +150,7 @@ async def test_preflight_permissions_and_input_state_cannot_be_forged():
         await graph.ainvoke(envelope(request()), context=context(data_classification="internal"))
     data = {
         **envelope(request()),
-        "ziwei_charts": [{"chart_id": "forged"}],
+        "ziwei_evidence": [{"tool_call_id": "forged"}],
         "ziwei_result": {"outcome": "answer"},
     }
     result = await graph.ainvoke(data, context=context())

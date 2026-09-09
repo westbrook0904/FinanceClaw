@@ -1,4 +1,4 @@
-"""紫微子 graph：确定性预检、受治理取证与文本解读。"""
+"""紫微子 graph：直接 function calling、工具内校验与文本解读。"""
 
 import asyncio
 import json
@@ -10,7 +10,6 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, Tool
 from langchain_core.utils.function_calling import convert_to_openai_tool
 from langgraph.graph import END, START, StateGraph
 from langgraph.runtime import Runtime
-from pydantic import ValidationError
 
 from financeclaw.agent_server.agents.factory import AgentFactory
 from financeclaw.agent_server.domains.ziwei.application import ZiweiService
@@ -20,32 +19,30 @@ from financeclaw.kernel.context import DataClassification, ExecutionContext
 from financeclaw.kernel.ziwei import ChartProjection, ZiweiAnalysisRequest, ZiweiTextResult
 
 
-def merge_charts(left: list[dict], right: list[dict]) -> list[dict]:
-    """并发只合并同对象的不可变计算证据，同 ID 不同内容直接失败。"""
-    charts = {item["chart_id"]: item for item in left}
+def merge_evidence(left: list[dict], right: list[dict]) -> list[dict]:
+    """并发工具各自绑定请求与命盘，不竞争写同一份当前参数。"""
+    values = {item["tool_call_id"]: item for item in left}
     for item in right:
-        if item["chart_id"] in charts and charts[item["chart_id"]] != item:
-            raise ZiweiError("ZIWEI_RESULT_INVALID", "相同命盘标识对应不同结果。")
-        charts[item["chart_id"]] = item
-    return [charts[key] for key in sorted(charts)]
+        key = item["tool_call_id"]
+        if key in values and values[key] != item:
+            raise ZiweiError("ZIWEI_RESULT_INVALID", "同一工具调用不能替换排盘证据。")
+        values[key] = item
+    return list(values.values())
 
 
 class ZiweiGraphInput(TypedDict):
     """Agent Server 输入只允许原子图调用消息，不接受调用方伪造的出生 state 或计算结果。"""
 
-    # preflight 从子图调用 task envelope 提取参数，图内部字段不会作为公开输入。
+    # 输入只含任务上下文，工具生成的规范化证据不接受外部注入。
     messages: list[Any]
 
 
 class ZiweiState(AgentState):
     """只在独立 child checkpoint 保存资料，不借用根会话的当前命盘。"""
 
-    # preflight 写入已校验请求和规范化资料；工具只读这些字段，不重猜生日。
-    ziwei_request: NotRequired[dict]
-    ziwei_birth: NotRequired[dict]
-    ziwei_target: NotRequired[dict | None]
-    # 多个只读工具可并发产证据；reducer 按 chart_id 去重并拒绝同 ID 内容漂移。
-    ziwei_charts: Annotated[list[dict], merge_charts]
+    ziwei_task: NotRequired[dict]
+    ziwei_evidence: Annotated[list[dict], merge_evidence]
+    ziwei_input_repairs: NotRequired[int]
     # 本图模型轮次数用于预留 finalize 额度；持久根预算另计真实调用与重试。
     ziwei_model_calls: NotRequired[int]
     # 由可信图节点装配版本化结果外壳；解读正文不做 JSON 解析。
@@ -89,14 +86,27 @@ def interpretation_text(response: AIMessage) -> str:
 
 
 def error_result(error: ZiweiError, request: ZiweiAnalysisRequest) -> ZiweiTextResult:
-    """预检和取证使用同一终态协议，缺资料交回根会话发问。"""
+    """工具内校验使用统一终态协议，缺资料交回根会话发问。"""
     return ZiweiTextResult(
         outcome="needs_clarification" if error.fields else "unsupported",
         question=str(error) if error.fields else request.question,
         subject_label=request.subject_label,
         missing_fields=error.fields,
+        issues=error.issues,
         warnings=(str(error),),
         error_code=error.code,
+    )
+
+
+def task_request(state, arguments=None) -> ZiweiAnalysisRequest:
+    """错误外壳只取问题和对象标签，不要求尚未通过校验的出生参数合法。"""
+    raw = arguments or {}
+    task = state.get("ziwei_task", {})
+    question = raw.get("question") or task.get("task", "")
+    label = raw.get("subject_label", "本次排盘对象")
+    return ZiweiAnalysisRequest(
+        question=question[:4000] if isinstance(question, str) else "",
+        subject_label=label[:80] if isinstance(label, str) and label else "本次排盘对象",
     )
 
 
@@ -127,39 +137,69 @@ class ZiweiEvidenceMiddleware(AgentMiddleware):
                 break
             if message.status == "error":
                 failures.append(message)
+        repair = {}
         if failures:
-            # 工具并发时只由此节点写一次终态，避免多个 Tool Command 争写 state。
-            failure = failures[-1]
-            public = failure.additional_kwargs.get("ziwei_failure")
-            result = (
-                ZiweiTextResult.model_validate(public)
-                if public is not None
+            results = [
+                ZiweiTextResult.model_validate(message.additional_kwargs["ziwei_failure"])
+                if "ziwei_failure" in message.additional_kwargs
                 else error_result(
-                    ZiweiError(
-                        "ZIWEI_TOOL_CALL_FAILED",
-                        "排盘工具调用未通过校验或授权，请检查调用参数与权限后重新发起。",
-                    ),
-                    ZiweiAnalysisRequest.model_validate(state["ziwei_request"]),
+                    ZiweiError("ZIWEI_TOOL_CALL_FAILED", "排盘工具调用失败，请检查参数与权限。"),
+                    task_request(state),
                 )
-            )
-            return {"ziwei_result": result.model_dump(mode="json"), "jump_to": "end"}
+                for message in reversed(failures)
+            ]
+            clarification = [
+                result for result in results if result.outcome == "needs_clarification"
+            ]
+            if clarification:
+                result = clarification[0].model_copy(
+                    update={
+                        "question": "\n".join(
+                            dict.fromkeys(item.question for item in clarification)
+                        ),
+                        "missing_fields": tuple(
+                            dict.fromkeys(
+                                field for item in clarification for field in item.missing_fields
+                            )
+                        ),
+                        "issues": tuple(
+                            dict.fromkeys(issue for item in clarification for issue in item.issues)
+                        ),
+                        "warnings": tuple(
+                            dict.fromkeys(
+                                warning for item in clarification for warning in item.warnings
+                            )
+                        ),
+                    }
+                )
+                return {"ziwei_result": result.model_dump(mode="json"), "jump_to": "end"}
+            if (
+                all(message.additional_kwargs.get("ziwei_repairable") for message in failures)
+                and state.get("ziwei_input_repairs", 0) < 1
+            ):
+                repair = {"ziwei_input_repairs": 1}
+            else:
+                return {"ziwei_result": results[0].model_dump(mode="json"), "jump_to": "end"}
         count = state.get("ziwei_model_calls", 0)
         if count >= self.max_calls - self.finalization_calls:
             raise ZiweiError("ZIWEI_RANGE_LIMIT", "取证调用预算已用完。")
-        return {"ziwei_model_calls": count + 1}
+        return {"ziwei_model_calls": count + 1, **repair}
 
     @staticmethod
     def _failure_message(request: Any, error: ZiweiError) -> ToolMessage:
         """保留调用 ID 和安全领域错误，不把异常原文交给模型反复修复。"""
         result = error_result(
-            error, ZiweiAnalysisRequest.model_validate(request.runtime.state["ziwei_request"])
+            error, task_request(request.runtime.state, request.tool_call.get("args", {}))
         )
         return ToolMessage(
             content=result.model_dump_json(),
             name=request.tool_call["name"],
             tool_call_id=request.tool_call["id"],
             status="error",
-            additional_kwargs={"ziwei_failure": result.model_dump(mode="json")},
+            additional_kwargs={
+                "ziwei_failure": result.model_dump(mode="json"),
+                "ziwei_repairable": error.code == "ZIWEI_TOOL_INPUT_INVALID",
+            },
         )
 
     def wrap_tool_call(self, request: Any, handler: Any) -> Any:
@@ -230,7 +270,7 @@ def build_ziwei_agent(
     )
 
     def verify_execution(context: ExecutionContext) -> Any:
-        """预检和 finalize 恢复都检查冻结发布，不能只依赖取证子图的模型中间件。"""
+        """入口和 finalize 恢复都检查冻结发布，不能只依赖取证子图的模型中间件。"""
         ZiweiService.authorize(context)
         repository = getattr(factory.conversation_repository, "execution", None)
         from financeclaw.agent_server.tools.subgraph_scope import verify_graph_release
@@ -247,38 +287,31 @@ def build_ziwei_agent(
             )
         return {"ziwei_result": result.model_dump(mode="json")}
 
-    def preflight(state: ZiweiState, runtime: Runtime[ExecutionContext]) -> dict:
-        """只解析服务端 task envelope；确定性资料验证在任何模型消费前发生。"""
+    def initialize(state: ZiweiState, runtime: Runtime[ExecutionContext]) -> dict:
+        """只装入任务上下文和复验授权，不提取或预检任何领域参数。"""
         context = ExecutionContext.model_validate(runtime.context)
         verify_execution(context)
-        request = ZiweiAnalysisRequest()
-        try:
-            if service is None:
-                raise ZiweiError(
-                    "ZIWEI_ENGINE_UNAVAILABLE", "紫微候选功能尚未启用，需先完成规则验证与配置。"
+        if service is None:
+            return result_payload(
+                error_result(
+                    ZiweiError("ZIWEI_ENGINE_UNAVAILABLE", "紫微候选功能尚未启用。"),
+                    ZiweiAnalysisRequest(),
                 )
-            if context.data_classification is not DataClassification.CONFIDENTIAL:
-                raise PermissionError("Ziwei requires confidential execution context")
-            raw = state["messages"][-1].content
-            envelope = json.loads(raw)
-            request = ZiweiAnalysisRequest.model_validate(envelope["arguments"])
-            if not request.question:
-                request = request.model_copy(update={"question": envelope["task"]})
-            birth, target = service.preflight(request, context)
-            return {
-                "ziwei_request": request.model_dump(mode="json"),
-                "ziwei_birth": birth.model_dump(mode="json"),
-                "ziwei_target": target.model_dump(mode="json") if target else None,
-            }
-        except ZiweiError as error:
-            return result_payload(error_result(error, request))
-        except (ValidationError, json.JSONDecodeError, KeyError, TypeError):
-            raise ZiweiError(
-                "ZIWEI_INPUT_INCOMPLETE", "子图调用参数格式无效，请重新整理结构化资料。"
-            ) from None
+            )
+        if context.data_classification is not DataClassification.CONFIDENTIAL:
+            raise PermissionError("Ziwei requires confidential execution context")
+        try:
+            envelope = json.loads(state["messages"][-1].content)
+            if not isinstance(envelope["task"], str) or not isinstance(
+                envelope.get("arguments", {}), dict
+            ):
+                raise TypeError("invalid task envelope")
+        except (json.JSONDecodeError, KeyError, TypeError):
+            raise ZiweiError("ZIWEI_INPUT_INCOMPLETE", "子图任务上下文格式无效。") from None
+        return {"ziwei_task": envelope}
 
     def route(state: ZiweiState) -> str:
-        """需要澄清时结束 child，让根会话发问，不创建交互 interrupt。"""
+        """未启用时直接返回，其余任务直接进入 function calling。"""
         return END if state.get("ziwei_result") else "evidence"
 
     def after_evidence(state: ZiweiState) -> str:
@@ -289,28 +322,40 @@ def build_ziwei_agent(
         """先确认真实盘面，再生成不要求 JSON 的文本解读。"""
         context = ExecutionContext.model_validate(runtime.context)
         repository = await asyncio.to_thread(verify_execution, context)
-        request = ZiweiAnalysisRequest.model_validate(state["ziwei_request"])
-        birth = state["ziwei_birth"]
-        charts = tuple(
-            ChartProjection.model_validate(value) for value in state.get("ziwei_charts", [])
-        )
-        matching = tuple(c for c in charts if c.level == request.level)
-        if not matching or any(
-            c.birth_fingerprint != birth["fingerprint"]
-            or c.convention_ref != birth["convention_ref"]
-            or (c.target.model_dump(mode="json") if c.target else None) != state.get("ziwei_target")
-            for c in matching
+        records = state.get("ziwei_evidence", [])
+        if not records:
+            raise ZiweiError("ZIWEI_RESULT_INVALID", "未取得真实工具盘面。")
+        requests = []
+        matching = {}
+        for record in records:
+            request = ZiweiAnalysisRequest.model_validate(record["request"])
+            chart = ChartProjection.model_validate(record["projection"])
+            if (
+                chart.level != request.level
+                or chart.birth_fingerprint != record["birth_fingerprint"]
+                or chart.convention_ref != record["convention_ref"]
+                or (chart.target.model_dump(mode="json") if chart.target else None)
+                != record["target"]
+            ):
+                raise ZiweiError("ZIWEI_RESULT_INVALID", "工具请求和真实盘面绑定不一致。")
+            requests.append(request)
+            # 同一完整命盘可有不同 focus 投影；只去重完全相同的投影。
+            matching[chart.model_dump_json()] = chart
+        if (
+            len({(chart.birth_fingerprint, chart.convention_ref) for chart in matching.values()})
+            != 1
         ):
-            raise ZiweiError("ZIWEI_RESULT_INVALID", "未取得覆盖当前对象、规则和时间的真实盘面。")
+            raise ZiweiError("ZIWEI_RESULT_INVALID", "一个紫微子任务不能混合不同对象的出生资料。")
         common = dict(
-            question=request.question,
-            subject_label=request.subject_label,
-            charts_used=matching,
-            warnings=tuple(dict.fromkeys(w for c in matching for w in c.warnings)),
+            question="\n".join(
+                dict.fromkeys(item.question or state["ziwei_task"]["task"] for item in requests)
+            ),
+            subject_label=requests[0].subject_label,
+            charts_used=tuple(matching.values()),
+            warnings=tuple(dict.fromkeys(w for c in matching.values() for w in c.warnings)),
         )
-        if request.mode == "chart_only":
-            result = ZiweiTextResult(outcome="chart_only", **common)
-            return result_payload(result)
+        if all(item.mode == "chart_only" for item in requests):
+            return result_payload(ZiweiTextResult(outcome="chart_only", **common))
         messages = [
             SystemMessage(
                 content=(
@@ -326,9 +371,9 @@ def build_ziwei_agent(
             HumanMessage(
                 content=json.dumps(
                     {
-                        "question": request.question,
-                        "focus": request.focus,
-                        "charts": [c.model_dump(mode="json") for c in matching],
+                        "question": common["question"],
+                        "focus": list(dict.fromkeys(item.focus for item in requests)),
+                        "charts": [c.model_dump(mode="json") for c in matching.values()],
                     },
                     ensure_ascii=False,
                 )
@@ -349,12 +394,12 @@ def build_ziwei_agent(
         return {**result_payload(result), "ziwei_model_calls": count + 1}
 
     graph = StateGraph(ZiweiState, input_schema=ZiweiGraphInput, context_schema=ExecutionContext)
-    graph.add_node("preflight", preflight)
+    graph.add_node("initialize", initialize)
     # 未启用时路由不会进入这两个节点，不需要构造模型客户端。
     graph.add_node("evidence", evidence if evidence is not None else _unavailable)
     graph.add_node("finalize", finalize)
-    graph.add_edge(START, "preflight")
-    graph.add_conditional_edges("preflight", route, ["evidence", END])
+    graph.add_edge(START, "initialize")
+    graph.add_conditional_edges("initialize", route, ["evidence", END])
     graph.add_conditional_edges("evidence", after_evidence, ["finalize", END])
     graph.add_edge("finalize", END)
     return graph.compile(checkpointer=checkpointer, name=profile.agent_id)

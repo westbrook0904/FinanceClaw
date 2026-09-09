@@ -37,6 +37,7 @@ from financeclaw.agent_server.middleware.middleware import (
     FullIODebugMiddleware,
     ToolGovernanceMiddleware,
 )
+from financeclaw.agent_server.middleware.worker_clarification import WorkerClarificationMiddleware
 from financeclaw.agent_server.tools.catalog import ToolCatalog
 from financeclaw.agent_server.tools.policy import ToolDecisionType, ToolPolicy, TransientToolError
 from financeclaw.kernel.agents import AgentProfile
@@ -216,6 +217,14 @@ class AgentFactory:
         }
         # 5. 按顺序装配治理类中间件：人工审批、工具治理与调用偏好指令。
         middleware: list[Any] = list(additional_middleware)
+        if profile.worker_manifest:
+            middleware.append(
+                WorkerClarificationMiddleware(
+                    pinned_catalog,
+                    profile,
+                    getattr(self.conversation_repository, "execution", None),
+                )
+            )
         if interrupt_on:
             hitl_type = HumanInTheLoopMiddleware
             hitl_options = {}
@@ -341,6 +350,7 @@ class AgentFactory:
                 self.tool_policy,
                 max_batch=profile.max_tool_batch,
                 execution=getattr(self.conversation_repository, "execution", None),
+                worker_manifest=profile.worker_manifest,
             )
         )
         middleware.append(

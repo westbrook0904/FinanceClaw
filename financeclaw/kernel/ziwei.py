@@ -2,9 +2,9 @@
 
 from datetime import date, datetime
 from enum import StrEnum
-from typing import Literal, Self
+from typing import Any, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, RootModel, model_validator
 
 
 class ZiweiModel(BaseModel):
@@ -152,7 +152,7 @@ class TargetSelector(ZiweiModel):
 
 
 class ZiweiAnalysisRequest(ZiweiModel):
-    """根 Agent 的领域参数；上下文引用仍使用外层 Tool 的授权引用机制。"""
+    """排盘 Tool 的完整业务参数；未知资料留空，由工具一次反馈全部可确定问题。"""
 
     question: str = Field(default="", max_length=4000)
     # 标签仅用于展示；授权主体取 ExecutionContext，不能由此标签决定归属。
@@ -160,9 +160,21 @@ class ZiweiAnalysisRequest(ZiweiModel):
     mode: Literal["chart_only", "interpretation"] = "interpretation"
     birth: BirthInput = Field(default_factory=BirthInput)
     target: TargetSelector | None = None
-    # level 是本次子图调用允许的最深层级；focus 只筛选展示事实，不改变完整盘面身份。
+    # level 是本次 Tool 调用的层级；focus 只筛选展示事实，不改变完整盘面身份。
     level: ChartLevel = ChartLevel.NATAL
     focus: Focus = "overall"
+
+
+class ZiweiTaskArguments(RootModel[dict[str, Any]]):
+    """父 Agent 可选参数提示，保持原始内容；领域解释由子 Agent 的 function call 完成。"""
+
+
+class ZiweiInputIssue(ZiweiModel):
+    """一次校验的问题项，不包含原始出生资料或第三方异常正文。"""
+
+    field: str
+    code: str
+    message: str
 
 
 class ZiweiConvention(ZiweiModel):
@@ -190,7 +202,7 @@ class ZiweiConvention(ZiweiModel):
 
 
 class BirthContext(ZiweiModel):
-    """由可信 preflight 生成，不暴露在模型可填写的 Tool Schema 中。"""
+    """由 Tool 内校验和规范化生成，不暴露在模型可填写的 Tool Schema 中。"""
 
     solar_date: date
     shichen: Shichen
@@ -306,6 +318,7 @@ class ZiweiTextResult(ZiweiModel):
     answer_text: str = ""
     charts_used: tuple[ChartProjection, ...] = ()
     missing_fields: tuple[str, ...] = ()
+    issues: tuple[ZiweiInputIssue, ...] = ()
     warnings: tuple[str, ...] = ()
     error_code: str | None = None
 

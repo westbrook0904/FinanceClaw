@@ -226,7 +226,16 @@ async def test_serial_workers_complete_inside_one_root_with_gate_one(stack):
     calls = [call("call_agent__market_research_agent", 1, task="research only AAPL"), portfolio()]
     graph, kwargs = root_graph(stack, calls)
     result = await asyncio.wait_for(
-        graph.ainvoke({"messages": [HumanMessage(content="ROOT SECRET JOURNAL")]}, **kwargs), 10
+        graph.ainvoke(
+            {
+                "messages": [
+                    HumanMessage(content="ROOT SECRET JOURNAL"),
+                    HumanMessage(content="研究 AAPL 并检查投资组合"),
+                ]
+            },
+            **kwargs,
+        ),
+        10,
     )
     assert "__interrupt__" in result, result
     payload = result["__interrupt__"][0].value
@@ -348,6 +357,33 @@ class ClarifyingRootModel(SerialModel):
 
 
 @pytest.mark.asyncio
+async def test_market_worker_clarification_also_ends_root_before_next_model(stack):
+    """基础安装同样验证通用 Worker 澄清门控，不仅对紫微工具名生效。"""
+    calls = [call("call_agent__market_research_agent", 1, task="研究行情")]
+    graph, kwargs = root_graph(stack, calls, limits={"model": 2})
+    tool = stack.tool_catalog.resolve("call_agent__market_research_agent", "1.3.0").tool
+    tool.graph = stack.agent_factory.build(
+        tool.release,
+        model=BatchModel(
+            calls=[
+                call(
+                    "MarketResearchResult",
+                    2,
+                    outcome="needs_clarification",
+                    question="请问要研究哪只股票？",
+                    missing_fields=["symbols"],
+                )
+            ]
+        ),
+        checkpointer=None,
+        fallback_models=(),
+    )
+    result = await graph.ainvoke({"messages": [HumanMessage(content="研究行情")]}, **kwargs)
+    assert result["messages"][-1].content == "请问要研究哪只股票？"
+    assert stack.conversation_repository.execution.get("root")["model_calls"] == 2
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("stack", [True], indirect=True)
 async def test_ziwei_evidence_clarification_returns_to_root_with_budget_remaining(
     stack, monkeypatch
@@ -387,7 +423,7 @@ async def test_ziwei_evidence_clarification_returns_to_root_with_budget_remainin
     assert not result.get("__interrupt__")
     assert RepeatingEvidenceModel.calls == ["evidence"]
     execution = stack.conversation_repository.execution.get("root")
-    assert execution["model_calls"] == 3  # root dispatch + evidence + root question
+    assert execution["model_calls"] == 2  # root dispatch + evidence; question needs no model
     assert execution["tool_calls"] == 2  # Worker entry + chart attempt
 
 

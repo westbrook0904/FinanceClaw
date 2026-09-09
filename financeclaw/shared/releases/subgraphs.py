@@ -22,7 +22,7 @@ def composite_name(release):
 
 
 def composite_governance(release):
-    """Keep composite wrappers exclusive and nonretryable; leaves retain their governance."""
+    """Keep composite wrappers nonretryable; parallel admission uses their pinned leaves."""
     return ToolGovernance(
         tool_id=composite_name(release),
         version=release.version,
@@ -34,6 +34,23 @@ def composite_governance(release):
         egress=Egress.INTERNAL,
         sensitivity=Sensitivity.INTERNAL,
         retry_profile=RetryProfile.NONE,
+    )
+
+
+def is_parallel_read_worker(declaration: str) -> bool:
+    """仅无交互、无嵌套、无记忆写入且所有叶子只读的 Agent 可并发。"""
+    value = json.loads(declaration)
+    profile = value["profile"]
+    return (
+        value["kind"] == "agent"
+        and profile.get("context_policy") == "worker-task-only-v1"
+        and profile.get("memory_policy") == "none"
+        and not profile.get("interaction_points")
+        and not profile.get("worker_manifest")
+        and all(
+            leaf["side_effect"] == SideEffect.READ and leaf["approval"] == ApprovalMode.NONE
+            for leaf in value["tools"]
+        )
     )
 
 

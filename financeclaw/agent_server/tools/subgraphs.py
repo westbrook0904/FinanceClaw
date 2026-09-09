@@ -1,4 +1,4 @@
-"""Precompiled Worker graphs exposed as exclusive, governed root Agent Tools."""
+"""Precompiled Worker graphs exposed as governed root Agent Tools."""
 
 import asyncio
 import json
@@ -19,7 +19,11 @@ from financeclaw.kernel.context import ExecutionContext
 from financeclaw.shared.context.references import resolve_context_refs
 from financeclaw.shared.execution_ledger.authorization import intersect_scopes, require_scopes
 from financeclaw.shared.execution_ledger.repository import ExecutionConflict, digest
-from financeclaw.shared.releases.subgraphs import composite_governance, composite_name
+from financeclaw.shared.releases.subgraphs import (
+    composite_governance,
+    composite_name,
+    is_parallel_read_worker,
+)
 
 
 class SubagentInput(BaseModel):
@@ -93,7 +97,7 @@ class SubgraphTool(BaseTool):
         token = active_scope.set(scope)
         try:
             await asyncio.to_thread(verify_scope, self.execution, scope.context, self.declaration)
-            value = self.worker_input(arguments, refs)
+            value = self.worker_input(arguments, refs, runtime=runtime)
             try:
                 result = await self.graph.ainvoke(
                     value, config=runtime.config, context=scope.context
@@ -119,13 +123,22 @@ class SubagentTool(SubgraphTool):
 
     args_schema: type[BaseModel] = SubagentInput
 
-    def worker_input(self, arguments, refs):
-        """Construct the declared Worker input without copying root messages or memory."""
+    def worker_input(self, arguments, refs, *, runtime):
+        """传递当前用户原问题和显式授权引用，不复制整段根历史或模型推理。"""
         parsed = self.release.input_schema.model_validate(arguments.get("arguments", {}))
+        user = next(
+            (
+                message
+                for message in reversed(runtime.state.get("messages", []))
+                if isinstance(message, HumanMessage)
+            ),
+            None,
+        )
         envelope = {
             "task": arguments["task"],
             "arguments": parsed.model_dump(mode="json"),
             "context_refs": refs,
+            "user_context": {"message_id": user.id, "content": user.content} if user else None,
         }
         encoded = json.dumps(envelope, ensure_ascii=False)
         if len(encoded.encode()) > 48000:
@@ -140,7 +153,7 @@ class SubagentTool(SubgraphTool):
 class WorkflowTool(SubgraphTool):
     """Execute a fixed Workflow as one exclusive Tool in the root ReAct loop."""
 
-    def worker_input(self, arguments, refs):
+    def worker_input(self, arguments, refs, *, runtime):
         """Construct the declared Worker input without copying root messages or memory."""
         return self.release.normalize_input(arguments)
 
@@ -174,6 +187,15 @@ def subgraph_tool(release, graph, declaration, *, execution, conversations=None,
             description=(
                 f"Run bounded {kind} {release.key[0]}@{release.version} inside this "
                 "ReAct loop. Wait for its public result; human interrupts resume here. "
+                + (release.description if kind == "agent" else "")
+                + " "
+                + (
+                    "Parallel-safe read-only Worker: independent calls may share a batch. "
+                    if is_parallel_read_worker(declaration)
+                    else "Requires an exclusive Tool batch. "
+                )
+                + "If the result needs_clarification, ask the user and wait; "
+                "never invent missing arguments. "
                 "Input contract: "
                 + json.dumps(release.input_schema.model_json_schema(), ensure_ascii=False)
             ),

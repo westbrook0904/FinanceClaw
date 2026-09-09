@@ -88,7 +88,7 @@ async def test_free_text_is_delivered_without_json_parsing_or_repair(text):
                 tool_calls=[
                     {
                         "id": "unexpected",
-                        "name": "ziwei_natal_chart",
+                        "name": "ziwei_chart",
                         "args": {},
                         "type": "tool_call",
                     }

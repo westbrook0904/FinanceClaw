@@ -8,12 +8,13 @@ from typing import Any
 from langchain.agents.middleware import AgentMiddleware, hook_config
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
-from financeclaw.agent_server.agents.directives import parse_invocation_directive
+from financeclaw.agent_server.agents.directives import InvocationKind, parse_invocation_directive
 from financeclaw.agent_server.middleware.middleware import _context
 from financeclaw.agent_server.tools.catalog import ToolCatalog
 from financeclaw.agent_server.tools.policy import ToolDecisionType, ToolPolicy
 from financeclaw.kernel.tools import SideEffect
 from financeclaw.shared.execution_ledger.repository import ExecutionConflict
+from financeclaw.shared.releases.subgraphs import is_parallel_read_worker
 
 
 class ToolBatchMiddleware(AgentMiddleware):
@@ -24,13 +25,29 @@ class ToolBatchMiddleware(AgentMiddleware):
     """
 
     def __init__(
-        self, catalog: ToolCatalog, policy: ToolPolicy, *, max_batch: int, execution: Any = None
+        self,
+        catalog: ToolCatalog,
+        policy: ToolPolicy,
+        *,
+        max_batch: int,
+        execution: Any = None,
+        worker_manifest: tuple[str, ...] = (),
     ) -> None:
         """使用同一发布目录，并在已拒绝动作后封闭本根任务的副作用。"""
         self.catalog = catalog
         self.policy = policy
         self.max_batch = max_batch
         self.execution = execution
+        self.parallel_workers = frozenset(
+            declaration for declaration in worker_manifest if is_parallel_read_worker(declaration)
+        )
+
+    def _parallel_read(self, managed: Any) -> bool:
+        """根发布清单与运行工具一致时，允许只读子图保留 COMPOSITE 类型并发。"""
+        return managed.governance.side_effect is SideEffect.READ or (
+            managed.governance.side_effect is SideEffect.COMPOSITE
+            and getattr(managed.tool, "declaration", None) in self.parallel_workers
+        )
 
     def _reason(self, calls: list[dict[str, Any]], state: Any, runtime: Any) -> str | None:
         """整批判定先于 HITL，单调用也不能绕过已持久化的用户拒绝。"""
@@ -60,8 +77,17 @@ class ToolBatchMiddleware(AgentMiddleware):
             (m for m in reversed(state["messages"]) if isinstance(m, HumanMessage)), None
         )
         if latest_user and isinstance(latest_user.content, str):
-            if parse_invocation_directive(latest_user.content) is not None:
-                return "an explicit directive permits exactly one invocation"
+            directive = parse_invocation_directive(latest_user.content)
+            if directive is not None:
+                # 自然语言 /agent 可拆成该只读 Agent 的多个独立任务；显式 JSON 仍只调用一次。
+                if (
+                    directive.kind is not InvocationKind.AGENT
+                    or directive.arguments is not None
+                    or directive.parse_error
+                    or not directive.payload
+                    or any(call["name"] != f"call_agent__{directive.resource_id}" for call in calls)
+                ):
+                    return "an explicit directive permits exactly one matching invocation"
         context = _context(runtime.context)
         for call in calls:
             try:
@@ -73,10 +99,13 @@ class ToolBatchMiddleware(AgentMiddleware):
                 return "tool arguments must be objects"
             decision = self.policy.evaluate(context, managed.governance, dict(arguments))
             if (
-                managed.governance.side_effect is not SideEffect.READ
+                not self._parallel_read(managed)
                 or decision.effect is ToolDecisionType.REQUIRE_APPROVAL
             ):
-                return "composites, writes and approvals must occupy an exclusive batch"
+                return (
+                    "only independent READ tools and pinned non-interactive read-only Workers "
+                    "may share a batch"
+                )
         return None
 
     @hook_config(can_jump_to=["model"])

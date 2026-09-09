@@ -1,9 +1,10 @@
 """取证阶段失败必须交回根会话，不能依赖模型自行停止重试。"""
 
+import json
 from typing import ClassVar
 
 import pytest
-from langchain_core.messages import AIMessage, ToolMessage
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 
 from financeclaw.agent_server.agents.ziwei_offline import OfflineZiweiModel
@@ -22,6 +23,12 @@ class RepeatingEvidenceModel(OfflineZiweiModel):
     def _generate(self, messages, *args, **kwargs):
         """记录真实模型调用，包括任何不应发生的 finalize。"""
         type(self).calls.append("evidence" if self._bound_tool_names else "finalize")
+        task = json.loads(
+            next(m.content for m in reversed(messages) if isinstance(m, HumanMessage))
+        )
+        arguments = task["arguments"]
+        if self.invalid_arguments:
+            arguments["focus"] = "invalid-focus"
         return ChatResult(
             generations=[
                 ChatGeneration(
@@ -29,10 +36,8 @@ class RepeatingEvidenceModel(OfflineZiweiModel):
                         content="",
                         tool_calls=[
                             {
-                                "name": "ziwei_daily_chart",
-                                "args": {"focus": "invalid-focus"}
-                                if self.invalid_arguments
-                                else {},
+                                "name": "ziwei_chart",
+                                "args": arguments,
                                 "id": f"chart-{len(type(self).calls)}-{index}",
                             }
                             for index in range(self.batch_size)
@@ -47,7 +52,7 @@ class RepeatingEvidenceModel(OfflineZiweiModel):
 @pytest.mark.parametrize("mode", ["chart_only", "interpretation"])
 @pytest.mark.parametrize("failure", ["missing_input", "invalid_tool_arguments"])
 async def test_evidence_failure_exits_without_retry_or_finalization(monkeypatch, mode, failure):
-    """预检通过后的缺参和框架参数校验错误均不再消耗下一次模型预算。"""
+    """缺失事实立即终止；已有资料的格式问题最多修复一次。"""
     stack = components()
     RepeatingEvidenceModel.calls = []
     if failure == "missing_input":
@@ -73,14 +78,15 @@ async def test_evidence_failure_exits_without_retry_or_finalization(monkeypatch,
         assert public.question == "请补充查询日期。"
         assert public.error_code == "ZIWEI_INPUT_INCOMPLETE"
     else:
-        assert public.error_code == "ZIWEI_TOOL_CALL_FAILED"
+        assert public.error_code == "ZIWEI_TOOL_INPUT_INVALID"
         assert "invalid-focus" not in public.model_dump_json()
-    assert RepeatingEvidenceModel.calls == ["evidence"]
-    assert result["ziwei_model_calls"] == 1
+    expected = 1 if failure == "missing_input" else 2
+    assert RepeatingEvidenceModel.calls == ["evidence"] * expected
+    assert result["ziwei_model_calls"] == expected
     assert not public.charts_used and not public.answer_text
     assert not result.get("__interrupt__")
     receipts = [m for m in result["messages"] if isinstance(m, ToolMessage)]
-    assert len(receipts) == 1 and receipts[0].status == "error"
+    assert len(receipts) == expected and all(m.status == "error" for m in receipts)
     assert receipts[0].tool_call_id == "chart-1-0"
 
 
@@ -91,7 +97,7 @@ async def test_parallel_evidence_failures_have_one_terminal_result(monkeypatch):
     RepeatingEvidenceModel.calls = []
 
     def missing(*args, **kwargs):
-        """同一批的工具共享冻结任务，报告相同缺失字段。"""
+        """同一批的工具报告相同缺失字段。"""
         raise ZiweiError("ZIWEI_INPUT_INCOMPLETE", "请补充查询日期。", ("target",))
 
     monkeypatch.setattr(stack.ziwei_service, "calculate", missing)

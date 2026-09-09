@@ -7,6 +7,7 @@ conversation 模块的 ``ArtifactMetadataRow``，读写均按 tenant/subject 归
 from typing import Protocol
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
 from financeclaw.shared.artifacts.models import ArtifactMetadata
@@ -78,13 +79,13 @@ class SqlAlchemyArtifactRepository:
         self._sessions = sessions
 
     def save(self, metadata: ArtifactMetadata) -> ArtifactMetadata:
-        """把一条 Artifact 元数据写入数据库，成功后返回原元数据。
+        """写入 Artifact 元数据；并发重复提交完全相同内容时返回已提交记录。
 
         Args:
             metadata: 待持久化的工件元数据。
 
         Returns:
-            原样返回的 ``metadata``，便于调用方继续使用。
+            新提交的 ``metadata`` 或并发提交的相同记录。
 
         """
         # 1. 把领域模型映射为 ORM 行对象。
@@ -103,8 +104,22 @@ class SqlAlchemyArtifactRepository:
             created_at=metadata.created_at,
         )
         # 2. 在独立事务中落库，失败时整体回滚。
-        with self._sessions.begin() as session:
-            session.add(row)
+        try:
+            with self._sessions.begin() as session:
+                session.add(row)
+        except IntegrityError:
+            # 并发只读 Worker 可同时首次生成同一制品；仅复用完全相同的不可变元数据。
+            try:
+                existing = self.get_owned(
+                    metadata.artifact_id, metadata.tenant_id, metadata.subject_id
+                )
+            except ArtifactNotFound:
+                existing = None
+            if existing is not None and existing.model_dump(
+                exclude={"created_at"}
+            ) == metadata.model_dump(exclude={"created_at"}):
+                return existing
+            raise
         return metadata
 
     def get_owned(self, artifact_id: str, tenant_id: str, subject_id: str) -> ArtifactMetadata:
