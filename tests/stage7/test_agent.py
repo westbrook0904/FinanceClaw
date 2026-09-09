@@ -1,10 +1,12 @@
 """真实 LangGraph＋真实本地引擎＋离线模型，验证可执行闭环而不只检查配置。"""
 
 import pytest
+from langchain_core.messages import HumanMessage
 from pydantic import ValidationError
 
 from financeclaw.agent_server.agents.ziwei_offline import OfflineZiweiModel
 from financeclaw.agent_server.domains.ziwei.errors import ZiweiError
+from financeclaw.agent_server.graphs.ziwei_agent import check_prompt
 from financeclaw.kernel.ziwei import BirthTime, TargetSelector, ZiweiTextResult
 from financeclaw.shared.infrastructure.settings import FinanceClawSettings
 from tests.stage7.support import build_ziwei_agent, components, context, envelope, request, settings
@@ -31,11 +33,14 @@ def test_default_disabled_root_and_explicit_root_allowlist():
     names = {ref.tool_id for ref in active.default_agent_profile.allowed_tools}
     assert {name for name in names if "ziwei" in name} == {"call_agent__ziwei_doushu_agent"}
     specialist = active.agent_profiles.resolve("ziwei_doushu_agent")
-    assert len(specialist.allowed_tools) == 1 and not specialist.interaction_points
+    assert len(specialist.allowed_tools) == 5 and not specialist.interaction_points
     for ref in specialist.allowed_tools:
         tool = active.tool_catalog.resolve(ref.tool_id, ref.version)
         assert "runtime" not in tool.tool.tool_call_schema.model_json_schema()["properties"]
-        assert {"birth", "target", "level", "focus", "mode"} <= set(
+        assert {"birth", "focus", "mode"} <= set(
+            tool.tool.tool_call_schema.model_json_schema()["properties"]
+        )
+        assert not {"level", "target"} & set(
             tool.tool.tool_call_schema.model_json_schema()["properties"]
         )
 
@@ -99,12 +104,29 @@ def test_irrelevant_calendar_and_fold_parameters_cannot_be_silently_ignored():
         BirthTime(kind="shichen", shichen="yin", fold=1)
 
 
+def test_prompt_budget_counts_tokens_instead_of_utf8_bytes():
+    """多字节中文按 token 计入预算，不能继续把 UTF-8 字节冒充 token。"""
+
+    class CodePointCounter:
+        """用字符数模拟确定性 tokenizer，隔离本机 tiktoken 缓存状态。"""
+
+        def text(self, value: str) -> int:
+            """返回测试用的确定性 token 数。"""
+            return len(value)
+
+    messages = [HumanMessage(content="紫" * 1000)]
+    check_prompt(messages, limit=2_000, counter=CodePointCounter())
+    with pytest.raises(ZiweiError) as error:
+        check_prompt(messages, limit=1_000, counter=CodePointCounter())
+    assert error.value.code == "ZIWEI_CONTEXT_BUDGET_EXCEEDED"
+
+
 @pytest.mark.parametrize("mode", ["chart_only", "interpretation"])
 @pytest.mark.asyncio
 async def test_real_graph_produces_validated_evidence_and_result(mode):
     """子 Agent 一次取日盘，最终结构化结果保留实际盘面与证据。"""
     stack = components()
-    profile = stack.agent_profiles.resolve("ziwei_doushu_agent", "2.1.0")
+    profile = stack.agent_profiles.resolve("ziwei_doushu_agent", "2.2.0")
     graph = build_ziwei_agent(
         stack.agent_factory, profile, stack.ziwei_service, model=OfflineZiweiModel()
     )

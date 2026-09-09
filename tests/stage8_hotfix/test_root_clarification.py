@@ -9,6 +9,7 @@ from langchain_core.outputs import ChatGeneration, ChatResult
 from langgraph.types import Command
 
 from financeclaw.agent_server.agents.offline import OfflineFinanceModel
+from financeclaw.agent_server.agents.ziwei_offline import offline_chart_call
 from financeclaw.agent_server.graphs.ziwei_agent import build_ziwei_agent
 from financeclaw.agent_server.tools.task_context import answered_clarifications
 from financeclaw.shared.execution_ledger.repository import ExecutionConflict
@@ -77,13 +78,7 @@ class IncrementalZiwei(OfflineFinanceModel):
                 ChatGeneration(
                     message=AIMessage(
                         content="",
-                        tool_calls=[
-                            {
-                                "name": "ziwei_chart",
-                                "args": arguments,
-                                "id": "chart-from-context",
-                            }
-                        ],
+                        tool_calls=[offline_chart_call(arguments, "chart-from-context")],
                     )
                 )
             ]

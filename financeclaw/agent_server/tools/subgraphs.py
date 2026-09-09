@@ -45,7 +45,7 @@ class SubgraphTool(BaseTool):
     execution: Any
     conversations: Any = None
     artifacts: Any = None
-    max_result_bytes: int = 16384
+    max_result_bytes: int = 36384
 
     def _run(self, **kwargs):
         """拒绝同步桥接，避免在已有事件循环中创建另一套调度。"""

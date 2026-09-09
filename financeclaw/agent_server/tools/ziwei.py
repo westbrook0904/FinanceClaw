@@ -10,66 +10,98 @@ from langgraph.types import Command
 from pydantic import BaseModel, ConfigDict, Field
 
 from financeclaw.agent_server.domains.ziwei.errors import ZiweiError
+from financeclaw.agent_server.domains.ziwei.tool_inputs import analysis_request, public_input_error
 from financeclaw.agent_server.tools.governance import ManagedTool
 from financeclaw.kernel.context import ExecutionContext
-from financeclaw.kernel.ziwei import (
-    BirthInput,
-    ChartLevel,
-    Focus,
-    TargetSelector,
-    ZiweiAnalysisRequest,
+from financeclaw.kernel.ziwei_tools import (
+    ZIWEI_TOOL_INPUTS,
+    ZiweiDailyInput,
+    ZiweiDecadalInput,
+    ZiweiMonthlyInput,
+    ZiweiNatalInput,
+    ZiweiYearlyInput,
 )
 from financeclaw.shared.releases.tools import ziwei_tool_governance
 
 
-class ZiweiChartInput(ZiweiAnalysisRequest):
-    """完整排盘参数；运行时由 ToolNode 注入，不进入模型可填写的 Schema。"""
+class ZiweiRuntimeInput(BaseModel):
+    """运行时由 ToolNode 注入，不进入模型可填写的 Schema。"""
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
     runtime: ToolRuntime[ExecutionContext]
 
 
-class ZiweiChartTool(BaseTool):
-    """一个完整 Schema 支持所有排盘层级，避免重复传五份出生参数定义。"""
+class ZiweiNatalToolInput(ZiweiNatalInput, ZiweiRuntimeInput):
+    """本命参数与可信运行时。"""
 
-    name: str = "ziwei_chart"
-    description: str = (
-        "按出生资料计算紫微盘面。直接结合用户原请求、澄清问题与回答和授权引用填写参数。"
-        "未知资料留空，工具会汇总缺失或歧义，不得编造。"
-        "今年、明年等使用 target.kind=relative_period 与 unit/offset，由固定请求时钟解析。"
-        "流运盘包含上层依据，无需逐层调用。"
-    )
-    args_schema: type[BaseModel] = ZiweiChartInput
+
+class ZiweiDecadalToolInput(ZiweiDecadalInput, ZiweiRuntimeInput):
+    """大限参数与可信运行时。"""
+
+
+class ZiweiYearlyToolInput(ZiweiYearlyInput, ZiweiRuntimeInput):
+    """流年参数与可信运行时。"""
+
+
+class ZiweiMonthlyToolInput(ZiweiMonthlyInput, ZiweiRuntimeInput):
+    """流月参数与可信运行时。"""
+
+
+class ZiweiDailyToolInput(ZiweiDailyInput, ZiweiRuntimeInput):
+    """流日参数与可信运行时。"""
+
+
+_TOOL_SCHEMAS = {
+    "ziwei_natal_chart": (ZiweiNatalToolInput, "本命盘：只填写出生资料，不需要查询日期。"),
+    "ziwei_decadal_chart": (
+        ZiweiDecadalToolInput,
+        "大限盘：用 on_date 定位该日所在大限；当前大限可填 day_offset=0。",
+    ),
+    "ziwei_yearly_chart": (
+        ZiweiYearlyToolInput,
+        "流年盘：year 查询公历整年；今年 year_offset=0，明年 year_offset=1。",
+    ),
+    "ziwei_monthly_chart": (
+        ZiweiMonthlyToolInput,
+        "流月盘：year/month 查询公历整月；本月 month_offset=0，下月为 1。",
+    ),
+    "ziwei_daily_chart": (
+        ZiweiDailyToolInput,
+        "流日盘：on_date 查询某日；今天 day_offset=0，明天为 1；逐日最多 31 天。",
+    ),
+}
+
+
+class ZiweiChartTool(BaseTool):
+    """五个命名工具共用计算与证据绑定实现，但各自只接受对应层级的参数。"""
+
+    args_schema: type[BaseModel]
     service: Any = Field(exclude=True, repr=False)
+
+    @property
+    def tool_call_schema(self) -> type[BaseModel]:
+        """直接暴露版本化业务契约，保留示例与额外字段约束，排除 runtime。"""
+        return ZIWEI_TOOL_INPUTS[self.name]
 
     def _run(
         self,
-        question: str = "",
-        subject_label: str = "本次排盘对象",
-        mode: str = "interpretation",
-        birth: BirthInput | None = None,
-        target: TargetSelector | None = None,
-        level: ChartLevel = ChartLevel.NATAL,
-        focus: Focus = "overall",
         *,
         runtime: ToolRuntime[ExecutionContext],
+        **arguments,
     ) -> Command:
         """完成类型化参数解析后，聚合业务问题并生成绑定当前调用的真实证据。"""
         if self.service is None:
             raise ZiweiError("ZIWEI_ENGINE_UNAVAILABLE", "紫微候选功能尚未启用。")
         context = ExecutionContext.model_validate(runtime.context)
         self.service.authorize(context)
-        request = ZiweiAnalysisRequest(
-            question=question,
-            subject_label=subject_label,
-            mode=mode,
-            birth=birth or BirthInput(),
-            target=target,
-            level=level,
-            focus=focus,
-        )
-        birth, target = self.service.validate_input(request, context)
-        projection = self.service.calculate(birth, target, request.level, request.focus, context)
+        request = analysis_request(self.name, arguments)
+        try:
+            birth, target = self.service.validate_input(request, context)
+            projection = self.service.calculate(
+                birth, target, request.level, request.focus, context
+            )
+        except ZiweiError as error:
+            raise public_input_error(error) from None
         return Command(
             update={
                 "ziwei_evidence": [
@@ -99,7 +131,20 @@ class ZiweiChartTool(BaseTool):
 
 
 def ziwei_tools(service) -> tuple[ManagedTool, ...]:
-    """注册统一只读排盘工具，运行身份与预算不暴露给模型。"""
-    return (
-        ManagedTool(tool=ZiweiChartTool(service=service), governance=ziwei_tool_governance()[0]),
+    """注册五个独立 Schema 的只读入口，运行身份与预算不暴露给模型。"""
+    return tuple(
+        ManagedTool(
+            tool=ZiweiChartTool(
+                name=governance.tool_id,
+                args_schema=_TOOL_SCHEMAS[governance.tool_id][0],
+                description=(
+                    _TOOL_SCHEMAS[governance.tool_id][1]
+                    + "结合原问题、澄清回答和授权资料填写出生参数；未知留空，不得编造。"
+                    "不传 level 或 target；流运盘包含上层依据，无需逐层调用。"
+                ),
+                service=service,
+            ),
+            governance=governance,
+        )
+        for governance in ziwei_tool_governance()
     )

@@ -6,7 +6,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
-    UV_PROJECT_ENVIRONMENT=/opt/financeclaw/.venv
+    UV_PROJECT_ENVIRONMENT=/opt/financeclaw/.venv \
+    TIKTOKEN_CACHE_DIR=/opt/financeclaw/.cache/tiktoken
 
 RUN groupadd --system financeclaw && useradd --system --gid financeclaw financeclaw
 WORKDIR /opt/financeclaw
@@ -14,7 +15,10 @@ COPY --from=uv /uv /usr/local/bin/uv
 COPY pyproject.toml uv.lock README.md ./
 COPY financeclaw ./financeclaw
 COPY main.py alembic.ini ./
-RUN uv sync --frozen --no-dev --no-editable
+RUN uv sync --frozen --no-dev --no-editable \
+    && mkdir -p "$TIKTOKEN_CACHE_DIR" \
+    && /opt/financeclaw/.venv/bin/python -c \
+        'import tiktoken; tiktoken.get_encoding("cl100k_base")'
 
 USER financeclaw
 EXPOSE 8000

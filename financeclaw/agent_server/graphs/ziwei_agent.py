@@ -13,12 +13,14 @@ from langgraph.runtime import Runtime
 from pydantic import ValidationError
 
 from financeclaw.agent_server.agents.factory import AgentFactory
+from financeclaw.agent_server.context.builder import TokenCounter
 from financeclaw.agent_server.domains.ziwei.application import ZiweiService
 from financeclaw.agent_server.domains.ziwei.errors import ZiweiError
-from financeclaw.agent_server.domains.ziwei.validation import schema_error
+from financeclaw.agent_server.domains.ziwei.tool_inputs import tool_schema_error
 from financeclaw.kernel.agents import AgentProfile
 from financeclaw.kernel.context import DataClassification, ExecutionContext
 from financeclaw.kernel.ziwei import ChartProjection, ZiweiAnalysisRequest, ZiweiTextResult
+from financeclaw.kernel.ziwei_tools import ZIWEI_TOOL_INPUTS
 
 
 def merge_evidence(left: list[dict], right: list[dict]) -> list[dict]:
@@ -51,11 +53,21 @@ class ZiweiState(AgentState):
     ziwei_result: NotRequired[dict]
 
 
-def check_prompt(messages: list, *, limit: int, tools: list | None = None) -> None:
-    """保守以 UTF-8 字节作为 token 上界，绝不截断事实来塞入窗口。"""
+_PROMPT_TOKEN_COUNTER = TokenCounter()
+
+
+def check_prompt(
+    messages: list,
+    *,
+    limit: int,
+    tools: list | None = None,
+    counter: TokenCounter | None = None,
+) -> None:
+    """统计完整消息与工具 Schema 的 token 数，绝不截断事实来塞入窗口。"""
     payload = [message.model_dump(mode="json") for message in messages]
     schemas = [convert_to_openai_tool(tool) for tool in (tools or [])]
-    if len(json.dumps([payload, schemas], ensure_ascii=False, default=str).encode()) > limit:
+    serialized = json.dumps([payload, schemas], ensure_ascii=False, default=str)
+    if (counter or _PROMPT_TOKEN_COUNTER).text(serialized) > limit:
         raise ZiweiError(
             "ZIWEI_CONTEXT_BUDGET_EXCEEDED", "完整证据超过模型输入预算，请缩小查询范围。"
         )
@@ -117,7 +129,7 @@ class ZiweiEvidenceMiddleware(AgentMiddleware):
 
     工具缺参或失败后在下一次模型消费之前结束，不能依靠模型自行停止重试。
     before_model 在子图 state 中累计轮次，并为 finalize 保留一次调用；
-    wrap_model_call 同时计入系统消息和工具 Schema 的 UTF-8 字节大小。
+    wrap_model_call 同时计入系统消息和工具 Schema 的 token 数。
     超限直接返回领域错误，不截断盘面事实。根任务树的持久预算仍由
     ExecutionBudgetMiddleware 负责，两种限制约束不同范围。
     """
@@ -207,7 +219,7 @@ class ZiweiEvidenceMiddleware(AgentMiddleware):
     def _schema_failure(self, request, result):
         """框架已按固定 Schema 拒绝且治理已记账后，将格式错误转为聚合问题。"""
         if (
-            request.tool_call["name"] == "ziwei_chart"
+            request.tool_call["name"] in ZIWEI_TOOL_INPUTS
             and isinstance(result, ToolMessage)
             and result.status == "error"
         ):
@@ -219,10 +231,13 @@ class ZiweiEvidenceMiddleware(AgentMiddleware):
             if isinstance(payload, dict) and payload.get("error") == "tool_not_authorized":
                 return result
             try:
-                ZiweiAnalysisRequest.model_validate(request.tool_call["args"])
+                ZIWEI_TOOL_INPUTS[request.tool_call["name"]].model_validate(
+                    request.tool_call["args"]
+                )
             except ValidationError as error:
                 return self._failure_message(
-                    request, schema_error(request.tool_call["args"], error)
+                    request,
+                    tool_schema_error(request.tool_call["name"], request.tool_call["args"], error),
                 )
         return result
 

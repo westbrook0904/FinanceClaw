@@ -9,6 +9,7 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 
 from financeclaw.agent_server.agents.offline import OfflineFinanceModel
+from financeclaw.agent_server.agents.ziwei_offline import offline_chart_call
 from financeclaw.agent_server.tools.subgraph_scope import active_scope
 from financeclaw.shared.artifacts.repository import ArtifactNotFound
 from financeclaw.shared.execution_ledger.repository import ExecutionConflict
@@ -129,7 +130,7 @@ async def test_clarification_cannot_bypass_cancellation(stack, monkeypatch):
 @pytest.mark.parametrize("capability", ["write", "approval", "interaction", "memory", "nested"])
 def test_adding_unsafe_worker_capabilities_disables_parallel_admission(stack, capability):
     """并发资格从固定发布推导，增加写入或交互不能沿用原只读资格。"""
-    tool = stack.tool_catalog.resolve("call_agent__ziwei_doushu_agent", "2.1.0").tool
+    tool = stack.tool_catalog.resolve("call_agent__ziwei_doushu_agent", "2.2.0").tool
     assert is_parallel_read_worker(tool.declaration)
     value = json.loads(tool.declaration)
     if capability == "write":
@@ -292,9 +293,7 @@ class ContextReadingZiweiModel(OfflineFinanceModel):
             )
             answer = AIMessage(
                 content="",
-                tool_calls=[
-                    {"name": "ziwei_chart", "args": json.loads(content), "id": "from-context"}
-                ],
+                tool_calls=[offline_chart_call(json.loads(content), "from-context")],
             )
         return ChatResult(generations=[ChatGeneration(message=answer)])
 

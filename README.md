@@ -61,6 +61,11 @@ FINANCECLAW_FEISHU_SECURITY_MODE=audit
 
 ## 运行
 
+需要在本机同时启动 Docker PostgreSQL、共享 MinIO、持久化 Agent Server、BFF，
+并接入真实 DeepSeek 与 LangSmith 时，直接按[本地完整链路启动手册](docs/operations/local-full-stack.md)
+执行；对应配置模板是 `config/environments/local-*.env.example`，本地基础设施定义是
+`compose.local.yml`。
+
 先启动内部 Agent Server：
 
 ```bash

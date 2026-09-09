@@ -56,7 +56,7 @@ async def test_absent_chart_fails():
     stack = components()
     graph = build_ziwei_agent(
         stack.agent_factory,
-        stack.agent_profiles.resolve("ziwei_doushu_agent", "2.1.0"),
+        stack.agent_profiles.resolve("ziwei_doushu_agent", "2.2.0"),
         stack.ziwei_service,
         model=NoEvidenceModel(),
     )
@@ -149,7 +149,7 @@ def test_protected_results_are_never_offloaded_or_token_truncated(tmp_path):
 async def test_handled_tool_errors_are_audited_as_failures():
     """同步、异步均检查 ToolMessage.status，不把 ToolException 的已处理结果记成功。"""
     stack = components()
-    managed = stack.tool_catalog.resolve("ziwei_chart", "1.0.0")
+    managed = stack.tool_catalog.resolve("ziwei_natal_chart", "1.0.0")
     middleware = ToolGovernanceMiddleware(
         stack.tool_catalog, stack.tool_policy, stack.audit, allowed_keys=frozenset({managed.key})
     )

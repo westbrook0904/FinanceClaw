@@ -162,6 +162,7 @@ def build_release_catalogs(
     )
     from financeclaw.kernel.context import DataClassification
     from financeclaw.kernel.ziwei import ZiweiAnalysisRequest, ZiweiConvention
+    from financeclaw.kernel.ziwei_tools import ZIWEI_TOOL_INPUTS
 
     convention = ZiweiConvention()
     chart_tools = tuple(ToolRelease(item) for item in ziwei_tool_governance())
@@ -179,8 +180,9 @@ def build_release_catalogs(
                 settings.artifact_inline_bytes,
                 [managed.governance for managed in chart_tools],
                 ZiweiAnalysisRequest.model_json_schema(),
+                {name: schema.model_json_schema() for name, schema in ZIWEI_TOOL_INPUTS.items()},
             ),
-            "ziwei-text-result-v2",
+            "ziwei-five-tools-v1-text-result-v2",
         )
     )
     tool_catalog = ToolReleaseCatalog((*base_tool_catalog.values(), *chart_tools))

@@ -229,13 +229,10 @@ def resolve_target(
     request: ZiweiAnalysisRequest, context: ExecutionContext, engine: ZiweiEngine
 ) -> ResolvedTarget | None:
     """按固定 Turn 时间解析民用日期区间，不用日期代表点偷换整年或整月。"""
-    selector = request.target
     if request.level is ChartLevel.NATAL:
-        if selector is not None:
-            raise ZiweiError(
-                "ZIWEI_INPUT_INCOMPLETE", "本命盘无需目标日期，请确认要查询的流运层级。", ("level",)
-            )
+        # 本命没有流运目标，不修改调用方的冻结请求，也不继续执行日期必填校验。
         return None
+    selector = request.target
     if selector is None:
         raise ZiweiError("ZIWEI_INPUT_INCOMPLETE", "请指定要查询的日期或区间。", ("target",))
     if not context.request_clock:

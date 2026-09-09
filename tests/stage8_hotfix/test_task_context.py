@@ -10,7 +10,8 @@ from langchain_core.utils.function_calling import convert_to_openai_tool
 from financeclaw.agent_server.graphs.ziwei_agent import ZiweiEvidenceMiddleware
 from financeclaw.agent_server.middleware.middleware import ToolGovernanceMiddleware
 from financeclaw.agent_server.tools.task_context import answered_clarifications, task_context
-from financeclaw.agent_server.tools.ziwei import ZiweiChartInput, ziwei_tools
+from financeclaw.agent_server.tools.ziwei import ziwei_tools
+from financeclaw.kernel.ziwei_tools import ZIWEI_TOOL_INPUTS
 from financeclaw.shared.execution_ledger.repository import ExecutionConflict
 from financeclaw.shared.releases.interactions import CLARIFICATION_TOOL
 from tests.stage7.support import context
@@ -64,7 +65,9 @@ def test_invalid_clarification_receipt_is_not_treated_as_user_facts(answer):
 @pytest.mark.asyncio
 async def test_invalid_arguments_do_not_turn_governance_denial_into_clarification():
     """同一调用同时缺资料和未授权时，保留治理拒绝，不要求用户补参重试。"""
-    call = SimpleNamespace(tool_call={"name": "ziwei_chart", "id": "denied", "args": {"birth": 1}})
+    call = SimpleNamespace(
+        tool_call={"name": "ziwei_yearly_chart", "id": "denied", "args": {"birth": 1}}
+    )
     denied = ToolGovernanceMiddleware._denied_message(call, "tool is not allowed")
     middleware = ZiweiEvidenceMiddleware(max_calls=4, input_budget=28000)
     assert middleware.wrap_tool_call(call, lambda _: denied) is denied
@@ -76,13 +79,14 @@ async def test_invalid_arguments_do_not_turn_governance_denial_into_clarificatio
     assert await middleware.awrap_tool_call(call, handler) is denied
 
 
-def test_ziwei_public_schema_has_fixed_fields_descriptions_and_relative_examples():
+@pytest.mark.parametrize("index", range(5))
+def test_ziwei_public_schema_has_fixed_fields_descriptions_and_relative_examples(index):
     """检查实际提供给模型的 Schema，而不仅是 Python 类型或源码注释。"""
-    tool = ziwei_tools(None)[0].tool
-    assert tool.args_schema is ZiweiChartInput
-    assert {"birth", "level", "target", "runtime"} <= set(tool.get_input_schema().model_fields)
+    tool = ziwei_tools(None)[index].tool
+    assert issubclass(tool.args_schema, ZIWEI_TOOL_INPUTS[tool.name])
+    assert {"birth", "runtime"} <= set(tool.get_input_schema().model_fields)
     schema = convert_to_openai_tool(tool)["function"]["parameters"]
-    assert "runtime" not in schema["properties"]
+    assert not {"runtime", "target", "level"} & set(schema["properties"])
 
     def check_fields(value):
         """每一层业务字段都必须有模型可见的说明。"""
@@ -96,8 +100,11 @@ def test_ziwei_public_schema_has_fixed_fields_descriptions_and_relative_examples
                 check_fields(child)
 
     check_fields(schema)
-    target = schema["properties"]["target"]
-    assert {"kind": "relative_period", "unit": "year", "offset": 0} in target["anyOf"][0][
-        "examples"
-    ]
-    assert "request_clock" in json.dumps(target)
+    if index == 0:
+        assert not {"on_date", "date_range", "year", "month"} & set(schema["properties"])
+    else:
+        offset = next(
+            field for name, field in schema["properties"].items() if name.endswith("_offset")
+        )
+        assert 0 in offset["examples"]
+        assert "request_clock" in offset["description"]

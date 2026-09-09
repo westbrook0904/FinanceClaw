@@ -7,7 +7,7 @@ import pytest
 from langchain_core.messages import AIMessage, ToolMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 
-from financeclaw.agent_server.agents.ziwei_offline import OfflineZiweiModel
+from financeclaw.agent_server.agents.ziwei_offline import OfflineZiweiModel, offline_chart_call
 from tests.stage7.support import build_ziwei_agent, components, context, request
 
 
@@ -27,7 +27,7 @@ class PlannedZiweiModel(OfflineZiweiModel):
                     message=AIMessage(
                         content="",
                         tool_calls=[
-                            {"name": "ziwei_chart", "args": value, "id": f"chart-{count}-{index}"}
+                            offline_chart_call(value, f"chart-{count}-{index}")
                             for index, value in enumerate(self.batches[count])
                         ],
                     )
@@ -75,7 +75,7 @@ async def invoke(stack, batches):
                 "birth.time_basis",
                 "birth.place",
                 "birth.sex_for_chart",
-                "target",
+                "year",
             },
         ),
         (
@@ -92,8 +92,8 @@ async def invoke(stack, batches):
                 "birth.place",
                 "birth.time_basis",
                 "birth.sex_for_chart",
-                "target.year",
-                "target.month",
+                "year",
+                "month",
             },
         ),
         (
@@ -113,8 +113,8 @@ async def invoke(stack, batches):
                 "birth.date",
                 "birth.time",
                 "birth.place.timezone",
-                "target.start",
-                "target.end",
+                "date_range.start",
+                "date_range.end",
             },
         ),
     ],
@@ -181,5 +181,5 @@ async def test_schema_and_missing_errors_are_both_reported():
     result = await invoke(components(), [[{"level": "yearly", "focus": "invalid-format"}]])
     public = result["ziwei_result"]
     assert public["outcome"] == "needs_clarification"
-    assert {"focus", "birth.date", "target"} <= {item["field"] for item in public["issues"]}
+    assert {"focus", "birth.date", "year"} <= {item["field"] for item in public["issues"]}
     assert "invalid-format" not in json.dumps(public)

@@ -282,8 +282,8 @@ class TargetSelector(ZiweiModel):
         return self
 
 
-class ZiweiAnalysisRequest(ZiweiModel):
-    """排盘 Tool 的完整业务参数；未知资料留空，由工具一次反馈全部可确定问题。"""
+class ZiweiChartParameters(ZiweiModel):
+    """五个排盘入口共用的出生资料与展示参数，不包含层级或目标日期。"""
 
     question: str = Field(
         default="",
@@ -308,6 +308,15 @@ class ZiweiAnalysisRequest(ZiweiModel):
             "知出生资料；不能因父 arguments 提示不完整而丢掉已有资料。"
         ),
     )
+    focus: Focus = Field(
+        default="overall",
+        description="overall=综合；career=事业；relationship=关系；wealth=财运。只影响展示主题，不改变完整命盘。",
+    )
+
+
+class ZiweiAnalysisRequest(ZiweiChartParameters):
+    """内部统一计算请求；工具将各自的简化输入转换到此契约，不就地修改。"""
+
     target: TargetSelector | None = Field(
         default=None,
         description=(
@@ -322,10 +331,6 @@ class ZiweiAnalysisRequest(ZiweiModel):
             "natal=本命；decadal=按日期定位大限；yearly=流年；month"
             "ly=流月；daily=流日。明确按所问层级填写，流运盘包含上层依据。"
         ),
-    )
-    focus: Focus = Field(
-        default="overall",
-        description="overall=综合；career=事业；relationship=关系；wealth=财运。只影响展示主题，不改变完整命盘。",
     )
 
 

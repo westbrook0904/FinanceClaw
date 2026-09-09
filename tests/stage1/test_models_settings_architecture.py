@@ -14,11 +14,12 @@ from tests.support import build_components
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_deepseek_openai_compatible_configuration_is_explicit() -> None:
+@pytest.mark.parametrize("model_name", ["deepseek-v4-pro", "deepseek-v4-flash"])
+def test_deepseek_openai_compatible_configuration_is_explicit(model_name: str) -> None:
     """验证函数名所描述的业务场景符合预期。"""
     settings = FinanceClawSettings(
         environment="test",
-        model="openai:deepseek-v4-pro",
+        model=f"openai:{model_name}",
         provider_base_url="https://api.deepseek.com",
         provider_api_key=SecretStr("test-placeholder"),
         debug_full_io=False,
@@ -27,9 +28,10 @@ def test_deepseek_openai_compatible_configuration_is_explicit() -> None:
     model = components.model_factory.create(ModelProfileRef(profile_id="default", version="1.0.0"))
 
     assert type(model).__name__ == "ChatOpenAI"
-    assert model.model_name == "deepseek-v4-pro"
+    assert model.model_name == model_name
     assert model.openai_api_base == "https://api.deepseek.com"
     assert type(model.openai_api_key).__name__ == "SecretStr"
+    assert model.extra_body == {"thinking": {"type": "disabled"}}
 
 
 def test_production_rejects_debug_or_missing_oidc_authentication() -> None:

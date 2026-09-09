@@ -11,8 +11,13 @@ from typing import Protocol
 from uuid import NAMESPACE_URL, uuid5
 
 from financeclaw.bff.application.conversation_service import ConversationService
-from financeclaw.bff.application.feishu_interactions import format_interactions, parse_response
+from financeclaw.bff.application.feishu_interactions import (
+    accepts_text_reply,
+    format_interactions,
+    parse_response,
+)
 from financeclaw.kernel.authorization import AuthorizationEvidence
+from financeclaw.kernel.interactions import InteractionResponse
 from financeclaw.kernel.notifications import NotificationAddress
 from financeclaw.kernel.responses import ConversationTurnRequest, StreamEvent
 from financeclaw.shared.conversation.repository import ConversationConflict, ConversationNotFound
@@ -241,8 +246,8 @@ class FeishuChannelService:
                     await self._send_plain(
                         gateway,
                         message,
-                        "交互未恢复：该请求可能已过期、已处理或不属于当前单聊；也请核对命令格式。"
-                        "请使用原问题的交互 ID、版本和摘要，或通过 API 查看。",
+                        "这条回答暂未被接收：问题可能已过期、已处理，或回答格式不符合要求。"
+                        "请以最新问题为准，在原单聊中回复。",
                         suffix="interaction-conflict",
                     )
                     LOGGER.info(
@@ -267,8 +272,7 @@ class FeishuChannelService:
                     await self._send_plain(
                         gateway,
                         message,
-                        "当前会话仍有未完成任务。请在 Web/API 查看等待原因、对指定动作作出决定，"
-                        "或通过该任务的取消接口确认停止后再发送新消息。普通文字“同意”不会批准动作。",
+                        "上一条任务仍在处理中，请等待后续回复。",
                         suffix="active-turn",
                     )
                     return "waiting_active_turn"
@@ -354,6 +358,55 @@ class FeishuChannelService:
             subject_id=subject_id,
         )
         parsed = parse_response(normalized)
+        channel_state = {}
+        command = normalized.split(maxsplit=1)[0]
+        if parsed is None and not normalized.startswith("/"):
+            channel_state = await asyncio.to_thread(
+                self.conversation_service.runs.interactions.channel_state,
+                conversation.conversation_id,
+                tenant_id=tenant_id,
+                subject_id=subject_id,
+                response_key=f"feishu:{self.app_id}:{message.message_id}",
+            )
+            items = channel_state.get("interactions", [])
+            previous = channel_state.get("answered")
+            item = previous or (items[0] if len(items) == 1 else None)
+            if (
+                item
+                and accepts_text_reply(item)
+                and (previous or item["status"] == "pending")
+                and channel_state.get("waiting_reason") != "authorization_required"
+            ):
+                try:
+                    parsed = (
+                        item["interaction_id"],
+                        InteractionResponse(
+                            revision=item["revision"], kind="input", answer={"text": normalized}
+                        ),
+                    )
+                except ValueError as exc:
+                    raise InteractionConflict("text answer exceeds the response limit") from exc
+            elif previous:
+                raise InteractionConflict("message was already used for another response")
+            elif channel_state.get("root_run_id"):
+                waiting_reason = channel_state.get("waiting_reason")
+                fallback = (
+                    "这次提问已过期。请结束当前任务，再重新发起请求。"
+                    if waiting_reason == "interaction_expired"
+                    else "当前任务需要重新授权，请按上一条授权提示操作。"
+                    if waiting_reason == "authorization_required"
+                    else "上一条任务仍在处理中，请稍候。"
+                )
+                fallback += f"\n\n如需结束任务，请发送：\n/cancel {channel_state['root_run_id']}"
+                await self._send_plain(
+                    gateway,
+                    message,
+                    fallback
+                    if waiting_reason == "authorization_required"
+                    else format_interactions(items, fallback=fallback),
+                    suffix="pending-task",
+                )
+                return "waiting_active_turn"
         if parsed is not None:
             identifier, response = parsed
             accepted_response = await self.conversation_service.runs.interactions.respond(
@@ -373,7 +426,7 @@ class FeishuChannelService:
                 tenant_id=tenant_id,
                 subject_id=subject_id,
             )
-        if normalized.split(maxsplit=1)[0] in {"/cancel", "/authorize", "/revoke", "/mute"}:
+        if command in {"/cancel", "/authorize", "/revoke", "/mute"}:
             parts = normalized.split()
             if len(parts) != 2:
                 raise InteractionConflict("命令必须携带一个明确的根任务 ID。")

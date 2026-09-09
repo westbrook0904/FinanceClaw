@@ -474,6 +474,16 @@ class ConversationContextBuilder:
                 truncated = self.counter.truncate(item.content, target)
                 fitted[index] = item.model_copy(update={"content": truncated})
                 new_tokens = self.counter.message(fitted[index])
+                # BPE token 数不具备可加性：正文和 JSON 包装分别计数后再相加，可能比
+                # 整条消息实际计数少几个 token。按实际消息计数收紧正文，直到真正适配。
+                while total - tokens + new_tokens > remaining and truncated:
+                    overflow = total - tokens + new_tokens - remaining
+                    content_tokens = self.counter.text(truncated)
+                    truncated = self.counter.truncate(
+                        truncated, max(0, content_tokens - overflow - 1)
+                    )
+                    fitted[index] = item.model_copy(update={"content": truncated})
+                    new_tokens = self.counter.message(fitted[index])
                 total -= tokens - new_tokens
                 omissions.append(
                     ContextOmission(

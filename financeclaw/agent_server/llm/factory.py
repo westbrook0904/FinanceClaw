@@ -72,6 +72,10 @@ class ModelFactory:
             kwargs["api_key"] = self._api_key.get_secret_value()
         if self._base_url is not None:
             kwargs["base_url"] = self._base_url
+        # 通用 ChatOpenAI 不保留 DeepSeek 的 reasoning_content；在完整回传链路
+        # 接入前显式使用非思考模式，避免工具往返及澄清恢复时被 Provider 拒绝。
+        if profile.model.startswith("openai:deepseek-"):
+            kwargs["extra_body"] = {"thinking": {"type": "disabled"}}
         # 3. 初始化模型并校验类型，防止配置错误静默流入上层。
         model = init_chat_model(profile.model, **kwargs)
         if not isinstance(model, BaseChatModel):

@@ -1,10 +1,23 @@
-"""飞书明确命令协议：从已验证文本中取得交互身份，不从自然语言推测授权。"""
+"""飞书交互展示：文本澄清直接回答，其他交互使用明确命令。"""
 
 import json
 from typing import Any
 
 from financeclaw.kernel.interactions import InteractionResponse
 from financeclaw.shared.execution_ledger.interactions import InteractionConflict
+
+
+def accepts_text_reply(item: dict[str, Any]) -> bool:
+    """只有单个 text 字段的资料交互可映射普通回复；审批和选择仍显式绑定。"""
+    schema = item.get("response_schema", {})
+    properties = schema.get("properties", {})
+    return (
+        item.get("kind") == "input"
+        and schema.get("type") == "object"
+        and set(properties) == {"text"}
+        and properties["text"].get("type") == "string"
+        and schema.get("required") == ["text"]
+    )
 
 
 def parse_response(text: str) -> tuple[str, InteractionResponse] | None:
@@ -39,13 +52,29 @@ def parse_response(text: str) -> tuple[str, InteractionResponse] | None:
 
 
 def format_interactions(
-    items: list[dict[str, Any]] | tuple[dict[str, Any], ...], *, fallback: str
+    items: list[dict[str, Any]] | tuple[dict[str, Any], ...],
+    *,
+    fallback: str,
+    allow_text_reply: bool = True,
 ) -> str:
-    """生成可复制命令和摘要；旧消息重发的决定仍由服务端校验生命周期。"""
+    """单一文本澄清只展示问题；有歧义时逐项提供明确的回答入口。"""
+    if len(items) > 1:
+        return "有几项内容需要分别确认，请使用各项下方的回答命令：\n\n" + "\n\n".join(
+            format_interactions([item], fallback=fallback, allow_text_reply=False) for item in items
+        )
     if len(items) != 1 or "interaction_id" not in items[0]:
         return fallback
     item = items[0]
     identifier, revision = item["interaction_id"], item["revision"]
+    if accepts_text_reply(item) and allow_text_reply:
+        if item["status"] == "pending":
+            return item["question"] + "\n\n直接回复即可，我会接着处理。"
+        if item["status"] == "expired":
+            return (
+                "这次提问已过期。请发送以下命令结束当前任务，再重新发起请求："
+                f"\n/cancel {item['root_run_id']}"
+            )
+        return "这次提问已处理或关闭，请以最新消息为准。"
     lines = [
         item["question"],
         f"交互：{identifier} · 版本：{revision}",
@@ -75,6 +104,11 @@ def format_interactions(
             lines.append(f"回答格式较长，请通过已认证 API 查看：GET /v1/interactions/{identifier}")
         else:
             lines.append("回答格式：" + schema)
-            lines.append(f'/answer {identifier} {revision} {{"按上述格式填写": "回答"}}')
+            if accepts_text_reply(item):
+                lines.append(f'/answer {identifier} {revision} {{"text": "你的回答"}}')
+            else:
+                lines.append(
+                    f"请按上述字段填写 JSON，并发送：/answer {identifier} {revision} <JSON>"
+                )
     lines.extend([f"/cancel {item['root_run_id']}", f"API：{item['response_url']}"])
     return "\n\n".join(lines)

@@ -63,7 +63,7 @@ LANGSMITH_HIDE_OUTPUTS=false
 本轮没有自动扩大任一用户的权限。
 
 新建会话绑定 `finance_agent@1.5.0`。候选启用后，根可以使用
-`call_agent__ziwei_doushu_agent` Tool 调用 `ziwei_doushu_agent@2.1.0` 内部子图。
+`call_agent__ziwei_doushu_agent` Tool 调用 `ziwei_doushu_agent@2.2.0` 内部子图。
 `langgraph.json` 只注册顶层根，子图继承本次执行的权限、预算与 checkpoint；
 完整文本解读通过 Tool 结果交回根 Agent，再由 BFF 写入 Journal。
 业务库使用当前 `0001_initial`，候选能力不新增独立运行表。
@@ -74,14 +74,32 @@ LANGSMITH_HIDE_OUTPUTS=false
 `time_context` 提供固定的 `request_clock` 和查询时区；它来自可信运行上下文，模型不能覆盖。
 另可提供经归属、内容版本和权限校验的 `context_refs`。其他历史消息和制品通过显式引用提供，
 不自动复制整段根历史。父 Agent 无需提前抽取或冻结完整出生参数。
-子模型直接调用统一的 `ziwei_chart`，使用常规 Pydantic 类型化输入，完整 Schema 包含出生资料、
-层级、目标、主题与输出模式，每个业务字段均有模型可见的说明；运行时参数由框架注入。
+子模型从五个独立排盘工具中选择，每个工具固定自己的层级，不再接受 `level` 或通用 `target`。
+五个入口共用出生资料、主题与输出模式，各自仅暴露对应的日期参数；运行时参数由框架注入。
+本命没有查询日期，不会因模型漏填或多填流运目标而触发冻结对象赋值错误。
 图中不增加参数提取模型或领域预检节点。参数校验和规范化在同一次 Tool 调用内完成。
+
+| 工具 | 用途 | 常用查询参数（出生资料之外） |
+| --- | --- | --- |
+| `ziwei_natal_chart` | 本命 | 无日期参数 |
+| `ziwei_decadal_chart` | 大限 | `on_date` 定位所在大限；当前大限用 `day_offset: 0` |
+| `ziwei_yearly_chart` | 流年 | `year` 查询公历整年；今年用 `year_offset: 0` |
+| `ziwei_monthly_chart` | 流月 | `year`、`month` 查询公历整月；本月用 `month_offset: 0` |
+| `ziwei_daily_chart` | 流日 | `on_date` 指定某日；今天用 `day_offset: 0` |
+
+流运工具均可用 `on_date` 查询某日对应盘面，或用 `date_range.start/end` 查询连续区间。
+具体日期、年月、相对偏移量、日期区间每次只选一种，冲突会按参数格式错误处理。
+未提供目标不会默认今天／今年；本命拒绝日期字段，流年拒绝月份字段等无关参数。
+计算核心仍共用不可变的内部 `ZiweiAnalysisRequest`，不原地修改请求或改变排盘规则。
+
+从旧版升级时，先排空或取消在途任务，再同步部署 BFF 与 Agent Server（容器需重建镜像）。
+子 Agent 版本、工具白名单和配置指纹已更新；旧 `2.1.0` 检查点不能直接按新接口恢复，
+失败或取消的旧查询需重新发起。旧 `ziwei_chart` 不再注册；Artifact 的同名来源分类保留兼容。
 
 ```mermaid
 flowchart LR
     R[根 Agent：任务与上下文] --> W[子 Agent：function call]
-    W --> T[ziwei_chart：校验与计算]
+    W --> T[五个独立排盘入口：校验与计算]
     T -->|成功| F[证据汇合与解读]
     T -->|缺资料| E[子图 END]
     E --> Q[根图汇合当前批次]
@@ -100,8 +118,12 @@ Tool 一次返回当前能确定的全部缺失／无效资料，包括出生日
 及完整问题／回答记录，仅继续未完成工作。成功 Worker 的结果保留在根 checkpoint 中供复用。
 
 输入型澄清沿用现有交互接口，回答形如 `{"revision":1,"kind":"input","answer":{"text":"公历"}}`。
-实际 revision 取待回答交互，普通新 Turn 不能代替 resume。飞书使用显示的
-`/answer <交互ID> <版本> {"text":"公历"}` 命令；审批仍用原有 approve/reject 契约。
+实际 revision 取待回答交互，普通新 Turn 不能代替 resume。飞书单聊只有一个待回答的
+`{"text": "..."}` 资料交互时，用户可直接回复“公历”“当地钟表时间”等文字，渠道层根据
+当前单聊的持久交互记录绑定 ID 和 revision，再走相同的校验与 resume 流程，不创建新 Turn。
+提示只展示问题与直接回复说明；原请求及旧回答重推不会被用于后续问题，重启 BFF 后仍可恢复。
+过期问题会说明原因并给出取消当前任务的命令。其他结构化输入、多问题、选择和审批仍需明确
+指定交互；兼容 `/answer <交互ID> <版本> {"text":"公历"}`，审批仍用 approve/reject 契约。
 自然语言 `/agent` 的澄清回复可以继续原 Agent，显式 JSON 参数约束和审批权限检查仍然生效。
 缺失用户事实时，在下一次模型调用之前结束 evidence，外层直接进入 `END`，跳过 `finalize`。
 纯参数格式错误允许基于已有上下文修复一次；连续错误返回 `unsupported`，避免 ReAct 耗尽预算。
@@ -132,7 +154,7 @@ CI 分别验证基础安装和 `--extra ziwei` 安装；普通子图测试不依
 > /agent ziwei_doushu_agent 请只看一个合成样例的 2026 年 9 月 6 日日盘：女性，
 > 公历 2000 年 8 月 16 日，上海当地民用钟表时间 03:30。不要生成命理解读。
 
-子 Agent 依据上下文填写的 `ziwei_chart` 参数示例（不是父入口必填项或新增 HTTP 请求体）：
+子 Agent 依据上下文填写的 `ziwei_daily_chart` 参数示例（不是父入口必填项或新增 HTTP 请求体）：
 
 ```json
 {
@@ -147,18 +169,17 @@ CI 分别验证基础安装和 `--extra ziwei` 安装；普通子图测试不依
     "place": {"name": "上海"},
     "sex_for_chart": "female"
   },
-  "level": "daily",
   "focus": "overall",
-  "target": {"kind": "point", "on_date": "2026-09-06"}
+  "on_date": "2026-09-06"
 }
 ```
 
-五种层级为 `natal/decadal/yearly/monthly/daily`。本命不传 target；其余必须指定目标。
-公历整年使用 `{"kind":"calendar_period","unit":"year","year":2026}`，相对今年使用
-`{"kind":"relative_period","unit":"year","offset":0}`。相对时间取可信 Turn 时钟和查询时区，
+查本命改用 `ziwei_natal_chart` 并移除 `on_date`。查公历整年使用 `ziwei_yearly_chart` 的
+`{"year":2026}`，查今年使用 `{"year_offset":0}`；查某月使用 `ziwei_monthly_chart` 的
+`{"year":2026,"month":9}`，查本月使用 `{"month_offset":0}`。相对时间取可信 Turn 时钟和查询时区，
 不是 Worker 执行日期；恢复前后保持同一时间基准，不需要另外调用时间工具。
-明年为 `unit=year, offset=1`，本月为 `unit=month, offset=0`，今天为 `unit=day, offset=0`。
-`bounded_range` 的 `end` 不含当天。
+明年为 `year_offset=1`，下月为 `month_offset=1`，明天为 `day_offset=1`。
+`date_range` 的 `end` 不含当天；原有最多 366 天、逐日最多 31 天、最多 32 段的限制保持不变。
 
 农历出生需 `calendar=lunar` 和明确 `is_leap_month`。只知道时辰时使用 `time.kind=shichen`，
 例如 `shichen=yin`；“子时”仍需区分 `zi_early/zi_late`。不要补造 12:00 或猜测性别。
@@ -168,13 +189,19 @@ CI 分别验证基础安装和 `--extra ziwei` 安装；普通子图测试不依
 `OfflineZiweiModel` 只用于闭环测试，生成带实际引用的测试文本，不代表真实解读质量。
 回归测试覆盖真实图中的原问题与授权引用传递、完整 function call、聚合校验与并发澄清，
 以及仅回复一个字段、连续补充、重建根图后的原生恢复、BFF 交互登记与最终 Journal 写入。
-紫微模型输入检查包含完整 Schema、任务和证据，采用配置中的输入预算减预留输出额度，超限仍拒绝，
+`tests/stage8_hotfix/test_ziwei_five_tools.py` 另覆盖五个入口的真实执行、固定层级与证据绑定、
+无关字段和冲突日期拒绝、冻结请求不被修改、缺失目标不猜值，以及按固定时钟跨年解析相对时间。
+紫微模型输入检查按 token 统计完整 Schema、任务和证据，采用配置中的输入预算减预留输出额度，超限仍拒绝，
 不会截断出生资料、澄清回答或盘面来绕过预算。
 真实模型的自然语言理解与首次填参准确率仍需单独联调；Schema 和提示词不能保证它不误读原文。
 当前文本解读不使用 JSON mode。
 
 ## 当前限制与故障判断
 
+- 当前 `openai:deepseek-*` 模型统一显式发送 `thinking.type=disabled`，包括根模型与紫微子模型。
+  通用 ChatOpenAI 尚未完整回传 DeepSeek 的 `reasoning_content`；暂时关闭思考模式，避免工具往返／
+  澄清恢复触发 HTTP 400。其他模型配置不变。部署此变更需重启 Agent Server；容器部署需重建镜像。
+  该变更不会自动重试已经失败的任务，也不会补回旧检查点中已丢失的推理字段。
 - 仅民用时间；真太阳时明确返回 unsupported。
 - 地名可离线识别北京、上海、广州、深圳、成都、香港、台北；其他地点要补 IANA 时区。
 - 出生时间范围跨时辰、夏令时缺口／重复、资料缺失时先澄清，不生成猜测盘。

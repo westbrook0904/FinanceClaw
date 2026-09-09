@@ -12,6 +12,7 @@ from financeclaw.kernel.tools import (
     SideEffect,
     ToolGovernance,
 )
+from financeclaw.kernel.ziwei_tools import ZIWEI_TOOL_INPUTS
 
 
 def local_tool_governance() -> tuple[ToolGovernance, ...]:
@@ -141,9 +142,9 @@ def memory_tool_governance() -> tuple[ToolGovernance, ...]:
 
 def ziwei_tool_governance() -> tuple[ToolGovernance, ...]:
     """返回 ziwei 工具的治理声明，不创建执行实例。"""
-    return (
+    return tuple(
         ToolGovernance(
-            tool_id="ziwei_chart",
+            tool_id=name,
             version="1.0.0",
             side_effect=SideEffect.READ,
             idempotency=Idempotency.IDEMPOTENT,
@@ -155,5 +156,6 @@ def ziwei_tool_governance() -> tuple[ToolGovernance, ...]:
             retry_profile=RetryProfile.NONE,
             audit_level=AuditLevel.FULL,
             allowed_data_classes=frozenset({DataClassification.CONFIDENTIAL}),
-        ),
+        )
+        for name in ZIWEI_TOOL_INPUTS
     )

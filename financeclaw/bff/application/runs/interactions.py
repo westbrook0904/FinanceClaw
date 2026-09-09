@@ -3,9 +3,11 @@
 import asyncio
 
 from jsonschema import Draft202012Validator
+from sqlalchemy import select
 
 from financeclaw.bff.application.runs.waits import native_response
 from financeclaw.kernel.interactions import InteractionPoint
+from financeclaw.shared.conversation.tables import ConversationTurnRow
 from financeclaw.shared.execution_ledger.authorization import (
     check_authorization,
     intersect_scopes,
@@ -15,8 +17,10 @@ from financeclaw.shared.execution_ledger.interaction_tables import PendingIntera
 from financeclaw.shared.execution_ledger.interactions import (
     InteractionConflict,
     InteractionRepository,
+    export,
 )
 from financeclaw.shared.execution_ledger.root_repository import aware, now
+from financeclaw.shared.execution_ledger.run_tables import RootRunRow
 from financeclaw.shared.execution_ledger.tables import RunExecutionRow
 from financeclaw.shared.infrastructure.security.redaction import redact_sensitive
 
@@ -64,6 +68,55 @@ class BFFInteractions:
         self.service, self.store = service, service.store
         self.repository = InteractionRepository(self.store.execution)
         self.clock = now
+
+    def channel_state(self, conversation_id, *, tenant_id, subject_id, response_key):
+        """读取单聊回复目标，先找持久重放记录，防止旧消息回答下一次问题。"""
+        self.service.repository.get_owned(conversation_id, tenant_id, subject_id)
+        with self.store.sessions() as session:
+            answered = session.scalar(
+                select(PendingInteractionRow).where(
+                    PendingInteractionRow.tenant_id == tenant_id,
+                    PendingInteractionRow.subject_id == subject_id,
+                    PendingInteractionRow.conversation_id == conversation_id,
+                    PendingInteractionRow.response_key == response_key,
+                )
+            )
+            if answered is not None:
+                return {"answered": public_interaction(export(answered))}
+            turn = session.scalar(
+                select(ConversationTurnRow).where(
+                    ConversationTurnRow.tenant_id == tenant_id,
+                    ConversationTurnRow.subject_id == subject_id,
+                    ConversationTurnRow.conversation_id == conversation_id,
+                    ConversationTurnRow.client_idempotency_key == response_key,
+                )
+            )
+            if turn is not None:
+                # 原始请求重推仍由 start_turn 校验正文与幂等键，不能变成澄清回答。
+                return {"turn_replay": True}
+            root = session.scalar(
+                select(RootRunRow).where(
+                    RootRunRow.conversation_id == conversation_id, RootRunRow.active.is_(True)
+                )
+            )
+            if root is None:
+                return {}
+            items = []
+            for row in session.scalars(
+                select(PendingInteractionRow).where(
+                    PendingInteractionRow.root_run_id == root.run_id,
+                    PendingInteractionRow.status == "pending",
+                )
+            ):
+                item = public_interaction(export(row))
+                if aware(row.expires_at) <= now():
+                    item["status"] = "expired"
+                items.append(item)
+            return {
+                "root_run_id": root.run_id,
+                "waiting_reason": root.projection.get("waiting_reason"),
+                "interactions": items,
+            }
 
     async def public(self, row):
         """Reload a safe projection without modifying the stored interaction."""
@@ -131,6 +184,28 @@ class BFFInteractions:
                 raise InteractionConflict("response does not match the frozen interaction")
             with self.store.sessions.begin() as session:
                 root = self.store.lock(session, saved["root_run_id"])
+                if conversation_id is not None:
+                    prior = session.scalar(
+                        select(PendingInteractionRow.interaction_id).where(
+                            PendingInteractionRow.tenant_id == tenant_id,
+                            PendingInteractionRow.subject_id == subject_id,
+                            PendingInteractionRow.conversation_id == conversation_id,
+                            PendingInteractionRow.response_key == idempotency_key,
+                        )
+                    )
+                    turn = session.scalar(
+                        select(ConversationTurnRow.turn_id).where(
+                            ConversationTurnRow.tenant_id == tenant_id,
+                            ConversationTurnRow.subject_id == subject_id,
+                            ConversationTurnRow.conversation_id == conversation_id,
+                            ConversationTurnRow.client_idempotency_key == idempotency_key,
+                        )
+                    )
+                    if turn is not None or (prior is not None and prior != interaction_id):
+                        # 渠道查询与后台推进可能交错，提交时再次绑定原消息；API 幂等范围不变。
+                        raise InteractionConflict(
+                            "channel message already belongs to another operation"
+                        )
                 execution = session.get(RunExecutionRow, root.run_id)
                 profile = self.service.releases.verify(execution.snapshot)
                 effective = intersect_scopes(execution.snapshot["context"]["scopes"], scopes)

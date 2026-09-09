@@ -88,7 +88,7 @@ async def test_free_text_is_delivered_without_json_parsing_or_repair(text):
                 tool_calls=[
                     {
                         "id": "unexpected",
-                        "name": "ziwei_chart",
+                        "name": "ziwei_natal_chart",
                         "args": {},
                         "type": "tool_call",
                     }
@@ -152,7 +152,7 @@ def test_v2_envelope_still_rejects_missing_charts_or_wrong_protocol():
 def test_evidence_budget_does_not_expand_when_json_repair_is_removed():
     """当前发布最多 6 次取证＋1 次文本。"""
     stack = components()
-    profile = stack.agent_profiles.resolve("ziwei_doushu_agent", "2.1.0")
+    profile = stack.agent_profiles.resolve("ziwei_doushu_agent", "2.2.0")
     middleware = ZiweiEvidenceMiddleware(
         max_calls=profile.max_model_calls, input_budget=24_000, finalization_calls=1
     )

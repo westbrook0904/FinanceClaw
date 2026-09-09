@@ -7,7 +7,7 @@ import pytest
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 
-from financeclaw.agent_server.agents.ziwei_offline import OfflineZiweiModel
+from financeclaw.agent_server.agents.ziwei_offline import OfflineZiweiModel, offline_chart_call
 from financeclaw.agent_server.domains.ziwei.errors import ZiweiError
 from financeclaw.kernel.ziwei import ZiweiTextResult
 from tests.stage7.support import build_ziwei_agent, components, context, envelope, request
@@ -35,11 +35,7 @@ class RepeatingEvidenceModel(OfflineZiweiModel):
                     message=AIMessage(
                         content="",
                         tool_calls=[
-                            {
-                                "name": "ziwei_chart",
-                                "args": arguments,
-                                "id": f"chart-{len(type(self).calls)}-{index}",
-                            }
+                            offline_chart_call(arguments, f"chart-{len(type(self).calls)}-{index}")
                             for index in range(self.batch_size)
                         ],
                     )

@@ -399,7 +399,7 @@ async def test_ziwei_evidence_clarification_returns_to_root_with_budget_remainin
 
     monkeypatch.setattr(stack.ziwei_service, "calculate", missing)
     RepeatingEvidenceModel.calls = []
-    tool = stack.tool_catalog.resolve("call_agent__ziwei_doushu_agent", "2.1.0").tool
+    tool = stack.tool_catalog.resolve("call_agent__ziwei_doushu_agent", "2.2.0").tool
     tool.graph = build_ziwei_agent(
         stack.agent_factory,
         tool.release,
@@ -629,7 +629,7 @@ def test_catalog_contains_only_current_root_and_worker_releases(stack):
     assert set(releases.agent_profiles) == {
         ("finance_agent", "1.5.0"),
         ("market_research_agent", "1.3.0"),
-        ("ziwei_doushu_agent", "2.1.0"),
+        ("ziwei_doushu_agent", "2.2.0"),
     }
     assert stack.default_agent_profile.version == "1.5.0"
     assert set(stack.agent_profiles) == set(releases.agent_profiles)
