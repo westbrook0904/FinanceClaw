@@ -2,7 +2,7 @@
 
 from datetime import UTC, datetime
 
-from financeclaw.shared.execution_ledger.coordination_tables import RunAuthorizationRow
+from financeclaw.shared.execution_ledger.run_tables import RunAuthorizationRow
 
 
 def intersect_scopes(original, current) -> frozenset[str]:
@@ -23,9 +23,7 @@ def check_authorization(session, root, *, scopes=None, now=None):
 
     if root is None:
         raise ExecutionConflict("root execution is unavailable")
-    if root.snapshot.get("driver_mode") != "coordinator" and not root.snapshot.get(
-        "profile", {}
-    ).get("worker_manifest"):
+    if not root.snapshot.get("profile", {}).get("worker_manifest"):
         return None
     grant = session.get(RunAuthorizationRow, root.run_id)
     expires = (

@@ -1,11 +1,13 @@
-"""Retain native HITL payloads and persist a Worker rejection before ReAct continues."""
+"""Retain native HITL payloads and persist rejection before the new root ReAct continues."""
 
 import asyncio
 
 from langchain.agents.middleware import HumanInTheLoopMiddleware
 from langchain_core.messages import ToolMessage
 
-from financeclaw.agent_server.tools.subgraph_scope import verify_scope
+from financeclaw.agent_server.tools.subgraph_scope import active_scope, verify_scope
+from financeclaw.kernel.context import ExecutionContext
+from financeclaw.shared.execution_ledger.repository import ExecutionConflict
 
 
 class SubgraphHITLMiddleware(HumanInTheLoopMiddleware):
@@ -23,8 +25,17 @@ class SubgraphHITLMiddleware(HumanInTheLoopMiddleware):
             isinstance(message, ToolMessage) and message.status == "error"
             for message in result["messages"]
         ):
-            scope = verify_scope(self.execution, runtime.context)
-            self.execution.deny_side_effects(scope.context.run_id)
+            if active_scope.get() is not None:
+                context = verify_scope(self.execution, runtime.context).context
+            else:
+                context = ExecutionContext.model_validate(runtime.context)
+                self.execution.verify_context(context)
+                root = self.execution.get(context.run_id)
+                if context.root_run_id != context.run_id or not root["snapshot"]["profile"].get(
+                    "worker_manifest"
+                ):
+                    raise ExecutionConflict("native rejection requires the BFF root release")
+            self.execution.deny_side_effects(context.run_id)
         return result
 
     async def aafter_model(self, state, runtime):

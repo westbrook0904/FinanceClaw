@@ -314,11 +314,10 @@ class ToolGovernanceMiddleware(AgentMiddleware):
         if any(isinstance(message, ToolMessage) for message in messages[latest_user_index + 1 :]):
             return "the explicit directive already produced a Tool result"
         # 3. 被调用工具必须与指令指向的能力一致，否则拒绝。
-        prefix = "call" if tool.name.startswith("call_") else "delegate"
         expected_tool_name = (
             directive.resource_id
             if directive.kind is InvocationKind.TOOL
-            else f"{prefix}_{directive.kind.value}__{directive.resource_id}"
+            else f"call_{directive.kind.value}__{directive.resource_id}"
         )
         if expected_tool_name != tool.name:
             return "the model-selected capability does not match the explicit user directive"

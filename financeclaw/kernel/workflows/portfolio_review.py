@@ -13,10 +13,10 @@ from financeclaw.kernel.responses import ArtifactReference
 WORKFLOW_ID = "portfolio_review"
 
 
-WORKFLOW_VERSION = "1.0.0"
+WORKFLOW_VERSION = "1.1.0"
 
 
-ASSISTANT_ID = "portfolio_review_v1"
+ASSISTANT_ID = "portfolio_review_v1_1_0"
 
 
 APPROVAL_POINT = "publish_portfolio_report"
@@ -134,7 +134,7 @@ class PortfolioReviewOutput(_FrozenModel):
     """
 
     workflow_id: Literal["portfolio_review"]
-    workflow_version: Literal["1.0.0"]
+    workflow_version: Literal["1.1.0"]
     run_id: str
     status: Literal["completed", "rejected", "failed"]
     arguments_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -160,9 +160,3 @@ class PortfolioReviewOutput(_FrozenModel):
         if self.status != "completed" and not self.error:
             raise ValueError("non-completed portfolio review requires an error")
         return self
-
-
-class PortfolioReviewSubgraphOutput(PortfolioReviewOutput):
-    """Internal 1.1.0 release keeps the public result fields and pins its own version."""
-
-    workflow_version: Literal["1.1.0"] = "1.1.0"

@@ -61,12 +61,12 @@ def resolve_context_refs(
                 identifier, context.tenant_id, context.subject_id
             )
             if metadata.size_bytes > max_bytes - total:
-                raise ValueError("delegation context references exceed the size budget")
+                raise ValueError("worker context references exceed the size budget")
             classification = DataClassification(metadata.access_policy.get("data_classification"))
             if _CLASSIFICATION[classification] > _CLASSIFICATION[context.data_classification]:
                 raise PermissionError("reference classification exceeds the execution snapshot")
             if metadata.content_type not in {"text/plain", "application/json", "text/markdown"}:
-                raise ValueError("delegation supports only textual artifacts")
+                raise ValueError("worker context supports only textual artifacts")
             content = artifacts.read(identifier, context=context).decode("utf-8")
             source = {"source_type": metadata.source_type, "source_id": metadata.source_id}
         if _CLASSIFICATION[classification] > _CLASSIFICATION[context.data_classification]:
@@ -76,7 +76,7 @@ def resolve_context_refs(
             raise ValueError("context reference content version changed")
         total += len(encoded)
         if total > max_bytes:
-            raise ValueError("delegation context references exceed the size budget")
+            raise ValueError("worker context references exceed the size budget")
         resolved.append(
             {
                 "ref": ref,

@@ -8,14 +8,14 @@ from sqlalchemy import delete, func, select
 
 from financeclaw.bff.http.app import create_app
 from financeclaw.bff.http.auth import AuthenticatedPrincipal, StaticBearerAuthenticator
-from financeclaw.shared.execution_ledger.coordination_tables import RunProgressEventRow
+from financeclaw.shared.execution_ledger.run_tables import RunProgressEventRow
 from tests.stage8.test_notifications import completed
 
 
 def application(setup):
     """生产路由配合测试身份，后台仍使用正式受理 Facade。"""
     return create_app(
-        run_service=setup.services.runs,
+        run_service=setup.runtime.runs,
         conversation_service=setup.bff,
         authenticator=StaticBearerAuthenticator(
             {
@@ -66,7 +66,7 @@ async def test_independent_cursor_replay_snapshot_and_readonly_queries(setup):
         assert (
             await client.get(f"/v1/runs/{run_id}/events", headers={"Authorization": "Bearer other"})
         ).status_code == 404
-    assert setup.backend.calls == setup.backend.reads == 1
+    assert setup.backend.calls == len(setup.runtime.client.runs.calls) == 1
     with setup.store.sessions() as session:
         assert session.scalar(select(func.count()).select_from(RunProgressEventRow)) == before
     assert repository.materialize()

@@ -25,13 +25,10 @@ from financeclaw.agent_server.tools.policy import ToolDecisionType, ToolPolicy, 
 from financeclaw.kernel.context import ExecutionContext
 from financeclaw.kernel.workflows.portfolio_review import (
     APPROVAL_POINT,
-    ASSISTANT_ID,
     MARKET_TOOL_ID,
     MARKET_TOOL_VERSION,
     WORKFLOW_ID,
-    WORKFLOW_VERSION,
     PortfolioReviewInput,
-    PortfolioReviewOutput,
 )
 from financeclaw.shared.artifacts.service import ArtifactService
 from financeclaw.shared.audit.models import AuditEventType, AuditRecord
@@ -132,7 +129,7 @@ class PortfolioReviewProjection(TypedDict, total=False):
 
 
 def _parse_decision(value: Any) -> dict[str, Any]:
-    """解析审批恢复负载，兼容 decisions 列表包装与扁平对象两种形态。
+    """解析审批恢复负载，使用 BFF 冻结的单条决定对象。
 
     Args:
         value: interrupt 恢复时得到的审批决定负载。
@@ -146,11 +143,6 @@ def _parse_decision(value: Any) -> dict[str, Any]:
     """
     if not isinstance(value, Mapping):
         raise ValueError("workflow approval resume payload must be an object")
-    decisions = value.get("decisions")
-    if isinstance(decisions, list):
-        if len(decisions) != 1 or not isinstance(decisions[0], Mapping):
-            raise ValueError("workflow approval requires exactly one decision")
-        return dict(decisions[0])
     return dict(value)
 
 
@@ -182,7 +174,7 @@ def build_portfolio_review_graph(
     read_max_attempts: int = 3,
     clock: Callable[[], datetime] | None = None,
     execution: ExecutionRepository | None = None,
-    release: Any = None,
+    release: Any,
     resource_gate: Any = None,
 ) -> Any:
     """装配并编译 portfolio_review@1.0.0 的固定流程图。
@@ -200,33 +192,29 @@ def build_portfolio_review_graph(
         read_max_attempts: 行情读取遇瞬时错误的最大尝试次数，默认 3。
         clock: 注入时钟，返回当前时间；缺省为系统 UTC 时间（测试可注入）。
         execution: 根任务树预算与授权仓储；业务运行必须配置。
-        release: 内部子图的新发布；None 保持历史 1.0.0 图。
+        release: 当前内部子图发布。
         resource_gate: 同 Factory 共享的叶子 I/O 资源门。
 
     Returns:
         编译后的 LangGraph 图，图名为 portfolio_review_v1。
 
     """
-    workflow_version = release.version if release else WORKFLOW_VERSION
-    expected_worker = None
-    if release is not None:
-        from financeclaw.shared.releases.subgraphs import worker_declaration
+    workflow_version = release.version
+    from financeclaw.shared.releases.subgraphs import worker_declaration
 
-        expected_worker = json.loads(worker_declaration(release, catalog, {}))
-        expected_worker.pop("models")  # This deterministic Workflow performs no model calls.
+    expected_worker = json.loads(worker_declaration(release, catalog, {}))
+    expected_worker.pop("models")  # This deterministic Workflow performs no model calls.
 
     def verify_worker(context):
-        """对新流程核对完整发布和叶子声明；旧流程维持原契约。"""
-        if release is not None:
-            from financeclaw.agent_server.tools.subgraph_scope import verify_scope
+        """核对完整发布和叶子声明。"""
+        from financeclaw.agent_server.tools.subgraph_scope import verify_scope
 
-            scope = verify_scope(execution, context)
-            pinned = json.loads(scope.declaration)
-            pinned.pop("models")
-            if pinned != expected_worker:
-                raise ExecutionConflict("Workflow release differs from the bound Worker")
-            return scope
-        return None
+        scope = verify_scope(execution, context)
+        pinned = json.loads(scope.declaration)
+        pinned.pop("models")
+        if pinned != expected_worker:
+            raise ExecutionConflict("Workflow release differs from the bound Worker")
+        return scope
 
     now = clock or (lambda: datetime.now(UTC))
     managed_market = catalog.resolve(MARKET_TOOL_ID, MARKET_TOOL_VERSION)
@@ -295,9 +283,7 @@ def build_portfolio_review_graph(
         return {
             "approval_expires_at": (
                 now() + timedelta(seconds=release.timeout_policy.approval_timeout_seconds)
-            ).isoformat()
-            if release
-            else "",
+            ).isoformat(),
             "normalized_input": normalized,
             "portfolio_name": parsed.portfolio_name,
             "positions": normalized["positions"],
@@ -517,8 +503,8 @@ def build_portfolio_review_graph(
         """
         # 1. 派生确定性审批标识：同一 run、同一输入重复恢复不会漂移。
         scope = verify_worker(runtime.context)
-        binding = scope.interaction_binding() if scope else {}
-        if scope and now() >= datetime.fromisoformat(state["approval_expires_at"]):
+        binding = scope.interaction_binding()
+        if now() >= datetime.fromisoformat(state["approval_expires_at"]):
             raise ExecutionConflict("Workflow approval expired")
         approval_identity = {
             **binding,
@@ -534,7 +520,7 @@ def build_portfolio_review_graph(
             interrupt(
                 {
                     **binding,
-                    **({"expires_at": state["approval_expires_at"]} if scope else {}),
+                    "expires_at": state["approval_expires_at"],
                     "approval_id": approval_id,
                     "approval_point": APPROVAL_POINT,
                     "workflow_id": WORKFLOW_ID,
@@ -547,19 +533,17 @@ def build_portfolio_review_graph(
                 }
             )
         )
-        if scope:
-            verify_worker(runtime.context)
-            if (
-                decision.get("invocation_id") != scope.identity
-                or decision.get("approval_id") != approval_id
-                or now() >= datetime.fromisoformat(state["approval_expires_at"])
-            ):
-                raise ExecutionConflict("Workflow decision does not match this invocation")
+        verify_worker(runtime.context)
+        if (
+            decision.get("invocation_id") != scope.identity
+            or decision.get("approval_id") != approval_id
+            or now() >= datetime.fromisoformat(state["approval_expires_at"])
+        ):
+            raise ExecutionConflict("Workflow decision does not match this invocation")
         decision_type = decision.get("type")
         # 3. 解析恢复负载：reject 置驳回；approve 复验入参哈希一致性。
         if decision_type == "reject":
-            if scope:
-                execution.deny_side_effects(runtime.context.run_id)
+            execution.deny_side_effects(runtime.context.run_id)
             return {
                 "approval_id": approval_id,
                 "approval_outcome": "rejected",
@@ -623,7 +607,7 @@ def build_portfolio_review_graph(
             if execution.get(runtime.context.root_run_id)["side_effects_denied"]:
                 raise ExecutionConflict("publication is denied after rejection")
             execution.consume(runtime.context.run_id, "tool")
-        publication_key = scope.identity if scope else APPROVAL_POINT
+        publication_key = scope.identity
         with resource_gate if resource_gate is not None else nullcontext():
             metadata = artifact_service.persist(
                 report,
@@ -671,7 +655,7 @@ def build_portfolio_review_graph(
             for item in state.get("snapshots", [])
         ]
         # 3. 经输出契约校验（completed 必带制品、非 completed 必带错误）后返回。
-        output_type = release.output_schema if release else PortfolioReviewOutput
+        output_type = release.output_schema
         output = output_type(
             workflow_id=WORKFLOW_ID,
             workflow_version=workflow_version,
@@ -726,9 +710,7 @@ def build_portfolio_review_graph(
     graph.add_edge("publish_report", "finalize")
     graph.add_edge("finalize", END)
     # 以 checkpointer 支撑审批中断后的恢复，图名 portfolio_review_v1。
-    return graph.compile(
-        checkpointer=checkpointer, name=release.assistant_id if release else ASSISTANT_ID
-    )
+    return graph.compile(checkpointer=checkpointer, name=release.assistant_id)
 
 
 def portfolio_review_definition(
@@ -766,7 +748,11 @@ def portfolio_review_definition(
         状态为 ACTIVE 的 WorkflowDefinition，含输入输出契约与权限域要求。
 
     """
+    release = portfolio_review_release(
+        run_timeout_seconds=run_timeout_seconds, approval_timeout_seconds=approval_timeout_seconds
+    )
     graph = build_portfolio_review_graph(
+        release=release,
         catalog=catalog,
         policy=policy,
         audit=audit,
@@ -775,9 +761,6 @@ def portfolio_review_definition(
         read_max_attempts=read_max_attempts,
         clock=clock,
         execution=execution,
-    )
-    release = portfolio_review_release(
-        run_timeout_seconds=run_timeout_seconds, approval_timeout_seconds=approval_timeout_seconds
     )
     return WorkflowDefinition(
         **{field.name: getattr(release, field.name) for field in fields(release)}, graph=graph

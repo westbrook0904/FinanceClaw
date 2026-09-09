@@ -251,7 +251,7 @@ class SearchMemoriesTool(_MemoryTool):
 
         """
         try:
-            # 1. 委托记忆服务在当前主体命名空间内执行检索。
+            # 1. 子图调用记忆服务在当前主体命名空间内执行检索。
             recalls = self._service.search(
                 self._context(runtime),
                 runtime.store,
@@ -330,7 +330,7 @@ class ProposeMemoryTool(_MemoryTool):
 
         """
         try:
-            # 1. 组装草案并委托服务层做策略校验与证据归属解析。
+            # 1. 组装草案并子图调用服务层做策略校验与证据归属解析。
             proposal = self._service.propose(
                 self._context(runtime),
                 self._draft(
@@ -398,7 +398,7 @@ class ConfirmMemoryTool(_MemoryTool):
 
         """
         try:
-            # 1. 委托服务层复验提案一致性并执行受控写入（user_confirmed=True）。
+            # 1. 子图调用服务层复验提案一致性并执行受控写入（user_confirmed=True）。
             record = self._service.confirm(
                 self._context(runtime),
                 runtime.store,
@@ -470,7 +470,7 @@ class ForgetMemoryTool(_MemoryTool):
 
         """
         try:
-            # 1. 委托服务层做所有权校验并执行生命周期迁移。
+            # 1. 子图调用服务层做所有权校验并执行生命周期迁移。
             record = self._service.forget(
                 self._context(runtime), runtime.store, memory_id, mode=mode
             )
@@ -487,7 +487,7 @@ def default_memory_tools(service: LongTermMemoryService) -> tuple[ManagedTool, .
     """装配默认的记忆 Tool 集合：检索、提案、确认与遗忘。
 
     使用场景：编排层为具备记忆能力的 Agent 装配工具集时调用；四个
-    Tool 共享同一记忆服务实例，治理上 direct_invocation 均关闭，
+    Tool 共享同一记忆服务实例，
     只允许经 Agent 调用。
 
     Args:

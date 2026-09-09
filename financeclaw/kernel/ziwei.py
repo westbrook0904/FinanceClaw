@@ -152,7 +152,7 @@ class TargetSelector(ZiweiModel):
 
 
 class ZiweiAnalysisRequest(ZiweiModel):
-    """根 Agent 的领域参数；上下文引用仍使用外层 handoff 的授权引用机制。"""
+    """根 Agent 的领域参数；上下文引用仍使用外层 Tool 的授权引用机制。"""
 
     question: str = Field(default="", max_length=4000)
     # 标签仅用于展示；授权主体取 ExecutionContext，不能由此标签决定归属。
@@ -160,7 +160,7 @@ class ZiweiAnalysisRequest(ZiweiModel):
     mode: Literal["chart_only", "interpretation"] = "interpretation"
     birth: BirthInput = Field(default_factory=BirthInput)
     target: TargetSelector | None = None
-    # level 是本次委派允许的最深层级；focus 只筛选展示事实，不改变完整盘面身份。
+    # level 是本次子图调用允许的最深层级；focus 只筛选展示事实，不改变完整盘面身份。
     level: ChartLevel = ChartLevel.NATAL
     focus: Focus = "overall"
 

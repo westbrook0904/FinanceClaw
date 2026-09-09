@@ -2,19 +2,12 @@
 
 from pathlib import Path
 
-import pytest
 from alembic import command
 from alembic.config import Config
 from pydantic import SecretStr
 from sqlalchemy import create_engine, inspect
 
 from financeclaw.agent_server.memory.models import MemoryDraft
-from financeclaw.coordination.application.target_resolver import (
-    TargetResolutionError,
-    TargetResolver,
-)
-from financeclaw.kernel.responses import RunRequest
-from financeclaw.kernel.targets import ToolTarget
 from financeclaw.operations.memory_eval_seed import SAMPLES
 from financeclaw.shared.audit.models import AuditEventType
 from financeclaw.shared.audit.repository import SqlAlchemyAuditRepository
@@ -96,47 +89,6 @@ def test_langsmith_regression_seed_covers_required_memory_cases() -> None:
         "current_tool_fact_wins",
         "high_impact_confirmation",
     }
-
-
-def test_memory_tools_cannot_bypass_agent_human_approval_via_direct_target(
-    tmp_path: Path,
-) -> None:
-    """验证函数名所描述的业务场景符合预期。"""
-    # 准备 components，供后续步骤使用。
-    components = build_components(
-        FinanceClawSettings(
-            environment="test",
-            offline_model=True,
-            debug_full_io=False,
-            database_url=SecretStr(f"sqlite+pysqlite:///{tmp_path / 'direct.db'}"),
-            artifact_root=str(tmp_path / "artifacts"),
-        ),
-        enable_persistence=True,
-    )
-    # 准备 resolver，供后续步骤使用。
-    resolver = TargetResolver(
-        tool_catalog=components.tool_catalog,
-        agent_profiles=components.agent_profiles,
-    )
-    # 限定依赖资源的生命周期，并确保资源能够可靠释放。
-    with pytest.raises(TargetResolutionError, match="governed Agent path"):
-        resolver.resolve(
-            RunRequest(
-                message="bypass memory approval",
-                target=ToolTarget(
-                    tool_id="confirm_memory",
-                    arguments={
-                        "proposal_id": "forged",
-                        "kind": "preference",
-                        "content": "forged",
-                        "evidence_message_ids": ["current"],
-                    },
-                ),
-            )
-        )
-    # 显式处理 `components.database is not None` 分支。
-    if components.database is not None:
-        components.database.close()
 
 
 def test_memory_audit_survives_repository_reconstruction(tmp_path: Path) -> None:

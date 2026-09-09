@@ -8,22 +8,10 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from financeclaw.coordination.api import (
-    ApprovalExpired,
-    DelegationAuthorizationError,
-    DelegationConflict,
-    DelegationInputError,
-    IdempotencyConflict,
-    InteractionNotFound,
-    RunNotFound,
-    TargetResolutionError,
-    WorkflowApprovalExpired,
-    WorkflowAuthorizationError,
-    WorkflowConflict,
-    WorkflowInputError,
-)
 from financeclaw.kernel.responses import ErrorResponse
+from financeclaw.kernel.run_errors import IdempotencyConflict, RunNotFound
 from financeclaw.shared.conversation.repository import ConversationConflict, ConversationNotFound
+from financeclaw.shared.execution_ledger.interactions import InteractionNotFound
 from financeclaw.shared.execution_ledger.repository import ExecutionConflict
 
 
@@ -64,12 +52,6 @@ def install_error_handlers(app: FastAPI) -> None:
             },
         )
 
-    @app.exception_handler(TargetResolutionError)
-    async def target_error(_request: Request, exc: TargetResolutionError) -> JSONResponse:
-        """目标解析失败（目录中无此工具/流程/Agent）映射为 404。"""
-        payload = ErrorResponse(code="TARGET_NOT_FOUND", message=str(exc))
-        return JSONResponse(status_code=404, content=payload.model_dump(mode="json"))
-
     @app.exception_handler(RunNotFound)
     async def run_error(_request: Request, exc: RunNotFound) -> JSONResponse:
         """运行不存在映射为 404 RUN_NOT_FOUND。"""
@@ -92,58 +74,4 @@ def install_error_handlers(app: FastAPI) -> None:
     async def conversation_conflict(_request: Request, exc: ConversationConflict) -> JSONResponse:
         """会话状态冲突（如对已关闭会话发言）映射为 409。"""
         payload = ErrorResponse(code="CONVERSATION_CONFLICT", message=str(exc))
-        return JSONResponse(status_code=409, content=payload.model_dump(mode="json"))
-
-    @app.exception_handler(ApprovalExpired)
-    async def approval_expired(_request: Request, exc: ApprovalExpired) -> JSONResponse:
-        """审批窗口已过期映射为 410 APPROVAL_EXPIRED。"""
-        payload = ErrorResponse(code="APPROVAL_EXPIRED", message=str(exc))
-        return JSONResponse(status_code=410, content=payload.model_dump(mode="json"))
-
-    @app.exception_handler(WorkflowInputError)
-    async def workflow_input(_request: Request, exc: WorkflowInputError) -> JSONResponse:
-        """Workflow 入参不合法映射为 422 WORKFLOW_INPUT_INVALID。"""
-        payload = ErrorResponse(code="WORKFLOW_INPUT_INVALID", message=str(exc))
-        return JSONResponse(status_code=422, content=payload.model_dump(mode="json"))
-
-    @app.exception_handler(WorkflowAuthorizationError)
-    async def workflow_forbidden(
-        _request: Request, exc: WorkflowAuthorizationError
-    ) -> JSONResponse:
-        """调用方无权操作该 Workflow 映射为 403 WORKFLOW_FORBIDDEN。"""
-        payload = ErrorResponse(code="WORKFLOW_FORBIDDEN", message=str(exc))
-        return JSONResponse(status_code=403, content=payload.model_dump(mode="json"))
-
-    @app.exception_handler(WorkflowConflict)
-    async def workflow_conflict(_request: Request, exc: WorkflowConflict) -> JSONResponse:
-        """Workflow 状态冲突（如重复启动/未发布）映射为 409。"""
-        payload = ErrorResponse(code="WORKFLOW_CONFLICT", message=str(exc))
-        return JSONResponse(status_code=409, content=payload.model_dump(mode="json"))
-
-    @app.exception_handler(WorkflowApprovalExpired)
-    async def workflow_approval_expired(
-        _request: Request, exc: WorkflowApprovalExpired
-    ) -> JSONResponse:
-        """Workflow 审批窗口已过期映射为 410 WORKFLOW_APPROVAL_EXPIRED。"""
-        payload = ErrorResponse(code="WORKFLOW_APPROVAL_EXPIRED", message=str(exc))
-        return JSONResponse(status_code=410, content=payload.model_dump(mode="json"))
-
-    @app.exception_handler(DelegationInputError)
-    async def delegation_input(_request: Request, exc: DelegationInputError) -> JSONResponse:
-        """委派入参不合法映射为 422 DELEGATION_INPUT_INVALID。"""
-        payload = ErrorResponse(code="DELEGATION_INPUT_INVALID", message=str(exc))
-        return JSONResponse(status_code=422, content=payload.model_dump(mode="json"))
-
-    @app.exception_handler(DelegationAuthorizationError)
-    async def delegation_forbidden(
-        _request: Request, exc: DelegationAuthorizationError
-    ) -> JSONResponse:
-        """调用方无权发起该委派映射为 403 DELEGATION_FORBIDDEN。"""
-        payload = ErrorResponse(code="DELEGATION_FORBIDDEN", message=str(exc))
-        return JSONResponse(status_code=403, content=payload.model_dump(mode="json"))
-
-    @app.exception_handler(DelegationConflict)
-    async def delegation_conflict(_request: Request, exc: DelegationConflict) -> JSONResponse:
-        """委派状态冲突（如重复恢复）映射为 409 DELEGATION_CONFLICT。"""
-        payload = ErrorResponse(code="DELEGATION_CONFLICT", message=str(exc))
         return JSONResponse(status_code=409, content=payload.model_dump(mode="json"))

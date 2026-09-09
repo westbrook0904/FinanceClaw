@@ -69,7 +69,7 @@ def request(**changes) -> ZiweiAnalysisRequest:
 
 
 def envelope(value: ZiweiAnalysisRequest) -> dict:
-    """与 DelegationService 实际发送的 child 输入结构一致。"""
+    """构造生产 Worker Tool 使用的领域输入结构。"""
     return {
         "messages": [
             {
@@ -98,3 +98,43 @@ def components(tmp_path=None):
             "artifact_root": str(tmp_path / "artifacts"),
         }
     return build_components(settings(**overrides), enable_persistence=bool(tmp_path))
+
+
+def build_ziwei_agent(factory, profile, service, **options):
+    """Build a real scoped Worker so domain tests can inspect its evidence."""
+    from pathlib import Path
+    from tempfile import TemporaryDirectory
+    from types import SimpleNamespace
+
+    from financeclaw.agent_server.graphs.ziwei_agent import build_ziwei_agent as build_graph
+    from financeclaw.shared.conversation.repository import SqlAlchemyConversationRepository
+    from financeclaw.shared.infrastructure.database import ApplicationDatabase
+    from tests.worker_scope import invocation
+
+    async def ainvoke(value, *, context):
+        """Create a private execution ledger only when this focused domain fixture has none."""
+        original = factory.conversation_repository
+        database = None
+        with TemporaryDirectory(prefix="financeclaw-worker-test-") as directory:
+            if original is None:
+                database = ApplicationDatabase(f"sqlite:///{Path(directory) / 'worker.db'}")
+                database.initialize_schema()
+                factory.conversation_repository = SqlAlchemyConversationRepository(
+                    database.session_factory
+                )
+            try:
+                graph = build_graph(factory, profile, service, **options)
+                with invocation(
+                    factory.conversation_repository.execution,
+                    profile,
+                    factory.tool_catalog,
+                    factory.model_factory.catalog,
+                    context,
+                ) as scoped:
+                    return await graph.ainvoke(value, context=scoped)
+            finally:
+                factory.conversation_repository = original
+                if database:
+                    database.close()
+
+    return SimpleNamespace(ainvoke=ainvoke)

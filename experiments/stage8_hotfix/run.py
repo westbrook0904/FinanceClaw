@@ -32,7 +32,6 @@ def provenance() -> dict:
     )
     sources = sorted((ROOT / "experiments/stage8_hotfix").glob("*.py"))
     sources += sorted((ROOT / "tests/stage8_hotfix").glob("*.py"))
-    sources.append(ROOT / "experiments/stage8_hotfix/release-plan.json")
     sources.append(ROOT / "experiments/stage8_hotfix/requirements.txt")
     return {
         "python": platform.python_version(),
@@ -59,7 +58,6 @@ async def run(args) -> dict:
         "scope": {
             "synthetic_model": True,
             "real_credentials_used": False,
-            "coordinator_started": False,
             "production_code_switched": False,
             "persistent_runtime_restart_verified": False,
             "bff_journal_delivery_verified": False,

@@ -896,7 +896,7 @@ class SqlAlchemyConversationRepository:
         content: str,
         parent_message_id: str,
     ) -> ConversationMessage:
-        """为分支场景追加 assistant 消息（委托给 append_assistant_message 实现）。
+        """为分支场景追加 assistant 消息（子图调用给 append_assistant_message 实现）。
 
         Args:
             run_id: 平台运行标识。

@@ -9,8 +9,8 @@ from financeclaw.shared.conversation.tables import (
     ConversationRow,
     ConversationTurnRow,
 )
-from financeclaw.shared.execution_ledger.coordination_tables import RunAuthorizationRow
 from financeclaw.shared.execution_ledger.repository import ExecutionConflict, digest
+from financeclaw.shared.execution_ledger.run_tables import RunAuthorizationRow
 from financeclaw.shared.notifications.tables import NotificationEventRow, NotificationTargetRow
 
 
@@ -133,7 +133,6 @@ def record_progress(session, root) -> None:
         key = [kind, [(item["interaction_id"], item["revision"]) for item in items]]
     elif status in {"interrupted", "cancellation_requested"} and reason not in {
         None,
-        "delegation_pending",
         "delivery_pending",
     }:
         kind = "attention"
@@ -155,7 +154,7 @@ def record_progress(session, root) -> None:
 
 
 def require_schema(sessions) -> None:
-    """正式接管角色必须理解通知表；不能静默丢弃已订阅任务的交付责任。"""
+    """BFF 与发送器必须具备通知表；不能静默丢弃已订阅任务的交付责任。"""
     from sqlalchemy import inspect
 
     from financeclaw.shared.notifications.tables import (
@@ -174,4 +173,4 @@ def require_schema(sessions) -> None:
             if not inspector.has_table(row.__tablename__) or not set(
                 row.__table__.columns.keys()
             ).issubset({column["name"] for column in inspector.get_columns(row.__tablename__)}):
-                raise RuntimeError("Stage-8B database migration is required")
+                raise RuntimeError("application database migration is required")

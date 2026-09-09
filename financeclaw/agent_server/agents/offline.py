@@ -146,13 +146,9 @@ class OfflineFinanceModel(BaseChatModel):
             else (
                 directive.resource_id
                 if directive.kind is InvocationKind.TOOL
-                else f"delegate_{directive.kind.value}__{directive.resource_id}"
+                else f"call_{directive.kind.value}__{directive.resource_id}"
             )
         )
-        if directive_capability and directive_capability.startswith("delegate_"):
-            composite = directive_capability.replace("delegate_", "call_", 1)
-            if composite in self._bound_tool_names:
-                directive_capability = composite
         # 3. 指令参数缺失或非法时，要求补充参数，不发起工具调用。
         if directive is not None and (directive.parse_error or not directive.payload):
             problem = directive.parse_error or "required arguments"
@@ -165,7 +161,7 @@ class OfflineFinanceModel(BaseChatModel):
                     )
                 ]
             )
-        # 4. 指令能力未绑定（不可见）时，说明无法注册该委托能力。
+        # 4. 指令能力未绑定（不可见）时，说明无法注册该子图调用能力。
         if directive is not None and directive_capability not in self._bound_tool_names:
             return ChatResult(
                 generations=[
@@ -173,7 +169,7 @@ class OfflineFinanceModel(BaseChatModel):
                         message=AIMessage(
                             content=(
                                 f"Requested {directive.kind.value} '{directive.resource_id}' "
-                                "has no registered delegation capability."
+                                "has no registered composite Tool capability."
                             )
                         )
                     )
@@ -185,11 +181,11 @@ class OfflineFinanceModel(BaseChatModel):
             name = (
                 directive.resource_id
                 if directive.kind is InvocationKind.TOOL
-                else f"delegate_{directive.kind.value}__{directive.resource_id}"
+                else f"call_{directive.kind.value}__{directive.resource_id}"
             )
             args = directive.arguments
         elif directive is not None and directive.kind is InvocationKind.AGENT and directive.payload:
-            name = f"delegate_agent__{directive.resource_id}"
+            name = f"call_agent__{directive.resource_id}"
             args = {"task": directive.payload}
         elif "remember preference" in content or "记住" in content:
             name = "propose_memory"

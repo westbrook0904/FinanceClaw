@@ -1,30 +1,19 @@
-# Stage 8B：飞书通知交付
+# 飞书通知交付
 
-通知发送器是 BFF 包中的独立运行角色，与 BFF、Coordinator 共用 `financeclaw_app`。
-Coordinator 只通过 `shared/notifications` 写事务事实，不导入 BFF 或飞书 SDK。
-不需要新增数据库、消息队列或 Temporal。
+通知发送器是 BFF 包中的独立运行角色，与 BFF 共用业务库。BFF 通过 `shared/notifications` 在结果事务中写通知意图，发送器读取持久责任并保存渠道回执。
 
 ## 启用和部署
 
-1. 对共享应用库执行 `.venv/bin/alembic upgrade head`，当前头为 `0010_stage8b`。
-   本版本 Coordinator 启动必须具备通知表，即使新通知受理开关关闭，也不能漏掉已有责任。
-2. 先升级 Coordinator，再升级 BFF。8B 新根固定 `driver_version=2`，8A Worker 只领取版本 1，
-   不能处理这些新根；8B Worker 兼容原版本 1 的 8A 根，不将它们改成新的驱动身份。
-   新 BFF 的就绪检查只承认版本 2 Worker 心跳。旧 legacy 根接管仍属于 8C。
-3. 按 [`notifications.env.example`](../../config/environments/notifications.env.example) 设置独立发送角色。
-   该片段中的 `FEISHU_ENABLED=false` 只适用于发送器，飞书入站 BFF 仍需 `FEISHU_ENABLED=true`。
-   BFF 与发送器使用同一 app ID、当前灰度名单和数据库；凭据由环境注入。
-4. 通过测试单聊验收后，在飞书 BFF 和发送器上启用 `FINANCECLAW_FEISHU_NOTIFICATIONS_ENABLED=true`。
-   Coordinator 的通知写入取决于根的持久订阅，不需要飞书 app secret。
+1. 对新空业务库执行 `.venv/bin/alembic upgrade head`，当前版本 `0001_initial` 包含通知表。
+2. 按 [notifications.env.example](../../config/environments/notifications.env.example) 设置发送角色。该片段的 `FEISHU_ENABLED=false` 仅用于发送器；飞书入站 BFF 仍需 `FEISHU_ENABLED=true`。
+3. BFF 与发送器使用相同 app ID、白名单和业务库，并注入飞书凭据；按部署需要启用 `FINANCECLAW_FEISHU_NOTIFICATIONS_ENABLED=true`。
+4. 启动发送器：
 
-   ```bash
-   .venv/bin/python -m financeclaw.bff.notifications.worker
-   ```
+```bash
+.venv/bin/python -m financeclaw.bff.notifications.worker
+```
 
-   或使用 [`compose.notifications.yml`](../../compose.notifications.yml)。发送器不启动 WebSocket，
-   可运行多实例，每实例一次只领取一个分片，长调用期间续租。SIGTERM 排空当前有限调用。
-   BFF `/ready` 单独报告 `notification_sender`；这个检查表示 schema 和进程心跳可用，
-   飞书 API 是否可投递由实际回执及积压状态判断。
+也可用 [compose.notifications.yml](../../compose.notifications.yml)。发送器不启动 WebSocket，可多实例运行，每实例一次领取一个分片并续租；SIGTERM 排空当前有限调用。BFF `/ready` 的 `notification_sender` 检查 schema 和发送者心跳，实际交付以回执为准。
 
 通知开关默认关闭。关闭新受理不删除已有订阅，也不让已订阅任务切回前台卡片最终交付。
 关闭发送器会保留待办；重新启动后继续原分片。
@@ -40,10 +29,10 @@ Coordinator 只通过 `shared/notifications` 写事务事实，不导入 BFF 或
 
 事件逐行消费，没有共用全局序号游标，因此迟提交的事务不会被较大序号跳过。
 审计 Outbox 的 published 不等于飞书 sent。发送故障不重新提交 start/resume，也不重跑模型。
-普通不变探测、child 的中间文字不会形成最终通知。
+普通不变探测、Worker 的中间文字不会形成最终通知。
 
-协调通知模式当前固定为 `text_reply_v1`。前台短受理后即返回，不创建最终卡片；回答、选择和
-审批消息不会创建第二个最终目标。其他模式的 legacy 展示保持原行为。
+持久通知模式当前固定为 `text_reply_v1`。前台短受理后即返回，不创建最终卡片；回答、选择和
+审批消息不会创建第二个最终目标。未订阅通知的会话通过 BFF Journal 和 SSE 读取结果。
 正文按 UTF-8 字符边界每片最多 3500 字节，另加 `[当前/总数]` 前缀；原正文完整保留。
 每片使用独立、永久固定的 UUID，只调用 SDK 底层 `areply`，不会触发高层分片或 reply→create 降级。
 前片未明确 sent 时不会越过它发送后片；前片死信或被抑制时，后片也会被抑制。
@@ -82,7 +71,7 @@ SDK 的布尔 success 或“相同文本出现在聊天里”不能单独解决�
 表中保存受保护的地址与通知正文，应沿用 Journal 的访问控制；日志只记录错误类型。
 不要把发送键重置或将 sending/uncertain 手动改回 pending。出现 unknown 时，保留原记录，
 依据原 SDK 回执或渠道侧可证明的投递记录核对。缺少证据时保持可见待处理，结果仍可从 Journal 获取。
-有通知事实时迁移拒绝破坏性 downgrade；回滚应用须保留理解版本 2 根与通知表的协调／发送角色。
+开发库初始迁移的 downgrade 会删除表，只应用于可丢弃的隔离测试库。
 
 ## SSE 恢复
 
@@ -98,7 +87,7 @@ SSE 断开、重连及任意数量观察者不会写执行事实或增加 backen
 
 ## 验收界限
 
-本地测试覆盖正式数据库仓储、真实 PostgreSQL 多进程和官方 SDK 的 HTTP 协议边界。
+当前测试覆盖业务仓储、并发发送与回执分类；PostgreSQL 多进程测试需专用测试数据库，外部渠道另行验收。
 真实飞书验收仍需明确授权的测试单聊和原消息：验证正常回执、同 UUID 去重、原消息撤回、
 灰度名单撤销、长文本顺序、响应丢失后的原键恢复和幂等窗口边界。
 未经这组验收，不声明 8B 已通过真实渠道发布门禁。

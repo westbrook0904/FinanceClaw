@@ -160,22 +160,19 @@ class FinanceClawSettings(BaseSettings):
     agent_server_url: str = "http://127.0.0.1:2024"
     agent_server_timeout_seconds: float = Field(default=30.0, gt=0, le=300)
     agent_server_service_token: SecretStr | None = None
-    coordinator_enabled: bool = False
-    coordinator_backend_instance_id: str = Field(
-        default="langgraph-primary", pattern=r"^[A-Za-z0-9._-]{1,128}$"
+    bff_backend_instance_id: str = Field(
+        default="langgraph-main", pattern=r"^[A-Za-z0-9._-]{1,128}$"
     )
-    coordinator_callback_url: str | None = None
-    coordinator_webhook_token: SecretStr | None = None
-    coordinator_grant_seconds: int = Field(default=1800, ge=1, le=86400)
-    coordinator_approval_scope: str = Field(default="tools:approve", min_length=1, max_length=128)
-    coordinator_poll_seconds: float = Field(default=1, ge=0.05, le=30)
-    coordinator_reconcile_seconds: float = Field(default=10, ge=0.1, le=300)
-    coordinator_lease_seconds: float = Field(default=60, ge=3, le=600)
-    coordinator_max_step_seconds: float = Field(default=120, ge=1, le=1800)
-    coordinator_worker_concurrency: int = Field(default=4, ge=1, le=32)
-    coordinator_max_inflight: int = Field(default=32, ge=1, le=1024)
-    coordinator_tenant_inflight: int = Field(default=4, ge=1, le=128)
-    coordinator_ready_backlog_seconds: float = Field(default=120, ge=1, le=86400)
+    bff_callback_url: str | None = None
+    bff_webhook_token: SecretStr | None = None
+    bff_approval_scope: str = Field(default="tools:approve", min_length=1, max_length=128)
+    bff_run_max_step_seconds: float = Field(default=120, ge=1, le=1800)
+    bff_run_ready_backlog_seconds: float = Field(default=120, ge=1, le=86400)
+    bff_run_poll_seconds: float = Field(default=1, ge=0.05, le=30)
+    bff_run_reconcile_seconds: float = Field(default=10, ge=0.1, le=300)
+    bff_run_lease_seconds: float = Field(default=60, ge=3, le=600)
+    bff_run_concurrency: int = Field(default=4, ge=1, le=32)
+    bff_run_grant_seconds: int = Field(default=1800, ge=1, le=86400)
     feishu_enabled: bool = False
     feishu_notifications_enabled: bool = False
     notification_poll_seconds: float = Field(default=1, ge=0.05, le=30)
@@ -284,12 +281,8 @@ class FinanceClawSettings(BaseSettings):
             ValueError: 生产环境违反安全基线，或通用约束（算法、加密配置）非法。
 
         """
-        if (
-            self.coordinator_enabled
-            or self.coordinator_callback_url
-            or self.coordinator_webhook_token
-        ):
-            callback = urlparse(self.coordinator_callback_url or "")
+        if self.bff_callback_url or self.bff_webhook_token:
+            callback = urlparse(self.bff_callback_url or "")
             if (
                 callback.scheme not in {"http", "https"}
                 or not callback.hostname
@@ -297,25 +290,21 @@ class FinanceClawSettings(BaseSettings):
                 or callback.password
                 or callback.query
                 or callback.fragment
+                or callback.path != f"/internal/webhooks/langgraph/{self.bff_backend_instance_id}"
             ):
-                raise ValueError(
-                    "coordinator_callback_url must be a fixed URL without credentials or query"
-                )
-            expected_path = f"/internal/webhooks/{self.coordinator_backend_instance_id}"
-            if callback.path != expected_path:
-                raise ValueError(
-                    "coordinator callback must identify the configured backend ingress"
-                )
+                raise ValueError("bff_callback_url must be a fixed BFF LangGraph ingress URL")
             if (
                 self.environment in {Environment.PRODUCTION, Environment.STAGING}
                 and callback.scheme != "https"
             ):
-                raise ValueError("deployed coordinator callback requires HTTPS")
+                raise ValueError("deployed BFF callback requires HTTPS")
+            if callback.hostname not in self.internal_service_hosts:
+                raise ValueError("BFF callback host must be in internal_service_hosts")
             if (
-                self.coordinator_webhook_token is None
-                or len(self.coordinator_webhook_token.get_secret_value()) < 32
+                self.bff_webhook_token is None
+                or len(self.bff_webhook_token.get_secret_value()) < 32
             ):
-                raise ValueError("coordinator_webhook_token requires at least 32 characters")
+                raise ValueError("bff_webhook_token requires at least 32 characters")
         # 1. 生产环境基线：禁用调试输出与离线模型。
         if self.ziwei_allow_full_io and self.environment not in {
             Environment.DEVELOPMENT,
@@ -401,8 +390,6 @@ class FinanceClawSettings(BaseSettings):
             raise ValueError("notification lease must exceed two remote call timeouts")
         if self.notification_verified_dedup_seconds and not self.notification_dedup_evidence:
             raise ValueError("notification dedup recovery requires a verified evidence reference")
-        if self.feishu_notifications_enabled and not self.coordinator_enabled:
-            raise ValueError("durable notification admission requires Coordinator")
         if self.feishu_enabled or self.feishu_notifications_enabled:
             if not self.feishu_app_id or not self.feishu_app_id.strip():
                 raise ValueError("feishu_app_id is required when Feishu channel is enabled")

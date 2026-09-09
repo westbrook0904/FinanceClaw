@@ -58,17 +58,17 @@ async def test_reads_merge_all_results_before_next_model(asynchronous: bool) -> 
     assert "3" in messages[-1].content and "7" in messages[-1].content
 
 
-@pytest.mark.parametrize("kind", ["writes", "delegations", "mixed", "directive"])
+@pytest.mark.parametrize("kind", ["writes", "composites", "mixed", "directive"])
 def test_unsupported_batch_is_rejected_before_hitl_and_dispatch(kind: str) -> None:
-    """不支持的批次不能产生审批、handoff 或部分执行。"""
+    """不支持的批次不能产生审批、子图或部分执行。"""
     components, audit = components_with_tools()
     read = call("calculate", 1, operation="add", left=1, right=1)
     write = call("watchlist_add", 2, symbol="AAPL", note="test")
-    delegated = call("delegate_agent__market_research_agent", 3, task="research AAPL")
+    worker_call = call("call_agent__market_research_agent", 3, task="research AAPL")
     batches = {
         "writes": [write, {**write, "id": "another-write"}],
-        "delegations": [delegated, {**delegated, "id": "another-child"}],
-        "mixed": [read, delegated],
+        "composites": [worker_call, {**worker_call, "id": "another-worker"}],
+        "mixed": [read, worker_call],
         "directive": [read, {**read, "id": "duplicate-read"}],
     }
     graph = components.agent_factory.build(

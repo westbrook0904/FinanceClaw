@@ -79,8 +79,8 @@ class MCPQuoteTool(BaseTool):
             raise ValueError("timeout_seconds must be positive")
         self._timeout_seconds = timeout_seconds
 
-    async def _delegate(self, symbol: str) -> Any:
-        """把一次报价请求委托给 MCP Server 上的同名工具执行。
+    async def _invoke_remote(self, symbol: str) -> Any:
+        """把一次报价请求子图调用给 MCP Server 上的同名工具执行。
 
         Args:
             symbol: 证券代码，原样透传给 MCP 工具。
@@ -120,12 +120,12 @@ class MCPQuoteTool(BaseTool):
             raise MCPToolUnavailable("MCP tool is unavailable") from exc
 
     def _run(self, symbol: str) -> Any:
-        """同步入口：在独立事件循环中执行异步委托。"""
-        return asyncio.run(self._delegate(symbol))
+        """同步入口：在独立事件循环中执行异步子图调用。"""
+        return asyncio.run(self._invoke_remote(symbol))
 
     async def _arun(self, symbol: str) -> Any:
-        """异步入口：直接执行异步委托，供 LangChain 异步调用链使用。"""
-        return await self._delegate(symbol)
+        """异步入口：直接执行异步子图调用，供 LangChain 异步调用链使用。"""
+        return await self._invoke_remote(symbol)
 
 
 def managed_mcp_quote_tool(*, timeout_seconds: float = 10.0) -> ManagedTool:

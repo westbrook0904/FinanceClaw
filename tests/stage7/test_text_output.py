@@ -9,11 +9,10 @@ from financeclaw.agent_server.agents.ziwei_offline import OfflineZiweiModel
 from financeclaw.agent_server.domains.ziwei.errors import ZiweiError
 from financeclaw.agent_server.graphs.ziwei_agent import (
     ZiweiEvidenceMiddleware,
-    build_ziwei_agent,
     interpretation_text,
 )
 from financeclaw.kernel.ziwei import ZiweiTextResult
-from tests.stage7.support import components, context, envelope, request
+from tests.stage7.support import build_ziwei_agent, components, context, envelope, request
 
 
 class TextResponseModel(OfflineZiweiModel):
@@ -132,7 +131,7 @@ def test_content_blocks_only_extract_visible_text():
 
 
 def test_v2_envelope_still_rejects_missing_charts_or_wrong_protocol():
-    """父委派边界校验的是协议与业务状态，不是算命答案对不对。"""
+    """Worker 返回边界校验的是协议与业务状态，不是算命答案对不对。"""
     with pytest.raises(ValidationError, match="calculated charts"):
         ZiweiTextResult(outcome="answer", answer_text="凭空算好的盘")
     with pytest.raises(ValidationError):
@@ -153,7 +152,7 @@ def test_v2_envelope_still_rejects_missing_charts_or_wrong_protocol():
 def test_evidence_budget_does_not_expand_when_json_repair_is_removed():
     """当前发布最多 6 次取证＋1 次文本。"""
     stack = components()
-    profile = stack.agent_profiles.resolve("ziwei_doushu_agent", "2.0.0")
+    profile = stack.agent_profiles.resolve("ziwei_doushu_agent", "2.1.0")
     middleware = ZiweiEvidenceMiddleware(
         max_calls=profile.max_model_calls, input_budget=24_000, finalization_calls=1
     )
@@ -169,5 +168,5 @@ def test_removed_legacy_releases_are_not_resolvable():
         stack.agent_profiles.resolve("finance_agent", "1.3.0")
     with pytest.raises(LookupError):
         stack.agent_profiles.resolve("ziwei_doushu_agent", "1.0.0")
-    assert stack.agent_profiles.resolve("finance_agent").version == "1.4.0"
+    assert stack.agent_profiles.resolve("finance_agent").version == "1.5.0"
     assert stack.agent_profiles.resolve("ziwei_doushu_agent").output_schema is ZiweiTextResult

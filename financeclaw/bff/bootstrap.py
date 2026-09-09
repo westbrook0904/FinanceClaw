@@ -1,4 +1,4 @@
-"""BFF 装配入口：认证、HTTP、Channel 和嵌入式协调服务。"""
+"""BFF 装配入口：认证、HTTP、Channel 和持久根运行控制。"""
 
 import asyncio
 from collections.abc import Awaitable, Callable
@@ -16,7 +16,6 @@ from financeclaw.bff.http.auth import (
     OIDCJWTAuthenticator,
     StaticBearerAuthenticator,
 )
-from financeclaw.coordination.bootstrap import build_coordination
 from financeclaw.shared.infrastructure.observability.langsmith import configure_langsmith
 from financeclaw.shared.infrastructure.observability.logging import configure_json_logging
 from financeclaw.shared.infrastructure.observability.telemetry import (
@@ -40,7 +39,7 @@ def create_default_app(settings: FinanceClawSettings | None = None) -> FastAPI:
         装配完成的 FastAPI 应用，数据库句柄挂在 ``app.state`` 上。
 
     Raises:
-        RuntimeError: 会话/Workflow/委派的持久化组件未配置。
+        RuntimeError: 会话/Workflow/子图调用的持久化组件未配置。
 
     """
     # 1. 解析配置并初始化可观测性：JSON 日志、LangSmith 追踪与 OTel。
@@ -61,16 +60,15 @@ def create_default_app(settings: FinanceClawSettings | None = None) -> FastAPI:
         sample_rate=settings.otel_trace_sample_rate,
     )
     # 2. 装配基础设施组件：工具目录、Agent 档案、仓库、审计与制品服务。
-    coordination = build_coordination(settings)
-    components = coordination.resources
-    client = coordination.client
-    run_service = coordination.runs
-    workflow_service = coordination.workflows
-    delegation_service = coordination.delegations
+    from financeclaw.bff.application.runs.bootstrap import build_bff_runs
+
+    bff_runtime = build_bff_runs(settings)
+    components, client = bff_runtime.resources, bff_runtime.client
+    run_service = bff_runtime.runs
     conversation_service = ConversationService(
         components.conversation_repository,
-        coordination.releases.agent_profiles,
-        runs=coordination.conversations,
+        bff_runtime.releases.agent_profiles,
+        runs=bff_runtime.runs,
     )
     # 5. 飞书 Channel 默认关闭；开启时才构造 SDK 适配器并在 lifespan 中连接。
     feishu_channel: FeishuChannelAdapter | None = None
@@ -139,8 +137,9 @@ def create_default_app(settings: FinanceClawSettings | None = None) -> FastAPI:
         "artifact_store": artifact_ready,
         "agent_server": client.health,
     }
-    if getattr(conversation_service.runs, "coordinated", False):
-        readiness_checks["coordinator"] = conversation_service.runs.healthy
+    startup_hooks += (bff_runtime.lifecycle.start,)
+    shutdown_hooks.append(bff_runtime.lifecycle.stop)
+    readiness_checks["bff_run_control"] = bff_runtime.runs.healthy
     if settings.feishu_notifications_enabled:
         from financeclaw.bff.notifications.repository import NotificationRepository
 
@@ -158,7 +157,7 @@ def create_default_app(settings: FinanceClawSettings | None = None) -> FastAPI:
 
         readiness_checks["notification_sender"] = notifications_ready
     if feishu_channel is not None:
-        startup_hooks = (feishu_channel.start,)
+        startup_hooks += (feishu_channel.start,)
         shutdown_hooks.append(feishu_channel.stop)
         readiness_checks["feishu_channel"] = feishu_channel.health
     # 8. 装配 FastAPI 应用，并把数据库与 Channel 句柄挂到 app.state 供运维复用。
@@ -166,8 +165,6 @@ def create_default_app(settings: FinanceClawSettings | None = None) -> FastAPI:
         run_service=run_service,
         authenticator=authenticator,
         conversation_service=conversation_service,
-        workflow_service=workflow_service,
-        delegation_service=delegation_service,
         readiness_checks=readiness_checks,
         startup_hooks=startup_hooks,
         shutdown_hooks=tuple(shutdown_hooks),
@@ -175,6 +172,11 @@ def create_default_app(settings: FinanceClawSettings | None = None) -> FastAPI:
         shutdown_timeout_seconds=settings.shutdown_timeout_seconds,
         p95_target_ms=settings.api_p95_target_ms,
     )
+    from financeclaw.bff.http.webhooks import webhook_router
+
+    if settings.bff_callback_url:
+        app.include_router(webhook_router(bff_runtime.runs.store, settings))
+    app.state.financeclaw_bff_runs = bff_runtime
     app.state.financeclaw_database = components.database
     app.state.financeclaw_feishu_channel = feishu_channel
     return app

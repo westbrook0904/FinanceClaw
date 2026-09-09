@@ -53,7 +53,7 @@ class ZiweiChartTool(BaseTool):
         if LEVELS.index(self.level) > LEVELS.index(request.level) or (
             focus and focus != request.focus
         ):
-            raise ZiweiError("ZIWEI_RANGE_LIMIT", "工具请求超出本次委派的层级或主题。")
+            raise ZiweiError("ZIWEI_RANGE_LIMIT", "工具请求超出本次子图调用的层级或主题。")
         birth = BirthContext.model_validate(runtime.state["ziwei_birth"])
         raw_target = runtime.state.get("ziwei_target")
         target = (
@@ -98,7 +98,7 @@ def ziwei_tools(service: ZiweiService | None) -> tuple[ManagedTool, ...]:
                     service=service,
                     description=(
                         f"Calculate {level.value} and ancestor charts using the frozen birth "
-                        "and target in this delegated task. Do not call lower levels first. "
+                        "and target in this Worker invocation. Do not call lower levels first. "
                         "To change birth or target, return to the root conversation."
                     ),
                 ),

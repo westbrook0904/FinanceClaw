@@ -50,7 +50,7 @@ def verify_scope(repository, context, declaration=None):
         raise ExecutionConflict("worker requires a trusted internal invocation scope")
     if declaration is not None and scope.declaration != declaration:
         raise ExecutionConflict("worker release differs from the bound invocation")
-    if context.parent_run_id or context.delegation_id or context.root_run_id != context.run_id:
+    if context.root_run_id != context.run_id:
         raise ExecutionConflict("subgraph must execute inside the business root")
     if repository is None:
         raise ExecutionConflict("persistent root execution is required for subgraphs")
@@ -62,7 +62,7 @@ def verify_scope(repository, context, declaration=None):
 
 
 def verify_graph_release(repository, context, profile):
-    """Compare Workers to the manifest and historical root graphs to their own snapshot."""
+    """Compare Workers to the manifest and root graphs to their own snapshot."""
     if profile.context_policy == "worker-task-only-v1":
         scope = verify_scope(repository, context)
         if json.loads(scope.declaration)["profile"] != profile.model_dump(mode="json"):

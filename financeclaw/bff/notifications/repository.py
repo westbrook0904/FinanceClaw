@@ -7,9 +7,9 @@ from sqlalchemy import exists, func, or_, select, update
 from sqlalchemy.orm import aliased
 
 from financeclaw.bff.notifications.rendering import chunks, render
-from financeclaw.shared.execution_ledger.coordination_tables import CoordinatedRunRow
 from financeclaw.shared.execution_ledger.interaction_tables import PendingInteractionRow
 from financeclaw.shared.execution_ledger.repository import digest
+from financeclaw.shared.execution_ledger.run_tables import RootRunRow
 from financeclaw.shared.execution_ledger.tables import RunExecutionRow
 from financeclaw.shared.notifications.facts import require_schema, target_valid
 from financeclaw.shared.notifications.tables import (
@@ -150,7 +150,7 @@ class NotificationRepository:
         ):
             return False
         if event.kind != "terminal":
-            root = session.get(CoordinatedRunRow, target.run_id)
+            root = session.get(RootRunRow, target.run_id)
             execution = session.get(RunExecutionRow, target.run_id)
             if not root.active:
                 return False

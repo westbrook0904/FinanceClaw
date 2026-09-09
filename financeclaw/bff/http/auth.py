@@ -281,7 +281,7 @@ def principal_dependency(authenticator: Authenticator):
         scheme, _, token = (authorization or "").partition(" ")
         if scheme.lower() != "bearer" or not token:
             raise HTTPException(status_code=401, detail="valid bearer authentication is required")
-        # 2. 委派认证器校验 token；失败统一 401，不区分具体失败原因。
+        # 2. 子图调用认证器校验 token；失败统一 401，不区分具体失败原因。
         principal = await authenticator.authenticate(token)
         if principal is None:
             raise HTTPException(status_code=401, detail="invalid bearer credential")

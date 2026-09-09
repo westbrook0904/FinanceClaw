@@ -55,7 +55,7 @@ class AgentFactory:
 
     使用场景：应用启动期构造一次并持有；每次需要 Agent 时调用 build 传入档案
     （如 finance_agent），得到挂满治理中间件的顶层 ReAct Agent，负责判断直接
-    回答、Tool Calling、Workflow handoff 或领域 Agent delegation。
+    回答、Tool Calling、Workflow 或领域 Agent 子图 Tool。
 
     Attributes:
         model_factory: 模型工厂，用于创建主模型、解析模型档案与兜底模型。
@@ -219,7 +219,7 @@ class AgentFactory:
         if interrupt_on:
             hitl_type = HumanInTheLoopMiddleware
             hitl_options = {}
-            if profile.context_policy == "worker-task-only-v1":
+            if profile.context_policy == "worker-task-only-v1" or profile.worker_manifest:
                 from financeclaw.agent_server.middleware.subgraph_hitl import SubgraphHITLMiddleware
 
                 hitl_type = SubgraphHITLMiddleware
@@ -242,9 +242,7 @@ class AgentFactory:
             ]
         )
         if profile.context_policy != "worker-task-only-v1":
-            middleware.append(
-                InvocationDirectiveMiddleware(composite=bool(profile.worker_manifest))
-            )
+            middleware.append(InvocationDirectiveMiddleware())
         # 6. 可选挂载工件 offload、记忆召回与会话上下文中间件。
         if self.artifact_service is not None:
             middleware.append(
@@ -260,7 +258,6 @@ class AgentFactory:
         if (
             self.memory_service is not None
             and profile.memory_policy != "none"
-            and not profile.delegatable
             and profile.context_policy != "worker-task-only-v1"
         ):
             middleware.append(
@@ -272,7 +269,7 @@ class AgentFactory:
             )
         if (
             profile.context_policy == "stage2-journal-v1"
-            and not profile.delegatable
+            and profile.context_policy != "worker-task-only-v1"
             and self.context_builder is not None
             and self.conversation_repository is not None
         ):

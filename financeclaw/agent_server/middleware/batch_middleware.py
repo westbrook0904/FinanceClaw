@@ -76,7 +76,7 @@ class ToolBatchMiddleware(AgentMiddleware):
                 managed.governance.side_effect is not SideEffect.READ
                 or decision.effect is ToolDecisionType.REQUIRE_APPROVAL
             ):
-                return "delegations, writes and approvals must occupy an exclusive batch"
+                return "composites, writes and approvals must occupy an exclusive batch"
         return None
 
     @hook_config(can_jump_to=["model"])

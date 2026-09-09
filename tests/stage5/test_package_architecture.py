@@ -38,12 +38,11 @@ def _imports(path: Path, package_root: Path = PACKAGE) -> set[str]:
 
 
 def test_service_dependency_direction_is_enforced() -> None:
-    """三包不得互相穿透，共享包不得回指服务；BFF 只依赖公开协调入口。"""
+    """服务包不得互相穿透，共享包不得回指 BFF 或 Agent Server。"""
     allowed = {
         "kernel": {"kernel"},
         "shared": {"kernel", "shared"},
         "agent_server": {"kernel", "shared", "agent_server"},
-        "coordination": {"kernel", "shared", "coordination"},
         "bff": {"kernel", "shared", "bff"},
     }
     violations = []
@@ -56,17 +55,8 @@ def test_service_dependency_direction_is_enforced() -> None:
                     continue
                 if imported.split(".")[1] in dependencies:
                     continue
-                if owner == "bff" and imported == "financeclaw.coordination.api":
-                    continue
-                if (
-                    path == PACKAGE / "bff/bootstrap.py"
-                    and imported == "financeclaw.coordination.bootstrap"
-                ):
-                    continue
                 violations.append(f"{path.relative_to(ROOT)} -> {imported}")
     assert not violations, "invalid package dependencies:\n" + "\n".join(violations)
-    for path in (PACKAGE / "coordination/application").rglob("*.py"):
-        assert "financeclaw.coordination.backends.langgraph" not in _imports(path)
 
 
 def test_relative_and_aggregate_imports_cannot_hide_dependencies(tmp_path: Path) -> None:
@@ -93,7 +83,8 @@ def test_relative_and_aggregate_imports_cannot_hide_dependencies(tmp_path: Path)
         "audit",
         "contracts",
         "conversation",
-        "delegation",
+        "subgraph",
+        "coordination",
         "graphs",
         "memory",
         "models",

@@ -12,8 +12,8 @@ from financeclaw.shared.infrastructure.orm import Base
 class PendingInteractionRow(Base):
     """保存一个原生中断对应的问题快照及其唯一决定。
 
-    root_run_id 控制整棵任务树最多一个 pending 交互，owner_run_id 标识
-    真正等待回答的业务运行。server_run_id 与 interrupt_id 共同定位恢复点，
+    root_run_id 和 owner_run_id 均为本次根执行，最多一个 pending 交互。
+    server_run_id 与 interrupt_id 共同定位恢复点，
     revision 在同一 owner 内递增，用于拒绝旧页面或旧消息的回答。
 
     resolved/rejected 表示决定已落盘；远程恢复是否已受理及完成，需要沿
@@ -27,8 +27,6 @@ class PendingInteractionRow(Base):
     conversation_id: Mapped[str | None] = mapped_column(String(128))
     root_run_id: Mapped[str] = mapped_column(String(128), index=True)
     owner_run_id: Mapped[str] = mapped_column(ForeignKey("run_executions.run_id"), index=True)
-    parent_run_id: Mapped[str | None] = mapped_column(String(128))
-    delegation_id: Mapped[str | None] = mapped_column(String(128))
     source: Mapped[str] = mapped_column(String(32))
     thread_id: Mapped[str] = mapped_column(String(128))
     server_run_id: Mapped[str] = mapped_column(String(128))

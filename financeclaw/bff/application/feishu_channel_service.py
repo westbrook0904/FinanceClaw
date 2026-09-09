@@ -12,14 +12,14 @@ from uuid import NAMESPACE_URL, uuid5
 
 from financeclaw.bff.application.conversation_service import ConversationService
 from financeclaw.bff.application.feishu_interactions import format_interactions, parse_response
-from financeclaw.coordination.api import (
-    InteractionConflict,
-    InteractionNotFound,
-)
 from financeclaw.kernel.authorization import AuthorizationEvidence
 from financeclaw.kernel.notifications import NotificationAddress
 from financeclaw.kernel.responses import ConversationTurnRequest, StreamEvent
 from financeclaw.shared.conversation.repository import ConversationConflict, ConversationNotFound
+from financeclaw.shared.execution_ledger.interactions import (
+    InteractionConflict,
+    InteractionNotFound,
+)
 from financeclaw.shared.execution_ledger.repository import digest
 
 LOGGER = logging.getLogger(__name__)
@@ -152,7 +152,7 @@ class FeishuChannelService:
             allowed_open_ids: 灰度用户 open_id 白名单。
             scopes: 显式授予飞书身份的 FinanceClaw scopes。
             max_concurrency: 不同单聊同时执行的最大数量。
-            status_poll_interval_seconds: delegation 等场景的状态轮询间隔。
+            status_poll_interval_seconds: 后台运行的状态轮询间隔。
             status_timeout_seconds: 流结束后等待最终状态的最长秒数。
 
         Raises:
@@ -326,28 +326,24 @@ class FeishuChannelService:
         """解析会话绑定、幂等开启 Turn，并交付流式回复。"""
         tenant_id = f"feishu:{message.tenant_key}"
         subject_id = f"feishu:{message.sender_open_id}"
-        authorization_kwargs = {}
-        if getattr(getattr(self.conversation_service, "runs", None), "coordinated", False):
-            current = datetime.now(UTC)
-            authorization_kwargs = {
-                "authorization": AuthorizationEvidence(
-                    source="feishu",
-                    source_hash=digest(
-                        [
-                            self.app_id,
-                            message.tenant_key,
-                            message.sender_open_id,
-                            message.chat_id,
-                            message.message_id,
-                        ]
-                    ),
-                    issued_at=current,
-                    expires_at=current
-                    + timedelta(
-                        seconds=self.conversation_service.runs.settings.coordinator_grant_seconds
-                    ),
-                )
-            }
+        current = datetime.now(UTC)
+        authorization_kwargs = {
+            "authorization": AuthorizationEvidence(
+                source="feishu",
+                source_hash=digest(
+                    [
+                        self.app_id,
+                        message.tenant_key,
+                        message.sender_open_id,
+                        message.chat_id,
+                        message.message_id,
+                    ]
+                ),
+                issued_at=current,
+                expires_at=current
+                + timedelta(seconds=self.conversation_service.runs.settings.bff_run_grant_seconds),
+            )
+        }
         conversation = await self.conversation_service.get_or_create_channel_conversation(
             channel="feishu",
             app_id=self.app_id,
@@ -481,8 +477,8 @@ class FeishuChannelService:
         subject_id: str,
     ) -> str:
         """新 Turn 与交互恢复共用展示路径；回答不会追加新的父 Turn。"""
-        runs = getattr(self.conversation_service, "runs", None)
-        if getattr(runs, "coordinated", False) and await asyncio.to_thread(
+        runs = self.conversation_service.runs
+        if await asyncio.to_thread(
             runs.notification_mode, run_id, tenant_id=tenant_id, subject_id=subject_id
         ):
             # 短受理结束后由持久发送器交付；此处不创建卡片或第二份最终回复。
@@ -595,7 +591,7 @@ class FeishuChannelService:
         tenant_id: str,
         subject_id: str,
     ) -> None:
-        """轮询权威状态，推进 delegation，并用 Journal 的最终文本校正展示。"""
+        """轮询权威状态，并用 Journal 的最终文本校正展示。"""
         loop = asyncio.get_running_loop()
         deadline = loop.time() + self.status_timeout_seconds
         while True:

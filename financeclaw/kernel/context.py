@@ -1,7 +1,7 @@
 """跨层共享的运行时上下文契约：租户、主体、会话定位与数据分级。
 
-本模块属于 kernel（稳定共享契约层），被 orchestration 与 infrastructure 依赖，
-自身不依赖任何业务模块，变更需保持向后兼容。
+本模块属于 kernel，共享给 BFF、Agent Server 与持久化设施，
+自身不依赖业务实现。
 """
 
 from enum import StrEnum
@@ -30,14 +30,14 @@ Identifier = Annotated[str, Field(min_length=1, max_length=128, pattern=r"^[A-Za
 class ExecutionContext(BaseModel):
     """一次运行的执行上下文：携带租户、主体、会话定位与数据分级等背景信息。
 
-    使用场景：BFF 受理请求后构造，随 Run 贯穿 orchestration 与 infrastructure，
+    使用场景：BFF 受理请求后构造，随根执行贯穿服务与持久化设施，
     用于多租户隔离、授权判定、审计归属与观测标注。
 
     Attributes:
         tenant_id: 租户 ID，多租户隔离与存储命名空间的一级维度。
         subject_id: 主体 ID（通常是终端用户），权限校验与审计记录的归属对象。
         scopes: 授予本次运行的作用域集合，供 Tool/Workflow 的授权策略校验。
-        conversation_id: 会话 ID；不经会话的直连运行（裸 Tool/Workflow）可为 None。
+        conversation_id: 会话 ID；独立领域单元测试可省略。
         turn_id: 轮次 ID，定位会话中由一次用户输入触发的工作单元。
         run_id: 本次运行的唯一 ID，贯穿审计、状态查询与流式事件。
         data_classification: 本次运行的数据密级，默认 ``INTERNAL``。
@@ -54,11 +54,8 @@ class ExecutionContext(BaseModel):
     conversation_id: Identifier | None = None
     turn_id: Identifier
     run_id: Identifier
-    # 根运行指向自身，子运行指向同一预算根；None 兼容未登记持久预算的图调用。
+    # 产品执行始终指向自身，Worker 继承该 ID；独立叶子测试可省略。
     root_run_id: Identifier | None = None
-    # 父运行和委派 ID 用于核验执行链，不能由模型生成的工具参数覆盖。
-    parent_run_id: Identifier | None = None
-    delegation_id: Identifier | None = None
     # 服务端固定的带时区 ISO 时间，供“今年”等相对时间解析及恢复重放使用。
     request_clock: str | None = None
     data_classification: DataClassification = DataClassification.INTERNAL

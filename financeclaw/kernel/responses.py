@@ -1,15 +1,12 @@
-"""跨层共享的请求/响应契约模型，覆盖运行受理、会话轮次、直连调用与审批流。
+"""跨层共享的请求/响应契约模型，覆盖根运行受理、会话轮次与只读投影。
 
-本模块属于 kernel（稳定共享契约层）：BFF（HTTP 接口层）与 orchestration 据此
+本模块属于 kernel（稳定共享契约层）：BFF 与共享持久化设施据此
 收发数据；所有模型均继承 ``ContractModel``，禁止未声明的额外字段。
 """
 
-from enum import StrEnum
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
-
-from financeclaw.kernel.targets import RunTarget
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ContractModel(BaseModel):
@@ -22,29 +19,11 @@ class ContractModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class RunRequest(ContractModel):
-    """发起一次 Run 的请求体：不经会话轮次，直接向目标提交任务。
-
-    使用场景：脚本或集成方调用运行入口时使用；不指定 ``target`` 时，
-    由顶层 Agent（ReAct）自行决策直接回答、调工具、跑流程或委派。
-
-    Attributes:
-        message: 用户消息正文，长度 1~32000 字符。
-        target: 可选运行目标；为 None 时由顶层 Agent 自行决策路由。
-        conversation_id: 可选会话 ID，用于把本次运行挂到已有会话上下文。
-
-    """
-
-    message: Annotated[str, Field(min_length=1, max_length=32_000)]
-    target: RunTarget | None = None
-    conversation_id: Annotated[str, Field(min_length=1, max_length=128)] | None = None
-
-
 class ConversationTurnRequest(ContractModel):
     """创建 message-only Turn 的请求体，即 BFF 唯一产品写入口的入参。
 
     使用场景：终端用户在会话中发言时，BFF 用它创建 Conversation + Turn，
-    由 finance_agent 决定直接回答、调用能力或委派。
+    由 finance_agent 决定直接回答、调用能力或子图调用。
 
     Attributes:
         message: 用户消息正文，长度 1~32000 字符。
@@ -52,38 +31,6 @@ class ConversationTurnRequest(ContractModel):
     """
 
     message: Annotated[str, Field(min_length=1, max_length=32_000)]
-
-
-class ToolInvokeRequest(ContractModel):
-    """直连调用 Tool 的请求体：绕过 Agent 决策、直达治理后的工具执行路径。
-
-    使用场景：集成方明确知道要调用的工具时使用；入参校验、策略与审计
-    仍由 ToolPolicy 与 AuditRepository 保证。
-
-    Attributes:
-        version: 可选工具版本；为 None 时解析为目录中的最新版本。
-        arguments: 工具入参字典，默认为空字典，须符合工具参数 schema。
-
-    """
-
-    version: str | None = None
-    arguments: dict[str, Any] = Field(default_factory=dict)
-
-
-class WorkflowInvokeRequest(ContractModel):
-    """直连调用 Workflow 的请求体：绕过 Agent 决策、直达已发布流程。
-
-    使用场景：集成方需要确定性的多步流程执行时使用；指定版本号以
-    保证流程行为可复现。
-
-    Attributes:
-        version: 目标 Workflow 的语义化版本号（形如 ``1.2.3``）；可为 None。
-        arguments: 流程入参字典，默认为空字典，须符合流程入参 schema。
-
-    """
-
-    version: Annotated[str, Field(pattern=r"^\d+\.\d+\.\d+$")] | None = None
-    arguments: dict[str, Any] = Field(default_factory=dict)
 
 
 class RunAccepted(ContractModel):
@@ -96,7 +43,7 @@ class RunAccepted(ContractModel):
         run_id: 受理的运行 ID。
         thread_id: LangGraph 线程 ID，用于状态查询与流式订阅。
         status: 受理时的初始状态字符串，由服务端状态机定义。
-        target_kind: 目标类型字符串（tool/workflow/agent）。
+        target_kind: 当前固定为 agent，表示顶层会话根。
         idempotent_replay: True 表示本次为幂等重放，复用了先前同键请求的结果。
         conversation_id: 关联的会话 ID；无会话上下文时为 None。
         turn_id: 关联的轮次 ID；无会话上下文时为 None。
@@ -225,25 +172,6 @@ class RunStatusResponse(ContractModel):
     pending_interactions: tuple[dict[str, Any], ...] = ()
 
 
-class AgentResponse(ContractModel):
-    """Agent 运行的最终响应体：返回自然语言回复与运行定位信息。
-
-    使用场景：非流式调用 Agent 完成后返回；客户端优先展示 ``message``。
-
-    Attributes:
-        run_id: 本次运行 ID。
-        thread_id: LangGraph 线程 ID，可用于追问与流式订阅。
-        status: 运行终态状态字符串，由服务端状态机定义。
-        message: Agent 的最终文本回复；无文本产出时为 None。
-
-    """
-
-    run_id: str
-    thread_id: str
-    status: str
-    message: str | None = None
-
-
 class ArtifactReference(ContractModel):
     """产出制品（Artifact）的引用信息，指向一个已落盘的制品。
 
@@ -262,85 +190,6 @@ class ArtifactReference(ContractModel):
     content_type: str
     content_hash: str
     size_bytes: int = Field(ge=0)
-
-
-class DirectToolResponse(ContractModel):
-    """Tool 直连调用的响应体：返回执行状态、结果与治理信息。
-
-    使用场景：直连工具调用结束后返回；调用方依据 ``status`` 分支处理
-    成功结果、审批中断或失败原因。
-
-    Attributes:
-        run_id: 本次调用对应的运行 ID。
-        tool_id: 被调用工具的 ID。
-        tool_version: 实际执行的工具版本。
-        status: 执行结果状态，仅允许 success/denied/rejected/failed/interrupted。
-        result: 工具执行结果（任意 JSON 值）；无结果时为 None。
-        error: 失败原因描述；成功时为 None。
-        artifact: 工具产出的制品引用；未产出制品时为 None。
-        arguments_hash: 入参哈希，用于幂等判定与审计比对；缺失时为 None。
-
-    """
-
-    run_id: str
-    tool_id: str
-    tool_version: str
-    status: Literal["success", "denied", "rejected", "failed", "interrupted"]
-    result: Any = None
-    error: str | None = None
-    artifact: ArtifactReference | None = None
-    arguments_hash: str | None = None
-
-
-class ApprovalDecisionType(StrEnum):
-    """审批决策类型枚举，表示人对 Agent 待执行动作的处置方式。
-
-    使用场景：Tool/Workflow 触发人机协同（HITL）审批而挂起时，审批方
-    提交 ``ApprovalDecision`` 所用的 ``type`` 字段取值。
-    """
-
-    APPROVE = "approve"
-    REJECT = "reject"
-    EDIT = "edit"
-
-
-class ApprovalDecision(ContractModel):
-    """一次人机协同审批的决策内容，决定被挂起动作的后续走向。
-
-    使用场景：Agent 发起需审批的工具/流程调用而挂起等待时，审批人
-    通过审批 API 提交本模型以恢复或终止执行。
-
-    Attributes:
-        type: 决策类型：批准、驳回或修订入参后重提交。
-        arguments_hash: 被审批调用的入参哈希，用于与挂起请求精确匹配。
-        arguments: 修订后的入参；仅 ``EDIT`` 决策允许携带。
-        reason: 审批理由说明，最长 500 字符；可为 None。
-
-    """
-
-    type: ApprovalDecisionType
-    arguments_hash: str | None = None
-    interrupt_id: str | None = None
-    arguments: dict[str, Any] | None = None
-    reason: Annotated[str, Field(max_length=500)] | None = None
-
-    @model_validator(mode="after")
-    def validate_edit(self) -> "ApprovalDecision":
-        """校验 ``arguments`` 字段仅允许出现在 ``EDIT`` 决策中。
-
-        Returns:
-            校验通过的原模型实例。
-
-        Raises:
-            ValueError: ``EDIT`` 决策缺少 ``arguments``，或非 ``EDIT`` 决策
-                携带了 ``arguments``。
-
-        """
-        if self.type is ApprovalDecisionType.EDIT and self.arguments is None:
-            raise ValueError("edit approval decision requires arguments")
-        if self.type is not ApprovalDecisionType.EDIT and self.arguments is not None:
-            raise ValueError("arguments are only valid for edit decisions")
-        return self
 
 
 class StreamEvent(ContractModel):

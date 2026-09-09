@@ -5,37 +5,35 @@ from pydantic import ValidationError
 
 from financeclaw.agent_server.agents.ziwei_offline import OfflineZiweiModel
 from financeclaw.agent_server.domains.ziwei.errors import ZiweiError
-from financeclaw.agent_server.graphs.ziwei_agent import build_ziwei_agent
 from financeclaw.kernel.ziwei import BirthTime, TargetSelector, ZiweiTextResult
 from financeclaw.shared.infrastructure.settings import FinanceClawSettings
-from tests.stage7.support import components, context, envelope, request, settings
+from tests.stage7.support import build_ziwei_agent, components, context, envelope, request, settings
 from tests.support import build_components
 
 
 def test_default_disabled_root_and_explicit_root_allowlist():
-    """开关两侧都使用根 1.4.0，只有启用后才允许紫微委派。"""
+    """开关两侧都使用根 1.5.0，只有启用后才允许紫微子图。"""
     base = build_components(
         FinanceClawSettings(
             _env_file=None, environment="test", offline_model=True, debug_full_io=False
         )
     )
-    assert base.default_agent_profile.version == "1.4.0"
+    assert base.default_agent_profile.version == "1.5.0"
     assert not any("ziwei" in ref.tool_id for ref in base.default_agent_profile.allowed_tools)
     active = components()
-    assert active.default_agent_profile.version == "1.4.0"
+    assert active.default_agent_profile.version == "1.5.0"
     for stack in (base, active):
         with pytest.raises(LookupError):
             stack.agent_profiles.resolve("finance_agent", "1.2.0")
         assert [key for key in stack.agent_profiles if key[0] == "finance_agent"] == [
-            ("finance_agent", "1.4.0")
+            ("finance_agent", "1.5.0")
         ]
     names = {ref.tool_id for ref in active.default_agent_profile.allowed_tools}
-    assert {name for name in names if "ziwei" in name} == {"delegate_agent__ziwei_doushu_agent"}
+    assert {name for name in names if "ziwei" in name} == {"call_agent__ziwei_doushu_agent"}
     specialist = active.agent_profiles.resolve("ziwei_doushu_agent")
     assert len(specialist.allowed_tools) == 5 and not specialist.interaction_points
     for ref in specialist.allowed_tools:
         tool = active.tool_catalog.resolve(ref.tool_id, ref.version)
-        assert not tool.governance.direct_invocation
         assert "runtime" not in tool.tool.tool_call_schema.model_json_schema()["properties"]
         assert "birth" not in tool.tool.tool_call_schema.model_json_schema()["properties"]
 
@@ -104,7 +102,7 @@ def test_irrelevant_calendar_and_fold_parameters_cannot_be_silently_ignored():
 async def test_real_graph_produces_validated_evidence_and_result(mode):
     """子 Agent 一次取日盘，最终结构化结果保留实际盘面与证据。"""
     stack = components()
-    profile = stack.agent_profiles.resolve("ziwei_doushu_agent", "2.0.0")
+    profile = stack.agent_profiles.resolve("ziwei_doushu_agent", "2.1.0")
     graph = build_ziwei_agent(
         stack.agent_factory, profile, stack.ziwei_service, model=OfflineZiweiModel()
     )

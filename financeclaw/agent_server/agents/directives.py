@@ -32,9 +32,9 @@ class InvocationKind(StrEnum):
 
     # 直接调用某个治理工具，能力名即工具 id。
     TOOL = "tool"
-    # 把工作流作为整体能力委托调用，能力名为 delegate_workflow__<id>。
+    # 把工作流作为整体能力调用，能力名为 call_workflow__<id>。
     WORKFLOW = "workflow"
-    # 把领域 Agent 作为整体能力委托调用，能力名为 delegate_agent__<id>。
+    # 把领域 Agent 作为整体能力调用，能力名为 call_agent__<id>。
     AGENT = "agent"
 
 

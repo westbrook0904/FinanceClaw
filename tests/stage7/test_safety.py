@@ -8,13 +8,12 @@ from langchain_core.outputs import ChatGeneration, ChatResult
 
 from financeclaw.agent_server.agents.ziwei_offline import OfflineZiweiModel
 from financeclaw.agent_server.domains.ziwei.errors import ZiweiError
-from financeclaw.agent_server.graphs.ziwei_agent import build_ziwei_agent
 from financeclaw.agent_server.middleware.artifact_middleware import ToolResultArtifactMiddleware
 from financeclaw.agent_server.middleware.middleware import ToolGovernanceMiddleware
 from financeclaw.shared.audit.models import AuditEventType
 from financeclaw.shared.execution_ledger.repository import ExecutionConflict
-from financeclaw.shared.execution_ledger.snapshots import agent_snapshot
-from tests.stage7.support import components, context, envelope, request
+from tests.stage7.support import build_ziwei_agent, components, context, envelope, request
+from tests.worker_scope import worker_snapshot
 
 
 class NoEvidenceModel(OfflineZiweiModel):
@@ -57,7 +56,7 @@ async def test_absent_chart_fails():
     stack = components()
     graph = build_ziwei_agent(
         stack.agent_factory,
-        stack.agent_profiles.resolve("ziwei_doushu_agent", "2.0.0"),
+        stack.agent_profiles.resolve("ziwei_doushu_agent", "2.1.0"),
         stack.ziwei_service,
         model=NoEvidenceModel(),
     )
@@ -72,7 +71,14 @@ async def test_finalization_cannot_bypass_persistent_root_budget(tmp_path):
     stack = components(tmp_path)
     profile = stack.agent_profiles.resolve("ziwei_doushu_agent")
     owner = context(root_run_id="ziwei-child")
-    snapshot = agent_snapshot(profile, owner, thread_id="budget-child", input_hash="synthetic")
+    snapshot = worker_snapshot(
+        profile,
+        owner,
+        stack.tool_catalog,
+        stack.model_profiles,
+        thread_id="budget-child",
+        input_hash="synthetic",
+    )
     snapshot["limits"]["model"] = 2
     stack.conversation_repository.execution.register(owner.run_id, snapshot)
     try:
@@ -92,7 +98,14 @@ async def test_preflight_rejects_release_drift_even_for_clarification(tmp_path):
     stack = components(tmp_path)
     profile = stack.agent_profiles.resolve("ziwei_doushu_agent")
     owner = context(root_run_id="ziwei-child")
-    snapshot = agent_snapshot(profile, owner, thread_id="pinned-child", input_hash="synthetic")
+    snapshot = worker_snapshot(
+        profile,
+        owner,
+        stack.tool_catalog,
+        stack.model_profiles,
+        thread_id="pinned-child",
+        input_hash="synthetic",
+    )
     stack.conversation_repository.execution.register(owner.run_id, snapshot)
     drifted = profile.model_copy(update={"configuration_fingerprint": "different-release"})
     try:
@@ -109,7 +122,7 @@ async def test_preflight_rejects_release_drift_even_for_clarification(tmp_path):
 def test_protected_results_are_never_offloaded_or_token_truncated(tmp_path):
     """跨 child→root 也保留结构，不能返回截断摘要假装完整证据。"""
     stack = components(tmp_path)
-    tool_name = "delegate_agent__ziwei_doushu_agent"
+    tool_name = "call_agent__ziwei_doushu_agent"
     middleware = ToolResultArtifactMiddleware(
         stack.artifact_service, protected_tools=frozenset({tool_name})
     )

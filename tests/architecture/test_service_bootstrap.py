@@ -17,10 +17,9 @@ ROOT = Path(__file__).parents[2]
             "financeclaw",
             ["financeclaw.bff", "financeclaw.coordination", "financeclaw.agent_server"],
         ),
-        ("financeclaw.bff.bootstrap", ["financeclaw.agent_server", "langgraph.graph"]),
         (
-            "financeclaw.coordination.bootstrap",
-            ["financeclaw.bff", "financeclaw.agent_server", "langgraph.graph"],
+            "financeclaw.bff.bootstrap",
+            ["financeclaw.agent_server", "financeclaw.coordination", "langgraph.graph"],
         ),
         ("financeclaw.agent_server.bootstrap", ["financeclaw.bff", "financeclaw.coordination"]),
     ],
@@ -75,15 +74,13 @@ finally:
 
 
 @pytest.mark.parametrize("ziwei_enabled", [False, True])
-def test_coordination_and_runtime_share_exact_release_contracts(
-    tmp_path: Path, ziwei_enabled: bool
-) -> None:
+def test_bff_and_runtime_share_exact_release_contracts(tmp_path: Path, ziwei_enabled: bool) -> None:
     """独立装配的发布快照必须一致，工作流图仅存在于执行端。"""
     if ziwei_enabled:
         pytest.importorskip("x_iztro")
         pytest.importorskip("tzdata")
     from financeclaw.agent_server.bootstrap import build_components
-    from financeclaw.coordination.bootstrap import build_coordination
+    from financeclaw.bff.application.runs.bootstrap import build_bff_runs
     from financeclaw.shared.infrastructure.resources import build_resources
     from financeclaw.shared.infrastructure.settings import FinanceClawSettings
 
@@ -103,14 +100,12 @@ def test_coordination_and_runtime_share_exact_release_contracts(
     )
     resources = build_resources(settings, enable_persistence=True)
     try:
-        coordination = build_coordination(resources=resources)
+        bff = build_bff_runs(settings, resources=resources)
         runtime = build_components(resources=resources)
-        assert runtime.conversation_repository is coordination.conversations.repository
-        assert coordination.conversations.execution.sessions is resources.database.session_factory
-        assert coordination.delegations.repository._sessions is resources.database.session_factory
-        assert coordination.workflows.repository._sessions is resources.database.session_factory
-        assert set(runtime.agent_profiles) == set(coordination.releases.agent_profiles)
-        for key, declared in coordination.releases.agent_profiles.items():
+        assert runtime.conversation_repository is bff.runs.repository
+        assert bff.runs.execution.sessions is resources.database.session_factory
+        assert set(runtime.agent_profiles) == set(bff.releases.agent_profiles)
+        for key, declared in bff.releases.agent_profiles.items():
             actual = runtime.agent_profiles[key]
             assert actual.model_dump(mode="json") == declared.model_dump(mode="json")
             for attr in ("input_schema", "output_schema"):
@@ -118,11 +113,11 @@ def test_coordination_and_runtime_share_exact_release_contracts(
                 assert (schema.model_json_schema() if schema else None) == (
                     getattr(declared, attr).model_json_schema() if getattr(declared, attr) else None
                 )
-        assert set(runtime.tool_catalog) == set(coordination.releases.tool_catalog)
-        for key, declared in coordination.releases.tool_catalog.items():
+        assert set(runtime.tool_catalog) == set(bff.releases.tool_catalog)
+        for key, declared in bff.releases.tool_catalog.items():
             assert runtime.tool_catalog[key].governance == declared.governance
             assert not hasattr(declared, "tool")
-        for key, declared in coordination.releases.workflow_catalog.items():
+        for key, declared in bff.releases.workflow_catalog.items():
             actual = runtime.workflow_catalog[key]
             assert actual.graph is not None and not hasattr(declared, "graph")
             assert {field.name: getattr(declared, field.name) for field in fields(declared)} == {

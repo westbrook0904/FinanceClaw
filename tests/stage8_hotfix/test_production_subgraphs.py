@@ -88,7 +88,7 @@ class FreshMarket(MarketSnapshotTool):
 
 @pytest.fixture
 def stack(tmp_path):
-    """SQLite facts and real compiled graphs; no BFF, Coordinator, HTTP SDK or credentials."""
+    """SQLite facts and real compiled graphs; no BFF, HTTP SDK or credentials."""
     value = build_components(
         settings(
             database_url=f"sqlite+pysqlite:///{tmp_path / 'hf1.db'}",
@@ -96,7 +96,6 @@ def stack(tmp_path):
             artifact_root=str(tmp_path / "artifacts"),
         ),
         enable_persistence=True,
-        enable_subgraphs=True,
         resource_concurrency=1,
         tool_catalog=ToolCatalog(default_local_tools(market_tool=FreshMarket())),
     )
@@ -162,7 +161,7 @@ def root_graph(
     if snapshot_change:
         snapshot_change(snapshot)
     stack.conversation_repository.execution.register(context.run_id, snapshot)
-    from financeclaw.shared.execution_ledger.coordination_tables import RunAuthorizationRow
+    from financeclaw.shared.execution_ledger.run_tables import RunAuthorizationRow
 
     with stack.database.session_factory.begin() as session:
         session.add(
@@ -227,7 +226,7 @@ async def test_serial_workers_complete_inside_one_root_with_gate_one(stack):
     assert json.loads(messages[1].content)["status"] == "completed"
     assert json.loads(messages[1].content)["workflow_version"] == "1.1.0"
     assert result["messages"][-1].content == "all workers finished"
-    assert len(stack.conversation_repository.execution.tree("root")) == 1
+    assert stack.conversation_repository.execution.get("root")["root_run_id"] == "root"
     assert not active_scope.get()
     assert all("ROOT SECRET JOURNAL" not in str(item) for item in ResearchModel.inputs)
 
@@ -339,26 +338,10 @@ async def test_root_release_budget_and_cancel_fail_closed(stack, failure):
     assert not active_scope.get()
 
 
-def test_candidate_catalog_is_opt_in_and_old_releases_are_unchanged(stack):
-    """BFF default and old drain releases retain their original publication snapshots."""
-    old = build_release_catalogs(stack.settings, enable_persistence=True)
-    new = build_release_catalogs(stack.settings, enable_persistence=True, include_subgraphs=True)
-    for key in old.agent_profiles:
-        assert old.agent_profiles[key].model_dump(mode="json") == new.agent_profiles[
-            key
-        ].model_dump(mode="json")
-    assert old.agent_profiles.resolve("finance_agent").version == "1.4.0"
-    assert stack.default_agent_profile.version == "1.4.0"
-    assert all(
-        not ref.tool_id.startswith("delegate_")
-        for ref in new.agent_profiles.resolve("finance_agent", "1.5.0").allowed_tools
-    )
-
-
 @pytest.mark.asyncio
 async def test_revocation_while_waiting_prevents_worker_resume(stack):
     """A valid native resume does not restore a revoked user grant."""
-    from financeclaw.shared.execution_ledger.coordination_tables import RunAuthorizationRow
+    from financeclaw.shared.execution_ledger.run_tables import RunAuthorizationRow
 
     graph, kwargs = root_graph(stack, [portfolio()])
     result = await graph.ainvoke({"messages": [HumanMessage(content="review")]}, **kwargs)
@@ -503,3 +486,41 @@ async def test_native_worker_hitl_preserves_approval_and_root_rejection(stack, d
         decision == "reject"
     )
     assert result["messages"][-1].content == "all workers finished"
+
+
+@pytest.mark.asyncio
+async def test_root_native_hitl_rejection_blocks_subsequent_side_effects(stack):
+    """HF-2 applies root HITL rejection inside the graph before another ReAct tool batch."""
+    graph, kwargs = root_graph(
+        stack,
+        [
+            call("watchlist_add", 1, symbol="AAPL", note="first"),
+            call("watchlist_add", 2, symbol="MSFT", note="after rejection"),
+        ],
+    )
+    result = await graph.ainvoke(
+        {"messages": [HumanMessage(content="synthetic root approval")]}, **kwargs
+    )
+    wait = result["__interrupt__"][0]
+    result = await graph.ainvoke(
+        Command(resume={wait.id: {"decisions": [{"type": "reject"}]}}), **kwargs
+    )
+    assert "__interrupt__" not in result
+    assert stack.conversation_repository.execution.get("root")["side_effects_denied"]
+    assert not stack.tool_catalog.resolve("watchlist_add", "1.0.0").tool.writes
+    assert result["messages"][-1].content == "all workers finished"
+
+
+def test_catalog_contains_only_current_root_and_worker_releases(stack):
+    """All runtime and static contracts agree; unpublished historical releases are absent."""
+    releases = build_release_catalogs(stack.settings, enable_persistence=True)
+    assert set(releases.agent_profiles) == {
+        ("finance_agent", "1.5.0"),
+        ("market_research_agent", "1.3.0"),
+        ("ziwei_doushu_agent", "2.1.0"),
+    }
+    assert stack.default_agent_profile.version == "1.5.0"
+    assert set(stack.agent_profiles) == set(releases.agent_profiles)
+    assert all(
+        not ref.tool_id.startswith("delegate_") for ref in stack.default_agent_profile.allowed_tools
+    )

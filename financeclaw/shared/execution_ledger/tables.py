@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String
+from sqlalchemy import JSON, Boolean, CheckConstraint, DateTime, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from financeclaw.shared.infrastructure.orm import Base, utcnow
@@ -12,12 +12,13 @@ from financeclaw.shared.infrastructure.orm import Base, utcnow
 class RunExecutionRow(Base):
     """每个业务 run 的不可变执行快照和当前执行尝试关联。
 
-    snapshot 内保存原始权限上界与实际发布版本。root_run_id 指向整棵任务树
-    的预算归属；waiting 是最近一次运行观察的中断快照，用户的回答和决定
+    snapshot 内保存原始权限上界与实际发布版本。root_run_id 始终等于 run_id，
+    Worker 共用这条记录的预算；waiting 是中断快照，用户的回答和决定
     则记录在 pending_interactions，二者不能互相替代。
     """
 
     __tablename__ = "run_executions"
+    __table_args__ = (CheckConstraint("root_run_id = run_id", name="ck_execution_is_root"),)
 
     run_id: Mapped[str] = mapped_column(String(128), primary_key=True)
     root_run_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
@@ -27,9 +28,9 @@ class RunExecutionRow(Base):
     # requested 先封闭后续派发；confirmed 需等全部已提交尝试被确认停止。
     cancellation_requested: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     cancellation_confirmed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    # 用户拒绝后关闭根任务的写动作与新委派，仍允许受控交付原任务结果。
+    # 用户拒绝后关闭根任务的写动作与新子图调用，仍允许受控交付原任务结果。
     side_effects_denied: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    # consume 统一更新 root_run_id 对应行，子运行行不单独拥有可消费额度。
+    # 模型调用、叶子 Tool 和恢复均计入这条根记录。
     model_calls: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     tool_calls: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     operation_calls: Mapped[int] = mapped_column(Integer, default=0, nullable=False)

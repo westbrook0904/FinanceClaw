@@ -1,4 +1,4 @@
-"""工具治理的唯一发布声明；BFF/Coordinator 无须加载工具实现。"""
+"""工具治理的唯一发布声明；BFF 无须加载工具实现。"""
 
 from financeclaw.kernel.context import DataClassification
 from financeclaw.kernel.tools import (
@@ -94,7 +94,6 @@ def memory_tool_governance() -> tuple[ToolGovernance, ...]:
     readable_classes = frozenset({DataClassification.INTERNAL, DataClassification.CONFIDENTIAL})
     internal = dict(
         version="1.0.0",
-        direct_invocation=False,
         egress=Egress.INTERNAL,
         sensitivity=Sensitivity.CONFIDENTIAL,
         retry_profile=RetryProfile.NONE,
@@ -159,35 +158,7 @@ def ziwei_tool_governance() -> tuple[ToolGovernance, ...]:
                 sensitivity=Sensitivity.CONFIDENTIAL,
                 retry_profile=RetryProfile.NONE,
                 audit_level=AuditLevel.FULL,
-                direct_invocation=False,
                 allowed_data_classes=frozenset({DataClassification.CONFIDENTIAL}),
             )
         )
     return tuple(result)
-
-
-def delegation_governance(
-    tool_id: str, required_scopes: frozenset[str], version: str
-) -> ToolGovernance:
-    """返回 delegation 工具的治理声明，不创建执行实例。"""
-    return ToolGovernance(
-        tool_id=tool_id,
-        version=version,
-        side_effect=SideEffect.DELEGATION,
-        idempotency=Idempotency.KEY_REQUIRED,
-        risk_level=RiskLevel.MEDIUM,
-        required_scopes=required_scopes,
-        approval=ApprovalMode.NONE,
-        egress=Egress.INTERNAL,
-        sensitivity=Sensitivity.CONFIDENTIAL,
-        retry_profile=RetryProfile.NONE,
-        audit_level=AuditLevel.FULL,
-        direct_invocation=False,
-        allowed_data_classes=frozenset(
-            {
-                DataClassification.PUBLIC,
-                DataClassification.INTERNAL,
-                DataClassification.CONFIDENTIAL,
-            }
-        ),
-    )

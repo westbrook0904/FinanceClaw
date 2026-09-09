@@ -18,7 +18,6 @@ from financeclaw.agent_server.domains.ziwei.errors import ZiweiError
 from financeclaw.kernel.agents import AgentProfile
 from financeclaw.kernel.context import DataClassification, ExecutionContext
 from financeclaw.kernel.ziwei import ChartProjection, ZiweiAnalysisRequest, ZiweiTextResult
-from financeclaw.shared.execution_ledger.snapshots import verify_agent_snapshot
 
 
 def merge_charts(left: list[dict], right: list[dict]) -> list[dict]:
@@ -32,9 +31,9 @@ def merge_charts(left: list[dict], right: list[dict]) -> list[dict]:
 
 
 class ZiweiGraphInput(TypedDict):
-    """Agent Server 输入只允许原委派消息，不接受调用方伪造的出生 state 或计算结果。"""
+    """Agent Server 输入只允许原子图调用消息，不接受调用方伪造的出生 state 或计算结果。"""
 
-    # preflight 从委派 task envelope 提取参数，图内部字段不会作为公开输入。
+    # preflight 从子图调用 task envelope 提取参数，图内部字段不会作为公开输入。
     messages: list[Any]
 
 
@@ -136,7 +135,10 @@ def build_ziwei_agent(
     input_budget: int = 24_000,
 ) -> Any:
     """装配原生 LangGraph；service 关闭时安全返回 unsupported，不调用模型或引擎。"""
-    if profile.output_schema is not ZiweiTextResult:
+    if (
+        profile.context_policy != "worker-task-only-v1"
+        or profile.output_schema is not ZiweiTextResult
+    ):
         raise ValueError("unsupported Ziwei result release")
     primary = model or (factory.model_factory.create(profile.model_profile) if service else None)
     model_profile = factory.model_factory.catalog.resolve(profile.model_profile)
@@ -167,20 +169,13 @@ def build_ziwei_agent(
         """预检和 finalize 恢复都检查冻结发布，不能只依赖取证子图的模型中间件。"""
         ZiweiService.authorize(context)
         repository = getattr(factory.conversation_repository, "execution", None)
-        if profile.context_policy == "worker-task-only-v1":
-            from financeclaw.agent_server.tools.subgraph_scope import verify_graph_release
+        from financeclaw.agent_server.tools.subgraph_scope import verify_graph_release
 
-            verify_graph_release(repository, context, profile)
-            return repository
-        if context.root_run_id:
-            if repository is None:
-                raise RuntimeError("persistent execution budget is not configured")
-            repository.verify_context(context)
-            verify_agent_snapshot(profile, repository.get(context.run_id)["snapshot"])
+        verify_graph_release(repository, context, profile)
         return repository
 
     def result_payload(result: ZiweiTextResult) -> dict:
-        """为父委派 envelope 留出空间；完整领域结果超限时不交付截断的成功。"""
+        """为父子图调用 envelope 留出空间；完整领域结果超限时不交付截断的成功。"""
         inline = service.artifacts.inline_bytes if service and service.artifacts else 16_384
         if len(result.model_dump_json().encode()) > inline - 1024:
             raise ZiweiError(
@@ -223,7 +218,7 @@ def build_ziwei_agent(
             return result_payload(result)
         except (ValidationError, json.JSONDecodeError, KeyError, TypeError):
             raise ZiweiError(
-                "ZIWEI_INPUT_INCOMPLETE", "委派参数格式无效，请重新整理结构化资料。"
+                "ZIWEI_INPUT_INCOMPLETE", "子图调用参数格式无效，请重新整理结构化资料。"
             ) from None
 
     def route(state: ZiweiState) -> str:

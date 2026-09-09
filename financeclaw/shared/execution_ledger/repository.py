@@ -83,7 +83,7 @@ class ExecutionRepository:
     """
 
     def __init__(self, sessions: sessionmaker[Session]) -> None:
-        """绑定与会话、委派、Workflow 相同的事务数据库。"""
+        """绑定与会话、子图调用、Workflow 相同的事务数据库。"""
         self.sessions = sessions
 
     def register(
@@ -91,29 +91,20 @@ class ExecutionRepository:
         run_id: str,
         snapshot: dict[str, Any],
         *,
-        root_run_id: str | None = None,
         session: Session | None = None,
     ) -> dict[str, Any]:
         """固定权限、发布和根归属；显式 Session 参与受理事务且不自行提交。"""
         if session is None:
             with self.sessions.begin() as transaction:
-                return self.register(run_id, snapshot, root_run_id=root_run_id, session=transaction)
+                return self.register(run_id, snapshot, session=transaction)
         _ensure_savepoint_transaction(session)
         try:
             with session.begin_nested():
-                session.add(
-                    RunExecutionRow(
-                        run_id=run_id, root_run_id=root_run_id or run_id, snapshot=snapshot
-                    )
-                )
+                session.add(RunExecutionRow(run_id=run_id, root_run_id=run_id, snapshot=snapshot))
                 session.flush()
         except IntegrityError:
             existing = session.get(RunExecutionRow, run_id)
-            if (
-                existing is None
-                or existing.snapshot != snapshot
-                or existing.root_run_id != (root_run_id or run_id)
-            ):
+            if existing is None or existing.snapshot != snapshot or existing.root_run_id != run_id:
                 raise ExecutionConflict("execution snapshot or root cannot be replaced") from None
         return _execution(session.get(RunExecutionRow, run_id))
 
@@ -122,33 +113,8 @@ class ExecutionRepository:
         with self.sessions() as session:
             row = session.get(RunExecutionRow, run_id)
             if row is None:
-                raise ExecutionConflict(
-                    "execution snapshot missing; drain or reauthorize legacy run"
-                )
+                raise ExecutionConflict("execution snapshot is missing")
             return _execution(row)
-
-    def require_legacy(self, run_id: str | None = None) -> None:
-        """兼容旧入口先核对部署门闩和根归属，正式产品读取不使用这些入口。"""
-        from financeclaw.shared.execution_ledger.driver import require_legacy
-
-        with self.sessions() as session:
-            snapshot = {}
-            if run_id is not None:
-                row = session.get(RunExecutionRow, run_id)
-                if row is not None:
-                    root = session.get(RunExecutionRow, row.root_run_id)
-                    snapshot = (root or row).snapshot
-            require_legacy(session, snapshot)
-
-    def tree(self, root_run_id: str) -> tuple[dict[str, Any], ...]:
-        """列出取消需要确认的整个已登记子树。"""
-        with self.sessions() as session:
-            return tuple(
-                _execution(row)
-                for row in session.scalars(
-                    select(RunExecutionRow).where(RunExecutionRow.root_run_id == root_run_id)
-                )
-            )
 
     def consume(self, run_id: str, kind: str, *, session: Session | None = None) -> None:
         """每次真实尝试计入根预算；恢复、子任务与重试共用持久计数。"""
@@ -162,9 +128,7 @@ class ExecutionRepository:
         root = session.get(RunExecutionRow, row.root_run_id)
         if root is None:
             raise ExecutionConflict("root execution budget is missing")
-        if root.snapshot.get("driver_mode") == "coordinator" or root.snapshot.get(
-            "profile", {}
-        ).get("worker_manifest"):
+        if root.snapshot.get("profile", {}).get("worker_manifest"):
             from financeclaw.shared.execution_ledger.authorization import check_authorization
 
             session.execute(
@@ -241,26 +205,11 @@ class ExecutionRepository:
             raise ExecutionConflict("operation key reused with a different command or snapshot")
         return _operation(row)
 
-    def claim(
-        self, operation_id: str, *, session: Session | None = None, legacy: bool = False
-    ) -> bool:
+    def claim(self, operation_id: str, *, session: Session | None = None) -> bool:
         """只有一个进程获得提交权；领取与根预算扣减属于同一事务。"""
         if session is None:
             with self.sessions.begin() as transaction:
-                return self.claim(operation_id, session=transaction, legacy=legacy)
-        if legacy:
-            from financeclaw.shared.execution_ledger.driver import control, require_legacy
-
-            control(session)
-            operation = session.get(RunOperationRow, operation_id)
-            execution = session.get(RunExecutionRow, operation.run_id)
-            root = session.scalar(
-                select(RunExecutionRow)
-                .where(RunExecutionRow.run_id == execution.root_run_id)
-                .with_for_update()
-                .execution_options(populate_existing=True)
-            )
-            require_legacy(session, root.snapshot)
+                return self.claim(operation_id, session=transaction)
         return self._claim_in_session(operation_id, session)
 
     def _claim_in_session(self, operation_id: str, session: Session) -> bool:
@@ -339,74 +288,6 @@ class ExecutionRepository:
                 )
             )
 
-    def delivery_in_progress(self, run_id: str, delegation_id: str) -> bool:
-        """拒绝后仅允许原委派工具接收已准备交付的终态，不把它当作新委派。
-
-        图恢复会重新进入中断工具的 wrapper。凭工具名称放行会扩大权限，因此
-        必须同时匹配原 handoff、已领取的交付操作、原生中断和确切执行链。
-        新模型调用仍先受批次守卫约束，取消仍由根预算的原子检查拦截。
-        """
-        from financeclaw.shared.execution_ledger.delegation_tables import DelegationRow
-
-        with self.sessions() as session:
-            execution = session.get(RunExecutionRow, run_id)
-            delegation = session.get(DelegationRow, delegation_id)
-            operation = session.get(
-                RunOperationRow, "operation-" + digest([run_id, "delivery:" + delegation_id])
-            )
-            if (
-                execution is None
-                or delegation is None
-                or operation is None
-                or delegation.parent_run_id != run_id
-                or delegation.execution_status not in {"completed", "rejected", "failed"}
-                or operation.status not in {"claimed", "submitted", "uncertain"}
-            ):
-                return False
-            binding = delegation.execution_snapshot or {}
-            if execution.snapshot.get("driver_mode") == "coordinator":
-                from financeclaw.kernel.coordination import DelegationRequest, ResponseDelivery
-                from financeclaw.shared.execution_ledger.coordination_tables import ContinuationRow
-
-                if (
-                    operation.request.get("kind") != "response"
-                    or digest(operation.request) != operation.request_hash
-                ):
-                    return False
-                command = ResponseDelivery.model_validate(operation.request["payload"])
-                request = command.request
-                if not isinstance(request, DelegationRequest):
-                    return False
-                continuation = session.get(
-                    ContinuationRow, request.continuation_ref.continuation_id
-                )
-                return bool(
-                    continuation
-                    and continuation.reference == request.continuation_ref.model_dump(mode="json")
-                    and binding.get("coordination_request") == request.model_dump(mode="json")
-                    and request.request_id == delegation_id
-                    and request.owner_task_id == run_id
-                    and command.responding_task_id == delegation.child_run_id
-                    and operation.request.get("predecessor")
-                    == request.source_execution_ref.operation_id
-                    and execution.server_run_id
-                    in {request.source_execution_ref.operation_id, operation.operation_id}
-                )
-            waiting = execution.waiting or {}
-            predecessor = binding.get("parent_server_run_id")
-            interrupt_id = binding.get("parent_interrupt_id")
-            resume = (operation.request.get("command") or {}).get("resume", {})
-            result = resume.get(interrupt_id, {}) if interrupt_id else resume
-            return bool(
-                predecessor
-                and waiting.get("kind") == "handoff"
-                and waiting.get("payload", {}).get("handoff_id") == delegation_id
-                and waiting.get("server_run_id") == predecessor
-                and operation.request.get("predecessor") == predecessor
-                and execution.server_run_id in {predecessor, operation.server_run_id}
-                and result.get("delegation_id") == delegation_id
-            )
-
     def bind(
         self, operation_id: str, server_run_id: str, *, session: Session | None = None
     ) -> None:
@@ -450,85 +331,8 @@ class ExecutionRepository:
                 .values(status="uncertain", updated_at=datetime.now(UTC))
             )
 
-    def observe(
-        self,
-        operation_id: str,
-        result: dict[str, Any],
-        *,
-        delegation_id: str | None = None,
-        audit: Any = None,
-    ) -> None:
-        """保存观察结果与交付事实；二者原子提交，崩溃后无需重发父恢复。"""
-        from financeclaw.shared.audit.models import AuditEventType, AuditRecord
-        from financeclaw.shared.execution_ledger.delegation_tables import DelegationRow
-
-        event = None
-        with self.sessions.begin() as session:
-            session.execute(
-                update(RunOperationRow)
-                .where(
-                    RunOperationRow.operation_id == operation_id,
-                    RunOperationRow.status != "observed",
-                )
-                .values(status="observed", result=result, updated_at=datetime.now(UTC))
-            )
-            if delegation_id is not None:
-                row = session.get(DelegationRow, delegation_id)
-                if (
-                    row is None
-                    or row.parent_run_id != session.get(RunOperationRow, operation_id).run_id
-                ):
-                    raise ExecutionConflict("delivery operation does not own this delegation")
-                if row.delivered_at is None:
-                    row.delivered_at = datetime.now(UTC)
-                    row.status = "delivered"  # 旧 API 投影；execution_status 保留原终态。
-                    event = AuditRecord(
-                        audit_id="audit-" + digest([operation_id, "delivered"]),
-                        event_type=AuditEventType.DELEGATION_DELIVERED,
-                        tenant_id=row.tenant_id,
-                        subject_id=row.subject_id,
-                        conversation_id=row.conversation_id,
-                        turn_id=row.parent_turn_id,
-                        run_id=row.parent_run_id,
-                        resource_type="delegation",
-                        resource_id=row.delegation_id,
-                        resource_version=row.target_version,
-                        action="delivery",
-                        decision="delivered_to_parent",
-                        policy_version=row.policy_version,
-                        payload_hash=row.arguments_hash,
-                        metadata={"operation_id": operation_id},
-                    )
-                    if audit is not None and hasattr(audit, "append_in_session"):
-                        audit.append_in_session(session, event)
-        # 仅测试用内存审计没有数据库事务；持久化实现走上面的同事务分支。
-        if event is not None and audit is not None and not hasattr(audit, "append_in_session"):
-            audit.append(event)
-
-    def set_waiting(
-        self, run_id: str, waiting: dict[str, Any] | None, *, server_run_id: str | None = None
-    ) -> dict[str, Any] | None:
-        """保存单个中断实例；同实例不重置审批截止时间，也不允许载荷漂移。"""
-        with self.sessions.begin() as session:
-            session.execute(
-                update(RunExecutionRow)
-                .where(RunExecutionRow.run_id == run_id)
-                .values(run_id=run_id)
-            )
-            row = session.get(RunExecutionRow, run_id)
-            if server_run_id is not None and row.server_run_id != server_run_id:
-                raise ExecutionConflict(
-                    "stale observation of a previous server attempt; query again"
-                )
-            if row.waiting and waiting and row.waiting["key"] == waiting["key"]:
-                if row.waiting["payload_hash"] != waiting["payload_hash"]:
-                    raise ExecutionConflict("pending action changed without a new interrupt")
-                return row.waiting
-            row.waiting = waiting
-            return waiting
-
     def request_cancel(self, root_run_id: str, *, session: Session | None = None) -> None:
-        """先关闭整个任务树的新派发；底层停止确认由应用服务另行处理。"""
+        """先关闭根执行的新派发；底层停止确认由应用服务另行处理。"""
         with nullcontext(session) if session is not None else self.sessions.begin() as session:
             session.execute(
                 update(RunExecutionRow)
@@ -536,17 +340,8 @@ class ExecutionRepository:
                 .values(cancellation_requested=True)
             )
 
-    def confirm_cancel(self, run_id: str) -> None:
-        """仅在精确执行尝试已停止后记录底层取消确认。"""
-        with self.sessions.begin() as session:
-            session.execute(
-                update(RunExecutionRow)
-                .where(RunExecutionRow.run_id == run_id)
-                .values(cancellation_confirmed=True)
-            )
-
     def deny_side_effects(self, run_id: str) -> None:
-        """拒绝后禁止根任务树再派发写动作或新委派，不能换工具绕过。"""
+        """拒绝后禁止根执行再派发写动作或新子图调用，不能换工具绕过。"""
         with self.sessions.begin() as session:
             row = session.get(RunExecutionRow, run_id)
             session.execute(

@@ -13,7 +13,6 @@ from sqlalchemy import engine_from_config, pool
 # 导入各模块表定义，确保全部 ORM 模型注册进 Base.metadata，迁移才能感知它们。
 import financeclaw.shared.audit.tables as _audit_tables  # noqa: F401
 import financeclaw.shared.conversation.tables as _conversation_tables  # noqa: F401
-import financeclaw.shared.execution_ledger.workflow_tables as _workflow_tables  # noqa: F401
 import financeclaw.shared.outbox.tables as _outbox_tables  # noqa: F401
 from financeclaw.shared.infrastructure.database import (
     ensure_database_parent,

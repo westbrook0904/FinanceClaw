@@ -17,14 +17,9 @@ Do not enable it for real personal data yet. Follow
 [`docs/operations/ziwei-agent.md`](../../docs/operations/ziwei-agent.md) for matching
 BFF/Agent Server configuration and explicit `ziwei:read` authorization.
 
-Stage 8A adds an opt-in Coordinator profile fragment: [`coordinator.env.example`](coordinator.env.example).
-Apply matching settings to BFF, Ingress and Worker, migrate the shared application database first,
-and configure the Agent Server webhook header separately. See
-[`Coordinator operations`](../../docs/operations/coordinator.md).
-
-Stage 8C makes product reads always use the Coordinator facade. The enabled flag controls only new
-admission. Use [`Cutover operations`](../../docs/operations/coordinator-cutover.md) for legacy inventory,
-read-only shadow checks, stopped-producer evidence, deployment CAS and bounded worker concurrency.
+BFF is the product run controller. Use [`bff-run-control.env.example`](bff-run-control.env.example)
+with the selected profile, and follow [`BFF operations`](../../docs/operations/bff-run-control.md)
+for initial schema setup, admission and dispatch controls.
 
 Stage 8B adds [`notifications.env.example`](notifications.env.example) and a separate sender role.
 Keep the notification admission switch disabled until the real Feishu canary passes; configure the

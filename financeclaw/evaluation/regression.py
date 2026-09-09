@@ -12,13 +12,13 @@ from typing import Any, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
 
-# 发布门禁要求数据集必须覆盖的用例类别：工具、补槽、委派、策略、记忆、
+# 发布门禁要求数据集必须覆盖的用例类别：工具、补槽、子图调用、策略、记忆、
 # 金融时效、恢复、注入、租户与 Provider 故障。
 REQUIRED_CATEGORIES = frozenset(
     {
         "tool_selection",
         "slash_slots",
-        "delegation",
+        "subgraph",
         "policy",
         "context_memory",
         "financial_freshness",

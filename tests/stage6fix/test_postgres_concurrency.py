@@ -11,13 +11,13 @@ from sqlalchemy import create_engine
 from sqlalchemy.engine import make_url
 from sqlalchemy.schema import CreateSchema, DropSchema
 
-from financeclaw.coordination.interactions.repository import InteractionRepository
 from financeclaw.kernel.context import ExecutionContext
+from financeclaw.shared.execution_ledger.interactions import InteractionRepository
 from financeclaw.shared.execution_ledger.repository import ExecutionConflict
 from financeclaw.shared.execution_ledger.snapshots import agent_snapshot
 from financeclaw.shared.infrastructure.database import normalize_database_url
 from financeclaw.shared.infrastructure.settings import FinanceClawSettings
-from tests.stage6fix.test_execution_recovery import OWNER
+from tests.stage8_hotfix.test_bff_runs import OWNER
 from tests.support import build_components
 
 pytestmark = pytest.mark.skipif(
@@ -50,7 +50,7 @@ async def test_postgres_turn_journal_operation_and_budget_cas(tmp_path):
         )
         repository = components.conversation_repository
         conversation = repository.create_conversation(
-            **OWNER, agent_id="finance_agent", agent_profile_version="1.4.0"
+            **OWNER, agent_id="finance_agent", agent_profile_version="1.5.0"
         )
         requests = await asyncio.gather(
             *(
@@ -63,7 +63,7 @@ async def test_postgres_turn_journal_operation_and_budget_cas(tmp_path):
                     message="bounded test",
                     target_type="agent",
                     target_id="finance_agent",
-                    target_version="1.4.0",
+                    target_version="1.5.0",
                 )
                 for _ in range(20)
             )

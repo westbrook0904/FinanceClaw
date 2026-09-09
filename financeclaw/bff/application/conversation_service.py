@@ -1,13 +1,12 @@
-"""BFF 会话用例：创建/读取 Journal，并通过公开协调 API 提交运行操作。"""
+"""BFF 会话用例：创建/读取 Journal，并通过注入的 BFF 运行服务提交操作。"""
 
 import asyncio
 from collections.abc import AsyncIterator
 from typing import Any
 
-from financeclaw.coordination.api import ConversationRunService, CoordinatorAdmission
+from financeclaw.bff.application.runs.service import BFFRunService
 from financeclaw.kernel.agents import AgentProfileCatalog
 from financeclaw.kernel.responses import (
-    ApprovalDecision,
     ConversationMessageResponse,
     ConversationMessagesResponse,
     ConversationResponse,
@@ -20,7 +19,7 @@ from financeclaw.shared.conversation.repository import SqlAlchemyConversationRep
 
 
 class ConversationService:
-    """负责产品会话入口；执行推进与挂起恢复由注入的 Coordination 服务负责。"""
+    """负责产品会话入口；执行推进与挂起恢复由注入的运行服务负责。"""
 
     ROOT_AGENT_ID = "finance_agent"
 
@@ -29,9 +28,9 @@ class ConversationService:
         repository: SqlAlchemyConversationRepository,
         agent_profiles: AgentProfileCatalog,
         *,
-        runs: ConversationRunService | CoordinatorAdmission,
+        runs: BFFRunService,
     ) -> None:
-        """复用 Journal 与发布目录，并显式注入同库的运行协调服务。"""
+        """复用 Journal 与发布目录，并显式注入同库的 BFF 运行服务。"""
         self.repository = repository
         self.agent_profiles = agent_profiles
         self.runs = runs
@@ -177,7 +176,7 @@ class ConversationService:
         tenant_id: str,
         subject_id: str,
     ) -> str | None:
-        """通过 Coordination 的公开会话运行接口处理本次请求。"""
+        """通过 BFF 运行服务处理本次请求。"""
         return await self.runs.assistant_content(run_id, tenant_id=tenant_id, subject_id=subject_id)
 
     async def start_turn(
@@ -192,7 +191,7 @@ class ConversationService:
         authorization=None,
         notification_address=None,
     ) -> RunAccepted:
-        """通过 Coordination 的公开会话运行接口处理本次请求。"""
+        """通过 BFF 运行服务处理本次请求。"""
         return await self.runs.start_turn(
             conversation_id,
             request,
@@ -200,11 +199,8 @@ class ConversationService:
             subject_id=subject_id,
             scopes=scopes,
             idempotency_key=idempotency_key,
-            **(
-                {"authorization": authorization, "notification_address": notification_address}
-                if getattr(self.runs, "coordinated", False)
-                else {}
-            ),
+            authorization=authorization,
+            notification_address=notification_address,
         )
 
     async def status(
@@ -214,43 +210,17 @@ class ConversationService:
         tenant_id: str,
         subject_id: str,
         scopes: frozenset[str] | None = None,
-        allow_dispatch: bool = True,
-        allow_parent_resume: bool = True,
     ) -> RunStatusResponse:
-        """通过 Coordination 的公开会话运行接口处理本次请求。"""
+        """通过 BFF 运行服务处理本次请求。"""
         return await self.runs.status(
             run_id,
             tenant_id=tenant_id,
             subject_id=subject_id,
             scopes=scopes,
-            allow_dispatch=allow_dispatch,
-            allow_parent_resume=allow_parent_resume,
-        )
-
-    async def resume(
-        self,
-        run_id: str,
-        decision: ApprovalDecision,
-        *,
-        tenant_id: str,
-        subject_id: str,
-        scopes: frozenset[str],
-        authorization=None,
-    ) -> RunStatusResponse:
-        """通过 Coordination 的公开会话运行接口处理本次请求。"""
-        return await self.runs.resume(
-            run_id,
-            decision,
-            tenant_id=tenant_id,
-            subject_id=subject_id,
-            scopes=scopes,
-            **(
-                {"authorization": authorization} if getattr(self.runs, "coordinated", False) else {}
-            ),
         )
 
     async def cancel(self, run_id: str, *, tenant_id: str, subject_id: str) -> RunStatusResponse:
-        """通过 Coordination 的公开会话运行接口处理本次请求。"""
+        """通过 BFF 运行服务处理本次请求。"""
         return await self.runs.cancel(run_id, tenant_id=tenant_id, subject_id=subject_id)
 
     async def stream(
@@ -262,25 +232,19 @@ class ConversationService:
         scopes: frozenset[str] = frozenset(),
         last_event_id: str | None = None,
     ) -> AsyncIterator[StreamEvent]:
-        """通过 Coordination 的公开会话运行接口处理本次请求。"""
+        """通过 BFF 运行服务处理本次请求。"""
         async for event in self.runs.stream(
             run_id,
             tenant_id=tenant_id,
             subject_id=subject_id,
             scopes=scopes,
-            **(
-                {"last_event_id": last_event_id} if getattr(self.runs, "coordinated", False) else {}
-            ),
+            last_event_id=last_event_id,
         ):
             yield event
 
     def assert_owned(self, run_id: str, *, tenant_id: str, subject_id: str) -> None:
-        """通过 Coordination 的公开会话运行接口处理本次请求。"""
+        """通过 BFF 运行服务处理本次请求。"""
         return self.runs.assert_owned(run_id, tenant_id=tenant_id, subject_id=subject_id)
-
-    async def reconcile_incomplete(self) -> tuple[str, ...]:
-        """通过 Coordination 的公开会话运行接口处理本次请求。"""
-        return await self.runs.reconcile_incomplete()
 
 
 def _conversation_response(conversation: Any) -> ConversationResponse:

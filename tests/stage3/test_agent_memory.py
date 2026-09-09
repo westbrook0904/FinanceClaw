@@ -4,7 +4,6 @@ import json
 from pathlib import Path
 from typing import Any, ClassVar
 
-import pytest
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, SystemMessage, ToolMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
@@ -14,10 +13,6 @@ from langgraph.types import Command
 from pydantic import PrivateAttr, SecretStr
 
 from financeclaw.agent_server.memory.models import MemoryDraft
-from financeclaw.bff.application.conversation_service import ConversationService
-from financeclaw.coordination.api import ConversationRunService
-from financeclaw.coordination.application.conversation_runs import ApprovalExpired
-from financeclaw.kernel.responses import ApprovalDecision
 from financeclaw.shared.audit.repository import InMemoryAuditRepository
 from financeclaw.shared.infrastructure.settings import FinanceClawSettings
 from tests.support import build_components
@@ -285,79 +280,6 @@ def test_cross_thread_recall_is_injected_and_manifested(tmp_path: Path) -> None:
     assert manifests[0].memory_refs[0].schema_version == record.schema_version
     # 继续执行前验证内部不变量。
     assert manifests[0].memory_refs[0].injection_reason == "lexical_relevance"
-    # 显式处理 `components.database is not None` 分支。
-    if components.database is not None:
-        components.database.close()
-
-
-@pytest.mark.asyncio
-async def test_expired_memory_approval_cannot_resume(tmp_path: Path) -> None:
-    """验证函数名所描述的业务场景符合预期。"""
-
-    # 定义当前操作使用的局部 NoResumeClient 辅助类型。
-    class NoResumeClient:
-        """`NoResumeClient` 封装外部服务的调用边界。"""
-
-        async def resume_run(self, **kwargs: Any) -> dict[str, Any]:
-            """恢复 `run`，并返回边界约定的结果。"""
-            del kwargs
-            raise AssertionError("expired approval must not reach Agent Server")
-
-    # 准备 components，供后续步骤使用。
-    components = build_components(settings(tmp_path / "timeout.db"), enable_persistence=True)
-    # 准备 repository，供后续步骤使用。
-    repository = components.conversation_repository
-    # 继续执行前验证内部不变量。
-    assert repository is not None
-    # 准备 context and _，供后续步骤使用。
-    context, _ = conversation_context(repository, key="expired-memory")
-    from datetime import UTC, datetime, timedelta
-
-    from financeclaw.shared.execution_ledger.snapshots import agent_snapshot
-
-    repository.execution.register(
-        context.run_id,
-        agent_snapshot(
-            components.default_agent_profile, context, thread_id="expired", input_hash="0" * 64
-        ),
-    )
-    repository.execution.set_waiting(
-        context.run_id,
-        {
-            "key": "expired",
-            "kind": "hitl",
-            "expires_at": (datetime.now(UTC) - timedelta(seconds=1)).isoformat(),
-        },
-    )
-    # 前置条件满足后调用 update turn status。
-    repository.update_turn_status(context.run_id, "interrupted")
-    # 准备 service，供后续步骤使用。
-    service = ConversationService(
-        repository,
-        components.agent_profiles,
-        runs=ConversationRunService(
-            NoResumeClient(),  # type: ignore[arg-type]
-            repository,
-            components.agent_profiles,
-            approval_timeout_seconds=0,
-        ),
-    )
-    # 限定依赖资源的生命周期，并确保资源能够可靠释放。
-    with pytest.raises(ApprovalExpired):
-        await service.resume(
-            context.run_id,
-            ApprovalDecision(type="approve"),
-            tenant_id=context.tenant_id,
-            subject_id=context.subject_id,
-            scopes=context.scopes,
-        )
-    # 继续执行前验证内部不变量。
-    assert (
-        repository.get_turn_owned(
-            context.run_id, context.tenant_id, context.subject_id
-        ).status.value
-        == "interrupted"
-    )
     # 显式处理 `components.database is not None` 分支。
     if components.database is not None:
         components.database.close()

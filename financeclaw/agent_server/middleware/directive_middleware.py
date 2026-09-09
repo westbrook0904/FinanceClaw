@@ -37,10 +37,6 @@ class InvocationDirectiveMiddleware(AgentMiddleware):
 
     """
 
-    def __init__(self, *, composite: bool = False):
-        """固定当前根发布使用的能力命名，不按模型输入切换协议。"""
-        self.prefix = "call" if composite else "delegate"
-
     def _apply(self, request: ModelRequest) -> ModelRequest:
         """解析最新用户消息中的指令，并按槽位评估结果改写模型请求。"""
         # 1. 仅当最新消息是字符串内容的用户消息时才尝试解析指令。
@@ -53,11 +49,11 @@ class InvocationDirectiveMiddleware(AgentMiddleware):
         # 2. 无指令时原样放行，不做任何改写。
         if directive is None:
             return request
-        # 3. 计算指令对应的能力名：tool 用原 id，workflow/agent 用委托包装名。
+        # 3. 计算指令对应的能力名：tool 用原 id，workflow/agent 用子图调用包装名。
         capability_name = (
             directive.resource_id
             if directive.kind is InvocationKind.TOOL
-            else f"{self.prefix}_{directive.kind.value}__{directive.resource_id}"
+            else f"call_{directive.kind.value}__{directive.resource_id}"
         )
         # 4. 在候选工具中查找匹配能力；找不到时注入"不可用"指令并清空工具。
         selected = self._find_tool(request.tools, capability_name)

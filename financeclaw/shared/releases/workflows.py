@@ -9,11 +9,9 @@ from financeclaw.kernel.workflows.models import (
 )
 from financeclaw.kernel.workflows.portfolio_review import (
     APPROVAL_POINT,
-    ASSISTANT_ID,
     MARKET_TOOL_ID,
     MARKET_TOOL_VERSION,
     WORKFLOW_ID,
-    WORKFLOW_VERSION,
     PortfolioReviewInput,
     PortfolioReviewOutput,
 )
@@ -25,8 +23,8 @@ def portfolio_review_release(
     """固定工作流的 Schema、工具版本、审批点与运行超时。"""
     return WorkflowRelease(
         workflow_id=WORKFLOW_ID,
-        version=WORKFLOW_VERSION,
-        assistant_id=ASSISTANT_ID,
+        version="1.1.0",
+        assistant_id="portfolio_review_v1_1_0",
         input_schema=PortfolioReviewInput,
         output_schema=PortfolioReviewOutput,
         model_profile_id="default@1.0.0",

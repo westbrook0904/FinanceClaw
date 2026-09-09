@@ -1,7 +1,7 @@
 """审计记录的领域模型定义。
 
 位于 audit 模块的模型层：定义审计事件类型枚举与不可变的审计记录模型，覆盖工具
-调用、审批、记忆写入、工作流与委派的完整生命周期。
+调用、审批、记忆写入、工作流与子图调用的完整生命周期。
 """
 
 from datetime import UTC, datetime
@@ -37,12 +37,6 @@ class AuditEventType(StrEnum):
         WORKFLOW_REJECTED: 工作流审批被驳回。
         WORKFLOW_COMPLETED: 工作流运行完成。
         WORKFLOW_FAILED: 工作流运行失败。
-        DELEGATION_REQUESTED: 委派请求已登记。
-        DELEGATION_STARTED: 委派子任务已启动。
-        DELEGATION_INTERRUPTED: 委派子任务被中断。
-        DELEGATION_COMPLETED: 委派子任务执行完成。
-        DELEGATION_FAILED: 委派子任务执行失败。
-        DELEGATION_DELIVERED: 委派结果已回递给父运行。
 
     """
 
@@ -65,23 +59,17 @@ class AuditEventType(StrEnum):
     WORKFLOW_COMPLETED = "workflow.completed"
     WORKFLOW_FAILED = "workflow.failed"
     WORKFLOW_CANCELLED = "workflow.cancelled"
-    DELEGATION_REQUESTED = "delegation.requested"
-    DELEGATION_STARTED = "delegation.started"
-    DELEGATION_INTERRUPTED = "delegation.interrupted"
-    DELEGATION_COMPLETED = "delegation.completed"
-    DELEGATION_FAILED = "delegation.failed"
-    DELEGATION_DELIVERED = "delegation.delivered"
     INTERACTION_REQUESTED = "interaction.requested"
     INTERACTION_DECIDED = "interaction.decided"
     INTERACTION_CLOSED = "interaction.closed"
-    COORDINATION_UPDATED = "coordination.updated"
+    RUN_PROGRESS_UPDATED = "run.progress_updated"
     RUN_AUTHORIZED = "run.authorized"
 
 
 class AuditRecord(BaseModel):
     """一条不可变的永久审计记录，描述"谁在何时对什么资源做了什么决定"。
 
-    使用场景：工具调用、审批、记忆写入、工作流与委派等关键动作发生时构造，
+    使用场景：工具调用、审批、记忆写入、工作流与子图调用等关键动作发生时构造，
     由 AuditRepository 与 Outbox 事件在同一事务中落盘，作为合规与追溯依据。
 
     Attributes:

@@ -10,7 +10,7 @@ from financeclaw.shared.execution_ledger.tables import RunExecutionRow, RunOpera
 from financeclaw.shared.infrastructure.database import ApplicationDatabase
 
 
-def test_admission_children_do_not_commit_callers_transaction(tmp_path) -> None:
+def test_admission_writes_do_not_commit_callers_transaction(tmp_path) -> None:
     """已执行的 Journal、快照和操作 SQL 随最外层事务一同回滚。"""
     db = ApplicationDatabase(f"sqlite:///{tmp_path / 'shared.db'}")
     db.initialize_schema()
@@ -19,7 +19,7 @@ def test_admission_children_do_not_commit_callers_transaction(tmp_path) -> None:
         tenant_id="tenant",
         subject_id="owner",
         agent_id="finance_agent",
-        agent_profile_version="1.4.0",
+        agent_profile_version="1.5.0",
     )
     with pytest.raises(RuntimeError, match="crash"):
         with db.session_factory.begin() as session:
@@ -32,7 +32,7 @@ def test_admission_children_do_not_commit_callers_transaction(tmp_path) -> None:
                 message="hello",
                 target_type="agent",
                 target_id="finance_agent",
-                target_version="1.4.0",
+                target_version="1.5.0",
                 session=session,
             )
             repository.execution.register(turn.run_id, {"frozen": True}, session=session)
@@ -52,13 +52,14 @@ def test_admission_children_do_not_commit_callers_transaction(tmp_path) -> None:
 
 
 def test_execution_root_cannot_be_replaced_by_idempotent_registration(tmp_path) -> None:
-    """相同 snapshot 不允许把已登记 child 迁移到另一根预算。"""
+    """幂等登记复用原根，但不能替换已冻结的执行快照。"""
     db = ApplicationDatabase(f"sqlite:///{tmp_path / 'root.db'}")
     db.initialize_schema()
     execution = SqlAlchemyConversationRepository(db.session_factory).execution
-    execution.register("child", {"input": "frozen"}, root_run_id="root")
+    execution.register("root", {"input": "frozen"})
+    assert execution.register("root", {"input": "frozen"})["root_run_id"] == "root"
     with pytest.raises(ExecutionConflict, match="root"):
-        execution.register("child", {"input": "frozen"}, root_run_id="another-root")
+        execution.register("root", {"input": "changed"})
     db.close()
 
 

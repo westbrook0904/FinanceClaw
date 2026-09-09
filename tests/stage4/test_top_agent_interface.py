@@ -174,4 +174,4 @@ def test_workflow_directive_does_not_turn_into_a_public_target_or_tool_substitut
         version="v2",
     )
 
-    assert "no registered delegation capability" in result.value["messages"][-1].content
+    assert "no registered composite Tool capability" in result.value["messages"][-1].content

@@ -38,7 +38,6 @@ class AgentProfile(BaseModel):
         agent_id: Agent 唯一标识，如 ``finance_agent``。
         version: 档案版本，必须为 ``主.次.修订`` 语义化版本格式。
         description: 档案的人类可读描述，默认空串。
-        delegatable: 是否允许被其他 Agent 委托调用，默认 False。
         required_scopes: 调用该 Agent 所需的权限作用域集合，默认为空集。
         model_profile: 引用的模型档案（含模型 id 与版本）。
         system_prompt_template: Agent 的系统提示模板文本。
@@ -56,7 +55,6 @@ class AgentProfile(BaseModel):
     agent_id: str
     version: str = Field(pattern=r"^\d+\.\d+\.\d+$")
     description: str = ""
-    delegatable: bool = False
     required_scopes: frozenset[str] = Field(default_factory=frozenset)
     model_profile: ModelProfileRef
     system_prompt_template: str
@@ -68,7 +66,7 @@ class AgentProfile(BaseModel):
     max_tool_calls: int = Field(default=12, ge=1, le=128)
     # 单次模型输出的工具批次上限；整批准入通过后才进入 HITL 和 ToolNode。
     max_tool_batch: int = Field(default=8, ge=1, le=32)
-    # 根任务树持久预算，覆盖所有子任务、恢复及真实重试；区别于单 Agent 限额。
+    # 根执行持久预算，覆盖所有 Worker、恢复及真实重试；区别于单 Agent 限额。
     max_tree_model_calls: int = Field(default=64, ge=1, le=256)
     max_tree_tool_calls: int = Field(default=128, ge=1, le=1024)
     max_tree_operations: int = Field(default=64, ge=1, le=256)
@@ -83,12 +81,11 @@ class AgentProfile(BaseModel):
     output_state_key: str = "structured_response"
     # 可提问的类型、选项、Schema 和权限在发布时声明，模型只提供问题正文。
     interaction_points: tuple[InteractionPoint, ...] = ()
-    # Canonical JSON declarations keep nested releases immutable; absent on historical releases.
-    worker_manifest: tuple[str, ...] = Field(default=(), exclude_if=lambda value: not value)
-    # 领域运行采用声明的资料分级；内部默认值省略序列化以保持旧发布快照兼容。
+    # Canonical JSON declarations keep nested releases immutable.
+    worker_manifest: tuple[str, ...] = ()
+    # 领域运行采用声明的资料分级。
     data_classification: DataClassification = Field(
         default=DataClassification.INTERNAL,
-        exclude_if=lambda value: value == DataClassification.INTERNAL,
     )
 
     @field_serializer("required_scopes")
@@ -107,19 +104,16 @@ class AgentProfile(BaseModel):
             raise ValueError("AgentProfile cannot bind multiple versions of the same tool name")
         if self.context_policy not in {
             "stage2-journal-v1",
-            "delegated-task-only-v1",
             "worker-task-only-v1",
         }:
             raise ValueError("unsupported Agent context policy")
-        if (
-            self.delegatable or self.context_policy == "worker-task-only-v1"
-        ) and self.memory_policy != "none":
-            raise ValueError("delegated Agents cannot recall root long-term memory")
+        if (self.context_policy == "worker-task-only-v1") and self.memory_policy != "none":
+            raise ValueError("Worker Agents cannot recall root long-term memory")
         return self
 
     @property
     def execution_assistant_id(self) -> str:
-        """服务端图映射；未声明的旧档案仅供兼容，发布档案必须显式固定。"""
+        """服务端图映射；发布档案显式固定 assistant_id。"""
         return self.assistant_id or self.agent_id
 
     @property
@@ -131,7 +125,7 @@ class AgentProfile(BaseModel):
 class AgentProfileCatalog(Mapping[tuple[str, str], AgentProfile]):
     """只读的 Agent 档案目录，按键 ``(agent_id, version)`` 存取档案。
 
-    使用场景：启动期收集全部 AgentProfile 构造一次；装配与委托解析时通过
+    使用场景：启动期收集全部 AgentProfile 构造一次；装配与子图调用解析时通过
     resolve 按 id 取指定版本或最高版本的档案。
 
     """

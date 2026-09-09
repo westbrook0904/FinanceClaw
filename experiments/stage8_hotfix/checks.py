@@ -1,4 +1,4 @@
-"""本地原生图与 HTTP 探针共享的行为验收，不依赖应用层委托实现。"""
+"""本地原生图与 HTTP 探针共享的行为验收，独立验证原生子图行为。"""
 
 import json
 from collections import Counter
@@ -23,7 +23,7 @@ def waiting(snapshot: dict, scenario: str) -> tuple[dict | None, dict | None]:
     interrupts = [i for task in tasks for i in task.get("interrupts", [])]
     if not interrupts:
         return None, None
-    require(len(interrupts) == 1, "HF-0 expects one user wait, never a delegation")
+    require(len(interrupts) == 1, "expected exactly one native user wait")
     current = interrupts[0]
     payload = current["value"]
     require(bool(current["id"]), "top-level interrupt must expose an addressable ID")
@@ -48,7 +48,8 @@ def waiting(snapshot: dict, scenario: str) -> tuple[dict | None, dict | None]:
         kind = "native_hitl"
     else:
         require(
-            payload.get("kind") in {"user_interaction", "workflow_approval"}, "unexpected handoff"
+            payload.get("kind") in {"user_interaction", "workflow_approval"},
+            "unexpected native interrupt",
         )
         require(payload["root_call_id"] == outer["id"], "payload bound to another Tool call")
         require(payload["label"] == outer["args"]["label"], "payload bound to another invocation")

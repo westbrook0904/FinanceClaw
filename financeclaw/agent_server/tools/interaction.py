@@ -80,7 +80,7 @@ class UserQuestionTool(BaseTool):
     """资料／选项提问独占工具批次，恢复后继续当前 Agent 的工具循环。"""
 
     # interrupt 暂停当前 owner，用户回答经应用服务验证后恢复同一工具；
-    # 与委派工具不同，这里不创建 child run，也不由父 Agent 自动代答。
+    # 问题通过原生 interrupt 传播到根，由用户回答后恢复当前子图。
 
     point: InteractionPoint
     args_schema: type[BaseModel] = UserQuestionInput
@@ -127,7 +127,6 @@ def question_tools(points: tuple[InteractionPoint, ...]) -> tuple[ManagedTool, .
                     egress=Egress.INTERNAL,
                     sensitivity=Sensitivity.INTERNAL,
                     retry_profile=RetryProfile.NONE,
-                    direct_invocation=False,
                 ),
             )
         )

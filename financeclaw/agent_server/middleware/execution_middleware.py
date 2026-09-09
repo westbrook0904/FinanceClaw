@@ -1,4 +1,4 @@
-"""根任务树累计预算与共享资源门控，原生重试仍由 LangChain 执行。"""
+"""根执行累计预算与共享资源门控，原生重试仍由 LangChain 执行。"""
 
 import asyncio
 from collections.abc import Callable
@@ -9,7 +9,6 @@ from langchain.agents.middleware import AgentMiddleware
 
 from financeclaw.agent_server.middleware.middleware import _context
 from financeclaw.agent_server.tools.catalog import ToolCatalog
-from financeclaw.agent_server.tools.delegation import DelegationTool, delegation_handoff_id
 from financeclaw.agent_server.tools.subgraph_scope import verify_graph_release
 from financeclaw.kernel.tools import SideEffect
 from financeclaw.shared.execution_ledger.repository import ExecutionConflict, ExecutionRepository
@@ -57,19 +56,8 @@ class ExecutionBudgetMiddleware(AgentMiddleware):
         root = self.repository.get(context.root_run_id)
         if kind == "tool" and root["side_effects_denied"]:
             managed = self.catalog.resolve(request.tool_call["name"])
-            delivering = isinstance(
-                managed.tool, DelegationTool
-            ) and self.repository.delivery_in_progress(
-                context.run_id,
-                delegation_handoff_id(
-                    parent_run_id=context.run_id,
-                    tool_call_id=request.tool_call["id"],
-                    kind=managed.tool.handoff_kind,
-                    target_id=managed.tool.target_id,
-                ),
-            )
-            if managed.governance.side_effect is not SideEffect.READ and not delivering:
-                raise ExecutionConflict("user rejected side effects; re-delegation is not allowed")
+            if managed.governance.side_effect is not SideEffect.READ:
+                raise ExecutionConflict("user rejected side effects")
         self.repository.consume(context.run_id, kind)
 
     def wrap_model_call(self, request: Any, handler: Callable) -> Any:

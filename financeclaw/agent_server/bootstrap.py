@@ -12,10 +12,6 @@ from financeclaw.agent_server.llm.factory import ModelFactory
 from financeclaw.agent_server.memory.policy import MemoryPolicy
 from financeclaw.agent_server.memory.service import LongTermMemoryService
 from financeclaw.agent_server.tools.catalog import ToolCatalog
-from financeclaw.agent_server.tools.delegation import (
-    agent_delegation_tool,
-    workflow_delegation_tool,
-)
 from financeclaw.agent_server.tools.local import default_local_tools
 from financeclaw.agent_server.tools.mcp import managed_mcp_quote_tool
 from financeclaw.agent_server.tools.memory import default_memory_tools
@@ -24,7 +20,6 @@ from financeclaw.kernel.agents import AgentProfile, AgentProfileCatalog
 from financeclaw.kernel.models import ModelProfileCatalog
 from financeclaw.kernel.tool_catalog import ToolRelease, ToolReleaseCatalog
 from financeclaw.kernel.workflows.catalog import WorkflowCatalog
-from financeclaw.kernel.workflows.models import WorkflowStatus
 from financeclaw.shared.artifacts.service import ArtifactService
 from financeclaw.shared.audit.repository import (
     AuditRepository,
@@ -49,7 +44,7 @@ class AgentServerComponents:
 
     Attributes:
         settings: 全局配置，涵盖环境、模型、数据库、存储与观测等。
-        tool_catalog: 治理后的工具目录，含本地工具、MCP 报价工具、记忆与委派工具。
+        tool_catalog: 治理后的工具目录，含本地工具、MCP 报价工具、记忆与子图调用工具。
         tool_policy: 工具调用策略，承载调用校验与治理规则。
         audit: 审计仓储；未注入且未启用持久化时为内存实现。
         model_profiles: 模型档案目录，登记主模型与降级候选档案。
@@ -88,9 +83,9 @@ class AgentServerComponents:
 
     @property
     def default_agent_profile(self) -> AgentProfile:
-        """返回仍由旧 BFF 准入的 finance_agent@1.4.0 档案。
+        """返回本次装配已注册的最新顶层档案，仅用于创建新会话。
 
-        HF-1 只注册新图，默认版本须等 HF-2 新驱动完成后显式切换。
+        当前产品装配仅注册 1.5.0 根发布。
         候选功能开关决定当前发布的工具配置；已创建会话使用它保存的固定版本，
         不应在每轮调用时重新选择默认档案。
 
@@ -98,7 +93,7 @@ class AgentServerComponents:
             顶层财务 Agent 的 ``AgentProfile``。
 
         """
-        return self.agent_profiles.resolve("finance_agent", "1.4.0")
+        return self.agent_profiles.resolve("finance_agent")
 
 
 def build_components(
@@ -108,10 +103,9 @@ def build_components(
     audit: AuditRepository | None = None,
     enable_persistence: bool = False,
     resources: ApplicationResources | None = None,
-    enable_subgraphs: bool = False,
     resource_concurrency: int = 8,
 ) -> AgentServerComponents:
-    """装配执行端；不创建 Coordinator 客户端、业务服务或飞书连接。"""
+    """装配执行端；不创建 BFF 业务服务或飞书连接。"""
     resources = resources or build_resources(
         settings, audit=audit, enable_persistence=enable_persistence
     )
@@ -180,7 +174,6 @@ def build_components(
     releases = build_release_catalogs(
         settings,
         enable_persistence=artifact_service is not None,
-        include_subgraphs=enable_subgraphs,
         base_tool_catalog=ToolReleaseCatalog(
             ToolRelease(item.governance) for item in base_tool_catalog.values()
         ),
@@ -205,21 +198,7 @@ def build_components(
             projection_bytes=settings.ziwei_projection_bytes,
         )
     chart_tools = ziwei_tools(ziwei_service)
-    ziwei_delegate = agent_delegation_tool(agent_profiles.resolve("ziwei_doushu_agent", "2.0.0"))
-    ziwei_delegate.tool.metadata = {"preserve_result": True}
-    tool_catalog = ToolCatalog(
-        (
-            *base_tool_catalog.values(),
-            *(
-                workflow_delegation_tool(definition)
-                for definition in workflow_catalog.published()
-                if definition.status is WorkflowStatus.ACTIVE
-            ),
-            agent_delegation_tool(agent_profiles.resolve("market_research_agent", "1.2.0")),
-            *chart_tools,
-            ziwei_delegate,
-        )
-    )
+    tool_catalog = ToolCatalog((*base_tool_catalog.values(), *chart_tools))
     # 12. 构建 Agent 工厂：绑定模型、工具、策略、审计与各类服务。
     agent_factory = AgentFactory(
         model_factory=model_factory,
@@ -236,17 +215,16 @@ def build_components(
         memory_recall_limit=settings.memory_recall_limit,
         resource_concurrency=resource_concurrency,
     )
-    if enable_subgraphs:
-        from financeclaw.agent_server.tools.subgraph_assembly import assemble_subgraph_tools
+    from financeclaw.agent_server.tools.subgraph_assembly import assemble_subgraph_tools
 
-        composites = assemble_subgraph_tools(
-            releases,
-            agent_factory,
-            settings=settings,
-            ziwei_service=ziwei_service,
-        )
-        tool_catalog = ToolCatalog((*tool_catalog.values(), *composites))
-        agent_factory.tool_catalog = tool_catalog
+    composites = assemble_subgraph_tools(
+        releases,
+        agent_factory,
+        settings=settings,
+        ziwei_service=ziwei_service,
+    )
+    tool_catalog = ToolCatalog((*tool_catalog.values(), *composites))
+    agent_factory.tool_catalog = tool_catalog
     # 13. 汇总返回组件集合。
     return AgentServerComponents(
         settings=settings,

@@ -22,7 +22,9 @@ from financeclaw.shared.artifacts.service import ArtifactService
 from financeclaw.shared.artifacts.storage import InMemoryArtifactStore
 from financeclaw.shared.audit.models import AuditEventType
 from financeclaw.shared.audit.repository import InMemoryAuditRepository
+from financeclaw.shared.execution_ledger.repository import ExecutionRepository
 from financeclaw.shared.infrastructure.database import ApplicationDatabase
+from tests.worker_scope import invocation
 
 
 def _context(*scopes: str, run_id: str = "run-workflow") -> ExecutionContext:
@@ -63,9 +65,11 @@ def _workflow(tmp_path: Path, *, market: MarketSnapshotTool | None = None):
         policy=ToolPolicy(),
         audit=audit,
         artifact_service=artifact_service,
+        execution=ExecutionRepository(database.session_factory),
         checkpointer=InMemorySaver(),
         clock=lambda: datetime(2026, 9, 3, tzinfo=UTC),
     )
+    definition = scoped_definition(definition, database, tool_catalog)
     return database, store, audit, definition
 
 
@@ -76,9 +80,9 @@ def test_catalog_schema_and_topology_are_immutable_and_version_pinned(tmp_path: 
     # 准备 catalog，供后续步骤使用。
     catalog = WorkflowCatalog((definition,))
     # 继续执行前验证内部不变量。
-    assert catalog.resolve("portfolio_review").version == "1.0.0"
+    assert catalog.resolve("portfolio_review").version == "1.1.0"
     # 继续执行前验证内部不变量。
-    assert definition.assistant_id == "portfolio_review_v1"
+    assert definition.assistant_id == "portfolio_review_v1_1_0"
     # 继续执行前验证内部不变量。
     assert [(tool.tool_id, tool.version) for tool in definition.allowed_tools] == [
         ("market_snapshot", "1.0.0")
@@ -138,7 +142,7 @@ def test_graph_interrupts_then_publishes_one_bounded_provenance_artifact(
     # 继续执行前验证内部不变量。
     assert approval["approval_point"] == "publish_portfolio_report"
     # 继续执行前验证内部不变量。
-    assert approval["workflow_version"] == "1.0.0"
+    assert approval["workflow_version"] == "1.1.0"
     # 继续执行前验证内部不变量。
     assert approval["allowed_decisions"] == ["approve", "reject"]
     # 继续执行前验证内部不变量。
@@ -148,12 +152,12 @@ def test_graph_interrupts_then_publishes_one_bounded_provenance_artifact(
     completed = definition.graph.invoke(
         Command(
             resume={
-                "decisions": [
-                    {
-                        "type": "approve",
-                        "arguments_hash": approval["arguments_hash"],
-                    }
-                ]
+                interrupted.interrupts[0].id: {
+                    "type": "approve",
+                    "arguments_hash": approval["arguments_hash"],
+                    "invocation_id": approval["invocation_id"],
+                    "approval_id": approval["approval_id"],
+                }
             }
         ),
         config=config,
@@ -224,7 +228,16 @@ def test_reject_stale_authorization_and_transient_retry_fail_closed(tmp_path: Pa
     assert market.call_count == 2
     # 准备 rejected，供后续步骤使用。
     rejected = definition.graph.invoke(
-        Command(resume={"decisions": [{"type": "reject", "message": "not now"}]}),
+        Command(
+            resume={
+                interrupted.interrupts[0].id: {
+                    "type": "reject",
+                    "message": "not now",
+                    "invocation_id": interrupted.interrupts[0].value["invocation_id"],
+                    "approval_id": interrupted.interrupts[0].value["approval_id"],
+                }
+            }
+        ),
         config=config,
         context=context,
         version="v2",
@@ -253,10 +266,14 @@ def test_reject_stale_authorization_and_transient_retry_fail_closed(tmp_path: Pa
         artifact_service=ArtifactService(
             SqlAlchemyArtifactRepository(database.session_factory), store
         ),
+        execution=ExecutionRepository(database.session_factory),
         checkpointer=InMemorySaver(),
         clock=lambda: datetime(2026, 9, 10, tzinfo=UTC),
     )
     # 准备 stale，供后续步骤使用。
+    stale_definition = scoped_definition(
+        stale_definition, database, ToolCatalog(default_local_tools())
+    )
     stale = stale_definition.graph.invoke(
         _input(max_age=24),
         config={"configurable": {"thread_id": "portfolio-stale"}},
@@ -318,3 +335,23 @@ def test_report_artifact_write_is_idempotent_for_the_same_run_node(tmp_path: Pat
         )
     # 前置条件满足后调用 close。
     database.close()
+
+
+def scoped_definition(definition, database, catalog):
+    """Supply a trusted root scope around the actual compiled Workflow in focused graph tests."""
+    from dataclasses import replace
+    from types import SimpleNamespace
+
+    graph = definition.graph
+
+    def invoke(value, *, context, **kwargs):
+        """Enter Worker scope and preserve the native v2 state response."""
+        with invocation(
+            ExecutionRepository(database.session_factory), definition, catalog, {}, context
+        ) as scoped:
+            return graph.invoke(value, context=scoped, **kwargs)
+
+    return replace(
+        definition,
+        graph=SimpleNamespace(invoke=invoke, get_graph=graph.get_graph, get_state=graph.get_state),
+    )

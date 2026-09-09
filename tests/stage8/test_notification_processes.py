@@ -13,7 +13,7 @@ from sqlalchemy import select
 from financeclaw.bff.notifications.feishu import Receipt
 from financeclaw.bff.notifications.repository import NotificationRepository
 from financeclaw.bff.notifications.worker import run_worker
-from financeclaw.coordination.repository import now
+from financeclaw.shared.execution_ledger.root_repository import now
 from financeclaw.shared.infrastructure.database import ApplicationDatabase
 from financeclaw.shared.notifications.tables import NotificationDeliveryRow
 from tests.stage8.test_notifications import completed

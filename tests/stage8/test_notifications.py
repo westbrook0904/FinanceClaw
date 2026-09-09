@@ -14,17 +14,17 @@ from financeclaw.bff.application.feishu_channel_service import (
 from financeclaw.bff.notifications.feishu import Receipt
 from financeclaw.bff.notifications.repository import NotificationRepository, StaleSender
 from financeclaw.bff.notifications.worker import deliver
-from financeclaw.coordination.repository import now
 from financeclaw.shared.conversation.tables import (
     ChannelConversationBindingRow,
     ConversationMessageRow,
 )
-from financeclaw.shared.execution_ledger.coordination_tables import CoordinatedRunRow
 from financeclaw.shared.execution_ledger.interaction_tables import PendingInteractionRow
+from financeclaw.shared.execution_ledger.root_repository import now
+from financeclaw.shared.execution_ledger.run_tables import RootRunRow
 from financeclaw.shared.notifications.tables import NotificationDeliveryRow as Delivery
 from financeclaw.shared.notifications.tables import NotificationEventRow as Event
 from financeclaw.shared.notifications.tables import NotificationTargetRow as Target
-from tests.stage8.test_coordinator import tick
+from tests.stage8.support import tick
 
 
 class NoDisplay:
@@ -64,7 +64,7 @@ class Gateway:
 
 
 async def admitted(setup):
-    """实际飞书应用受理即退出，后续通过独立 Coordinator 与 Sender 推进。"""
+    """实际飞书应用受理即退出，后续通过BFF 后台循环与 Sender 推进。"""
     setup.settings = setup.settings.model_copy(update={"feishu_notifications_enabled": True})
     setup.bff.runs.settings = setup.settings
     service = FeishuChannelService(
@@ -153,17 +153,20 @@ async def test_notification_failure_rolls_back_journal_and_completion(setup, mon
             raise RuntimeError("synthetic transaction failure")
 
     monkeypatch.setattr(facts, "record_progress", fail_after_intent)
-    with pytest.raises(RuntimeError, match="synthetic transaction"):
-        await tick(setup)
+    await tick(setup)
     with setup.store.sessions() as session:
-        assert session.get(CoordinatedRunRow, run_id).projection["status"] != "completed"
-        assert session.scalar(select(func.count()).select_from(Event)) == 0
+        assert session.get(RootRunRow, run_id).projection["status"] != "completed"
+        assert session.get(RootRunRow, run_id).last_error == "RuntimeError"
+        assert session.scalars(select(Event.kind)).all() == ["attention"]
         assert session.scalar(select(func.count()).select_from(ConversationMessageRow)) == 1
     monkeypatch.setattr(facts, "record_progress", original)
     await tick(setup)
     assert setup.backend.calls == 1
     with setup.store.sessions() as session:
-        assert session.scalar(select(func.count()).select_from(Event)) == 1
+        assert session.scalars(select(Event.kind).order_by(Event.revision)).all() == [
+            "attention",
+            "terminal",
+        ]
 
 
 @pytest.mark.asyncio
@@ -263,7 +266,7 @@ async def test_revoked_or_changed_target_never_receives_final(setup, change):
 @pytest.mark.asyncio
 async def test_answer_reuses_subscription_and_suppresses_old_interaction(setup):
     """决定消息不另订阅最终回复；已回答的旧提示在发送前被抑制。"""
-    setup.backend.delegate = True
+    setup.backend.questions = True
     service, message, run_id, repository = await admitted(setup)
     for _ in range(8):
         await tick(setup)
@@ -276,7 +279,7 @@ async def test_answer_reuses_subscription_and_suppresses_old_interaction(setup):
             replace(
                 message,
                 message_id="answer-message",
-                text=f'/answer {identifier} {revision} {{"scope": "all"}}',
+                text=f'/answer {identifier} {revision} {{"analysis_period": "2026"}}',
             ),
             NoDisplay(),
         )
@@ -334,8 +337,8 @@ async def test_concurrent_sender_claims_one_original_delivery(setup):
 @pytest.mark.asyncio
 @pytest.mark.parametrize("obsolete", ["expired", "cancelled"])
 async def test_expired_or_cancelled_interaction_is_not_prompted(setup, obsolete):
-    """即使原事件未消费或 Coordinator 尚未处理过期，也不能发送旧决定请求。"""
-    setup.backend.delegate = True
+    """即使原事件未消费或 BFF 尚未处理过期，也不能发送旧决定请求。"""
+    setup.backend.questions = True
     _, _, run_id, repository = await admitted(setup)
     for _ in range(8):
         await tick(setup)
@@ -376,30 +379,3 @@ async def test_frozen_content_mismatch_fails_before_network(setup):
     gateway = Gateway()
     await deliver(repository, gateway, claim, setup.settings)
     assert delivery(repository).status == "dead_letter" and not gateway.calls
-
-
-@pytest.mark.asyncio
-async def test_new_driver_is_fenced_from_old_worker_and_can_read_8a_roots(setup):
-    """新根不会被不写通知的 8A Worker 领取；8B 能继续原协议的无订阅旧根。"""
-    from tests.stage8.test_coordinator import admit
-
-    _, _, run_id, _ = await admitted(setup)
-    with setup.store.sessions() as session:
-        from financeclaw.coordination.repository import DRIVER_VERSION
-
-        assert session.get(CoordinatedRunRow, run_id).driver_version == DRIVER_VERSION
-        assert (
-            session.scalar(select(CoordinatedRunRow).where(CoordinatedRunRow.driver_version == 1))
-            is None
-        )
-    for _ in range(3):
-        await tick(setup)
-    _, legacy = await admit(setup)
-    with setup.store.sessions.begin() as session:
-        session.get(CoordinatedRunRow, legacy.run_id).driver_version = 1
-    for _ in range(3):
-        await tick(setup)
-    with setup.store.sessions() as session:
-        row = session.get(CoordinatedRunRow, legacy.run_id)
-        assert row.driver_version == 1 and row.projection["status"] == "completed"
-        assert session.scalar(select(func.count()).select_from(Target)) == 1

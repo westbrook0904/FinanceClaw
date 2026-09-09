@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
 from enum import StrEnum
 from typing import Any, Literal
 
@@ -40,58 +39,6 @@ class WorkflowStatus(StrEnum):
     DRAFT = "draft"
     ACTIVE = "active"
     DEPRECATED = "deprecated"
-
-
-class WorkflowRunStatus(StrEnum):
-    """工作流运行的生命周期状态。
-
-    使用场景：
-        驱动 BFF 侧的运行状态机；COMPLETED/REJECTED/FAILED/CANCELLED 为终态。
-
-    Attributes:
-        ACCEPTED: 请求已受理，尚未在 Agent Server 上启动。
-        PENDING: 运行已提交，等待执行或审批。
-        RUNNING: 正在图中执行。
-        INTERRUPTED: 停在审批等 interrupt 检查点，等待恢复。
-        COMPLETED: 运行成功结束。
-        REJECTED: 审批被拒绝，运行终止。
-        FAILED: 执行失败，运行终止。
-        CANCELLED: 业务已取消且确切执行尝试全部确认停止，不表示副作用已撤销。
-
-    """
-
-    ACCEPTED = "accepted"
-    PENDING = "pending"
-    RUNNING = "running"
-    INTERRUPTED = "interrupted"
-    COMPLETED = "completed"
-    REJECTED = "rejected"
-    FAILED = "failed"
-    CANCELLED = "cancelled"
-
-
-class WorkflowApprovalStatus(StrEnum):
-    """人工审批决定的生命周期状态。
-
-    使用场景：
-        审批点产生 PENDING 记录，复验通过后由审批人落成终态。
-
-    Attributes:
-        PENDING: 等待审批人决定。
-        APPROVED: 已批准，运行可恢复。
-        REJECTED: 已拒绝，运行终止。
-        EXPIRED: 超过审批时限，未再被决定。
-        CANCELLED: 根任务已请求取消，该审批窗口关闭。
-        SUPERSEDED: 被新的交互实例替换，旧审批不再有效。
-
-    """
-
-    PENDING = "pending"
-    APPROVED = "approved"
-    REJECTED = "rejected"
-    EXPIRED = "expired"
-    CANCELLED = "cancelled"
-    SUPERSEDED = "superseded"
 
 
 class WorkflowToolRef(FrozenWorkflowModel):
@@ -225,105 +172,3 @@ class WorkflowRelease:
 
         """
         return self.input_schema.model_validate(arguments).model_dump(mode="json")
-
-
-class WorkflowRun(FrozenWorkflowModel):
-    """一次工作流运行的持久事实记录，由 BFF 永久保存。
-
-    使用场景：
-        串起客户端请求、Workflow 独占 thread 与 server run 的映射，
-        并保存输入哈希、输出与发布制品引用以支撑追溯与审计。
-
-    Attributes:
-        run_id: 应用侧运行标识。
-        tenant_id: 租户隔离键。
-        subject_id: 已认证主体标识，用于所有权校验。
-        workflow_id: 本次运行的工作流标识。
-        workflow_version: 本次运行固定的工作流版本。
-        assistant_id: Agent Server 侧助手标识。
-        deployment_revision: 装配该运行所用的部署修订号。
-        model_profile_id: 本次运行固定的模型档案标识。
-        run_timeout_seconds: 运行超时快照（秒）。
-        approval_timeout_seconds: 审批超时快照（秒）。
-        thread_id: Workflow 独占的 Agent Server thread 标识。
-        server_run_id: 绑定的 Agent Server 运行标识；尚未绑定时为空。
-        client_idempotency_key: 客户端幂等键，与租户、流程、版本共同唯一。
-        arguments_hash: 规范化输入参数的 SHA-256，审批恢复前用于复验。
-        request_fingerprint: 完整请求的 SHA-256 指纹，用于幂等冲突检测。
-        input_payload: 归一化后的输入参数快照。
-        output_payload: 终态时的结构化输出快照；未结束时为空。
-        artifact_refs: 本次运行发布的制品标识（如审批后的报告）。
-        status: 当前运行状态。
-        started_at: 运行创建时间。
-        updated_at: 最近一次状态变更时间。
-        completed_at: 进入终态的时间；未结束时为空。
-
-    """
-
-    run_id: str
-    tenant_id: str
-    subject_id: str
-    workflow_id: str
-    workflow_version: str
-    assistant_id: str
-    deployment_revision: str
-    model_profile_id: str
-    run_timeout_seconds: int = Field(ge=1)
-    approval_timeout_seconds: int = Field(ge=1)
-    thread_id: str
-    server_run_id: str | None = None
-    client_idempotency_key: str
-    arguments_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
-    request_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
-    input_payload: dict[str, Any]
-    output_payload: dict[str, Any] | None = None
-    artifact_refs: tuple[str, ...] = ()
-    status: WorkflowRunStatus
-    started_at: datetime
-    updated_at: datetime
-    completed_at: datetime | None = None
-
-
-class WorkflowApproval(FrozenWorkflowModel):
-    """一次人工审批的持久事实记录，与 LangGraph interrupt 检查点对应。
-
-    使用场景：
-        运行停在审批点时创建 PENDING 记录；恢复前复验权限、归属、
-        原始参数哈希与过期时间，决定后再落成终态。
-
-    Attributes:
-        approval_id: 审批请求稳定标识。
-        run_id: 关联的工作流运行标识。
-        tenant_id: 租户隔离键。
-        subject_id: 发起运行的主体标识。
-        approval_point: 触发审批的检查点标识，同一运行内唯一。
-        arguments_hash: 绑定的输入参数哈希，恢复前用于篡改检测。
-        requested_action: 请求人工确认的具体动作。
-        request_payload: 展示给审批人的请求参数快照。
-        allowed_decisions: 允许的决定值集合。
-        required_scope: 作出决定所需的权限域。
-        status: 审批状态。
-        requested_at: 审批请求创建时间。
-        expires_at: 审批过期时间，超时后不得再决定。
-        decided_at: 决定时间；未决定时为空。
-        decided_by: 作出决定的主体标识；未决定时为空。
-        decision_reason: 审批人给出的决定理由；可为空。
-
-    """
-
-    approval_id: str
-    run_id: str
-    tenant_id: str
-    subject_id: str
-    approval_point: str
-    arguments_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
-    requested_action: str
-    request_payload: dict[str, Any]
-    allowed_decisions: tuple[str, ...]
-    required_scope: str
-    status: WorkflowApprovalStatus
-    requested_at: datetime
-    expires_at: datetime
-    decided_at: datetime | None = None
-    decided_by: str | None = None
-    decision_reason: str | None = None

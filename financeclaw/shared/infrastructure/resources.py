@@ -1,4 +1,4 @@
-"""共享应用数据库与存储资源的装配；不创建 Agent 或协调服务。"""
+"""共享应用数据库与存储资源的装配；服务运行用例由各自包负责。"""
 
 from dataclasses import dataclass
 

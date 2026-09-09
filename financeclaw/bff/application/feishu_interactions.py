@@ -3,8 +3,8 @@
 import json
 from typing import Any
 
-from financeclaw.coordination.api import InteractionConflict
 from financeclaw.kernel.interactions import InteractionResponse
+from financeclaw.shared.execution_ledger.interactions import InteractionConflict
 
 
 def parse_response(text: str) -> tuple[str, InteractionResponse] | None:

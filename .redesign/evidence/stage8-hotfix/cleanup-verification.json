@@ -1,0 +1,57 @@
+{
+  "passed": true,
+  "scope": "current BFF and internal Worker architecture cleanup",
+  "pytest": {
+    "passed": 245,
+    "skipped": 5,
+    "warnings": 2,
+    "seconds": 55.94,
+    "tested_from": "isolated Git index snapshot",
+    "command": "python -m pytest -q --disable-warnings --tb=short"
+  },
+  "ruff_check": true,
+  "ruff_format": true,
+  "credential_scan": true,
+  "git_diff_check": true,
+  "wheel": {
+    "built": true,
+    "obsolete_paths": [],
+    "migrations": [
+      "0001_initial"
+    ]
+  },
+  "schema": {
+    "fresh_upgrade_matches_metadata": true,
+    "downgrade_and_reupgrade": true,
+    "child_execution_rejected": true,
+    "control_revision_concurrency": true
+  },
+  "native_http": {
+    "cleanup-native.json": {
+      "scenario": "mixed",
+      "business_roots": 1,
+      "business_children": 0,
+      "native_thread_count": 1,
+      "native_run_count": 5,
+      "human_resumes": 4,
+      "journal_messages": 2,
+      "authenticated_webhook_count": 5
+    },
+    "cleanup-hitl-native.json": {
+      "scenario": "hitl",
+      "business_roots": 1,
+      "business_children": 0,
+      "native_thread_count": 1,
+      "native_run_count": 3,
+      "human_resumes": 2,
+      "journal_messages": 2,
+      "authenticated_webhook_count": 3
+    }
+  },
+  "limitations": [
+    "PostgreSQL concurrency tests require a dedicated database and were skipped",
+    "External provider and Feishu live tests were skipped",
+    "Persistent Agent Server crash/restart recovery was not verified"
+  ],
+  "existing_local_databases_modified": false
+}

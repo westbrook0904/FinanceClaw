@@ -18,7 +18,6 @@ class SideEffect(StrEnum):
     READ = "read"
     WRITE = "write"
     EXTERNAL_ACTION = "external_action"
-    DELEGATION = "delegation"
     INTERACTION = "interaction"
     COMPOSITE = "composite"
 
@@ -27,7 +26,7 @@ class Idempotency(StrEnum):
     """Tool 幂等性枚举，声明重复调用同一请求时的行为保证。
 
     使用场景：填写 ToolGovernance.idempotency；KEY_REQUIRED 表示调用方
-    必须携带幂等键才能安全重放，用于写入与委托类 Tool 的去重。
+    必须携带幂等键才能安全重放，用于写入与子图调用类 Tool 的去重。
     """
 
     NONE = "none"
@@ -124,8 +123,8 @@ class ToolGovernance(BaseModel):
         sensitivity: 可接触数据的敏感级别。
         retry_profile: 自动重试策略。
         audit_level: 审计详细程度，默认 FULL。
-        direct_invocation: 是否允许绕过 Agent 经 API 直接调用，
-            默认允许；委托类与记忆类 Tool 会显式关闭。
+
+            默认允许；子图调用类与记忆类 Tool 会显式关闭。
         tenant_allowlist: 允许使用该 Tool 的租户白名单；None 表示
             不限制租户。
         allowed_data_classes: 允许处理的数据密级集合，缺省放开全部
@@ -146,7 +145,6 @@ class ToolGovernance(BaseModel):
     sensitivity: Sensitivity
     retry_profile: RetryProfile
     audit_level: AuditLevel = AuditLevel.FULL
-    direct_invocation: bool = True
     tenant_allowlist: frozenset[str] | None = None
     allowed_data_classes: frozenset[DataClassification] = Field(
         default_factory=lambda: frozenset(DataClassification)

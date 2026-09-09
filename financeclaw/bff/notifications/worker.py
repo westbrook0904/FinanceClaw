@@ -1,4 +1,4 @@
-"""可独立重启的事件订阅与发送循环：不装配 BFF、Agent 或 Coordinator。"""
+"""独立事件订阅与通知发送循环。"""
 
 import asyncio
 import logging

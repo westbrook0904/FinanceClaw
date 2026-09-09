@@ -23,7 +23,7 @@ class FeishuNotificationGateway:
 
     @classmethod
     def from_settings(cls, settings):
-        """只有显式启动的发送进程才装配凭证，不在 Coordinator 导入 SDK。"""
+        """只有显式启动的发送进程才装配凭证和 SDK。"""
         from lark_channel import Client, LogLevel
 
         client = (
