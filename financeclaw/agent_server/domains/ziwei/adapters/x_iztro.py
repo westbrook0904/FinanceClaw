@@ -37,7 +37,14 @@ class XIztroEngine:
     def __init__(self) -> None:
         """版本不一致立即失败，不用新依赖冒充固定发布。"""
         for package, expected in (("x-iztro", "0.4.0"), ("tzdata", "2026.3")):
-            if metadata.version(package) != expected:
+            try:
+                installed = metadata.version(package)
+            except metadata.PackageNotFoundError:
+                raise RuntimeError(
+                    f"Ziwei requires {package}=={expected}; install the ziwei extra "
+                    "with `uv sync --extra ziwei` and include it in the Agent Server image."
+                ) from None
+            if installed != expected:
                 raise RuntimeError(f"Stage 7 requires {package}=={expected}")
 
     def zone(self, name: str) -> ZoneInfo:

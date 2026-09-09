@@ -87,10 +87,15 @@ class FreshMarket(MarketSnapshotTool):
 
 
 @pytest.fixture
-def stack(tmp_path):
+def stack(tmp_path, request):
     """SQLite facts and real compiled graphs; no BFF, HTTP SDK or credentials."""
+    ziwei_enabled = getattr(request, "param", False)
+    if ziwei_enabled:
+        pytest.importorskip("x_iztro")
+        pytest.importorskip("tzdata")
     value = build_components(
         settings(
+            ziwei_enabled=ziwei_enabled,
             database_url=f"sqlite+pysqlite:///{tmp_path / 'hf1.db'}",
             database_auto_create_schema=True,
             artifact_root=str(tmp_path / "artifacts"),
@@ -106,7 +111,16 @@ def stack(tmp_path):
 
 
 def root_graph(
-    stack, calls, *, questions=0, limits=None, snapshot_change=None, native=False, hitl=False
+    stack,
+    calls,
+    *,
+    questions=0,
+    limits=None,
+    snapshot_change=None,
+    native=False,
+    hitl=False,
+    root_scopes=None,
+    model=None,
 ):
     """Register one business root, then execute its frozen candidate release."""
     profile = stack.agent_profiles.resolve("finance_agent", "1.5.0")
@@ -116,7 +130,9 @@ def root_graph(
         run_id="root",
         root_run_id="root",
         turn_id="turn",
-        scopes={
+        scopes=root_scopes
+        if root_scopes is not None
+        else {
             "market:read",
             "portfolio:review",
             "ziwei:read",
@@ -176,7 +192,7 @@ def root_graph(
         )
     graph = stack.agent_factory.build(
         profile,
-        model=SerialModel(calls=calls),
+        model=model or SerialModel(calls=calls),
         fallback_models=(),
         **({"checkpointer": None} if native else {}),
     )
@@ -294,6 +310,7 @@ async def test_repeated_workflow_invocations_have_distinct_approval_and_artifact
 
 @pytest.mark.parametrize("mode", ["chart_only", "interpretation"])
 @pytest.mark.asyncio
+@pytest.mark.parametrize("stack", [True], indirect=True)
 async def test_ziwei_text_result_survives_root_tool_projection(stack, mode):
     """Real Ziwei engine and text graph preserve the Stage-7 text hotfix contract."""
     graph, kwargs = root_graph(
@@ -524,3 +541,33 @@ def test_catalog_contains_only_current_root_and_worker_releases(stack):
     assert all(
         not ref.tool_id.startswith("delegate_") for ref in stack.default_agent_profile.allowed_tools
     )
+
+
+class VisibleToolsModel(OfflineFinanceModel):
+    """Expose the names actually bound to the root model after governance filtering."""
+
+    def _generate(self, messages, *args, **kwargs):
+        """Return tool names without invoking any leaf Tool or remote model."""
+        return ChatResult(
+            generations=[
+                ChatGeneration(message=AIMessage(content=",".join(sorted(self._bound_tool_names))))
+            ]
+        )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stack", [False, True], indirect=True)
+@pytest.mark.parametrize("ziwei_scope", [False, True])
+async def test_root_model_sees_ziwei_only_when_enabled_and_authorized(stack, ziwei_scope):
+    """The feature flag registers the Worker; caller scopes control model visibility."""
+    scopes = {"market:read"} | ({"ziwei:read"} if ziwei_scope else set())
+    graph, kwargs = root_graph(stack, [], root_scopes=scopes, model=VisibleToolsModel())
+    result = await graph.ainvoke(
+        {"messages": [HumanMessage(content="List available tools.")]}, **kwargs
+    )
+    visible = set(result["messages"][-1].content.split(","))
+    name = "call_agent__ziwei_doushu_agent"
+    assert "call_agent__market_research_agent" in visible
+    assert (name in visible) is (stack.settings.ziwei_enabled and ziwei_scope)
+    declared = {json.loads(item)["tool_id"] for item in stack.default_agent_profile.worker_manifest}
+    assert (name in declared) is stack.settings.ziwei_enabled

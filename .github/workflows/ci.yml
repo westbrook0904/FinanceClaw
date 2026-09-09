@@ -10,7 +10,16 @@ permissions:
 
 jobs:
   test-and-supply-chain:
+    name: test-and-supply-chain (${{ matrix.capabilities }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - capabilities: base
+            extras: ""
+          - capabilities: ziwei
+            extras: "--extra ziwei"
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
@@ -18,15 +27,18 @@ jobs:
           version: "0.12.9"
           enable-cache: true
       - run: uv python install 3.13
-      - run: uv sync --frozen --extra dev
-      - run: uv run ruff check financeclaw tests scripts
-      - run: uv run ruff format --check financeclaw tests scripts
-      - run: uv run python scripts/check_secret_leaks.py
-      - run: uv run pytest -q
-      - run: uv run python scripts/generate_sbom.py
-      - run: uv export --frozen --no-dev --no-emit-project --format requirements-txt --output-file build/production-requirements.txt
-      - run: uv run pip-audit --strict --require-hashes --disable-pip --requirement build/production-requirements.txt
+      - run: uv sync --frozen --extra dev ${{ matrix.extras }}
+      - name: Verify Ziwei runtime dependencies
+        if: matrix.capabilities == 'ziwei'
+        run: uv run --no-sync python -c "from financeclaw.agent_server.domains.ziwei.adapters.x_iztro import XIztroEngine; XIztroEngine()"
+      - run: uv run --no-sync ruff check financeclaw tests scripts
+      - run: uv run --no-sync ruff format --check financeclaw tests scripts
+      - run: uv run --no-sync python scripts/check_secret_leaks.py
+      - run: uv run --no-sync pytest -q
+      - run: uv run --no-sync python scripts/generate_sbom.py
+      - run: uv export --frozen --no-dev --no-emit-project ${{ matrix.extras }} --format requirements-txt --output-file build/production-requirements.txt
+      - run: uv run --no-sync pip-audit --strict --require-hashes --disable-pip --requirement build/production-requirements.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: financeclaw-sbom
+          name: financeclaw-sbom-${{ matrix.capabilities }}
           path: build/sbom.cdx.json

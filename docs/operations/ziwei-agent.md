@@ -68,6 +68,14 @@ LANGSMITH_HIDE_OUTPUTS=false
 完整文本解读通过 Tool 结果交回根 Agent，再由 BFF 写入 Journal。
 业务库使用当前 `0001_initial`，候选能力不新增独立运行表。
 
+## 可选依赖与 CI
+
+启用紫微的运行环境需通过 `uv sync --extra ziwei` 安装 `x-iztro` 和 `tzdata`，
+并在 Agent Server 镜像中包含这些依赖。缺少依赖时，启动错误会提示安装方式。
+
+CI 分别验证基础安装和 `--extra ziwei` 安装；普通子图测试不依赖排盘引擎，
+紫微集成测试只在 extra 已安装时运行。紫微任务额外检查引擎依赖，并将可选依赖纳入安全审计。
+
 ## 请求示例
 
 合成测试消息：
