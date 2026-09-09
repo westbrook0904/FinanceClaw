@@ -68,6 +68,11 @@ LANGSMITH_HIDE_OUTPUTS=false
 完整文本解读通过 Tool 结果交回根 Agent，再由 BFF 写入 Journal。
 业务库使用当前 `0001_initial`，候选能力不新增独立运行表。
 
+预检或取证工具发现缺资料时，子图返回 `needs_clarification`、`missing_fields` 和问题，
+由根会话向用户发问。取证工具失败后，在下一次模型调用之前结束 evidence，外层直接进入
+`END`，不再进入 `finalize`。框架参数校验等技术性错误返回 `unsupported`，不把它们伪装成
+用户出生资料缺失；权限、取消和持久预算异常仍按原有机制失败。
+
 ## 可选依赖与 CI
 
 启用紫微的运行环境需通过 `uv sync --extra ziwei` 安装 `x-iztro` 和 `tzdata`，

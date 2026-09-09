@@ -5,8 +5,8 @@ import json
 from typing import Annotated, Any, NotRequired, TypedDict
 
 from langchain.agents import AgentState
-from langchain.agents.middleware import AgentMiddleware
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain.agents.middleware import AgentMiddleware, hook_config
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.utils.function_calling import convert_to_openai_tool
 from langgraph.graph import END, START, StateGraph
 from langgraph.runtime import Runtime
@@ -88,9 +88,22 @@ def interpretation_text(response: AIMessage) -> str:
     return content.strip()
 
 
+def error_result(error: ZiweiError, request: ZiweiAnalysisRequest) -> ZiweiTextResult:
+    """预检和取证使用同一终态协议，缺资料交回根会话发问。"""
+    return ZiweiTextResult(
+        outcome="needs_clarification" if error.fields else "unsupported",
+        question=str(error) if error.fields else request.question,
+        subject_label=request.subject_label,
+        missing_fields=error.fields,
+        warnings=(str(error),),
+        error_code=error.code,
+    )
+
+
 class ZiweiEvidenceMiddleware(AgentMiddleware):
     """为紫微取证循环预留最终解读额度，并检查实际模型输入大小。
 
+    工具缺参或失败后在下一次模型消费之前结束，不能依靠模型自行停止重试。
     before_model 在子图 state 中累计轮次，并为 finalize 保留一次调用；
     wrap_model_call 同时计入系统消息和工具 Schema 的 UTF-8 字节大小。
     超限直接返回领域错误，不截断盘面事实。根任务树的持久预算仍由
@@ -105,12 +118,63 @@ class ZiweiEvidenceMiddleware(AgentMiddleware):
         self.input_budget = input_budget
         self.finalization_calls = finalization_calls
 
+    @hook_config(can_jump_to=["end"])
     def before_model(self, state: ZiweiState, runtime: Runtime) -> dict:
-        """每次模型轮次累计计数；持久树预算另外计算所有实际重试。"""
+        """先处理本批工具错误，再计模型预算；成功取证仍走正常 finalize。"""
+        failures = []
+        for message in reversed(state.get("messages", [])):
+            if not isinstance(message, ToolMessage):
+                break
+            if message.status == "error":
+                failures.append(message)
+        if failures:
+            # 工具并发时只由此节点写一次终态，避免多个 Tool Command 争写 state。
+            failure = failures[-1]
+            public = failure.additional_kwargs.get("ziwei_failure")
+            result = (
+                ZiweiTextResult.model_validate(public)
+                if public is not None
+                else error_result(
+                    ZiweiError(
+                        "ZIWEI_TOOL_CALL_FAILED",
+                        "排盘工具调用未通过校验或授权，请检查调用参数与权限后重新发起。",
+                    ),
+                    ZiweiAnalysisRequest.model_validate(state["ziwei_request"]),
+                )
+            )
+            return {"ziwei_result": result.model_dump(mode="json"), "jump_to": "end"}
         count = state.get("ziwei_model_calls", 0)
         if count >= self.max_calls - self.finalization_calls:
             raise ZiweiError("ZIWEI_RANGE_LIMIT", "取证调用预算已用完。")
         return {"ziwei_model_calls": count + 1}
+
+    @staticmethod
+    def _failure_message(request: Any, error: ZiweiError) -> ToolMessage:
+        """保留调用 ID 和安全领域错误，不把异常原文交给模型反复修复。"""
+        result = error_result(
+            error, ZiweiAnalysisRequest.model_validate(request.runtime.state["ziwei_request"])
+        )
+        return ToolMessage(
+            content=result.model_dump_json(),
+            name=request.tool_call["name"],
+            tool_call_id=request.tool_call["id"],
+            status="error",
+            additional_kwargs={"ziwei_failure": result.model_dump(mode="json")},
+        )
+
+    def wrap_tool_call(self, request: Any, handler: Any) -> Any:
+        """治理链先记录实际失败；只转换可公开的紫微领域错误。"""
+        try:
+            return handler(request)
+        except ZiweiError as error:
+            return self._failure_message(request, error)
+
+    async def awrap_tool_call(self, request: Any, handler: Any) -> Any:
+        """异步取证保持同一终态，不吞权限、取消或持久预算异常。"""
+        try:
+            return await handler(request)
+        except ZiweiError as error:
+            return self._failure_message(request, error)
 
     def wrap_model_call(self, request: Any, handler: Any) -> Any:
         """检查加上系统指令和工具 Schema 后的实际请求。"""
@@ -207,15 +271,7 @@ def build_ziwei_agent(
                 "ziwei_target": target.model_dump(mode="json") if target else None,
             }
         except ZiweiError as error:
-            result = ZiweiTextResult(
-                outcome="needs_clarification" if error.fields else "unsupported",
-                question=str(error) if error.fields else request.question,
-                subject_label=request.subject_label,
-                missing_fields=error.fields,
-                warnings=(str(error),),
-                error_code=error.code,
-            )
-            return result_payload(result)
+            return result_payload(error_result(error, request))
         except (ValidationError, json.JSONDecodeError, KeyError, TypeError):
             raise ZiweiError(
                 "ZIWEI_INPUT_INCOMPLETE", "子图调用参数格式无效，请重新整理结构化资料。"
@@ -224,6 +280,10 @@ def build_ziwei_agent(
     def route(state: ZiweiState) -> str:
         """需要澄清时结束 child，让根会话发问，不创建交互 interrupt。"""
         return END if state.get("ziwei_result") else "evidence"
+
+    def after_evidence(state: ZiweiState) -> str:
+        """取证阶段已产生澄清或失败终态时，跳过最终解读并返回父图。"""
+        return END if state.get("ziwei_result") else "finalize"
 
     async def finalize(state: ZiweiState, runtime: Runtime[ExecutionContext]) -> dict:
         """先确认真实盘面，再生成不要求 JSON 的文本解读。"""
@@ -295,7 +355,7 @@ def build_ziwei_agent(
     graph.add_node("finalize", finalize)
     graph.add_edge(START, "preflight")
     graph.add_conditional_edges("preflight", route, ["evidence", END])
-    graph.add_edge("evidence", "finalize")
+    graph.add_conditional_edges("evidence", after_evidence, ["finalize", END])
     graph.add_edge("finalize", END)
     return graph.compile(checkpointer=checkpointer, name=profile.agent_id)
 

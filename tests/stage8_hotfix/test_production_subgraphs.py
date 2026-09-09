@@ -332,6 +332,65 @@ async def test_ziwei_text_result_survives_root_tool_projection(stack, mode):
         assert output["answer_text"] and "interpretations" not in output
 
 
+class ClarifyingRootModel(SerialModel):
+    """根模型只能从 Worker 的公开结果获知待澄清问题。"""
+
+    def _generate(self, messages, *args, **kwargs):
+        """取到澄清结果后，在根会话输出问题。"""
+        if isinstance(messages[-1], ToolMessage):
+            result = json.loads(messages[-1].content)
+            assert result["outcome"] == "needs_clarification"
+            assert result["missing_fields"] == ["target"]
+            return ChatResult(
+                generations=[ChatGeneration(message=AIMessage(content=result["question"]))]
+            )
+        return super()._generate(messages, *args, **kwargs)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stack", [True], indirect=True)
+async def test_ziwei_evidence_clarification_returns_to_root_with_budget_remaining(
+    stack, monkeypatch
+):
+    """真实根图、Worker Tool 和取证图闭环，不创建 interrupt 或消耗完根预算。"""
+    from financeclaw.agent_server.domains.ziwei.errors import ZiweiError
+    from financeclaw.agent_server.graphs.ziwei_agent import build_ziwei_agent
+    from tests.stage7.test_evidence_exit import RepeatingEvidenceModel
+
+    def missing(*args, **kwargs):
+        """让预检通过后的真实取证 Tool 发现缺少查询资料。"""
+        raise ZiweiError("ZIWEI_INPUT_INCOMPLETE", "请补充查询日期。", ("target",))
+
+    monkeypatch.setattr(stack.ziwei_service, "calculate", missing)
+    RepeatingEvidenceModel.calls = []
+    tool = stack.tool_catalog.resolve("call_agent__ziwei_doushu_agent", "2.1.0").tool
+    tool.graph = build_ziwei_agent(
+        stack.agent_factory,
+        tool.release,
+        stack.ziwei_service,
+        model=RepeatingEvidenceModel(),
+    )
+    invocation = call(
+        tool.name,
+        1,
+        task="紫微测试",
+        arguments=request(mode="interpretation").model_dump(mode="json"),
+    )
+    graph, kwargs = root_graph(
+        stack,
+        [invocation],
+        model=ClarifyingRootModel(calls=[invocation]),
+        limits={"model": 4, "tool": 3},
+    )
+    result = await graph.ainvoke({"messages": [HumanMessage(content="紫微测试")]}, **kwargs)
+    assert result["messages"][-1].content == "请补充查询日期。"
+    assert not result.get("__interrupt__")
+    assert RepeatingEvidenceModel.calls == ["evidence"]
+    execution = stack.conversation_repository.execution.get("root")
+    assert execution["model_calls"] == 3  # root dispatch + evidence + root question
+    assert execution["tool_calls"] == 2  # Worker entry + chart attempt
+
+
 @pytest.mark.parametrize("failure", ["manifest", "budget", "cancel"])
 @pytest.mark.asyncio
 async def test_root_release_budget_and_cancel_fail_closed(stack, failure):
