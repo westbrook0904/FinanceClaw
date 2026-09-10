@@ -8,7 +8,9 @@ ROOT_CLARIFICATION = InteractionPoint(
     question="请补充或确认本次任务所需的信息。",
     response_schema={
         "type": "object",
-        "properties": {"text": {"type": "string", "minLength": 1, "maxLength": 8000}},
+        "properties": {
+            "text": {"title": "你的回答", "type": "string", "minLength": 1, "maxLength": 8000}
+        },
         "required": ["text"],
         "additionalProperties": False,
     },

@@ -13,7 +13,6 @@ from financeclaw.bff.application.conversation_service import ConversationService
 from financeclaw.bff.http.app import create_app
 from financeclaw.bff.http.auth import AuthenticatedPrincipal, StaticBearerAuthenticator
 from financeclaw.bff.http.webhooks import webhook_router
-from financeclaw.bff.run_control import BFFDeploymentControl
 from financeclaw.kernel.interactions import InteractionResponse
 from financeclaw.shared.execution_ledger.interaction_tables import PendingInteractionRow
 from financeclaw.shared.execution_ledger.repository import ExecutionConflict
@@ -34,21 +33,12 @@ from tests.stage8_hotfix.test_bff_runs import runtime as runtime
 
 
 @pytest.mark.asyncio
-async def test_admission_disabled_rolls_back_user_and_turn(runtime):
-    """The explicit gate is checked in the same transaction as the user Journal."""
-    gate = BFFDeploymentControl(runtime.runs.store)
-    original = gate.view()
-    gate.configure(original["revision"], admission_enabled=False)
-    with pytest.raises(ExecutionConflict, match="admission is disabled"):
-        await admit(runtime)
-    with runtime.runs.store.sessions() as session:
-        assert session.scalar(select(RootRunRow)) is None
-    gate.configure(original["revision"] + 1, admission_enabled=True, dispatch_paused=True)
-    accepted = await admit(runtime, key="enabled")
-    await tick(runtime)
-    assert not runtime.client.runs.calls
+async def test_stop_before_dispatch_never_starts_remote_run(runtime):
+    """启动后的 BFF 直接受理，先到的停止请求封闭尚未发送的操作。"""
+    accepted = await admit(runtime)
     await runtime.runs.cancel(accepted.run_id, **OWNER)
     await tick(runtime)
+    assert not runtime.client.runs.calls
     assert (await runtime.runs.status(accepted.run_id, **OWNER)).status == "cancelled"
 
 
@@ -289,9 +279,6 @@ async def test_bff_completion_reuses_atomic_notification_and_independent_sender(
     )
     from tests.stage8.test_notifications import Gateway, NoDisplay
 
-    runtime.runs.settings = runtime.runs.settings.model_copy(
-        update={"feishu_notifications_enabled": True}
-    )
     conversations = ConversationService(
         runtime.runs.repository, runtime.releases.agent_profiles, runs=runtime.runs
     )
@@ -325,19 +312,23 @@ async def test_bff_completion_reuses_atomic_notification_and_independent_sender(
     await tick(runtime)
     await tick(runtime)
     with runtime.runs.store.sessions() as session:
-        events = list(session.scalars(select(NotificationEventRow)))
+        events = list(
+            session.scalars(
+                select(NotificationEventRow).where(NotificationEventRow.kind == "terminal")
+            )
+        )
         assert len(events) == 1 and events[0].payload["content"] == "verified final answer"
     sender = NotificationRepository(
         runtime.runs.store.sessions,
         app_id="synthetic-app",
         allowed_open_ids=frozenset({"synthetic-user"}),
     )
-    assert sender.materialize()
+    while sender.materialize():
+        pass
     gateway = Gateway()
-    await deliver(
-        sender, gateway, sender.claim("synthetic-sender", lease_seconds=30), runtime.runs.settings
-    )
+    while claim := sender.claim("synthetic-sender", lease_seconds=30):
+        await deliver(sender, gateway, claim, runtime.runs.settings)
     with runtime.runs.store.sessions() as session:
         delivery = session.scalar(select(NotificationDeliveryRow))
         assert delivery.status == "sent"
-    assert len(gateway.calls) == 1 and len(runtime.client.runs.calls) == 1
+    assert len(gateway.calls) == 2 and len(runtime.client.runs.calls) == 1

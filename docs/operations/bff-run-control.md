@@ -10,22 +10,11 @@ BFF 管理顶层 start、人工 resume、cancel、有限授权与 Journal 收尾
 .venv/bin/alembic upgrade head
 ```
 
-初始化默认关闭新受理。BFF 配置示例见 [bff-run-control.env.example](../../config/environments/bff-run-control.env.example)，启动入口为 `financeclaw.bff.bootstrap:create_default_app --factory` 或 `main:app`。后台生命周期循环随 BFF 启停。
+BFF 就绪后直接受理，无数据库部署门闩。BFF 配置示例见 [bff-run-control.env.example](../../config/environments/bff-run-control.env.example)，启动入口为 `financeclaw.bff.bootstrap:create_default_app --factory` 或 `main:app`。后台生命周期循环随 BFF 启停。
 
 Agent Server 使用 [langgraph.json](../../langgraph.json)，只注册 `finance_agent_v1_5_0`。Worker 是内部子图。部署时将固定 Webhook 域名、允许端口与 HTTPS 策略调整为部署内地址；Agent Server 的 `LG_WEBHOOK_BFF_TOKEN` 与 BFF 的 `FINANCECLAW_BFF_WEBHOOK_TOKEN` 必须相同。模型和产品 API 无权指定回调地址。
 
 BFF Webhook 路径为 `/internal/webhooks/langgraph/{backend_instance_id}`。它认证并限制 64 KiB，只持久化用于唤醒观察的最小事实；正文不能直接成为助手答案。持久化失败返回 503。漏回调时后台仍按 `BFF_RUN_RECONCILE_SECONDS` 核对到期根。
-
-## 开放与暂停
-
-读取共享控制 revision 后再修改（把 `N` 替换为查询结果）：
-
-```bash
-.venv/bin/python -m financeclaw.bff.run_control status
-.venv/bin/python -m financeclaw.bff.run_control configure --expected-revision N --admission-enabled true --dispatch-paused false
-```
-
-并发修改使用 revision CAS，冲突需重新读取。`--admission-enabled false` 暂停新受理；`--dispatch-paused true` 暂停尚未发送的 start/resume。结果观察、未知回执核对和取消继续运行。应用重新启动后仍读取持久门闩。
 
 ## 执行与观察
 
@@ -33,8 +22,8 @@ BFF Webhook 路径为 `/internal/webhooks/langgraph/{backend_instance_id}`。它
 - `POST /v1/interactions/{id}/responses` 绑定原 attempt、checkpoint、interrupt、revision、schema 和动作摘要。人工回答生成一个固定 resume 操作；子图正常完成直接回到顶层 ReAct。
 - `POST /v1/runs/{id}/cancel` 接受取消意图，精确尝试停止后才落库 cancelled。客户端断线不会取消执行。
 - 查询与 SSE 只读，不触发运行。SSE 重放持久进度与最终 Journal 快照，不承诺 token 重放。
-- 多副本使用数据库租约、epoch、唯一 operation 领取和事务门闩，过期持有者不能提交结果。
-- `/ready` 分别检查业务库、制品库、Agent Server、BFF 运行控制及已启用的通知发送器。
+- 多副本使用数据库租约、epoch、唯一 operation 领取和根事务锁，过期持有者不能提交结果。
+- `/ready` 分别检查业务库、制品库、Agent Server、BFF 执行生命周期及已启用飞书的内置通知发送器。
 
 常见持久 `waiting_reason`：
 
@@ -44,7 +33,6 @@ BFF Webhook 路径为 `/internal/webhooks/langgraph/{backend_instance_id}`。它
 | `resume_pending` | 回答已持久化，原 resume 尚待提交／绑定 |
 | `submission_uncertain` | 曾取得发送权但回执未知；仅按原 thread＋operation metadata 查找，空结果不会自动重发 |
 | `authorization_required` | 新派发所需授权已过期／撤销；显式有限重授权或取消，不能靠 GET 扩权 |
-| `dispatch_paused` | 部署门闩暂停发送；结果观察与取消仍保留 |
 | `interaction_expired` | 问题／审批过期；不能延长原等待点后重新批准，可取消并开启新 Turn |
 | `reconciliation_required` | 发布或原生证据不匹配、预算不足、数据库／后端异常等；结合 `last_error` 类别与固定操作排查，不更换 ID 重发 |
 

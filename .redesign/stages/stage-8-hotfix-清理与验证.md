@@ -8,7 +8,7 @@
 - 删除跨运行委托协议、子运行创建／接管／历史迁移、回调别名、旧驱动选择和旧发布目录。
 - 删除独立 Tool／Workflow／Agent target 的创建与通用 resume API、对应图导出和旧冒烟脚本。
 - 只注册 `finance_agent_v1_5_0` 根图。领域 Agent 与 Workflow 通过 `call_agent__*`／`call_workflow__*` 在根 ReAct 中调用。
-- 业务表使用 `root_runs`、`run_inbox`、`run_control`；保留 Journal、授权、原生 attempt、交互、审计和通知事实。数据库约束要求执行记录 `root_run_id = run_id`。
+- 业务表使用 `root_runs`、`run_inbox`；保留 Journal、授权、操作内的原生回执、交互、审计和通知事实。数据库约束要求执行记录 `root_run_id = run_id`。
 - 未发布迁移合并为 `0001_initial`，共 22 张业务表。空库初始化默认关闭新受理，使用 BFF 控制命令显式开放。
 - 删除描述旧架构的方案、部署步骤和证据，历史通过 Git 查看；当前架构、API 和运维文档同步更新。
 

@@ -28,7 +28,9 @@ def assemble_subgraph_tools(releases, factory, *, settings, ziwei_service=None, 
                     ziwei_service,
                     model=model or (OfflineZiweiModel() if settings.offline_model else None),
                     checkpointer=None,
-                    input_budget=settings.context_input_limit - settings.context_reserved_output,
+                    input_budget=settings.context_input_limit
+                    - settings.context_reserved_output
+                    - settings.context_safety_margin,
                 )
             else:
                 graph = factory.build(

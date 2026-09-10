@@ -25,7 +25,11 @@ class NotificationTargetRow(Base):
     subject_id: Mapped[str] = mapped_column(String(128))
     app_id: Mapped[str] = mapped_column(String(128), index=True)
     address: Mapped[dict[str, Any]] = mapped_column(JSON)
-    delivery_mode: Mapped[str] = mapped_column(String(32), default="text_reply_v1")
+    # 同一根只有一张任务交互卡，通知目标同时保存其渠道回执。
+    card_id: Mapped[str | None] = mapped_column(String(128))
+    card_message_id: Mapped[str | None] = mapped_column(String(128))
+    card_sequence: Mapped[int] = mapped_column(Integer, default=0)
+    card_payload: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
@@ -54,7 +58,9 @@ class NotificationDeliveryRow(Base):
     parts: Mapped[int] = mapped_column(Integer)
     content: Mapped[str] = mapped_column(Text)
     content_hash: Mapped[str] = mapped_column(String(64))
-    content_version: Mapped[int] = mapped_column(Integer, default=1)
+    message_type: Mapped[str] = mapped_column(String(16), default="text")
+    card_id: Mapped[str | None] = mapped_column(String(128))
+    target_message_id: Mapped[str | None] = mapped_column(String(128))
     send_key: Mapped[str] = mapped_column(String(36), unique=True)
     status: Mapped[str] = mapped_column(String(32), default="pending")
     attempts: Mapped[int] = mapped_column(Integer, default=0)
@@ -77,7 +83,7 @@ class NotificationDeliveryRow(Base):
 
 
 class NotificationSenderRow(Base):
-    """发送角色心跳只证明兼容进程存活，业务回执单独统计。"""
+    """发送角色心跳只证明进程存活，业务回执单独统计。"""
 
     __tablename__ = "notification_senders"
     worker_id: Mapped[str] = mapped_column(String(128), primary_key=True)

@@ -74,10 +74,17 @@ class FeishuNotificationGateway:
         from lark_channel.api.im.v1.model.reply_message_request import ReplyMessageRequest
         from lark_channel.api.im.v1.model.reply_message_request_body import ReplyMessageRequestBody
 
+        if claim.get("message_type") == "card" and claim.get("target_message_id"):
+            return await self.update_card(claim)
+        content = (
+            {"type": "card", "data": {"card_id": claim["card_id"]}}
+            if claim.get("message_type") == "card"
+            else {"text": claim["content"]}
+        )
         body = (
             ReplyMessageRequestBody.builder()
-            .msg_type("text")
-            .content(json.dumps({"text": claim["content"]}, ensure_ascii=False))
+            .msg_type("interactive" if claim.get("message_type") == "card" else "text")
+            .content(json.dumps(content, ensure_ascii=False))
             .uuid(claim["send_key"])
             .build()
         )
@@ -104,3 +111,41 @@ class FeishuNotificationGateway:
         if response.code in {230001, 230002, 230006, 230011, 230013, 230025, 230027, 230028}:
             return Receipt("failed", error_class="reply_rejected")
         return Receipt("uncertain", error_class="unclassified_reply_result")
+
+    async def create_card(self, content):
+        """创建尚未发布的 CardKit 实例；返回可持久保存的 ID。"""
+        from lark_channel.api.cardkit.v1.model.create_card_request import CreateCardRequest
+        from lark_channel.api.cardkit.v1.model.create_card_request_body import CreateCardRequestBody
+
+        response = await self.client.cardkit.v1.card.acreate(
+            CreateCardRequest.builder()
+            .request_body(CreateCardRequestBody.builder().type("card_json").data(content).build())
+            .build()
+        )
+        if response.code != 0 or not getattr(response.data, "card_id", None):
+            raise ValueError("card creation rejected")
+        return response.data.card_id
+
+    async def update_card(self, claim):
+        """固定 UUID/sequence 的全量更新，卡片操作不依赖临时回调 token。"""
+        from lark_channel.api.cardkit.v1.model.card import Card
+        from lark_channel.api.cardkit.v1.model.update_card_request import UpdateCardRequest
+        from lark_channel.api.cardkit.v1.model.update_card_request_body import UpdateCardRequestBody
+
+        response = await self.client.cardkit.v1.card.aupdate(
+            UpdateCardRequest.builder()
+            .card_id(claim["card_id"])
+            .request_body(
+                UpdateCardRequestBody.builder()
+                .card(Card.builder().type("card_json").data(claim["content"]).build())
+                .uuid(claim["send_key"])
+                .sequence(claim["sequence"])
+                .build()
+            )
+            .build()
+        )
+        if response.code == 0:
+            return Receipt("sent", message_id=claim["target_message_id"])
+        if response.code in {230020, 99991400}:
+            return Receipt("retry", error_class="rate_limited")
+        return Receipt("uncertain", error_class="card_update_unconfirmed")

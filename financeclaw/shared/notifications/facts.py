@@ -65,10 +65,10 @@ def bind_target(session, root, address, *, tenant_id, subject_id, evidence, repl
     session.flush()
 
 
-def target_valid(session, target) -> bool:
+def target_valid(session, target, *, require_active=True) -> bool:
     """本地撤销或身份、会话重绑定立即阻止后续分片；已在途网络调用仍需回执。"""
     binding = session.get(ChannelConversationBindingRow, target.binding_id)
-    if not target.active or binding is None or target.delivery_mode != "text_reply_v1":
+    if (require_active and not target.active) or binding is None:
         return False
     address = target.address
     conversation = session.get(ConversationRow, binding.conversation_id)
@@ -100,57 +100,74 @@ def target_valid(session, target) -> bool:
 
 
 def record_progress(session, root) -> None:
-    """仅根终态、待决定和需处理停顿产生通知；无订阅的 API 任务不自动补发。"""
+    """根状态变化生成任务卡快照，成功完成另记最终文本；API 任务不自动补发。"""
     target = session.scalar(
         select(NotificationTargetRow).where(NotificationTargetRow.run_id == root.run_id)
     )
     if target is None:
         return
+    from financeclaw.shared.execution_ledger.root_repository import aware, now
+
     projection = root.projection
-    status, reason = projection["status"], projection.get("waiting_reason")
-    items = [
-        item for item in projection.get("pending_interactions", ()) if item["status"] == "pending"
-    ]
-    payload = {"run_id": root.run_id, "status": status, "waiting_reason": reason}
-    if status in {"completed", "failed", "cancelled"}:
-        kind, key = "terminal", "terminal"
-        if status == "completed":
-            content = session.scalar(
-                select(ConversationMessageRow.content)
-                .join(ConversationTurnRow)
-                .where(
-                    ConversationTurnRow.run_id == root.run_id,
-                    ConversationMessageRow.role == "assistant",
-                    ConversationMessageRow.parent_message_id.is_(None),
-                )
-            )
-            if content is None:
-                raise ExecutionConflict("completed notification requires Journal answer")
-            payload["content"] = content
-    elif items and reason != "authorization_required":
-        kind = "interaction"
-        payload["interactions"] = items
-        key = [kind, [(item["interaction_id"], item["revision"]) for item in items]]
-    elif status in {"interrupted", "cancellation_requested"} and reason not in {
-        None,
-        "delivery_pending",
-    }:
-        kind = "attention"
-        grant = session.get(RunAuthorizationRow, root.run_id)
-        key = [kind, reason, grant.revision if grant else 0]
-    else:
-        return
-    event_id = digest([target.target_id, key])
+    grant = session.get(RunAuthorizationRow, root.run_id)
+    task = target.card_payload.get("task")
+    if task is None:
+        task = session.scalar(
+            select(ConversationMessageRow.content)
+            .join(ConversationTurnRow)
+            .where(ConversationTurnRow.run_id == root.run_id, ConversationMessageRow.role == "user")
+        )
+    pending = projection.get("pending_interactions", [])
+    payload = {
+        "run_id": root.run_id,
+        "status": projection["status"],
+        "waiting_reason": projection.get("waiting_reason"),
+        "task": (task or "本轮任务")[:200],
+        "interaction": pending[0] if pending else None,
+        "last_decision": projection.get("last_decision"),
+        "grant": {
+            "revision": grant.revision,
+            "scopes": list(grant.scopes),
+            "expires_at": aware(grant.expires_at).isoformat(),
+            "revoked": grant.revoked,
+        },
+        "created_at": now().isoformat(),
+    }
+    target.card_payload = payload
+    event_id = digest([target.target_id, "card", root.revision])
     if session.get(NotificationEventRow, event_id) is None:
         session.add(
             NotificationEventRow(
                 event_id=event_id,
                 target_id=target.target_id,
                 revision=root.revision,
-                kind=kind,
+                kind="card",
                 payload=payload,
             )
         )
+    if projection["status"] == "completed":
+        content = session.scalar(
+            select(ConversationMessageRow.content)
+            .join(ConversationTurnRow)
+            .where(
+                ConversationTurnRow.run_id == root.run_id,
+                ConversationMessageRow.role == "assistant",
+                ConversationMessageRow.parent_message_id.is_(None),
+            )
+        )
+        if content is None:
+            raise ExecutionConflict("completed notification requires Journal answer")
+        terminal_id = digest([target.target_id, "terminal"])
+        if session.get(NotificationEventRow, terminal_id) is None:
+            session.add(
+                NotificationEventRow(
+                    event_id=terminal_id,
+                    target_id=target.target_id,
+                    revision=root.revision,
+                    kind="terminal",
+                    payload={**payload, "content": content},
+                )
+            )
 
 
 def require_schema(sessions) -> None:

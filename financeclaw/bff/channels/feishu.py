@@ -13,8 +13,6 @@ from typing import Any
 from financeclaw.bff.application.feishu_channel_service import (
     FeishuChannelService,
     FeishuInboundMessage,
-    FeishuMarkdownStream,
-    MarkdownProducer,
 )
 
 LOGGER = logging.getLogger(__name__)
@@ -45,7 +43,7 @@ class FeishuChannelAdapter:
             service: 飞书 P2P 应用服务。
             app_id: 飞书应用 ID。
             app_secret: 飞书应用 Secret，仅传给 SDK，不写日志。
-            allowed_open_ids: 灰度用户白名单。
+            allowed_open_ids: 允许使用的用户列表。
             max_concurrency: SDK WebSocket 回调并发安全上限。
             security_mode: SDK security mode（audit 或 strict）。
             connect_timeout_seconds: 启动等待 WebSocket 就绪的超时。
@@ -72,6 +70,8 @@ class FeishuChannelAdapter:
         self._application_loop: asyncio.AbstractEventLoop | None = None
         self._tenant_by_message: OrderedDict[str, str] = OrderedDict()
         self._tenant_lock = Lock()
+        self._card_lock = Lock()
+        self._card_futures = set()
         self._ready = False
         self._accepting_messages = False
 
@@ -105,8 +105,15 @@ class FeishuChannelAdapter:
 
     async def stop(self) -> None:
         """先排空已受理业务任务，再断开飞书 WebSocket。"""
-        self._accepting_messages = False
+        with self._card_lock:
+            self._accepting_messages = False
+            pending_cards = list(self._card_futures)
         try:
+            if pending_cards:
+                await asyncio.gather(
+                    *(asyncio.wrap_future(future) for future in pending_cards),
+                    return_exceptions=True,
+                )
             await self.service.shutdown()
         finally:
             channel = self._channel
@@ -126,27 +133,6 @@ class FeishuChannelAdapter:
             return False
         snapshot = getattr(channel, "connection_snapshot", lambda: None)()
         return snapshot is None or getattr(snapshot, "state", "connected") != "error"
-
-    async def stream_markdown(
-        self,
-        *,
-        chat_id: str,
-        reply_to_message_id: str,
-        producer: MarkdownProducer,
-    ) -> bool:
-        """调用 SDK 高层 CardKit Markdown 流，并返回发送成功标志。"""
-        channel = self._require_channel()
-
-        async def sdk_producer(stream: FeishuMarkdownStream) -> None:
-            """把 SDK 控制器以应用层最小协议交给生产者。"""
-            await producer(stream)
-
-        result = await channel.stream(
-            chat_id,
-            {"markdown": sdk_producer},
-            {"reply_to": reply_to_message_id},
-        )
-        return bool(getattr(result, "success", False))
 
     async def send_text(
         self,
@@ -220,7 +206,22 @@ class FeishuChannelAdapter:
             raise RuntimeError(
                 "Feishu channel is enabled but lark-channel-sdk is not installed"
             ) from exc
-        return FeishuChannel(
+        # 固定 SDK 的单一同步回调入口；不改写 dispatcher map、不另建连接。
+        adapter = self
+
+        class DurableCardChannel(FeishuChannel):
+            """在 SDK 回包前完成 BFF 持久受理，普通消息仍走官方管线。"""
+
+            def _on_p2_card_action_trigger(self, data):
+                """原样保留可信回调字段，并把持久受理结果交回 SDK。"""
+                from lark_channel.channel._coerce import obj_to_dict
+                from lark_channel.event.callback.model.p2_card_action_trigger import (
+                    P2CardActionTriggerResponse,
+                )
+
+                return P2CardActionTriggerResponse(adapter._accept_card(obj_to_dict(data)))
+
+        return DurableCardChannel(
             app_id=self.app_id,
             app_secret=self._app_secret,
             policy=PolicyConfig(
@@ -249,6 +250,34 @@ class FeishuChannelAdapter:
                 max_concurrent_ws_handlers=self.max_concurrency,
             ),
         )
+
+    def _accept_card(self, raw):
+        """SDK 后台线程只等待短事务，超时不谎报失败或取消可能已提交的决定。"""
+        from concurrent.futures import TimeoutError as FutureTimeout
+
+        from financeclaw.bff.application.feishu_card_actions import toast
+
+        loop = self._application_loop
+        with self._card_lock:
+            if not self._accepting_messages or loop is None or loop.is_closed():
+                return toast("服务暂不可用，请稍后重试。", "warning")
+            if len(self._card_futures) >= self.max_concurrency:
+                return toast("当前操作较多，请稍后重试。", "warning")
+            future = asyncio.run_coroutine_threadsafe(self.service.card_actions.handle(raw), loop)
+            self._card_futures.add(future)
+
+        def finished(completed):
+            """释放回调容量，关闭时只等待尚未完成的受理。"""
+            with self._card_lock:
+                self._card_futures.discard(completed)
+
+        future.add_done_callback(finished)
+        try:
+            return future.result(timeout=2.5)
+        except FutureTimeout:
+            return toast("正在确认受理结果，请稍后查看卡片。", "warning")
+        except Exception:
+            return toast("暂时无法确认受理结果，请稍后重试。", "warning")
 
     def _capture_raw_event(self, payload: Any) -> None:
         """只从已验证事件提取 message_id→tenant_key，绝不保存正文或原文。"""

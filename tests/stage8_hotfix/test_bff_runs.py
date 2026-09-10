@@ -16,7 +16,6 @@ from financeclaw.bff.http.webhooks import webhook_router
 from financeclaw.kernel.agent_server import ServerRun
 from financeclaw.kernel.interactions import InteractionResponse
 from financeclaw.kernel.responses import ConversationTurnRequest
-from financeclaw.shared.execution_ledger.control_tables import RunControlRow
 from financeclaw.shared.execution_ledger.repository import ExecutionConflict
 from financeclaw.shared.execution_ledger.root_repository import StaleRunLease, now
 from financeclaw.shared.execution_ledger.run_tables import (
@@ -142,9 +141,6 @@ def runtime(tmp_path):
     """Create an explicitly enabled test BFF with shared durable resources."""
     native = FakeNative()
     runtime = build_bff_runs(config(tmp_path), native=native)
-    with runtime.runs.store.sessions.begin() as session:
-        gate = session.get(RunControlRow, 1)
-        gate.bff_admission_enabled = True
     yield runtime
     runtime.resources.database.close()
 

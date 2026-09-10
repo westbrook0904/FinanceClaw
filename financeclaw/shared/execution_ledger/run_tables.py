@@ -76,23 +76,6 @@ class RunInboxRow(Base):
     )
 
 
-class BackendAttemptRow(Base):
-    """一次固定 operation 的确切 backend 引用，部署与 opaque ID 联合唯一。"""
-
-    __tablename__ = "backend_attempts"
-    operation_id: Mapped[str] = mapped_column(
-        ForeignKey("run_operations.operation_id"), primary_key=True
-    )
-    run_id: Mapped[str] = mapped_column(ForeignKey("root_runs.run_id"), index=True)
-    backend_instance_id: Mapped[str] = mapped_column(String(128))
-    execution_hash: Mapped[str] = mapped_column(String(64))
-    reference: Mapped[dict[str, Any]] = mapped_column(JSON)
-    cancellation_confirmed: Mapped[bool] = mapped_column(Boolean, default=False)
-    __table_args__ = (
-        Index("uq_backend_attempt_identity", "backend_instance_id", "execution_hash", unique=True),
-    )
-
-
 class RunProgressEventRow(Base):
     """根与 revision 唯一的业务进度，不保存 token 或 backend 原始状态。"""
 

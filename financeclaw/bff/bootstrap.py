@@ -139,15 +139,19 @@ def create_default_app(settings: FinanceClawSettings | None = None) -> FastAPI:
     }
     startup_hooks += (bff_runtime.lifecycle.start,)
     shutdown_hooks.append(bff_runtime.lifecycle.stop)
-    readiness_checks["bff_run_control"] = bff_runtime.runs.healthy
-    if settings.feishu_notifications_enabled:
+    readiness_checks["bff_runs"] = bff_runtime.runs.healthy
+    if settings.feishu_enabled:
         from financeclaw.bff.notifications.repository import NotificationRepository
+        from financeclaw.bff.notifications.worker import NotificationWorker
 
         notifications = NotificationRepository(
             components.database.session_factory,
             app_id=settings.feishu_app_id,
             allowed_open_ids=settings.feishu_allowed_open_ids,
         )
+        notification_worker = NotificationWorker(notifications, settings)
+        startup_hooks += (notification_worker.start,)
+        shutdown_hooks.append(notification_worker.stop)
 
         async def notifications_ready():
             """独立报告通知发送者存活，不以审计 publisher 成功替代。"""

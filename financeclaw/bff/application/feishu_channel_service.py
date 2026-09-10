@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Protocol
@@ -19,7 +18,7 @@ from financeclaw.bff.application.feishu_interactions import (
 from financeclaw.kernel.authorization import AuthorizationEvidence
 from financeclaw.kernel.interactions import InteractionResponse
 from financeclaw.kernel.notifications import NotificationAddress
-from financeclaw.kernel.responses import ConversationTurnRequest, StreamEvent
+from financeclaw.kernel.responses import ConversationTurnRequest
 from financeclaw.shared.conversation.repository import ConversationConflict, ConversationNotFound
 from financeclaw.shared.execution_ledger.interactions import (
     InteractionConflict,
@@ -30,52 +29,13 @@ from financeclaw.shared.execution_ledger.repository import digest
 LOGGER = logging.getLogger(__name__)
 
 
-class FeishuMarkdownStream(Protocol):
-    """应用层写入飞书卡片所需的最小流控制协议。
-
-    append 用于展示增量文本，set_content 用 Journal 的完整答案最终校正。
-    SDK 卡片对象只由接口适配器持有，应用服务不依赖其具体类型。
-    """
-
-    async def append(self, chunk: str) -> None:
-        """追加一段助手文本。"""
-        ...
-
-    async def set_content(self, full: str) -> None:
-        """用完整文本覆盖当前卡片内容。"""
-        ...
-
-
-MarkdownProducer = Callable[[FeishuMarkdownStream], Awaitable[None]]
-
-
 class FeishuReplyGateway(Protocol):
-    """飞书回复的出站 Port，由 Channel SDK 适配器实现。
-
-    stream_markdown 调用 producer 持续生成卡片正文；返回 False 或发生
-    异常时，应用服务可转用 send_text。布尔值描述发送结果，不代表 Agent
-    运行成功；普通文本的 idempotency_key 用于同一消息的重复发送去重。
-    """
-
-    async def stream_markdown(
-        self,
-        *,
-        chat_id: str,
-        reply_to_message_id: str,
-        producer: MarkdownProducer,
-    ) -> bool:
-        """发送回复原消息的 Markdown 流式卡片，成功时返回 True。"""
-        ...
+    """普通入站校验反馈；任务交付全部使用持久通知。"""
 
     async def send_text(
-        self,
-        *,
-        chat_id: str,
-        reply_to_message_id: str,
-        text: str,
-        idempotency_key: str,
+        self, *, chat_id: str, reply_to_message_id: str, text: str, idempotency_key: str
     ) -> bool:
-        """发送回复原消息的普通文本，成功时返回 True。"""
+        """发送带固定 UUID 的简短文本反馈。"""
         ...
 
 
@@ -107,36 +67,18 @@ class FeishuInboundMessage:
     sender_is_bot: bool = False
 
 
-@dataclass(slots=True)
-class _ReplyState:
-    """单条入站消息的流式回复状态，不能跨消息或 chat 复用。
-
-    live_text 累积已观察到的增量，final_text 保存 Journal 校正结果；
-    terminal_status 决定是否结束等待，showing_progress 区分占位提示和
-    正式答案，避免把进度文字拼接进用户最终收到的内容。
-    """
-
-    live_text: str = ""
-    final_text: str | None = None
-    terminal_status: str | None = None
-    showing_progress: bool = False
-
-
 class FeishuChannelService:
     """飞书 P2P 消息到 Conversation Turn 的一期编排服务。
 
     同一个 chat 通过内存锁串行，不同 chat 受全局信号量限制并行；消息 ID
     同时进入持久化 Turn 幂等键，SDK 重推不会重复执行或追加 Journal。
     内存锁只覆盖本服务实例，持久化幂等负责重放保护，不能据此推导出多实例
-    Channel 的全局串行保证。流式卡片只是展示，最终正文以 Journal 为准。
+    Channel 的全局串行保证。任务卡展示持久状态，最终正文以 Journal 为准。
     """
 
     UNSUPPORTED_TEXT = "当前仅支持文本消息。"
     EMPTY_TEXT = "消息内容不能为空。"
-    PROGRESS_TEXT = "正在处理…"
-    INTERRUPTED_TEXT = "该请求需要人工审批，请前往 Web/API 完成审批。"
     FAILED_TEXT = "处理失败，请稍后重试。"
-    STILL_RUNNING_TEXT = "请求仍在处理中，请稍后通过 Web/API 查看结果。"
 
     def __init__(
         self,
@@ -146,19 +88,15 @@ class FeishuChannelService:
         allowed_open_ids: frozenset[str],
         scopes: frozenset[str],
         max_concurrency: int = 8,
-        status_poll_interval_seconds: float = 0.25,
-        status_timeout_seconds: float = 300.0,
     ) -> None:
-        """装配飞书 Channel 服务并校验并发与轮询参数。
+        """装配飞书 Channel 服务并校验权限与并发参数。
 
         Args:
             conversation_service: 复用现有 Journal 与 Agent Server 的会话服务。
             app_id: 飞书应用 ID。
-            allowed_open_ids: 灰度用户 open_id 白名单。
+            allowed_open_ids: 允许使用的用户 open_id 列表。
             scopes: 显式授予飞书身份的 FinanceClaw scopes。
             max_concurrency: 不同单聊同时执行的最大数量。
-            status_poll_interval_seconds: 后台运行的状态轮询间隔。
-            status_timeout_seconds: 流结束后等待最终状态的最长秒数。
 
         Raises:
             ValueError: 必填值为空或数值范围非法。
@@ -174,14 +112,18 @@ class FeishuChannelService:
             raise ValueError("Feishu app_id, allowlist and scopes are required")
         if max_concurrency < 1:
             raise ValueError("Feishu max_concurrency must be positive")
-        if status_poll_interval_seconds < 0 or status_timeout_seconds <= 0:
-            raise ValueError("Feishu status polling values are invalid")
         self.conversation_service = conversation_service
         self.app_id = app_id
         self.allowed_open_ids = allowed_open_ids
         self.scopes = scopes
-        self.status_poll_interval_seconds = status_poll_interval_seconds
-        self.status_timeout_seconds = status_timeout_seconds
+        from financeclaw.bff.application.feishu_card_actions import FeishuCardActions
+
+        self.card_actions = FeishuCardActions(
+            conversation_service.runs,
+            app_id=app_id,
+            allowed_open_ids=allowed_open_ids,
+            scopes=scopes,
+        )
         self._concurrency = asyncio.Semaphore(max_concurrency)
         self._chat_locks: dict[tuple[str, str], asyncio.Lock] = {}
         self._tasks: set[asyncio.Task[str]] = set()
@@ -327,7 +269,7 @@ class FeishuChannelService:
         normalized: str,
         gateway: FeishuReplyGateway,
     ) -> str:
-        """解析会话绑定、幂等开启 Turn，并交付流式回复。"""
+        """解析会话绑定、幂等开启 Turn，并登记持久化任务卡。"""
         tenant_id = f"feishu:{message.tenant_key}"
         subject_id = f"feishu:{message.sender_open_id}"
         current = datetime.now(UTC)
@@ -409,7 +351,7 @@ class FeishuChannelService:
                 return "waiting_active_turn"
         if parsed is not None:
             identifier, response = parsed
-            accepted_response = await self.conversation_service.runs.interactions.respond(
+            await self.conversation_service.runs.interactions.respond(
                 identifier,
                 response,
                 tenant_id=tenant_id,
@@ -419,13 +361,7 @@ class FeishuChannelService:
                 idempotency_key=f"feishu:{self.app_id}:{message.message_id}",
                 **authorization_kwargs,
             )
-            return await self._deliver_run(
-                accepted_response["root_run_id"],
-                message,
-                gateway,
-                tenant_id=tenant_id,
-                subject_id=subject_id,
-            )
+            return "accepted"
         if command in {"/cancel", "/authorize", "/revoke", "/mute"}:
             parts = normalized.split()
             if len(parts) != 2:
@@ -442,8 +378,6 @@ class FeishuChannelService:
             if turn.conversation_id != conversation.conversation_id:
                 raise InteractionConflict("任务不属于当前单聊。")
             if parts[0] == "/mute":
-                if not authorization_kwargs:
-                    raise InteractionConflict("此任务没有后台通知订阅。")
                 await asyncio.to_thread(
                     self.conversation_service.runs.notifications,
                     parts[1],
@@ -454,8 +388,6 @@ class FeishuChannelService:
                 await self._send_plain(gateway, message, "已关闭该任务的后续通知。", suffix="mute")
                 return "notifications_muted"
             if parts[0] in {"/authorize", "/revoke"}:
-                if not authorization_kwargs:
-                    raise InteractionConflict("此任务未启用后台协调授权。")
                 if parts[0] == "/authorize":
                     result = await self.conversation_service.runs.reauthorize(
                         parts[1],
@@ -463,12 +395,14 @@ class FeishuChannelService:
                         subject_id=subject_id,
                         scopes=self.scopes,
                         **authorization_kwargs,
+                        command_id=f"feishu:{self.app_id}:{message.message_id}",
                     )
                 else:
                     result = await self.conversation_service.runs.revoke_authorization(
                         parts[1],
                         tenant_id=tenant_id,
                         subject_id=subject_id,
+                        command_id=f"feishu:{self.app_id}:{message.message_id}",
                     )
                 await self._send_plain(
                     gateway,
@@ -493,212 +427,23 @@ class FeishuChannelService:
                 suffix="cancel",
             )
             return result.status
-        accepted = await self.conversation_service.start_turn(
+        await self.conversation_service.start_turn(
             conversation.conversation_id,
             ConversationTurnRequest(message=normalized),
             tenant_id=tenant_id,
             subject_id=subject_id,
             scopes=self.scopes,
             idempotency_key=f"feishu:{self.app_id}:{message.message_id}",
-            **(
-                {
-                    "notification_address": NotificationAddress(
-                        app_id=self.app_id,
-                        tenant_key=message.tenant_key,
-                        open_id=message.sender_open_id,
-                        chat_id=message.chat_id,
-                        message_id=message.message_id,
-                    )
-                }
-                if authorization_kwargs
-                and self.conversation_service.runs.settings.feishu_notifications_enabled
-                else {}
+            notification_address=NotificationAddress(
+                app_id=self.app_id,
+                tenant_key=message.tenant_key,
+                open_id=message.sender_open_id,
+                chat_id=message.chat_id,
+                message_id=message.message_id,
             ),
             **authorization_kwargs,
         )
-        return await self._deliver_run(
-            accepted.run_id, message, gateway, tenant_id=tenant_id, subject_id=subject_id
-        )
-
-    async def _deliver_run(
-        self,
-        run_id: str,
-        message: FeishuInboundMessage,
-        gateway: FeishuReplyGateway,
-        *,
-        tenant_id: str,
-        subject_id: str,
-    ) -> str:
-        """新 Turn 与交互恢复共用展示路径；回答不会追加新的父 Turn。"""
-        runs = self.conversation_service.runs
-        if await asyncio.to_thread(
-            runs.notification_mode, run_id, tenant_id=tenant_id, subject_id=subject_id
-        ):
-            # 短受理结束后由持久发送器交付；此处不创建卡片或第二份最终回复。
-            return "accepted"
-        state = _ReplyState()
-
-        async def producer(stream: FeishuMarkdownStream) -> None:
-            """把稳定应用事件写入 SDK 流控制器并最终以 Journal 校正。"""
-            try:
-                async for event in self.conversation_service.stream(
-                    run_id,
-                    tenant_id=tenant_id,
-                    subject_id=subject_id,
-                    scopes=self.scopes,
-                ):
-                    await self._apply_event(stream, event, state)
-            except Exception:
-                LOGGER.warning(
-                    "Feishu application stream interrupted",
-                    extra={"run_id": run_id, "message_id": message.message_id},
-                )
-            if state.terminal_status is None:
-                await self._resolve_final(
-                    stream,
-                    state,
-                    run_id=run_id,
-                    tenant_id=tenant_id,
-                    subject_id=subject_id,
-                )
-
-        try:
-            delivered = await gateway.stream_markdown(
-                chat_id=message.chat_id,
-                reply_to_message_id=message.message_id,
-                producer=producer,
-            )
-            if not delivered:
-                raise RuntimeError("Feishu streaming card delivery returned failure")
-        except Exception:
-            LOGGER.warning(
-                "Feishu streaming card failed; falling back to text",
-                extra={"run_id": run_id, "message_id": message.message_id},
-            )
-            if state.terminal_status is None:
-                await self._resolve_final(
-                    None,
-                    state,
-                    run_id=run_id,
-                    tenant_id=tenant_id,
-                    subject_id=subject_id,
-                )
-            await self._send_plain(
-                gateway,
-                message,
-                state.final_text or self.FAILED_TEXT,
-                suffix="fallback",
-            )
-        return state.terminal_status or "completed"
-
-    async def _apply_event(
-        self,
-        stream: FeishuMarkdownStream,
-        event: StreamEvent,
-        state: _ReplyState,
-    ) -> None:
-        """把一个稳定应用事件投影到 Markdown 卡片。"""
-        data = event.data if isinstance(event.data, Mapping) else {}
-        if event.event == "assistant.delta":
-            delta = data.get("delta")
-            if not isinstance(delta, str) or not delta:
-                return
-            if state.showing_progress and not state.live_text:
-                state.live_text = delta
-                state.showing_progress = False
-                await stream.set_content(delta)
-            else:
-                state.live_text += delta
-                await stream.append(delta)
-            return
-        if event.event == "run.progress":
-            if not state.live_text and not state.showing_progress:
-                state.showing_progress = True
-                await stream.set_content(self.PROGRESS_TEXT)
-            return
-        if event.event == "assistant.completed":
-            content = data.get("content")
-            if isinstance(content, str) and content:
-                state.final_text = content
-            state.terminal_status = "completed"
-            await stream.set_content(state.final_text or state.live_text or "处理已完成。")
-            return
-        if event.event == "run.interrupted":
-            state.terminal_status = "interrupted"
-            state.final_text = format_interactions(
-                data.get("pending_interactions", ()), fallback=self.INTERRUPTED_TEXT
-            )
-            await stream.set_content(state.final_text)
-            return
-        if event.event == "run.failed":
-            state.terminal_status = "failed"
-            state.final_text = self.FAILED_TEXT
-            await stream.set_content(state.final_text)
-
-    async def _resolve_final(
-        self,
-        stream: FeishuMarkdownStream | None,
-        state: _ReplyState,
-        *,
-        run_id: str,
-        tenant_id: str,
-        subject_id: str,
-    ) -> None:
-        """轮询权威状态，并用 Journal 的最终文本校正展示。"""
-        loop = asyncio.get_running_loop()
-        deadline = loop.time() + self.status_timeout_seconds
-        while True:
-            response = await self.conversation_service.status(
-                run_id,
-                tenant_id=tenant_id,
-                subject_id=subject_id,
-                scopes=self.scopes,
-            )
-            if response.status == "completed":
-                state.terminal_status = "completed"
-                state.final_text = await self.conversation_service.assistant_content(
-                    run_id,
-                    tenant_id=tenant_id,
-                    subject_id=subject_id,
-                )
-                state.final_text = state.final_text or state.live_text or "处理已完成。"
-                if stream is not None:
-                    await stream.set_content(state.final_text)
-                return
-            if response.status == "interrupted":
-                state.terminal_status = "interrupted"
-                state.final_text = format_interactions(
-                    response.pending_interactions, fallback=self.INTERRUPTED_TEXT
-                )
-                if stream is not None:
-                    await stream.set_content(state.final_text)
-                return
-            if response.status in {"cancelled", "cancellation_requested"}:
-                state.terminal_status = response.status
-                state.final_text = (
-                    "任务已取消。"
-                    if response.status == "cancelled"
-                    else "已请求取消，等待执行停止确认。"
-                )
-                if stream is not None:
-                    await stream.set_content(state.final_text)
-                return
-            if response.status == "failed":
-                state.terminal_status = "failed"
-                state.final_text = self.FAILED_TEXT
-                if stream is not None:
-                    await stream.set_content(state.final_text)
-                return
-            if stream is not None and not state.live_text and not state.showing_progress:
-                state.showing_progress = True
-                await stream.set_content(self.PROGRESS_TEXT)
-            if loop.time() >= deadline:
-                state.terminal_status = "running"
-                state.final_text = self.STILL_RUNNING_TEXT
-                if stream is not None:
-                    await stream.set_content(state.final_text)
-                return
-            await asyncio.sleep(self.status_poll_interval_seconds)
+        return "accepted"
 
     async def _send_plain(
         self,

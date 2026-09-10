@@ -11,7 +11,6 @@ from financeclaw.agent_server.agents.offline import OfflineFinanceModel
 from financeclaw.agent_server.bootstrap import build_components
 from financeclaw.bff.application.runs.bootstrap import build_bff_runs
 from financeclaw.kernel.context import ExecutionContext
-from financeclaw.shared.execution_ledger.control_tables import RunControlRow
 from financeclaw.shared.releases.interactions import CLARIFICATION_TOOL
 from tests.stage6fix.test_batch_tools import BatchModel, call
 from tests.stage8_hotfix.test_bff_runs import OWNER, FakeNative, admit, config, response, tick
@@ -91,8 +90,6 @@ async def test_native_root_clarification_survives_bff_resume_and_journal(tmp_pat
 
     native.runs.on_create = execute_native
     try:
-        with bff.runs.store.sessions.begin() as session:
-            session.get(RunControlRow, 1).bff_admission_enabled = True
         accepted = await admit(bff, message="帮我研究行情")
         await tick(bff)
         await tick(bff)

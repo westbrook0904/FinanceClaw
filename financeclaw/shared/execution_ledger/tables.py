@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import JSON, Boolean, CheckConstraint, DateTime, ForeignKey, Integer, String
+from sqlalchemy import JSON, Boolean, CheckConstraint, DateTime, ForeignKey, Index, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from financeclaw.shared.infrastructure.orm import Base, utcnow
@@ -55,5 +55,14 @@ class RunOperationRow(Base):
     status: Mapped[str] = mapped_column(String(32), default="prepared", nullable=False)
     server_run_id: Mapped[str | None] = mapped_column(String(128))
     result: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    # 回执与出站操作一对一，直接保存在原操作上。
+    backend_instance_id: Mapped[str | None] = mapped_column(String(128))
+    execution_hash: Mapped[str | None] = mapped_column(String(64))
+    reference: Mapped[dict[str, Any] | None] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    __table_args__ = (
+        Index(
+            "uq_operation_backend_identity", "backend_instance_id", "execution_hash", unique=True
+        ),
+    )

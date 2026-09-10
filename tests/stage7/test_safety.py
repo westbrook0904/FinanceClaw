@@ -122,6 +122,7 @@ async def test_initialize_rejects_release_drift_even_for_clarification(tmp_path)
 def test_protected_results_are_never_offloaded_or_token_truncated(tmp_path):
     """跨 child→root 也保留结构，不能返回截断摘要假装完整证据。"""
     stack = components(tmp_path)
+    stack.artifact_service.inline_bytes = 16384
     tool_name = "call_agent__ziwei_doushu_agent"
     middleware = ToolResultArtifactMiddleware(
         stack.artifact_service, protected_tools=frozenset({tool_name})

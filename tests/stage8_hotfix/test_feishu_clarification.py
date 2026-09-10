@@ -11,11 +11,8 @@ from financeclaw.bff.application.conversation_service import ConversationService
 from financeclaw.bff.application.feishu_channel_service import (
     FeishuChannelService,
     FeishuInboundMessage,
-    _ReplyState,
 )
 from financeclaw.bff.application.feishu_interactions import format_interactions, parse_response
-from financeclaw.bff.notifications.rendering import render
-from financeclaw.kernel.responses import StreamEvent
 from financeclaw.shared.conversation.tables import ConversationTurnRow
 from financeclaw.shared.execution_ledger.interaction_tables import PendingInteractionRow
 from financeclaw.shared.execution_ledger.root_repository import now
@@ -35,25 +32,14 @@ class Replies:
         """每个测试单独收集用户实际看到的文本。"""
         self.texts = []
 
-    async def stream_markdown(self, **kwargs):
-        """启用后台通知时不应生成另一份前台卡片。"""
-        raise AssertionError("unexpected foreground stream")
-
     async def send_text(self, *, text, **kwargs):
         """收集提示并模拟已成功发送。"""
         self.texts.append(text)
         return True
 
-    async def set_content(self, text):
-        """模拟前台卡片用最终问题更新正文。"""
-        self.texts.append(text)
-
 
 def channel(runtime):
     """从数据库资源重建飞书入口，不保存当前问题到进程内存。"""
-    runtime.runs.settings = runtime.runs.settings.model_copy(
-        update={"feishu_notifications_enabled": True}
-    )
     return FeishuChannelService(
         ConversationService(
             runtime.runs.repository, runtime.releases.agent_profiles, runs=runtime.runs
@@ -131,7 +117,7 @@ async def waiting(runtime, *, approval=False):
 async def test_plain_answer_resumes_same_root_and_replay_never_answers_next_question(runtime):
     """只回复时制即可恢复；重启入口及重推原请求／旧回答不会串到后续澄清。"""
     service, replies, accepted, first = await waiting(runtime)
-    text = render("interaction", {"run_id": accepted.run_id, "interactions": [first]})
+    text = format_interactions([first], fallback="等待处理")
     assert QUESTION in text and "直接回复" in text
     assert all(part not in text for part in ("interaction-", "Schema", '"properties"', "/v1/"))
     # 原消息重推仍展示同一根，不得拿原始任务当作澄清回答。
@@ -163,20 +149,6 @@ async def test_plain_answer_resumes_same_root_and_replay_never_answers_next_ques
     assert len(runtime.client.runs.calls) == 3
     assert await channel(runtime).process(answer, replies) == "accepted"
     assert not replies.texts
-
-
-@pytest.mark.asyncio
-async def test_stream_poll_and_durable_notification_show_same_concise_question(runtime):
-    """SSE、轮询和独立通知发送器均展示问题与直接回复说明。"""
-    service, replies, accepted, item = await waiting(runtime)
-    expected = render("interaction", {"run_id": accepted.run_id, "interactions": [item]})
-    await service._apply_event(
-        replies,
-        StreamEvent(event="run.interrupted", data={"pending_interactions": [item]}),
-        _ReplyState(),
-    )
-    await service._resolve_final(replies, _ReplyState(), run_id=accepted.run_id, **OWNER)
-    assert replies.texts == [expected, expected]
 
 
 @pytest.mark.asyncio
@@ -232,7 +204,7 @@ async def test_other_chat_and_changed_duplicate_cannot_retarget_answer(runtime):
 
 
 @pytest.mark.asyncio
-async def test_answer_schema_and_legacy_answer_command_are_preserved(runtime):
+async def test_answer_schema_and_explicit_answer_command(runtime):
     """文本捷径仍使用固定回答 Schema；原来的显式回答命令也能恢复同一任务。"""
     service, replies, accepted, item = await waiting(runtime)
     assert (

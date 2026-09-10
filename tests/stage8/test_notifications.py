@@ -30,10 +30,6 @@ from tests.stage8.support import tick
 class NoDisplay:
     """协调通知开启后，BFF 不应再尝试任何展示或最终发送。"""
 
-    async def stream_markdown(self, **kwargs):
-        """拒绝创建第二份最终卡片。"""
-        raise AssertionError("unexpected streaming display")
-
     async def send_text(self, **kwargs):
         """普通任务受理不在前台发送文本。"""
         raise AssertionError("unexpected foreground delivery")
@@ -51,21 +47,27 @@ class Gateway:
         """当前测试目标仍有效；生产 SDK 另有协议测试。"""
         return None
 
+    async def create_card(self, content):
+        """模拟创建尚未发出的卡片实例。"""
+        return "card-synthetic"
+
     async def send(self, claim):
         """仿真远端固定键去重，调用账本包含每次真实尝试。"""
         self.calls.append(dict(claim))
         if self.receipts:
             return self.receipts.pop(0)
-        self.messages.setdefault(claim["send_key"], "message-" + str(len(self.messages) + 1))
+        key = claim.get("target_message_id") or claim["send_key"]
+        self.messages.setdefault(
+            key, claim.get("target_message_id") or "message-" + str(len(self.messages) + 1)
+        )
         if self.lose:
             self.lose = False
             raise TimeoutError("synthetic lost response")
-        return Receipt("sent", message_id=self.messages[claim["send_key"]])
+        return Receipt("sent", message_id=self.messages[key])
 
 
 async def admitted(setup):
     """实际飞书应用受理即退出，后续通过BFF 后台循环与 Sender 推进。"""
-    setup.settings = setup.settings.model_copy(update={"feishu_notifications_enabled": True})
     setup.bff.runs.settings = setup.settings
     service = FeishuChannelService(
         setup.bff, app_id="app", allowed_open_ids=frozenset({"user"}), scopes=setup.scopes
@@ -95,6 +97,10 @@ async def completed(setup):
     result = await admitted(setup)
     for _ in range(3):
         await tick(setup)
+    # 这些测试隔离最终文本分片故障；任务卡的完整投递/回调由 test_feishu_cards 覆盖。
+    with setup.store.sessions.begin() as session:
+        for event in session.scalars(select(Event).where(Event.kind == "card")):
+            event.materialized_at = now()
     return result
 
 
@@ -117,10 +123,13 @@ async def test_final_intent_atomic_and_independent_of_display(setup):
     service, message, run_id, repository = await completed(setup)
     assert await service.process(message, NoDisplay()) == "accepted"
     with setup.store.sessions() as session:
-        event = session.scalar(select(Event))
+        event = session.scalar(select(Event).where(Event.kind == "terminal"))
         assert event.payload["content"] == "final answer"
         assert session.scalar(select(func.count()).select_from(Target)) == 1
-        assert session.scalar(select(func.count()).select_from(Event)) == 1
+        assert (
+            session.scalar(select(func.count()).select_from(Event).where(Event.kind == "terminal"))
+            == 1
+        )
         assert session.scalar(select(func.count()).select_from(ConversationMessageRow)) == 2
     assert repository.materialize()
     assert not repository.materialize()
@@ -157,16 +166,13 @@ async def test_notification_failure_rolls_back_journal_and_completion(setup, mon
     with setup.store.sessions() as session:
         assert session.get(RootRunRow, run_id).projection["status"] != "completed"
         assert session.get(RootRunRow, run_id).last_error == "RuntimeError"
-        assert session.scalars(select(Event.kind)).all() == ["attention"]
+        assert set(session.scalars(select(Event.kind))) == {"card"}
         assert session.scalar(select(func.count()).select_from(ConversationMessageRow)) == 1
     monkeypatch.setattr(facts, "record_progress", original)
     await tick(setup)
     assert setup.backend.calls == 1
     with setup.store.sessions() as session:
-        assert session.scalars(select(Event.kind).order_by(Event.revision)).all() == [
-            "attention",
-            "terminal",
-        ]
+        assert set(session.scalars(select(Event.kind))) == {"card", "terminal"}
 
 
 @pytest.mark.asyncio
@@ -296,8 +302,9 @@ async def test_answer_reuses_subscription_and_suppresses_old_interaction(setup):
             await deliver(repository, gateway, claim, setup.settings)
     with repository.sessions() as session:
         assert session.scalar(select(func.count()).select_from(Target)) == 1
-        assert {row.status for row in session.scalars(select(Delivery))} == {"suppressed", "sent"}
+        assert {row.status for row in session.scalars(select(Delivery))} == {"sent"}
     assert len(gateway.calls) == 1
+    assert "analysis_period" not in gateway.calls[0]["content"]
     assert gateway.calls[0]["address"]["message_id"] == "original"
 
 
@@ -309,7 +316,7 @@ async def test_chunks_are_ordered_and_uncertain_blocks_later_parts(setup):
     assert "".join(part.split("\n", 1)[1] for part in chunks("数据🧪" * 1500)) == "数据🧪" * 1500
     _, _, _, repository = await completed(setup)
     with repository.sessions.begin() as session:
-        event = session.scalar(select(Event))
+        event = session.scalar(select(Event).where(Event.kind == "terminal"))
         event.payload = {**event.payload, "content": "数据🧪" * 1500}
     repository.materialize()
     gateway = Gateway(lose=True)
@@ -347,10 +354,15 @@ async def test_expired_or_cancelled_interaction_is_not_prompted(setup, obsolete)
             session.scalar(select(PendingInteractionRow)).expires_at = now() - timedelta(seconds=1)
     else:
         await setup.bff.cancel(run_id, tenant_id="feishu:tenant", subject_id="feishu:user")
-    repository.materialize()
+    while repository.materialize():
+        pass
     gateway = Gateway()
     await deliver(repository, gateway, repository.claim("sender", lease_seconds=60), setup.settings)
-    assert delivery(repository).status == "suppressed" and not gateway.calls
+    if obsolete == "expired":
+        assert delivery(repository).status == "suppressed" and not gateway.calls
+    else:
+        assert delivery(repository).status == "sent"
+        assert "正在停止" in gateway.calls[0]["content"]
 
 
 @pytest.mark.asyncio

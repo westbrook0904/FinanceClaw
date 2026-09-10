@@ -3,7 +3,6 @@
 from datetime import datetime
 
 from financeclaw.shared.execution_ledger.authorization import check_authorization
-from financeclaw.shared.execution_ledger.driver import control
 from financeclaw.shared.execution_ledger.repository import ExecutionConflict
 from financeclaw.shared.execution_ledger.root_repository import RootRunRepository, now
 from financeclaw.shared.execution_ledger.tables import RunExecutionRow, RunOperationRow
@@ -19,8 +18,6 @@ class BFFRunRepository(RootRunRepository):
     def claim_operation(self, claim, operation_id):
         """Commit a single sending right after checking the frozen command and live grant."""
         with self.sessions.begin() as session:
-            if control(session).bff_dispatch_paused:
-                return False
             row = self.lock(session, claim["run_id"], claim)
             root = session.get(RunExecutionRow, row.run_id)
             operation = session.get(RunOperationRow, operation_id)

@@ -19,6 +19,9 @@ class InteractionPoint(BaseModel):
     # 的动作快照在运行期登记，并由 required_scope 约束回答者权限。
     response_schema: dict[str, Any] = Field(default_factory=dict)
     options: tuple[str, ...] = Field(default=(), max_length=20)
+    selection_mode: Literal["single", "multiple"] = "single"
+    min_selected: int = Field(default=1, ge=0, le=20)
+    max_selected: int = Field(default=20, ge=1, le=20)
     required_scope: str | None = Field(default=None, min_length=1, max_length=128)
     # 有效期从首次登记计算，重复观察不能给同一中断续期。
     timeout_seconds: int = Field(default=900, ge=1, le=604800)
@@ -55,9 +58,34 @@ class InteractionPoint(BaseModel):
             raise ValueError("choice requires bounded unique options")
         if self.kind != "choice" and self.options:
             raise ValueError("only choice interactions declare options")
+        if self.selection_mode == "multiple" and (
+            self.kind != "choice" or self.min_selected > min(self.max_selected, len(self.options))
+        ):
+            raise ValueError("multiple choice requires valid selection bounds")
         if self.kind == "approval" and not self.required_scope:
             raise ValueError("declared approval requires an explicit approval scope")
         return self
+
+    def normalize_answer(self, answer: Any) -> Any:
+        """双端共用回答校验，多选按发布顺序规范化以稳定幂等摘要。"""
+        if self.kind == "input":
+            Draft202012Validator(self.response_schema).validate(answer)
+            return answer
+        if self.kind != "choice":
+            raise ValueError("approval has no answer")
+        if self.selection_mode == "single":
+            if not isinstance(answer, str) or answer not in self.options:
+                raise ValueError("response is not a published choice")
+            return answer
+        if (
+            not isinstance(answer, list)
+            or not all(isinstance(value, str) for value in answer)
+            or len(set(answer)) != len(answer)
+            or not self.min_selected <= len(answer) <= self.max_selected
+            or any(value not in self.options for value in answer)
+        ):
+            raise ValueError("response is not a valid multiple choice")
+        return [value for value in self.options if value in answer]
 
 
 class InteractionResponse(BaseModel):

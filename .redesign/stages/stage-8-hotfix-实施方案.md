@@ -44,6 +44,6 @@ Webhook 保留在 BFF。它先认证并持久化最小唤醒线索，正文不�
 
 ## 数据与部署
 
-当前 schema 使用 `root_runs`、`run_inbox`、`run_control`，保留执行快照、授权、attempt、interaction、Journal 和通知等业务事实。`run_executions` 强制 `root_run_id = run_id`。无需未发布 schema 的升级兼容；开发环境使用新空库运行迁移，本次清理不修改本机已有数据库。
+当前 schema 使用 `root_runs`、`run_inbox`，保留执行快照、授权、操作回执、interaction、Journal 和通知等业务事实。`run_executions` 强制 `root_run_id = run_id`。无需未发布 schema 的升级兼容；开发环境使用新空库运行迁移，本次清理不修改本机已有数据库。
 
 启动、门闩和异常处理见 [BFF 运维](../../docs/operations/bff-run-control.md)，通知见 [通知运维](../../docs/operations/notifications.md)，边界见 [包结构](../../docs/architecture/package-layout.md)。

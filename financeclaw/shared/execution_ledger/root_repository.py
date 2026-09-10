@@ -11,7 +11,6 @@ from financeclaw.shared.conversation.repository import SqlAlchemyConversationRep
 from financeclaw.shared.conversation.tables import ConversationRow
 from financeclaw.shared.execution_ledger.repository import ExecutionConflict, digest
 from financeclaw.shared.execution_ledger.run_tables import (
-    BackendAttemptRow,
     RootRunRow,
     RunInboxRow,
     RunProgressEventRow,
@@ -54,9 +53,6 @@ class RootRunRepository:
         from financeclaw.shared.notifications.facts import require_schema
 
         require_schema(self.sessions)
-        from financeclaw.shared.execution_ledger.control_tables import (
-            RunControlRow,
-        )
         from financeclaw.shared.execution_ledger.run_tables import (
             RunAuthorizationRow,
         )
@@ -65,11 +61,10 @@ class RootRunRepository:
             inspector = inspect(session.get_bind())
             for table in (
                 RootRunRow,
+                RunOperationRow,
                 RunAuthorizationRow,
                 RunInboxRow,
-                BackendAttemptRow,
                 RunProgressEventRow,
-                RunControlRow,
             ):
                 if not inspector.has_table(table.__tablename__):
                     raise RuntimeError("application database migration is required")
@@ -79,9 +74,6 @@ class RootRunRepository:
 
     def lock(self, session, root_id: str, claim=None) -> RootRunRow:
         """业务变更先取得会话与根锁，再校验 fencing；领取本身只锁协调行。"""
-        from financeclaw.shared.execution_ledger.driver import control
-
-        control(session)
         row = session.get(RootRunRow, root_id)
         if row is None:
             raise ExecutionConflict("run is not registered")
@@ -221,9 +213,9 @@ class RootRunRepository:
             if session.get(RunInboxRow, identity) is not None:
                 return False
             attempt = session.scalar(
-                select(BackendAttemptRow).where(
-                    BackendAttemptRow.backend_instance_id == self.backend_instance_id,
-                    BackendAttemptRow.execution_hash == execution_hash,
+                select(RunOperationRow).where(
+                    RunOperationRow.backend_instance_id == self.backend_instance_id,
+                    RunOperationRow.execution_hash == execution_hash,
                 )
             )
             row = self.lock(session, attempt.run_id) if attempt else None
@@ -287,10 +279,7 @@ class RootRunRepository:
         """短事务使用 SKIP LOCKED，只领取到期活跃责任，随即释放锁。"""
         from sqlalchemy.orm import aliased
 
-        from financeclaw.shared.execution_ledger.driver import control
-
         with self.sessions.begin() as session:
-            control(session)
             if session.get_bind().dialect.name == "postgresql":
                 # 跨进程的容量检查与领取共用短锁，不持有网络 I/O。
                 if not session.scalar(
@@ -396,20 +385,12 @@ class RootRunRepository:
                 or execution.root_run_id != row.run_id
             ):
                 raise ExecutionConflict("backend receipt does not match fixed operation")
-            existing = session.get(BackendAttemptRow, reference.operation_id)
             payload = reference.model_dump(mode="json")
-            if existing is not None and existing.reference != payload:
+            if operation.reference is not None and operation.reference != payload:
                 raise ExecutionConflict("operation receipt cannot be replaced")
-            if existing is None:
-                session.add(
-                    BackendAttemptRow(
-                        operation_id=reference.operation_id,
-                        run_id=row.run_id,
-                        backend_instance_id=row.backend_instance_id,
-                        execution_hash=digest(reference.execution_id),
-                        reference=payload,
-                    )
-                )
+            operation.backend_instance_id = row.backend_instance_id
+            operation.execution_hash = digest(reference.execution_id)
+            operation.reference = payload
             self.execution.bind(reference.operation_id, reference.operation_id, session=session)
             session.execute(
                 update(RunInboxRow)
@@ -427,18 +408,16 @@ class RootRunRepository:
         with self.sessions() as session:
             bindings = list(
                 session.execute(
-                    select(RunInboxRow.inbox_id, BackendAttemptRow.run_id)
+                    select(RunInboxRow.inbox_id, RunOperationRow.run_id)
+                    .select_from(RunInboxRow)
                     .join(
-                        BackendAttemptRow,
+                        RunOperationRow,
                         (
-                            (
-                                BackendAttemptRow.backend_instance_id
-                                == RunInboxRow.backend_instance_id
-                            )
-                            & (BackendAttemptRow.execution_hash == RunInboxRow.execution_hash)
+                            (RunOperationRow.backend_instance_id == RunInboxRow.backend_instance_id)
+                            & (RunOperationRow.execution_hash == RunInboxRow.execution_hash)
                         ),
                     )
-                    .join(RootRunRow, RootRunRow.run_id == BackendAttemptRow.run_id)
+                    .join(RootRunRow, RootRunRow.run_id == RunOperationRow.run_id)
                     .where(
                         RootRunRow.driver_version == self.driver_version,
                         RunInboxRow.backend_instance_id == self.backend_instance_id,

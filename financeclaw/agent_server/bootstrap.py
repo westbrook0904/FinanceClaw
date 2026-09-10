@@ -120,13 +120,7 @@ def build_components(
     if conversation_repository is not None:
         context_builder = ConversationContextBuilder(
             conversation_repository,
-            ContextBudget(
-                model_input_limit=settings.context_input_limit,
-                reserved_output_tokens=settings.context_reserved_output,
-                system_policy_reserve=settings.context_system_policy_reserve,
-                tool_schema_reserve=settings.context_tool_schema_reserve,
-                safety_margin=settings.context_safety_margin,
-            ),
+            ContextBudget(**settings.context_budget),
         )
     # 5. 装配长期记忆服务：依赖会话仓储，未启用持久化时跳过。
     memory_service = (

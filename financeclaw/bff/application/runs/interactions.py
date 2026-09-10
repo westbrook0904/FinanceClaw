@@ -1,8 +1,9 @@
 """BFF human decisions and their immutable root resume command share one transaction."""
 
 import asyncio
+from contextlib import nullcontext
 
-from jsonschema import Draft202012Validator
+from jsonschema import ValidationError
 from sqlalchemy import select
 
 from financeclaw.bff.application.runs.waits import native_response
@@ -49,6 +50,11 @@ def public_interaction(row):
         result["response_schema"] = point["response_schema"]
     elif point["kind"] == "choice":
         result["options"] = point["options"]
+        result.update(
+            selection_mode=point["selection_mode"],
+            min_selected=point["min_selected"],
+            max_selected=point["max_selected"],
+        )
     else:
         result.update(
             action_hash=request["action_hash"],
@@ -135,7 +141,14 @@ class BFFInteractions:
             result["resume_status"] = operation["status"]
         return result
 
-    async def respond(
+    async def respond(self, interaction_id, response, **kwargs):
+        """受理决定后只唤醒协调器，不等待远端恢复。"""
+        decided = await asyncio.to_thread(self.accept_response, interaction_id, response, **kwargs)
+        if self.service.lifecycle:
+            self.service.lifecycle.wake()
+        return await self.public(decided)
+
+    def accept_response(
         self,
         interaction_id,
         response,
@@ -146,6 +159,7 @@ class BFFInteractions:
         idempotency_key,
         conversation_id=None,
         authorization=None,
+        session=None,
     ):
         """Validate the fixed schema and authority, then persist a recoverable human command."""
         from financeclaw.bff.application.runs.service import bounded_authorization
@@ -160,29 +174,40 @@ class BFFInteractions:
             evidence=authorization,
         )
 
+        supplied_session = session
+
         def accept():
             """Serialize answers, attempts, cancellation and finalization under the root lock."""
-            saved = self.repository.get_owned(interaction_id, tenant_id, subject_id, now=now())
+            saved = self.repository.get_owned(
+                interaction_id, tenant_id, subject_id, now=now(), session=supplied_session
+            )
             if conversation_id is not None and conversation_id != saved["conversation_id"]:
                 raise InteractionConflict("interaction belongs to another channel conversation")
             request = saved["request"]["bff"]
             point = InteractionPoint.model_validate(request["point"])
+            normalized = response
+            if point.kind != "approval":
+                try:
+                    normalized = response.model_copy(
+                        update={"answer": point.normalize_answer(response.answer)}
+                    )
+                except (ValueError, TypeError, ValidationError) as exc:
+                    raise InteractionConflict("answer does not match the frozen schema") from exc
             if (
                 response.revision != saved["revision"]
                 or response.kind != point.kind
                 or response.action_hash != request["action_hash"]
-                or (
-                    point.kind == "input"
-                    and not Draft202012Validator(point.response_schema).is_valid(response.answer)
-                )
-                or (point.kind == "choice" and response.answer not in point.options)
                 or (
                     point.kind == "approval"
                     and response.decision not in request["allowed_decisions"]
                 )
             ):
                 raise InteractionConflict("response does not match the frozen interaction")
-            with self.store.sessions.begin() as session:
+            with (
+                nullcontext(supplied_session)
+                if supplied_session is not None
+                else self.store.sessions.begin()
+            ) as session:
                 root = self.store.lock(session, saved["root_run_id"])
                 if conversation_id is not None:
                     prior = session.scalar(
@@ -231,7 +256,7 @@ class BFFInteractions:
                         "revision": response.revision,
                         "binding": request["binding"],
                         "expires_at": request["expires_at"],
-                        "response": native_response(request, response),
+                        "response": native_response(request, normalized),
                     },
                 }
                 decided = self.repository.decide(
@@ -240,7 +265,7 @@ class BFFInteractions:
                     subject_id=subject_id,
                     revision=response.revision,
                     response_key=idempotency_key,
-                    response=response.model_dump(mode="json"),
+                    response=normalized.model_dump(mode="json"),
                     operation=operation,
                     now=now(),
                     session=session,
@@ -253,10 +278,10 @@ class BFFInteractions:
                         status="running",
                         waiting_reason="resume_pending",
                         pending_interactions=[],
+                        last_decision="拒绝已受理。"
+                        if response.decision == "reject"
+                        else "回答已受理，正在继续处理。",
                     )
                 return decided
 
-        decided = await asyncio.to_thread(accept)
-        if self.service.lifecycle:
-            self.service.lifecycle.wake()
-        return await self.public(decided)
+        return accept()

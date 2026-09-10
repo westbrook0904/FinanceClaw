@@ -1,5 +1,5 @@
 # Separate sender role. Render .env.notifications from your profile + BFF and notification
-# settings, with FEISHU_NOTIFICATIONS_ENABLED=true. This file does not connect a WebSocket.
+# settings. BFF includes a sender; this optional extra worker does not connect a WebSocket.
 services:
   notification-sender:
     build: .

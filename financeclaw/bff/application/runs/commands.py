@@ -7,7 +7,6 @@ from sqlalchemy import select
 from financeclaw.kernel.backend import BackendExecutionRef
 from financeclaw.shared.execution_ledger.authorization import check_authorization
 from financeclaw.shared.execution_ledger.repository import ExecutionConflict
-from financeclaw.shared.execution_ledger.run_tables import BackendAttemptRow
 from financeclaw.shared.execution_ledger.tables import RunExecutionRow, RunOperationRow
 
 
@@ -32,10 +31,9 @@ class RunCommandService:
                 )
             ]
             attempts = {
-                item.operation_id: BackendExecutionRef.model_validate(item.reference)
-                for item in session.scalars(
-                    select(BackendAttemptRow).where(BackendAttemptRow.run_id == row.run_id)
-                )
+                op["operation_id"]: BackendExecutionRef.model_validate(op["reference"])
+                for op in operations
+                if op["reference"] is not None
             }
             return {
                 "active": row.active,
@@ -98,7 +96,6 @@ class RunCommandService:
             if not await asyncio.to_thread(
                 self.store.claim_operation, claim, operation["operation_id"]
             ):
-                await asyncio.to_thread(self.results.blocked, claim, "dispatch_paused")
                 return False
             operation = await asyncio.to_thread(
                 self.store.execution.operation, operation["operation_id"]
@@ -127,10 +124,9 @@ class RunObserver:
             if not row.active or not root.server_run_id:
                 return None
             op = session.get(RunOperationRow, root.server_run_id)
-            attempt = session.get(BackendAttemptRow, op.operation_id)
             return (
                 {c.name: getattr(op, c.name) for c in op.__table__.columns},
-                BackendExecutionRef.model_validate(attempt.reference),
+                BackendExecutionRef.model_validate(op.reference),
                 root.snapshot,
             )
 

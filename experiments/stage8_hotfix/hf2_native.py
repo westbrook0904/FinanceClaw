@@ -19,7 +19,6 @@ from sqlalchemy import select
 
 from experiments.stage8_hotfix.environment import ROOT, NativeServer, isolated_environment
 from financeclaw.bff.bootstrap import create_default_app
-from financeclaw.bff.run_control import BFFDeploymentControl
 from financeclaw.shared.execution_ledger.run_tables import (
     RootRunRow,
     RunInboxRow,
@@ -170,7 +169,6 @@ async def probe(directory, scenario="mixed"):
         )
         app, server, task = await start_bff(settings, bff_port, scenario)
         runtime = app.state.financeclaw_bff_runs
-        BFFDeploymentControl(runtime.runs.store).configure(0, admission_enabled=True)
         url = f"http://127.0.0.1:{bff_port}"
         headers = {"Authorization": "Bearer synthetic-client"}
         async with httpx.AsyncClient(
@@ -216,9 +214,6 @@ async def probe(directory, scenario="mixed"):
                 await stop_bff(server, task)
                 app, server, task = await start_bff(settings, bff_port, scenario)
                 runtime = app.state.financeclaw_bff_runs
-            if index == wait_count - 1:
-                # Rollback preparation closes admission while retaining compatible in-flight work.
-                BFFDeploymentControl(runtime.runs.store).configure(1, admission_enabled=False)
             body = {"revision": item["revision"], "kind": item["kind"]}
             if item["kind"] == "input":
                 body["answer"] = {"analysis_period": "2026"}
@@ -281,7 +276,6 @@ async def probe(directory, scenario="mixed"):
             assert root.driver_version == 1 and not root.active and callbacks
         execution = runtime.runs.execution.get(run_id)
         return {
-            "admission_paused_during_final_resume": True,
             "passed": True,
             "mode": "production_bff_and_native_agent_server_http",
             "registered_graphs": ["finance_agent_v1_5_0"],

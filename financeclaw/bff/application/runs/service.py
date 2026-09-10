@@ -13,8 +13,7 @@ from financeclaw.kernel.responses import RunAccepted, RunStatusResponse
 from financeclaw.kernel.run_errors import IdempotencyConflict, RunNotFound
 from financeclaw.shared.conversation.repository import IdempotencyConflict as JournalConflict
 from financeclaw.shared.conversation.tables import ConversationRow, ConversationTurnRow
-from financeclaw.shared.execution_ledger.authorization import intersect_scopes, require_scopes
-from financeclaw.shared.execution_ledger.driver import control
+from financeclaw.shared.execution_ledger.authorization import require_scopes
 from financeclaw.shared.execution_ledger.repository import (
     ExecutionConflict,
     digest,
@@ -110,7 +109,6 @@ class BFFRunService:
         )
         try:
             with self.store.sessions.begin() as session:
-                gate = control(session)
                 turn, message, replay = self.repository.begin_turn(
                     conversation_id=conversation_id,
                     tenant_id=tenant_id,
@@ -127,8 +125,6 @@ class BFFRunService:
                     row = self.store.lock(session, turn.run_id)
                     snapshot = session.get(RunExecutionRow, turn.run_id).snapshot
                 else:
-                    if not gate.bff_admission_enabled:
-                        raise ExecutionConflict("BFF root admission is disabled")
                     current = session.get(ConversationRow, conversation_id)
                     if (current.agent_id, current.agent_profile_version) != (
                         profile.agent_id,
@@ -216,8 +212,6 @@ class BFFRunService:
                 if notification_address is not None:
                     from financeclaw.shared.notifications.facts import bind_target
 
-                    if not replay and not self.settings.feishu_notifications_enabled:
-                        raise ExecutionConflict("notification admission is disabled")
                     bind_target(
                         session,
                         row,
@@ -311,17 +305,6 @@ class BFFRunService:
         ):
             yield event
 
-    def notification_mode(self, run_id, *, tenant_id, subject_id):
-        """目标模式来自首次受理事实，开关关闭后也不能切回另一最终发送路径。"""
-        from financeclaw.shared.notifications.tables import NotificationTargetRow
-
-        root_id = self.root_for_task(run_id, tenant_id=tenant_id, subject_id=subject_id)
-        with self.store.sessions() as session:
-            target = session.scalar(
-                select(NotificationTargetRow).where(NotificationTargetRow.run_id == root_id)
-            )
-            return target.delivery_mode if target else None
-
     def notifications(self, run_id, *, tenant_id, subject_id, revoke=False):
         """按根归属读取投递责任或显式撤销订阅，不暴露目的地址和正文。"""
         from financeclaw.shared.notifications.tables import (
@@ -357,7 +340,7 @@ class BFFRunService:
                 "run_id": root_id,
                 "subscribed": True,
                 "active": target.active,
-                "delivery_mode": target.delivery_mode,
+                "card_sequence": target.card_sequence,
                 "unmaterialized_events": sum(event.materialized_at is None for event in events),
                 "deliveries": [
                     {
@@ -394,92 +377,64 @@ class BFFRunService:
             None,
         )
 
-    async def cancel(self, run_id, *, tenant_id, subject_id):
-        """本地取消仅封闭派发并唤醒；确切停止由BFF 命令服务 确认。"""
+    async def control_run(
+        self,
+        run_id,
+        op,
+        *,
+        tenant_id,
+        subject_id,
+        scopes=(),
+        authorization=None,
+        command_id=None,
+        expected_grant_revision=None,
+    ):
+        """共同的显式任务控制入口，消息重投不会重新计算授权期限。"""
+        from financeclaw.bff.application.runs.controls import apply_control
+        from financeclaw.shared.execution_ledger.receipts import read_receipt, save_receipt
 
-        def accept():
-            """根锁内受理取消，不等待 backend 停止。"""
-            root_id = self.root_for_task(run_id, tenant_id=tenant_id, subject_id=subject_id)
-            with self.store.sessions.begin() as session:
-                row = self.store.lock(session, root_id)
-                if row.active:
-                    self.interactions.repository.cancel_root(root_id, now=now(), session=session)
-                    self.repository.update_turn_status(
-                        root_id, "cancellation_requested", session=session
-                    )
-                    self.store.command_inbox(session, row, "cancel")
-                    self.store.project(
-                        session,
-                        row,
-                        status="cancellation_requested",
-                        waiting_reason="execution_stop_not_confirmed",
-                        pending_interactions=[],
-                    )
-
-        await asyncio.to_thread(accept)
-        return await self.status(run_id, tenant_id=tenant_id, subject_id=subject_id)
-
-    async def reauthorize(self, run_id, *, tenant_id, subject_id, scopes, authorization=None):
-        """显式更新有限 grant；原输入、发布、request clock 与已受理决定都不改变。"""
-        evidence, expires_at = bounded_authorization(
-            self.settings,
-            tenant_id=tenant_id,
-            subject_id=subject_id,
-            scopes=scopes,
-            evidence=authorization,
+        root_id = await asyncio.to_thread(
+            self.root_for_task, run_id, tenant_id=tenant_id, subject_id=subject_id
         )
+        fingerprint = digest([op, sorted(scopes), expected_grant_revision])
 
         def accept():
-            """记录新的有限授权和唤醒，不覆盖任何已冻结业务命令。"""
-            root_id = self.root_for_task(run_id, tenant_id=tenant_id, subject_id=subject_id)
+            """入账控制和回执，不在锁内调用异步后端。"""
             with self.store.sessions.begin() as session:
-                row = self.store.lock(session, root_id)
-                execution = session.get(RunExecutionRow, root_id)
-                if not row.active or execution.cancellation_requested:
-                    raise ExecutionConflict("terminal or cancelling task cannot be reauthorized")
-                grant = session.get(RunAuthorizationRow, root_id)
-                grant.scopes = sorted(
-                    intersect_scopes(snapshot_context(execution.snapshot).scopes, scopes)
+                root = self.store.lock(session, root_id)
+                if command_id and read_receipt(session, root, command_id, fingerprint) is not None:
+                    return
+                apply_control(
+                    self,
+                    session,
+                    root,
+                    op,
+                    scopes=scopes,
+                    authorization=authorization,
+                    revision=expected_grant_revision,
                 )
-                grant.source, grant.source_hash, grant.issued_at = (
-                    evidence.source,
-                    evidence.source_hash,
-                    evidence.issued_at,
-                )
-                grant.expires_at, grant.revoked, grant.revision = (
-                    expires_at,
-                    False,
-                    grant.revision + 1,
-                )
-                self.store.command_inbox(session, row, f"authorize:{grant.revision}")
-                self.store.authorization_event(session, row, grant, "reauthorized")
+                if command_id:
+                    save_receipt(
+                        session,
+                        root,
+                        command_id,
+                        fingerprint,
+                        {"status": root.projection["status"]},
+                    )
 
         await asyncio.to_thread(accept)
+        if self.lifecycle:
+            self.lifecycle.wake()
         return await self.status(run_id, tenant_id=tenant_id, subject_id=subject_id)
 
-    async def revoke_authorization(self, run_id, *, tenant_id, subject_id):
-        """原主体显式撤销本地 grant，后续受治理动作立即拒绝。"""
+    async def cancel(self, run_id, **kwargs):
+        """持久请求停止本轮任务，确切停止由后端回执确认。"""
+        return await self.control_run(run_id, "cancel", **kwargs)
 
-        def revoke():
-            """撤销和可见状态在同一根锁事务提交。"""
-            root_id = self.root_for_task(run_id, tenant_id=tenant_id, subject_id=subject_id)
-            with self.store.sessions.begin() as session:
-                row = self.store.lock(session, root_id)
-                grant = session.get(RunAuthorizationRow, root_id)
-                if not row.active or grant.revoked:
-                    return
-                grant.revoked, grant.revision = True, grant.revision + 1
-                self.store.authorization_event(session, row, grant, "revoked")
-                self.store.command_inbox(session, row, f"revoke:{grant.revision}")
-                cancelling = session.get(RunExecutionRow, root_id).cancellation_requested
-                self.store.project(
-                    session,
-                    row,
-                    status="cancellation_requested" if cancelling else "interrupted",
-                    waiting_reason="execution_stop_not_confirmed"
-                    if cancelling
-                    else "authorization_required",
-                )
+    async def reauthorize(self, run_id, **kwargs):
+        """显式恢复本轮的有限授权。"""
+        return await self.control_run(run_id, "authorize", **kwargs)
 
-        await asyncio.to_thread(revoke)
-        return await self.status(run_id, tenant_id=tenant_id, subject_id=subject_id)
+    async def revoke_authorization(self, run_id, **kwargs):
+        """撤销本轮后台授权并封闭后续受治理动作。"""
+        return await self.control_run(run_id, "revoke", **kwargs)

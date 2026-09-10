@@ -177,6 +177,7 @@ def build_release_catalogs(
                 settings.ziwei_projection_bytes,
                 settings.context_input_limit,
                 settings.context_reserved_output,
+                settings.context_safety_margin,
                 settings.artifact_inline_bytes,
                 [managed.governance for managed in chart_tools],
                 ZiweiAnalysisRequest.model_json_schema(),
@@ -222,6 +223,7 @@ def build_release_catalogs(
             model_release,
             settings.offline_model,
             manifest,
+            settings.context_budget,
             [item.governance for item in base_tool_catalog.latest()],
         ),
         system_prompt_template=(

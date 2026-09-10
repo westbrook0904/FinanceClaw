@@ -94,10 +94,20 @@ def format_interactions(
                 lines.append(f"/{decision} {identifier} {revision} {item['action_hash']}")
             lines.append("请核对动作后复制对应命令。普通文字“同意”不作为批准。")
     elif item["kind"] == "choice":
-        lines.extend(
-            f"/choose {identifier} {revision} {json.dumps(option, ensure_ascii=False)}"
-            for option in item["options"]
-        )
+        if item["selection_mode"] == "multiple":
+            lines.append(
+                f"请选择 {item['min_selected']}—{item['max_selected']} 项："
+                + "、".join(item["options"])
+            )
+            lines.append(
+                f"/choose {identifier} {revision} "
+                + json.dumps(item["options"][: item["min_selected"]], ensure_ascii=False)
+            )
+        else:
+            lines.extend(
+                f"/choose {identifier} {revision} {json.dumps(option, ensure_ascii=False)}"
+                for option in item["options"]
+            )
     else:
         schema = json.dumps(item["response_schema"], ensure_ascii=False)
         if len(schema) > 4000:

@@ -4,13 +4,13 @@ FinanceClaw 基于 LangChain、LangGraph Agent Server 与 LangSmith，提供金�
 
 当前架构由 BFF 与 Agent Server 两个服务组成：BFF 负责 start、人工 resume、cancel、授权和永久聊天记录；顶层 ReAct 通过 Tool 调用领域 Agent 或 Workflow subgraph。一个业务 Turn 只有一个根执行，Worker 不创建独立 thread/run。当前只注册 finance_agent_v1_5_0 根图。
 
-BFF 的 Webhook 接收器和后台结果核对独立于客户端连接。最终答案、运行状态、审计和通知意图同事务落库；独立飞书发送器按持久责任交付。未知提交不会自动换 ID 重发。
+BFF 的 Webhook 接收器和后台结果核对独立于客户端连接。最终答案、运行状态、审计和通知意图同事务落库；BFF 内置飞书发送器按持久责任交付。未知提交不会自动换 ID 重发。
 
 产品仅通过 Conversation 与 message-only Turn 发起执行，查询和 SSE 只读。/tool、/agent、/workflow 是调用偏好；人工回复统一经 interaction responses。代码目录与依赖见 [包结构](docs/architecture/package-layout.md)，实施契约见 [Stage 8 Hotfix](.redesign/stages/stage-8-hotfix-实施方案.md)。
 
 项目尚未上线：数据库迁移为当前的 0001_initial，不维护未发布 schema 的升级兼容。使用新空开发库初始化，已有本机数据库不会自动删除或重置。
 
-[BFF 运行手册](docs/operations/bff-run-control.md) · [飞书通知](docs/operations/notifications.md) · [紫微候选](docs/operations/ziwei-agent.md)
+[飞书交互卡片实现](.redesign/stages/Feishu-交互卡片适配实施方案.md) · [BFF 运行手册](docs/operations/bff-run-control.md) · [飞书通知](docs/operations/notifications.md) · [紫微候选](docs/operations/ziwei-agent.md)
 
 ## 环境
 
@@ -35,17 +35,19 @@ FINANCECLAW_PROVIDER_BASE_URL=https://api.deepseek.com
 FINANCECLAW_PROVIDER_API_KEY=your-deepseek-api-key
 ```
 
+默认上下文规划上限为 800,000 token，输出上限/预留 32,768，系统预留 8,192、工具预留 32,768、安全余量 32,768；正文与历史可用约 693,504 token。最近原文窗口为 64 条，另召回最多 16 条相关历史及 8 条摘要。配置说明与长历史验证见[上下文预算](docs/operations/context-budget.md)。
+
 Secret 只放 `.env` 或部署平台 Secret Manager，不要写入 Git 跟踪的 example 文件。
 
 飞书一期使用企业自建应用。在飞书后台启用机器人、WebSocket 事件订阅和
-`im.message.receive_v1`，并授予消息收发与 CardKit 创建/更新权限；权限变化后需重新发布、安装应用。
-灰度 BFF 配置至少包含：
+`im.message.receive_v1` 和 `card.action.trigger`，并授予消息收发与 CardKit 创建/更新权限；权限变化后需重新发布、安装应用。
+BFF 配置至少包含：
 
 ```dotenv
 FINANCECLAW_FEISHU_ENABLED=true
 FINANCECLAW_FEISHU_APP_ID=cli_xxx
 FINANCECLAW_FEISHU_APP_SECRET=<from-secret-manager>
-FINANCECLAW_FEISHU_ALLOWED_OPEN_IDS='["ou_canary_user"]'
+FINANCECLAW_FEISHU_ALLOWED_OPEN_IDS='["ou_allowed_user"]'
 FINANCECLAW_FEISHU_SCOPES='["market:read","tools:read","artifacts:read","memory:read"]'
 FINANCECLAW_FEISHU_MAX_CONCURRENCY=8
 FINANCECLAW_FEISHU_SECURITY_MODE=audit
@@ -73,7 +75,7 @@ FINANCECLAW_FEISHU_SECURITY_MODE=audit
 ```
 
 按 [BFF 运行手册](docs/operations/bff-run-control.md) 配置 Webhook，
-启动 BFF 后使用运行控制命令开放受理。生命周期循环随 BFF 启停：
+BFF 就绪后直接受理。执行与卡片投递循环随 BFF 启停：
 
 ```bash
 .conda/envs/financeclaw/bin/uvicorn main:app --host 127.0.0.1 --port 8000

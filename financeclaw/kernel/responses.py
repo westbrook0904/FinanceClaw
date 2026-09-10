@@ -170,6 +170,8 @@ class RunStatusResponse(ContractModel):
     output: dict[str, Any] | list[Any] | None = None
     waiting_reason: str | None = None
     pending_interactions: tuple[dict[str, Any], ...] = ()
+    last_decision: str | None = None
+    authorization_revision: int | None = None
 
 
 class ArtifactReference(ContractModel):

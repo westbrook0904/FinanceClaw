@@ -3,7 +3,6 @@
 import json
 from typing import Any
 
-from jsonschema import Draft202012Validator
 from langchain_core.tools import BaseTool
 from langgraph.types import interrupt
 from pydantic import BaseModel, ConfigDict, Field
@@ -59,11 +58,8 @@ def request_user_interaction(
             "action_hash"
         ) != digest(action):
             raise ValueError("approval response does not match this concrete action")
-    elif point.kind == "choice":
-        if result.get("answer") not in point.options:
-            raise ValueError("response is not a published choice")
     else:
-        Draft202012Validator(point.response_schema).validate(result.get("answer"))
+        result["answer"] = point.normalize_answer(result.get("answer"))
     return result
 
 
@@ -103,7 +99,16 @@ def question_tools(points: tuple[InteractionPoint, ...]) -> tuple[ManagedTool, .
         if point.kind == "approval":
             continue
         name = "request_user__" + point.point_id
-        contract = point.response_schema if point.kind == "input" else list(point.options)
+        contract = (
+            point.response_schema
+            if point.kind == "input"
+            else {
+                "options": list(point.options),
+                "selection_mode": point.selection_mode,
+                "min_selected": point.min_selected,
+                "max_selected": point.max_selected,
+            }
+        )
         result.append(
             ManagedTool(
                 tool=UserQuestionTool(

@@ -114,11 +114,14 @@ class FinanceClawSettings(BaseSettings):
         outbox_batch_size: Outbox 事件单轮派发的批大小。
         outbox_max_attempts: Outbox 事件的最大尝试次数，超过后事件转入死信状态。
         api_p95_target_ms: API p95 延迟 SLO 目标（毫秒），用于请求完成日志的 SLO 判定。
-        context_input_limit: 单次模型调用的上下文输入 token 预算上限。
+        context_input_limit: 单次模型调用的上下文规划上限，包含输出及输入预留。
         context_reserved_output: 上下文预算中为模型输出预留的 token 数。
         context_system_policy_reserve: 上下文预算中为系统策略文本预留的 token 数。
         context_tool_schema_reserve: 上下文预算中为工具 schema 预留的 token 数。
         context_safety_margin: 上下文预算的安全边际，用于吸收 token 估算误差。
+        context_recent_messages: 最近原文窗口最多保留的消息数。
+        context_relevant_messages: 窗口外按相关性召回的原文消息数。
+        context_relevant_summaries: 按相关性召回的摘要数。
         summary_segment_messages: 分层摘要中单个片段覆盖的消息条数。
         summary_hierarchy_segments: 高层摘要聚合低层片段的数量。
         memory_recall_tokens: 记忆召回内容允许占用的 token 预算。
@@ -150,8 +153,8 @@ class FinanceClawSettings(BaseSettings):
     ziwei_projection_bytes: int = Field(default=14_000, ge=2_048, le=64_000)
     debug_full_io: bool = True
     log_level: str = "INFO"
-    model_timeout_seconds: float = Field(default=60.0, gt=0, le=600)
-    model_max_tokens: int = Field(default=4096, ge=64, le=384_000)
+    model_timeout_seconds: float = Field(default=300.0, gt=0, le=600)
+    model_max_tokens: int = Field(default=32_768, ge=64, le=384_000)
     model_max_retries: int = Field(default=2, ge=0, le=8)
     read_max_attempts: int = Field(default=3, ge=1, le=8)
     approval_timeout_seconds: int = Field(default=900, ge=30, le=86_400)
@@ -174,8 +177,7 @@ class FinanceClawSettings(BaseSettings):
     bff_run_concurrency: int = Field(default=4, ge=1, le=32)
     bff_run_grant_seconds: int = Field(default=1800, ge=1, le=86400)
     feishu_enabled: bool = False
-    feishu_notifications_enabled: bool = False
-    notification_poll_seconds: float = Field(default=1, ge=0.05, le=30)
+    notification_poll_seconds: float = Field(default=0.2, ge=0.05, le=30)
     notification_lease_seconds: float = Field(default=60, ge=15, le=600)
     notification_timeout_seconds: float = Field(default=10, ge=1, le=30)
     notification_max_failures: int = Field(default=5, ge=1, le=20)
@@ -192,7 +194,7 @@ class FinanceClawSettings(BaseSettings):
     )
     feishu_max_concurrency: int = Field(default=8, ge=1, le=128)
     feishu_security_mode: Literal["audit", "strict"] = "audit"
-    feishu_connect_timeout_seconds: float = Field(default=30.0, gt=0, le=120)
+    feishu_connect_timeout_seconds: float = Field(default=300.0, gt=0, le=300)
     oidc_issuer: str | None = None
     oidc_audience: str | None = None
     oidc_jwks_url: str | None = None
@@ -234,7 +236,7 @@ class FinanceClawSettings(BaseSettings):
     database_statement_timeout_seconds: int = Field(default=30, ge=1, le=300)
     artifact_backend: ArtifactBackend = ArtifactBackend.LOCAL
     artifact_root: str = ".financeclaw/artifacts"
-    artifact_inline_bytes: int = Field(default=16_384, ge=256, le=10_000_000)
+    artifact_inline_bytes: int = Field(default=46_384, ge=256, le=10_000_000)
     artifact_s3_bucket: str | None = None
     artifact_s3_prefix: str = "financeclaw"
     artifact_s3_endpoint_url: str | None = None
@@ -256,16 +258,33 @@ class FinanceClawSettings(BaseSettings):
     outbox_batch_size: int = Field(default=100, ge=1, le=1_000)
     outbox_max_attempts: int = Field(default=8, ge=1, le=100)
     api_p95_target_ms: int = Field(default=2_500, ge=1)
-    context_input_limit: int = Field(default=32_768, ge=1_024)
-    context_reserved_output: int = Field(default=4_096, ge=64)
-    context_system_policy_reserve: int = Field(default=2_048, ge=0)
-    context_tool_schema_reserve: int = Field(default=4_096, ge=0)
-    context_safety_margin: int = Field(default=1_024, ge=0)
+    context_input_limit: int = Field(default=800_000, ge=1_024)
+    context_reserved_output: int = Field(default=32_768, ge=64)
+    context_system_policy_reserve: int = Field(default=8_192, ge=0)
+    context_tool_schema_reserve: int = Field(default=32_768, ge=0)
+    context_safety_margin: int = Field(default=32_768, ge=0)
+    context_recent_messages: int = Field(default=64, ge=1, le=1_000)
+    context_relevant_messages: int = Field(default=16, ge=0, le=64)
+    context_relevant_summaries: int = Field(default=8, ge=0, le=64)
     summary_segment_messages: int = Field(default=12, ge=2, le=1_000)
     summary_hierarchy_segments: int = Field(default=8, ge=2, le=1_000)
     memory_recall_tokens: int = Field(default=768, ge=64, le=8_192)
-    memory_recall_limit: int = Field(default=5, ge=1, le=20)
+    memory_recall_limit: int = Field(default=2, ge=1, le=20)
     memory_auto_commit_low_risk_preferences: bool = False
+
+    @property
+    def context_budget(self) -> dict[str, int]:
+        """根模型的上下文预算与选取窗口，装配及发布指纹共用此配置。"""
+        return {
+            "model_input_limit": self.context_input_limit,
+            "reserved_output_tokens": self.context_reserved_output,
+            "system_policy_reserve": self.context_system_policy_reserve,
+            "tool_schema_reserve": self.context_tool_schema_reserve,
+            "safety_margin": self.context_safety_margin,
+            "max_recent_messages": self.context_recent_messages,
+            "max_relevant_messages": self.context_relevant_messages,
+            "max_relevant_summaries": self.context_relevant_summaries,
+        }
 
     @model_validator(mode="after")
     def protect_production(self) -> "FinanceClawSettings":
@@ -390,7 +409,7 @@ class FinanceClawSettings(BaseSettings):
             raise ValueError("notification lease must exceed two remote call timeouts")
         if self.notification_verified_dedup_seconds and not self.notification_dedup_evidence:
             raise ValueError("notification dedup recovery requires a verified evidence reference")
-        if self.feishu_enabled or self.feishu_notifications_enabled:
+        if self.feishu_enabled:
             if not self.feishu_app_id or not self.feishu_app_id.strip():
                 raise ValueError("feishu_app_id is required when Feishu channel is enabled")
             if (
@@ -401,11 +420,24 @@ class FinanceClawSettings(BaseSettings):
             if not self.feishu_allowed_open_ids or any(
                 not item.strip() for item in self.feishu_allowed_open_ids
             ):
-                raise ValueError("feishu_allowed_open_ids must contain the canary user allowlist")
+                raise ValueError("feishu_allowed_open_ids must contain the permitted users")
             if not self.feishu_scopes or any(not item.strip() for item in self.feishu_scopes):
                 raise ValueError("feishu_scopes cannot be empty")
             if {"*", "internal:invoke"}.intersection(self.feishu_scopes):
                 raise ValueError("feishu_scopes cannot grant wildcard or internal invocation")
             if self.environment is Environment.PRODUCTION and self.feishu_security_mode != "strict":
                 raise ValueError("production Feishu channel requires strict security mode")
+        if self.context_reserved_output < self.model_max_tokens:
+            raise ValueError("context output reserve must cover model_max_tokens")
+        if (
+            self.context_input_limit
+            - (
+                self.context_reserved_output
+                + self.context_system_policy_reserve
+                + self.context_tool_schema_reserve
+                + self.context_safety_margin
+            )
+            < 256
+        ):
+            raise ValueError("context reserves leave insufficient input budget")
         return self

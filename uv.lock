@@ -399,7 +399,7 @@ requires-dist = [
     { name = "langgraph-cli", extras = ["inmem"], marker = "extra == 'dev'", specifier = ">=0.4,<1" },
     { name = "langgraph-sdk", specifier = ">=0.3,<1" },
     { name = "langsmith", specifier = ">=0.4,<1" },
-    { name = "lark-channel-sdk", specifier = ">=1.4,<2" },
+    { name = "lark-channel-sdk", specifier = "==1.4.0" },
     { name = "opentelemetry-api", specifier = ">=1.42,<2" },
     { name = "opentelemetry-exporter-otlp-proto-http", specifier = ">=1.42,<2" },
     { name = "opentelemetry-sdk", specifier = ">=1.42,<2" },

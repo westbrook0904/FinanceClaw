@@ -16,8 +16,33 @@ from financeclaw.shared.notifications.facts import require_schema
 LOGGER = logging.getLogger(__name__)
 
 
+class NotificationWorker:
+    """BFF 自带有界发送循环，任务一经受理即可出现停止入口。"""
+
+    def __init__(self, repository, settings):
+        """保存发送资源和排空信号，不在构造时启动网络。"""
+        self.repository, self.settings = repository, settings
+        self.stop_event = asyncio.Event()
+        self.task = None
+
+    async def start(self):
+        """SDK 在工作线程导入，避免捕获并停止 ASGI 主循环。"""
+        gateway = await asyncio.to_thread(FeishuNotificationGateway.from_settings, self.settings)
+        self.task = asyncio.create_task(
+            run_worker(self.repository, gateway, self.settings, self.stop_event)
+        )
+
+    async def stop(self):
+        """停止领取新任务，排空已经持有的有限网络调用。"""
+        self.stop_event.set()
+        if self.task:
+            await self.task
+
+
 async def deliver(repository, gateway, claim, settings):
     """发送前做两层有效性检查，提交 sending 后的异常只记为 uncertain。"""
+    if not await asyncio.to_thread(repository.validate, claim):
+        return
     try:
         async with asyncio.timeout(settings.notification_timeout_seconds):
             rejection = await gateway.check_target(claim["address"])
@@ -28,6 +53,19 @@ async def deliver(repository, gateway, claim, settings):
             repository.settle, claim, rejection, max_failures=settings.notification_max_failures
         )
         return
+    if claim.get("message_type") == "card" and not claim.get("card_id"):
+        try:
+            async with asyncio.timeout(settings.notification_timeout_seconds):
+                card_id = await gateway.create_card(claim["content"])
+            await asyncio.to_thread(repository.attach_card, claim, card_id)
+        except Exception:
+            await asyncio.to_thread(
+                repository.settle,
+                claim,
+                Receipt("retry", error_class="card_creation_unavailable"),
+                max_failures=settings.notification_max_failures,
+            )
+            return
     ready = await asyncio.to_thread(
         repository.prepare,
         claim,
@@ -93,10 +131,10 @@ async def run_worker(repository, gateway, settings, stop, *, worker_id=None):
 
 
 async def main():
-    """独立角色入口；迁移和发送开关都必须显式就绪。"""
+    """独立角色入口；迁移和飞书凭证必须就绪。"""
     settings = FinanceClawSettings()
-    if not settings.feishu_notifications_enabled:
-        raise RuntimeError("notification sender is disabled")
+    if not settings.feishu_app_id or not settings.feishu_app_secret:
+        raise RuntimeError("Feishu credentials are required")
     configure_json_logging(settings.log_level)
     database = ApplicationDatabase(settings.database_url.get_secret_value())
     try:
