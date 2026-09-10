@@ -193,3 +193,30 @@ async def test_too_small_prompt_budget_fails_instead_of_truncating():
     with pytest.raises(ZiweiError) as error:
         await graph.ainvoke(envelope(request(mode="interpretation")), context=context())
     assert error.value.code == "ZIWEI_CONTEXT_BUDGET_EXCEEDED"
+
+
+@pytest.mark.asyncio
+async def test_configured_prompt_budget_applies_without_persistence():
+    """直接装配子图也继承配置上限，不能因关闭历史持久化而使用固定默认值。"""
+    pytest.importorskip("x_iztro")
+    pytest.importorskip("tzdata")
+    stack = build_components(
+        settings(
+            context_input_limit=4_096,
+            model_max_tokens=1_024,
+            context_reserved_output=1_024,
+            context_system_policy_reserve=64,
+            context_tool_schema_reserve=64,
+            context_safety_margin=64,
+        )
+    )
+    assert stack.context_builder is None
+    graph = build_ziwei_agent(
+        stack.agent_factory,
+        stack.agent_profiles.resolve("ziwei_doushu_agent"),
+        stack.ziwei_service,
+        model=OfflineZiweiModel(),
+    )
+    with pytest.raises(ZiweiError) as error:
+        await graph.ainvoke(envelope(request()), context=context())
+    assert error.value.code == "ZIWEI_CONTEXT_BUDGET_EXCEEDED"

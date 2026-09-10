@@ -275,9 +275,11 @@ def build_ziwei_agent(
     *,
     model: Any = None,
     checkpointer: Any = None,
-    input_budget: int = 28_672,
+    input_budget: int | None = None,
 ) -> Any:
     """装配原生 LangGraph；service 关闭时安全返回 unsupported，不调用模型或引擎。"""
+    if input_budget is None:
+        input_budget = factory.context_budget.model_request_limit
     if (
         profile.context_policy != "worker-task-only-v1"
         or profile.output_schema is not ZiweiTextResult

@@ -23,7 +23,7 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.store.base import BaseStore
 
-from financeclaw.agent_server.context.builder import ConversationContextBuilder
+from financeclaw.agent_server.context.builder import ContextBudget, ConversationContextBuilder
 from financeclaw.agent_server.llm.factory import ModelFactory
 from financeclaw.agent_server.memory.service import LongTermMemoryService
 from financeclaw.agent_server.middleware.artifact_middleware import ToolResultArtifactMiddleware
@@ -65,6 +65,7 @@ class AgentFactory:
         audit: 审计仓储，记录工具授权与执行事件。
         debug_full_io: 是否开启完整输入输出调试日志与完整 Prompt 明文。
         model_max_retries: 模型调用瞬时失败的最大重试次数，默认 2。
+        context_budget: 统一上下文预算，独立于会话持久化和历史装配。
         context_builder: 会话上下文构建器；为 None 时不挂载上下文中间件。
         conversation_repository: 会话仓储；为 None 时不挂载上下文中间件。
         artifact_service: Artifact 服务；为 None 时不挂载工件 offload 中间件。
@@ -82,6 +83,7 @@ class AgentFactory:
         tool_policy: ToolPolicy,
         audit: AuditRepository,
         debug_full_io: bool,
+        context_budget: ContextBudget,
         model_max_retries: int = 2,
         context_builder: ConversationContextBuilder | None = None,
         conversation_repository: ConversationRepository | None = None,
@@ -99,6 +101,7 @@ class AgentFactory:
             tool_policy: 工具策略。
             audit: 审计仓储。
             debug_full_io: 是否开启完整输入输出调试日志。
+            context_budget: 根模型与领域子图共用的上下文预算。
             model_max_retries: 模型调用最大重试次数。
             context_builder: 会话上下文构建器，可选。
             conversation_repository: 会话仓储，可选。
@@ -116,6 +119,7 @@ class AgentFactory:
         self.tool_policy = tool_policy
         self.audit = audit
         self.debug_full_io = debug_full_io
+        self.context_budget = context_budget
         self.model_max_retries = model_max_retries
         self.context_builder = context_builder
         self.conversation_repository = conversation_repository

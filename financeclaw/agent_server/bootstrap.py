@@ -116,11 +116,12 @@ def build_components(
     artifact_service = resources.artifact_service
     outbox_repository = resources.outbox_repository
     effective_audit = resources.audit
+    context_budget = ContextBudget(**settings.context_budget)
     context_builder = None
     if conversation_repository is not None:
         context_builder = ConversationContextBuilder(
             conversation_repository,
-            ContextBudget(**settings.context_budget),
+            context_budget,
         )
     # 5. 装配长期记忆服务：依赖会话仓储，未启用持久化时跳过。
     memory_service = (
@@ -200,6 +201,7 @@ def build_components(
         tool_policy=tool_policy,
         audit=effective_audit,
         debug_full_io=settings.debug_full_io,
+        context_budget=context_budget,
         model_max_retries=settings.model_max_retries,
         context_builder=context_builder,
         conversation_repository=conversation_repository,

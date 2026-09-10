@@ -66,6 +66,11 @@ class ContextBudget(BaseModel):
     max_relevant_messages: int = Field(default=4, ge=0, le=64)
 
     @property
+    def model_request_limit(self) -> int:
+        """完整模型输入的上限；输入已含系统和工具，仅扣输出预留及安全余量。"""
+        return self.model_input_limit - self.reserved_output_tokens - self.safety_margin
+
+    @property
     def available_input_tokens(self) -> int:
         """计算扣除全部预留后，可用于历史上下文的输入 token 数。
 
@@ -75,13 +80,7 @@ class ContextBudget(BaseModel):
             int: 输入上限减去输出预留、系统预留、工具预留与安全余量后的剩余值。
 
         """
-        return (
-            self.model_input_limit
-            - self.reserved_output_tokens
-            - self.system_policy_reserve
-            - self.tool_schema_reserve
-            - self.safety_margin
-        )
+        return self.model_request_limit - self.system_policy_reserve - self.tool_schema_reserve
 
     @model_validator(mode="after")
     def validate_available_budget(self) -> "ContextBudget":
@@ -198,7 +197,7 @@ def _tiktoken_cache_available() -> bool:
         bool: 缓存目录未显式置空且编码缓存文件存在时返回 True。
 
     """
-    cache_root = os.getenv("TIKTOKEN_CACHE_DIR") or os.getenv("DATA_GYM_CACHE_DIR")
+    cache_root = os.getenv("TIKTOKEN_CACHE_DIR", os.getenv("DATA_GYM_CACHE_DIR"))
     if cache_root == "":
         return False
     root = Path(cache_root) if cache_root else Path(tempfile.gettempdir()) / "data-gym-cache"

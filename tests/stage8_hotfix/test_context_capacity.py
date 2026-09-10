@@ -5,6 +5,7 @@ from langchain_core.messages import HumanMessage
 from pydantic import ValidationError
 
 from financeclaw.agent_server.bootstrap import build_components
+from financeclaw.agent_server.context import builder as context_module
 from financeclaw.kernel.context import ExecutionContext
 from financeclaw.shared.infrastructure.settings import FinanceClawSettings
 from financeclaw.shared.releases.catalog import build_release_catalogs
@@ -24,8 +25,13 @@ def config(tmp_path, **changes):
     )
 
 
-def test_large_context_retains_64_original_messages_above_previous_limit(tmp_path):
+@pytest.mark.parametrize("disable_cache", [False, True], ids=["local-cache", "no-cache"])
+def test_large_context_retains_64_original_messages_above_previous_limit(
+    tmp_path, monkeypatch, disable_cache
+):
     """实际装配超过旧上限的 64 条完整原文，当前输入与预留仍满足预算。"""
+    if disable_cache:
+        monkeypatch.setenv("TIKTOKEN_CACHE_DIR", "")
     runtime = build_components(config(tmp_path), enable_persistence=True)
     try:
         journal = runtime.conversation_repository
@@ -35,7 +41,8 @@ def test_large_context_retains_64_original_messages_above_previous_limit(tmp_pat
             agent_id="finance_agent",
             agent_profile_version="1.5.0",
         )
-        body = "这是需要保留的完整历史原文。" * 400
+        # 两种计数方式均超过旧总上限，且 64 条消息的 UTF-8 字节数也能放入新预算。
+        body = "这是需要保留的完整历史原文。" * 200
         for index in range(40):
             turn, _, _ = journal.begin_turn(
                 conversation_id=conversation.conversation_id,
@@ -80,6 +87,25 @@ def test_large_context_retains_64_original_messages_above_previous_limit(tmp_pat
         assert not selected.omissions
     finally:
         runtime.database.close()
+
+
+def test_disabled_tokenizer_cache_never_loads_encoding(tmp_path, monkeypatch):
+    """显式禁用优先于备用缓存目录，离线初始化不尝试加载或下载编码。"""
+    from hashlib import sha1
+
+    source = "https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken"
+    (tmp_path / sha1(source.encode()).hexdigest()).touch()
+    monkeypatch.setenv("DATA_GYM_CACHE_DIR", str(tmp_path))
+    monkeypatch.setenv("TIKTOKEN_CACHE_DIR", "")
+
+    def unexpected_load(name):
+        """任何编码加载都会违反离线禁用约定。"""
+        pytest.fail("disabled cache must not load an encoding")
+
+    monkeypatch.setattr(context_module.tiktoken, "get_encoding", unexpected_load)
+    counter = context_module.TokenCounter()
+    assert counter.text("中文 abc") == len("中文 abc".encode())
+    assert counter.truncate("中文 abc", 5) == "中"
 
 
 @pytest.mark.parametrize("changes", [{"model_max_tokens": 65_536}, {"context_input_limit": 65_536}])

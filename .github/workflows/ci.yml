@@ -34,7 +34,10 @@ jobs:
       - run: uv run --no-sync ruff check financeclaw tests scripts
       - run: uv run --no-sync ruff format --check financeclaw tests scripts
       - run: uv run --no-sync python scripts/check_secret_leaks.py
-      - run: uv run --no-sync pytest -q
+      - name: Test with offline tokenizer fallback
+        env:
+          TIKTOKEN_CACHE_DIR: ""
+        run: uv run --no-sync pytest -q
       - run: uv run --no-sync python scripts/generate_sbom.py
       - run: uv export --frozen --no-dev --no-emit-project ${{ matrix.extras }} --format requirements-txt --output-file build/production-requirements.txt
       - run: uv run --no-sync pip-audit --strict --require-hashes --disable-pip --requirement build/production-requirements.txt
