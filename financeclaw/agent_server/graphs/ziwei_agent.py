@@ -13,7 +13,7 @@ from langgraph.runtime import Runtime
 from pydantic import ValidationError
 
 from financeclaw.agent_server.agents.factory import AgentFactory
-from financeclaw.agent_server.context.builder import TokenCounter
+from financeclaw.agent_server.context.budget import TokenCounter
 from financeclaw.agent_server.domains.ziwei.application import ZiweiService
 from financeclaw.agent_server.domains.ziwei.errors import ZiweiError
 from financeclaw.agent_server.domains.ziwei.tool_inputs import tool_schema_error

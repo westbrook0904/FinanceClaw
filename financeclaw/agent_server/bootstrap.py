@@ -3,21 +3,23 @@
 from dataclasses import dataclass
 
 from financeclaw.agent_server.agents.factory import AgentFactory
-from financeclaw.agent_server.context.builder import ContextBudget, ConversationContextBuilder
+from financeclaw.agent_server.context.budget import ContextBudget
 from financeclaw.agent_server.domains.ziwei.application import ZiweiService
 from financeclaw.agent_server.graphs.workflows.portfolio_review_v1 import (
     portfolio_review_definition,
 )
 from financeclaw.agent_server.llm.factory import ModelFactory
+from financeclaw.agent_server.memory.history import HistoryService
 from financeclaw.agent_server.memory.policy import MemoryPolicy
 from financeclaw.agent_server.memory.service import LongTermMemoryService
 from financeclaw.agent_server.tools.catalog import ToolCatalog
+from financeclaw.agent_server.tools.history import history_tools
 from financeclaw.agent_server.tools.local import default_local_tools
 from financeclaw.agent_server.tools.mcp import managed_mcp_quote_tool
 from financeclaw.agent_server.tools.memory import default_memory_tools
 from financeclaw.agent_server.tools.policy import ToolPolicy
 from financeclaw.kernel.agents import AgentProfile, AgentProfileCatalog
-from financeclaw.kernel.models import ModelProfileCatalog
+from financeclaw.kernel.models import ModelProfileCatalog, ModelProfileRef
 from financeclaw.kernel.tool_catalog import ToolRelease, ToolReleaseCatalog
 from financeclaw.kernel.workflows.catalog import WorkflowCatalog
 from financeclaw.shared.artifacts.service import ArtifactService
@@ -27,7 +29,6 @@ from financeclaw.shared.audit.repository import (
 from financeclaw.shared.conversation.repository import (
     ConversationRepository,
 )
-from financeclaw.shared.conversation.summaries import SummaryService
 from financeclaw.shared.infrastructure.database import ApplicationDatabase
 from financeclaw.shared.infrastructure.resources import ApplicationResources, build_resources
 from financeclaw.shared.infrastructure.settings import FinanceClawSettings
@@ -53,8 +54,6 @@ class AgentServerComponents:
         agent_factory: Agent 工厂，依据 Agent 档案与工具目录构建 ReAct Agent。
         database: 应用数据库连接；未启用持久化时为 None。
         conversation_repository: 会话仓储；未启用持久化时为 None。
-        context_builder: 上下文预算构建器，控制注入模型的上下文规模。
-        summary_service: 会话摘要服务，负责分段与层级摘要生成。
         artifact_service: 制品服务，负责制品登记与内容读写。
         memory_service: 长期记忆服务；无会话仓储时不可用，为 None。
         workflow_catalog: Workflow 目录，登记已发布的流程定义。
@@ -73,8 +72,6 @@ class AgentServerComponents:
     agent_factory: AgentFactory
     database: ApplicationDatabase | None = None
     conversation_repository: ConversationRepository | None = None
-    context_builder: ConversationContextBuilder | None = None
-    summary_service: SummaryService | None = None
     artifact_service: ArtifactService | None = None
     memory_service: LongTermMemoryService | None = None
     workflow_catalog: WorkflowCatalog | None = None
@@ -85,7 +82,7 @@ class AgentServerComponents:
     def default_agent_profile(self) -> AgentProfile:
         """返回本次装配已注册的最新顶层档案，仅用于创建新会话。
 
-        当前产品装配仅注册 1.5.0 根发布。
+        当前产品装配仅注册 1.6.0 根发布。
         候选功能开关决定当前发布的工具配置；已创建会话使用它保存的固定版本，
         不应在每轮调用时重新选择默认档案。
 
@@ -112,22 +109,15 @@ def build_components(
     settings = resources.settings
     database = resources.database
     conversation_repository = resources.conversation_repository
-    summary_service = resources.summary_service
     artifact_service = resources.artifact_service
     outbox_repository = resources.outbox_repository
     effective_audit = resources.audit
     context_budget = ContextBudget(**settings.context_budget)
-    context_builder = None
-    if conversation_repository is not None:
-        context_builder = ConversationContextBuilder(
-            conversation_repository,
-            context_budget,
-        )
-    # 5. 装配长期记忆服务：依赖会话仓储，未启用持久化时跳过。
     memory_service = (
         LongTermMemoryService(
             conversation_repository=conversation_repository,
             audit=effective_audit,
+            outbox=outbox_repository,
             policy=MemoryPolicy(
                 auto_commit_low_risk_preferences=(settings.memory_auto_commit_low_risk_preferences)
             ),
@@ -142,12 +132,23 @@ def build_components(
                 *default_local_tools(),
                 managed_mcp_quote_tool(timeout_seconds=settings.mcp_timeout_seconds),
                 *(default_memory_tools(memory_service) if memory_service is not None else ()),
+                *(
+                    history_tools(HistoryService(conversation_repository, artifact_service))
+                    if artifact_service is not None
+                    else ()
+                ),
             )
         )
     else:
         base_tool_catalog = tool_catalog
     # 工具调用策略与目录解耦，使用默认规则集独立实例化。
-    tool_policy = ToolPolicy()
+    tool_policy = ToolPolicy(
+        approval_policies={
+            "save_memory": memory_service.requires_approval,
+        }
+        if memory_service is not None
+        else {}
+    )
     # 7. 装配 Workflow 目录：仅在制品服务可用（已启用持久化）时注册组合复盘流程。
     workflow_catalog = WorkflowCatalog(
         (
@@ -203,7 +204,7 @@ def build_components(
         debug_full_io=settings.debug_full_io,
         context_budget=context_budget,
         model_max_retries=settings.model_max_retries,
-        context_builder=context_builder,
+        summary_profile=ModelProfileRef(profile_id="summary", version="1.0.0"),
         conversation_repository=conversation_repository,
         artifact_service=artifact_service,
         memory_service=memory_service,
@@ -233,8 +234,6 @@ def build_components(
         agent_factory=agent_factory,
         database=database,
         conversation_repository=conversation_repository,
-        context_builder=context_builder,
-        summary_service=summary_service,
         artifact_service=artifact_service,
         memory_service=memory_service,
         workflow_catalog=workflow_catalog,

@@ -5,11 +5,12 @@
 """
 
 import json
+from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from typing import Any
 from uuid import uuid4
 
-from financeclaw.kernel.context import ExecutionContext
+from financeclaw.kernel.context import DataClassification, ExecutionContext
 from financeclaw.shared.artifacts.models import ArtifactMetadata
 from financeclaw.shared.artifacts.repository import ArtifactNotFound, ArtifactRepository
 from financeclaw.shared.artifacts.storage import ArtifactStore
@@ -35,12 +36,14 @@ class ArtifactService:
         store: ArtifactStore,
         *,
         inline_bytes: int = 16_384,
+        retention_days: int = 30,
     ) -> None:
         """创建服务实例并校验内联阈值。
 
         Args:
             repository: Artifact 元数据仓储。
             store: Artifact 存储后端。
+            retention_days: 工件默认保留天数，活动业务引用可以延后回收。
             inline_bytes: 内联阈值（字节），默认 16384，必须不小于 256。
 
         Raises:
@@ -49,9 +52,12 @@ class ArtifactService:
         """
         if inline_bytes < 256:
             raise ValueError("artifact inline threshold must be at least 256 bytes")
+        if retention_days < 1:
+            raise ValueError("artifact retention must be positive")
         self.repository = repository
         self.store = store
         self.inline_bytes = inline_bytes
+        self.retention_days = retention_days
 
     def offload(
         self,
@@ -99,6 +105,10 @@ class ArtifactService:
             tenant_id=context.tenant_id,
             subject_id=context.subject_id,
             content_type=content_type,
+            conversation_id=context.conversation_id,
+            source_turn_id=context.turn_id,
+            source_run_id=context.run_id,
+            expires_at=datetime.now(UTC) + timedelta(days=self.retention_days),
             storage_uri=storage_uri,
             content_hash=sha256(payload).hexdigest(),
             size_bytes=len(payload),
@@ -196,6 +206,10 @@ class ArtifactService:
             tenant_id=context.tenant_id,
             subject_id=context.subject_id,
             content_type=content_type,
+            conversation_id=context.conversation_id,
+            source_turn_id=context.turn_id,
+            source_run_id=context.run_id,
+            expires_at=datetime.now(UTC) + timedelta(days=self.retention_days),
             storage_uri=storage_uri,
             content_hash=content_hash,
             size_bytes=len(payload),
@@ -230,6 +244,17 @@ class ArtifactService:
             raise PermissionError("artifacts:read scope is required")
         # 2. 按归属读取元数据，确保 owner 隔离。
         metadata = self.repository.get_owned(artifact_id, context.tenant_id, context.subject_id)
+        levels = list(DataClassification)
+        classification = DataClassification(
+            metadata.access_policy.get("data_classification", "restricted")
+        )
+        if levels.index(classification) > levels.index(context.data_classification):
+            raise PermissionError("artifact exceeds the execution data classification")
+        expires = metadata.expires_at
+        if expires is not None and expires.replace(tzinfo=expires.tzinfo or UTC) <= datetime.now(
+            UTC
+        ):
+            raise ArtifactNotFound("artifact retention period has expired")
         # 3. 读取内容并校验 SHA256，防止存储侧内容损坏或被篡改。
         payload = self.store.get(metadata.storage_uri)
         if sha256(payload).hexdigest() != metadata.content_hash:

@@ -26,7 +26,6 @@ class AuditEventType(StrEnum):
         TOOL_REJECTED: 工具调用审批被驳回。
         FINANCIAL_TOOL_EXECUTED: 金融工具执行成功。
         FINANCIAL_TOOL_FAILED: 金融工具执行失败。
-        MEMORY_PROPOSED: 记忆写入提案已生成。
         MEMORY_COMMITTED: 记忆提案已提交生效。
         MEMORY_SUPERSEDED: 既有记忆被新记忆取代。
         MEMORY_REVOKED: 记忆被撤销。
@@ -47,7 +46,6 @@ class AuditEventType(StrEnum):
     TOOL_REJECTED = "tool.rejected"
     FINANCIAL_TOOL_EXECUTED = "financial_tool.executed"
     FINANCIAL_TOOL_FAILED = "financial_tool.failed"
-    MEMORY_PROPOSED = "memory.proposed"
     MEMORY_COMMITTED = "memory.committed"
     MEMORY_SUPERSEDED = "memory.superseded"
     MEMORY_REVOKED = "memory.revoked"

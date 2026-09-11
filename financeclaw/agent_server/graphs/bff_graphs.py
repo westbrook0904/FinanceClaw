@@ -15,7 +15,7 @@ configure_langsmith(
 )
 components = build_components(settings, enable_persistence=True)
 finance_agent = components.agent_factory.build(
-    components.agent_profiles.resolve("finance_agent", "1.5.0"),
+    components.agent_profiles.resolve("finance_agent", "1.6.0"),
     model=OfflineFinanceModel() if settings.offline_model else None,
     checkpointer=None,
 )

@@ -62,6 +62,8 @@ class OutboxEvent(BaseModel):
 
     event_id: str
     event_type: str
+    destination: str = "audit"
+    claim_epoch: int = 0
     aggregate_type: str
     aggregate_id: str
     tenant_id: str

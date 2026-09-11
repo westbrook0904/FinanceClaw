@@ -1,7 +1,7 @@
 """会话日志模块的 SQLAlchemy ORM 表定义（业务数据库持久化层）。
 
 定义 conversations、channel_conversation_bindings、conversation_turns、
-conversation_messages、conversation_summaries、model_context_manifests 与 artifacts 表。
+conversation_messages、model_context_manifests 与 artifacts 表。
 """
 
 from datetime import datetime
@@ -237,101 +237,8 @@ class ConversationMessageRow(Base):
     turn: Mapped[ConversationTurnRow] = relationship(back_populates="messages")
 
 
-class ConversationSummaryRow(Base):
-    """摘要表：持久化 ConversationSummary，支持分段与分层摘要。
-
-    使用场景：（会话，层级，起始，结束）组合索引支撑区间查询；
-    superseded_by 自引用外键记录摘要换代链路。
-
-    Attributes:
-        summary_id: 摘要标识，主键（String(128)）。
-        conversation_id: 所属会话标识，外键指向 conversations.conversation_id，非空。
-        level: 摘要层级（0 为分段摘要，>=1 为分层摘要），非空。
-        start_sequence: 覆盖起始序号，非空。
-        end_sequence: 覆盖结束序号，非空。
-        source_message_ids: 源消息 ID 列表（JSON），非空，默认空列表。
-        source_summary_ids: 源摘要 ID 列表（JSON），非空，默认空列表。
-        summary_content: 摘要正文（Text），非空。
-        topics: 主题词列表（JSON），非空，默认空列表。
-        entities: 实体（股票代码）列表（JSON），非空，默认空列表。
-        decisions: 历史决策列表（JSON），非空，默认空列表。
-        open_items: 未决事项列表（JSON），非空，默认空列表。
-        model_profile_version: 生成摘要的摘要器版本（String(32)），非空。
-        template_version: 摘要模板版本（String(64)），非空。
-        content_hash: 摘要内容 SHA-256 摘要（String(64)），非空。
-        status: 摘要状态字符串，非空，默认 "active"。
-        superseded_by: 取代本摘要的新摘要 ID（自引用外键）；未被取代时为 NULL。
-        created_at: 创建时间（带时区），非空，默认当前 UTC 时间。
-
-    """
-
-    __tablename__ = "conversation_summaries"
-    __table_args__ = (
-        Index(
-            "ix_summaries_conversation_range",
-            "conversation_id",
-            "level",
-            "start_sequence",
-            "end_sequence",
-        ),
-    )
-
-    summary_id: Mapped[str] = mapped_column(String(128), primary_key=True)
-    conversation_id: Mapped[str] = mapped_column(
-        ForeignKey("conversations.conversation_id"), nullable=False
-    )
-    level: Mapped[int] = mapped_column(Integer, nullable=False)
-    start_sequence: Mapped[int] = mapped_column(Integer, nullable=False)
-    end_sequence: Mapped[int] = mapped_column(Integer, nullable=False)
-    source_message_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
-    source_summary_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
-    summary_content: Mapped[str] = mapped_column(Text, nullable=False)
-    topics: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
-    entities: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
-    decisions: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
-    open_items: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
-    model_profile_version: Mapped[str] = mapped_column(String(32), nullable=False)
-    template_version: Mapped[str] = mapped_column(String(64), nullable=False)
-    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
-    status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
-    superseded_by: Mapped[str | None] = mapped_column(
-        ForeignKey("conversation_summaries.summary_id")
-    )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=utcnow
-    )
-
-
 class ModelContextManifestRow(Base):
-    """模型上下文清单表：永久保存每次模型调用的 ModelContextManifest。
-
-    使用场景：model_call_id 唯一约束保证一次调用一条清单；
-    （会话，turn，run）组合索引支撑按轮次审计与回放。
-
-    Attributes:
-        manifest_id: 清单标识，主键（String(128)）。
-        model_call_id: 模型调用标识（String(128)），非空，全局唯一约束。
-        conversation_id: 所属会话标识，外键指向 conversations.conversation_id，非空。
-        turn_id: 所属 turn 标识，外键指向 conversation_turns.turn_id，非空。
-        run_id: 平台运行标识（String(128)），非空。
-        prompt_template_version: 提示词模板版本（String(64)），非空。
-        agent_profile_version: Agent Profile 版本（String(32)），非空。
-        model_profile_version: 模型配置版本（String(32)），非空。
-        recent_message_start: 入选最近原文的最小序号；无入选时为 NULL。
-        recent_message_end: 入选最近原文的最大序号；无入选时为 NULL。
-        summary_ids: 入选摘要 ID 列表（JSON），非空，默认空列表。
-        memory_ids: 注入记忆 ID 列表（JSON），非空，默认空列表。
-        memory_refs: 记忆引用明细（JSON 对象列表），非空，默认空列表。
-        historical_message_ids: 相关古老历史消息 ID 列表（JSON），非空，默认空列表。
-        tool_result_refs: 外置工件 ID 列表（JSON），非空，默认空列表。
-        exposed_tools: 暴露给模型的工具清单（JSON），非空，默认空列表。
-        input_token_count: 估算输入 token 总数，非空。
-        available_input_tokens: 配置的可用输入预算，非空。
-        omissions: 省略明细（JSON 对象列表），非空，默认空列表。
-        context_hash: 上下文 SHA-256 摘要（String(64)），非空。
-        created_at: 创建时间（带时区），非空，默认当前 UTC 时间。
-
-    """
+    """每次实际模型调用的来源、预算和请求指纹。"""
 
     __tablename__ = "model_context_manifests"
     __table_args__ = (
@@ -349,12 +256,16 @@ class ModelContextManifestRow(Base):
     prompt_template_version: Mapped[str] = mapped_column(String(64), nullable=False)
     agent_profile_version: Mapped[str] = mapped_column(String(32), nullable=False)
     model_profile_version: Mapped[str] = mapped_column(String(32), nullable=False)
-    recent_message_start: Mapped[int | None] = mapped_column(Integer)
-    recent_message_end: Mapped[int | None] = mapped_column(Integer)
-    summary_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    provider: Mapped[str] = mapped_column(String(128), nullable=False)
+    model: Mapped[str] = mapped_column(String(256), nullable=False)
+    subtype: Mapped[str] = mapped_column(String(32), nullable=False)
+    token_count_method: Mapped[str] = mapped_column(String(64), nullable=False)
+    summary_sources: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSON, nullable=False, default=list
+    )
     memory_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     memory_refs: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False, default=list)
-    historical_message_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    message_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     tool_result_refs: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     exposed_tools: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     input_token_count: Mapped[int] = mapped_column(Integer, nullable=False)

@@ -111,21 +111,12 @@ def memory_tool_governance() -> tuple[ToolGovernance, ...]:
             **internal,
         ),
         ToolGovernance(
-            tool_id="propose_memory",
-            side_effect=SideEffect.READ,
-            idempotency=Idempotency.IDEMPOTENT,
-            risk_level=RiskLevel.LOW,
-            required_scopes=frozenset({"memory:write"}),
-            approval=ApprovalMode.NONE,
-            **internal,
-        ),
-        ToolGovernance(
-            tool_id="confirm_memory",
+            tool_id="save_memory",
             side_effect=SideEffect.WRITE,
             idempotency=Idempotency.KEY_REQUIRED,
             risk_level=RiskLevel.MEDIUM,
             required_scopes=frozenset({"memory:write"}),
-            approval=ApprovalMode.ALWAYS,
+            approval=ApprovalMode.POLICY,
             **internal,
         ),
         ToolGovernance(
@@ -158,4 +149,26 @@ def ziwei_tool_governance() -> tuple[ToolGovernance, ...]:
             allowed_data_classes=frozenset({DataClassification.CONFIDENTIAL}),
         )
         for name in ZIWEI_TOOL_INPUTS
+    )
+
+
+def history_tool_governance() -> tuple[ToolGovernance, ...]:
+    """历史与工件只读声明，外部工具结果也使用同一回读入口。"""
+    return tuple(
+        ToolGovernance(
+            tool_id=name,
+            version="1.0.0",
+            side_effect=SideEffect.READ,
+            idempotency=Idempotency.IDEMPOTENT,
+            risk_level=RiskLevel.LOW,
+            required_scopes=frozenset(
+                {"artifacts:read" if name == "read_artifact" else "memory:read"}
+            ),
+            approval=ApprovalMode.NONE,
+            egress=Egress.INTERNAL,
+            sensitivity=Sensitivity.CONFIDENTIAL,
+            retry_profile=RetryProfile.NONE,
+            audit_level=AuditLevel.FULL,
+        )
+        for name in ("search_history", "read_history", "read_artifact")
     )

@@ -3,9 +3,10 @@
 import json
 
 from jsonschema import Draft202012Validator
-from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+from langchain_core.messages import AIMessage, ToolMessage
 
 from financeclaw.kernel.context import ExecutionContext
+from financeclaw.kernel.turns import current_turn_start
 from financeclaw.shared.execution_ledger.repository import ExecutionConflict
 from financeclaw.shared.releases.interactions import CLARIFICATION_TOOL, ROOT_CLARIFICATION
 
@@ -52,15 +53,10 @@ def task_context(runtime, snapshot):
     """使用 BFF 固定的本轮消息锚点；恢复不会改成最后一条回答或混入旧任务。"""
     messages = runtime.state.get("messages", [])
     origin = snapshot.get("user_message_id")
-    indices = [
-        index
-        for index, message in enumerate(messages)
-        if isinstance(message, HumanMessage) and (origin is None or message.id == origin)
-    ]
-    if not indices or (origin is not None and len(indices) != 1):
-        raise ExecutionConflict("root task has no unique original user message")
-    # 非 BFF 的原生图测试没有消息锚点，使用最后一条用户消息作为本次任务入口。
-    start = indices[-1]
+    try:
+        start = current_turn_start(messages, origin)
+    except ValueError as exc:
+        raise ExecutionConflict("root task has no unique original user message") from exc
     original = messages[start]
     context = ExecutionContext.model_validate(runtime.context)
     return {

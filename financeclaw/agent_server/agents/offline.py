@@ -6,7 +6,6 @@
 
 """
 
-import json
 from collections.abc import Sequence
 from typing import Any
 
@@ -110,28 +109,8 @@ class OfflineFinanceModel(BaseChatModel):
                     )
                 ]
             )
-        # 1. 处理工具回传消息：记忆提案自动转为 confirm_memory 调用，其余回显。
+        # 工具回执直接交付；记忆保存的一次确认由原生 HITL 负责。
         if isinstance(last, ToolMessage):
-            if last.name == "propose_memory":
-                proposal = json.loads(str(last.content))
-                draft = proposal["draft"]
-                return ChatResult(
-                    generations=[
-                        ChatGeneration(
-                            message=AIMessage(
-                                content="",
-                                tool_calls=[
-                                    {
-                                        "name": "confirm_memory",
-                                        "args": {"proposal_id": proposal["proposal_id"], **draft},
-                                        "id": "offline-confirm-memory-call",
-                                        "type": "tool_call",
-                                    }
-                                ],
-                            )
-                        )
-                    ]
-                )
             return ChatResult(
                 generations=[
                     ChatGeneration(message=AIMessage(content=f"Tool result: {last.content}"))
@@ -188,7 +167,7 @@ class OfflineFinanceModel(BaseChatModel):
             name = f"call_agent__{directive.resource_id}"
             args = {"task": directive.payload}
         elif "remember preference" in content or "记住" in content:
-            name = "propose_memory"
+            name = "save_memory"
             args = {
                 "kind": "preference",
                 "content": "用户偏好低波动资产",

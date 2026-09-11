@@ -119,11 +119,14 @@ class FinanceClawSettings(BaseSettings):
         context_system_policy_reserve: 上下文预算中为系统策略文本预留的 token 数。
         context_tool_schema_reserve: 上下文预算中为工具 schema 预留的 token 数。
         context_safety_margin: 上下文预算的安全边际，用于吸收 token 估算误差。
-        context_recent_messages: 最近原文窗口最多保留的消息数。
-        context_relevant_messages: 窗口外按相关性召回的原文消息数。
-        context_relevant_summaries: 按相关性召回的摘要数。
-        summary_segment_messages: 分层摘要中单个片段覆盖的消息条数。
-        summary_hierarchy_segments: 高层摘要聚合低层片段的数量。
+        context_recent_turns: 原生摘要保护的最近已完成 Turn 数。
+        context_summary_trigger_tokens: 旧 Turn 摘要触发阈值。
+        context_soft_input_tokens: 原生工具结果清理的软目标。
+        context_tool_results_to_keep: 清理时保留的最近工具结果数。
+        summary_model: 可独立配置的摘要模型名。
+        embedding_model: 独立 embedding 模型名，画像直接读取不依赖此模型。
+        embedding_dimensions: 必须与原生 Store index 的 dims 一致。
+        artifact_retention_days: 工件默认保留天数，活动引用延后回收。
         memory_recall_tokens: 记忆召回内容允许占用的 token 预算。
         memory_recall_limit: 单次记忆召回的条数上限。
         memory_auto_commit_low_risk_preferences: 是否自动提交低风险偏好类记忆（不等待人工确认）。
@@ -263,14 +266,24 @@ class FinanceClawSettings(BaseSettings):
     context_system_policy_reserve: int = Field(default=8_192, ge=0)
     context_tool_schema_reserve: int = Field(default=32_768, ge=0)
     context_safety_margin: int = Field(default=32_768, ge=0)
-    context_recent_messages: int = Field(default=64, ge=1, le=1_000)
-    context_relevant_messages: int = Field(default=16, ge=0, le=64)
-    context_relevant_summaries: int = Field(default=8, ge=0, le=64)
-    summary_segment_messages: int = Field(default=12, ge=2, le=1_000)
-    summary_hierarchy_segments: int = Field(default=8, ge=2, le=1_000)
-    memory_recall_tokens: int = Field(default=768, ge=64, le=8_192)
-    memory_recall_limit: int = Field(default=2, ge=1, le=20)
-    memory_auto_commit_low_risk_preferences: bool = False
+    context_recent_turns: int = Field(default=4, ge=0, le=100)
+    context_summary_trigger_tokens: int = Field(default=64_000, ge=256)
+    context_soft_input_tokens: int = Field(default=96_000, ge=256)
+    context_tool_results_to_keep: int = Field(default=3, ge=0, le=100)
+    summary_model: str | None = None
+    summary_max_tokens: int = Field(default=4_096, ge=256)
+    embedding_model: str | None = None
+    embedding_base_url: str | None = None
+    embedding_api_key: SecretStr | None = None
+    embedding_dimensions: int = Field(default=1536, ge=1, le=65536)
+    embedding_timeout_seconds: float = Field(default=30, gt=0, le=120)
+    history_index_version: str = "history/1"
+    history_index_batch_size: int = Field(default=4, ge=1, le=100)
+    history_index_poll_seconds: float = Field(default=5, ge=0.1, le=60)
+    artifact_retention_days: int = Field(default=30, ge=1, le=3650)
+    memory_recall_tokens: int = Field(default=4_096, ge=64, le=8_192)
+    memory_recall_limit: int = Field(default=6, ge=1, le=20)
+    memory_auto_commit_low_risk_preferences: bool = True
 
     @property
     def context_budget(self) -> dict[str, int]:
@@ -281,9 +294,10 @@ class FinanceClawSettings(BaseSettings):
             "system_policy_reserve": self.context_system_policy_reserve,
             "tool_schema_reserve": self.context_tool_schema_reserve,
             "safety_margin": self.context_safety_margin,
-            "max_recent_messages": self.context_recent_messages,
-            "max_relevant_messages": self.context_relevant_messages,
-            "max_relevant_summaries": self.context_relevant_summaries,
+            "recent_turns": self.context_recent_turns,
+            "summary_trigger_tokens": self.context_summary_trigger_tokens,
+            "soft_input_tokens": self.context_soft_input_tokens,
+            "tool_results_to_keep": self.context_tool_results_to_keep,
         }
 
     @model_validator(mode="after")

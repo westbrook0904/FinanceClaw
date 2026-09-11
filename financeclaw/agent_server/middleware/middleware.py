@@ -14,7 +14,7 @@ from hashlib import sha256
 from typing import Any
 
 from langchain.agents.middleware import AgentMiddleware, ModelRequest, ModelResponse
-from langchain_core.messages import HumanMessage, ToolMessage
+from langchain_core.messages import ToolMessage
 from langsmith import traceable
 
 from financeclaw.agent_server.agents.directives import (
@@ -26,6 +26,7 @@ from financeclaw.agent_server.agents.directives import (
 from financeclaw.agent_server.tools.catalog import ToolCatalog
 from financeclaw.agent_server.tools.policy import ToolDecision, ToolDecisionType, ToolPolicy
 from financeclaw.kernel.context import ExecutionContext
+from financeclaw.kernel.turns import is_user_message
 from financeclaw.shared.audit.models import AuditEventType, AuditRecord
 from financeclaw.shared.audit.repository import AuditRepository
 from financeclaw.shared.infrastructure.security.redaction import redact_sensitive
@@ -299,7 +300,7 @@ class ToolGovernanceMiddleware(AgentMiddleware):
             (
                 (index, message)
                 for index, message in reversed(tuple(enumerate(messages)))
-                if isinstance(message, HumanMessage) and isinstance(message.content, str)
+                if is_user_message(message) and isinstance(message.content, str)
             ),
             None,
         )

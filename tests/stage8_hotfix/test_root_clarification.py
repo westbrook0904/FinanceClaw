@@ -128,7 +128,7 @@ async def test_one_field_answer_resumes_same_task_with_original_context(stack, d
     assert before["model_calls"] == 2  # 根派发一次、子模型一次，无模型参与汇总
     # 从保存的 checkpoint 重建根图，不能依赖旧工具实例内的“当前出生资料”。
     graph = stack.agent_factory.build(
-        stack.agent_profiles.resolve("finance_agent", "1.5.0"),
+        stack.agent_profiles.resolve("finance_agent", "1.6.0"),
         model=ContinuingRoot(calls=calls),
         checkpointer=graph.checkpointer,
         fallback_models=(),

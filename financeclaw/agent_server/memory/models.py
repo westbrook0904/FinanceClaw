@@ -9,7 +9,9 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Annotated, Self
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from financeclaw.agent_server.memory.profiles import ProfileField
 
 
 class FrozenMemoryModel(BaseModel):
@@ -36,7 +38,7 @@ class MemoryType(StrEnum):
     Attributes:
         PREFERENCE: 用户表达的稳定偏好，如沟通风格与呈现方式。
         GOAL: 用户的阶段性目标，用于跨会话对齐任务方向。
-        CONSTRAINT: 必须遵守的硬性约束，召回时无条件进入模型上下文。
+        CONSTRAINT: 用户约束；稳定约束应保存到对应的画像字段。
         DECISION_NOTE: 已作出的金融决策及其理由备注。
 
     """
@@ -109,6 +111,8 @@ class MemoryDraft(FrozenMemoryModel):
     """
 
     kind: MemoryType
+    field: ProfileField | None = None
+    valid_until: AwareDatetime | None = None
     content: Annotated[str, Field(min_length=1, max_length=2_000)]
     evidence_message_ids: tuple[MemoryIdentifier, ...] = Field(min_length=1, max_length=32)
 
@@ -153,11 +157,11 @@ class MemoryProposal(FrozenMemoryModel):
     """策略评估后输出的记忆写入提案，等待 HITL 人工确认。
 
     使用场景：
-        propose 阶段产出并写入审计；confirm 阶段凭 proposal_id 复验后落库。
+        内部证据评估产出，用于原生 HITL 判定；提案本身不写 Store 或审计。
 
     Attributes:
-        proposal_id: 由租户、主体、草案与策略版本共同决定的确定性标识，
-            防止提案与确认之间的事实被替换。
+        proposal_id: 由租户、主体与规范化草案决定的内部确定性标识；
+            原生 HITL 将批准绑定到实际工具参数。
         draft: 待写入的记忆草案，证据引用已解析完成。
         sensitivity: 策略判定的数据敏感级别。
         requires_confirmation: 是否必须经用户显式确认后才能写入。
@@ -182,11 +186,11 @@ class MemoryRecord(FrozenMemoryModel):
         都围绕它进行；Store 原始值必须能投影回本模型才视为合法。
 
     Attributes:
-        memory_id: 由 proposal_id 派生的确定性记忆标识。
+        memory_id: profile 字段 ID 或由工具执行标识派生的事件 ID。
         tenant_id: 租户隔离键，所有读写都必须落在该租户命名空间内。
         subject_id: 已认证主体标识，用于所有权校验与审计归因。
         namespace: LangGraph Store 命名空间路径，固定 5 段：
-            根路径 3 段，加 URL 安全转义后的租户、主体标签各 1 段。
+            固定根路径 2 段、编码租户/主体各 1 段、类别 1 段。
         memory_type: 记忆的语义类别。
         content: 记忆正文，1 到 2000 字符。
         status: 生命周期状态，默认 ACTIVE。
@@ -206,6 +210,9 @@ class MemoryRecord(FrozenMemoryModel):
     subject_id: MemoryIdentifier
     namespace: tuple[str, ...] = Field(min_length=5, max_length=5)
     memory_type: MemoryType
+    field: ProfileField | None = None
+    mutation_id: str | None = None
+    revision: int = Field(default=1, ge=1)
     content: Annotated[str, Field(min_length=1, max_length=2_000)]
     status: MemoryStatus = MemoryStatus.ACTIVE
     source_message_ids: tuple[MemoryIdentifier, ...] = Field(min_length=1, max_length=32)
@@ -245,11 +252,11 @@ class MemoryRecall(FrozenMemoryModel):
 
     Attributes:
         record: 命中的记忆记录。
-        reason: 命中理由，如活跃约束、活跃目标、语义或词法相关。
-        score: 相关性得分，取语义与词法得分的较大值，不小于 0。
+        reason: 原生事件语义检索或无查询的事件列举。
+        score: 原生 Store 的相关性得分；余弦分数可以为负。
 
     """
 
     record: MemoryRecord
     reason: str
-    score: float = Field(ge=0)
+    score: float = 0

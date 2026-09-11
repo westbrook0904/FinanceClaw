@@ -52,6 +52,10 @@ class ArtifactStore(Protocol):
         """
         ...
 
+    def delete(self, storage_uri: str) -> None:
+        """幂等删除工件内容；仅接受当前后端生成的 URI。"""
+        ...
+
     def encryption_metadata(self) -> dict[str, str]:
         """返回当前存储后端的服务端加密描述，用于写入工件元数据。"""
         ...
@@ -161,6 +165,14 @@ class LocalArtifactStore:
             ValueError: URI 前缀不匹配、路径结构非法或指向租户命名空间之外时抛出。
 
         """
+        return self._path(storage_uri).read_bytes()
+
+    def delete(self, storage_uri: str) -> None:
+        """内容已删除时仍返回成功，便于元数据提交失败后的重试。"""
+        self._path(storage_uri).unlink(missing_ok=True)
+
+    def _path(self, storage_uri: str) -> Path:
+        """读取与删除共享路径校验，拒绝穿越和外部符号链接。"""
         prefix = "artifact-local:"
         if not storage_uri.startswith(prefix):
             raise ValueError("unsupported local artifact URI")
@@ -174,7 +186,10 @@ class LocalArtifactStore:
         ):
             raise ValueError("invalid artifact URI")
         _artifact_id(relative.parts[-1])
-        return (self.root / relative).read_bytes()
+        path = (self.root / relative).resolve()
+        if not path.is_relative_to(self.root):
+            raise ValueError("artifact path escapes configured root")
+        return path
 
     def encryption_metadata(self) -> dict[str, str]:
         """返回服务端加密描述；本地实现不提供加密，返回空字典。"""
@@ -243,6 +258,10 @@ class InMemoryArtifactStore:
 
         """
         return self.values[storage_uri.removeprefix("artifact-memory:")]
+
+    def delete(self, storage_uri: str) -> None:
+        """删除测试后端中的内容。"""
+        self.values.pop(storage_uri.removeprefix("artifact-memory:"), None)
 
     def encryption_metadata(self) -> dict[str, str]:
         """返回服务端加密描述；内存实现不提供加密，返回空字典。"""
@@ -397,6 +416,15 @@ class S3ArtifactStore:
                 之外、包含路径穿越片段时抛出。
 
         """
+        response = self._client.get_object(Bucket=self.bucket, Key=self._key(storage_uri))
+        return bytes(response["Body"].read())
+
+    def delete(self, storage_uri: str) -> None:
+        """删除当前配置前缀内的对象；对象不存在也视为成功。"""
+        self._client.delete_object(Bucket=self.bucket, Key=self._key(storage_uri))
+
+    def _key(self, storage_uri: str) -> str:
+        """读写共用的桶与 namespace 校验。"""
         prefix = f"artifact-s3://{self.bucket}/"
         # 1. 校验 URI 属于当前配置的存储桶。
         if not storage_uri.startswith(prefix):
@@ -406,9 +434,7 @@ class S3ArtifactStore:
         required_prefix = f"{self.prefix}/tenants/" if self.prefix else "tenants/"
         if not key.startswith(required_prefix) or "/../" in f"/{key}/":
             raise ValueError("artifact key is outside the tenant namespace")
-        # 3. 拉取对象内容并读取全部字节。
-        response = self._client.get_object(Bucket=self.bucket, Key=key)
-        return bytes(response["Body"].read())
+        return key
 
     def encryption_metadata(self) -> dict[str, str]:
         """返回写入工件时使用的服务端加密描述（SSE 算法与可选 KMS 密钥）。"""

@@ -39,6 +39,23 @@ class ArtifactRepository(Protocol):
         """按工件标识与归属租户/主体读取元数据，未命中时抛出 ArtifactNotFound。"""
         ...
 
+    def is_protected(self, metadata: ArtifactMetadata) -> bool:
+        """有活动运行、审批或待核对操作的会话，暂缓工件回收。"""
+        ...
+
+    def list_turn(
+        self,
+        conversation_id: str,
+        turn_id: str,
+        tenant_id: str,
+        subject_id: str,
+        *,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> tuple[ArtifactMetadata, ...]:
+        """按可信 Turn 返回有界工件目录。"""
+        ...
+
 
 def _metadata(row: ArtifactMetadataRow) -> ArtifactMetadata:
     """把 ORM 行 ``ArtifactMetadataRow`` 转换为领域模型 ``ArtifactMetadata``。"""
@@ -52,6 +69,11 @@ def _metadata(row: ArtifactMetadataRow) -> ArtifactMetadata:
         size_bytes=row.size_bytes,
         source_type=row.source_type,
         source_id=row.source_id,
+        conversation_id=row.conversation_id,
+        source_turn_id=row.source_turn_id,
+        source_run_id=row.source_run_id,
+        expires_at=row.expires_at,
+        deleted_at=row.deleted_at,
         access_policy=row.access_policy,
         encryption_metadata=row.encryption_metadata,
         created_at=row.created_at,
@@ -99,6 +121,11 @@ class SqlAlchemyArtifactRepository:
             size_bytes=metadata.size_bytes,
             source_type=metadata.source_type,
             source_id=metadata.source_id,
+            conversation_id=metadata.conversation_id,
+            source_turn_id=metadata.source_turn_id,
+            source_run_id=metadata.source_run_id,
+            expires_at=metadata.expires_at,
+            deleted_at=metadata.deleted_at,
             access_policy=metadata.access_policy,
             encryption_metadata=metadata.encryption_metadata,
             created_at=metadata.created_at,
@@ -116,8 +143,8 @@ class SqlAlchemyArtifactRepository:
             except ArtifactNotFound:
                 existing = None
             if existing is not None and existing.model_dump(
-                exclude={"created_at"}
-            ) == metadata.model_dump(exclude={"created_at"}):
+                exclude={"created_at", "expires_at"}
+            ) == metadata.model_dump(exclude={"created_at", "expires_at"}):
                 return existing
             raise
         return metadata
@@ -149,3 +176,38 @@ class SqlAlchemyArtifactRepository:
             if row is None:
                 raise ArtifactNotFound("artifact was not found for authenticated owner")
             return _metadata(row)
+
+    def is_protected(self, metadata: ArtifactMetadata) -> bool:
+        """按会话保守保护所有工件，也覆盖前一 Turn 的工具结果引用。"""
+        from financeclaw.shared.conversation.lifecycle import has_open_responsibility
+
+        with self._sessions() as session:
+            return has_open_responsibility(session, metadata.conversation_id)
+
+    def list_turn(
+        self,
+        conversation_id: str,
+        turn_id: str,
+        tenant_id: str,
+        subject_id: str,
+        *,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> tuple[ArtifactMetadata, ...]:
+        """按 Turn 分页读取目录，支持完成后才归档的小结果。"""
+        if not 1 <= limit <= 100 or offset < 0:
+            raise ValueError("invalid artifact directory page")
+        statement = (
+            select(ArtifactMetadataRow)
+            .where(
+                ArtifactMetadataRow.conversation_id == conversation_id,
+                ArtifactMetadataRow.source_turn_id == turn_id,
+                ArtifactMetadataRow.tenant_id == tenant_id,
+                ArtifactMetadataRow.subject_id == subject_id,
+            )
+            .order_by(ArtifactMetadataRow.created_at, ArtifactMetadataRow.artifact_id)
+            .limit(limit)
+            .offset(offset)
+        )
+        with self._sessions() as session:
+            return tuple(_metadata(row) for row in session.scalars(statement))

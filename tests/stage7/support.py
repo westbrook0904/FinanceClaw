@@ -38,7 +38,7 @@ def context(**changes) -> ExecutionContext:
             "subject_id": "synthetic-owner",
             "run_id": "ziwei-child",
             "turn_id": "turn-ziwei",
-            "conversation_id": "ziwei-conversation",
+            "conversation_id": None,
             "request_clock": "2026-09-06T01:00:00+08:00",
             "data_classification": "confidential",
             "scopes": {"ziwei:read", "artifacts:read"},

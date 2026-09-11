@@ -4,7 +4,7 @@
     "."
   ],
   "graphs": {
-    "finance_agent_v1_5_0": "./financeclaw/agent_server/graphs/bff_graphs.py:finance_agent"
+    "finance_agent_v1_6_0": "./financeclaw/agent_server/graphs/bff_graphs.py:finance_agent"
   },
   "env": ".env",
   "python_version": "3.13",
@@ -21,6 +21,15 @@
       ],
       "require_https": true,
       "disable_loopback": true
+    }
+  },
+  "store": {
+    "index": {
+      "embed": "./financeclaw/agent_server/memory/embeddings.py:embeddings",
+      "dims": 1536,
+      "fields": [
+        "content"
+      ]
     }
   }
 }

@@ -4,6 +4,7 @@ from pathlib import Path
 
 from alembic import command
 from alembic.config import Config
+from langgraph.store.memory import InMemoryStore
 from pydantic import SecretStr
 from sqlalchemy import create_engine, inspect
 
@@ -114,9 +115,12 @@ def test_memory_audit_survives_repository_reconstruction(tmp_path: Path) -> None
     # 准备 context and _，供后续步骤使用。
     context, _ = conversation_context(repository, key="persistent-audit")
     # 前置条件满足后调用 propose。
-    service.propose(
+    service.save(
         context,
-        MemoryDraft(
+        InMemoryStore(),
+        mutation_id="audit-probe",
+        approved=True,
+        draft=MemoryDraft(
             kind="goal",
             content="用户希望建立长期投资计划",
             evidence_message_ids=("current",),
@@ -134,6 +138,6 @@ def test_memory_audit_survives_repository_reconstruction(tmp_path: Path) -> None
     # 准备 records，供后续步骤使用。
     records = audit.records(tenant_id=context.tenant_id, subject_id=context.subject_id)
     # 继续执行前验证内部不变量。
-    assert [record.event_type for record in records] == [AuditEventType.MEMORY_PROPOSED]
+    assert [record.event_type for record in records] == [AuditEventType.MEMORY_COMMITTED]
     # 前置条件满足后调用 close。
     database.close()

@@ -55,7 +55,15 @@ class ApplicationDatabase:
         if url.startswith("sqlite"):
             connect_args = {"check_same_thread": False}
         else:
-            connect_args = {"options": f"-c statement_timeout={statement_timeout_seconds * 1_000}"}
+            # DSN options 可能指定隔离 schema，设置超时不能覆盖它。
+            existing_options = make_url(url).query.get("options", "")
+            if not isinstance(existing_options, str):
+                raise ValueError("database options must be a single string")
+            connect_args = {
+                "options": (
+                    f"{existing_options} -c statement_timeout={statement_timeout_seconds * 1_000}"
+                ).strip()
+            }
         # 3. 创建引擎（pool_pre_ping 预检失效连接），并注入 OpenTelemetry SQL 插桩。
         self.engine: Engine = create_engine(url, pool_pre_ping=True, connect_args=connect_args)
         instrument_sqlalchemy_engine(self.engine)

@@ -149,7 +149,7 @@ async def admit(runtime, *, key="start", conversation_id=None, message="HF-2 syn
     """Create only a new version-pinned root conversation and one user Turn."""
     if conversation_id is None:
         conversation = runtime.runs.repository.create_conversation(
-            **OWNER, agent_id="finance_agent", agent_profile_version="1.5.0"
+            **OWNER, agent_id="finance_agent", agent_profile_version="1.6.0"
         )
         conversation_id = conversation.conversation_id
     accepted = await runtime.runs.start_turn(

@@ -250,7 +250,7 @@ def test_worker_manifest_is_identical_across_process_hash_seeds(tmp_path):
 from tests.stage8_hotfix.test_bff_runs import config
 from financeclaw.shared.releases.catalog import build_release_catalogs
 from financeclaw.shared.execution_ledger.repository import digest
-print(digest(build_release_catalogs(config(Path('/tmp')),enable_persistence=True).agent_profiles.resolve('finance_agent','1.5.0').model_dump(mode='json')))
+print(digest(build_release_catalogs(config(Path('/tmp')),enable_persistence=True).agent_profiles.resolve('finance_agent','1.6.0').model_dump(mode='json')))
 """
     values = []
     for seed in ("1", "2", "3"):

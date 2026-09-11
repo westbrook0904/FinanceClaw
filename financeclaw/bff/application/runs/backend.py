@@ -5,6 +5,7 @@ import json
 from langgraph_sdk.errors import NotFoundError
 
 from financeclaw.kernel.backend import BackendExecutionRef
+from financeclaw.kernel.turns import current_turn_start, is_user_message
 from financeclaw.shared.execution_ledger.repository import (
     ExecutionConflict,
     digest,
@@ -27,14 +28,12 @@ def interrupts(state):
 def current_messages(state, snapshot):
     """Exclude previous Turns using the BFF's immutable user Journal message ID."""
     messages = state.get("values", {}).get("messages", [])
-    starts = [i for i, item in enumerate(messages) if item.get("id") == snapshot["user_message_id"]]
-    if len(starts) != 1 or messages[starts[0]].get("type", messages[starts[0]].get("role")) not in {
-        "human",
-        "user",
-    }:
-        raise ExecutionConflict("native state has no unique current Turn input")
-    current = messages[starts[0] + 1 :]
-    if any(item.get("type", item.get("role")) in {"human", "user"} for item in current):
+    try:
+        start = current_turn_start(messages, snapshot["user_message_id"])
+    except ValueError as exc:
+        raise ExecutionConflict(str(exc)) from exc
+    current = messages[start + 1 :]
+    if any(is_user_message(item) for item in current):
         raise ExecutionConflict("native thread advanced to another Turn")
     return current
 

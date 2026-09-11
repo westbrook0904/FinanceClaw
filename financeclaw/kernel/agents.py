@@ -43,7 +43,7 @@ class AgentProfile(BaseModel):
         system_prompt_template: Agent 的系统提示模板文本。
         allowed_tools: 允许使用的工具引用序列，装配时逐个解析。
         middleware_profile: 中间件组合策略标识，默认 ``governed-v1``。
-        context_policy: 上下文组装策略标识，默认 ``stage2-journal-v1``。
+        context_policy: 上下文组装策略标识，默认 ``native-thread-v1``。
         memory_policy: 记忆策略标识；``none`` 表示不挂载记忆召回中间件。
         max_model_calls: 单次运行的模型调用上限，取值 1-64，默认 8。
         max_tool_calls: 单次运行的工具调用上限，取值 1-128，默认 12。
@@ -60,7 +60,7 @@ class AgentProfile(BaseModel):
     system_prompt_template: str
     allowed_tools: tuple[ToolRef, ...]
     middleware_profile: str = "governed-v1"
-    context_policy: str = "stage2-journal-v1"
+    context_policy: str = "native-thread-v1"
     memory_policy: str = "none"
     max_model_calls: int = Field(default=8, ge=1, le=64)
     max_tool_calls: int = Field(default=12, ge=1, le=128)
@@ -103,7 +103,7 @@ class AgentProfile(BaseModel):
         if len(names) != len(set(names)):
             raise ValueError("AgentProfile cannot bind multiple versions of the same tool name")
         if self.context_policy not in {
-            "stage2-journal-v1",
+            "native-thread-v1",
             "worker-task-only-v1",
         }:
             raise ValueError("unsupported Agent context policy")

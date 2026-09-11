@@ -94,20 +94,20 @@ def test_trusted_namespace_evidence_lifecycle_and_cross_thread_recall(tmp_path: 
 
     # 限定依赖资源的生命周期，并确保资源能够可靠释放。
     with pytest.raises(MemoryConfirmationRequired):
-        service.confirm(
+        service.save(
             first_context,
             store,
-            proposal_id=proposal.proposal_id,
+            mutation_id=proposal.proposal_id,
             draft=proposal.draft,
-            user_confirmed=False,
+            approved=False,
         )
     # 准备 first，供后续步骤使用。
-    first = service.confirm(
+    first = service.save(
         first_context,
         store,
-        proposal_id=proposal.proposal_id,
+        mutation_id=proposal.proposal_id,
         draft=proposal.draft,
-        user_confirmed=True,
+        approved=True,
     )
     # 继续执行前验证内部不变量。
     assert first.status is MemoryStatus.ACTIVE
@@ -125,7 +125,6 @@ def test_trusted_namespace_evidence_lifecycle_and_cross_thread_recall(tmp_path: 
         second_context,
         store,
         query="低波动",
-        for_model_context=True,
     )
     # 继续执行前验证内部不变量。
     assert tuple(item.record.memory_id for item in recalls) == (first.memory_id,)
@@ -146,12 +145,12 @@ def test_trusted_namespace_evidence_lifecycle_and_cross_thread_recall(tmp_path: 
         ),
     )
     # 准备 replacement，供后续步骤使用。
-    replacement = service.confirm(
+    replacement = service.save(
         second_context,
         store,
-        proposal_id=replacement_proposal.proposal_id,
+        mutation_id=replacement_proposal.proposal_id,
         draft=replacement_proposal.draft,
-        user_confirmed=True,
+        approved=True,
         supersedes_id=first.memory_id,
     )
     # 继续执行前验证内部不变量。
@@ -167,13 +166,13 @@ def test_trusted_namespace_evidence_lifecycle_and_cross_thread_recall(tmp_path: 
     # 准备 revoked，供后续步骤使用。
     revoked = service.forget(second_context, store, replacement.memory_id, mode="revoke")
     # 继续执行前验证内部不变量。
-    assert revoked.status is MemoryStatus.REVOKED
+    assert revoked["status"] == MemoryStatus.REVOKED.value
     # 继续执行前验证内部不变量。
     assert service.search(second_context, store, query=None) == ()
     # 准备 deleted，供后续步骤使用。
     deleted = service.forget(second_context, store, replacement.memory_id, mode="delete")
     # 继续执行前验证内部不变量。
-    assert deleted.status is MemoryStatus.DELETED
+    assert deleted["status"] == MemoryStatus.DELETED.value
     # 继续执行前验证内部不变量。
     assert service.get(second_context, store, replacement.memory_id) is None
 
@@ -183,11 +182,9 @@ def test_trusted_namespace_evidence_lifecycle_and_cross_thread_recall(tmp_path: 
     ]
     # 继续执行前验证内部不变量。
     assert memory_events == [
-        AuditEventType.MEMORY_PROPOSED,
-        AuditEventType.MEMORY_COMMITTED,
-        AuditEventType.MEMORY_PROPOSED,
         AuditEventType.MEMORY_COMMITTED,
         AuditEventType.MEMORY_SUPERSEDED,
+        AuditEventType.MEMORY_COMMITTED,
         AuditEventType.MEMORY_REVOKED,
         AuditEventType.MEMORY_DELETED,
     ]
@@ -226,6 +223,7 @@ def test_evidence_cannot_cross_conversation_or_owner(tmp_path: Path) -> None:
     # 准备 forged_context，供后续步骤使用。
     forged_context = ExecutionContext(
         tenant_id="tenant.b",
+        scopes={"memory:write"},
         subject_id=context_a.subject_id,
         conversation_id=context_a.conversation_id,
         turn_id=context_a.turn_id,
@@ -268,12 +266,12 @@ def test_store_value_cannot_forge_identity_inside_trusted_namespace(tmp_path: Pa
         ),
     )
     # 准备 record，供后续步骤使用。
-    record = service.confirm(
+    record = service.save(
         context,
         store,
-        proposal_id=proposal.proposal_id,
+        mutation_id=proposal.proposal_id,
         draft=proposal.draft,
-        user_confirmed=True,
+        approved=True,
     )
     # 准备 forged，供后续步骤使用。
     forged = record.model_copy(update={"tenant_id": "tenant.b"})
@@ -329,12 +327,12 @@ def test_postgres_store_record_survives_connection_reconstruction(tmp_path: Path
     # 限定依赖资源的生命周期，并确保资源能够可靠释放。
     with PostgresStore.from_conn_string(dsn) as first_store:
         first_store.setup()
-        committed = service.confirm(
+        committed = service.save(
             context,
             first_store,
-            proposal_id=proposal.proposal_id,
+            mutation_id=proposal.proposal_id,
             draft=proposal.draft,
-            user_confirmed=True,
+            approved=True,
         )
     # 限定依赖资源的生命周期，并确保资源能够可靠释放。
     with PostgresStore.from_conn_string(dsn) as restarted_store:

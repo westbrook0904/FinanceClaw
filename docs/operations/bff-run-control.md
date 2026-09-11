@@ -12,7 +12,7 @@ BFF 管理顶层 start、人工 resume、cancel、有限授权与 Journal 收尾
 
 BFF 就绪后直接受理，无数据库部署门闩。BFF 配置示例见 [bff-run-control.env.example](../../config/environments/bff-run-control.env.example)，启动入口为 `financeclaw.bff.bootstrap:create_default_app --factory` 或 `main:app`。后台生命周期循环随 BFF 启停。
 
-Agent Server 使用 [langgraph.json](../../langgraph.json)，只注册 `finance_agent_v1_5_0`。Worker 是内部子图。部署时将固定 Webhook 域名、允许端口与 HTTPS 策略调整为部署内地址；Agent Server 的 `LG_WEBHOOK_BFF_TOKEN` 与 BFF 的 `FINANCECLAW_BFF_WEBHOOK_TOKEN` 必须相同。模型和产品 API 无权指定回调地址。
+Agent Server 使用 [langgraph.json](../../langgraph.json)，只注册 `finance_agent_v1_6_0`。Worker 是内部子图。部署时将固定 Webhook 域名、允许端口与 HTTPS 策略调整为部署内地址；Agent Server 的 `LG_WEBHOOK_BFF_TOKEN` 与 BFF 的 `FINANCECLAW_BFF_WEBHOOK_TOKEN` 必须相同。模型和产品 API 无权指定回调地址。
 
 BFF Webhook 路径为 `/internal/webhooks/langgraph/{backend_instance_id}`。它认证并限制 64 KiB，只持久化用于唤醒观察的最小事实；正文不能直接成为助手答案。持久化失败返回 503。漏回调时后台仍按 `BFF_RUN_RECONCILE_SECONDS` 核对到期根。
 

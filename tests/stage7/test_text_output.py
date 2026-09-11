@@ -168,5 +168,5 @@ def test_removed_legacy_releases_are_not_resolvable():
         stack.agent_profiles.resolve("finance_agent", "1.3.0")
     with pytest.raises(LookupError):
         stack.agent_profiles.resolve("ziwei_doushu_agent", "1.0.0")
-    assert stack.agent_profiles.resolve("finance_agent").version == "1.5.0"
+    assert stack.agent_profiles.resolve("finance_agent").version == "1.6.0"
     assert stack.agent_profiles.resolve("ziwei_doushu_agent").output_schema is ZiweiTextResult

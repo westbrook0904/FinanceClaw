@@ -62,7 +62,7 @@ LANGSMITH_HIDE_OUTPUTS=false
 按既有机制配置开发 BFF scopes 或飞书白名单身份 scopes，保留原有合法权限，不使用 `*` 兜底。
 本轮没有自动扩大任一用户的权限。
 
-新建会话绑定 `finance_agent@1.5.0`。候选启用后，根可以使用
+新建会话绑定 `finance_agent@1.6.0`。候选启用后，根可以使用
 `call_agent__ziwei_doushu_agent` Tool 调用 `ziwei_doushu_agent@2.2.0` 内部子图。
 `langgraph.json` 只注册顶层根，子图继承本次执行的权限、预算与 checkpoint；
 完整文本解读通过 Tool 结果交回根 Agent，再由 BFF 写入 Journal。
@@ -223,7 +223,7 @@ CI 分别验证基础安装和 `--extra ziwei` 安装；普通子图测试不依
 不要通过共享 Tool 实例保存“当前用户命盘”，也不要把 Artifact ID 当成跨用户读取授权。
 
 停止候选需先排空运行，随后两侧关闭 `FINANCECLAW_ZIWEI_ENABLED`。
-关闭后普通金融请求继续使用根 1.5.0，紫微 Tool不再可见。开关变化会改变发布配置指纹，
+关闭后普通金融请求继续使用根 1.6.0，紫微 Tool不再可见。开关变化会改变发布配置指纹，
 不能用新配置恢复旧的在途任务；须先排空任务并同步重启 BFF 与 Agent Server。
 
 本次澄清修复同样更新了根与紫微的 deployment revision，BFF 与 Agent Server 必须使用相同版本

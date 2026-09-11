@@ -4,6 +4,7 @@
 原因并交给仓库做退避或死信处理，成功则标记完成；自身不管理调度周期。
 """
 
+import asyncio
 from typing import Protocol
 
 from financeclaw.shared.outbox.models import OutboxEvent
@@ -45,10 +46,12 @@ class OutboxPublisher:
         *,
         batch_size: int = 100,
         max_attempts: int = 8,
+        destination: str = "audit",
     ) -> None:
         """初始化投递器。
 
         Args:
+            destination: 当前消费者的定向事件。
             repository: Outbox 事件仓库，负责领取与投递结果回写。
             sink: 投递目标，接收单条事件并执行实际外发。
             batch_size: 单轮 ``run_once`` 最多处理的事件数，默认 100。
@@ -59,6 +62,7 @@ class OutboxPublisher:
         self._sink = sink
         self._batch_size = batch_size
         self._max_attempts = max_attempts
+        self._destination = destination
 
     async def run_once(self) -> int:
         """执行一轮投递：领取一批事件并逐条投递，返回本轮处理的事件数。
@@ -67,20 +71,26 @@ class OutboxPublisher:
             本轮从仓库领到并处理（无论成功或失败）的事件数量。
 
         """
-        # 1. 按批次大小领取处于租约保护下的待投递事件。
-        events = self._repository.claim_pending(limit=self._batch_size)
-        for event in events:
+        count = 0
+        for _ in range(self._batch_size):
+            # 按条领取，后续任务不会在等待前一条执行时消耗租约。
+            events = self._repository.claim_pending(
+                limit=1, lease_seconds=60, destination=self._destination
+            )
+            if not events:
+                break
+            event = events[0]
+            count += 1
             try:
-                # 2. 投递到下游 sink。
-                await self._sink.publish(event)
+                async with asyncio.timeout(50):
+                    await self._sink.publish(event)
             except Exception as exc:
-                # 3. 失败：记录原因，由仓库决定退避重试或转入死信。
                 self._repository.mark_failed(
                     event.event_id,
                     f"{type(exc).__name__}: {exc}",
                     max_attempts=self._max_attempts,
+                    claim_epoch=event.claim_epoch,
                 )
             else:
-                # 4. 成功：把事件标记为已发布。
-                self._repository.mark_published(event.event_id)
-        return len(events)
+                self._repository.mark_published(event.event_id, claim_epoch=event.claim_epoch)
+        return count

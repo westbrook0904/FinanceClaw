@@ -23,14 +23,19 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.store.base import BaseStore
 
-from financeclaw.agent_server.context.builder import ContextBudget, ConversationContextBuilder
+from financeclaw.agent_server.context.budget import ContextBudget
+from financeclaw.agent_server.context.compaction import NativeContextMiddleware
 from financeclaw.agent_server.llm.factory import ModelFactory
 from financeclaw.agent_server.memory.service import LongTermMemoryService
 from financeclaw.agent_server.middleware.artifact_middleware import ToolResultArtifactMiddleware
 from financeclaw.agent_server.middleware.batch_middleware import ToolBatchMiddleware
-from financeclaw.agent_server.middleware.context_middleware import ConversationContextMiddleware
+from financeclaw.agent_server.middleware.context_editing import ToolContextEditingMiddleware
 from financeclaw.agent_server.middleware.directive_middleware import InvocationDirectiveMiddleware
 from financeclaw.agent_server.middleware.execution_middleware import ExecutionBudgetMiddleware
+from financeclaw.agent_server.middleware.final_context import (
+    FinalContextMiddleware,
+    RequestRecorder,
+)
 from financeclaw.agent_server.middleware.memory_middleware import MemoryRecallMiddleware
 from financeclaw.agent_server.middleware.middleware import (
     ContextTraceMiddleware,
@@ -42,6 +47,7 @@ from financeclaw.agent_server.tools.catalog import ToolCatalog
 from financeclaw.agent_server.tools.policy import ToolDecisionType, ToolPolicy, TransientToolError
 from financeclaw.kernel.agents import AgentProfile
 from financeclaw.kernel.context import ExecutionContext
+from financeclaw.kernel.models import ModelProfileRef
 from financeclaw.kernel.tools import ApprovalMode, RetryProfile
 from financeclaw.shared.artifacts.service import ArtifactService
 from financeclaw.shared.audit.repository import AuditRepository
@@ -66,7 +72,6 @@ class AgentFactory:
         debug_full_io: 是否开启完整输入输出调试日志与完整 Prompt 明文。
         model_max_retries: 模型调用瞬时失败的最大重试次数，默认 2。
         context_budget: 统一上下文预算，独立于会话持久化和历史装配。
-        context_builder: 会话上下文构建器；为 None 时不挂载上下文中间件。
         conversation_repository: 会话仓储；为 None 时不挂载上下文中间件。
         artifact_service: Artifact 服务；为 None 时不挂载工件 offload 中间件。
         memory_service: 长期记忆服务；为 None 时不挂载记忆召回中间件。
@@ -85,7 +90,7 @@ class AgentFactory:
         debug_full_io: bool,
         context_budget: ContextBudget,
         model_max_retries: int = 2,
-        context_builder: ConversationContextBuilder | None = None,
+        summary_profile: ModelProfileRef | None = None,
         conversation_repository: ConversationRepository | None = None,
         artifact_service: ArtifactService | None = None,
         memory_service: LongTermMemoryService | None = None,
@@ -103,7 +108,7 @@ class AgentFactory:
             debug_full_io: 是否开启完整输入输出调试日志。
             context_budget: 根模型与领域子图共用的上下文预算。
             model_max_retries: 模型调用最大重试次数。
-            context_builder: 会话上下文构建器，可选。
+            summary_profile: 按需初始化的工作摘要模型档案。
             conversation_repository: 会话仓储，可选。
             artifact_service: Artifact 服务，可选。
             memory_service: 长期记忆服务，可选。
@@ -121,7 +126,7 @@ class AgentFactory:
         self.debug_full_io = debug_full_io
         self.context_budget = context_budget
         self.model_max_retries = model_max_retries
-        self.context_builder = context_builder
+        self.summary_profile = summary_profile
         self.conversation_repository = conversation_repository
         self.artifact_service = artifact_service
         self.memory_service = memory_service
@@ -217,7 +222,7 @@ class AgentFactory:
                 "when": requires_approval,
             }
             for managed in resolved_tools
-            if managed.governance.approval is ApprovalMode.ALWAYS
+            if managed.governance.approval in {ApprovalMode.ALWAYS, ApprovalMode.POLICY}
         }
         # 5. 按顺序装配治理类中间件：人工审批、工具治理与调用偏好指令。
         middleware: list[Any] = list(additional_middleware)
@@ -265,6 +270,7 @@ class AgentFactory:
                         managed.tool.name
                         for managed in resolved_tools
                         if (managed.tool.metadata or {}).get("preserve_result")
+                        or managed.tool.name.startswith("request_user__")
                     ),
                 )
             )
@@ -280,22 +286,26 @@ class AgentFactory:
                     max_memories=self.memory_recall_limit,
                 )
             )
-        if (
-            profile.context_policy == "stage2-journal-v1"
-            and profile.context_policy != "worker-task-only-v1"
-            and self.context_builder is not None
-            and self.conversation_repository is not None
-        ):
+        if profile.context_policy == "native-thread-v1":
             middleware.append(
-                ConversationContextMiddleware(
-                    builder=self.context_builder,
-                    repository=self.conversation_repository,
-                    tool_catalog=pinned_catalog,
-                    agent_profile_version=profile.version,
-                    model_profile_version=model_profile.version,
-                    prompt_template_version=f"{profile.agent_id}-system/{profile.version}",
-                    debug_full_io=self.debug_full_io,
+                NativeContextMiddleware(
+                    self.context_budget,
+                    self.conversation_repository,
+                    self.artifact_service,
+                    (
+                        model
+                        or (
+                            self.model_factory.create(self.summary_profile)
+                            if self.summary_profile
+                            else primary
+                        )
+                    ),
+                    profile_version=profile.version,
                 )
+            )
+        if self.artifact_service is not None:
+            middleware.append(
+                ToolContextEditingMiddleware(self.artifact_service, self.context_budget)
             )
         # 7. 挂载追踪与输入输出调试中间件。
         middleware.extend(
@@ -363,6 +373,15 @@ class AgentFactory:
                 pinned_catalog,
                 self.resource_gate,
                 profile=profile,
+            )
+        )
+        middleware.append(
+            FinalContextMiddleware(
+                RequestRecorder(
+                    self.context_budget,
+                    self.conversation_repository,
+                    profile_version=profile.version,
+                )
             )
         )
         # 11. 解析 Checkpointer（缺省用内存实现），交给 create_agent 装配。

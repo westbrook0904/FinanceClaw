@@ -14,7 +14,6 @@ from financeclaw.shared.conversation.repository import (
     ConversationRepository,
     SqlAlchemyConversationRepository,
 )
-from financeclaw.shared.conversation.summaries import SummaryService
 from financeclaw.shared.infrastructure.database import ApplicationDatabase
 from financeclaw.shared.infrastructure.security.egress import EgressPolicy
 from financeclaw.shared.infrastructure.settings import ArtifactBackend, FinanceClawSettings
@@ -29,7 +28,6 @@ class ApplicationResources:
     audit: AuditRepository
     database: ApplicationDatabase | None = None
     conversation_repository: ConversationRepository | None = None
-    summary_service: SummaryService | None = None
     artifact_service: ArtifactService | None = None
     outbox_repository: OutboxRepository | None = None
 
@@ -46,7 +44,6 @@ def build_resources(
 
     database: ApplicationDatabase | None = None
     conversation_repository: ConversationRepository | None = None
-    summary_service: SummaryService | None = None
     artifact_service: ArtifactService | None = None
     outbox_repository: OutboxRepository | None = None
     # 2. 按需装配持久化设施：数据库、会话/制品/Outbox 仓储及派生服务。
@@ -61,12 +58,7 @@ def build_resources(
         # 2.2 装配会话仓储与摘要服务。
         concrete_repository = SqlAlchemyConversationRepository(database.session_factory)
         conversation_repository = concrete_repository
-        summary_service = SummaryService(
-            concrete_repository,
-            segment_messages=settings.summary_segment_messages,
-            hierarchy_segments=settings.summary_hierarchy_segments,
-        )
-        # 2.3 依据配置选择制品后端（S3 或本地文件系统），并装配制品服务。
+
         artifact_store = (
             S3ArtifactStore(
                 bucket=settings.artifact_s3_bucket or "",
@@ -85,6 +77,7 @@ def build_resources(
             SqlAlchemyArtifactRepository(database.session_factory),
             artifact_store,
             inline_bytes=settings.artifact_inline_bytes,
+            retention_days=settings.artifact_retention_days,
         )
         # 2.4 装配共享 Outbox 仓储。
         outbox_repository = SqlAlchemyOutboxRepository(database.session_factory)
@@ -133,7 +126,6 @@ def build_resources(
         effective_audit,
         database,
         conversation_repository,
-        summary_service,
         artifact_service,
         outbox_repository,
     )

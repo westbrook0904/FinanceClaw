@@ -1,0 +1,16 @@
+{
+  "passed": true,
+  "profile_embedding_calls": 0,
+  "indexed_documents": 2,
+  "query_encodings": 3,
+  "embedding_methods": {
+    "documents": 5,
+    "query": 0
+  },
+  "connection_reconstruction": true,
+  "delete_removes_vectors": true,
+  "index_false_removes_vectors": false,
+  "inactive_filtered_from_semantic_search": true,
+  "semantic_quality_verified": false,
+  "isolated_schema_cleaned": true
+}

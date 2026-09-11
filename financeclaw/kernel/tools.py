@@ -54,6 +54,7 @@ class ApprovalMode(StrEnum):
 
     NONE = "none"
     ALWAYS = "always"
+    POLICY = "policy"
 
 
 class Egress(StrEnum):
@@ -164,7 +165,16 @@ class ToolGovernance(BaseModel):
         """
         # 1. 写入与外部动作类 Tool 必须强制人工审批。
         mutable_effects = {SideEffect.WRITE, SideEffect.EXTERNAL_ACTION}
-        if self.side_effect in mutable_effects and self.approval is not ApprovalMode.ALWAYS:
+        conditional_internal_write = (
+            self.approval is ApprovalMode.POLICY
+            and self.side_effect is SideEffect.WRITE
+            and self.egress is Egress.INTERNAL
+        )
+        if (
+            self.side_effect in mutable_effects
+            and self.approval is not ApprovalMode.ALWAYS
+            and not conditional_internal_write
+        ):
             raise ValueError("WRITE and external-action tools must always require approval")
         # 2. 写入与外部动作类 Tool 禁止自动重试，避免重复产生副作用。
         if self.side_effect in mutable_effects and self.retry_profile is not RetryProfile.NONE:

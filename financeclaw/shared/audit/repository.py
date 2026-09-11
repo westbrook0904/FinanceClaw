@@ -63,7 +63,8 @@ class InMemoryAuditRepository:
         if not isinstance(record, AuditRecord):
             raise TypeError("record must be AuditRecord")
         with self._lock:
-            self._records.append(record)
+            if not any(item.audit_id == record.audit_id for item in self._records):
+                self._records.append(record)
 
     def records(self) -> tuple[AuditRecord, ...]:
         """在锁保护下返回已追加审计记录的只读快照。"""
@@ -112,6 +113,11 @@ class SqlAlchemyAuditRepository:
 
     def append_in_session(self, session, record: AuditRecord) -> None:
         """在调用方业务事务内追加 Audit 与 Outbox，避免交付事实和审计分离。"""
+        existing = session.get(AuditRecordRow, record.audit_id)
+        if existing is not None:
+            if (existing.payload_hash, existing.action) != (record.payload_hash, record.action):
+                raise ValueError("audit ID identifies different operation facts")
+            return
         session.add(
             AuditRecordRow(
                 audit_id=record.audit_id,

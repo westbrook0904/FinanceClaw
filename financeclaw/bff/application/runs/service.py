@@ -161,6 +161,7 @@ class BFFRunService:
                         driver_version=DRIVER_VERSION,
                         backend_instance_id=self.store.backend_instance_id,
                         user_message_id=message.message_id,
+                        user_message_sequence=message.sequence,
                     )
                     self.execution.register(turn.run_id, snapshot, session=session)
                     row = RootRunRow(
@@ -200,6 +201,14 @@ class BFFRunService:
                                             "role": "user",
                                             "content": request.message,
                                             "id": message.message_id,
+                                            "additional_kwargs": {
+                                                "financeclaw_source": {
+                                                    "conversation_id": conversation_id,
+                                                    "turn_id": turn.turn_id,
+                                                    "run_id": turn.run_id,
+                                                    "sequence": message.sequence,
+                                                }
+                                            },
                                         }
                                     ]
                                 }

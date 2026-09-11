@@ -85,21 +85,6 @@ class MessageRole(StrEnum):
     ASSISTANT = "assistant"
 
 
-class SummaryStatus(StrEnum):
-    """摘要的生命周期状态。
-
-    使用场景：摘要生成后为 ACTIVE；被重建版本替换后置为 SUPERSEDED 并记录
-    superseded_by，旧摘要保留供审计但不再进入上下文选择。
-
-    成员（StrEnum 取值即入库字符串）：
-        ACTIVE：当前生效、可被上下文装配选用的摘要。
-        SUPERSEDED：已被更新版本取代的历史摘要。
-    """
-
-    ACTIVE = "active"
-    SUPERSEDED = "superseded"
-
-
 class Conversation(FrozenRecord):
     """一次持久化对话的聚合根记录，固定绑定租户、主体与 Agent 线程。
 
@@ -232,54 +217,6 @@ class ConversationMessage(FrozenRecord):
     created_at: datetime
 
 
-class ConversationSummary(FrozenRecord):
-    """一段历史消息或低层摘要的摘要记录，支持分段与分层两种粒度。
-
-    使用场景：SummaryService 按分段（level=0）与分层（level>=1）生成摘要并落库；
-    上下文装配时按相关性选取摘要，替代超出预算的古老原文。
-
-    Attributes:
-        summary_id: 摘要全局唯一标识，形如 "summary-<hex>"，作为主键。
-        conversation_id: 所属会话标识，关联 Conversation。
-        level: 摘要层级；0 表示由原文消息生成的分段摘要，>=1 表示聚合低层摘要。
-        start_sequence: 覆盖范围的起始消息序号（含）。
-        end_sequence: 覆盖范围的结束消息序号（含）。
-        source_message_ids: 生成该摘要的源消息 ID 元组；level=0 时使用。
-        source_summary_ids: 生成该摘要的源摘要 ID 元组；level>=1 时使用。
-        summary_content: 摘要正文文本。
-        topics: 摘要覆盖的主题词元组，用于相关性排序。
-        entities: 摘要中的实体（如股票代码）元组，用于相关性排序。
-        decisions: 摘要记录的历史决策元组，默认为空。
-        open_items: 摘要遗留的未决事项元组，默认为空。
-        model_profile_version: 生成摘要所用摘要器/模型配置版本。
-        template_version: 摘要模板版本，用于审计与再生成兼容。
-        content_hash: 摘要内容的 SHA-256 十六进制摘要，用于重建幂等判定。
-        status: 摘要状态，默认 ACTIVE，取值见 SummaryStatus。
-        superseded_by: 取代该摘要的新摘要 ID；未被取代时为 None。
-        created_at: 摘要创建时间（UTC）。
-
-    """
-
-    summary_id: str
-    conversation_id: str
-    level: int = Field(ge=0)
-    start_sequence: int = Field(ge=1)
-    end_sequence: int = Field(ge=1)
-    source_message_ids: tuple[str, ...] = ()
-    source_summary_ids: tuple[str, ...] = ()
-    summary_content: str
-    topics: tuple[str, ...] = ()
-    entities: tuple[str, ...] = ()
-    decisions: tuple[str, ...] = ()
-    open_items: tuple[str, ...] = ()
-    model_profile_version: str
-    template_version: str
-    content_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
-    status: SummaryStatus = SummaryStatus.ACTIVE
-    superseded_by: str | None = None
-    created_at: datetime
-
-
 class ContextOmission(FrozenRecord):
     """上下文装配中被省略项的记录，用于审计与调试 token 取舍。
 
@@ -327,38 +264,11 @@ class ManifestMemoryReference(FrozenRecord):
     schema_version: int = Field(ge=1)
     memory_type: Literal["preference", "goal", "constraint", "decision_note"]
     injection_reason: str
+    revision: int = Field(default=1, ge=1)
 
 
 class ModelContextManifest(FrozenRecord):
-    """一次模型调用的上下文清单，永久记录本次调用实际使用的上下文构成。
-
-    使用场景：每次模型调用前由上下文中间件构建并经 save_manifest 持久化，
-    支撑审计、成本分析与跨 Agent Server 重启后的行为复现。
-
-    Attributes:
-        manifest_id: 清单唯一标识，形如 "manifest-<hex>"。
-        model_call_id: 模型调用唯一标识，形如 "model-call-<hex>"，同调用幂等。
-        conversation_id: 所属会话标识。
-        turn_id: 所属 turn 标识。
-        run_id: 平台侧运行标识。
-        prompt_template_version: 所用提示词模板版本。
-        agent_profile_version: 所用 Agent Profile 版本。
-        model_profile_version: 所用模型配置版本。
-        recent_message_start: 入选最近原文消息的最小序号；无入选时为 None。
-        recent_message_end: 入选最近原文消息的最大序号；无入选时为 None。
-        summary_ids: 本次入选的摘要 ID 元组。
-        memory_ids: 注入的记忆 ID 元组，必须与 memory_refs 顺序一致。
-        memory_refs: 记忆引用明细，见 ManifestMemoryReference。
-        historical_message_ids: 按相关性入选的古老历史消息 ID 元组。
-        tool_result_refs: 本次调用涉及的外置工件（工具结果）ID 元组。
-        exposed_tools: 本次暴露给模型的工具清单（带版本的工具 ID）。
-        input_token_count: 输入 token 估算总数（含系统提示与工具 schema）。
-        available_input_tokens: 配置的可用输入 token 预算。
-        omissions: 被省略项明细，见 ContextOmission。
-        context_hash: 完整输入上下文的 SHA-256 摘要，用于幂等与一致性校验。
-        created_at: 清单创建时间（UTC），默认当前时间。
-
-    """
+    """每次实际模型尝试的输入证据；不保存完整 prompt。"""
 
     manifest_id: str
     model_call_id: str
@@ -368,12 +278,14 @@ class ModelContextManifest(FrozenRecord):
     prompt_template_version: str
     agent_profile_version: str
     model_profile_version: str
-    recent_message_start: int | None = None
-    recent_message_end: int | None = None
-    summary_ids: tuple[str, ...] = ()
+    provider: str = "unknown"
+    model: str = "unknown"
+    subtype: Literal["answer", "summary"] = "answer"
+    token_count_method: str = "estimated"
+    summary_sources: tuple[dict[str, Any], ...] = ()
     memory_ids: tuple[str, ...] = ()
     memory_refs: tuple[ManifestMemoryReference, ...] = ()
-    historical_message_ids: tuple[str, ...] = ()
+    message_ids: tuple[str, ...] = ()
     tool_result_refs: tuple[str, ...] = ()
     exposed_tools: tuple[str, ...] = ()
     input_token_count: int = Field(ge=0)
@@ -401,36 +313,3 @@ class ModelContextManifest(FrozenRecord):
         if len(referenced_ids) != len(set(referenced_ids)):
             raise ValueError("manifest memory references must be unique")
         return self
-
-
-class ContextSelection(FrozenRecord):
-    """一次上下文装配的选取结果，是构建 ModelContextManifest 的直接数据来源。
-
-    使用场景：ConversationContextBuilder.build 返回该对象；中间件据此组装最终
-    消息列表、构建 Manifest，并在 development 环境输出完整 Prompt 调试信息。
-
-    Attributes:
-        recent_message_ids: 按 token 预算入选的最近原文消息 ID 元组（按会话顺序）。
-        summary_ids: 入选的摘要 ID 元组。
-        memory_refs: 注入的记忆引用元组。
-        historical_message_ids: 按相关性入选的古老历史消息 ID 元组（按序号升序）。
-        tool_result_refs: 被外置的工件（工具结果）ID 元组。
-        input_token_count: 本次装配的输入 token 估算总数（含系统提示与工具 schema）。
-        available_input_tokens: 配置的可用输入 token 预算。
-        omissions: 被省略项明细元组。
-        context_hash: 完整输入上下文的 SHA-256 摘要。
-        debug_payload: 调试负载，含系统提示、消息序列化结果、工具 schema 与
-            预算配置；仅在 development 环境用于输出完整 Prompt。
-
-    """
-
-    recent_message_ids: tuple[str, ...] = ()
-    summary_ids: tuple[str, ...] = ()
-    memory_refs: tuple[ManifestMemoryReference, ...] = ()
-    historical_message_ids: tuple[str, ...] = ()
-    tool_result_refs: tuple[str, ...] = ()
-    input_token_count: int
-    available_input_tokens: int
-    omissions: tuple[ContextOmission, ...] = ()
-    context_hash: str
-    debug_payload: dict[str, Any] = Field(default_factory=dict)

@@ -13,7 +13,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from langchain.agents.middleware import AgentMiddleware, ModelRequest, ModelResponse
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import SystemMessage
 from langchain_core.tools import BaseTool
 
 from financeclaw.agent_server.agents.directives import (
@@ -21,6 +21,7 @@ from financeclaw.agent_server.agents.directives import (
     assess_tool_slots,
     parse_invocation_directive,
 )
+from financeclaw.kernel.turns import is_user_message
 
 # 注入系统提示的指令区域包裹前缀，便于与既有提示内容分隔并识别。
 _REGION_PREFIX = "\n\n<financeclaw_invocation_directive>\n"
@@ -40,7 +41,7 @@ class InvocationDirectiveMiddleware(AgentMiddleware):
     def _apply(self, request: ModelRequest) -> ModelRequest:
         """解析最新用户消息中的指令，并按槽位评估结果改写模型请求。"""
         # 1. 仅当最新消息是字符串内容的用户消息时才尝试解析指令。
-        if not request.messages or not isinstance(request.messages[-1], HumanMessage):
+        if not request.messages or not is_user_message(request.messages[-1]):
             return request
         content = request.messages[-1].content
         if not isinstance(content, str):

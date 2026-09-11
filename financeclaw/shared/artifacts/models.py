@@ -43,6 +43,11 @@ class ArtifactMetadata(BaseModel):
     size_bytes: int = Field(ge=0)
     source_type: str
     source_id: str
+    conversation_id: str | None = None
+    source_turn_id: str | None = None
+    source_run_id: str | None = None
+    deleted_at: datetime | None = None
+    expires_at: datetime | None = None
     access_policy: dict[str, Any] = Field(default_factory=dict)
     encryption_metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))

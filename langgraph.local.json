@@ -6,8 +6,17 @@
     "tzdata==2026.3"
   ],
   "graphs": {
-    "finance_agent_v1_5_0": "./financeclaw/agent_server/graphs/bff_graphs.py:finance_agent"
+    "finance_agent_v1_6_0": "./financeclaw/agent_server/graphs/bff_graphs.py:finance_agent"
   },
   "env": ".env.agent-server.local",
-  "python_version": "3.13"
+  "python_version": "3.13",
+  "store": {
+    "index": {
+      "embed": "./financeclaw/agent_server/memory/embeddings.py:embeddings",
+      "dims": 1536,
+      "fields": [
+        "content"
+      ]
+    }
+  }
 }

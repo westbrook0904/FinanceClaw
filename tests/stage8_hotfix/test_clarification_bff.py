@@ -48,7 +48,6 @@ async def test_native_root_clarification_survives_bff_resume_and_journal(tmp_pat
     native = FakeNative()
     bff = build_bff_runs(settings, native=native)
     server = build_components(settings, enable_persistence=True)
-    server.agent_factory.context_builder = None
     server.agent_factory.memory_service = None
     tool = server.tool_catalog.resolve("call_agent__market_research_agent").tool
     tool.graph = server.agent_factory.build(

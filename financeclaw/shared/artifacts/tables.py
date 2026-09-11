@@ -32,7 +32,10 @@ class ArtifactMetadataRow(Base):
     """
 
     __tablename__ = "artifacts"
-    __table_args__ = (Index("ix_artifacts_owner", "tenant_id", "subject_id", "artifact_id"),)
+    __table_args__ = (
+        Index("ix_artifacts_owner", "tenant_id", "subject_id", "artifact_id"),
+        Index("ix_artifacts_turn", "tenant_id", "subject_id", "conversation_id", "source_turn_id"),
+    )
 
     artifact_id: Mapped[str] = mapped_column(String(128), primary_key=True)
     tenant_id: Mapped[str] = mapped_column(String(128), nullable=False)
@@ -43,6 +46,11 @@ class ArtifactMetadataRow(Base):
     size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
     source_type: Mapped[str] = mapped_column(String(64), nullable=False)
     source_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    conversation_id: Mapped[str | None] = mapped_column(String(128))
+    source_turn_id: Mapped[str | None] = mapped_column(String(128))
+    source_run_id: Mapped[str | None] = mapped_column(String(128))
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     access_policy: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
     encryption_metadata: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
     created_at: Mapped[datetime] = mapped_column(

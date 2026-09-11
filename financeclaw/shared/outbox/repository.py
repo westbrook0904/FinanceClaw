@@ -22,10 +22,17 @@ class OutboxRepository(Protocol):
     生产环境使用 SqlAlchemyOutboxRepository，测试可替换为内存实现。
     """
 
-    def claim_pending(self, *, limit: int, lease_seconds: int = 60) -> tuple[OutboxEvent, ...]:
+    def enqueue(self, event: OutboxEvent) -> None:
+        """先持久化可重试任务；相同事件 ID 必须标识相同任务。"""
+        ...
+
+    def claim_pending(
+        self, *, limit: int, lease_seconds: int = 60, destination: str = "audit"
+    ) -> tuple[OutboxEvent, ...]:
         """领取一批到期可投递的事件并为其设置投递租约。
 
         Args:
+            destination: 当前消费者负责的定向事件。
             limit: 单次最多领取的事件数。
             lease_seconds: 租约时长（秒），超时未确认可被其他 publisher 接管。
 
@@ -35,11 +42,12 @@ class OutboxRepository(Protocol):
         """
         ...
 
-    def mark_published(self, event_id: str) -> None:
+    def mark_published(self, event_id: str, *, claim_epoch: int) -> None:
         """把租约内的事件标记为 PUBLISHED 并记录投递成功时间。
 
         Args:
             event_id: 事件唯一标识。
+            claim_epoch: 领取时返回的租约代际。
 
         Raises:
             LookupError: 事件不存在或未处于本 publisher 的 PUBLISHING 租约中。
@@ -47,11 +55,14 @@ class OutboxRepository(Protocol):
         """
         ...
 
-    def mark_failed(self, event_id: str, error: str, *, max_attempts: int) -> None:
+    def mark_failed(
+        self, event_id: str, error: str, *, max_attempts: int, claim_epoch: int
+    ) -> None:
         """记录一次投递失败：未达上限则指数退避重试，否则转入死信。
 
         Args:
             event_id: 事件唯一标识。
+            claim_epoch: 领取时返回的租约代际。
             error: 失败原因描述（存储时截断到 1000 字符）。
             max_attempts: 允许的最大尝试次数，达到后事件进入 DEAD_LETTER。
 
@@ -78,10 +89,23 @@ class SqlAlchemyOutboxRepository:
         """
         self._sessions = sessions
 
-    def claim_pending(self, *, limit: int, lease_seconds: int = 60) -> tuple[OutboxEvent, ...]:
+    def enqueue(self, event: OutboxEvent) -> None:
+        """幂等插入任务，投递字段由仓库管理。"""
+        with self._sessions.begin() as session:
+            existing = session.get(OutboxEventRow, event.event_id)
+            if existing is not None:
+                if (existing.destination, existing.payload) != (event.destination, event.payload):
+                    raise ValueError("outbox event identifies different task facts")
+                return
+            session.add(OutboxEventRow(**event.model_dump()))
+
+    def claim_pending(
+        self, *, limit: int, lease_seconds: int = 60, destination: str = "audit"
+    ) -> tuple[OutboxEvent, ...]:
         """领取一批到期事件，置为 PUBLISHING 并写入租约到期时间。
 
         Args:
+            destination: 当前消费者负责的定向事件。
             limit: 单次最多领取的事件数。
             lease_seconds: 租约时长（秒），用于失联 publisher 的租约回收。
 
@@ -100,7 +124,11 @@ class SqlAlchemyOutboxRepository:
         )
         statement = (
             select(OutboxEventRow)
-            .where(eligible, OutboxEventRow.available_at <= now)
+            .where(
+                eligible,
+                OutboxEventRow.available_at <= now,
+                OutboxEventRow.destination == destination,
+            )
             .order_by(OutboxEventRow.available_at, OutboxEventRow.event_id)
             .limit(limit)
             .with_for_update(skip_locked=True)
@@ -110,26 +138,29 @@ class SqlAlchemyOutboxRepository:
             rows = tuple(session.scalars(statement))
             # 3. 将领到的事件置为 PUBLISHING 并写入租约到期时间，随事务一起提交。
             for row in rows:
+                row.claim_epoch += 1
                 row.status = OutboxStatus.PUBLISHING.value
                 row.locked_until = now + timedelta(seconds=lease_seconds)
             return tuple(_event(row) for row in rows)
 
-    def mark_published(self, event_id: str) -> None:
+    def mark_published(self, event_id: str, *, claim_epoch: int) -> None:
         """把租约内的事件标记为 PUBLISHED，清空租约与错误信息。"""
         with self._sessions.begin() as session:
             # 1. 校验事件仍处于本 publisher 的 PUBLISHING 租约中。
-            row = _owned_claim(session, event_id)
+            row = _owned_claim(session, event_id, claim_epoch)
             # 2. 写入成功状态与投递时间，并释放租约。
             row.status = OutboxStatus.PUBLISHED.value
             row.published_at = datetime.now(UTC)
             row.locked_until = None
             row.last_error = None
 
-    def mark_failed(self, event_id: str, error: str, *, max_attempts: int) -> None:
+    def mark_failed(
+        self, event_id: str, error: str, *, max_attempts: int, claim_epoch: int
+    ) -> None:
         """记录投递失败：指数退避后重试，达到上限转入死信。"""
         with self._sessions.begin() as session:
             # 1. 校验租约归属，累计尝试次数并记录失败原因（截断到 1000 字符）。
-            row = _owned_claim(session, event_id)
+            row = _owned_claim(session, event_id, claim_epoch)
             row.attempts += 1
             row.last_error = error[:1_000]
             row.locked_until = None
@@ -143,10 +174,18 @@ class SqlAlchemyOutboxRepository:
                 row.available_at = datetime.now(UTC) + timedelta(seconds=delay_seconds)
 
 
-def _owned_claim(session: Session, event_id: str) -> OutboxEventRow:
+def _owned_claim(session: Session, event_id: str, claim_epoch: int) -> OutboxEventRow:
     """取回事件行并校验其仍处于 PUBLISHING 租约中，否则视为租约已失效。"""
-    row = session.get(OutboxEventRow, event_id)
-    if row is None or row.status != OutboxStatus.PUBLISHING.value:
+    row = session.scalar(
+        select(OutboxEventRow).where(OutboxEventRow.event_id == event_id).with_for_update()
+    )
+    if (
+        row is None
+        or row.status != OutboxStatus.PUBLISHING.value
+        or row.claim_epoch != claim_epoch
+        or row.locked_until is None
+        or row.locked_until.replace(tzinfo=row.locked_until.tzinfo or UTC) <= datetime.now(UTC)
+    ):
         raise LookupError("outbox event is not owned by this publisher lease")
     return row
 
@@ -156,6 +195,8 @@ def _event(row: OutboxEventRow) -> OutboxEvent:
     return OutboxEvent(
         event_id=row.event_id,
         event_type=row.event_type,
+        destination=row.destination,
+        claim_epoch=row.claim_epoch,
         aggregate_type=row.aggregate_type,
         aggregate_id=row.aggregate_id,
         tenant_id=row.tenant_id,

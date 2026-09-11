@@ -31,7 +31,7 @@ def test_initial_schema_matches_runtime_and_rejects_child_executions(tmp_path, m
                 *Base.metadata.tables,
                 "alembic_version",
             }
-            assert len(Base.metadata.tables) == 20
+            assert len(Base.metadata.tables) == 19
             assert "backend_attempts" not in Base.metadata.tables
             assert "run_control" not in Base.metadata.tables
         with pytest.raises(IntegrityError, match="ck_execution_is_root"):

@@ -23,7 +23,6 @@ from tests.stage8_hotfix.test_production_subgraphs import root_graph
 def stack(tmp_path):
     """使用生产默认的并发容量，而非其他恢复测试刻意设置的单资源槽。"""
     value = components(tmp_path)
-    value.agent_factory.context_builder = None
     value.agent_factory.memory_service = None
     yield value
     value.database.close()

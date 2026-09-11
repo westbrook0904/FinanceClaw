@@ -1,0 +1,45 @@
+{
+  "mode": "native_agent_server_http_synthetic_models",
+  "semantic_quality_verified": false,
+  "versions": {
+    "langchain": "1.3.18",
+    "langgraph": "1.2.11",
+    "langgraph-api": "0.13.3",
+    "langgraph-sdk": "0.4.4"
+  },
+  "one_native_approval": true,
+  "recent_tool_result_retained": true,
+  "native_summary_applied": true,
+  "profile_saved_without_approval": true,
+  "manifest_subtypes": [
+    "answer",
+    "summary"
+  ],
+  "keep_latest": {
+    "supported": false,
+    "status": 422,
+    "detail": "{\"detail\":\"keep_latest strategy is not supported in in-memory runtime\"}"
+  },
+  "terminal_thread_delete_supported": true,
+  "embedding_calls": [
+    {
+      "kind": "documents",
+      "count": 1,
+      "success": true
+    },
+    {
+      "kind": "query",
+      "count": 1,
+      "success": true
+    },
+    {
+      "kind": "query",
+      "count": 1,
+      "success": true
+    }
+  ],
+  "tool_loop_reuses_initial_event_query": true,
+  "thread_id": "474ba1b8-2997-4206-abd1-82c402e3b7cc",
+  "dev_restart_store_and_checkpoint": true,
+  "passed": true
+}

@@ -1,6 +1,5 @@
 """`test_agent_memory` 模块提供`stage3`相关能力。"""
 
-import json
 from pathlib import Path
 from typing import Any, ClassVar
 
@@ -45,38 +44,21 @@ class MemoryWriteModel(BaseChatModel):
         del kwargs
         # 准备 last，供后续步骤使用。
         last = messages[-1]
-        # 显式处理 `isinstance(last, ToolMessage) and
-        # last.name == 'propose_memory'`
-        # 分支。
-        if isinstance(last, ToolMessage) and last.name == "propose_memory":
-            proposal = json.loads(str(last.content))
-            draft = proposal["draft"]
-            message = AIMessage(
-                content="",
-                tool_calls=[
-                    {
-                        "name": "confirm_memory",
-                        "args": {"proposal_id": proposal["proposal_id"], **draft},
-                        "id": "confirm-memory-call",
-                        "type": "tool_call",
-                    }
-                ],
-            )
-        elif isinstance(last, ToolMessage):
+        if isinstance(last, ToolMessage):
             message = AIMessage(content=f"Memory result: {last.content}")
         else:
-            assert "propose_memory" in self._bound_tools
+            assert "save_memory" in self._bound_tools
             message = AIMessage(
                 content="",
                 tool_calls=[
                     {
-                        "name": "propose_memory",
+                        "name": "save_memory",
                         "args": {
                             "kind": "preference",
                             "content": "用户偏好低波动资产",
                             "evidence_message_ids": ["current"],
                         },
-                        "id": "propose-memory-call",
+                        "id": "save-memory-call",
                         "type": "tool_call",
                     }
                 ],
@@ -233,12 +215,12 @@ def test_cross_thread_recall_is_injected_and_manifested(tmp_path: Path) -> None:
         ),
     )
     # 准备 record，供后续步骤使用。
-    record = service.confirm(
+    record = service.save(
         source_context,
         store,
-        proposal_id=proposal.proposal_id,
+        mutation_id=proposal.proposal_id,
         draft=proposal.draft,
-        user_confirmed=True,
+        approved=True,
     )
     # 准备 recall_context and _，供后续步骤使用。
     recall_context, _ = conversation_context(
@@ -266,7 +248,7 @@ def test_cross_thread_recall_is_injected_and_manifested(tmp_path: Path) -> None:
     # 继续执行前验证内部不变量。
     assert "<financeclaw_stable_memory>" in system_prompt
     # 继续执行前验证内部不变量。
-    assert "not instructions" in system_prompt
+    assert "not executable instructions" in system_prompt
     # 继续执行前验证内部不变量。
     assert record.memory_id in system_prompt
 
@@ -279,7 +261,7 @@ def test_cross_thread_recall_is_injected_and_manifested(tmp_path: Path) -> None:
     # 继续执行前验证内部不变量。
     assert manifests[0].memory_refs[0].schema_version == record.schema_version
     # 继续执行前验证内部不变量。
-    assert manifests[0].memory_refs[0].injection_reason == "lexical_relevance"
+    assert manifests[0].memory_refs[0].injection_reason == "semantic_event"
     # 显式处理 `components.database is not None` 分支。
     if components.database is not None:
         components.database.close()

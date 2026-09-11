@@ -1,0 +1,88 @@
+{
+  "date": "2026-09-11",
+  "release": "finance_agent@1.6.0",
+  "implementation_status": "implemented",
+  "release_quality_status": "awaiting_real_model_configuration_and_measurement",
+  "versions": {
+    "langchain": "1.3.18",
+    "langgraph": "1.2.11",
+    "langgraph-api": "0.13.3",
+    "langgraph-sdk": "0.4.4",
+    "langgraph-checkpoint-postgres": "3.1.2"
+  },
+  "regression": {
+    "command": ".venv/bin/pytest -m 'not external' -q",
+    "passed": 422,
+    "skipped": 3,
+    "deselected": 2,
+    "warnings": 2,
+    "seconds": 111.83,
+    "log_sha256": "c174af477e974ae0f6ac1c993eebe97f5ced3b16e62a5c30a5293e780e2ad385"
+  },
+  "postgres_business_regression": {
+    "command": ".venv/bin/pytest tests/stage6fix/test_postgres_concurrency.py -q",
+    "isolated_schema": true,
+    "passed": 1,
+    "log_sha256": "0e18a89c487eaf4740d2aaf8627e4222c484f051655e162d849b0a2ccb5bc2fb"
+  },
+  "checks": {
+    "ruff_check": true,
+    "ruff_format": true,
+    "compileall": true,
+    "git_diff_check": true,
+    "empty_schema_upgrade_downgrade_metadata": true,
+    "delivery_document_links": true
+  },
+  "schema": {
+    "revision": "0001_initial",
+    "business_table_count": 19,
+    "existing_database_migrated": false
+  },
+  "wheel": {
+    "filename": "financeclaw-0.1.0-py3-none-any.whl",
+    "size_bytes": 422710,
+    "sha256": "6754d8346957d5f62ad4e056a33188708eb45955054fc3235ac95cd80e6f2924",
+    "obsolete_modules_absent": true,
+    "migration_files": [
+      "financeclaw/shared/infrastructure/migrations/versions/0001_initial.py"
+    ],
+    "source_files_match": true
+  },
+  "source_digest": {
+    "algorithm": "sha256 of sorted path-to-content-sha256 JSON",
+    "files": 201,
+    "digest": "228ee293e6ea667684e27dd60b8b1dc144639d504bd5aea4d071240c0e745c3a"
+  },
+  "probes": {
+    "native-http": {
+      "path": ".redesign/evidence/stage9/native-http.json",
+      "sha256": "b490aac7c2a6d1748c809898a57742488f7a190c44c75f0269689a79afc154f8",
+      "passed": true
+    },
+    "postgres-store": {
+      "path": ".redesign/evidence/stage9/postgres-store.json",
+      "sha256": "af9f208a9b9ce1aae7d54af617f371fe103abaf8945ad7654d17c8b25402c079",
+      "passed": true
+    }
+  },
+  "test_isolation_incident": {
+    "fixed_dsn_option_merge": true,
+    "cleaned_verified_synthetic_rows": {
+      "removed_only_verified_synthetic_rows": {
+        "conversation_messages": 1,
+        "run_executions": 1,
+        "conversation_turns": 1,
+        "conversations": 1
+      },
+      "schema_tables_unchanged": true
+    },
+    "isolation_asserted_before_subsequent_writes": true
+  },
+  "not_verified": [
+    "real_embedding_semantic_quality",
+    "real_summary_quality",
+    "10_100_1000_turn_performance_p95",
+    "production_agent_server_ha_checkpoint_retention",
+    "physical_deletion_of_versioned_s3_objects"
+  ]
+}

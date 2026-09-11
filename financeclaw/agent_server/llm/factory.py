@@ -80,6 +80,13 @@ class ModelFactory:
         model = init_chat_model(profile.model, **kwargs)
         if not isinstance(model, BaseChatModel):
             raise TypeError("model profile did not create a BaseChatModel")
+        model.metadata = {
+            **(model.metadata or {}),
+            "financeclaw_model_profile": {
+                "profile_id": profile.profile_id,
+                "version": profile.version,
+            },
+        }
         return model
 
     def fallback_models(self, profile: ModelProfile) -> tuple[BaseChatModel, ...]:

@@ -1,10 +1,9 @@
 """会话日志的持久化仓库：负责领域模型与 ORM 表的互转及事务落库。
 
-提供会话、turn、消息、摘要与 Manifest 的幂等写入与归属查询能力，
+提供会话、turn、消息与 Manifest 的幂等写入与归属查询能力，
 是 Conversation Journal 唯一的数据库访问层。
 """
 
-from collections.abc import Sequence
 from contextlib import nullcontext
 from datetime import UTC, datetime
 from hashlib import sha256
@@ -20,18 +19,15 @@ from financeclaw.shared.conversation.models import (
     Conversation,
     ConversationMessage,
     ConversationStatus,
-    ConversationSummary,
     ConversationTurn,
     MessageRole,
     ModelContextManifest,
-    SummaryStatus,
     TurnStatus,
 )
 from financeclaw.shared.conversation.tables import (
     ChannelConversationBindingRow,
     ConversationMessageRow,
     ConversationRow,
-    ConversationSummaryRow,
     ConversationTurnRow,
     ModelContextManifestRow,
 )
@@ -51,7 +47,7 @@ class ConversationConflict(RuntimeError):
     """会话状态或内容与操作前提冲突时抛出的异常。
 
     使用场景：会话非活跃、assistant 回复内容对账冲突、turn 已绑定其他
-    Agent Server 运行、摘要源区间被占用等场景抛出。
+    Agent Server 运行等场景抛出。
     """
 
     pass
@@ -82,8 +78,6 @@ class ConversationRepository(Protocol):
         bind_server_run: 将 turn 绑定到 Agent Server 运行并更新状态。
         get_turn_owned: 按 run_id 与归属读取 turn。
         list_messages: 按会话读取原文消息（默认仅可见）。
-        list_summaries: 按会话读取摘要（默认仅 ACTIVE）。
-        get_summary: 按主键读取摘要。
         save_manifest: 按 model_call_id 幂等保存模型调用 Manifest。
     """
 
@@ -102,6 +96,24 @@ class ConversationRepository(Protocol):
 
     def get_owned(self, conversation_id: str, tenant_id: str, subject_id: str) -> Conversation:
         """按（会话 ID，租户，主体）读取会话记录，不存在时抛出异常。"""
+        ...
+
+    def get_message_owned(
+        self, message_id: str, tenant_id: str, subject_id: str
+    ) -> ConversationMessage:
+        """精确读取主体自己的来源消息，不扫描整段会话。"""
+        ...
+
+    def messages_for_turn(
+        self, conversation_id: str, turn_id: str
+    ) -> tuple[ConversationMessage, ...]:
+        """返回一个 Turn 的可见顶层问答；调用方先校验会话归属。"""
+        ...
+
+    def completed_history(
+        self, conversation_id: str, *, before_sequence: int, turns: int
+    ) -> tuple[ConversationMessage, ...]:
+        """新 thread 初始化时使用的有界已完成问答。"""
         ...
 
     def get_channel_binding(
@@ -159,16 +171,6 @@ class ConversationRepository(Protocol):
         self, conversation_id: str, *, visible_only: bool = True
     ) -> tuple[ConversationMessage, ...]:
         """按序号升序返回会话的原文消息，默认仅包含可见消息。"""
-        ...
-
-    def list_summaries(
-        self, conversation_id: str, *, active_only: bool = True
-    ) -> tuple[ConversationSummary, ...]:
-        """按层级与起始序号返回会话摘要，默认仅包含 ACTIVE 状态。"""
-        ...
-
-    def get_summary(self, summary_id: str) -> ConversationSummary:
-        """按主键读取摘要记录，不存在时抛出异常。"""
         ...
 
     def save_manifest(self, manifest: ModelContextManifest) -> ModelContextManifest:
@@ -257,55 +259,12 @@ def _message(row: ConversationMessageRow) -> ConversationMessage:
     )
 
 
-def _summary(row: ConversationSummaryRow) -> ConversationSummary:
-    """将 ConversationSummaryRow 表记录转换为 ConversationSummary 领域记录。"""
-    return ConversationSummary(
-        summary_id=row.summary_id,
-        conversation_id=row.conversation_id,
-        level=row.level,
-        start_sequence=row.start_sequence,
-        end_sequence=row.end_sequence,
-        source_message_ids=tuple(row.source_message_ids),
-        source_summary_ids=tuple(row.source_summary_ids),
-        summary_content=row.summary_content,
-        topics=tuple(row.topics),
-        entities=tuple(row.entities),
-        decisions=tuple(row.decisions),
-        open_items=tuple(row.open_items),
-        model_profile_version=row.model_profile_version,
-        template_version=row.template_version,
-        content_hash=row.content_hash,
-        status=SummaryStatus(row.status),
-        superseded_by=row.superseded_by,
-        created_at=row.created_at,
-    )
-
-
 def _manifest(row: ModelContextManifestRow) -> ModelContextManifest:
     """将 ModelContextManifestRow 表记录转换为 ModelContextManifest（含嵌套校验）。"""
     return ModelContextManifest.model_validate(
         {
-            "manifest_id": row.manifest_id,
-            "model_call_id": row.model_call_id,
-            "conversation_id": row.conversation_id,
-            "turn_id": row.turn_id,
-            "run_id": row.run_id,
-            "prompt_template_version": row.prompt_template_version,
-            "agent_profile_version": row.agent_profile_version,
-            "model_profile_version": row.model_profile_version,
-            "recent_message_start": row.recent_message_start,
-            "recent_message_end": row.recent_message_end,
-            "summary_ids": row.summary_ids,
-            "memory_ids": row.memory_ids,
-            "memory_refs": row.memory_refs,
-            "historical_message_ids": row.historical_message_ids,
-            "tool_result_refs": row.tool_result_refs,
-            "exposed_tools": row.exposed_tools,
-            "input_token_count": row.input_token_count,
-            "available_input_tokens": row.available_input_tokens,
-            "omissions": row.omissions,
-            "context_hash": row.context_hash,
-            "created_at": row.created_at,
+            column.name: getattr(row, column.name)
+            for column in ModelContextManifestRow.__table__.columns
         }
     )
 
@@ -861,6 +820,16 @@ class SqlAlchemyConversationRepository:
             turn.completed_at = turn.completed_at or now
             conversation.updated_at = now
             session.add(row)
+            if parent_message_id is None:
+                from financeclaw.shared.conversation.indexing import enqueue_history_index
+
+                user = session.scalar(
+                    select(ConversationMessageRow).where(
+                        ConversationMessageRow.turn_id == turn.turn_id,
+                        ConversationMessageRow.role == MessageRole.USER.value,
+                    )
+                )
+                enqueue_history_index(session, turn, user, row)
         return _message(row)
 
     def confirm_cancel(self, run_id: str, *, session: Session | None = None) -> ConversationTurn:
@@ -911,6 +880,66 @@ class SqlAlchemyConversationRepository:
             run_id=run_id, content=content, parent_message_id=parent_message_id
         )
 
+    def get_message_owned(
+        self, message_id: str, tenant_id: str, subject_id: str
+    ) -> ConversationMessage:
+        """按消息 ID 精确读取可信证据，不扫描整个 Journal。"""
+        statement = (
+            select(ConversationMessageRow)
+            .join(ConversationRow)
+            .where(
+                ConversationMessageRow.message_id == message_id,
+                ConversationRow.tenant_id == tenant_id,
+                ConversationRow.subject_id == subject_id,
+            )
+        )
+        with self._sessions() as session:
+            row = session.scalar(statement)
+            if row is None:
+                raise ConversationNotFound("message was not found for authenticated owner")
+            return _message(row)
+
+    def messages_for_turn(
+        self, conversation_id: str, turn_id: str
+    ) -> tuple[ConversationMessage, ...]:
+        """读取一个 Turn 的原始问答；调用者须先校验会话归属。"""
+        statement = (
+            select(ConversationMessageRow)
+            .where(
+                ConversationMessageRow.conversation_id == conversation_id,
+                ConversationMessageRow.turn_id == turn_id,
+                ConversationMessageRow.parent_message_id.is_(None),
+                ConversationMessageRow.visible.is_(True),
+            )
+            .order_by(ConversationMessageRow.sequence)
+        )
+        with self._sessions() as session:
+            return tuple(_message(row) for row in session.scalars(statement))
+
+    def completed_history(
+        self, conversation_id: str, *, before_sequence: int, turns: int
+    ) -> tuple[ConversationMessage, ...]:
+        """初始化时有界读取已完成问答；排除失败 Turn 和分支草稿。"""
+        if not 0 <= turns <= 100:
+            raise ValueError("invalid bootstrap Turn limit")
+        statement = (
+            select(ConversationMessageRow)
+            .join(
+                ConversationTurnRow, ConversationTurnRow.turn_id == ConversationMessageRow.turn_id
+            )
+            .where(
+                ConversationMessageRow.conversation_id == conversation_id,
+                ConversationMessageRow.sequence < before_sequence,
+                ConversationMessageRow.parent_message_id.is_(None),
+                ConversationMessageRow.visible.is_(True),
+                ConversationTurnRow.status == TurnStatus.COMPLETED.value,
+            )
+            .order_by(ConversationMessageRow.sequence.desc())
+            .limit(turns * 2)
+        )
+        with self._sessions() as session:
+            return tuple(reversed([_message(row) for row in session.scalars(statement)]))
+
     def list_messages(
         self, conversation_id: str, *, visible_only: bool = True
     ) -> tuple[ConversationMessage, ...]:
@@ -948,116 +977,6 @@ class SqlAlchemyConversationRepository:
         with self._sessions() as session:
             return tuple(_turn(row) for row in session.scalars(statement))
 
-    def save_summary(
-        self, summary: ConversationSummary, *, supersede_ids: Sequence[str] = ()
-    ) -> ConversationSummary:
-        """幂等保存摘要，并按需将既有摘要标记为被取代。
-
-        使用场景：SummaryService 写入分段/分层摘要；同范围已有内容一致的
-        ACTIVE 摘要时直接返回既有记录，内容不同则视为冲突。
-
-        Args:
-            summary: 待保存的摘要记录。
-            supersede_ids: 需要被本次摘要取代的既有摘要 ID 序列，默认为空。
-
-        Returns:
-            ConversationSummary: 已保存或既有的摘要记录。
-
-        Raises:
-            ConversationConflict: 同范围已存在内容不同的 ACTIVE 摘要，或待取代
-                摘要不属于该会话时抛出。
-
-        """
-        with self._sessions.begin() as session:
-            # 1. 查询同会话、同层级、同区间的 ACTIVE 摘要。
-            same_range = session.scalar(
-                select(ConversationSummaryRow).where(
-                    ConversationSummaryRow.conversation_id == summary.conversation_id,
-                    ConversationSummaryRow.level == summary.level,
-                    ConversationSummaryRow.start_sequence == summary.start_sequence,
-                    ConversationSummaryRow.end_sequence == summary.end_sequence,
-                    ConversationSummaryRow.status == SummaryStatus.ACTIVE.value,
-                )
-            )
-            # 2. 已存在且内容一致时幂等返回；内容不同则视为冲突。
-            if same_range is not None and same_range.summary_id not in supersede_ids:
-                if same_range.content_hash == summary.content_hash:
-                    return _summary(same_range)
-                raise ConversationConflict("active summary already exists for source range")
-            # 3. 写入新摘要，并将待取代摘要置为 SUPERSEDED 且记录取代者。
-            row = ConversationSummaryRow(
-                summary_id=summary.summary_id,
-                conversation_id=summary.conversation_id,
-                level=summary.level,
-                start_sequence=summary.start_sequence,
-                end_sequence=summary.end_sequence,
-                source_message_ids=list(summary.source_message_ids),
-                source_summary_ids=list(summary.source_summary_ids),
-                summary_content=summary.summary_content,
-                topics=list(summary.topics),
-                entities=list(summary.entities),
-                decisions=list(summary.decisions),
-                open_items=list(summary.open_items),
-                model_profile_version=summary.model_profile_version,
-                template_version=summary.template_version,
-                content_hash=summary.content_hash,
-                status=SummaryStatus.ACTIVE.value,
-                created_at=summary.created_at,
-            )
-            session.add(row)
-            session.flush()
-            for summary_id in supersede_ids:
-                old = session.get(ConversationSummaryRow, summary_id)
-                if old is None or old.conversation_id != summary.conversation_id:
-                    raise ConversationConflict("summary rebuild source does not match conversation")
-                old.status = SummaryStatus.SUPERSEDED.value
-                old.superseded_by = summary.summary_id
-        return summary
-
-    def list_summaries(
-        self, conversation_id: str, *, active_only: bool = True
-    ) -> tuple[ConversationSummary, ...]:
-        """按层级与起始序号升序返回会话摘要。
-
-        Args:
-            conversation_id: 会话标识。
-            active_only: 为 True（默认）时仅返回 ACTIVE 状态摘要。
-
-        Returns:
-            tuple[ConversationSummary, ...]: 摘要记录元组。
-
-        """
-        statement = select(ConversationSummaryRow).where(
-            ConversationSummaryRow.conversation_id == conversation_id
-        )
-        if active_only:
-            statement = statement.where(ConversationSummaryRow.status == SummaryStatus.ACTIVE.value)
-        statement = statement.order_by(
-            ConversationSummaryRow.level,
-            ConversationSummaryRow.start_sequence,
-        )
-        with self._sessions() as session:
-            return tuple(_summary(row) for row in session.scalars(statement))
-
-    def get_summary(self, summary_id: str) -> ConversationSummary:
-        """按主键读取摘要记录。
-
-        Args:
-            summary_id: 摘要标识。
-
-        Returns:
-            ConversationSummary: 摘要领域记录。
-
-        Raises:
-            ConversationNotFound: 摘要不存在时抛出。
-
-        """
-        with self._sessions() as session:
-            row = session.get(ConversationSummaryRow, summary_id)
-            if row is None:
-                raise ConversationNotFound("summary was not found")
-            return _summary(row)
-
     def save_manifest(self, manifest: ModelContextManifest) -> ModelContextManifest:
         """按 model_call_id 幂等保存模型调用 Manifest。
 
@@ -1085,26 +1004,7 @@ class SqlAlchemyConversationRepository:
                     raise ConversationConflict("model_call_id has conflicting context manifest")
                 return _manifest(existing)
             row = ModelContextManifestRow(
-                manifest_id=manifest.manifest_id,
-                model_call_id=manifest.model_call_id,
-                conversation_id=manifest.conversation_id,
-                turn_id=manifest.turn_id,
-                run_id=manifest.run_id,
-                prompt_template_version=manifest.prompt_template_version,
-                agent_profile_version=manifest.agent_profile_version,
-                model_profile_version=manifest.model_profile_version,
-                recent_message_start=manifest.recent_message_start,
-                recent_message_end=manifest.recent_message_end,
-                summary_ids=list(manifest.summary_ids),
-                memory_ids=list(manifest.memory_ids),
-                memory_refs=[item.model_dump(mode="json") for item in manifest.memory_refs],
-                historical_message_ids=list(manifest.historical_message_ids),
-                tool_result_refs=list(manifest.tool_result_refs),
-                exposed_tools=list(manifest.exposed_tools),
-                input_token_count=manifest.input_token_count,
-                available_input_tokens=manifest.available_input_tokens,
-                omissions=[item.model_dump(mode="json") for item in manifest.omissions],
-                context_hash=manifest.context_hash,
+                **manifest.model_dump(mode="json", exclude={"created_at"}),
                 created_at=manifest.created_at,
             )
             session.add(row)

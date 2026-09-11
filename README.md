@@ -2,7 +2,7 @@
 
 FinanceClaw 基于 LangChain、LangGraph Agent Server 与 LangSmith，提供金融场景的会话、受治理工具、人工审批、上下文、记忆、制品与审计。
 
-当前架构由 BFF 与 Agent Server 两个服务组成：BFF 负责 start、人工 resume、cancel、授权和永久聊天记录；顶层 ReAct 通过 Tool 调用领域 Agent 或 Workflow subgraph。一个业务 Turn 只有一个根执行，Worker 不创建独立 thread/run。当前只注册 finance_agent_v1_5_0 根图。
+当前架构由 BFF 与 Agent Server 两个服务组成：BFF 负责 start、人工 resume、cancel、授权和永久聊天记录；顶层 ReAct 通过 Tool 调用领域 Agent 或 Workflow subgraph。一个业务 Turn 只有一个根执行，Worker 不创建独立 thread/run。当前只注册 finance_agent_v1_6_0 根图。
 
 BFF 的 Webhook 接收器和后台结果核对独立于客户端连接。最终答案、运行状态、审计和通知意图同事务落库；BFF 内置飞书发送器按持久责任交付。未知提交不会自动换 ID 重发。
 
@@ -11,6 +11,8 @@ BFF 的 Webhook 接收器和后台结果核对独立于客户端连接。最终�
 项目尚未上线：数据库迁移为当前的 0001_initial，不维护未发布 schema 的升级兼容。使用新空开发库初始化，已有本机数据库不会自动删除或重置。
 
 [飞书交互卡片实现](.redesign/stages/Feishu-交互卡片适配实施方案.md) · [BFF 运行手册](docs/operations/bff-run-control.md) · [飞书通知](docs/operations/notifications.md) · [紫微候选](docs/operations/ziwei-agent.md)
+
+Stage 9 实现：[Stage 9：上下文与记忆优化实施方案](.redesign/stages/stage-9-上下文与记忆优化实施方案.md)，依据[当前系统评估](docs/architecture/memory-assessment-2026-09-10.md)。实现与验证见[Stage 9 验收记录](.redesign/stages/stage-9-实现与验证.md)。
 
 ## 环境
 
@@ -35,7 +37,7 @@ FINANCECLAW_PROVIDER_BASE_URL=https://api.deepseek.com
 FINANCECLAW_PROVIDER_API_KEY=your-deepseek-api-key
 ```
 
-默认上下文规划上限为 800,000 token，输出上限/预留 32,768，系统预留 8,192、工具预留 32,768、安全余量 32,768；正文与历史可用约 693,504 token。最近原文窗口为 64 条，另召回最多 16 条相关历史及 8 条摘要。配置说明与长历史验证见[上下文预算](docs/operations/context-budget.md)。
+默认上下文容量上限为 800,000 token；原生 state 保留近期消息，达到阈值后摘要旧 Turn，保护当前 Turn 及最近 4 个已完成 Turn。画像直接读 Store，长期事件按 Turn 语义召回一次，历史原文按需分页回读；工具结果清理前归档。配置与后台角色见[上下文与记忆运维](docs/operations/context-budget.md)。
 
 Secret 只放 `.env` 或部署平台 Secret Manager，不要写入 Git 跟踪的 example 文件。
 
@@ -83,7 +85,7 @@ BFF 就绪后直接受理。执行与卡片投递循环随 BFF 启停：
 
 通过 `POST /v1/conversations` 创建会话，再调用
 `POST /v1/conversations/{conversation_id}/turns`，请求体只传 `message`。后续轮次复用同一 ID；
-原始消息、摘要与 Manifest 均由业务数据库持久化。需要明确表达调用偏好时，把
+原始问答与 Manifest 由业务数据库持久化；工作消息/摘要由原生 checkpoint 保存，画像和事件由原生 Store 保存。需要明确表达调用偏好时，把
 `/tool ...`、`/workflow ...` 或 `/agent ...` 直接写入 `message`，不要在请求体中传 Target。
 长期记忆由 Agent Server 的 LangGraph Store 持久化；生产部署需把 Agent Server Store 配置为
 PostgreSQL-backed 实现。记忆写入会暂停为审批，通过 `/v1/interactions/{interaction_id}/responses` 批准或拒绝。

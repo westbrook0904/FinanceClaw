@@ -7,7 +7,7 @@ from uuid import uuid4
 
 import pytest
 from pydantic import SecretStr
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.schema import CreateSchema, DropSchema
 
@@ -15,7 +15,7 @@ from financeclaw.kernel.context import ExecutionContext
 from financeclaw.shared.execution_ledger.interactions import InteractionRepository
 from financeclaw.shared.execution_ledger.repository import ExecutionConflict
 from financeclaw.shared.execution_ledger.snapshots import agent_snapshot
-from financeclaw.shared.infrastructure.database import normalize_database_url
+from financeclaw.shared.infrastructure.database import ApplicationDatabase, normalize_database_url
 from financeclaw.shared.infrastructure.settings import FinanceClawSettings
 from tests.stage8_hotfix.test_bff_runs import OWNER
 from tests.support import build_components
@@ -38,6 +38,13 @@ async def test_postgres_turn_journal_operation_and_budget_cas(tmp_path):
     isolated = url.update_query_dict({"options": f"-csearch_path={schema}"})
     components = None
     try:
+        # 在任何自动建表/写入之前，先验证真实连接使用的是本测试的 schema。
+        probe = ApplicationDatabase(isolated.render_as_string(hide_password=False))
+        try:
+            with probe.engine.connect() as connection:
+                assert connection.scalar(text("SELECT current_schema()")) == schema
+        finally:
+            probe.close()
         components = build_components(
             FinanceClawSettings(
                 _env_file=None,
@@ -50,7 +57,7 @@ async def test_postgres_turn_journal_operation_and_budget_cas(tmp_path):
         )
         repository = components.conversation_repository
         conversation = repository.create_conversation(
-            **OWNER, agent_id="finance_agent", agent_profile_version="1.5.0"
+            **OWNER, agent_id="finance_agent", agent_profile_version="1.6.0"
         )
         requests = await asyncio.gather(
             *(
@@ -63,7 +70,7 @@ async def test_postgres_turn_journal_operation_and_budget_cas(tmp_path):
                     message="bounded test",
                     target_type="agent",
                     target_id="finance_agent",
-                    target_version="1.5.0",
+                    target_version="1.6.0",
                 )
                 for _ in range(20)
             )

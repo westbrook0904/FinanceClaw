@@ -1,6 +1,6 @@
 """长期记忆写入的治理策略：识别机密与时效性金融事实，决定敏感级别与确认要求。
 
-评估在提案阶段执行，结论与策略版本随提案一并写入审计，供确认阶段复验。
+原生 HITL 判定前评估一次，实际保存时复验同一草案；策略版本随操作审计保存。
 """
 
 from __future__ import annotations
@@ -8,6 +8,11 @@ from __future__ import annotations
 import re
 
 from financeclaw.agent_server.memory.models import MemoryDraft, MemorySensitivity, MemoryType
+from financeclaw.agent_server.memory.profiles import (
+    LOW_RISK_VALUES,
+    explicit_preferences,
+    validate_profile_value,
+)
 
 # 匹配 bearer 令牌、常见密钥前缀以及密码、API 键等机密内容的正则。
 _SECRET = re.compile(
@@ -58,19 +63,19 @@ class MemoryPolicy:
     """长期记忆写入的确定性治理策略。
 
     使用场景：
-        propose 与 confirm 阶段对同一草案重复评估，保证两次决策一致；
-        评估结论连同版本号随提案持久化，支持审计复现。
+        原生审批判定与实际保存共用证据规则，模型不能自行声明免确认。
+        提案只作为内部计算结果，实际写入记录来源并生成操作审计。
 
     Attributes:
         version: 策略语义版本号，随提案与审计记录持久化。
         auto_commit_low_risk_preferences: 是否允许低风险偏好类记忆免确认
-            自动提交；默认关闭，即所有写入都要求显式确认。
+            自动提交；默认开启，但必须验证可信用户的明确持续性表达。
 
     """
 
-    version = "memory-policy/1.0.0"
+    version = "memory-policy/2.0.0"
 
-    def __init__(self, *, auto_commit_low_risk_preferences: bool = False) -> None:
+    def __init__(self, *, auto_commit_low_risk_preferences: bool = True) -> None:
         """初始化策略开关。
 
         Args:
@@ -79,10 +84,13 @@ class MemoryPolicy:
         """
         self.auto_commit_low_risk_preferences = auto_commit_low_risk_preferences
 
-    def assess(self, draft: MemoryDraft) -> tuple[MemorySensitivity, bool, str]:
+    def assess(
+        self, draft: MemoryDraft, *, evidence_texts: tuple[str, ...] = ()
+    ) -> tuple[MemorySensitivity, bool, str]:
         """评估记忆草案，返回敏感级别、是否需要显式确认与策略理由。
 
         Args:
+            evidence_texts: 已校验归属的用户原文，用于判定明确的持续偏好。
             draft: 待评估的记忆草案。
 
         Returns:
@@ -105,12 +113,25 @@ class MemoryPolicy:
                 reason="temporal_financial_fact_forbidden",
             )
         # 3. 高影响金融画像提升敏感级别，并判定是否允许免确认自动提交。
-        high_impact = bool(_HIGH_IMPACT.search(draft.content))
+        if draft.field is not None:
+            validate_profile_value(draft.field, draft.content)
+        high_impact = draft.field not in LOW_RISK_VALUES or bool(_HIGH_IMPACT.search(draft.content))
         sensitivity = MemorySensitivity.CONFIDENTIAL if high_impact else MemorySensitivity.INTERNAL
+        if draft.kind is MemoryType.PREFERENCE and any(
+            re.search(r"这次|本次|for this (?:answer|turn)|this time", text, re.I)
+            for text in evidence_texts
+        ):
+            raise MemoryPolicyViolation(
+                "Turn-only preferences cannot be saved", reason="turn_only_preference"
+            )
         can_auto_commit = (
             self.auto_commit_low_risk_preferences
             and draft.kind is MemoryType.PREFERENCE
-            and not high_impact
+            and draft.field in LOW_RISK_VALUES
+            and any(
+                explicit_preferences(text).get(draft.field) == draft.content
+                for text in evidence_texts
+            )
         )
         if can_auto_commit:
             return sensitivity, False, "explicit low-risk preference auto-commit is enabled"

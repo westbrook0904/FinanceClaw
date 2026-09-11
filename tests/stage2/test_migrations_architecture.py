@@ -12,7 +12,6 @@ STAGE2_TABLES = {
     "alembic_version",
     "artifacts",
     "conversation_messages",
-    "conversation_summaries",
     "conversation_turns",
     "conversations",
     "model_context_manifests",

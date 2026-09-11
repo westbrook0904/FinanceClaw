@@ -19,7 +19,7 @@ def test_admission_writes_do_not_commit_callers_transaction(tmp_path) -> None:
         tenant_id="tenant",
         subject_id="owner",
         agent_id="finance_agent",
-        agent_profile_version="1.5.0",
+        agent_profile_version="1.6.0",
     )
     with pytest.raises(RuntimeError, match="crash"):
         with db.session_factory.begin() as session:
@@ -32,7 +32,7 @@ def test_admission_writes_do_not_commit_callers_transaction(tmp_path) -> None:
                 message="hello",
                 target_type="agent",
                 target_id="finance_agent",
-                target_version="1.5.0",
+                target_version="1.6.0",
                 session=session,
             )
             repository.execution.register(turn.run_id, {"frozen": True}, session=session)

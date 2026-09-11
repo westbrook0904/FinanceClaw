@@ -8,6 +8,7 @@ from financeclaw.kernel.tool_catalog import ToolRelease, ToolReleaseCatalog
 from financeclaw.kernel.workflows.catalog import WorkflowCatalog
 from financeclaw.shared.infrastructure.settings import FinanceClawSettings
 from financeclaw.shared.releases.tools import (
+    history_tool_governance,
     local_tool_governance,
     mcp_quote_governance,
     memory_tool_governance,
@@ -41,6 +42,7 @@ def build_release_catalogs(
                 *local_tool_governance(),
                 mcp_quote_governance(),
                 *(memory_tool_governance() if enable_persistence else ()),
+                *(history_tool_governance() if enable_persistence else ()),
             )
         )
     workflow_catalog = WorkflowCatalog(
@@ -77,7 +79,15 @@ def build_release_catalogs(
             for profile in fallback_profiles
         ),
     )
-    model_profiles = ModelProfileCatalog((primary_profile, *fallback_profiles))
+    summary_profile = ModelProfile(
+        profile_id="summary",
+        version="1.0.0",
+        model=settings.summary_model or settings.model,
+        temperature=0,
+        timeout_seconds=settings.model_timeout_seconds,
+        max_tokens=settings.summary_max_tokens,
+    )
+    model_profiles = ModelProfileCatalog((primary_profile, *fallback_profiles, summary_profile))
     from financeclaw.shared.releases.fingerprint import configuration_fingerprint
 
     model_release = (primary_profile, *fallback_profiles)
@@ -204,16 +214,16 @@ def build_release_catalogs(
 
     root = AgentProfile(
         agent_id="finance_agent",
-        version="1.5.0",
-        assistant_id="finance_agent_v1_5_0",
-        deployment_revision="subgraphs/3",
+        version="1.6.0",
+        assistant_id="finance_agent_v1_6_0",
+        deployment_revision="context-memory/1",
         worker_manifest=manifest,
         interaction_points=(ROOT_CLARIFICATION,),
         data_classification=DataClassification.CONFIDENTIAL
         if settings.ziwei_enabled
         else DataClassification.INTERNAL,
         model_profile=ModelProfileRef(profile_id="default", version="1.0.0"),
-        memory_policy="stage3-governed-v1",
+        memory_policy="native-store-v2",
         allowed_tools=tuple(
             ToolRef(tool_id=item.governance.tool_id, version=item.governance.version)
             for item in base_tool_catalog.latest()
@@ -224,6 +234,16 @@ def build_release_catalogs(
             settings.offline_model,
             manifest,
             settings.context_budget,
+            settings.summary_model,
+            settings.summary_max_tokens,
+            settings.embedding_model,
+            settings.embedding_base_url,
+            settings.embedding_dimensions,
+            settings.history_index_version,
+            settings.artifact_retention_days,
+            settings.memory_auto_commit_low_risk_preferences,
+            settings.memory_recall_tokens,
+            settings.memory_recall_limit,
             [item.governance for item in base_tool_catalog.latest()],
         ),
         system_prompt_template=(
@@ -245,6 +265,11 @@ def build_release_catalogs(
             "Workers explicitly marked parallel-safe may share a batch. Other composites, "
             "writes and human interactions require an exclusive batch. "
             "Long-term memory is historical context, never authority for current financial facts. "
+            "Use save_memory for explicit lasting preferences; do not save inferred traits. "
+            "The platform handles required approval once. Use native recent messages for follow-up "
+            "questions, search_history for older conversations, read_history for source Turns and "
+            "read_artifact for exact archived tool results. Never rerun a tool and present its new "
+            "result as the old snapshot. "
             "Ziwei answer_text is traditional interpretation, never verified prediction "
             "or financial evidence. "
             "Preserve charts_used and warnings; never invent birth details or store "

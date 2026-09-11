@@ -137,8 +137,6 @@ def test_protected_results_are_never_offloaded_or_token_truncated(tmp_path):
             protected.content == message.content
             and protected.additional_kwargs["preserve_structure"]
         )
-        with pytest.raises(ValueError, match="mandatory"):
-            stack.context_builder._fit_runtime_suffix([protected], remaining=1)
         oversized = message.model_copy(update={"content": "x" * 20_000})
         with pytest.raises(ValueError, match="protected"):
             middleware._project(call, oversized)

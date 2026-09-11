@@ -16,7 +16,7 @@ def assemble_subgraph_tools(releases, factory, *, settings, ziwei_service=None, 
     models = models or {}
     result = []
     execution = getattr(factory.conversation_repository, "execution", None)
-    for declaration in releases.agent_profiles.resolve("finance_agent", "1.5.0").worker_manifest:
+    for declaration in releases.agent_profiles.resolve("finance_agent", "1.6.0").worker_manifest:
         entry = json.loads(declaration)
         if entry["kind"] == "agent":
             release = releases.agent_profiles.resolve(entry["target_id"], entry["version"])

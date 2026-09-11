@@ -42,12 +42,14 @@ class OutboxEventRow(Base):
     # 投递索引支撑 publisher 按（状态，可用时间，租约时间）领取到期事件；
     # 归属索引支撑按租户与主体回溯事件创建记录。
     __table_args__ = (
-        Index("ix_outbox_delivery", "status", "available_at", "locked_until"),
+        Index("ix_outbox_delivery", "destination", "status", "available_at", "locked_until"),
         Index("ix_outbox_owner", "tenant_id", "subject_id", "created_at"),
     )
 
     event_id: Mapped[str] = mapped_column(String(128), primary_key=True)
     event_type: Mapped[str] = mapped_column(String(128), nullable=False)
+    destination: Mapped[str] = mapped_column(String(64), nullable=False, default="audit")
+    claim_epoch: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     aggregate_type: Mapped[str] = mapped_column(String(64), nullable=False)
     aggregate_id: Mapped[str] = mapped_column(String(128), nullable=False)
     tenant_id: Mapped[str] = mapped_column(String(128), nullable=False)
