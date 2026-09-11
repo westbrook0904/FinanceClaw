@@ -227,7 +227,6 @@ def test_evidence_cannot_cross_conversation_or_owner(tmp_path: Path) -> None:
         subject_id=context_a.subject_id,
         conversation_id=context_a.conversation_id,
         turn_id=context_a.turn_id,
-        run_id=context_a.run_id,
     )
     # 限定依赖资源的生命周期，并确保资源能够可靠释放。
     with pytest.raises(LookupError):

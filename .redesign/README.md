@@ -1,6 +1,6 @@
 # FinanceClaw 当前架构
 
-BFF 负责产品入口、根运行控制与 Journal；Agent Server 执行顶层 ReAct 和内部 Worker。业务库共享，原生执行持久化由 Agent Server 管理。项目尚未正式上线，当前数据库从初始 schema 创建。
+Stage 10 将业务 API 合入 AgentServer，同一镜像分为 api、worker、integrations 三个角色。业务运行模型收敛为 Turn、Command、Interaction；14 张应用表使用唯一初始迁移。
 
 - [架构基线](00-最终架构设计.md)
 - [架构决议](01-架构决议汇总.md)
@@ -11,6 +11,8 @@ BFF 负责产品入口、根运行控制与 Journal；Agent Server 执行顶层 
 - [Stage 8 Hotfix 实施方案](stages/stage-8-hotfix-实施方案.md)
 - [Stage 9：上下文与记忆优化实施方案](stages/stage-9-上下文与记忆优化实施方案.md)
 - [Stage 9 实现与验证](stages/stage-9-实现与验证.md)
+- [Stage 10：统一 API 与运行模型收敛实施方案](stages/stage-10-统一API与运行模型收敛实施方案.md)
+- [Stage 10 实现与验证](stages/stage-10-实现与验证.md)
 - [上下文与记忆评估依据](../docs/architecture/memory-assessment-2026-09-10.md)
 - [清理与验证](stages/stage-8-hotfix-清理与验证.md)
 - [Stage 6：Feishu P2P Channel](./stages/Stage-6-Feishu-P2P-Channel-实施说明.md)

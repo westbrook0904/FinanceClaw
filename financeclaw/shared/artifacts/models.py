@@ -45,7 +45,6 @@ class ArtifactMetadata(BaseModel):
     source_id: str
     conversation_id: str | None = None
     source_turn_id: str | None = None
-    source_run_id: str | None = None
     deleted_at: datetime | None = None
     expires_at: datetime | None = None
     access_policy: dict[str, Any] = Field(default_factory=dict)

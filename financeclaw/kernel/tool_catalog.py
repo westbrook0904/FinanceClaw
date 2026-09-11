@@ -45,7 +45,7 @@ def _version_key(version: str) -> tuple[int, int, int]:
 class ToolReleaseCatalog(Mapping[tuple[str, str], ToolRelease]):
     """受治理 Tool 的只读目录，按 (tool_id, version) 索引各 ToolRelease。
 
-    使用场景：装配阶段把全部 ToolRelease 注册进目录；BFF 按
+    使用场景：装配阶段把全部 ToolRelease 注册进目录；API 按
     tool_id+version 精确解析治理声明，或按 tool_id
     取最新版本。目录本身不可变，保证运行期清单稳定可审计。
 

@@ -392,7 +392,6 @@ class ToolGovernanceMiddleware(AgentMiddleware):
                 subject_id=context.subject_id,
                 conversation_id=context.conversation_id,
                 turn_id=context.turn_id,
-                run_id=context.run_id,
                 tool_call_id=tool_call_id,
                 resource_id=managed.governance.tool_id,
                 resource_version=managed.governance.version,

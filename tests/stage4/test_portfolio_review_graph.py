@@ -22,19 +22,18 @@ from financeclaw.shared.artifacts.service import ArtifactService
 from financeclaw.shared.artifacts.storage import InMemoryArtifactStore
 from financeclaw.shared.audit.models import AuditEventType
 from financeclaw.shared.audit.repository import InMemoryAuditRepository
-from financeclaw.shared.execution_ledger.repository import ExecutionRepository
 from financeclaw.shared.infrastructure.database import ApplicationDatabase
+from financeclaw.shared.turns.budget import TurnExecutionRepository
 from tests.worker_scope import invocation
 
 
-def _context(*scopes: str, run_id: str = "run-workflow") -> ExecutionContext:
+def _context(*scopes: str, turn_id: str = "run-workflow") -> ExecutionContext:
     """处理 `当前操作`，并返回边界约定的结果。"""
     return ExecutionContext(
         tenant_id="tenant-a",
         subject_id="subject-a",
         scopes=frozenset(scopes),
         turn_id="workflow-turn",
-        run_id=run_id,
     )
 
 
@@ -65,7 +64,7 @@ def _workflow(tmp_path: Path, *, market: MarketSnapshotTool | None = None):
         policy=ToolPolicy(),
         audit=audit,
         artifact_service=artifact_service,
-        execution=ExecutionRepository(database.session_factory),
+        execution=TurnExecutionRepository(database.session_factory),
         checkpointer=InMemorySaver(),
         clock=lambda: datetime(2026, 9, 3, tzinfo=UTC),
     )
@@ -266,7 +265,7 @@ def test_reject_stale_authorization_and_transient_retry_fail_closed(tmp_path: Pa
         artifact_service=ArtifactService(
             SqlAlchemyArtifactRepository(database.session_factory), store
         ),
-        execution=ExecutionRepository(database.session_factory),
+        execution=TurnExecutionRepository(database.session_factory),
         checkpointer=InMemorySaver(),
         clock=lambda: datetime(2026, 9, 10, tzinfo=UTC),
     )
@@ -299,7 +298,7 @@ def test_report_artifact_write_is_idempotent_for_the_same_run_node(tmp_path: Pat
     # 准备 service，供后续步骤使用。
     service = ArtifactService(SqlAlchemyArtifactRepository(database.session_factory), store)
     # 准备 context，供后续步骤使用。
-    context = _context("artifacts:read", run_id="run-idempotent")
+    context = _context("artifacts:read", turn_id="run-idempotent")
     # 准备 first，供后续步骤使用。
     first = service.persist(
         {"report": "stable"},
@@ -347,7 +346,7 @@ def scoped_definition(definition, database, catalog):
     def invoke(value, *, context, **kwargs):
         """Enter Worker scope and preserve the native v2 state response."""
         with invocation(
-            ExecutionRepository(database.session_factory), definition, catalog, {}, context
+            TurnExecutionRepository(database.session_factory), definition, catalog, {}, context
         ) as scoped:
             return graph.invoke(value, context=scoped, **kwargs)
 

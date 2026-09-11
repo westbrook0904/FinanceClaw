@@ -97,12 +97,6 @@ def build_resources(
             settings.egress_allowed_hosts,
             require_https=settings.environment.value in {"staging", "production"},
         ).validate(settings.provider_base_url)
-    # 4.2 校验内部 Agent Server 地址（允许内网主机与 HTTP）。
-    EgressPolicy(
-        settings.internal_service_hosts,
-        require_https=False,
-        allow_private_hosts=True,
-    ).validate(settings.agent_server_url)
     # 4.3 生产环境额外校验认证、LangSmith 与 OpenTelemetry 观测端点。
     if settings.environment.value == "production" and settings.oidc_jwks_url:
         EgressPolicy(settings.egress_allowed_hosts).validate(settings.oidc_jwks_url)
@@ -114,7 +108,7 @@ def build_resources(
                 settings.otel_metrics_exporter_endpoint
             )
     # 4.4 自定义 S3 端点按内部服务策略校验（允许内网与 HTTP）。
-    if settings.artifact_s3_endpoint_url:
+    if settings.artifact_backend == "s3" and settings.artifact_s3_endpoint_url:
         EgressPolicy(
             settings.internal_service_hosts,
             require_https=False,

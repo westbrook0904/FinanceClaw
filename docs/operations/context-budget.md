@@ -4,7 +4,7 @@
 
 ## 容量与摘要
 
-以下环境变量均加 `FINANCECLAW_` 前缀，BFF 与 Agent Server 的策略值需要一致，以匹配冻结发布指纹。
+以下环境变量均加 `FINANCECLAW_` 前缀，API 与 Worker 的策略值需要一致，以匹配冻结发布指纹。
 
 | 配置 | 默认 | 作用 |
 |---|---:|---|
@@ -37,7 +37,7 @@ Store namespace 为 `financeclaw/v2/<编码tenant>/<编码subject>/<类别>`。�
 - `EMBEDDING_MODEL`、`EMBEDDING_BASE_URL`、`EMBEDDING_API_KEY`：OpenAI 兼容 embeddings 服务；密钥只需提供给 Agent Server。
 - `EMBEDDING_DIMENSIONS` 默认 1536，必须与所用 `langgraph*.json` 的 `store.index.dims` 一致。
 - `EMBEDDING_TIMEOUT_SECONDS` 默认 30；SDK 隐式重试关闭。失败不降级为词法检索。
-- 将供应商主机加入 `EGRESS_ALLOWED_HOSTS`；BFF 只需同一模型名、URL、维度等发布策略，不需 embedding 密钥。
+- 将供应商主机加入 `EGRESS_ALLOWED_HOSTS`；API 只需同一模型名、URL、维度等发布策略，不需 embedding 密钥。
 
 配置文件的 `store.index.embed` 指向 `financeclaw/agent_server/memory/embeddings.py:embeddings`，框架负责文档索引和查询编码。日志以 `embedding method=documents/query` 记录实际方法调用次数、字符量、耗时与失败，`memory_store purpose=...` 区分初始召回、更新后召回、主动搜索和历史索引。PostgreSQL Store 也会用 `embed_documents` 批量编码查询，不能仅凭方法名推断用途；不记录被编码的正文。`OFFLINE_MODEL=true` 使用框架的确定性假向量，仅供机制验证，不能证明中文语义检索质量。
 
@@ -50,8 +50,8 @@ Store namespace 为 `financeclaw/v2/<编码tenant>/<编码subject>/<类别>`。�
 完成 Turn 在业务事务内写入 `destination=history_index` 的 outbox 任务，回答不等待 embedding。运行独立后台角色：
 
 ```bash
-python -m financeclaw.agent_server.memory.worker --once
-python -m financeclaw.agent_server.memory.worker
+python -m financeclaw.integrations --once
+python -m financeclaw.integrations
 ```
 
 保存或遗忘时若 Store 已成功、审计失败，工具返回 `receipt_pending` 错误并使旧召回失效，不能声称回滚或全部完成。同一修改重入补齐回执；删除还由持久 outbox 恢复。
@@ -61,7 +61,7 @@ python -m financeclaw.agent_server.memory.worker
 尚未索引的明确 Turn 仍可直接回读。重建可按已认证主体的会话分页预览和入队，返回 `next_offset` 时继续下一页；正在执行的消费者会被跳过，不重放 audit 或 memory_delete：
 
 ```bash
-python -m financeclaw.agent_server.memory.maintenance history \
+python -m financeclaw.integrations.maintenance history \
   --tenant-id TENANT --subject-id SUBJECT --conversation-id CONVERSATION
 # 确认范围后追加 --apply；下一页使用返回的 --offset。
 ```
@@ -74,11 +74,11 @@ python -m financeclaw.agent_server.memory.maintenance history \
 
 ```bash
 # 默认仅预览；显式 --apply 才删除已到期且无活动引用的对象内容。
-python -m financeclaw.agent_server.memory.maintenance artifacts
-python -m financeclaw.agent_server.memory.maintenance artifacts --apply
+python -m financeclaw.integrations.maintenance artifacts
+python -m financeclaw.integrations.maintenance artifacts --apply
 
 # 只允许已归档且业务与原生运行均无待办的会话。
-python -m financeclaw.agent_server.memory.maintenance checkpoints \
+python -m financeclaw.integrations.maintenance checkpoints \
   --tenant-id TENANT --subject-id SUBJECT --conversation-id CONVERSATION
 ```
 

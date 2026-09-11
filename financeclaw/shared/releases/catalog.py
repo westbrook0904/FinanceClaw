@@ -1,4 +1,4 @@
-"""BFF 与 Agent Server 共用的静态发布目录；不依赖任何服务的运行实现。"""
+"""API 与 Agent Server 共用的静态发布目录；不依赖任何服务的运行实现。"""
 
 from dataclasses import dataclass
 
@@ -215,7 +215,7 @@ def build_release_catalogs(
     root = AgentProfile(
         agent_id="finance_agent",
         version="1.6.0",
-        assistant_id="finance_agent_v1_6_0",
+        assistant_id="finance_agent",
         deployment_revision="context-memory/1",
         worker_manifest=manifest,
         interaction_points=(ROOT_CLARIFICATION,),

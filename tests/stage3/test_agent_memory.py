@@ -119,7 +119,7 @@ def test_memory_write_interrupt_reject_and_resume(tmp_path: Path) -> None:
     # 继续执行前验证内部不变量。
     assert repository is not None
     # 准备 context and _，供后续步骤使用。
-    context, _ = conversation_context(repository)
+    context, message_id = conversation_context(repository, profile=components.default_agent_profile)
     # 准备 store，供后续步骤使用。
     store = InMemoryStore()
     # 准备 agent，供后续步骤使用。
@@ -132,7 +132,7 @@ def test_memory_write_interrupt_reject_and_resume(tmp_path: Path) -> None:
     config = {"configurable": {"thread_id": "memory-hitl"}}
     # 准备 interrupted，供后续步骤使用。
     interrupted = agent.invoke(
-        {"messages": [{"role": "user", "content": "请记住我的低波动偏好"}]},
+        {"messages": [{"role": "user", "content": "请记住我的低波动偏好", "id": message_id}]},
         context=context,
         config=config,
         version="v2",
@@ -157,8 +157,9 @@ def test_memory_write_interrupt_reject_and_resume(tmp_path: Path) -> None:
     assert len(components.memory_service.search(context, store)) == 1
 
     # 使用独立提案验证拒绝操作不会修改 Store。
-    rejected_context, _ = conversation_context(
+    rejected_context, rejected_message_id = conversation_context(
         repository,
+        profile=components.default_agent_profile,
         message="请记住我偏好价值投资",
         key="rejected-memory",
     )
@@ -166,7 +167,11 @@ def test_memory_write_interrupt_reject_and_resume(tmp_path: Path) -> None:
     rejected_config = {"configurable": {"thread_id": "memory-reject"}}
     # 准备 rejected，供后续步骤使用。
     rejected = agent.invoke(
-        {"messages": [{"role": "user", "content": "请记住我偏好价值投资"}]},
+        {
+            "messages": [
+                {"role": "user", "content": "请记住我偏好价值投资", "id": rejected_message_id}
+            ]
+        },
         context=rejected_context,
         config=rejected_config,
         version="v2",
@@ -204,7 +209,9 @@ def test_cross_thread_recall_is_injected_and_manifested(tmp_path: Path) -> None:
     # 准备 store，供后续步骤使用。
     store = InMemoryStore()
     # 准备 source_context and _，供后续步骤使用。
-    source_context, _ = conversation_context(repository)
+    source_context, message_id = conversation_context(
+        repository, profile=components.default_agent_profile
+    )
     # 准备 proposal，供后续步骤使用。
     proposal = service.propose(
         source_context,
@@ -223,8 +230,9 @@ def test_cross_thread_recall_is_injected_and_manifested(tmp_path: Path) -> None:
         approved=True,
     )
     # 准备 recall_context and _，供后续步骤使用。
-    recall_context, _ = conversation_context(
+    recall_context, recall_message_id = conversation_context(
         repository,
+        profile=components.default_agent_profile,
         message="请按低波动偏好分析我的方案",
         key="recall-turn",
     )
@@ -236,7 +244,11 @@ def test_cross_thread_recall_is_injected_and_manifested(tmp_path: Path) -> None:
     )
     # 准备 result，供后续步骤使用。
     result = agent.invoke(
-        {"messages": [{"role": "user", "content": "请按低波动偏好分析我的方案"}]},
+        {
+            "messages": [
+                {"role": "user", "content": "请按低波动偏好分析我的方案", "id": recall_message_id}
+            ]
+        },
         context=recall_context,
         config={"configurable": {"thread_id": "memory-recall"}},
         version="v2",

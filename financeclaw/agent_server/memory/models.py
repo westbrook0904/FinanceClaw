@@ -142,14 +142,13 @@ class MemoryProvenance(FrozenMemoryModel):
     Attributes:
         conversation_id: 产生该记忆的会话标识。
         turn_id: 产生该记忆的会话轮次标识。
-        run_id: 产生该记忆的应用侧运行标识。
+        turn_id: 产生该记忆的应用侧运行标识。
         producer: 产生该记忆的服务组件标识，默认为长期记忆服务自身。
 
     """
 
     conversation_id: MemoryIdentifier
     turn_id: MemoryIdentifier
-    run_id: MemoryIdentifier
     producer: str = "financeclaw.long_term_memory_service"
 
 

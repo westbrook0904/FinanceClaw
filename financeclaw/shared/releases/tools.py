@@ -1,4 +1,4 @@
-"""工具治理的唯一发布声明；BFF 无须加载工具实现。"""
+"""工具治理的唯一发布声明；API 无须加载工具实现。"""
 
 from financeclaw.kernel.context import DataClassification
 from financeclaw.kernel.tools import (

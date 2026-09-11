@@ -5,34 +5,28 @@ from datetime import UTC, datetime
 from sqlalchemy import select, update
 
 from financeclaw.shared.artifacts.tables import ArtifactMetadataRow
-from financeclaw.shared.conversation.tables import ConversationRow, ConversationTurnRow
-from financeclaw.shared.execution_ledger.interaction_tables import PendingInteractionRow
-from financeclaw.shared.execution_ledger.run_tables import RootRunRow
-from financeclaw.shared.execution_ledger.tables import RunExecutionRow, RunOperationRow
+from financeclaw.shared.conversation.tables import ConversationRow
+from financeclaw.shared.turns.tables import ConversationTurnRow, InteractionRow, TurnCommandRow
 
 
 def has_open_responsibility(session, conversation_id: str | None) -> bool:
     """未知会话不推断终态；活动 Turn、审批和未确认的出站命令都阻止回收。"""
     if not conversation_id:
         return True
-    run_ids = select(ConversationTurnRow.run_id).where(
+    turn_ids = select(ConversationTurnRow.turn_id).where(
         ConversationTurnRow.conversation_id == conversation_id
     )
     checks = (
-        select(RootRunRow.run_id).where(
-            RootRunRow.conversation_id == conversation_id, RootRunRow.active.is_(True)
-        ),
-        select(ConversationTurnRow.run_id).where(
+        select(ConversationTurnRow.turn_id).where(
             ConversationTurnRow.conversation_id == conversation_id,
             ConversationTurnRow.status.not_in(("completed", "failed", "cancelled")),
         ),
-        select(PendingInteractionRow.interaction_id).where(
-            PendingInteractionRow.conversation_id == conversation_id,
-            PendingInteractionRow.status.in_(("pending", "decided")),
+        select(InteractionRow.interaction_id).where(
+            InteractionRow.turn_id.in_(turn_ids), InteractionRow.status == "pending"
         ),
-        select(RunOperationRow.operation_id).where(
-            RunOperationRow.run_id.in_(run_ids),
-            RunOperationRow.status.in_(("prepared", "claimed", "submitted", "uncertain")),
+        select(TurnCommandRow.command_id).where(
+            TurnCommandRow.turn_id.in_(turn_ids),
+            TurnCommandRow.state.in_(("prepared", "sending", "submitted", "uncertain")),
         ),
     )
     return any(session.scalar(statement.limit(1)) is not None for statement in checks)
@@ -84,28 +78,15 @@ class ConversationRetention:
                 results.append({"artifact_id": identity, "status": status})
         return results
 
-    def prune_checkpoints(
-        self,
-        client,
-        *,
-        conversation_id: str,
-        tenant_id: str,
-        subject_id: str,
-        apply: bool = False,
-        strategy: str = "keep_latest",
-    ) -> dict:
-        """只回收归档会话的旧 checkpoint；业务及服务端任一待办都阻止调用。"""
-        if strategy not in {"keep_latest", "delete"}:
-            raise ValueError("unsupported checkpoint strategy")
-        with self.sessions.begin() as session:
+    def checkpoint_candidates(self, *, conversation_id: str, tenant_id: str, subject_id: str):
+        """Read settled archived threads; product admission never reopens an archive."""
+        with self.sessions() as session:
             conversation = session.scalar(
-                select(ConversationRow)
-                .where(
+                select(ConversationRow).where(
                     ConversationRow.conversation_id == conversation_id,
                     ConversationRow.tenant_id == tenant_id,
                     ConversationRow.subject_id == subject_id,
                 )
-                .with_for_update()
             )
             if conversation is None:
                 raise LookupError("conversation was not found for owner")
@@ -113,31 +94,12 @@ class ConversationRetention:
                 session, conversation_id
             ):
                 raise ValueError("checkpoint retention requires an archived, settled conversation")
-            snapshots = session.scalars(
-                select(RunExecutionRow.snapshot)
-                .join(ConversationTurnRow, ConversationTurnRow.run_id == RunExecutionRow.run_id)
-                .where(ConversationTurnRow.conversation_id == conversation_id)
-            )
             threads = {conversation.agent_thread_id}
-            threads.update(value["thread_id"] for value in snapshots if value.get("thread_id"))
-            verified = []
-            for thread_id in sorted(threads):
-                try:
-                    thread = client.threads.get(thread_id)
-                    state = client.threads.get_state(thread_id, subgraphs=True)
-                except Exception as exc:
-                    # Unsupported endpoints and missing native state fail closed.
-                    raise ValueError("native thread state could not be verified") from exc
-                tasks = state.get("tasks", [])
-                if (
-                    thread.get("status") != "idle"
-                    or state.get("next")
-                    or any(task.get("interrupts") or task.get("error") for task in tasks)
-                ):
-                    raise ValueError("native thread still has pending work")
-                verified.append(thread_id)
-            result = {"threads": verified, "strategy": strategy, "applied": False}
-            if apply:
-                result["native_result"] = client.threads.prune(verified, strategy=strategy)
-                result["applied"] = True
-            return result
+            threads.update(
+                session.scalars(
+                    select(ConversationTurnRow.thread_id).where(
+                        ConversationTurnRow.conversation_id == conversation_id
+                    )
+                )
+            )
+            return sorted(threads)

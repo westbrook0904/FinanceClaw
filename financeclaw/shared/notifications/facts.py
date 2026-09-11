@@ -1,4 +1,4 @@
-"""通知意图与受理、Journal、进度共享事务；不依赖 BFF 或网络。"""
+"""通知意图与受理、Journal、进度共享事务；不依赖 API 或网络。"""
 
 from sqlalchemy import select
 
@@ -7,11 +7,10 @@ from financeclaw.shared.conversation.tables import (
     ChannelConversationBindingRow,
     ConversationMessageRow,
     ConversationRow,
-    ConversationTurnRow,
 )
-from financeclaw.shared.execution_ledger.repository import ExecutionConflict, digest
-from financeclaw.shared.execution_ledger.run_tables import RunAuthorizationRow
 from financeclaw.shared.notifications.tables import NotificationEventRow, NotificationTargetRow
+from financeclaw.shared.turns.tables import ConversationTurnRow
+from financeclaw.shared.turns.types import ExecutionConflict, digest
 
 
 def bind_target(session, root, address, *, tenant_id, subject_id, evidence, replay=False):
@@ -19,7 +18,7 @@ def bind_target(session, root, address, *, tenant_id, subject_id, evidence, repl
     address = NotificationAddress.model_validate(address)
     values = address.model_dump(mode="json")
     target = session.scalar(
-        select(NotificationTargetRow).where(NotificationTargetRow.run_id == root.run_id)
+        select(NotificationTargetRow).where(NotificationTargetRow.turn_id == root.turn_id)
     )
     if replay:
         if target is None or target.address != values:
@@ -53,8 +52,8 @@ def bind_target(session, root, address, *, tenant_id, subject_id, evidence, repl
         raise ExecutionConflict("notification target lacks verified channel binding")
     session.add(
         NotificationTargetRow(
-            target_id=digest([root.run_id, "notification"]),
-            run_id=root.run_id,
+            target_id=digest([root.turn_id, "notification"]),
+            turn_id=root.turn_id,
             binding_id=binding.binding_id,
             tenant_id=tenant_id,
             subject_id=subject_id,
@@ -73,7 +72,7 @@ def target_valid(session, target, *, require_active=True) -> bool:
     address = target.address
     conversation = session.get(ConversationRow, binding.conversation_id)
     turn = session.scalar(
-        select(ConversationTurnRow).where(ConversationTurnRow.run_id == target.run_id)
+        select(ConversationTurnRow).where(ConversationTurnRow.turn_id == target.turn_id)
     )
     return bool(
         conversation
@@ -102,34 +101,39 @@ def target_valid(session, target, *, require_active=True) -> bool:
 def record_progress(session, root) -> None:
     """根状态变化生成任务卡快照，成功完成另记最终文本；API 任务不自动补发。"""
     target = session.scalar(
-        select(NotificationTargetRow).where(NotificationTargetRow.run_id == root.run_id)
+        select(NotificationTargetRow).where(NotificationTargetRow.turn_id == root.turn_id)
     )
     if target is None:
         return
-    from financeclaw.shared.execution_ledger.root_repository import aware, now
+    from financeclaw.shared.turns.projection import snapshot
+    from financeclaw.shared.turns.types import aware, now
 
-    projection = root.projection
-    grant = session.get(RunAuthorizationRow, root.run_id)
+    projection = snapshot(session, root).model_dump(mode="json")
+    grant = root
     task = target.card_payload.get("task")
     if task is None:
         task = session.scalar(
             select(ConversationMessageRow.content)
-            .join(ConversationTurnRow)
-            .where(ConversationTurnRow.run_id == root.run_id, ConversationMessageRow.role == "user")
+            .join(
+                ConversationTurnRow, ConversationMessageRow.turn_id == ConversationTurnRow.turn_id
+            )
+            .where(
+                ConversationTurnRow.turn_id == root.turn_id, ConversationMessageRow.role == "user"
+            )
         )
     pending = projection.get("pending_interactions", [])
     payload = {
-        "run_id": root.run_id,
+        "turn_id": root.turn_id,
         "status": projection["status"],
-        "waiting_reason": projection.get("waiting_reason"),
+        "waiting_reason": projection.get("reason"),
         "task": (task or "本轮任务")[:200],
         "interaction": pending[0] if pending else None,
         "last_decision": projection.get("last_decision"),
         "grant": {
-            "revision": grant.revision,
-            "scopes": list(grant.scopes),
-            "expires_at": aware(grant.expires_at).isoformat(),
-            "revoked": grant.revoked,
+            "revision": grant.grant_revision,
+            "scopes": list(grant.grant_scopes),
+            "expires_at": aware(grant.grant_expires_at).isoformat(),
+            "revoked": grant.grant_revoked,
         },
         "created_at": now().isoformat(),
     }
@@ -148,9 +152,11 @@ def record_progress(session, root) -> None:
     if projection["status"] == "completed":
         content = session.scalar(
             select(ConversationMessageRow.content)
-            .join(ConversationTurnRow)
+            .join(
+                ConversationTurnRow, ConversationMessageRow.turn_id == ConversationTurnRow.turn_id
+            )
             .where(
-                ConversationTurnRow.run_id == root.run_id,
+                ConversationTurnRow.turn_id == root.turn_id,
                 ConversationMessageRow.role == "assistant",
                 ConversationMessageRow.parent_message_id.is_(None),
             )
@@ -171,7 +177,7 @@ def record_progress(session, root) -> None:
 
 
 def require_schema(sessions) -> None:
-    """BFF 与发送器必须具备通知表；不能静默丢弃已订阅任务的交付责任。"""
+    """校验 API 与发送器的通知表，避免丢失已受理任务的交付责任。"""
     from sqlalchemy import inspect
 
     from financeclaw.shared.notifications.tables import (

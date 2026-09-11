@@ -61,7 +61,7 @@ class ApprovalPoint(FrozenWorkflowModel):
     """工作流中需要人工审批（HITL）的检查点定义。
 
     使用场景：
-        图执行到该检查点时通过 LangGraph interrupt 暂停，BFF 侧据此
+        图执行到该检查点时通过 LangGraph interrupt 暂停，API 侧据此
         生成审批请求，恢复前复验权限、归属与原始参数哈希。
 
     Attributes:

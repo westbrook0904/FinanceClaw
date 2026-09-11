@@ -167,32 +167,25 @@ def test_summary_failure_keeps_original_messages(memory_stack):
 def test_bootstrap_reads_only_completed_pairs_once(memory_stack, monkeypatch):
     """更换 thread 时只初始化完成问答，失败 Turn 不进入新 state。"""
     context, identity, repository, artifacts, _, _ = memory_stack
-    repository.bind_server_run(context.turn_id, "old-run", "success")
-    answer = repository.append_assistant_message(run_id=context.run_id, content="已完成的答案")
-    failed, failed_user, _ = repository.begin_turn(
-        conversation_id=context.conversation_id,
-        tenant_id=context.tenant_id,
-        subject_id=context.subject_id,
-        idempotency_key="failed",
-        request_hash="b" * 64,
+    from tests.turn_support import finish_turn, seed_execution
+
+    finish_turn(repository, context.turn_id)
+    answer = repository.append_assistant_message(turn_id=context.turn_id, content="已完成的答案")
+    failed = seed_execution(
+        repository.execution,
+        context.model_copy(update={"turn_id": "failed", "command_id": None}),
+        {"limits": {"model": 100, "tool": 100, "command": 100}},
         message="未完成的问题",
-        target_type="agent",
-        target_id="finance_agent",
-        target_version="1.6.0",
     )
-    repository.bind_server_run(failed.turn_id, "failed-run", "error")
-    turn, user, _ = repository.begin_turn(
-        conversation_id=context.conversation_id,
-        tenant_id=context.tenant_id,
-        subject_id=context.subject_id,
-        idempotency_key="new",
-        request_hash="c" * 64,
+    failed_user = repository.list_messages(context.conversation_id)[-1]
+    finish_turn(repository, failed.turn_id, "failed")
+    current = seed_execution(
+        repository.execution,
+        context.model_copy(update={"turn_id": "new", "command_id": None}),
+        {"limits": {"model": 100, "tool": 100, "command": 100}},
         message="新问题",
-        target_type="agent",
-        target_id="finance_agent",
-        target_version="1.6.0",
     )
-    current = context.model_copy(update={"turn_id": turn.turn_id, "run_id": turn.run_id})
+    user = repository.list_messages(context.conversation_id)[-1]
     monkeypatch.setattr(
         "financeclaw.agent_server.context.compaction.user_anchor", lambda *_: user.message_id
     )

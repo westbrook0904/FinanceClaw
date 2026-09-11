@@ -16,7 +16,7 @@ def test_cold_sdk_import_keeps_application_loop_alive(loop_kind: str, fail_conne
 import asyncio
 import sys
 from types import SimpleNamespace
-from financeclaw.bff.channels.feishu import FeishuChannelAdapter
+from financeclaw.integrations.feishu.channel import FeishuChannelAdapter
 
 assert "lark_channel.ws.client" not in sys.modules
 

@@ -11,7 +11,8 @@ from financeclaw.agent_server.middleware.middleware import _context
 from financeclaw.agent_server.tools.catalog import ToolCatalog
 from financeclaw.agent_server.tools.subgraph_scope import verify_graph_release
 from financeclaw.kernel.tools import SideEffect
-from financeclaw.shared.execution_ledger.repository import ExecutionConflict, ExecutionRepository
+from financeclaw.shared.turns.budget import TurnExecutionRepository
+from financeclaw.shared.turns.types import ExecutionConflict
 
 
 class ExecutionBudgetMiddleware(AgentMiddleware):
@@ -23,7 +24,7 @@ class ExecutionBudgetMiddleware(AgentMiddleware):
 
     def __init__(
         self,
-        repository: ExecutionRepository | None,
+        repository: TurnExecutionRepository | None,
         catalog: ToolCatalog,
         gate: BoundedSemaphore,
         profile: Any = None,
@@ -37,28 +38,30 @@ class ExecutionBudgetMiddleware(AgentMiddleware):
     def _consume(self, request: Any, kind: str) -> None:
         """无持久化 root ID 的纯图测试仍受框架限额，产品运行必须有预算快照。"""
         context = _context(request.runtime.context)
-        if context.root_run_id is None:
+        if self.repository is None:
             if self.profile is not None and (
                 self.profile.worker_manifest or self.profile.context_policy == "worker-task-only-v1"
             ):
-                raise ExecutionConflict("subgraph releases require a persistent business root")
-            return
-        if self.repository is None:
-            raise ExecutionConflict("persistent execution budget is not configured")
+                raise ExecutionConflict("product releases require a persistent Turn")
+            return  # Explicitly constructed standalone leaf tests have no business repository.
         self.repository.verify_context(context)
         if self.profile is not None:
             if self.profile.context_policy == "worker-task-only-v1":
                 verify_graph_release(self.repository, context, self.profile)
-            elif self.repository.get(context.run_id)["snapshot"].get(
+            elif self.repository.get(context.turn_id)["release_snapshot"].get(
                 "profile"
             ) != self.profile.model_dump(mode="json"):
                 raise ExecutionConflict("executing graph release differs from the pinned profile")
-        root = self.repository.get(context.root_run_id)
+        root = self.repository.get(context.turn_id)
         if kind == "tool" and root["side_effects_denied"]:
             managed = self.catalog.resolve(request.tool_call["name"])
-            if managed.governance.side_effect is not SideEffect.READ:
+            reentering = (
+                managed.governance.side_effect is SideEffect.COMPOSITE
+                and self.repository.rejected_invocation(context, request.tool_call.get("id"))
+            )
+            if managed.governance.side_effect is not SideEffect.READ and not reentering:
                 raise ExecutionConflict("user rejected side effects")
-        self.repository.consume(context.run_id, kind)
+        self.repository.consume(context.turn_id, kind)
 
     def wrap_model_call(self, request: Any, handler: Callable) -> Any:
         """在重试内部计入每次模型请求。"""

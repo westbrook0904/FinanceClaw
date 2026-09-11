@@ -31,8 +31,8 @@ jobs:
       - name: Verify Ziwei runtime dependencies
         if: matrix.capabilities == 'ziwei'
         run: uv run --no-sync python -c "from financeclaw.agent_server.domains.ziwei.adapters.x_iztro import XIztroEngine; XIztroEngine()"
-      - run: uv run --no-sync ruff check financeclaw tests scripts
-      - run: uv run --no-sync ruff format --check financeclaw tests scripts
+      - run: uv run --no-sync ruff check financeclaw tests scripts deploy experiments/stage10
+      - run: uv run --no-sync ruff format --check financeclaw tests scripts deploy experiments/stage10
       - run: uv run --no-sync python scripts/check_secret_leaks.py
       - name: Test with offline tokenizer fallback
         env:

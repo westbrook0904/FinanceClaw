@@ -7,19 +7,17 @@ from types import SimpleNamespace
 import pytest
 from sqlalchemy import func, select
 
-from financeclaw.bff.application.conversation_service import ConversationService
-from financeclaw.bff.application.feishu_channel_service import (
+from financeclaw.api.application.conversation_service import ConversationService
+from financeclaw.api.application.feishu_channel_service import (
     FeishuChannelService,
     FeishuInboundMessage,
 )
-from financeclaw.bff.application.feishu_interactions import format_interactions, parse_response
-from financeclaw.shared.conversation.tables import ConversationTurnRow
-from financeclaw.shared.execution_ledger.interaction_tables import PendingInteractionRow
-from financeclaw.shared.execution_ledger.root_repository import now
-from financeclaw.shared.execution_ledger.run_tables import RootRunRow
+from financeclaw.shared.channels.feishu.interactions import format_interactions, parse_response
 from financeclaw.shared.releases.interactions import ROOT_CLARIFICATION
-from tests.stage8_hotfix.test_bff_runs import SCOPES, final_state, tick
-from tests.stage8_hotfix.test_bff_runs import runtime as runtime
+from financeclaw.shared.turns.tables import ConversationTurnRow, InteractionRow
+from financeclaw.shared.turns.types import now
+from tests.stage10.runtime import SCOPES, final_state, tick
+from tests.stage10.runtime import runtime as runtime
 
 OWNER = {"tenant_id": "feishu:tenant", "subject_id": "feishu:user"}
 QUESTION = "请补充出生记录所用时制（当地钟表时间或真太阳时）。"
@@ -42,7 +40,7 @@ def channel(runtime):
     """从数据库资源重建飞书入口，不保存当前问题到进程内存。"""
     return FeishuChannelService(
         ConversationService(
-            runtime.runs.repository, runtime.releases.agent_profiles, runs=runtime.runs
+            runtime.turns.journal, runtime.releases.agent_profiles, turns=runtime.turns
         ),
         app_id="app",
         allowed_open_ids=frozenset({"user"}),
@@ -96,8 +94,8 @@ async def ask(runtime, accepted, *, native_id="clarification-1", approval=False)
     state["tasks"] = [{"interrupts": [{"id": native_id, "value": payload}]}]
     state["next"] = ["tools"]
     await tick(runtime)
-    status = await runtime.runs.status(accepted.run_id, **OWNER)
-    assert status.status == "interrupted"
+    status = await runtime.turns.status(accepted.turn_id, **OWNER)
+    assert status.status == "waiting"
     return status.pending_interactions[0]
 
 
@@ -105,9 +103,9 @@ async def waiting(runtime, *, approval=False):
     """实际经过飞书受理、持久根提交及后台中断观察。"""
     service, replies = channel(runtime), Replies()
     assert await service.process(message(), replies) == "accepted"
-    with runtime.runs.store.sessions() as session:
-        root = session.scalar(select(RootRunRow))
-        accepted = SimpleNamespace(run_id=root.run_id, thread_id=root.projection["thread_id"])
+    with runtime.turns.store.sessions() as session:
+        root = session.scalar(select(ConversationTurnRow))
+        accepted = SimpleNamespace(turn_id=root.turn_id, thread_id=root.thread_id)
     await tick(runtime)
     item = await ask(runtime, accepted, approval=approval)
     return service, replies, accepted, item
@@ -124,10 +122,10 @@ async def test_plain_answer_resumes_same_root_and_replay_never_answers_next_ques
     assert await channel(runtime).process(message(), replies) == "accepted"
     answer = message("当地钟表时间", identifier="answer-1")
     assert await service.process(answer, replies) == "accepted"
-    with runtime.runs.store.sessions() as session:
-        saved = session.get(PendingInteractionRow, first["interaction_id"])
+    with runtime.turns.store.sessions() as session:
+        saved = session.get(InteractionRow, first["interaction_id"])
         assert saved.response["answer"] == {"text": "当地钟表时间"}
-        operation_id = saved.operation_id
+        operation_id = saved.resume_command_id
     await tick(runtime)
     assert len(runtime.client.runs.calls) == 2
     second = await ask(runtime, accepted, native_id="clarification-2")
@@ -135,17 +133,17 @@ async def test_plain_answer_resumes_same_root_and_replay_never_answers_next_ques
     service = channel(runtime)
     assert await service.process(answer, replies) == "accepted"
     assert await service.process(message(), replies) == "accepted"
-    with runtime.runs.store.sessions() as session:
+    with runtime.turns.store.sessions() as session:
         assert (
-            session.get(PendingInteractionRow, first["interaction_id"]).operation_id == operation_id
+            session.get(InteractionRow, first["interaction_id"]).resume_command_id == operation_id
         )
-        assert session.get(PendingInteractionRow, second["interaction_id"]).response is None
+        assert session.get(InteractionRow, second["interaction_id"]).response is None
         assert session.scalar(select(func.count()).select_from(ConversationTurnRow)) == 1
     assert await service.process(message("公历", identifier="answer-2"), replies) == "accepted"
     await tick(runtime)
     final_state(runtime, accepted)
     await tick(runtime)
-    assert (await runtime.runs.status(accepted.run_id, **OWNER)).status == "completed"
+    assert (await runtime.turns.status(accepted.turn_id, **OWNER)).status == "completed"
     assert len(runtime.client.runs.calls) == 3
     assert await channel(runtime).process(answer, replies) == "accepted"
     assert not replies.texts
@@ -159,8 +157,8 @@ async def test_plain_agreement_cannot_approve_but_explicit_approval_still_works(
         await service.process(message("同意", identifier="agree"), replies) == "waiting_active_turn"
     )
     assert "/approve" in replies.texts[-1] and "直接回复" not in replies.texts[-1]
-    with runtime.runs.store.sessions() as session:
-        assert session.get(PendingInteractionRow, item["interaction_id"]).response is None
+    with runtime.turns.store.sessions() as session:
+        assert session.get(InteractionRow, item["interaction_id"]).response is None
     command = f"/approve {item['interaction_id']} {item['revision']} {item['action_hash']}"
     assert await service.process(message(command, identifier="approve"), replies) == "accepted"
 
@@ -169,18 +167,18 @@ async def test_plain_agreement_cannot_approve_but_explicit_approval_still_works(
 async def test_expired_question_has_actionable_reply_and_cancel(runtime):
     """已过期的回答不变成新任务，提示提供绑定该根的取消入口。"""
     service, replies, accepted, item = await waiting(runtime)
-    with runtime.runs.store.sessions.begin() as session:
-        session.get(PendingInteractionRow, item["interaction_id"]).expires_at = now() - timedelta(
+    with runtime.turns.store.sessions.begin() as session:
+        session.get(InteractionRow, item["interaction_id"]).expires_at = now() - timedelta(
             seconds=1
         )
     result = await service.process(message("当地钟表时间", identifier="late"), replies)
     assert result == "waiting_active_turn" and "过期" in replies.texts[-1]
     assert "Web/API" not in replies.texts[-1] and "/cancel" in replies.texts[-1]
-    cancel = message(f"/cancel {accepted.run_id}", identifier="cancel")
+    cancel = message(f"/cancel {accepted.turn_id}", identifier="cancel")
     result = await service.process(cancel, replies)
-    assert result in {"cancellation_requested", "cancelled"}
+    assert result in {"cancelling", "cancelled"}
     await tick(runtime)
-    assert (await runtime.runs.status(accepted.run_id, **OWNER)).status == "cancelled"
+    assert (await runtime.turns.status(accepted.turn_id, **OWNER)).status == "cancelled"
     assert await service.process(cancel, replies) == "cancelled"
 
 
@@ -190,15 +188,15 @@ async def test_other_chat_and_changed_duplicate_cannot_retarget_answer(runtime):
     service, replies, accepted, item = await waiting(runtime)
     answer = message("当地钟表时间", identifier="answer")
     assert await service.process(replace(answer, chat_id="another-chat"), replies) == "accepted"
-    with runtime.runs.store.sessions() as session:
-        assert session.get(PendingInteractionRow, item["interaction_id"]).response is None
+    with runtime.turns.store.sessions() as session:
+        assert session.get(InteractionRow, item["interaction_id"]).response is None
     answer = replace(answer, message_id="answer-in-original-chat")
     assert await service.process(answer, replies) == "accepted"
     assert (
         await service.process(replace(answer, text="真太阳时"), replies) == "interaction_conflict"
     )
-    with runtime.runs.store.sessions() as session:
-        assert session.get(PendingInteractionRow, item["interaction_id"]).response["answer"] == {
+    with runtime.turns.store.sessions() as session:
+        assert session.get(InteractionRow, item["interaction_id"]).response["answer"] == {
             "text": "当地钟表时间"
         }
 
@@ -213,7 +211,7 @@ async def test_answer_schema_and_explicit_answer_command(runtime):
     )
     command = f'/answer {item["interaction_id"]} {item["revision"]} {{"text":"当地钟表时间"}}'
     assert await service.process(message(command, identifier="explicit"), replies) == "accepted"
-    with runtime.runs.store.sessions() as session:
+    with runtime.turns.store.sessions() as session:
         assert session.scalar(select(func.count()).select_from(ConversationTurnRow)) == 1
 
 
@@ -228,13 +226,13 @@ async def test_replayed_message_cannot_answer_new_question_when_lookup_races(run
 
     def stale_lookup(*args, **kwargs):
         """模拟查询重放记录后、读取当前问题前，另一进程完成首次回答。"""
-        return {"root_run_id": accepted.run_id, "interactions": [second]}
+        return {"turn_id": accepted.turn_id, "interactions": [second]}
 
-    monkeypatch.setattr(runtime.runs.interactions, "channel_state", stale_lookup)
+    monkeypatch.setattr(runtime.turns.interactions, "channel_state", stale_lookup)
     assert await service.process(answer, replies) == "interaction_conflict"
     assert await service.process(message(), replies) == "interaction_conflict"
-    with runtime.runs.store.sessions() as session:
-        assert session.get(PendingInteractionRow, second["interaction_id"]).response is None
+    with runtime.turns.store.sessions() as session:
+        assert session.get(InteractionRow, second["interaction_id"]).response is None
 
 
 def test_multiple_questions_show_valid_explicit_commands_instead_of_ambiguous_plain_reply():
@@ -247,7 +245,7 @@ def test_multiple_questions_show_valid_explicit_commands_instead_of_ambiguous_pl
         "question": QUESTION,
         "response_schema": ROOT_CLARIFICATION.response_schema,
         "expires_at": (now() + timedelta(minutes=15)).isoformat(),
-        "root_run_id": "synthetic-run",
+        "turn_id": "synthetic-run",
         "response_url": "/v1/interactions/interaction-one/responses",
     }
     rendered = format_interactions(

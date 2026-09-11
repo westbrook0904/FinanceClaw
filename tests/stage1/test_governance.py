@@ -50,7 +50,6 @@ def context(**overrides: object) -> ExecutionContext:
         "subject_id": "subject-a",
         "scopes": {"market:read"},
         "turn_id": "turn-a",
-        "run_id": "run-a",
         "data_classification": "internal",
     }
     values.update(overrides)

@@ -43,7 +43,8 @@ def test_service_dependency_direction_is_enforced() -> None:
         "kernel": {"kernel"},
         "shared": {"kernel", "shared"},
         "agent_server": {"kernel", "shared", "agent_server"},
-        "bff": {"kernel", "shared", "bff"},
+        "api": {"kernel", "shared", "api"},
+        "integrations": {"kernel", "shared", "integrations"},
     }
     violations = []
     for owner, dependencies in allowed.items():
@@ -78,7 +79,7 @@ def test_relative_and_aggregate_imports_cannot_hide_dependencies(tmp_path: Path)
         "infrastructure",
         "interfaces",
         "agents",
-        "api",
+        "bff",
         "artifacts",
         "audit",
         "contracts",
@@ -106,7 +107,6 @@ def test_all_python_definitions_are_documented() -> None:
     missing: list[str] = []
     roots = (PACKAGE, ROOT / "scripts", ROOT / "tests")
     paths = [path for root in roots for path in root.rglob("*.py")]
-    paths.append(ROOT / "main.py")
     for path in paths:
         tree = ast.parse(path.read_text(encoding="utf-8"))
         definitions = [tree, *ast.walk(tree)]

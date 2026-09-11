@@ -424,9 +424,9 @@ def build_ziwei_agent(
         if count >= profile.max_model_calls:
             raise ZiweiError("ZIWEI_RANGE_LIMIT", "解读调用预算已用完。")
         check_prompt(messages, limit=input_budget)
-        if context.root_run_id:
+        if context.turn_id:
             await asyncio.to_thread(repository.verify_context, context)
-            await asyncio.to_thread(repository.consume, context.run_id, "model")
+            await asyncio.to_thread(repository.consume, context.turn_id, "model")
         # 不启用 JSON mode，不调温、不做格式修复；工具取证与可信结果外壳保持不变。
         response = await primary.ainvoke(messages)
         result = ZiweiTextResult(

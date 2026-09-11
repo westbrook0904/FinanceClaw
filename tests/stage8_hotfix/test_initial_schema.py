@@ -1,13 +1,11 @@
 """当前空库迁移、完整列结构与根执行约束。"""
 
-import pytest
 from alembic import command
 from alembic.autogenerate import compare_metadata
 from alembic.config import Config
 from alembic.migration import MigrationContext
 from alembic.script import ScriptDirectory
-from sqlalchemy import inspect, text
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy import inspect
 
 from financeclaw.shared.infrastructure.database import ApplicationDatabase
 from financeclaw.shared.infrastructure.orm import Base
@@ -31,20 +29,9 @@ def test_initial_schema_matches_runtime_and_rejects_child_executions(tmp_path, m
                 *Base.metadata.tables,
                 "alembic_version",
             }
-            assert len(Base.metadata.tables) == 19
-            assert "backend_attempts" not in Base.metadata.tables
+            assert len(Base.metadata.tables) == 14
+            assert "run_executions" not in Base.metadata.tables
             assert "run_control" not in Base.metadata.tables
-        with pytest.raises(IntegrityError, match="ck_execution_is_root"):
-            with database.engine.begin() as connection:
-                connection.execute(
-                    text(
-                        "INSERT INTO run_executions "
-                        "(run_id, root_run_id, snapshot, cancellation_requested, "
-                        "cancellation_confirmed, side_effects_denied, model_calls, "
-                        "tool_calls, operation_calls, created_at) VALUES "
-                        "('child', 'root', '{}', false, false, false, 0, 0, 0, CURRENT_TIMESTAMP)"
-                    )
-                )
         command.downgrade(config, "base")
         assert inspect(database.engine).get_table_names() == ["alembic_version"]
         command.upgrade(config, "head")

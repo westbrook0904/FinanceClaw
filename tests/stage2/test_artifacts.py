@@ -18,7 +18,6 @@ def context(*scopes: str, tenant_id: str = "tenant-a") -> ExecutionContext:
         subject_id="subject-a",
         scopes=frozenset(scopes),
         turn_id="turn-artifact",
-        run_id="run-artifact",
     )
 
 

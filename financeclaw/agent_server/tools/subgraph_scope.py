@@ -5,8 +5,8 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 
 from financeclaw.kernel.context import ExecutionContext
-from financeclaw.shared.execution_ledger.repository import ExecutionConflict, digest
-from financeclaw.shared.execution_ledger.snapshots import verify_agent_snapshot
+from financeclaw.shared.turns.snapshots import verify_agent_snapshot
+from financeclaw.shared.turns.types import ExecutionConflict, digest
 
 
 @dataclass(frozen=True, slots=True)
@@ -22,14 +22,14 @@ class InvocationScope:
     def identity(self):
         """Separate repeated calls even when the Worker and business arguments are identical."""
         return digest(
-            [self.context.run_id, self.tool_call_id, self.declaration, self.arguments_hash]
+            [self.context.turn_id, self.tool_call_id, self.declaration, self.arguments_hash]
         )
 
     def interaction_binding(self):
         """Expose bounded correlation fields; the native interrupt ID identifies the wait."""
         release = json.loads(self.declaration)
         return {
-            "root_run_id": self.context.run_id,
+            "turn_id": self.context.turn_id,
             "root_tool_call_id": self.tool_call_id,
             "worker_kind": release["kind"],
             "worker_id": release["target_id"],
@@ -50,13 +50,15 @@ def verify_scope(repository, context, declaration=None):
         raise ExecutionConflict("worker requires a trusted internal invocation scope")
     if declaration is not None and scope.declaration != declaration:
         raise ExecutionConflict("worker release differs from the bound invocation")
-    if context.root_run_id != context.run_id:
+    if context.conversation_id is None or context.command_id is None:
         raise ExecutionConflict("subgraph must execute inside the business root")
     if repository is None:
         raise ExecutionConflict("persistent root execution is required for subgraphs")
     repository.verify_context(context)
-    root = repository.get(context.run_id)
-    if scope.declaration not in root["snapshot"].get("profile", {}).get("worker_manifest", []):
+    root = repository.get(context.turn_id)
+    if scope.declaration not in root["release_snapshot"].get("profile", {}).get(
+        "worker_manifest", []
+    ):
         raise ExecutionConflict("worker release is not pinned by this root")
     return scope
 
@@ -69,4 +71,4 @@ def verify_graph_release(repository, context, profile):
             raise ExecutionConflict("executing worker differs from the pinned profile")
     else:
         repository.verify_context(context)
-        verify_agent_snapshot(profile, repository.get(context.run_id)["snapshot"])
+        verify_agent_snapshot(profile, repository.get(context.turn_id)["release_snapshot"])

@@ -21,6 +21,7 @@ def conversation_context(
     subject_id: str = "subject.a",
     message: str = "请记住我偏好低波动资产",
     key: str = "memory-turn",
+    profile=None,
 ) -> tuple[ExecutionContext, str]:
     """处理 `context`，并返回边界约定的结果。"""
     # 准备 conversation，供后续步骤使用。
@@ -30,27 +31,24 @@ def conversation_context(
         agent_id="finance_agent",
         agent_profile_version="1.0.0",
     )
-    # 准备 turn and user_message and _，供后续步骤使用。
-    turn, user_message, _ = repository.begin_turn(
-        conversation_id=conversation.conversation_id,
+    from financeclaw.shared.turns.tables import ConversationTurnRow
+    from tests.turn_support import seed_execution
+
+    context = ExecutionContext(
         tenant_id=tenant_id,
         subject_id=subject_id,
-        idempotency_key=key,
-        request_hash=(key.encode().hex() + "0" * 64)[:64],
-        message=message,
-        target_type="agent",
-        target_id="finance_agent",
-        target_version="1.0.0",
+        conversation_id=conversation.conversation_id,
+        turn_id=key,
+        scopes={"memory:read", "memory:write", "memory:delete"},
     )
-    # 向调用方返回符合边界约定的结果。
-    return (
-        ExecutionContext(
-            tenant_id=tenant_id,
-            subject_id=subject_id,
-            scopes={"memory:read", "memory:write", "memory:delete"},
-            conversation_id=conversation.conversation_id,
-            turn_id=turn.turn_id,
-            run_id=turn.run_id,
-        ),
-        user_message.message_id,
+    from financeclaw.shared.turns.snapshots import agent_snapshot
+
+    snapshot = (
+        agent_snapshot(profile, context, thread_id=conversation.agent_thread_id, input_hash=key)
+        if profile
+        else {"limits": {"model": 100, "tool": 100, "command": 100}}
     )
+    context = seed_execution(repository.execution, context, snapshot, message=message)
+    with repository._sessions() as session:
+        message_id = session.get(ConversationTurnRow, context.turn_id).user_message_id
+    return context, message_id

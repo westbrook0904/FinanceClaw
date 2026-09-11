@@ -2,8 +2,8 @@
 
 from datetime import UTC, datetime
 
-from financeclaw.agent_server.memory.observability import store_operation
 from financeclaw.agent_server.memory.service import owner_namespace
+from financeclaw.shared.memory.observability import store_operation
 
 
 class HistoryService:

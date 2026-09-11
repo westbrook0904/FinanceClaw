@@ -78,7 +78,7 @@ class AuditRecord(BaseModel):
         subject_id: 主体标识，与 tenant_id 共同界定审计记录的归属。
         conversation_id: 关联会话标识；非会话场景为 None。
         turn_id: 事件所属的对话轮次标识。
-        run_id: 事件所属的 Agent 运行标识。
+        turn_id: 事件所属的 Agent 运行标识。
         tool_call_id: 关联的工具调用标识；仅工具类事件存在，其余场景为 None。
         resource_type: 被操作资源类型，默认为 ``tool``。
         resource_id: 被操作资源标识。
@@ -102,7 +102,6 @@ class AuditRecord(BaseModel):
     subject_id: str
     conversation_id: str | None = None
     turn_id: str
-    run_id: str
     tool_call_id: str | None = None
     resource_type: str = "tool"
     resource_id: str

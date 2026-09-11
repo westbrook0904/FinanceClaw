@@ -19,7 +19,7 @@ from financeclaw.kernel.tools import (
     SideEffect,
     ToolGovernance,
 )
-from financeclaw.shared.execution_ledger.repository import digest
+from financeclaw.shared.turns.types import digest
 
 
 def request_user_interaction(

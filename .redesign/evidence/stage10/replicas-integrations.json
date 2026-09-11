@@ -1,0 +1,12 @@
+{
+  "passed": true,
+  "api_replicas": 2,
+  "same_key_requests": 32,
+  "turn_id": "f2b92f5d-3efb-4e52-af20-4954ec49f3bd",
+  "commands": 1,
+  "native_receipts": 1,
+  "journal_messages": 2,
+  "cross_replica_sse": true,
+  "history_outbox_published": true,
+  "native_store_indexed_items": 2
+}

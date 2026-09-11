@@ -17,13 +17,13 @@ from financeclaw.agent_server.tools.subgraph_scope import (
 )
 from financeclaw.kernel.context import ExecutionContext
 from financeclaw.shared.context.references import resolve_context_refs
-from financeclaw.shared.execution_ledger.authorization import intersect_scopes, require_scopes
-from financeclaw.shared.execution_ledger.repository import ExecutionConflict, digest
 from financeclaw.shared.releases.subgraphs import (
     composite_governance,
     composite_name,
     is_parallel_read_worker,
 )
+from financeclaw.shared.turns.authorization import intersect_scopes, require_scopes
+from financeclaw.shared.turns.types import ExecutionConflict, digest
 
 
 class SubagentInput(BaseModel):
@@ -59,8 +59,10 @@ class SubgraphTool(BaseTool):
         if self.execution is None:
             raise ExecutionConflict("persistent root execution is required for subgraphs")
         self.execution.verify_context(context)
-        root = self.execution.get(context.run_id)
-        if self.declaration not in root["snapshot"].get("profile", {}).get("worker_manifest", []):
+        root = self.execution.get(context.turn_id)
+        if self.declaration not in root["release_snapshot"].get("profile", {}).get(
+            "worker_manifest", []
+        ):
             raise ExecutionConflict("worker release is not pinned by this root")
         require_scopes(context.scopes, self.release.required_scopes)
         declaration = json.loads(self.declaration)
@@ -86,6 +88,10 @@ class SubgraphTool(BaseTool):
         scope = InvocationScope(
             self.declaration, worker_context, runtime.tool_call_id, digest(arguments)
         )
+        if root["side_effects_denied"] and not self.execution.rejected_invocation(
+            context, runtime.tool_call_id, invocation_id=scope.identity
+        ):
+            raise ExecutionConflict("rejection permits only the interrupted invocation to return")
         return scope, resolved
 
     async def _arun(self, *, runtime: ToolRuntime[ExecutionContext], **arguments):
@@ -129,7 +135,7 @@ class SubagentTool(SubgraphTool):
         from financeclaw.agent_server.tools.task_context import task_context
 
         context = ExecutionContext.model_validate(runtime.context)
-        snapshot = self.execution.get(context.root_run_id or context.run_id)["snapshot"]
+        snapshot = self.execution.get(context.turn_id)["release_snapshot"]
         envelope = {
             "task": arguments["task"],
             "arguments": parsed.model_dump(mode="json"),

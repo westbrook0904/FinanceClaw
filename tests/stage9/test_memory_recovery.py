@@ -9,16 +9,16 @@ from langgraph.checkpoint.memory import InMemorySaver
 from sqlalchemy import select
 
 from financeclaw.agent_server.context.compaction import NativeContextMiddleware
-from financeclaw.agent_server.memory.deletion import (
-    MEMORY_DELETE_DESTINATION,
-    MemoryDeletionConsumer,
-)
 from financeclaw.agent_server.memory.models import MemoryDraft, MemoryStatus
 from financeclaw.agent_server.memory.service import MemoryReceiptPending
 from financeclaw.agent_server.tools.memory import ForgetMemoryTool
 from financeclaw.kernel.context import ExecutionContext
 from financeclaw.shared.audit.repository import SqlAlchemyAuditRepository
 from financeclaw.shared.audit.tables import AuditRecordRow
+from financeclaw.shared.memory.deletion import (
+    MEMORY_DELETE_DESTINATION,
+    MemoryDeletionConsumer,
+)
 from financeclaw.shared.outbox.repository import SqlAlchemyOutboxRepository
 from tests.stage9.test_context import budget
 from tests.stage9.test_history_lifecycle import StoreClient

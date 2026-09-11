@@ -1,24 +1,24 @@
-"""Shared notification fixtures with BFF-owned root execution."""
+"""Notification fixtures use the Stage 10 product model."""
 
 from types import SimpleNamespace
 
 import pytest
 
-from financeclaw.bff.application.conversation_service import ConversationService
-from tests.stage8_hotfix.test_bff_runs import SCOPES
-from tests.stage8_hotfix.test_bff_runs import runtime as runtime
+from financeclaw.api.application.conversation_service import ConversationService
+from tests.stage10.runtime import SCOPES
+from tests.stage10.runtime import runtime as runtime
 
 
 @pytest.fixture
 def setup(runtime):
-    """Expose notification dependencies while keeping execution entirely in BFF."""
+    """Provide the setup boundary for this test scenario."""
     return SimpleNamespace(
         runtime=runtime,
         settings=runtime.resources.settings,
-        store=runtime.runs.store,
+        store=runtime.turns.store,
         scopes=SCOPES,
-        bff=ConversationService(
-            runtime.runs.repository, runtime.releases.agent_profiles, runs=runtime.runs
+        api=ConversationService(
+            runtime.turns.journal, runtime.turns.releases.agents, turns=runtime.turns
         ),
         backend=SimpleNamespace(calls=0, questions=False),
     )

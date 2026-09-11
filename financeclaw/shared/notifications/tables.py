@@ -19,7 +19,7 @@ class NotificationTargetRow(Base):
 
     __tablename__ = "notification_targets"
     target_id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    run_id: Mapped[str] = mapped_column(ForeignKey("run_executions.run_id"), unique=True)
+    turn_id: Mapped[str] = mapped_column(ForeignKey("conversation_turns.turn_id"), unique=True)
     binding_id: Mapped[str] = mapped_column(ForeignKey("channel_conversation_bindings.binding_id"))
     tenant_id: Mapped[str] = mapped_column(String(128))
     subject_id: Mapped[str] = mapped_column(String(128))

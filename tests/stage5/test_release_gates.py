@@ -47,7 +47,9 @@ def test_sbom_script_and_ci_release_controls_are_committed() -> None:
     assert "uv export --frozen --no-dev --no-emit-project" in ci
     assert "generate_sbom.py" in ci
     assert "check_secret_leaks.py" in ci
-    assert "uv sync --frozen --no-dev" in dockerfile
+    assert "uv export --frozen --no-dev" in dockerfile
+    assert "langchain/langgraph-api:3.13@sha256:" in dockerfile
+    assert "deploy/entrypoint.sh" in dockerfile
 
 
 def test_agent_server_runtime_is_not_in_the_default_bff_dependency_set() -> None:

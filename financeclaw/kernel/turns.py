@@ -38,6 +38,5 @@ def message_source(context: Any, *, user_message_id: str | None = None) -> dict[
     return {
         "conversation_id": context.conversation_id,
         "turn_id": context.turn_id,
-        "run_id": context.run_id,
         "user_message_id": user_message_id,
     }

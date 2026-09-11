@@ -14,6 +14,7 @@ from sqlalchemy import Select, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
+from financeclaw.kernel.turn_status import TurnStatus
 from financeclaw.shared.conversation.models import (
     ChannelConversationBinding,
     Conversation,
@@ -22,22 +23,21 @@ from financeclaw.shared.conversation.models import (
     ConversationTurn,
     MessageRole,
     ModelContextManifest,
-    TurnStatus,
 )
 from financeclaw.shared.conversation.tables import (
     ChannelConversationBindingRow,
     ConversationMessageRow,
     ConversationRow,
-    ConversationTurnRow,
     ModelContextManifestRow,
 )
+from financeclaw.shared.turns.tables import ConversationTurnRow
 
 
 class ConversationNotFound(LookupError):
     """按归属查询的会话资源不存在时抛出的异常。
 
     使用场景：get_owned、get_turn_owned 等方法在目标记录不存在时抛出，
-    BFF 层通常据此返回 404。
+    API 层通常据此返回 404。
     """
 
     pass
@@ -57,7 +57,7 @@ class IdempotencyConflict(RuntimeError):
     """幂等键被复用于不同请求时抛出的异常。
 
     使用场景：begin_turn 中同一（租户，主体，幂等键）已有 turn，但会话或
-    request_hash 与本次请求不一致时抛出，BFF 层据此返回 409。
+    request_hash 与本次请求不一致时抛出，API 层据此返回 409。
     """
 
     pass
@@ -76,7 +76,7 @@ class ConversationRepository(Protocol):
         get_owned: 按归属读取会话，不存在时抛 ConversationNotFound。
         begin_turn: 幂等开启 turn 并写入用户消息。
         bind_server_run: 将 turn 绑定到 Agent Server 运行并更新状态。
-        get_turn_owned: 按 run_id 与归属读取 turn。
+        get_turn_owned: 按 turn_id 与归属读取 turn。
         list_messages: 按会话读取原文消息（默认仅可见）。
         save_manifest: 按 model_call_id 幂等保存模型调用 Manifest。
     """
@@ -143,32 +143,17 @@ class ConversationRepository(Protocol):
         """原子读取或创建 Channel 绑定和会话，返回是否新建。"""
         ...
 
-    def begin_turn(
-        self,
-        *,
-        conversation_id: str,
-        tenant_id: str,
-        subject_id: str,
-        idempotency_key: str,
-        request_hash: str,
-        message: str,
-        target_type: str,
-        target_id: str,
-        target_version: str,
-    ) -> tuple[ConversationTurn, ConversationMessage, bool]:
-        """幂等开启 turn 并写入用户消息，返回（turn，用户消息，是否幂等重放）。"""
-        ...
-
-    def bind_server_run(self, turn_id: str, server_run_id: str, status: str) -> ConversationTurn:
-        """将 turn 绑定到指定的 Agent Server 运行并更新其状态。"""
-        ...
-
-    def get_turn_owned(self, run_id: str, tenant_id: str, subject_id: str) -> ConversationTurn:
-        """按 run_id 与归属读取 turn，不存在时抛出异常。"""
+    def get_turn_owned(self, turn_id: str, tenant_id: str, subject_id: str) -> ConversationTurn:
+        """按 turn_id 与归属读取 turn，不存在时抛出异常。"""
         ...
 
     def list_messages(
-        self, conversation_id: str, *, visible_only: bool = True
+        self,
+        conversation_id: str,
+        *,
+        visible_only: bool = True,
+        after: int = 0,
+        limit: int | None = None,
     ) -> tuple[ConversationMessage, ...]:
         """按序号升序返回会话的原文消息，默认仅包含可见消息。"""
         ...
@@ -224,22 +209,9 @@ def _channel_binding(row: ChannelConversationBindingRow) -> ChannelConversationB
 
 
 def _turn(row: ConversationTurnRow) -> ConversationTurn:
-    """将 ConversationTurnRow 表记录转换为 ConversationTurn 领域记录。"""
-    return ConversationTurn(
-        turn_id=row.turn_id,
-        conversation_id=row.conversation_id,
-        tenant_id=row.tenant_id,
-        subject_id=row.subject_id,
-        run_id=row.run_id,
-        server_run_id=row.server_run_id,
-        client_idempotency_key=row.client_idempotency_key,
-        request_hash=row.request_hash,
-        target_type=row.target_type,
-        target_id=row.target_id,
-        target_version=row.target_version,
-        status=TurnStatus(row.status),
-        created_at=row.created_at,
-        completed_at=row.completed_at,
+    """Return the Journal-facing projection without exposing grants or execution state."""
+    return ConversationTurn.model_validate(
+        {key: getattr(row, key) for key in ConversationTurn.model_fields}
     )
 
 
@@ -284,9 +256,9 @@ class SqlAlchemyConversationRepository:
     def __init__(self, sessions: sessionmaker[Session]) -> None:
         """保存会话工厂；所有读写操作都经由该工厂获取数据库会话。"""
         self._sessions = sessions
-        from financeclaw.shared.execution_ledger.repository import ExecutionRepository
+        from financeclaw.shared.turns.budget import TurnExecutionRepository
 
-        self.execution = ExecutionRepository(sessions)
+        self.execution = TurnExecutionRepository(sessions)
 
     def create_conversation(
         self,
@@ -300,7 +272,7 @@ class SqlAlchemyConversationRepository:
     ) -> Conversation:
         """创建新会话记录并落库，缺省时自动生成会话与线程标识。
 
-        使用场景：BFF 的"创建 Conversation"入口调用；agent_thread_id 必须为
+        使用场景：API 的"创建 Conversation"入口调用；agent_thread_id 必须为
         UUID 字符串，保证与 LangGraph 线程一一对应。
 
         Args:
@@ -498,179 +470,11 @@ class SqlAlchemyConversationRepository:
                 continue
         raise ConversationConflict("concurrent channel binding creation did not converge")
 
-    def begin_turn(
-        self,
-        *,
-        conversation_id: str,
-        tenant_id: str,
-        subject_id: str,
-        idempotency_key: str,
-        request_hash: str,
-        message: str,
-        target_type: str,
-        target_id: str,
-        target_version: str,
-        session: Session | None = None,
-    ) -> tuple[ConversationTurn, ConversationMessage, bool]:
-        """幂等开启 turn 并写入用户消息，返回（turn，用户消息，是否幂等重放）。
-
-        使用场景：BFF 的 message-only Turn 写入口；同一（租户，主体，幂等键）
-        重复请求时返回已有 turn 与用户消息且重放标记为 True，保证日志不重复。
+    def get_turn_owned(self, turn_id: str, tenant_id: str, subject_id: str) -> ConversationTurn:
+        """按 turn_id 与归属读取 turn 记录。
 
         Args:
-            conversation_id: 目标会话标识。
-            tenant_id: 租户标识。
-            subject_id: 主体标识。
-            idempotency_key: 客户端幂等键。
-            request_hash: 请求内容哈希。
-            message: 用户消息原文。
-            target_type: 目标对象类型。
-            target_id: 目标对象标识。
-            target_version: 目标对象版本。
-            session: 外层组合事务；提供时不另建连接、不自行提交。
-
-        Returns:
-            tuple[ConversationTurn, ConversationMessage, bool]:
-                turn 记录、该 turn 的用户消息，以及是否命中幂等重放。
-
-        Raises:
-            IdempotencyConflict: 幂等键已用于其他会话或不同请求内容时抛出。
-            ConversationNotFound: 会话不存在或不属于该归属时抛出。
-            ConversationConflict: 会话非活跃，或幂等 turn 缺少用户消息时抛出。
-
-        """
-        with nullcontext(session) if session is not None else self._sessions.begin() as session:
-            # 首次读之前取得数据库写锁；SQLite 不实现 SELECT FOR UPDATE，
-            # no-op UPDATE 同样串行化同一会话，避免双受理和 MAX(sequence) 竞争。
-            session.execute(
-                update(ConversationRow)
-                .where(
-                    ConversationRow.conversation_id == conversation_id,
-                    ConversationRow.tenant_id == tenant_id,
-                    ConversationRow.subject_id == subject_id,
-                )
-                .values(updated_at=ConversationRow.updated_at)
-            )
-            # 1. 按（租户，主体，幂等键）查询既有 turn，命中则校验后重放返回。
-            existing = session.scalar(
-                select(ConversationTurnRow).where(
-                    ConversationTurnRow.tenant_id == tenant_id,
-                    ConversationTurnRow.subject_id == subject_id,
-                    ConversationTurnRow.client_idempotency_key == idempotency_key,
-                )
-            )
-            if existing is not None:
-                # 2. 校验幂等键未被复用于其他会话或不同请求内容。
-                if (
-                    existing.conversation_id != conversation_id
-                    or existing.request_hash != request_hash
-                ):
-                    raise IdempotencyConflict(
-                        "idempotency key was already used for another conversation request"
-                    )
-                # 3. 查找幂等 turn 的用户消息，缺失说明历史数据异常。
-                user_message = session.scalar(
-                    select(ConversationMessageRow).where(
-                        ConversationMessageRow.turn_id == existing.turn_id,
-                        ConversationMessageRow.role == MessageRole.USER.value,
-                    )
-                )
-                if user_message is None:
-                    raise ConversationConflict("idempotent turn is missing its user message")
-                return _turn(existing), _message(user_message), True
-
-            # 4. 行锁读取会话并校验存在性与活跃状态。
-            conversation = session.scalar(
-                select(ConversationRow)
-                .where(
-                    ConversationRow.conversation_id == conversation_id,
-                    ConversationRow.tenant_id == tenant_id,
-                    ConversationRow.subject_id == subject_id,
-                )
-                .with_for_update()
-            )
-            if conversation is None:
-                raise ConversationNotFound("conversation was not found for authenticated owner")
-            if conversation.status != ConversationStatus.ACTIVE.value:
-                raise ConversationConflict("conversation is not active")
-            active = session.scalar(
-                select(ConversationTurnRow.run_id).where(
-                    ConversationTurnRow.conversation_id == conversation_id,
-                    ConversationTurnRow.status.not_in(("completed", "failed", "cancelled")),
-                )
-            )
-            if active is not None:
-                raise ConversationConflict(
-                    f"run {active} is still active; finish or cancel it before sending a new turn"
-                )
-            # 5. 计算会话内下一个消息序号，构造 turn 与用户消息记录。
-            max_sequence = session.scalar(
-                select(func.max(ConversationMessageRow.sequence)).where(
-                    ConversationMessageRow.conversation_id == conversation_id
-                )
-            )
-            now = datetime.now(UTC)
-            turn_row = ConversationTurnRow(
-                turn_id=f"turn-{uuid4().hex}",
-                conversation_id=conversation_id,
-                tenant_id=tenant_id,
-                subject_id=subject_id,
-                run_id=f"run-{uuid4().hex}",
-                client_idempotency_key=idempotency_key,
-                request_hash=request_hash,
-                target_type=target_type,
-                target_id=target_id,
-                target_version=target_version,
-                status=TurnStatus.ACCEPTED.value,
-                created_at=now,
-            )
-            message_row = ConversationMessageRow(
-                message_id=f"message-{uuid4().hex}",
-                conversation_id=conversation_id,
-                turn_id=turn_row.turn_id,
-                sequence=(max_sequence or 0) + 1,
-                role=MessageRole.USER.value,
-                content=message,
-                content_hash=content_hash(message),
-                visible=True,
-                created_at=now,
-            )
-            # 6. 刷新会话更新时间并提交事务，返回新建记录与重放标记 False。
-            conversation.updated_at = now
-            session.add_all((turn_row, message_row))
-        return _turn(turn_row), _message(message_row), False
-
-    def bind_server_run(self, turn_id: str, server_run_id: str, status: str) -> ConversationTurn:
-        """将 turn 绑定到 Agent Server 运行并更新状态，绑定后不可更改。
-
-        Args:
-            turn_id: turn 标识。
-            server_run_id: Agent Server 运行标识。
-            status: 目标状态字符串（经 _normalize_turn_status 归一化）。
-
-        Returns:
-            ConversationTurn: 更新后的 turn 记录。
-
-        Raises:
-            ConversationNotFound: turn 不存在时抛出。
-            ConversationConflict: turn 已绑定其他运行时抛出。
-
-        """
-        with self._sessions.begin() as session:
-            row = session.get(ConversationTurnRow, turn_id)
-            if row is None:
-                raise ConversationNotFound("turn was not found")
-            if row.server_run_id is not None and row.server_run_id != server_run_id:
-                raise ConversationConflict("turn is already bound to another Agent Server run")
-            row.server_run_id = server_run_id
-            row.status = _normalize_turn_status(status).value
-        return _turn(row)
-
-    def get_turn_owned(self, run_id: str, tenant_id: str, subject_id: str) -> ConversationTurn:
-        """按 run_id 与归属读取 turn 记录。
-
-        Args:
-            run_id: 平台运行标识。
+            turn_id: 平台运行标识。
             tenant_id: 租户标识。
             subject_id: 主体标识。
 
@@ -682,7 +486,7 @@ class SqlAlchemyConversationRepository:
 
         """
         statement = select(ConversationTurnRow).where(
-            ConversationTurnRow.run_id == run_id,
+            ConversationTurnRow.turn_id == turn_id,
             ConversationTurnRow.tenant_id == tenant_id,
             ConversationTurnRow.subject_id == subject_id,
         )
@@ -692,51 +496,10 @@ class SqlAlchemyConversationRepository:
                 raise ConversationNotFound("turn was not found for authenticated owner")
             return _turn(row)
 
-    def update_turn_status(
-        self, run_id: str, status: str, *, session: Session | None = None
-    ) -> ConversationTurn:
-        """按 run_id 更新 turn 状态，到达终态时补记完成时间。
-
-        使用场景：Agent Server 执行过程中推进状态机；COMPLETED/FAILED 视为终态。
-
-        Args:
-            run_id: 平台运行标识。
-            status: 目标状态字符串（经 _normalize_turn_status 归一化）。
-
-            session: 外层组合事务；提供时不另开连接或自行提交。
-
-        Returns:
-            ConversationTurn: 更新后的 turn 记录。
-
-        Raises:
-            ConversationNotFound: turn 不存在时抛出。
-
-        """
-        normalized = _normalize_turn_status(status)
-        with nullcontext(session) if session is not None else self._sessions.begin() as session:
-            session.execute(
-                update(ConversationTurnRow)
-                .where(
-                    ConversationTurnRow.run_id == run_id,
-                )
-                .values(status=ConversationTurnRow.status)
-            )
-            row = session.scalar(
-                select(ConversationTurnRow).where(ConversationTurnRow.run_id == run_id)
-            )
-            if row is None:
-                raise ConversationNotFound("turn was not found")
-            if row.status in {"completed", "failed", "cancelled", "cancellation_requested"}:
-                return _turn(row)
-            row.status = normalized.value
-            if normalized in {TurnStatus.COMPLETED, TurnStatus.FAILED}:
-                row.completed_at = row.completed_at or datetime.now(UTC)
-        return _turn(row)
-
     def append_assistant_message(
         self,
         *,
-        run_id: str,
+        turn_id: str,
         content: str,
         parent_message_id: str | None = None,
         session: Session | None = None,
@@ -747,7 +510,7 @@ class SqlAlchemyConversationRepository:
         返回既有消息，内容冲突则抛出对账异常。
 
         Args:
-            run_id: 平台运行标识。
+            turn_id: 平台运行标识。
             content: assistant 回复原文。
             parent_message_id: 父消息标识；普通回复为 None，分支消息指定父消息。
             session: 外层组合事务；提供时不另建连接、不自行提交。
@@ -767,7 +530,7 @@ class SqlAlchemyConversationRepository:
                 .where(
                     ConversationRow.conversation_id
                     == select(ConversationTurnRow.conversation_id)
-                    .where(ConversationTurnRow.run_id == run_id)
+                    .where(ConversationTurnRow.turn_id == turn_id)
                     .scalar_subquery(),
                 )
                 .values(updated_at=ConversationRow.updated_at)
@@ -775,7 +538,7 @@ class SqlAlchemyConversationRepository:
             # 1. 行锁读取 turn，并查找同父消息的既有 assistant 回复。
             turn = session.scalar(
                 select(ConversationTurnRow)
-                .where(ConversationTurnRow.run_id == run_id)
+                .where(ConversationTurnRow.turn_id == turn_id)
                 .with_for_update()
             )
             if turn is None:
@@ -792,7 +555,7 @@ class SqlAlchemyConversationRepository:
                 if existing.content_hash != digest:
                     raise ConversationConflict("assistant message reconciliation conflict")
                 return _message(existing)
-            if turn.status in {"failed", "cancelled", "cancellation_requested"}:
+            if turn.status in {"failed", "cancelled", "cancelling"}:
                 raise ConversationConflict("cancelled or failed turn cannot append a final answer")
             # 3. 计算会话内下一个序号并写入消息，同时收敛 turn 与会话更新时间。
             conversation = session.get(ConversationRow, turn.conversation_id)
@@ -816,8 +579,6 @@ class SqlAlchemyConversationRepository:
                 visible=True,
                 created_at=now,
             )
-            turn.status = TurnStatus.COMPLETED.value
-            turn.completed_at = turn.completed_at or now
             conversation.updated_at = now
             session.add(row)
             if parent_message_id is None:
@@ -832,43 +593,17 @@ class SqlAlchemyConversationRepository:
                 enqueue_history_index(session, turn, user, row)
         return _message(row)
 
-    def confirm_cancel(self, run_id: str, *, session: Session | None = None) -> ConversationTurn:
-        """全树停止后结束 Turn 并换干净线程；旧检查点保留，禁止意外再执行。"""
-        with nullcontext(session) if session is not None else self._sessions.begin() as session:
-            session.execute(
-                update(ConversationRow)
-                .where(
-                    ConversationRow.conversation_id
-                    == select(ConversationTurnRow.conversation_id)
-                    .where(ConversationTurnRow.run_id == run_id)
-                    .scalar_subquery(),
-                )
-                .values(updated_at=ConversationRow.updated_at)
-            )
-            turn = session.scalar(
-                select(ConversationTurnRow).where(ConversationTurnRow.run_id == run_id)
-            )
-            if turn.status == "cancelled":
-                return _turn(turn)
-            if turn.status != "cancellation_requested":
-                raise ConversationConflict("turn cancellation has not been requested")
-            turn.status = "cancelled"
-            turn.completed_at = datetime.now(UTC)
-            conversation = session.get(ConversationRow, turn.conversation_id)
-            conversation.agent_thread_id = str(uuid4())
-            return _turn(turn)
-
     def append_branch_message(
         self,
         *,
-        run_id: str,
+        turn_id: str,
         content: str,
         parent_message_id: str,
     ) -> ConversationMessage:
         """为分支场景追加 assistant 消息（子图调用给 append_assistant_message 实现）。
 
         Args:
-            run_id: 平台运行标识。
+            turn_id: 平台运行标识。
             content: 分支回复原文。
             parent_message_id: 必填的父消息标识，标志该回复属于某条分支。
 
@@ -877,7 +612,7 @@ class SqlAlchemyConversationRepository:
 
         """
         return self.append_assistant_message(
-            run_id=run_id, content=content, parent_message_id=parent_message_id
+            turn_id=turn_id, content=content, parent_message_id=parent_message_id
         )
 
     def get_message_owned(
@@ -941,13 +676,20 @@ class SqlAlchemyConversationRepository:
             return tuple(reversed([_message(row) for row in session.scalars(statement)]))
 
     def list_messages(
-        self, conversation_id: str, *, visible_only: bool = True
+        self,
+        conversation_id: str,
+        *,
+        visible_only: bool = True,
+        after: int = 0,
+        limit: int | None = None,
     ) -> tuple[ConversationMessage, ...]:
         """按序号升序返回会话的全部原文消息。
 
         Args:
             conversation_id: 会话标识。
             visible_only: 为 True（默认）时仅返回可见消息。
+            after: 仅返回此序号之后的消息。
+            limit: 本页最多返回的消息条数。
 
         Returns:
             tuple[ConversationMessage, ...]: 按序号升序排列的消息元组。
@@ -959,6 +701,9 @@ class SqlAlchemyConversationRepository:
         if visible_only:
             statement = statement.where(ConversationMessageRow.visible.is_(True))
         statement = statement.order_by(ConversationMessageRow.sequence)
+        statement = statement.where(ConversationMessageRow.sequence > after)
+        if limit is not None:
+            statement = statement.limit(limit)
         with self._sessions() as session:
             return tuple(_message(row) for row in session.scalars(statement))
 
@@ -972,7 +717,9 @@ class SqlAlchemyConversationRepository:
 
         """
         statement = select(ConversationTurnRow).where(
-            ConversationTurnRow.status.not_in((TurnStatus.COMPLETED.value, TurnStatus.FAILED.value))
+            ConversationTurnRow.status.not_in(
+                (TurnStatus.COMPLETED.value, TurnStatus.FAILED.value, TurnStatus.CANCELLED.value)
+            )
         )
         with self._sessions() as session:
             return tuple(_turn(row) for row in session.scalars(statement))
@@ -1029,33 +776,3 @@ class SqlAlchemyConversationRepository:
         )
         with self._sessions() as session:
             return tuple(_manifest(row) for row in session.scalars(statement))
-
-
-def _normalize_turn_status(status: str) -> TurnStatus:
-    """将外部状态字符串归一化为 TurnStatus，未知取值回落为 PENDING。
-
-    使用场景：bind_server_run 与 update_turn_status 入库前统一状态口径，
-    兼容 "success"/"error" 等运行时同义词。
-
-    Args:
-        status: 外部状态字符串。
-
-    Returns:
-        TurnStatus: 归一化后的状态；未识别时返回 TurnStatus.PENDING。
-
-    """
-    mapping = {
-        "accepted": TurnStatus.ACCEPTED,
-        "pending": TurnStatus.PENDING,
-        "running": TurnStatus.RUNNING,
-        "waiting_child": TurnStatus.WAITING_CHILD,
-        "interrupted": TurnStatus.INTERRUPTED,
-        "success": TurnStatus.COMPLETED,
-        "completed": TurnStatus.COMPLETED,
-        "error": TurnStatus.FAILED,
-        "failed": TurnStatus.FAILED,
-        "cancellation_requested": TurnStatus.CANCELLATION_REQUESTED,
-        "cancelled": TurnStatus.CANCELLED,
-        "needs_attention": TurnStatus.NEEDS_ATTENTION,
-    }
-    return mapping.get(status, TurnStatus.PENDING)

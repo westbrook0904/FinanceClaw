@@ -25,14 +25,13 @@ def settings() -> FinanceClawSettings:
     return FinanceClawSettings(environment="test", offline_model=True, debug_full_io=False)
 
 
-def context(*scopes: str, run_id: str = "run-agent") -> ExecutionContext:
+def context(*scopes: str, turn_id: str = "run-agent") -> ExecutionContext:
     """处理 `当前操作`，并返回边界约定的结果。"""
     return ExecutionContext(
         tenant_id="tenant-a",
         subject_id="subject-a",
         scopes=frozenset(scopes),
-        turn_id=f"turn-{run_id}",
-        run_id=run_id,
+        turn_id=f"turn-{turn_id}",
     )
 
 

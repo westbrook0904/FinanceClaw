@@ -1,17 +1,9 @@
-# 产品 API 与顶层 Agent
+# Stage 10 产品 API
 
-唯一启动路径为创建 Conversation，再提交 message-only Turn。根 Agent 根据消息回答或调用受治理 Tool。斜杠指令只是调用偏好。
+唯一启动路径是创建 Conversation，再提交带 Idempotency-Key 的 message-only Turn。公开根图为 `finance_agent`；领域 Agent 和 Workflow 都是内部 Tool/subgraph，不创建独立业务任务。
 
-- POST /v1/conversations
-- POST /v1/conversations/{id}/turns（Idempotency-Key）
-- GET /v1/conversations/{id} 与 /messages
-- GET /v1/runs/{id} 与 /events（Last-Event-ID）
-- POST /v1/runs/{id}/cancel
-- POST /v1/runs/{id}/authorization 与 DELETE 同路径
-- GET /v1/interactions/{id}
-- POST /v1/interactions/{id}/responses（Idempotency-Key）
-- GET /v1/runs/{id}/notifications 与 DELETE 同路径
+当前接口与示例见 [README](../README.md#产品接口)，完整语义见 [Turn 运行手册](../docs/operations/turn-control.md)。所有 Turn 查询、取消和授权路径都嵌套在 Conversation 下，必须同时验证两者的归属关系。
 
-查询和 SSE 只读取持久事实；后台循环提交、恢复与核对。子图正常完成直接返回顶层 Tool，人工决定才恢复根原生运行。交互响应统一使用 revision、类型、回答或决定及动作摘要。
+HTTP/SSE 查询只读；人工交互使用 interaction_id、revision 和 typed response，不能提供原生 thread/run/checkpoint。回复决定必须在返回 202 前持久化。
 
-内部回调路径为 /internal/webhooks/langgraph/{backend_instance_id}，使用固定服务认证。运维细节见 [BFF 手册](../docs/operations/bff-run-control.md)。
+内部飞书路径 `/internal/channels/feishu/events` 仅接受受信任集成身份的标准化消息或卡片回调。不存在旧 Webhook、`/v1/runs/*` 或业务 `run_id` 别名。checkpoint 回收作为独立产品维护能力，只允许具有专门 scope 的用户操作自己已归档且无待办的会话。

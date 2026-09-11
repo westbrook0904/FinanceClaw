@@ -100,7 +100,6 @@ async def probe_provider(settings: FinanceClawSettings) -> Stage1ProviderProbeRe
         subject_id="stage1-provider-probe",
         scopes={"market:read", "tools:read"},
         turn_id="turn-stage1-provider-probe",
-        run_id="run-stage1-provider-probe",
         data_classification="internal",
     )
     await agent.ainvoke(

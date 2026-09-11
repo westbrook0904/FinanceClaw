@@ -1,0 +1,3183 @@
+{
+  "capacity_before_projection_optimization": {
+    "measured_at": "2026-09-11T06:38:14.167099+00:00",
+    "workload": "OfflineFinanceModel, synthetic calculate(2+3); no external provider calls",
+    "api_jobs": 0,
+    "worker_jobs": 4,
+    "native_terminal_timestamp": "read-only public.run.updated_at after success; probe DB only",
+    "batches": [
+      {
+        "concurrency": 1,
+        "subscribers_per_turn": 1,
+        "duration_seconds": 0.61,
+        "metrics": {
+          "admission_ms": {
+            "p50": 24.33,
+            "p95": 24.33,
+            "p99": 24.33
+          },
+          "accepted_to_native_bound_ms": {
+            "p50": 91.41,
+            "p95": 91.41,
+            "p99": 91.41
+          },
+          "native_terminal_to_journal_ms": {
+            "p50": 94.79,
+            "p95": 94.79,
+            "p99": 94.79
+          },
+          "journal_to_sse_ms": {
+            "p50": 43.71,
+            "p95": 43.71,
+            "p99": 43.71
+          },
+          "journal_to_last_subscriber_ms": {
+            "p50": 43.71,
+            "p95": 43.71,
+            "p99": 43.71
+          }
+        },
+        "samples": [
+          {
+            "turn_id": "2808dfa2-f26a-42b1-bc66-dbefd5017a6e",
+            "admission_ms": 24.32791899627773,
+            "accepted_to_native_bound_ms": 91.41499999999999,
+            "native_terminal_to_journal_ms": 94.791,
+            "journal_to_sse_ms": 43.708,
+            "journal_to_last_subscriber_ms": 43.708
+          }
+        ]
+      },
+      {
+        "concurrency": 32,
+        "subscribers_per_turn": 1,
+        "duration_seconds": 11.27,
+        "metrics": {
+          "admission_ms": {
+            "p50": 697.14,
+            "p95": 1012.93,
+            "p99": 1811.96
+          },
+          "accepted_to_native_bound_ms": {
+            "p50": 2453.93,
+            "p95": 4546.84,
+            "p99": 4742.81
+          },
+          "native_terminal_to_journal_ms": {
+            "p50": 323.75,
+            "p95": 2849.47,
+            "p99": 2992.9
+          },
+          "journal_to_sse_ms": {
+            "p50": 101.81,
+            "p95": 250.15,
+            "p99": 275.5
+          },
+          "journal_to_last_subscriber_ms": {
+            "p50": 101.81,
+            "p95": 250.15,
+            "p99": 275.5
+          }
+        },
+        "samples": [
+          {
+            "turn_id": "ad55b86f-299e-4c46-afed-09b3cbdd47bc",
+            "admission_ms": 425.7629360072315,
+            "accepted_to_native_bound_ms": 1497.546,
+            "native_terminal_to_journal_ms": 2733.605,
+            "journal_to_sse_ms": 147.048,
+            "journal_to_last_subscriber_ms": 147.048
+          },
+          {
+            "turn_id": "36fcbfa9-b865-49c9-87c8-f2950d0f8993",
+            "admission_ms": 386.4608500007307,
+            "accepted_to_native_bound_ms": 1509.497,
+            "native_terminal_to_journal_ms": 1931.596,
+            "journal_to_sse_ms": 107.822,
+            "journal_to_last_subscriber_ms": 107.822
+          },
+          {
+            "turn_id": "90a17b66-196a-421e-bc34-02885ccf95c9",
+            "admission_ms": 548.2935669933795,
+            "accepted_to_native_bound_ms": 2453.927,
+            "native_terminal_to_journal_ms": 668.079,
+            "journal_to_sse_ms": 139.23499999999999,
+            "journal_to_last_subscriber_ms": 139.23499999999999
+          },
+          {
+            "turn_id": "09bbaa79-143f-467d-b941-813097074360",
+            "admission_ms": 369.1630309986067,
+            "accepted_to_native_bound_ms": 1541.5890000000002,
+            "native_terminal_to_journal_ms": 227.39200000000002,
+            "journal_to_sse_ms": 71.655,
+            "journal_to_last_subscriber_ms": 71.655
+          },
+          {
+            "turn_id": "31624e3b-afc5-4f03-b69a-19ab37af9905",
+            "admission_ms": 504.69926199730253,
+            "accepted_to_native_bound_ms": 2139.0679999999998,
+            "native_terminal_to_journal_ms": 1790.821,
+            "journal_to_sse_ms": 250.151,
+            "journal_to_last_subscriber_ms": 250.151
+          },
+          {
+            "turn_id": "8523aaef-6fd4-44da-884b-9ffc0c0c370c",
+            "admission_ms": 1000.682092999341,
+            "accepted_to_native_bound_ms": 2508.0499999999997,
+            "native_terminal_to_journal_ms": 122.28500000000001,
+            "journal_to_sse_ms": 137.171,
+            "journal_to_last_subscriber_ms": 137.171
+          },
+          {
+            "turn_id": "edef11fe-27c4-495f-ab43-93b0f314a764",
+            "admission_ms": 413.1966030035983,
+            "accepted_to_native_bound_ms": 1497.076,
+            "native_terminal_to_journal_ms": 1918.831,
+            "journal_to_sse_ms": 107.546,
+            "journal_to_last_subscriber_ms": 107.546
+          },
+          {
+            "turn_id": "eadb6c0a-0897-4621-95da-fbd5aa353528",
+            "admission_ms": 381.8122049997328,
+            "accepted_to_native_bound_ms": 1486.1580000000001,
+            "native_terminal_to_journal_ms": 946.3829999999999,
+            "journal_to_sse_ms": 42.246,
+            "journal_to_last_subscriber_ms": 42.246
+          },
+          {
+            "turn_id": "d6d59093-5c83-468e-953e-788b6ab617b5",
+            "admission_ms": 865.6559830051265,
+            "accepted_to_native_bound_ms": 4131.423,
+            "native_terminal_to_journal_ms": 248.453,
+            "journal_to_sse_ms": 124.92200000000001,
+            "journal_to_last_subscriber_ms": 124.92200000000001
+          },
+          {
+            "turn_id": "1750ce7e-d167-47ed-8163-56131cd67221",
+            "admission_ms": 863.0484260065714,
+            "accepted_to_native_bound_ms": 2850.4109999999996,
+            "native_terminal_to_journal_ms": 298.046,
+            "journal_to_sse_ms": 74.73,
+            "journal_to_last_subscriber_ms": 74.73
+          },
+          {
+            "turn_id": "36e66b2f-644d-4afa-97fd-416aa609967f",
+            "admission_ms": 417.85270599939395,
+            "accepted_to_native_bound_ms": 1491.3410000000001,
+            "native_terminal_to_journal_ms": 2154.794,
+            "journal_to_sse_ms": 275.504,
+            "journal_to_last_subscriber_ms": 275.504
+          },
+          {
+            "turn_id": "b21d2dad-9217-4720-81a5-b7db84d36118",
+            "admission_ms": 1012.9345710010966,
+            "accepted_to_native_bound_ms": 2647.333,
+            "native_terminal_to_journal_ms": 284.555,
+            "journal_to_sse_ms": 72.55399999999999,
+            "journal_to_last_subscriber_ms": 72.55399999999999
+          },
+          {
+            "turn_id": "6c518c50-4bde-4397-9575-2a828353d27d",
+            "admission_ms": 361.7185989933205,
+            "accepted_to_native_bound_ms": 1492.0230000000001,
+            "native_terminal_to_journal_ms": 2992.9049999999997,
+            "journal_to_sse_ms": 109.25999999999999,
+            "journal_to_last_subscriber_ms": 109.25999999999999
+          },
+          {
+            "turn_id": "9eba59fa-713a-493a-8f69-7577900caf9b",
+            "admission_ms": 489.519709997694,
+            "accepted_to_native_bound_ms": 2092.964,
+            "native_terminal_to_journal_ms": 1781.866,
+            "journal_to_sse_ms": 190.492,
+            "journal_to_last_subscriber_ms": 190.492
+          },
+          {
+            "turn_id": "0bb7a5b1-cfdc-476c-9bf9-c06744ec6248",
+            "admission_ms": 898.2817009964492,
+            "accepted_to_native_bound_ms": 3060.816,
+            "native_terminal_to_journal_ms": 286.319,
+            "journal_to_sse_ms": 66.25699999999999,
+            "journal_to_last_subscriber_ms": 66.25699999999999
+          },
+          {
+            "turn_id": "e2536b04-0759-4b68-8244-c94dfc3267ba",
+            "admission_ms": 924.9288230057573,
+            "accepted_to_native_bound_ms": 3280.853,
+            "native_terminal_to_journal_ms": 180.488,
+            "journal_to_sse_ms": 153.46599999999998,
+            "journal_to_last_subscriber_ms": 153.46599999999998
+          },
+          {
+            "turn_id": "d840d3f7-1e9d-49b8-ba11-cc309fed633d",
+            "admission_ms": 536.7480510030873,
+            "accepted_to_native_bound_ms": 2235.737,
+            "native_terminal_to_journal_ms": 1850.5240000000001,
+            "journal_to_sse_ms": 171.706,
+            "journal_to_last_subscriber_ms": 171.706
+          },
+          {
+            "turn_id": "505ffd6d-dd40-4f02-8d62-2055ac93ca50",
+            "admission_ms": 404.526539001381,
+            "accepted_to_native_bound_ms": 1486.771,
+            "native_terminal_to_journal_ms": 2849.469,
+            "journal_to_sse_ms": 176.504,
+            "journal_to_last_subscriber_ms": 176.504
+          },
+          {
+            "turn_id": "41bad109-07c9-47c6-8f3b-56095f87ff18",
+            "admission_ms": 545.6344560006983,
+            "accepted_to_native_bound_ms": 2258.928,
+            "native_terminal_to_journal_ms": 1614.023,
+            "journal_to_sse_ms": 66.378,
+            "journal_to_last_subscriber_ms": 66.378
+          },
+          {
+            "turn_id": "33dc642f-f2c2-4dc5-a063-0490d7ad5413",
+            "admission_ms": 856.9608809993952,
+            "accepted_to_native_bound_ms": 4151.453,
+            "native_terminal_to_journal_ms": 191.903,
+            "journal_to_sse_ms": 115.02999999999999,
+            "journal_to_last_subscriber_ms": 115.02999999999999
+          },
+          {
+            "turn_id": "4d2bd1b9-ea1a-4c0a-b182-2d1558e1716c",
+            "admission_ms": 893.5903400051757,
+            "accepted_to_native_bound_ms": 4116.39,
+            "native_terminal_to_journal_ms": 209.22,
+            "journal_to_sse_ms": 91.95,
+            "journal_to_last_subscriber_ms": 91.95
+          },
+          {
+            "turn_id": "71c68075-57ec-4205-951b-f04a9405a308",
+            "admission_ms": 711.8427570021595,
+            "accepted_to_native_bound_ms": 3956.5139999999997,
+            "native_terminal_to_journal_ms": 323.749,
+            "journal_to_sse_ms": 85.819,
+            "journal_to_last_subscriber_ms": 85.819
+          },
+          {
+            "turn_id": "3146a128-e550-418d-ad1a-660c81357abd",
+            "admission_ms": 785.151144998963,
+            "accepted_to_native_bound_ms": 2431.752,
+            "native_terminal_to_journal_ms": 686.871,
+            "journal_to_sse_ms": 101.80699999999999,
+            "journal_to_last_subscriber_ms": 101.80699999999999
+          },
+          {
+            "turn_id": "e072112e-d23a-4e9a-bf2f-b5dd491afce3",
+            "admission_ms": 531.2260919963592,
+            "accepted_to_native_bound_ms": 2235.0240000000003,
+            "native_terminal_to_journal_ms": 948.948,
+            "journal_to_sse_ms": 64.332,
+            "journal_to_last_subscriber_ms": 64.332
+          },
+          {
+            "turn_id": "d026f4b6-1e9b-4151-b08a-c1b3dc9afaa6",
+            "admission_ms": 540.6548809987726,
+            "accepted_to_native_bound_ms": 2471.76,
+            "native_terminal_to_journal_ms": 703.532,
+            "journal_to_sse_ms": 44.296,
+            "journal_to_last_subscriber_ms": 44.296
+          },
+          {
+            "turn_id": "06dfe87d-0421-49f4-ac99-6193d2259df7",
+            "admission_ms": 782.5256130017806,
+            "accepted_to_native_bound_ms": 4197.636,
+            "native_terminal_to_journal_ms": 284.03000000000003,
+            "journal_to_sse_ms": 130.12099999999998,
+            "journal_to_last_subscriber_ms": 130.12099999999998
+          },
+          {
+            "turn_id": "5778bf77-dccb-4692-8b64-35d8767686b6",
+            "admission_ms": 913.3015159968636,
+            "accepted_to_native_bound_ms": 4546.842,
+            "native_terminal_to_journal_ms": 266.323,
+            "journal_to_sse_ms": 55.395,
+            "journal_to_last_subscriber_ms": 55.395
+          },
+          {
+            "turn_id": "a4763b97-0fa9-4d47-86c3-790eb3a38117",
+            "admission_ms": 697.1384450007463,
+            "accepted_to_native_bound_ms": 4021.089,
+            "native_terminal_to_journal_ms": 324.93100000000004,
+            "journal_to_sse_ms": 101.915,
+            "journal_to_last_subscriber_ms": 101.915
+          },
+          {
+            "turn_id": "ca1e7196-02ec-4b7a-8e45-6b49269c7a71",
+            "admission_ms": 752.3313479978242,
+            "accepted_to_native_bound_ms": 4181.9439999999995,
+            "native_terminal_to_journal_ms": 111.801,
+            "journal_to_sse_ms": 67.774,
+            "journal_to_last_subscriber_ms": 67.774
+          },
+          {
+            "turn_id": "f50e6a70-3177-4668-82fb-aec780f7d040",
+            "admission_ms": 924.1746359984973,
+            "accepted_to_native_bound_ms": 4742.81,
+            "native_terminal_to_journal_ms": 241.277,
+            "journal_to_sse_ms": 51.044,
+            "journal_to_last_subscriber_ms": 51.044
+          },
+          {
+            "turn_id": "7fb1f460-3599-4148-b1ff-a8ac3dc5109a",
+            "admission_ms": 846.3173429991002,
+            "accepted_to_native_bound_ms": 4211.035,
+            "native_terminal_to_journal_ms": 268.07599999999996,
+            "journal_to_sse_ms": 53.452,
+            "journal_to_last_subscriber_ms": 53.452
+          },
+          {
+            "turn_id": "d420a830-cfba-456f-9655-559670ae7b45",
+            "admission_ms": 1811.9608979977784,
+            "accepted_to_native_bound_ms": 2341.202,
+            "native_terminal_to_journal_ms": 303.287,
+            "journal_to_sse_ms": 74.382,
+            "journal_to_last_subscriber_ms": 74.382
+          }
+        ]
+      },
+      {
+        "concurrency": 128,
+        "subscribers_per_turn": 1,
+        "duration_seconds": 42.92,
+        "metrics": {
+          "admission_ms": {
+            "p50": 5620.3,
+            "p95": 8087.11,
+            "p99": 8464.35
+          },
+          "accepted_to_native_bound_ms": {
+            "p50": 12757.41,
+            "p95": 18050.78,
+            "p99": 18344.28
+          },
+          "native_terminal_to_journal_ms": {
+            "p50": 7856.25,
+            "p95": 19209.55,
+            "p99": 23492.35
+          },
+          "journal_to_sse_ms": {
+            "p50": 164.41,
+            "p95": 339.75,
+            "p99": 476.84
+          },
+          "journal_to_last_subscriber_ms": {
+            "p50": 164.41,
+            "p95": 339.75,
+            "p99": 476.84
+          }
+        },
+        "samples": [
+          {
+            "turn_id": "fa71623e-4e37-41e6-aaac-abf8423d5fc9",
+            "admission_ms": 761.2255629937863,
+            "accepted_to_native_bound_ms": 480.18100000000004,
+            "native_terminal_to_journal_ms": 8011.469,
+            "journal_to_sse_ms": 476.844,
+            "journal_to_last_subscriber_ms": 476.844
+          },
+          {
+            "turn_id": "8c9778b3-1e42-4fcb-a1f7-4819b208e4fd",
+            "admission_ms": 808.9874779980164,
+            "accepted_to_native_bound_ms": 441.62800000000004,
+            "native_terminal_to_journal_ms": 7856.251,
+            "journal_to_sse_ms": 705.808,
+            "journal_to_last_subscriber_ms": 705.808
+          },
+          {
+            "turn_id": "45d6bd53-54e5-47a3-a18b-c60e6a0bd0f2",
+            "admission_ms": 8464.350447997276,
+            "accepted_to_native_bound_ms": 18095.155,
+            "native_terminal_to_journal_ms": 126.67800000000001,
+            "journal_to_sse_ms": 93.311,
+            "journal_to_last_subscriber_ms": 93.311
+          },
+          {
+            "turn_id": "b6f73a9f-f7ff-45b8-af0e-17a7b58def25",
+            "admission_ms": 1045.966279998538,
+            "accepted_to_native_bound_ms": 1036.1789999999999,
+            "native_terminal_to_journal_ms": 13306.027,
+            "journal_to_sse_ms": 219.088,
+            "journal_to_last_subscriber_ms": 219.088
+          },
+          {
+            "turn_id": "3ef28fc8-a6aa-4ce8-a6a3-d18cce73a8a6",
+            "admission_ms": 854.6297089997097,
+            "accepted_to_native_bound_ms": 724.096,
+            "native_terminal_to_journal_ms": 8418.07,
+            "journal_to_sse_ms": 226.446,
+            "journal_to_last_subscriber_ms": 226.446
+          },
+          {
+            "turn_id": "fed9714d-00c0-4ef2-a194-b9deef545c48",
+            "admission_ms": 5237.336887003039,
+            "accepted_to_native_bound_ms": 12760.215,
+            "native_terminal_to_journal_ms": 7516.546,
+            "journal_to_sse_ms": 215.238,
+            "journal_to_last_subscriber_ms": 215.238
+          },
+          {
+            "turn_id": "c5990bed-fa42-4b13-83b9-9b0d94c7a5f0",
+            "admission_ms": 7822.668349996093,
+            "accepted_to_native_bound_ms": 17663.699999999997,
+            "native_terminal_to_journal_ms": 137.87199999999999,
+            "journal_to_sse_ms": 78.006,
+            "journal_to_last_subscriber_ms": 78.006
+          },
+          {
+            "turn_id": "eea52554-715a-4894-8e04-6f37e7763835",
+            "admission_ms": 962.3293859986006,
+            "accepted_to_native_bound_ms": 986.7439999999999,
+            "native_terminal_to_journal_ms": 11407.928,
+            "journal_to_sse_ms": 191.35,
+            "journal_to_last_subscriber_ms": 191.35
+          },
+          {
+            "turn_id": "e87747b3-bf3f-4d2a-b998-e38bb8a841da",
+            "admission_ms": 5840.336127002956,
+            "accepted_to_native_bound_ms": 14003.777,
+            "native_terminal_to_journal_ms": 6207.049,
+            "journal_to_sse_ms": 186.79000000000002,
+            "journal_to_last_subscriber_ms": 186.79000000000002
+          },
+          {
+            "turn_id": "b189d33f-dda0-466f-b253-a80e7117d6f4",
+            "admission_ms": 4490.653200999077,
+            "accepted_to_native_bound_ms": 13161.776,
+            "native_terminal_to_journal_ms": 7705.581999999999,
+            "journal_to_sse_ms": 101.929,
+            "journal_to_last_subscriber_ms": 101.929
+          },
+          {
+            "turn_id": "1798216b-b891-46b8-84f9-a476c768c3ae",
+            "admission_ms": 4820.531026001845,
+            "accepted_to_native_bound_ms": 14157.608,
+            "native_terminal_to_journal_ms": 8260.707,
+            "journal_to_sse_ms": 102.083,
+            "journal_to_last_subscriber_ms": 102.083
+          },
+          {
+            "turn_id": "c5016bb7-5e15-4173-8cb3-12fd2d321715",
+            "admission_ms": 1627.0752669952344,
+            "accepted_to_native_bound_ms": 1958.633,
+            "native_terminal_to_journal_ms": 15037.093,
+            "journal_to_sse_ms": 290.763,
+            "journal_to_last_subscriber_ms": 290.763
+          },
+          {
+            "turn_id": "d45816fa-3c2d-4c4d-926c-c54b9d445761",
+            "admission_ms": 1196.9007619991316,
+            "accepted_to_native_bound_ms": 1262.709,
+            "native_terminal_to_journal_ms": 13578.347000000002,
+            "journal_to_sse_ms": 278.668,
+            "journal_to_last_subscriber_ms": 278.668
+          },
+          {
+            "turn_id": "d3d39e2f-978b-4f22-8aee-ae4a891d0c23",
+            "admission_ms": 6633.4492649984895,
+            "accepted_to_native_bound_ms": 10000.521,
+            "native_terminal_to_journal_ms": 9425.786,
+            "journal_to_sse_ms": 133.511,
+            "journal_to_last_subscriber_ms": 133.511
+          },
+          {
+            "turn_id": "1be026e2-d052-407e-a2f2-f0daa080ab8e",
+            "admission_ms": 1221.8278509972151,
+            "accepted_to_native_bound_ms": 1001.166,
+            "native_terminal_to_journal_ms": 13088.736,
+            "journal_to_sse_ms": 174.745,
+            "journal_to_last_subscriber_ms": 174.745
+          },
+          {
+            "turn_id": "6c59906b-5a7b-461d-934e-588cccb44849",
+            "admission_ms": 1880.2555479996954,
+            "accepted_to_native_bound_ms": 2327.362,
+            "native_terminal_to_journal_ms": 23492.355,
+            "journal_to_sse_ms": 197.418,
+            "journal_to_last_subscriber_ms": 197.418
+          },
+          {
+            "turn_id": "c2c19ebc-e7da-4286-8608-2f1fd2d3a61b",
+            "admission_ms": 1267.1585760035668,
+            "accepted_to_native_bound_ms": 1100.827,
+            "native_terminal_to_journal_ms": 13130.698,
+            "journal_to_sse_ms": 187.977,
+            "journal_to_last_subscriber_ms": 187.977
+          },
+          {
+            "turn_id": "9019caca-fdcd-499a-8988-761b722c09c2",
+            "admission_ms": 1592.7624179967097,
+            "accepted_to_native_bound_ms": 1866.571,
+            "native_terminal_to_journal_ms": 13998.905999999999,
+            "journal_to_sse_ms": 187.95899999999997,
+            "journal_to_last_subscriber_ms": 187.95899999999997
+          },
+          {
+            "turn_id": "0b87bdf4-d480-434c-ab0e-b96ff1c20ed0",
+            "admission_ms": 1726.0626049974235,
+            "accepted_to_native_bound_ms": 2292.706,
+            "native_terminal_to_journal_ms": 20897.355,
+            "journal_to_sse_ms": 241.56,
+            "journal_to_last_subscriber_ms": 241.56
+          },
+          {
+            "turn_id": "17a5f208-b87e-4a0a-9504-6e267d8b9461",
+            "admission_ms": 1522.6069380005356,
+            "accepted_to_native_bound_ms": 1809.267,
+            "native_terminal_to_journal_ms": 14114.890000000001,
+            "journal_to_sse_ms": 164.405,
+            "journal_to_last_subscriber_ms": 164.405
+          },
+          {
+            "turn_id": "e7c91a0a-3d22-4fdc-8269-0a671ceb43c0",
+            "admission_ms": 2236.2865780014545,
+            "accepted_to_native_bound_ms": 4196.417,
+            "native_terminal_to_journal_ms": 2702.673,
+            "journal_to_sse_ms": 276.515,
+            "journal_to_last_subscriber_ms": 276.515
+          },
+          {
+            "turn_id": "a0d1037d-746e-43be-90a5-e7ab0fd87ea5",
+            "admission_ms": 6725.548353999329,
+            "accepted_to_native_bound_ms": 14289.307,
+            "native_terminal_to_journal_ms": 3717.533,
+            "journal_to_sse_ms": 111.765,
+            "journal_to_last_subscriber_ms": 111.765
+          },
+          {
+            "turn_id": "ea074c8d-670f-4fe0-8b0c-a05c67b229a3",
+            "admission_ms": 2668.857811993803,
+            "accepted_to_native_bound_ms": 8597.236,
+            "native_terminal_to_journal_ms": 17598.775,
+            "journal_to_sse_ms": 218.53300000000002,
+            "journal_to_last_subscriber_ms": 218.53300000000002
+          },
+          {
+            "turn_id": "8a832fd8-80d1-41b1-9d1c-4a5d6934afb4",
+            "admission_ms": 5620.3025529976,
+            "accepted_to_native_bound_ms": 13344.509,
+            "native_terminal_to_journal_ms": 7090.6900000000005,
+            "journal_to_sse_ms": 71.533,
+            "journal_to_last_subscriber_ms": 71.533
+          },
+          {
+            "turn_id": "d5b3d697-344f-488a-a783-cf6ca2f9bb8d",
+            "admission_ms": 1627.454025001498,
+            "accepted_to_native_bound_ms": 2210.432,
+            "native_terminal_to_journal_ms": 16524.878,
+            "journal_to_sse_ms": 247.815,
+            "journal_to_last_subscriber_ms": 247.815
+          },
+          {
+            "turn_id": "1746f30e-d587-46fc-a4ae-1b7523cf0885",
+            "admission_ms": 4327.528608999273,
+            "accepted_to_native_bound_ms": 7775.873,
+            "native_terminal_to_journal_ms": 10788.632,
+            "journal_to_sse_ms": 111.645,
+            "journal_to_last_subscriber_ms": 111.645
+          },
+          {
+            "turn_id": "e676dac2-8041-461d-840b-99a173ff7b31",
+            "admission_ms": 1777.6727059972472,
+            "accepted_to_native_bound_ms": 2425.833,
+            "native_terminal_to_journal_ms": 23568.724,
+            "journal_to_sse_ms": 203.21800000000002,
+            "journal_to_last_subscriber_ms": 203.21800000000002
+          },
+          {
+            "turn_id": "7009584a-38ac-4253-b9e7-2e1eed87022e",
+            "admission_ms": 3851.222842997231,
+            "accepted_to_native_bound_ms": 8313.116,
+            "native_terminal_to_journal_ms": 10733.587,
+            "journal_to_sse_ms": 113.605,
+            "journal_to_last_subscriber_ms": 113.605
+          },
+          {
+            "turn_id": "c5a63a75-773d-448c-9f3a-2cebf478566c",
+            "admission_ms": 7224.598458000401,
+            "accepted_to_native_bound_ms": 15396.649,
+            "native_terminal_to_journal_ms": 615.563,
+            "journal_to_sse_ms": 111.38000000000001,
+            "journal_to_last_subscriber_ms": 111.38000000000001
+          },
+          {
+            "turn_id": "c6956c07-dfc0-4459-a8af-cce41f448a46",
+            "admission_ms": 6839.145668003766,
+            "accepted_to_native_bound_ms": 14921.42,
+            "native_terminal_to_journal_ms": 615.3969999999999,
+            "journal_to_sse_ms": 50.51,
+            "journal_to_last_subscriber_ms": 50.51
+          },
+          {
+            "turn_id": "82556a4a-9935-4e8b-aea3-d01f8dedcd7a",
+            "admission_ms": 7822.149963001721,
+            "accepted_to_native_bound_ms": 17470.066,
+            "native_terminal_to_journal_ms": 169.421,
+            "journal_to_sse_ms": 76.781,
+            "journal_to_last_subscriber_ms": 76.781
+          },
+          {
+            "turn_id": "2b1ba167-8798-4ecb-9e65-4290c900e2b2",
+            "admission_ms": 4608.055800999864,
+            "accepted_to_native_bound_ms": 11046.55,
+            "native_terminal_to_journal_ms": 8214.106,
+            "journal_to_sse_ms": 202.862,
+            "journal_to_last_subscriber_ms": 202.862
+          },
+          {
+            "turn_id": "050ff96e-d98c-4b56-a675-596624f2595a",
+            "admission_ms": 6099.671326999669,
+            "accepted_to_native_bound_ms": 14499.429,
+            "native_terminal_to_journal_ms": 1708.666,
+            "journal_to_sse_ms": 326.79200000000003,
+            "journal_to_last_subscriber_ms": 326.79200000000003
+          },
+          {
+            "turn_id": "403c3b41-c8f5-4545-afed-37ab21f9801d",
+            "admission_ms": 1800.3141829976812,
+            "accepted_to_native_bound_ms": 2310.913,
+            "native_terminal_to_journal_ms": 20876.461,
+            "journal_to_sse_ms": 209.527,
+            "journal_to_last_subscriber_ms": 209.527
+          },
+          {
+            "turn_id": "1e9437a1-7d54-4b62-bb47-37b34f3644dd",
+            "admission_ms": 6777.908971998841,
+            "accepted_to_native_bound_ms": 15104.68,
+            "native_terminal_to_journal_ms": 386.138,
+            "journal_to_sse_ms": 168.462,
+            "journal_to_last_subscriber_ms": 168.462
+          },
+          {
+            "turn_id": "216480bf-2348-46c9-92eb-5ecae3343dd6",
+            "admission_ms": 1948.0789820008795,
+            "accepted_to_native_bound_ms": 2811.712,
+            "native_terminal_to_journal_ms": 20070.146,
+            "journal_to_sse_ms": 178.475,
+            "journal_to_last_subscriber_ms": 178.475
+          },
+          {
+            "turn_id": "752602cd-21f6-4d15-9796-a810c6a0d1b3",
+            "admission_ms": 2018.1991909994395,
+            "accepted_to_native_bound_ms": 8544.967,
+            "native_terminal_to_journal_ms": 3391.414,
+            "journal_to_sse_ms": 85.288,
+            "journal_to_last_subscriber_ms": 85.288
+          },
+          {
+            "turn_id": "4799c051-100b-409e-95a7-ecb8729768c2",
+            "admission_ms": 2080.9960429978673,
+            "accepted_to_native_bound_ms": 2967.513,
+            "native_terminal_to_journal_ms": 19854.584,
+            "journal_to_sse_ms": 242.772,
+            "journal_to_last_subscriber_ms": 242.772
+          },
+          {
+            "turn_id": "41d9a021-62a7-40b2-bf76-174ac8d0a128",
+            "admission_ms": 8484.023398006684,
+            "accepted_to_native_bound_ms": 18067.909,
+            "native_terminal_to_journal_ms": 165.614,
+            "journal_to_sse_ms": 57.421,
+            "journal_to_last_subscriber_ms": 57.421
+          },
+          {
+            "turn_id": "6623117d-e01f-4594-a5c7-36c95040bed6",
+            "admission_ms": 4436.078164995706,
+            "accepted_to_native_bound_ms": 7872.658,
+            "native_terminal_to_journal_ms": 9502.383,
+            "journal_to_sse_ms": 113.655,
+            "journal_to_last_subscriber_ms": 113.655
+          },
+          {
+            "turn_id": "ad2654e1-c963-4214-9612-6e2829b5849e",
+            "admission_ms": 2314.7628029983025,
+            "accepted_to_native_bound_ms": 6923.128000000001,
+            "native_terminal_to_journal_ms": 2641.886,
+            "journal_to_sse_ms": 253.73299999999998,
+            "journal_to_last_subscriber_ms": 253.73299999999998
+          },
+          {
+            "turn_id": "b4534fc0-af30-407c-82db-b5d05acd58c8",
+            "admission_ms": 7568.238881998695,
+            "accepted_to_native_bound_ms": 16249.256,
+            "native_terminal_to_journal_ms": 129.04299999999998,
+            "journal_to_sse_ms": 74.532,
+            "journal_to_last_subscriber_ms": 74.532
+          },
+          {
+            "turn_id": "4c72133a-0c9a-42c7-af40-aac12c8d7c48",
+            "admission_ms": 2137.488642001699,
+            "accepted_to_native_bound_ms": 6989.107,
+            "native_terminal_to_journal_ms": 2718.118,
+            "journal_to_sse_ms": 218.685,
+            "journal_to_last_subscriber_ms": 218.685
+          },
+          {
+            "turn_id": "a91c06d6-1771-4a32-973d-d0e804fdedb0",
+            "admission_ms": 7611.377207998885,
+            "accepted_to_native_bound_ms": 6200.7919999999995,
+            "native_terminal_to_journal_ms": 11022.458,
+            "journal_to_sse_ms": 289.62100000000004,
+            "journal_to_last_subscriber_ms": 289.62100000000004
+          },
+          {
+            "turn_id": "a5453186-2c14-46dc-8e1e-3faf5f4f34ae",
+            "admission_ms": 7677.697507999255,
+            "accepted_to_native_bound_ms": 17594.119,
+            "native_terminal_to_journal_ms": 119.69399999999999,
+            "journal_to_sse_ms": 69.685,
+            "journal_to_last_subscriber_ms": 69.685
+          },
+          {
+            "turn_id": "4b2f1d75-fde3-49ff-8d1f-02a4a3f7ce97",
+            "admission_ms": 2941.9244950040593,
+            "accepted_to_native_bound_ms": 9128.614000000001,
+            "native_terminal_to_journal_ms": 13775.311,
+            "journal_to_sse_ms": 218.607,
+            "journal_to_last_subscriber_ms": 218.607
+          },
+          {
+            "turn_id": "d010c944-cf11-4057-b1e3-5dab9702652c",
+            "admission_ms": 2692.564463999588,
+            "accepted_to_native_bound_ms": 8679.646999999999,
+            "native_terminal_to_journal_ms": 17313.948,
+            "journal_to_sse_ms": 188.234,
+            "journal_to_last_subscriber_ms": 188.234
+          },
+          {
+            "turn_id": "bfbe0aa8-6f0b-464e-b6d2-4e2c698eedbf",
+            "admission_ms": 5875.14075999934,
+            "accepted_to_native_bound_ms": 6807.053,
+            "native_terminal_to_journal_ms": 11068.452000000001,
+            "journal_to_sse_ms": 98.178,
+            "journal_to_last_subscriber_ms": 98.178
+          },
+          {
+            "turn_id": "9b668f11-f890-403d-b107-c0508b699546",
+            "admission_ms": 2496.279922001122,
+            "accepted_to_native_bound_ms": 8041.4169999999995,
+            "native_terminal_to_journal_ms": 19209.552,
+            "journal_to_sse_ms": 201.631,
+            "journal_to_last_subscriber_ms": 201.631
+          },
+          {
+            "turn_id": "792ad5ff-10fd-4b24-870c-bc07c7ae85a4",
+            "admission_ms": 3512.4189579946687,
+            "accepted_to_native_bound_ms": 12178.953,
+            "native_terminal_to_journal_ms": 10290.971000000001,
+            "journal_to_sse_ms": 178.59,
+            "journal_to_last_subscriber_ms": 178.59
+          },
+          {
+            "turn_id": "42919e38-6132-486d-a1d8-0238b09ae4dc",
+            "admission_ms": 2440.0699800025905,
+            "accepted_to_native_bound_ms": 8749.135,
+            "native_terminal_to_journal_ms": 15491.595,
+            "journal_to_sse_ms": 204.623,
+            "journal_to_last_subscriber_ms": 204.623
+          },
+          {
+            "turn_id": "6589b0a4-460a-404a-a9cb-ea4fb76a419b",
+            "admission_ms": 7206.5898639993975,
+            "accepted_to_native_bound_ms": 15106.239,
+            "native_terminal_to_journal_ms": 452.878,
+            "journal_to_sse_ms": 299.536,
+            "journal_to_last_subscriber_ms": 299.536
+          },
+          {
+            "turn_id": "1f89ac4e-a81b-45d2-b241-97f0bd9c0c21",
+            "admission_ms": 3450.6424499995774,
+            "accepted_to_native_bound_ms": 12366.743,
+            "native_terminal_to_journal_ms": 7544.179,
+            "journal_to_sse_ms": 288.89500000000004,
+            "journal_to_last_subscriber_ms": 288.89500000000004
+          },
+          {
+            "turn_id": "28fec7e7-4dfa-4101-9ece-5b95969fa2f9",
+            "admission_ms": 7376.94615899818,
+            "accepted_to_native_bound_ms": 15474.931,
+            "native_terminal_to_journal_ms": 303.75600000000003,
+            "journal_to_sse_ms": 55.389,
+            "journal_to_last_subscriber_ms": 55.389
+          },
+          {
+            "turn_id": "03f27d16-21a3-4ff7-a646-78740dbf13a3",
+            "admission_ms": 5623.325362998003,
+            "accepted_to_native_bound_ms": 14028.946,
+            "native_terminal_to_journal_ms": 2971.685,
+            "journal_to_sse_ms": 339.75100000000003,
+            "journal_to_last_subscriber_ms": 339.75100000000003
+          },
+          {
+            "turn_id": "5bb729d5-0515-4322-98a7-5e675ca190d7",
+            "admission_ms": 2659.4257449978613,
+            "accepted_to_native_bound_ms": 11713.597,
+            "native_terminal_to_journal_ms": 12259.237000000001,
+            "journal_to_sse_ms": 157.45600000000002,
+            "journal_to_last_subscriber_ms": 157.45600000000002
+          },
+          {
+            "turn_id": "8b6756c3-a832-454e-bb85-36ad4cfb5834",
+            "admission_ms": 3035.0962209995487,
+            "accepted_to_native_bound_ms": 11126.414,
+            "native_terminal_to_journal_ms": 10220.029,
+            "journal_to_sse_ms": 182.001,
+            "journal_to_last_subscriber_ms": 182.001
+          },
+          {
+            "turn_id": "a280e83c-5a2b-4ac6-b747-bf72746d3ded",
+            "admission_ms": 2850.1007550003123,
+            "accepted_to_native_bound_ms": 8561.448,
+            "native_terminal_to_journal_ms": 13074.922,
+            "journal_to_sse_ms": 131.98,
+            "journal_to_last_subscriber_ms": 131.98
+          },
+          {
+            "turn_id": "538fc5c7-37fc-4c1d-81c3-43246db319c4",
+            "admission_ms": 2786.762767995242,
+            "accepted_to_native_bound_ms": 11291.108,
+            "native_terminal_to_journal_ms": 11909.556999999999,
+            "journal_to_sse_ms": 169.588,
+            "journal_to_last_subscriber_ms": 169.588
+          },
+          {
+            "turn_id": "a1ba3272-fd13-45bc-acec-b85de8ab7921",
+            "admission_ms": 3261.906335996173,
+            "accepted_to_native_bound_ms": 12333.912,
+            "native_terminal_to_journal_ms": 8835.583,
+            "journal_to_sse_ms": 283.18399999999997,
+            "journal_to_last_subscriber_ms": 283.18399999999997
+          },
+          {
+            "turn_id": "a3d35e78-dbbe-43e1-807a-f0e91a281be4",
+            "admission_ms": 7743.591379999998,
+            "accepted_to_native_bound_ms": 18344.277000000002,
+            "native_terminal_to_journal_ms": 174.57500000000002,
+            "journal_to_sse_ms": 62.72800000000001,
+            "journal_to_last_subscriber_ms": 62.72800000000001
+          },
+          {
+            "turn_id": "bf436071-33bf-4f7b-8a26-c11d757df972",
+            "admission_ms": 7215.045659999305,
+            "accepted_to_native_bound_ms": 16180.386999999999,
+            "native_terminal_to_journal_ms": 151.19299999999998,
+            "journal_to_sse_ms": 71.685,
+            "journal_to_last_subscriber_ms": 71.685
+          },
+          {
+            "turn_id": "c407470c-ee6f-47d9-9395-0bc585fd9341",
+            "admission_ms": 7075.480280000193,
+            "accepted_to_native_bound_ms": 15447.385,
+            "native_terminal_to_journal_ms": 592.307,
+            "journal_to_sse_ms": 46.474000000000004,
+            "journal_to_last_subscriber_ms": 46.474000000000004
+          },
+          {
+            "turn_id": "92eac89b-19b2-4b4d-b438-d4172bdfba99",
+            "admission_ms": 7965.108990996669,
+            "accepted_to_native_bound_ms": 13400.614,
+            "native_terminal_to_journal_ms": 2089.3869999999997,
+            "journal_to_sse_ms": 51.217999999999996,
+            "journal_to_last_subscriber_ms": 51.217999999999996
+          },
+          {
+            "turn_id": "f8009cd3-b045-4d90-8ba7-aa2b6a43a389",
+            "admission_ms": 3167.462263998459,
+            "accepted_to_native_bound_ms": 11296.661,
+            "native_terminal_to_journal_ms": 11723.267,
+            "journal_to_sse_ms": 140.53799999999998,
+            "journal_to_last_subscriber_ms": 140.53799999999998
+          },
+          {
+            "turn_id": "e212ce55-cbf2-4488-bf75-0670c53f6eb7",
+            "admission_ms": 8087.106895000034,
+            "accepted_to_native_bound_ms": 18191.282,
+            "native_terminal_to_journal_ms": 118.129,
+            "journal_to_sse_ms": 53.042,
+            "journal_to_last_subscriber_ms": 53.042
+          },
+          {
+            "turn_id": "19205633-65ec-4b24-ae3e-911c38c6ad07",
+            "admission_ms": 4412.693822996516,
+            "accepted_to_native_bound_ms": 12902.046,
+            "native_terminal_to_journal_ms": 6825.064,
+            "journal_to_sse_ms": 62.925999999999995,
+            "journal_to_last_subscriber_ms": 62.925999999999995
+          },
+          {
+            "turn_id": "d72b68e5-a9a7-45c9-a002-e912d0c8718d",
+            "admission_ms": 8263.580557999376,
+            "accepted_to_native_bound_ms": 15584.323,
+            "native_terminal_to_journal_ms": 170.717,
+            "journal_to_sse_ms": 74.991,
+            "journal_to_last_subscriber_ms": 74.991
+          },
+          {
+            "turn_id": "48b43928-82cc-484b-b1c7-4dadfd9d8ed7",
+            "admission_ms": 3255.662180999934,
+            "accepted_to_native_bound_ms": 12345.064,
+            "native_terminal_to_journal_ms": 10144.202,
+            "journal_to_sse_ms": 138.899,
+            "journal_to_last_subscriber_ms": 138.899
+          },
+          {
+            "turn_id": "bb317afd-6719-491d-82f2-5fe493aee0d8",
+            "admission_ms": 6500.002384003892,
+            "accepted_to_native_bound_ms": 15154.083999999999,
+            "native_terminal_to_journal_ms": 2741.2980000000002,
+            "journal_to_sse_ms": 159.64600000000002,
+            "journal_to_last_subscriber_ms": 159.64600000000002
+          },
+          {
+            "turn_id": "5dc05498-1e5b-4dec-9691-0b7dfb10c181",
+            "admission_ms": 6086.306062999938,
+            "accepted_to_native_bound_ms": 6927.6669999999995,
+            "native_terminal_to_journal_ms": 11821.03,
+            "journal_to_sse_ms": 296.233,
+            "journal_to_last_subscriber_ms": 296.233
+          },
+          {
+            "turn_id": "bfd048a1-e9f2-45a2-9582-1e99feea4cc5",
+            "admission_ms": 6605.579815004603,
+            "accepted_to_native_bound_ms": 15086.038999999999,
+            "native_terminal_to_journal_ms": 1673.697,
+            "journal_to_sse_ms": 232.23,
+            "journal_to_last_subscriber_ms": 232.23
+          },
+          {
+            "turn_id": "d244ea89-de80-4072-9319-451c95f9ec32",
+            "admission_ms": 6386.978559996351,
+            "accepted_to_native_bound_ms": 6587.263,
+            "native_terminal_to_journal_ms": 11517.886,
+            "journal_to_sse_ms": 316.61699999999996,
+            "journal_to_last_subscriber_ms": 316.61699999999996
+          },
+          {
+            "turn_id": "2121dc08-14cd-4647-8d96-610d344a42c1",
+            "admission_ms": 3516.47470700118,
+            "accepted_to_native_bound_ms": 13334.488000000001,
+            "native_terminal_to_journal_ms": 9531.235,
+            "journal_to_sse_ms": 185.122,
+            "journal_to_last_subscriber_ms": 185.122
+          },
+          {
+            "turn_id": "7706c0ae-556c-464e-a5cc-994fa3699a33",
+            "admission_ms": 4756.868080999993,
+            "accepted_to_native_bound_ms": 12757.413,
+            "native_terminal_to_journal_ms": 6790.968999999999,
+            "journal_to_sse_ms": 57.184,
+            "journal_to_last_subscriber_ms": 57.184
+          },
+          {
+            "turn_id": "ba6b1d94-ac41-4211-9897-291c6e677218",
+            "admission_ms": 5622.011872997973,
+            "accepted_to_native_bound_ms": 13968.729,
+            "native_terminal_to_journal_ms": 6491.240000000001,
+            "journal_to_sse_ms": 414.193,
+            "journal_to_last_subscriber_ms": 414.193
+          },
+          {
+            "turn_id": "f2f645a1-59be-452c-9ffb-884610a1da11",
+            "admission_ms": 3722.178829004406,
+            "accepted_to_native_bound_ms": 13131.078000000001,
+            "native_terminal_to_journal_ms": 9521.474,
+            "journal_to_sse_ms": 196.67000000000002,
+            "journal_to_last_subscriber_ms": 196.67000000000002
+          },
+          {
+            "turn_id": "571d6950-4bd4-42fb-9c16-997c77da664d",
+            "admission_ms": 3780.022316001123,
+            "accepted_to_native_bound_ms": 8224.351,
+            "native_terminal_to_journal_ms": 10478.242,
+            "journal_to_sse_ms": 58.219,
+            "journal_to_last_subscriber_ms": 58.219
+          },
+          {
+            "turn_id": "3d129a29-fe83-406f-93e5-a704035d1cb4",
+            "admission_ms": 5286.08607899514,
+            "accepted_to_native_bound_ms": 13497.199,
+            "native_terminal_to_journal_ms": 7239.555,
+            "journal_to_sse_ms": 92.699,
+            "journal_to_last_subscriber_ms": 92.699
+          },
+          {
+            "turn_id": "52366e75-40a9-46d8-a8a6-a2f7ee7e9990",
+            "admission_ms": 5510.262315001455,
+            "accepted_to_native_bound_ms": 14037.918,
+            "native_terminal_to_journal_ms": 5288.46,
+            "journal_to_sse_ms": 120.059,
+            "journal_to_last_subscriber_ms": 120.059
+          },
+          {
+            "turn_id": "767a11e2-a318-4072-80e7-3bd597a38843",
+            "admission_ms": 3845.4462199952104,
+            "accepted_to_native_bound_ms": 13247.002,
+            "native_terminal_to_journal_ms": 8996.179,
+            "journal_to_sse_ms": 238.404,
+            "journal_to_last_subscriber_ms": 238.404
+          },
+          {
+            "turn_id": "3e979c65-24d0-4614-a228-2953af8e7b96",
+            "admission_ms": 8010.429045003548,
+            "accepted_to_native_bound_ms": 7877.858,
+            "native_terminal_to_journal_ms": 9050.656,
+            "journal_to_sse_ms": 324.07000000000005,
+            "journal_to_last_subscriber_ms": 324.07000000000005
+          },
+          {
+            "turn_id": "f100a650-130d-446e-a2ac-f8e65ae2f994",
+            "admission_ms": 4305.291611002758,
+            "accepted_to_native_bound_ms": 10640.794,
+            "native_terminal_to_journal_ms": 11110.767,
+            "journal_to_sse_ms": 150.995,
+            "journal_to_last_subscriber_ms": 150.995
+          },
+          {
+            "turn_id": "4a46b363-5a03-4c73-9834-f414760bf234",
+            "admission_ms": 5441.246340000362,
+            "accepted_to_native_bound_ms": 13984.84,
+            "native_terminal_to_journal_ms": 462.745,
+            "journal_to_sse_ms": 81.569,
+            "journal_to_last_subscriber_ms": 81.569
+          },
+          {
+            "turn_id": "ebd72d46-23da-4d64-a53a-7ed9f6701111",
+            "admission_ms": 6429.756272002123,
+            "accepted_to_native_bound_ms": 9806.733,
+            "native_terminal_to_journal_ms": 9344.408,
+            "journal_to_sse_ms": 237.06,
+            "journal_to_last_subscriber_ms": 237.06
+          },
+          {
+            "turn_id": "74626339-0272-4dd3-a52f-7e9b64abcb39",
+            "admission_ms": 6831.883412996831,
+            "accepted_to_native_bound_ms": 14957.26,
+            "native_terminal_to_journal_ms": 964.94,
+            "journal_to_sse_ms": 196.78699999999998,
+            "journal_to_last_subscriber_ms": 196.78699999999998
+          },
+          {
+            "turn_id": "ff0e57c1-906d-4b48-870f-e848b2ccfe0b",
+            "admission_ms": 4314.756924999529,
+            "accepted_to_native_bound_ms": 7803.353999999999,
+            "native_terminal_to_journal_ms": 368.815,
+            "journal_to_sse_ms": 84.65100000000001,
+            "journal_to_last_subscriber_ms": 84.65100000000001
+          },
+          {
+            "turn_id": "439bf531-d1ea-400c-9cab-1466cce1d67c",
+            "admission_ms": 8329.295129995444,
+            "accepted_to_native_bound_ms": 18665.198,
+            "native_terminal_to_journal_ms": 160.761,
+            "journal_to_sse_ms": 42.52,
+            "journal_to_last_subscriber_ms": 42.52
+          },
+          {
+            "turn_id": "c3157c89-e3be-4974-81ff-215c5470b1db",
+            "admission_ms": 7704.369539998879,
+            "accepted_to_native_bound_ms": 4274.572,
+            "native_terminal_to_journal_ms": 13100.816,
+            "journal_to_sse_ms": 207.344,
+            "journal_to_last_subscriber_ms": 207.344
+          },
+          {
+            "turn_id": "c1facfbc-608f-417a-8269-99a18a88720d",
+            "admission_ms": 7542.053521996422,
+            "accepted_to_native_bound_ms": 7441.63,
+            "native_terminal_to_journal_ms": 9949.247,
+            "journal_to_sse_ms": 69.13,
+            "journal_to_last_subscriber_ms": 69.13
+          },
+          {
+            "turn_id": "86b1801e-5d0f-4227-ae2e-ac719502ebf7",
+            "admission_ms": 4441.059785000107,
+            "accepted_to_native_bound_ms": 14293.673,
+            "native_terminal_to_journal_ms": 8933.589,
+            "journal_to_sse_ms": 233.745,
+            "journal_to_last_subscriber_ms": 233.745
+          },
+          {
+            "turn_id": "4bb4e342-5e1c-4844-90ed-c8b9d90bee1d",
+            "admission_ms": 4419.279825997364,
+            "accepted_to_native_bound_ms": 10866.441,
+            "native_terminal_to_journal_ms": 8293.871,
+            "journal_to_sse_ms": 316.183,
+            "journal_to_last_subscriber_ms": 316.183
+          },
+          {
+            "turn_id": "e5a623d6-6248-4441-abbf-9636ba4a624d",
+            "admission_ms": 4463.707451999653,
+            "accepted_to_native_bound_ms": 12993.142,
+            "native_terminal_to_journal_ms": 8112.933999999999,
+            "journal_to_sse_ms": 80.65,
+            "journal_to_last_subscriber_ms": 80.65
+          },
+          {
+            "turn_id": "70435cf0-3b43-4cbd-9aec-63ca564c23f2",
+            "admission_ms": 5741.947238995635,
+            "accepted_to_native_bound_ms": 6882.018,
+            "native_terminal_to_journal_ms": 12280.576,
+            "journal_to_sse_ms": 363.436,
+            "journal_to_last_subscriber_ms": 363.436
+          },
+          {
+            "turn_id": "e68976bb-18c4-4ec9-ade5-9ce60dc5e32a",
+            "admission_ms": 7932.497975998558,
+            "accepted_to_native_bound_ms": 18144.529,
+            "native_terminal_to_journal_ms": 124.156,
+            "journal_to_sse_ms": 56.053,
+            "journal_to_last_subscriber_ms": 56.053
+          },
+          {
+            "turn_id": "70c2c4f1-97c6-4e6a-8b93-47f5a0f235c6",
+            "admission_ms": 5783.377169995219,
+            "accepted_to_native_bound_ms": 14604.11,
+            "native_terminal_to_journal_ms": 4827.88,
+            "journal_to_sse_ms": 83.73400000000001,
+            "journal_to_last_subscriber_ms": 83.73400000000001
+          },
+          {
+            "turn_id": "0727d46f-4453-463c-b062-951deefc9082",
+            "admission_ms": 7971.827888002736,
+            "accepted_to_native_bound_ms": 7871.147,
+            "native_terminal_to_journal_ms": 9176.376,
+            "journal_to_sse_ms": 199.74,
+            "journal_to_last_subscriber_ms": 199.74
+          },
+          {
+            "turn_id": "3acd5776-6a10-4370-8ede-eaeda9e0f52f",
+            "admission_ms": 4724.406959001499,
+            "accepted_to_native_bound_ms": 13940.709,
+            "native_terminal_to_journal_ms": 7813.268,
+            "journal_to_sse_ms": 192.59699999999998,
+            "journal_to_last_subscriber_ms": 192.59699999999998
+          },
+          {
+            "turn_id": "aa7488ea-50a8-4881-9176-24e70d084b59",
+            "admission_ms": 7495.689481998852,
+            "accepted_to_native_bound_ms": 6678.594999999999,
+            "native_terminal_to_journal_ms": 9174.127,
+            "journal_to_sse_ms": 231.193,
+            "journal_to_last_subscriber_ms": 231.193
+          },
+          {
+            "turn_id": "1725d2be-faa9-487f-96d2-b84dab0af412",
+            "admission_ms": 7288.621036997938,
+            "accepted_to_native_bound_ms": 17570.019,
+            "native_terminal_to_journal_ms": 153.202,
+            "journal_to_sse_ms": 98.43599999999999,
+            "journal_to_last_subscriber_ms": 98.43599999999999
+          },
+          {
+            "turn_id": "26c97b2c-6846-4701-9efb-938a28943710",
+            "admission_ms": 4706.42194699758,
+            "accepted_to_native_bound_ms": 12801.359,
+            "native_terminal_to_journal_ms": 7965.057,
+            "journal_to_sse_ms": 89.05499999999999,
+            "journal_to_last_subscriber_ms": 89.05499999999999
+          },
+          {
+            "turn_id": "38a90d5f-afa5-465a-ace1-c1b6e29370e0",
+            "admission_ms": 6949.411582994799,
+            "accepted_to_native_bound_ms": 15659.545,
+            "native_terminal_to_journal_ms": 122.914,
+            "journal_to_sse_ms": 75.975,
+            "journal_to_last_subscriber_ms": 75.975
+          },
+          {
+            "turn_id": "9ba1817d-c98c-4c42-99b4-1932b53854d1",
+            "admission_ms": 6116.072940996673,
+            "accepted_to_native_bound_ms": 15297.696,
+            "native_terminal_to_journal_ms": 508.382,
+            "journal_to_sse_ms": 65.69200000000001,
+            "journal_to_last_subscriber_ms": 65.69200000000001
+          },
+          {
+            "turn_id": "66dd99d1-9d24-4796-ac57-e48deb326f59",
+            "admission_ms": 5947.169585000665,
+            "accepted_to_native_bound_ms": 14604.472,
+            "native_terminal_to_journal_ms": 4121.081,
+            "journal_to_sse_ms": 277.061,
+            "journal_to_last_subscriber_ms": 277.061
+          },
+          {
+            "turn_id": "37123bc2-1655-40e8-b41b-7bcecff60b4e",
+            "admission_ms": 5011.7877340017,
+            "accepted_to_native_bound_ms": 12694.708999999999,
+            "native_terminal_to_journal_ms": 7956.444,
+            "journal_to_sse_ms": 207.06,
+            "journal_to_last_subscriber_ms": 207.06
+          },
+          {
+            "turn_id": "ddaf1964-8939-4baa-b7f1-8a051cc04ab7",
+            "admission_ms": 8113.638883005478,
+            "accepted_to_native_bound_ms": 15983.292000000001,
+            "native_terminal_to_journal_ms": 185.23600000000002,
+            "journal_to_sse_ms": 70.661,
+            "journal_to_last_subscriber_ms": 70.661
+          },
+          {
+            "turn_id": "0764c99f-479c-4ed7-b3df-9975f7da6f30",
+            "admission_ms": 6845.823013005429,
+            "accepted_to_native_bound_ms": 15667.548,
+            "native_terminal_to_journal_ms": 610.5690000000001,
+            "journal_to_sse_ms": 70.868,
+            "journal_to_last_subscriber_ms": 70.868
+          },
+          {
+            "turn_id": "94c8c6db-7c94-493a-873b-5891723741d3",
+            "admission_ms": 5909.566801994515,
+            "accepted_to_native_bound_ms": 14488.508,
+            "native_terminal_to_journal_ms": 4183.256,
+            "journal_to_sse_ms": 409.59000000000003,
+            "journal_to_last_subscriber_ms": 409.59000000000003
+          },
+          {
+            "turn_id": "8f353570-22d1-4e60-9f9a-34f95820389f",
+            "admission_ms": 8206.488240000908,
+            "accepted_to_native_bound_ms": 18050.782000000003,
+            "native_terminal_to_journal_ms": 156.473,
+            "journal_to_sse_ms": 115.191,
+            "journal_to_last_subscriber_ms": 115.191
+          },
+          {
+            "turn_id": "1cfb8bf9-82fb-46e7-9275-1690fa28b9a5",
+            "admission_ms": 7882.083816002705,
+            "accepted_to_native_bound_ms": 17002.185999999998,
+            "native_terminal_to_journal_ms": 223.517,
+            "journal_to_sse_ms": 79.053,
+            "journal_to_last_subscriber_ms": 79.053
+          },
+          {
+            "turn_id": "560d5a8e-4bb6-42db-8a5b-1c541d664ed4",
+            "admission_ms": 7668.748493997555,
+            "accepted_to_native_bound_ms": 7126.415,
+            "native_terminal_to_journal_ms": 9270.842999999999,
+            "journal_to_sse_ms": 186.962,
+            "journal_to_last_subscriber_ms": 186.962
+          },
+          {
+            "turn_id": "d7122a45-0aa2-42a6-849e-5eb4d9a97f4d",
+            "admission_ms": 7751.267626998015,
+            "accepted_to_native_bound_ms": 15257.459,
+            "native_terminal_to_journal_ms": 121.18299999999999,
+            "journal_to_sse_ms": 78.583,
+            "journal_to_last_subscriber_ms": 78.583
+          },
+          {
+            "turn_id": "81a25368-c409-49f9-8df0-1b0097a0eadd",
+            "admission_ms": 6267.500077003206,
+            "accepted_to_native_bound_ms": 14060.484,
+            "native_terminal_to_journal_ms": 643.766,
+            "journal_to_sse_ms": 328.01599999999996,
+            "journal_to_last_subscriber_ms": 328.01599999999996
+          },
+          {
+            "turn_id": "b2714729-6694-4d97-977a-b619517de83f",
+            "admission_ms": 5047.880854996038,
+            "accepted_to_native_bound_ms": 12800.599,
+            "native_terminal_to_journal_ms": 8056.9220000000005,
+            "journal_to_sse_ms": 94.61500000000001,
+            "journal_to_last_subscriber_ms": 94.61500000000001
+          },
+          {
+            "turn_id": "b250340c-c864-4de6-bff8-48df7a2f7479",
+            "admission_ms": 7415.43277999881,
+            "accepted_to_native_bound_ms": 17816.592,
+            "native_terminal_to_journal_ms": 189.59300000000002,
+            "journal_to_sse_ms": 65.118,
+            "journal_to_last_subscriber_ms": 65.118
+          },
+          {
+            "turn_id": "6f4b16a9-62e9-43c0-8a15-23f36a45ab38",
+            "admission_ms": 5202.847626998846,
+            "accepted_to_native_bound_ms": 13489.006,
+            "native_terminal_to_journal_ms": 6546.813,
+            "journal_to_sse_ms": 149.805,
+            "journal_to_last_subscriber_ms": 149.805
+          },
+          {
+            "turn_id": "03c99f0a-697e-4430-aa64-3e6c2c8bf237",
+            "admission_ms": 5936.302313995839,
+            "accepted_to_native_bound_ms": 14691.596000000001,
+            "native_terminal_to_journal_ms": 3412.873,
+            "journal_to_sse_ms": 415.44100000000003,
+            "journal_to_last_subscriber_ms": 415.44100000000003
+          },
+          {
+            "turn_id": "b4416162-a074-4732-bb74-65a95f8235d2",
+            "admission_ms": 6137.923520000186,
+            "accepted_to_native_bound_ms": 6767.179999999999,
+            "native_terminal_to_journal_ms": 11246.131,
+            "journal_to_sse_ms": 287.186,
+            "journal_to_last_subscriber_ms": 287.186
+          },
+          {
+            "turn_id": "ebc0d157-f5ab-4f74-8187-18097f4ec624",
+            "admission_ms": 6820.84971400036,
+            "accepted_to_native_bound_ms": 15680.069,
+            "native_terminal_to_journal_ms": 168.747,
+            "journal_to_sse_ms": 117.368,
+            "journal_to_last_subscriber_ms": 117.368
+          },
+          {
+            "turn_id": "3a398704-ae78-49d6-aa79-5934b126c76a",
+            "admission_ms": 7701.601284999924,
+            "accepted_to_native_bound_ms": 16973.842999999997,
+            "native_terminal_to_journal_ms": 180.405,
+            "journal_to_sse_ms": 81.329,
+            "journal_to_last_subscriber_ms": 81.329
+          },
+          {
+            "turn_id": "f2751374-1559-4b17-a7e0-fbe4a80c235d",
+            "admission_ms": 5871.045310996124,
+            "accepted_to_native_bound_ms": 6917.777,
+            "native_terminal_to_journal_ms": 12014.41,
+            "journal_to_sse_ms": 187.602,
+            "journal_to_last_subscriber_ms": 187.602
+          },
+          {
+            "turn_id": "60e22339-545e-4f1e-9e22-d5f5c68efaba",
+            "admission_ms": 5656.704797998827,
+            "accepted_to_native_bound_ms": 13978.246000000001,
+            "native_terminal_to_journal_ms": 3689.272,
+            "journal_to_sse_ms": 113.766,
+            "journal_to_last_subscriber_ms": 113.766
+          },
+          {
+            "turn_id": "45237722-a869-4190-acee-d012ffb15191",
+            "admission_ms": 6851.16995700082,
+            "accepted_to_native_bound_ms": 6552.432,
+            "native_terminal_to_journal_ms": 10859.48,
+            "journal_to_sse_ms": 291.916,
+            "journal_to_last_subscriber_ms": 291.916
+          },
+          {
+            "turn_id": "1588d91d-debd-49b8-928a-a70ac87e0b88",
+            "admission_ms": 7882.417102002364,
+            "accepted_to_native_bound_ms": 14849.634999999998,
+            "native_terminal_to_journal_ms": 199.77900000000002,
+            "journal_to_sse_ms": 63.336000000000006,
+            "journal_to_last_subscriber_ms": 63.336000000000006
+          },
+          {
+            "turn_id": "2dec986c-5ff2-4a20-8aff-44ea423f42ea",
+            "admission_ms": 6754.1881689976435,
+            "accepted_to_native_bound_ms": 6683.642,
+            "native_terminal_to_journal_ms": 11393.069000000001,
+            "journal_to_sse_ms": 141.894,
+            "journal_to_last_subscriber_ms": 141.894
+          },
+          {
+            "turn_id": "dc4c05ce-943b-4f01-a180-d3dd81491f2b",
+            "admission_ms": 6548.097762002726,
+            "accepted_to_native_bound_ms": 13988.583,
+            "native_terminal_to_journal_ms": 1143.497,
+            "journal_to_sse_ms": 89.92,
+            "journal_to_last_subscriber_ms": 89.92
+          },
+          {
+            "turn_id": "76998a74-b25e-43fb-bc5e-fe1c8a50bd0d",
+            "admission_ms": 6960.594119998859,
+            "accepted_to_native_bound_ms": 5284.424999999999,
+            "native_terminal_to_journal_ms": 9218.109999999999,
+            "journal_to_sse_ms": 88.855,
+            "journal_to_last_subscriber_ms": 88.855
+          },
+          {
+            "turn_id": "42e97966-71b4-4070-a5ee-75cc3ed97a74",
+            "admission_ms": 5356.299601000501,
+            "accepted_to_native_bound_ms": 14314.124,
+            "native_terminal_to_journal_ms": 3446.3590000000004,
+            "journal_to_sse_ms": 137.92399999999998,
+            "journal_to_last_subscriber_ms": 137.92399999999998
+          }
+        ]
+      },
+      {
+        "concurrency": 1,
+        "subscribers_per_turn": 32,
+        "duration_seconds": 1.23,
+        "metrics": {
+          "admission_ms": {
+            "p50": 23.85,
+            "p95": 23.85,
+            "p99": 23.85
+          },
+          "accepted_to_native_bound_ms": {
+            "p50": 674.25,
+            "p95": 674.25,
+            "p99": 674.25
+          },
+          "native_terminal_to_journal_ms": {
+            "p50": 98.47,
+            "p95": 98.47,
+            "p99": 98.47
+          },
+          "journal_to_sse_ms": {
+            "p50": 77.77,
+            "p95": 77.77,
+            "p99": 77.77
+          },
+          "journal_to_last_subscriber_ms": {
+            "p50": 84.44,
+            "p95": 84.44,
+            "p99": 84.44
+          }
+        },
+        "samples": [
+          {
+            "turn_id": "7bb7f97a-69d5-4857-9450-270048914ed2",
+            "admission_ms": 23.849418997997418,
+            "accepted_to_native_bound_ms": 674.252,
+            "native_terminal_to_journal_ms": 98.468,
+            "journal_to_sse_ms": 77.77000000000001,
+            "journal_to_last_subscriber_ms": 84.438
+          }
+        ]
+      }
+    ]
+  },
+  "capacity": {
+    "measured_at": "2026-09-11T06:44:13.771475+00:00",
+    "workload": "OfflineFinanceModel, synthetic calculate(2+3); no external provider calls",
+    "api_jobs": 0,
+    "worker_jobs": 4,
+    "native_terminal_timestamp": "read-only public.run.updated_at after success; probe DB only",
+    "batches": [
+      {
+        "concurrency": 1,
+        "subscribers_per_turn": 1,
+        "duration_seconds": 0.81,
+        "metrics": {
+          "admission_ms": {
+            "p50": 39.0,
+            "p95": 39.0,
+            "p99": 39.0
+          },
+          "accepted_to_native_bound_ms": {
+            "p50": 199.52,
+            "p95": 199.52,
+            "p99": 199.52
+          },
+          "native_terminal_to_journal_ms": {
+            "p50": 95.55,
+            "p95": 95.55,
+            "p99": 95.55
+          },
+          "journal_to_sse_ms": {
+            "p50": 43.62,
+            "p95": 43.62,
+            "p99": 43.62
+          },
+          "journal_to_last_subscriber_ms": {
+            "p50": 43.62,
+            "p95": 43.62,
+            "p99": 43.62
+          }
+        },
+        "samples": [
+          {
+            "turn_id": "9e9cf11d-3cf0-4620-a0af-44a6fea0ef21",
+            "admission_ms": 38.999503005470615,
+            "accepted_to_native_bound_ms": 199.517,
+            "native_terminal_to_journal_ms": 95.546,
+            "journal_to_sse_ms": 43.624,
+            "journal_to_last_subscriber_ms": 43.624
+          }
+        ]
+      },
+      {
+        "concurrency": 32,
+        "subscribers_per_turn": 1,
+        "duration_seconds": 11.58,
+        "metrics": {
+          "admission_ms": {
+            "p50": 617.66,
+            "p95": 1073.91,
+            "p99": 2065.74
+          },
+          "accepted_to_native_bound_ms": {
+            "p50": 3068.8,
+            "p95": 4185.54,
+            "p99": 4198.32
+          },
+          "native_terminal_to_journal_ms": {
+            "p50": 347.25,
+            "p95": 3111.39,
+            "p99": 3506.06
+          },
+          "journal_to_sse_ms": {
+            "p50": 98.29,
+            "p95": 207.93,
+            "p99": 267.61
+          },
+          "journal_to_last_subscriber_ms": {
+            "p50": 98.29,
+            "p95": 207.93,
+            "p99": 267.61
+          }
+        },
+        "samples": [
+          {
+            "turn_id": "218ad3cf-06c3-4682-870d-bf6ce8cdc330",
+            "admission_ms": 195.07824000174878,
+            "accepted_to_native_bound_ms": 1926.865,
+            "native_terminal_to_journal_ms": 3506.058,
+            "journal_to_sse_ms": 153.191,
+            "journal_to_last_subscriber_ms": 153.191
+          },
+          {
+            "turn_id": "b7a72628-ee6c-482e-a39c-dc57a97a2553",
+            "admission_ms": 300.69694299891125,
+            "accepted_to_native_bound_ms": 2006.367,
+            "native_terminal_to_journal_ms": 3111.386,
+            "journal_to_sse_ms": 152.989,
+            "journal_to_last_subscriber_ms": 152.989
+          },
+          {
+            "turn_id": "59aeb830-0b26-462b-a80a-256d86a64884",
+            "admission_ms": 557.7717129999655,
+            "accepted_to_native_bound_ms": 3068.803,
+            "native_terminal_to_journal_ms": 1057.869,
+            "journal_to_sse_ms": 51.736,
+            "journal_to_last_subscriber_ms": 51.736
+          },
+          {
+            "turn_id": "b049dddf-315f-41f8-8a98-fc18f8d11706",
+            "admission_ms": 410.54352399805794,
+            "accepted_to_native_bound_ms": 1886.365,
+            "native_terminal_to_journal_ms": 2948.973,
+            "journal_to_sse_ms": 137.215,
+            "journal_to_last_subscriber_ms": 137.215
+          },
+          {
+            "turn_id": "f8cbfa60-f61f-4c9b-9781-df4f51f912aa",
+            "admission_ms": 250.2298149993294,
+            "accepted_to_native_bound_ms": 2001.4460000000001,
+            "native_terminal_to_journal_ms": 2608.391,
+            "journal_to_sse_ms": 127.93599999999999,
+            "journal_to_last_subscriber_ms": 127.93599999999999
+          },
+          {
+            "turn_id": "9bf76c03-83d3-48c8-afe0-48b59f214288",
+            "admission_ms": 1014.078611995501,
+            "accepted_to_native_bound_ms": 4183.251,
+            "native_terminal_to_journal_ms": 208.55599999999998,
+            "journal_to_sse_ms": 198.90099999999998,
+            "journal_to_last_subscriber_ms": 198.90099999999998
+          },
+          {
+            "turn_id": "ac16495b-813a-4b57-8420-e24716b377e1",
+            "admission_ms": 558.7133070002892,
+            "accepted_to_native_bound_ms": 3044.867,
+            "native_terminal_to_journal_ms": 1121.671,
+            "journal_to_sse_ms": 57.983,
+            "journal_to_last_subscriber_ms": 57.983
+          },
+          {
+            "turn_id": "0386f225-0ddb-45e1-8863-56fa8c6f6c0e",
+            "admission_ms": 362.6909570011776,
+            "accepted_to_native_bound_ms": 1832.153,
+            "native_terminal_to_journal_ms": 3047.3219999999997,
+            "journal_to_sse_ms": 155.097,
+            "journal_to_last_subscriber_ms": 155.097
+          },
+          {
+            "turn_id": "50341e68-c64c-40b3-929a-d0d5e14ccbb5",
+            "admission_ms": 1073.9141489975736,
+            "accepted_to_native_bound_ms": 4185.537,
+            "native_terminal_to_journal_ms": 299.065,
+            "journal_to_sse_ms": 98.29,
+            "journal_to_last_subscriber_ms": 98.29
+          },
+          {
+            "turn_id": "45da07e5-f375-4fcc-b5a5-7c4870d98045",
+            "admission_ms": 1022.5912269961555,
+            "accepted_to_native_bound_ms": 4113.05,
+            "native_terminal_to_journal_ms": 144.053,
+            "journal_to_sse_ms": 53.773,
+            "journal_to_last_subscriber_ms": 53.773
+          },
+          {
+            "turn_id": "b1f72eae-e8e1-43ee-89a4-e069fcf0ecce",
+            "admission_ms": 547.2121550046722,
+            "accepted_to_native_bound_ms": 1831.562,
+            "native_terminal_to_journal_ms": 2947.788,
+            "journal_to_sse_ms": 207.93,
+            "journal_to_last_subscriber_ms": 207.93
+          },
+          {
+            "turn_id": "f9851ded-c9df-4168-8cfc-b72bb6666139",
+            "admission_ms": 1026.5138960021432,
+            "accepted_to_native_bound_ms": 4048.3120000000004,
+            "native_terminal_to_journal_ms": 116.714,
+            "journal_to_sse_ms": 51.945,
+            "journal_to_last_subscriber_ms": 51.945
+          },
+          {
+            "turn_id": "c5e0ddce-77db-419f-8490-228342834d42",
+            "admission_ms": 545.704994998232,
+            "accepted_to_native_bound_ms": 1851.386,
+            "native_terminal_to_journal_ms": 2923.6110000000003,
+            "journal_to_sse_ms": 267.60699999999997,
+            "journal_to_last_subscriber_ms": 267.60699999999997
+          },
+          {
+            "turn_id": "27007612-cedb-482a-a949-bb4153e44667",
+            "admission_ms": 2065.7425120007247,
+            "accepted_to_native_bound_ms": 3221.0570000000002,
+            "native_terminal_to_journal_ms": 242.029,
+            "journal_to_sse_ms": 57.141,
+            "journal_to_last_subscriber_ms": 57.141
+          },
+          {
+            "turn_id": "7bee9b04-62d2-4da0-9e0f-1b5be8a9e520",
+            "admission_ms": 916.7375180040835,
+            "accepted_to_native_bound_ms": 3406.4700000000003,
+            "native_terminal_to_journal_ms": 193.825,
+            "journal_to_sse_ms": 106.89500000000001,
+            "journal_to_last_subscriber_ms": 106.89500000000001
+          },
+          {
+            "turn_id": "01c82989-769e-43cd-a9dc-f19d82852098",
+            "admission_ms": 1031.6687270023976,
+            "accepted_to_native_bound_ms": 4043.937,
+            "native_terminal_to_journal_ms": 165.582,
+            "journal_to_sse_ms": 60.732,
+            "journal_to_last_subscriber_ms": 60.732
+          },
+          {
+            "turn_id": "4c051743-1deb-41bc-9401-c4ac8c5a0a27",
+            "admission_ms": 627.9224370009615,
+            "accepted_to_native_bound_ms": 3003.0589999999997,
+            "native_terminal_to_journal_ms": 561.11,
+            "journal_to_sse_ms": 105.488,
+            "journal_to_last_subscriber_ms": 105.488
+          },
+          {
+            "turn_id": "984de0de-5974-4eb4-9354-afc951af2351",
+            "admission_ms": 545.0255210016621,
+            "accepted_to_native_bound_ms": 2928.8509999999997,
+            "native_terminal_to_journal_ms": 1055.267,
+            "journal_to_sse_ms": 103.46900000000001,
+            "journal_to_last_subscriber_ms": 103.46900000000001
+          },
+          {
+            "turn_id": "94190d5a-bf13-409f-a8ed-2561ce8ff2c1",
+            "admission_ms": 548.0229480017442,
+            "accepted_to_native_bound_ms": 2784.098,
+            "native_terminal_to_journal_ms": 472.948,
+            "journal_to_sse_ms": 40.932,
+            "journal_to_last_subscriber_ms": 40.932
+          },
+          {
+            "turn_id": "08984d58-2bbf-4345-b4e6-f1e34fdd7ea2",
+            "admission_ms": 844.1112869986682,
+            "accepted_to_native_bound_ms": 3481.25,
+            "native_terminal_to_journal_ms": 127.503,
+            "journal_to_sse_ms": 51.303000000000004,
+            "journal_to_last_subscriber_ms": 51.303000000000004
+          },
+          {
+            "turn_id": "ee43f9e9-8210-461d-ba83-7602839146fe",
+            "admission_ms": 1009.3267289994401,
+            "accepted_to_native_bound_ms": 4198.316,
+            "native_terminal_to_journal_ms": 117.179,
+            "journal_to_sse_ms": 76.429,
+            "journal_to_last_subscriber_ms": 76.429
+          },
+          {
+            "turn_id": "0f89c288-11b2-4a53-9517-63cce2a36348",
+            "admission_ms": 945.6352429988328,
+            "accepted_to_native_bound_ms": 3608.976,
+            "native_terminal_to_journal_ms": 115.761,
+            "journal_to_sse_ms": 48.416000000000004,
+            "journal_to_last_subscriber_ms": 48.416000000000004
+          },
+          {
+            "turn_id": "0c344e57-71d6-4681-b4a5-a9b5ceb01ce2",
+            "admission_ms": 804.1356920002727,
+            "accepted_to_native_bound_ms": 3425.042,
+            "native_terminal_to_journal_ms": 347.245,
+            "journal_to_sse_ms": 138.367,
+            "journal_to_last_subscriber_ms": 138.367
+          },
+          {
+            "turn_id": "b5a21bc8-db83-480f-9aaa-99b6af6e33f4",
+            "admission_ms": 544.7745630008285,
+            "accepted_to_native_bound_ms": 2810.217,
+            "native_terminal_to_journal_ms": 816.429,
+            "journal_to_sse_ms": 46.064,
+            "journal_to_last_subscriber_ms": 46.064
+          },
+          {
+            "turn_id": "ff70d484-5e98-4476-bdb5-b2eaa4b59ea6",
+            "admission_ms": 535.3264779987512,
+            "accepted_to_native_bound_ms": 1809.906,
+            "native_terminal_to_journal_ms": 3051.937,
+            "journal_to_sse_ms": 165.963,
+            "journal_to_last_subscriber_ms": 165.963
+          },
+          {
+            "turn_id": "53d31478-5fe6-4d73-9ea4-db8895b12d34",
+            "admission_ms": 642.6059799996438,
+            "accepted_to_native_bound_ms": 3513.598,
+            "native_terminal_to_journal_ms": 147.204,
+            "journal_to_sse_ms": 108.05499999999999,
+            "journal_to_last_subscriber_ms": 108.05499999999999
+          },
+          {
+            "turn_id": "c53e26b4-a1a3-499e-b298-51e7a6f9c8ea",
+            "admission_ms": 906.5889560006326,
+            "accepted_to_native_bound_ms": 2419.944,
+            "native_terminal_to_journal_ms": 574.112,
+            "journal_to_sse_ms": 106.199,
+            "journal_to_last_subscriber_ms": 106.199
+          },
+          {
+            "turn_id": "13f49dd2-e999-4314-8e08-320bc3c9b457",
+            "admission_ms": 536.6383139989921,
+            "accepted_to_native_bound_ms": 3628.374,
+            "native_terminal_to_journal_ms": 257.078,
+            "journal_to_sse_ms": 61.118,
+            "journal_to_last_subscriber_ms": 61.118
+          },
+          {
+            "turn_id": "874ec6eb-efc3-49de-89be-676f376a356a",
+            "admission_ms": 617.6599620011984,
+            "accepted_to_native_bound_ms": 3501.072,
+            "native_terminal_to_journal_ms": 243.41199999999998,
+            "journal_to_sse_ms": 76.442,
+            "journal_to_last_subscriber_ms": 76.442
+          },
+          {
+            "turn_id": "9c3c38ea-6908-464d-9460-f23d0c3c664b",
+            "admission_ms": 944.9471959960647,
+            "accepted_to_native_bound_ms": 3931.8399999999997,
+            "native_terminal_to_journal_ms": 106.30199999999999,
+            "journal_to_sse_ms": 60.99,
+            "journal_to_last_subscriber_ms": 60.99
+          },
+          {
+            "turn_id": "7579c08a-7da7-419e-9858-9d924b68d41a",
+            "admission_ms": 903.4661629993934,
+            "accepted_to_native_bound_ms": 3426.301,
+            "native_terminal_to_journal_ms": 222.152,
+            "journal_to_sse_ms": 66.90899999999999,
+            "journal_to_last_subscriber_ms": 66.90899999999999
+          },
+          {
+            "turn_id": "d15acc69-d8eb-4a06-9932-277e0185b693",
+            "admission_ms": 615.4514090012526,
+            "accepted_to_native_bound_ms": 2706.1130000000003,
+            "native_terminal_to_journal_ms": 985.639,
+            "journal_to_sse_ms": 100.033,
+            "journal_to_last_subscriber_ms": 100.033
+          }
+        ]
+      },
+      {
+        "concurrency": 128,
+        "subscribers_per_turn": 1,
+        "duration_seconds": 48.45,
+        "metrics": {
+          "admission_ms": {
+            "p50": 5505.22,
+            "p95": 7824.31,
+            "p99": 8200.14
+          },
+          "accepted_to_native_bound_ms": {
+            "p50": 12014.85,
+            "p95": 18023.92,
+            "p99": 18798.53
+          },
+          "native_terminal_to_journal_ms": {
+            "p50": 8132.82,
+            "p95": 16936.78,
+            "p99": 21605.23
+          },
+          "journal_to_sse_ms": {
+            "p50": 150.72,
+            "p95": 371.51,
+            "p99": 418.46
+          },
+          "journal_to_last_subscriber_ms": {
+            "p50": 150.72,
+            "p95": 371.51,
+            "p99": 418.46
+          }
+        },
+        "samples": [
+          {
+            "turn_id": "75a57d9b-9e6f-4077-8b76-a33cff8bdd4a",
+            "admission_ms": 681.1530769991805,
+            "accepted_to_native_bound_ms": 442.162,
+            "native_terminal_to_journal_ms": 10427.447,
+            "journal_to_sse_ms": 150.975,
+            "journal_to_last_subscriber_ms": 150.975
+          },
+          {
+            "turn_id": "8cde8dee-012d-42db-96a4-b8ad1f5ce303",
+            "admission_ms": 868.5844560022815,
+            "accepted_to_native_bound_ms": 792.63,
+            "native_terminal_to_journal_ms": 10528.965,
+            "journal_to_sse_ms": 130.779,
+            "journal_to_last_subscriber_ms": 130.779
+          },
+          {
+            "turn_id": "26ca310a-e9d7-4982-89a1-f8c5bf402640",
+            "admission_ms": 6961.128468996321,
+            "accepted_to_native_bound_ms": 15118.757,
+            "native_terminal_to_journal_ms": 1931.729,
+            "journal_to_sse_ms": 99.628,
+            "journal_to_last_subscriber_ms": 99.628
+          },
+          {
+            "turn_id": "942e2037-aa6f-4c86-9ea7-5731ccdfc610",
+            "admission_ms": 7719.782812004269,
+            "accepted_to_native_bound_ms": 16691.297,
+            "native_terminal_to_journal_ms": 219.68599999999998,
+            "journal_to_sse_ms": 103.08399999999999,
+            "journal_to_last_subscriber_ms": 103.08399999999999
+          },
+          {
+            "turn_id": "32ad2e76-e668-43cb-81ed-672b85349d99",
+            "admission_ms": 783.4842800002662,
+            "accepted_to_native_bound_ms": 928.0310000000001,
+            "native_terminal_to_journal_ms": 11428.802,
+            "journal_to_sse_ms": 371.508,
+            "journal_to_last_subscriber_ms": 371.508
+          },
+          {
+            "turn_id": "419b6c06-3df9-4797-8b94-2d029c661bbe",
+            "admission_ms": 1239.2147830032627,
+            "accepted_to_native_bound_ms": 1465.112,
+            "native_terminal_to_journal_ms": 10424.369999999999,
+            "journal_to_sse_ms": 87.59899999999999,
+            "journal_to_last_subscriber_ms": 87.59899999999999
+          },
+          {
+            "turn_id": "ac79d384-8301-4277-a61b-e0a375a04344",
+            "admission_ms": 1893.680861001485,
+            "accepted_to_native_bound_ms": 2928.246,
+            "native_terminal_to_journal_ms": 20109.182,
+            "journal_to_sse_ms": 95.832,
+            "journal_to_last_subscriber_ms": 95.832
+          },
+          {
+            "turn_id": "a96d53af-23e3-4297-be19-959f6fbc0358",
+            "admission_ms": 911.9746280048275,
+            "accepted_to_native_bound_ms": 1071.302,
+            "native_terminal_to_journal_ms": 11327.717,
+            "journal_to_sse_ms": 343.403,
+            "journal_to_last_subscriber_ms": 343.403
+          },
+          {
+            "turn_id": "7c9b842a-0521-4d41-bf6f-b986e59ea634",
+            "admission_ms": 1586.3748350020614,
+            "accepted_to_native_bound_ms": 2977.9840000000004,
+            "native_terminal_to_journal_ms": 22182.168999999998,
+            "journal_to_sse_ms": 376.423,
+            "journal_to_last_subscriber_ms": 376.423
+          },
+          {
+            "turn_id": "6d69186f-df1c-4a59-b84d-41a356fa7040",
+            "admission_ms": 1055.733617999067,
+            "accepted_to_native_bound_ms": 1436.816,
+            "native_terminal_to_journal_ms": 10802.467,
+            "journal_to_sse_ms": 184.501,
+            "journal_to_last_subscriber_ms": 184.501
+          },
+          {
+            "turn_id": "ff09093e-ab32-4d69-86c9-718d61683643",
+            "admission_ms": 2601.545306999469,
+            "accepted_to_native_bound_ms": 9590.973999999998,
+            "native_terminal_to_journal_ms": 13546.934000000001,
+            "journal_to_sse_ms": 87.07900000000001,
+            "journal_to_last_subscriber_ms": 87.07900000000001
+          },
+          {
+            "turn_id": "dd4ff54c-73e4-4cc9-9d2d-db16ea429d12",
+            "admission_ms": 1303.3199659985257,
+            "accepted_to_native_bound_ms": 1599.421,
+            "native_terminal_to_journal_ms": 10828.735,
+            "journal_to_sse_ms": 327.793,
+            "journal_to_last_subscriber_ms": 327.793
+          },
+          {
+            "turn_id": "be1f3272-83d6-4b40-89e3-6c1b3de5d1d2",
+            "admission_ms": 6338.955022001755,
+            "accepted_to_native_bound_ms": 13868.113,
+            "native_terminal_to_journal_ms": 4622.451,
+            "journal_to_sse_ms": 232.246,
+            "journal_to_last_subscriber_ms": 232.246
+          },
+          {
+            "turn_id": "989620d9-9f03-4a2a-a55a-e36d1ae8b7c3",
+            "admission_ms": 7523.18115199887,
+            "accepted_to_native_bound_ms": 16152.642,
+            "native_terminal_to_journal_ms": 205.604,
+            "journal_to_sse_ms": 67.342,
+            "journal_to_last_subscriber_ms": 67.342
+          },
+          {
+            "turn_id": "c94f921b-d74f-4efe-9a62-dd4dcfa236e0",
+            "admission_ms": 1246.861045001424,
+            "accepted_to_native_bound_ms": 1553.982,
+            "native_terminal_to_journal_ms": 10313.473,
+            "journal_to_sse_ms": 99.37,
+            "journal_to_last_subscriber_ms": 99.37
+          },
+          {
+            "turn_id": "c4c3b576-5e8e-44fb-ba35-19dc91733c7d",
+            "admission_ms": 1701.619607003522,
+            "accepted_to_native_bound_ms": 2740.389,
+            "native_terminal_to_journal_ms": 16469.053,
+            "journal_to_sse_ms": 49.412,
+            "journal_to_last_subscriber_ms": 49.412
+          },
+          {
+            "turn_id": "3853d497-b7a9-405c-9fda-23e7a03528ad",
+            "admission_ms": 1958.3581080005388,
+            "accepted_to_native_bound_ms": 3060.663,
+            "native_terminal_to_journal_ms": 21335.944000000003,
+            "journal_to_sse_ms": 132.833,
+            "journal_to_last_subscriber_ms": 132.833
+          },
+          {
+            "turn_id": "4cfbb51c-aa33-456d-b9ed-4850e2ce5d31",
+            "admission_ms": 6211.938220003503,
+            "accepted_to_native_bound_ms": 12594.866,
+            "native_terminal_to_journal_ms": 7731.807,
+            "journal_to_sse_ms": 192.168,
+            "journal_to_last_subscriber_ms": 192.168
+          },
+          {
+            "turn_id": "ffe1ee9d-3782-4875-b162-79f122f8b768",
+            "admission_ms": 1546.7613770015305,
+            "accepted_to_native_bound_ms": 2385.893,
+            "native_terminal_to_journal_ms": 11019.639,
+            "journal_to_sse_ms": 241.854,
+            "journal_to_last_subscriber_ms": 241.854
+          },
+          {
+            "turn_id": "db86838c-edf7-4a43-9965-abc28e4e13fb",
+            "admission_ms": 7788.510908998433,
+            "accepted_to_native_bound_ms": 17195.405000000002,
+            "native_terminal_to_journal_ms": 369.421,
+            "journal_to_sse_ms": 65.76899999999999,
+            "journal_to_last_subscriber_ms": 65.76899999999999
+          },
+          {
+            "turn_id": "f7d00210-6da0-4a76-bea8-f22cda98b173",
+            "admission_ms": 6198.19386999734,
+            "accepted_to_native_bound_ms": 13629.126,
+            "native_terminal_to_journal_ms": 5114.3640000000005,
+            "journal_to_sse_ms": 68.97399999999999,
+            "journal_to_last_subscriber_ms": 68.97399999999999
+          },
+          {
+            "turn_id": "66f31d39-4580-4b09-bb99-534fc315ac12",
+            "admission_ms": 5658.143922002637,
+            "accepted_to_native_bound_ms": 12391.054,
+            "native_terminal_to_journal_ms": 8914.202,
+            "journal_to_sse_ms": 509.413,
+            "journal_to_last_subscriber_ms": 509.413
+          },
+          {
+            "turn_id": "ddcc2d72-6666-4e8e-9d46-a72729e8b74c",
+            "admission_ms": 1585.4208620003192,
+            "accepted_to_native_bound_ms": 2799.255,
+            "native_terminal_to_journal_ms": 16342.676000000001,
+            "journal_to_sse_ms": 202.399,
+            "journal_to_last_subscriber_ms": 202.399
+          },
+          {
+            "turn_id": "3c3f7419-94d7-4abb-95de-f4458b2ccaff",
+            "admission_ms": 4721.957203000784,
+            "accepted_to_native_bound_ms": 11366.811,
+            "native_terminal_to_journal_ms": 10812.557,
+            "journal_to_sse_ms": 143.174,
+            "journal_to_last_subscriber_ms": 143.174
+          },
+          {
+            "turn_id": "8c2085ed-f216-4923-ae2b-400adfd58f29",
+            "admission_ms": 5033.845520003524,
+            "accepted_to_native_bound_ms": 10965.206,
+            "native_terminal_to_journal_ms": 11209.803000000002,
+            "journal_to_sse_ms": 146.184,
+            "journal_to_last_subscriber_ms": 146.184
+          },
+          {
+            "turn_id": "3af71f30-bc96-4e01-82e3-2eb29fd2205f",
+            "admission_ms": 1794.1271519957809,
+            "accepted_to_native_bound_ms": 3110.109,
+            "native_terminal_to_journal_ms": 21242.951,
+            "journal_to_sse_ms": 242.93300000000002,
+            "journal_to_last_subscriber_ms": 242.93300000000002
+          },
+          {
+            "turn_id": "bcfe9eb1-9748-4b8f-b0c6-f87b13551934",
+            "admission_ms": 2219.5320350001566,
+            "accepted_to_native_bound_ms": 7997.955,
+            "native_terminal_to_journal_ms": 1243.162,
+            "journal_to_sse_ms": 169.511,
+            "journal_to_last_subscriber_ms": 169.511
+          },
+          {
+            "turn_id": "8a58a019-630c-4143-85d6-3debfe0cb06f",
+            "admission_ms": 8200.136828003451,
+            "accepted_to_native_bound_ms": 18589.378,
+            "native_terminal_to_journal_ms": 460.363,
+            "journal_to_sse_ms": 161.093,
+            "journal_to_last_subscriber_ms": 161.093
+          },
+          {
+            "turn_id": "a3622d24-567d-4d65-8ead-6c2162abfd92",
+            "admission_ms": 4563.476499999524,
+            "accepted_to_native_bound_ms": 10475.436,
+            "native_terminal_to_journal_ms": 11668.537,
+            "journal_to_sse_ms": 372.219,
+            "journal_to_last_subscriber_ms": 372.219
+          },
+          {
+            "turn_id": "f819909e-ac28-42c8-af11-a8ad803dcaf4",
+            "admission_ms": 2068.1512450028094,
+            "accepted_to_native_bound_ms": 8057.56,
+            "native_terminal_to_journal_ms": 1683.246,
+            "journal_to_sse_ms": 172.376,
+            "journal_to_last_subscriber_ms": 172.376
+          },
+          {
+            "turn_id": "6d157f9b-03c0-44ac-839d-67d8e261af9d",
+            "admission_ms": 1930.0892629980808,
+            "accepted_to_native_bound_ms": 3418.659,
+            "native_terminal_to_journal_ms": 21605.226,
+            "journal_to_sse_ms": 334.964,
+            "journal_to_last_subscriber_ms": 334.964
+          },
+          {
+            "turn_id": "92104d02-e2e4-40fb-b6a4-cc42b34aed08",
+            "admission_ms": 2361.570834000304,
+            "accepted_to_native_bound_ms": 8057.119000000001,
+            "native_terminal_to_journal_ms": 16936.783,
+            "journal_to_sse_ms": 225.77,
+            "journal_to_last_subscriber_ms": 225.77
+          },
+          {
+            "turn_id": "58bb12af-c27e-4338-af80-30f87c5f017a",
+            "admission_ms": 5111.064614000497,
+            "accepted_to_native_bound_ms": 10862.429,
+            "native_terminal_to_journal_ms": 10453.953,
+            "journal_to_sse_ms": 130.87699999999998,
+            "journal_to_last_subscriber_ms": 130.87699999999998
+          },
+          {
+            "turn_id": "a66691d5-3da3-45a8-a683-153d75d2b0fb",
+            "admission_ms": 3515.050413996505,
+            "accepted_to_native_bound_ms": 8841.483,
+            "native_terminal_to_journal_ms": 14651.296,
+            "journal_to_sse_ms": 94.925,
+            "journal_to_last_subscriber_ms": 94.925
+          },
+          {
+            "turn_id": "ef2cffe7-636a-4574-8074-443b82b80d52",
+            "admission_ms": 7685.5391029966995,
+            "accepted_to_native_bound_ms": 17533.779,
+            "native_terminal_to_journal_ms": 148.089,
+            "journal_to_sse_ms": 61.633,
+            "journal_to_last_subscriber_ms": 61.633
+          },
+          {
+            "turn_id": "30bf8f24-b359-45ee-998c-9815b6ffee21",
+            "admission_ms": 1934.5402540056966,
+            "accepted_to_native_bound_ms": 6317.821,
+            "native_terminal_to_journal_ms": 3787.9100000000003,
+            "journal_to_sse_ms": 113.844,
+            "journal_to_last_subscriber_ms": 113.844
+          },
+          {
+            "turn_id": "02f4e546-7de4-4ddf-b3f2-060bcb0d418b",
+            "admission_ms": 7582.166472006065,
+            "accepted_to_native_bound_ms": 17053.04,
+            "native_terminal_to_journal_ms": 391.364,
+            "journal_to_sse_ms": 150.381,
+            "journal_to_last_subscriber_ms": 150.381
+          },
+          {
+            "turn_id": "143df87e-6638-4262-8225-e6622ba4df83",
+            "admission_ms": 7366.684133994568,
+            "accepted_to_native_bound_ms": 15896.551000000001,
+            "native_terminal_to_journal_ms": 289.925,
+            "journal_to_sse_ms": 121.127,
+            "journal_to_last_subscriber_ms": 121.127
+          },
+          {
+            "turn_id": "35f2b9e5-a08a-403b-816c-b0f027153585",
+            "admission_ms": 2472.3153629965964,
+            "accepted_to_native_bound_ms": 8202.861,
+            "native_terminal_to_journal_ms": 15747.277,
+            "journal_to_sse_ms": 273.09299999999996,
+            "journal_to_last_subscriber_ms": 273.09299999999996
+          },
+          {
+            "turn_id": "d2be901c-4c2d-4ddd-89ca-d94bc96e846a",
+            "admission_ms": 5578.3751380004105,
+            "accepted_to_native_bound_ms": 12014.849,
+            "native_terminal_to_journal_ms": 8791.346000000001,
+            "journal_to_sse_ms": 184.634,
+            "journal_to_last_subscriber_ms": 184.634
+          },
+          {
+            "turn_id": "46acd2b8-e1af-4fc0-acce-f513308a3cc6",
+            "admission_ms": 7051.803260001179,
+            "accepted_to_native_bound_ms": 15448.668,
+            "native_terminal_to_journal_ms": 318.75199999999995,
+            "journal_to_sse_ms": 49.576,
+            "journal_to_last_subscriber_ms": 49.576
+          },
+          {
+            "turn_id": "651a6efc-b5b2-45ba-b474-93e9c958ad47",
+            "admission_ms": 4342.86669499852,
+            "accepted_to_native_bound_ms": 10701.927,
+            "native_terminal_to_journal_ms": 10952.452,
+            "journal_to_sse_ms": 92.268,
+            "journal_to_last_subscriber_ms": 92.268
+          },
+          {
+            "turn_id": "17c2e7bc-6b04-4ee4-ab66-76ef7ecf6755",
+            "admission_ms": 2260.6838650026475,
+            "accepted_to_native_bound_ms": 8006.085000000001,
+            "native_terminal_to_journal_ms": 16638.944,
+            "journal_to_sse_ms": 57.772999999999996,
+            "journal_to_last_subscriber_ms": 57.772999999999996
+          },
+          {
+            "turn_id": "fe6e33b2-446a-4247-bac9-3c8669771f25",
+            "admission_ms": 3086.169130001508,
+            "accepted_to_native_bound_ms": 8803.101,
+            "native_terminal_to_journal_ms": 15861.115,
+            "journal_to_sse_ms": 281.68,
+            "journal_to_last_subscriber_ms": 281.68
+          },
+          {
+            "turn_id": "c85a5f3c-54e0-463f-860b-bf93a2ef201d",
+            "admission_ms": 3793.927031001658,
+            "accepted_to_native_bound_ms": 9348.661999999998,
+            "native_terminal_to_journal_ms": 13737.411,
+            "journal_to_sse_ms": 81.762,
+            "journal_to_last_subscriber_ms": 81.762
+          },
+          {
+            "turn_id": "e3b69f74-f16c-409a-9d69-9455cfde6e6e",
+            "admission_ms": 5453.639382001711,
+            "accepted_to_native_bound_ms": 11421.093,
+            "native_terminal_to_journal_ms": 10068.903,
+            "journal_to_sse_ms": 228.941,
+            "journal_to_last_subscriber_ms": 228.941
+          },
+          {
+            "turn_id": "161eb3bc-1e2a-43af-828b-9ef6d6a1c0fb",
+            "admission_ms": 2429.0865539951483,
+            "accepted_to_native_bound_ms": 8229.663999999999,
+            "native_terminal_to_journal_ms": 16390.735,
+            "journal_to_sse_ms": 315.373,
+            "journal_to_last_subscriber_ms": 315.373
+          },
+          {
+            "turn_id": "3aead529-697e-453c-8aed-bcdfb8575e1b",
+            "admission_ms": 2290.546534000896,
+            "accepted_to_native_bound_ms": 7926.273,
+            "native_terminal_to_journal_ms": 17041.21,
+            "journal_to_sse_ms": 284.46700000000004,
+            "journal_to_last_subscriber_ms": 284.46700000000004
+          },
+          {
+            "turn_id": "0182279c-ef7f-490e-a131-8e2596e0d051",
+            "admission_ms": 6272.28663200367,
+            "accepted_to_native_bound_ms": 13743.111,
+            "native_terminal_to_journal_ms": 4763.135,
+            "journal_to_sse_ms": 167.183,
+            "journal_to_last_subscriber_ms": 167.183
+          },
+          {
+            "turn_id": "ae634fe4-7c45-4bac-8956-13738328bc34",
+            "admission_ms": 2859.9975230026757,
+            "accepted_to_native_bound_ms": 8894.038,
+            "native_terminal_to_journal_ms": 15954.999000000002,
+            "journal_to_sse_ms": 284.918,
+            "journal_to_last_subscriber_ms": 284.918
+          },
+          {
+            "turn_id": "f9fab495-5aa3-44ef-9939-fb3196931121",
+            "admission_ms": 4479.230213000847,
+            "accepted_to_native_bound_ms": 10436.294,
+            "native_terminal_to_journal_ms": 11659.751999999999,
+            "journal_to_sse_ms": 258.321,
+            "journal_to_last_subscriber_ms": 258.321
+          },
+          {
+            "turn_id": "f38e58c4-ac5a-4e2a-8407-73c5b40fa03f",
+            "admission_ms": 6481.935634001275,
+            "accepted_to_native_bound_ms": 14547.252,
+            "native_terminal_to_journal_ms": 3055.4790000000003,
+            "journal_to_sse_ms": 309.541,
+            "journal_to_last_subscriber_ms": 309.541
+          },
+          {
+            "turn_id": "2f4b613a-70f1-4428-b24c-24199a4e5416",
+            "admission_ms": 3696.8606499940506,
+            "accepted_to_native_bound_ms": 9408.720000000001,
+            "native_terminal_to_journal_ms": 13711.032,
+            "journal_to_sse_ms": 201.013,
+            "journal_to_last_subscriber_ms": 201.013
+          },
+          {
+            "turn_id": "a72a5af2-472c-4ffb-a0a1-2902d75a3f01",
+            "admission_ms": 2607.6379810037906,
+            "accepted_to_native_bound_ms": 9530.632000000001,
+            "native_terminal_to_journal_ms": 14972.408,
+            "journal_to_sse_ms": 261.26899999999995,
+            "journal_to_last_subscriber_ms": 261.26899999999995
+          },
+          {
+            "turn_id": "3a21c5c8-6c0d-4827-b3b4-80a7e5a69810",
+            "admission_ms": 6396.527082004468,
+            "accepted_to_native_bound_ms": 14313.734999999999,
+            "native_terminal_to_journal_ms": 3624.913,
+            "journal_to_sse_ms": 399.108,
+            "journal_to_last_subscriber_ms": 399.108
+          },
+          {
+            "turn_id": "8aa8267f-88d7-4cb9-a995-60a031bfd2bf",
+            "admission_ms": 4544.574724000995,
+            "accepted_to_native_bound_ms": 10511.597,
+            "native_terminal_to_journal_ms": 11867.496,
+            "journal_to_sse_ms": 137.796,
+            "journal_to_last_subscriber_ms": 137.796
+          },
+          {
+            "turn_id": "f2129f73-3c5e-4ec7-a60d-249d1d40c701",
+            "admission_ms": 6590.55285499926,
+            "accepted_to_native_bound_ms": 14043.048999999999,
+            "native_terminal_to_journal_ms": 3804.6600000000003,
+            "journal_to_sse_ms": 157.797,
+            "journal_to_last_subscriber_ms": 157.797
+          },
+          {
+            "turn_id": "5eec53f4-9ec3-40b7-9b63-55065eb5eae0",
+            "admission_ms": 2786.0544930008473,
+            "accepted_to_native_bound_ms": 10532.04,
+            "native_terminal_to_journal_ms": 12694.06,
+            "journal_to_sse_ms": 83.537,
+            "journal_to_last_subscriber_ms": 83.537
+          },
+          {
+            "turn_id": "11aa6cdd-be3a-4334-9eaa-eeb5dc99f33f",
+            "admission_ms": 5433.250565998605,
+            "accepted_to_native_bound_ms": 11627.908,
+            "native_terminal_to_journal_ms": 9272.880000000001,
+            "journal_to_sse_ms": 67.568,
+            "journal_to_last_subscriber_ms": 67.568
+          },
+          {
+            "turn_id": "5bbb94b3-6b5e-4103-83e5-1d011fe86a6d",
+            "admission_ms": 7812.008339002205,
+            "accepted_to_native_bound_ms": 17789.494000000002,
+            "native_terminal_to_journal_ms": 216.29000000000002,
+            "journal_to_sse_ms": 60.383,
+            "journal_to_last_subscriber_ms": 60.383
+          },
+          {
+            "turn_id": "1da57eee-bbc3-40ca-ae7c-4d215dcb0468",
+            "admission_ms": 7488.490767995245,
+            "accepted_to_native_bound_ms": 17095.76,
+            "native_terminal_to_journal_ms": 379.613,
+            "journal_to_sse_ms": 56.983,
+            "journal_to_last_subscriber_ms": 56.983
+          },
+          {
+            "turn_id": "c4f1f5ee-2d59-4bee-af55-c760eb0682ac",
+            "admission_ms": 3816.3558919986826,
+            "accepted_to_native_bound_ms": 9224.914,
+            "native_terminal_to_journal_ms": 12933.752,
+            "journal_to_sse_ms": 385.366,
+            "journal_to_last_subscriber_ms": 385.366
+          },
+          {
+            "turn_id": "b8728761-7cd7-46ff-b42e-78050f691149",
+            "admission_ms": 3007.4211220053257,
+            "accepted_to_native_bound_ms": 10475.797999999999,
+            "native_terminal_to_journal_ms": 12807.652,
+            "journal_to_sse_ms": 145.595,
+            "journal_to_last_subscriber_ms": 145.595
+          },
+          {
+            "turn_id": "0743dccb-86fb-40d0-8dcf-11a06a8a5060",
+            "admission_ms": 5505.217295998591,
+            "accepted_to_native_bound_ms": 12464.919,
+            "native_terminal_to_journal_ms": 8748.02,
+            "journal_to_sse_ms": 418.46,
+            "journal_to_last_subscriber_ms": 418.46
+          },
+          {
+            "turn_id": "583578dd-569c-4270-a051-c3e0ccecebd9",
+            "admission_ms": 6556.16600200301,
+            "accepted_to_native_bound_ms": 12929.746,
+            "native_terminal_to_journal_ms": 6117.126,
+            "journal_to_sse_ms": 367.04900000000004,
+            "journal_to_last_subscriber_ms": 367.04900000000004
+          },
+          {
+            "turn_id": "45c9bfa2-6e22-4a5f-99a1-fab7416b78ac",
+            "admission_ms": 3057.097728997178,
+            "accepted_to_native_bound_ms": 9042.085000000001,
+            "native_terminal_to_journal_ms": 14633.304,
+            "journal_to_sse_ms": 275.941,
+            "journal_to_last_subscriber_ms": 275.941
+          },
+          {
+            "turn_id": "d52638d0-4957-40be-9e60-651af019122b",
+            "admission_ms": 3108.8291090054554,
+            "accepted_to_native_bound_ms": 10782.05,
+            "native_terminal_to_journal_ms": 12731.885999999999,
+            "journal_to_sse_ms": 216.372,
+            "journal_to_last_subscriber_ms": 216.372
+          },
+          {
+            "turn_id": "f08d9d67-49e5-4926-b87d-a865ec6ecb3f",
+            "admission_ms": 7890.944995000609,
+            "accepted_to_native_bound_ms": 18609.134000000002,
+            "native_terminal_to_journal_ms": 136.42499999999998,
+            "journal_to_sse_ms": 82.217,
+            "journal_to_last_subscriber_ms": 82.217
+          },
+          {
+            "turn_id": "eb06a915-98ae-464e-b8a3-a31b8ab441ac",
+            "admission_ms": 4486.019707001105,
+            "accepted_to_native_bound_ms": 11197.721,
+            "native_terminal_to_journal_ms": 11911.661,
+            "journal_to_sse_ms": 160.071,
+            "journal_to_last_subscriber_ms": 160.071
+          },
+          {
+            "turn_id": "cce9b801-360d-48c4-bac1-ba4b00ede808",
+            "admission_ms": 3349.5233229987207,
+            "accepted_to_native_bound_ms": 8889.311,
+            "native_terminal_to_journal_ms": 14338.817000000001,
+            "journal_to_sse_ms": 218.53900000000002,
+            "journal_to_last_subscriber_ms": 218.53900000000002
+          },
+          {
+            "turn_id": "6d7814df-8476-4180-85b7-053240795160",
+            "admission_ms": 7920.04917000304,
+            "accepted_to_native_bound_ms": 18811.791,
+            "native_terminal_to_journal_ms": 301.807,
+            "journal_to_sse_ms": 182.788,
+            "journal_to_last_subscriber_ms": 182.788
+          },
+          {
+            "turn_id": "e4c32318-a617-4bc3-8545-fa4c037e91a6",
+            "admission_ms": 7702.068950005923,
+            "accepted_to_native_bound_ms": 18117.62,
+            "native_terminal_to_journal_ms": 255.94299999999998,
+            "journal_to_sse_ms": 74.717,
+            "journal_to_last_subscriber_ms": 74.717
+          },
+          {
+            "turn_id": "304b9950-8003-4d4f-9daa-ede908e17a4e",
+            "admission_ms": 6513.58059499762,
+            "accepted_to_native_bound_ms": 14673.374000000002,
+            "native_terminal_to_journal_ms": 2385.03,
+            "journal_to_sse_ms": 158.83700000000002,
+            "journal_to_last_subscriber_ms": 158.83700000000002
+          },
+          {
+            "turn_id": "4244ebcd-3b2f-452b-bc04-ce5c9306bc3a",
+            "admission_ms": 3434.3770679988666,
+            "accepted_to_native_bound_ms": 9362.878999999999,
+            "native_terminal_to_journal_ms": 14113.666000000001,
+            "journal_to_sse_ms": 238.203,
+            "journal_to_last_subscriber_ms": 238.203
+          },
+          {
+            "turn_id": "7bc45216-fc63-4b85-bd41-536fe9d200c6",
+            "admission_ms": 4137.063540998497,
+            "accepted_to_native_bound_ms": 10806.318,
+            "native_terminal_to_journal_ms": 11597.463,
+            "journal_to_sse_ms": 296.51800000000003,
+            "journal_to_last_subscriber_ms": 296.51800000000003
+          },
+          {
+            "turn_id": "1eb09a7c-1f93-4a55-9fba-201748875941",
+            "admission_ms": 7933.122624002863,
+            "accepted_to_native_bound_ms": 18023.917999999998,
+            "native_terminal_to_journal_ms": 202.27700000000002,
+            "journal_to_sse_ms": 63.63199999999999,
+            "journal_to_last_subscriber_ms": 63.63199999999999
+          },
+          {
+            "turn_id": "6c0ab609-6bd9-402e-8930-22beb128eeab",
+            "admission_ms": 7867.968448997999,
+            "accepted_to_native_bound_ms": 18608.915,
+            "native_terminal_to_journal_ms": 549.741,
+            "journal_to_sse_ms": 181.13899999999998,
+            "journal_to_last_subscriber_ms": 181.13899999999998
+          },
+          {
+            "turn_id": "0bbf40a2-2ac5-4155-a9b5-288d9f56a70b",
+            "admission_ms": 6253.207574001863,
+            "accepted_to_native_bound_ms": 14049.706,
+            "native_terminal_to_journal_ms": 4534.626,
+            "journal_to_sse_ms": 124.425,
+            "journal_to_last_subscriber_ms": 124.425
+          },
+          {
+            "turn_id": "d601e3ab-da7d-4334-9a69-2373f9135b52",
+            "admission_ms": 3742.7842679971945,
+            "accepted_to_native_bound_ms": 10509.035000000002,
+            "native_terminal_to_journal_ms": 11777.164,
+            "journal_to_sse_ms": 247.107,
+            "journal_to_last_subscriber_ms": 247.107
+          },
+          {
+            "turn_id": "4afd460e-eab5-485d-af49-9bced48229ed",
+            "admission_ms": 5839.261407003505,
+            "accepted_to_native_bound_ms": 12909.065,
+            "native_terminal_to_journal_ms": 6866.052,
+            "journal_to_sse_ms": 94.843,
+            "journal_to_last_subscriber_ms": 94.843
+          },
+          {
+            "turn_id": "accab391-783d-4ea1-806e-f521dd703848",
+            "admission_ms": 6263.227210998593,
+            "accepted_to_native_bound_ms": 14603.992999999999,
+            "native_terminal_to_journal_ms": 3465.044,
+            "journal_to_sse_ms": 361.469,
+            "journal_to_last_subscriber_ms": 361.469
+          },
+          {
+            "turn_id": "15bdd066-a7c2-476c-9999-6ba9f8f743bc",
+            "admission_ms": 7824.3065789938555,
+            "accepted_to_native_bound_ms": 17764.673,
+            "native_terminal_to_journal_ms": 150.332,
+            "journal_to_sse_ms": 91.337,
+            "journal_to_last_subscriber_ms": 91.337
+          },
+          {
+            "turn_id": "0e7f3bdf-1935-4e9e-8b4c-e3403434b62a",
+            "admission_ms": 3802.756353994482,
+            "accepted_to_native_bound_ms": 9131.63,
+            "native_terminal_to_journal_ms": 13144.726,
+            "journal_to_sse_ms": 41.9,
+            "journal_to_last_subscriber_ms": 41.9
+          },
+          {
+            "turn_id": "ce9f637a-da45-44e8-991a-5815d772eb70",
+            "admission_ms": 5873.86865499866,
+            "accepted_to_native_bound_ms": 13139.818,
+            "native_terminal_to_journal_ms": 6609.956999999999,
+            "journal_to_sse_ms": 158.506,
+            "journal_to_last_subscriber_ms": 158.506
+          },
+          {
+            "turn_id": "5a673c85-84b9-41b8-9464-c13189b0f432",
+            "admission_ms": 3779.0611689997604,
+            "accepted_to_native_bound_ms": 10431.223,
+            "native_terminal_to_journal_ms": 11594.521,
+            "journal_to_sse_ms": 283.152,
+            "journal_to_last_subscriber_ms": 283.152
+          },
+          {
+            "turn_id": "b2a7a01a-0db8-4341-a40c-bffc043bdde0",
+            "admission_ms": 6927.978069004894,
+            "accepted_to_native_bound_ms": 15850.019,
+            "native_terminal_to_journal_ms": 138.61100000000002,
+            "journal_to_sse_ms": 86.305,
+            "journal_to_last_subscriber_ms": 86.305
+          },
+          {
+            "turn_id": "3ac3cf5d-8ff6-4896-b5d0-ca61aa07a020",
+            "admission_ms": 4985.272272002476,
+            "accepted_to_native_bound_ms": 11061.937,
+            "native_terminal_to_journal_ms": 10397.258000000002,
+            "journal_to_sse_ms": 110.333,
+            "journal_to_last_subscriber_ms": 110.333
+          },
+          {
+            "turn_id": "3fbbd2ef-90e3-4167-8202-adf80db20381",
+            "admission_ms": 5512.867623001512,
+            "accepted_to_native_bound_ms": 12650.089,
+            "native_terminal_to_journal_ms": 8909.273000000001,
+            "journal_to_sse_ms": 242.239,
+            "journal_to_last_subscriber_ms": 242.239
+          },
+          {
+            "turn_id": "9032f571-d639-4555-a91f-fede1e00531b",
+            "admission_ms": 7189.4126840052195,
+            "accepted_to_native_bound_ms": 16112.003999999999,
+            "native_terminal_to_journal_ms": 265.515,
+            "journal_to_sse_ms": 159.161,
+            "journal_to_last_subscriber_ms": 159.161
+          },
+          {
+            "turn_id": "369e99f9-d325-467d-93e5-ef45b88dfe61",
+            "admission_ms": 4126.892656000564,
+            "accepted_to_native_bound_ms": 10679.906,
+            "native_terminal_to_journal_ms": 11909.151,
+            "journal_to_sse_ms": 96.506,
+            "journal_to_last_subscriber_ms": 96.506
+          },
+          {
+            "turn_id": "18a86974-6ffe-4ff1-be62-e710db9e1df9",
+            "admission_ms": 5786.635583004681,
+            "accepted_to_native_bound_ms": 12594.473,
+            "native_terminal_to_journal_ms": 7448.657,
+            "journal_to_sse_ms": 178.466,
+            "journal_to_last_subscriber_ms": 178.466
+          },
+          {
+            "turn_id": "73df134c-3a44-49f7-a7f3-f7dbd30d55c0",
+            "admission_ms": 6790.302836998308,
+            "accepted_to_native_bound_ms": 14850.084,
+            "native_terminal_to_journal_ms": 2538.0600000000004,
+            "journal_to_sse_ms": 150.719,
+            "journal_to_last_subscriber_ms": 150.719
+          },
+          {
+            "turn_id": "06524710-33e0-4dfd-ae0a-dd7467d881ef",
+            "admission_ms": 5215.404283997486,
+            "accepted_to_native_bound_ms": 11465.507000000001,
+            "native_terminal_to_journal_ms": 10181.029,
+            "journal_to_sse_ms": 272.914,
+            "journal_to_last_subscriber_ms": 272.914
+          },
+          {
+            "turn_id": "8a7ca38e-d0a4-4bc8-9864-5da3a140c175",
+            "admission_ms": 9867.010857000423,
+            "accepted_to_native_bound_ms": 17326.007,
+            "native_terminal_to_journal_ms": 142.179,
+            "journal_to_sse_ms": 50.869,
+            "journal_to_last_subscriber_ms": 50.869
+          },
+          {
+            "turn_id": "6bc54a91-0fec-4f2f-af0f-04ecea3b2aab",
+            "admission_ms": 5720.965230997535,
+            "accepted_to_native_bound_ms": 12608.157000000001,
+            "native_terminal_to_journal_ms": 7674.024,
+            "journal_to_sse_ms": 309.639,
+            "journal_to_last_subscriber_ms": 309.639
+          },
+          {
+            "turn_id": "748aeeb5-3c09-4a22-891e-a2f8f19e5591",
+            "admission_ms": 6871.82617700455,
+            "accepted_to_native_bound_ms": 15944.341,
+            "native_terminal_to_journal_ms": 133.077,
+            "journal_to_sse_ms": 86.926,
+            "journal_to_last_subscriber_ms": 86.926
+          },
+          {
+            "turn_id": "5a42b414-b421-4e21-993d-1f7586bc5cd8",
+            "admission_ms": 6696.731169999111,
+            "accepted_to_native_bound_ms": 15049.53,
+            "native_terminal_to_journal_ms": 1489.811,
+            "journal_to_sse_ms": 127.939,
+            "journal_to_last_subscriber_ms": 127.939
+          },
+          {
+            "turn_id": "d77a364c-54c1-4887-932c-48e6626a7c3a",
+            "admission_ms": 4416.20710400457,
+            "accepted_to_native_bound_ms": 10605.473,
+            "native_terminal_to_journal_ms": 10840.394,
+            "journal_to_sse_ms": 75.075,
+            "journal_to_last_subscriber_ms": 75.075
+          },
+          {
+            "turn_id": "5f702cff-d7e7-4a29-9e10-3c0e4a376087",
+            "admission_ms": 6781.613956998626,
+            "accepted_to_native_bound_ms": 15924.644,
+            "native_terminal_to_journal_ms": 279.05400000000003,
+            "journal_to_sse_ms": 99.979,
+            "journal_to_last_subscriber_ms": 99.979
+          },
+          {
+            "turn_id": "51ec6cdd-415b-4071-ae71-bcce8600d9a6",
+            "admission_ms": 5815.13210599951,
+            "accepted_to_native_bound_ms": 13443.112,
+            "native_terminal_to_journal_ms": 717.372,
+            "journal_to_sse_ms": 165.094,
+            "journal_to_last_subscriber_ms": 165.094
+          },
+          {
+            "turn_id": "3cf3b4e6-ba54-4597-a552-80fd445eb54c",
+            "admission_ms": 5292.049318995851,
+            "accepted_to_native_bound_ms": 11729.322,
+            "native_terminal_to_journal_ms": 9645.882,
+            "journal_to_sse_ms": 136.886,
+            "journal_to_last_subscriber_ms": 136.886
+          },
+          {
+            "turn_id": "167eebdb-6ab9-4873-b225-81f426a569d5",
+            "admission_ms": 7134.051566994458,
+            "accepted_to_native_bound_ms": 16668.263,
+            "native_terminal_to_journal_ms": 128.477,
+            "journal_to_sse_ms": 98.523,
+            "journal_to_last_subscriber_ms": 98.523
+          },
+          {
+            "turn_id": "72618694-b5f4-476b-99e2-3e84feae1531",
+            "admission_ms": 6015.602346997184,
+            "accepted_to_native_bound_ms": 13801.046,
+            "native_terminal_to_journal_ms": 4912.492,
+            "journal_to_sse_ms": 112.196,
+            "journal_to_last_subscriber_ms": 112.196
+          },
+          {
+            "turn_id": "f26eb2a3-17c1-424f-973c-db78d01007cd",
+            "admission_ms": 6491.416983997624,
+            "accepted_to_native_bound_ms": 15070.021,
+            "native_terminal_to_journal_ms": 1872.358,
+            "journal_to_sse_ms": 152.41,
+            "journal_to_last_subscriber_ms": 152.41
+          },
+          {
+            "turn_id": "670092d0-524a-44fa-aac6-e22acf2b4459",
+            "admission_ms": 4620.825268997578,
+            "accepted_to_native_bound_ms": 10960.942,
+            "native_terminal_to_journal_ms": 11485.283000000001,
+            "journal_to_sse_ms": 188.269,
+            "journal_to_last_subscriber_ms": 188.269
+          },
+          {
+            "turn_id": "24e76522-e495-4bf6-9355-b0da03fcf849",
+            "admission_ms": 6119.265679000819,
+            "accepted_to_native_bound_ms": 14651.659,
+            "native_terminal_to_journal_ms": 2776.304,
+            "journal_to_sse_ms": 348.055,
+            "journal_to_last_subscriber_ms": 348.055
+          },
+          {
+            "turn_id": "b1e2562a-bc32-45a7-a0a0-d7604b5fe45e",
+            "admission_ms": 7382.690279002418,
+            "accepted_to_native_bound_ms": 17671.734,
+            "native_terminal_to_journal_ms": 141.431,
+            "journal_to_sse_ms": 82.181,
+            "journal_to_last_subscriber_ms": 82.181
+          },
+          {
+            "turn_id": "3c2f7925-8c74-4957-9d0f-15012f584b14",
+            "admission_ms": 7219.421015004627,
+            "accepted_to_native_bound_ms": 16939.799,
+            "native_terminal_to_journal_ms": 230.239,
+            "journal_to_sse_ms": 95.861,
+            "journal_to_last_subscriber_ms": 95.861
+          },
+          {
+            "turn_id": "ecb138e7-c1d7-46ae-9581-76f89536d11f",
+            "admission_ms": 6719.556249001471,
+            "accepted_to_native_bound_ms": 12431.67,
+            "native_terminal_to_journal_ms": 6084.523,
+            "journal_to_sse_ms": 196.539,
+            "journal_to_last_subscriber_ms": 196.539
+          },
+          {
+            "turn_id": "c1dcff80-77bb-430b-b521-bb85ce0d840d",
+            "admission_ms": 5593.211159997736,
+            "accepted_to_native_bound_ms": 12683.697,
+            "native_terminal_to_journal_ms": 8132.820000000001,
+            "journal_to_sse_ms": 359.618,
+            "journal_to_last_subscriber_ms": 359.618
+          },
+          {
+            "turn_id": "4d45cf75-3eba-4bbf-8435-c9b45dbd885c",
+            "admission_ms": 7235.082563995093,
+            "accepted_to_native_bound_ms": 16949.961,
+            "native_terminal_to_journal_ms": 144.172,
+            "journal_to_sse_ms": 86.893,
+            "journal_to_last_subscriber_ms": 86.893
+          },
+          {
+            "turn_id": "8cf190c5-e414-47b7-a549-bc0ff5bc8bd4",
+            "admission_ms": 5239.942994005105,
+            "accepted_to_native_bound_ms": 11862.24,
+            "native_terminal_to_journal_ms": 9322.571,
+            "journal_to_sse_ms": 91.92599999999999,
+            "journal_to_last_subscriber_ms": 91.92599999999999
+          },
+          {
+            "turn_id": "c5ef0444-cd2a-4b8f-9f36-1dcc2da3504b",
+            "admission_ms": 5040.887277995353,
+            "accepted_to_native_bound_ms": 10860.99,
+            "native_terminal_to_journal_ms": 9498.232,
+            "journal_to_sse_ms": 173.62900000000002,
+            "journal_to_last_subscriber_ms": 173.62900000000002
+          },
+          {
+            "turn_id": "9e5981bc-4dfa-4d6a-a66f-fe1b8b822bde",
+            "admission_ms": 6742.443244002061,
+            "accepted_to_native_bound_ms": 15429.315,
+            "native_terminal_to_journal_ms": 426.438,
+            "journal_to_sse_ms": 73.792,
+            "journal_to_last_subscriber_ms": 73.792
+          },
+          {
+            "turn_id": "0cd60430-ebc0-468d-9e60-41784711326c",
+            "admission_ms": 6610.813307997887,
+            "accepted_to_native_bound_ms": 14904.636,
+            "native_terminal_to_journal_ms": 1517.285,
+            "journal_to_sse_ms": 68.37,
+            "journal_to_last_subscriber_ms": 68.37
+          },
+          {
+            "turn_id": "a3b3bdda-65fc-4a3d-a11d-0930a312432c",
+            "admission_ms": 7664.756822006893,
+            "accepted_to_native_bound_ms": 17767.814000000002,
+            "native_terminal_to_journal_ms": 176.343,
+            "journal_to_sse_ms": 56.219,
+            "journal_to_last_subscriber_ms": 56.219
+          },
+          {
+            "turn_id": "4fa6f5c7-b922-4691-9241-6a1b7206e265",
+            "admission_ms": 6518.109477998223,
+            "accepted_to_native_bound_ms": 13712.583,
+            "native_terminal_to_journal_ms": 3850.702,
+            "journal_to_sse_ms": 105.35799999999999,
+            "journal_to_last_subscriber_ms": 105.35799999999999
+          },
+          {
+            "turn_id": "5c717e7a-adc0-485f-aa8a-5ad9ef59768c",
+            "admission_ms": 6666.728112002602,
+            "accepted_to_native_bound_ms": 15193.831,
+            "native_terminal_to_journal_ms": 887.5020000000001,
+            "journal_to_sse_ms": 64.251,
+            "journal_to_last_subscriber_ms": 64.251
+          },
+          {
+            "turn_id": "2da257ea-9ea7-4d9a-86dc-690c4da6c0a7",
+            "admission_ms": 5148.173847999715,
+            "accepted_to_native_bound_ms": 11820.669,
+            "native_terminal_to_journal_ms": 9016.261,
+            "journal_to_sse_ms": 180.99599999999998,
+            "journal_to_last_subscriber_ms": 180.99599999999998
+          },
+          {
+            "turn_id": "ff721f87-cb76-46d2-b236-63b005bb27f3",
+            "admission_ms": 4898.291532001167,
+            "accepted_to_native_bound_ms": 11046.545999999998,
+            "native_terminal_to_journal_ms": 10239.15,
+            "journal_to_sse_ms": 154.386,
+            "journal_to_last_subscriber_ms": 154.386
+          },
+          {
+            "turn_id": "f0d10ac0-21a6-41db-a324-383e92bb34b9",
+            "admission_ms": 5139.238976997149,
+            "accepted_to_native_bound_ms": 11412.464,
+            "native_terminal_to_journal_ms": 10202.974,
+            "journal_to_sse_ms": 123.516,
+            "journal_to_last_subscriber_ms": 123.516
+          },
+          {
+            "turn_id": "11f61885-bfca-431c-8665-ca8bebb0bc25",
+            "admission_ms": 6857.58666699985,
+            "accepted_to_native_bound_ms": 15862.777,
+            "native_terminal_to_journal_ms": 169.951,
+            "journal_to_sse_ms": 122.786,
+            "journal_to_last_subscriber_ms": 122.786
+          },
+          {
+            "turn_id": "8106dbba-a51f-4002-8f25-e94631b69163",
+            "admission_ms": 6791.884624995873,
+            "accepted_to_native_bound_ms": 15837.847,
+            "native_terminal_to_journal_ms": 274.961,
+            "journal_to_sse_ms": 87.936,
+            "journal_to_last_subscriber_ms": 87.936
+          },
+          {
+            "turn_id": "bb5f5b05-a2e3-480f-9a3b-91fc84ff7984",
+            "admission_ms": 5630.522229002963,
+            "accepted_to_native_bound_ms": 13060.100999999999,
+            "native_terminal_to_journal_ms": 6587.741,
+            "journal_to_sse_ms": 185.037,
+            "journal_to_last_subscriber_ms": 185.037
+          },
+          {
+            "turn_id": "29a1f430-55b5-4e62-8f1a-912861e172ac",
+            "admission_ms": 7450.217529003567,
+            "accepted_to_native_bound_ms": 17887.138,
+            "native_terminal_to_journal_ms": 214.85999999999999,
+            "journal_to_sse_ms": 143.088,
+            "journal_to_last_subscriber_ms": 143.088
+          },
+          {
+            "turn_id": "cbc2a69b-dfe0-4eb6-86bc-76daf639f959",
+            "admission_ms": 7701.369060996512,
+            "accepted_to_native_bound_ms": 18798.532000000003,
+            "native_terminal_to_journal_ms": 233.95499999999998,
+            "journal_to_sse_ms": 82.309,
+            "journal_to_last_subscriber_ms": 82.309
+          },
+          {
+            "turn_id": "eb282c9a-2432-480b-962e-615b0566c66d",
+            "admission_ms": 6386.954863999563,
+            "accepted_to_native_bound_ms": 13655.821,
+            "native_terminal_to_journal_ms": 4171.356000000001,
+            "journal_to_sse_ms": 138.514,
+            "journal_to_last_subscriber_ms": 138.514
+          },
+          {
+            "turn_id": "684c9cc2-1c4d-43b7-a8a6-8913ec9aede2",
+            "admission_ms": 6125.295095996989,
+            "accepted_to_native_bound_ms": 13066.026000000002,
+            "native_terminal_to_journal_ms": 5430.157,
+            "journal_to_sse_ms": 339.56399999999996,
+            "journal_to_last_subscriber_ms": 339.56399999999996
+          }
+        ]
+      },
+      {
+        "concurrency": 1,
+        "subscribers_per_turn": 32,
+        "duration_seconds": 1.59,
+        "metrics": {
+          "admission_ms": {
+            "p50": 30.23,
+            "p95": 30.23,
+            "p99": 30.23
+          },
+          "accepted_to_native_bound_ms": {
+            "p50": 903.31,
+            "p95": 903.31,
+            "p99": 903.31
+          },
+          "native_terminal_to_journal_ms": {
+            "p50": 225.7,
+            "p95": 225.7,
+            "p99": 225.7
+          },
+          "journal_to_sse_ms": {
+            "p50": 80.18,
+            "p95": 80.18,
+            "p99": 80.18
+          },
+          "journal_to_last_subscriber_ms": {
+            "p50": 85.09,
+            "p95": 85.09,
+            "p99": 85.09
+          }
+        },
+        "samples": [
+          {
+            "turn_id": "c70975e9-6684-4bb6-aa33-8a545e326913",
+            "admission_ms": 30.228629999328405,
+            "accepted_to_native_bound_ms": 903.3109999999999,
+            "native_terminal_to_journal_ms": 225.70399999999998,
+            "journal_to_sse_ms": 80.18400000000001,
+            "journal_to_last_subscriber_ms": 85.091
+          }
+        ]
+      }
+    ]
+  },
+  "join_saturated": {
+    "measured_at": "2026-09-11T06:56:41.395995+00:00",
+    "workload": "OfflineFinanceModel, synthetic calculate(2+3); no external provider calls",
+    "api_jobs": 0,
+    "worker_jobs": 4,
+    "native_terminal_timestamp": "read-only public.run.updated_at after success; probe DB only",
+    "batches": [
+      {
+        "concurrency": 32,
+        "subscribers_per_turn": 1,
+        "duration_seconds": 37.89,
+        "metrics": {
+          "admission_ms": {
+            "p50": 827.73,
+            "p95": 1372.75,
+            "p99": 2272.33
+          },
+          "accepted_to_native_bound_ms": {
+            "p50": 2588.36,
+            "p95": 4429.06,
+            "p99": 4739.77
+          },
+          "native_terminal_to_journal_ms": {
+            "p50": 26203.62,
+            "p95": 30079.06,
+            "p99": 30137.14
+          },
+          "journal_to_sse_ms": {
+            "p50": 85.66,
+            "p95": 228.08,
+            "p99": 260.4
+          },
+          "journal_to_last_subscriber_ms": {
+            "p50": 85.66,
+            "p95": 228.08,
+            "p99": 260.4
+          }
+        },
+        "samples": [
+          {
+            "turn_id": "c24ef1d2-0f7a-4aae-85b3-30967d7b8c7e",
+            "admission_ms": 301.39570400933735,
+            "accepted_to_native_bound_ms": 2071.423,
+            "native_terminal_to_journal_ms": 2471.948,
+            "journal_to_sse_ms": 23.470000000000002,
+            "journal_to_last_subscriber_ms": 23.470000000000002
+          },
+          {
+            "turn_id": "c393da39-e836-45ab-a4c1-a3f169eea62c",
+            "admission_ms": 399.6753940009512,
+            "accepted_to_native_bound_ms": 2045.4379999999999,
+            "native_terminal_to_journal_ms": 990.26,
+            "journal_to_sse_ms": 88.47099999999999,
+            "journal_to_last_subscriber_ms": 88.47099999999999
+          },
+          {
+            "turn_id": "cd30c052-169c-4ee7-90c6-7220d8ce7fc0",
+            "admission_ms": 645.2887589985039,
+            "accepted_to_native_bound_ms": 1766.443,
+            "native_terminal_to_journal_ms": 1692.2060000000001,
+            "journal_to_sse_ms": 61.510000000000005,
+            "journal_to_last_subscriber_ms": 61.510000000000005
+          },
+          {
+            "turn_id": "e2055d53-7436-49c4-aa0e-81a82e5b438c",
+            "admission_ms": 487.9198310081847,
+            "accepted_to_native_bound_ms": 1885.267,
+            "native_terminal_to_journal_ms": 1221.377,
+            "journal_to_sse_ms": 133.796,
+            "journal_to_last_subscriber_ms": 133.796
+          },
+          {
+            "turn_id": "3866858c-fdb9-418b-885d-2cecd85ed7b8",
+            "admission_ms": 395.13039799930993,
+            "accepted_to_native_bound_ms": 1965.3039999999999,
+            "native_terminal_to_journal_ms": 765.9899999999999,
+            "journal_to_sse_ms": 134.28799999999998,
+            "journal_to_last_subscriber_ms": 134.28799999999998
+          },
+          {
+            "turn_id": "6dbf7591-257d-4be4-b7f0-846acb16182d",
+            "admission_ms": 1365.811665993533,
+            "accepted_to_native_bound_ms": 2478.219,
+            "native_terminal_to_journal_ms": 30137.143,
+            "journal_to_sse_ms": 63.734,
+            "journal_to_last_subscriber_ms": 63.734
+          },
+          {
+            "turn_id": "41ce93b4-10cc-4aee-bfbf-29e82f63faf9",
+            "admission_ms": 623.750379003468,
+            "accepted_to_native_bound_ms": 1782.602,
+            "native_terminal_to_journal_ms": 1890.646,
+            "journal_to_sse_ms": 54.004999999999995,
+            "journal_to_last_subscriber_ms": 54.004999999999995
+          },
+          {
+            "turn_id": "55c3ca0c-537a-4a29-a966-f27e273ed81f",
+            "admission_ms": 587.5971450004727,
+            "accepted_to_native_bound_ms": 1948.2630000000001,
+            "native_terminal_to_journal_ms": 2097.351,
+            "journal_to_sse_ms": 129.722,
+            "journal_to_last_subscriber_ms": 129.722
+          },
+          {
+            "turn_id": "9b90b1ca-1b84-455d-b771-9867fe75e082",
+            "admission_ms": 1219.124818991986,
+            "accepted_to_native_bound_ms": 3584.314,
+            "native_terminal_to_journal_ms": 28744.604,
+            "journal_to_sse_ms": 78.278,
+            "journal_to_last_subscriber_ms": 78.278
+          },
+          {
+            "turn_id": "48e0b29d-4cc6-4f3c-86dc-3f879ba767ec",
+            "admission_ms": 1268.662457994651,
+            "accepted_to_native_bound_ms": 3978.3469999999998,
+            "native_terminal_to_journal_ms": 120.864,
+            "journal_to_sse_ms": 95.458,
+            "journal_to_last_subscriber_ms": 95.458
+          },
+          {
+            "turn_id": "36a9dc3a-e746-4e30-9a51-ec580b7eb359",
+            "admission_ms": 718.7831069895765,
+            "accepted_to_native_bound_ms": 2434.788,
+            "native_terminal_to_journal_ms": 1350.781,
+            "journal_to_sse_ms": 129.61800000000002,
+            "journal_to_last_subscriber_ms": 129.61800000000002
+          },
+          {
+            "turn_id": "781ca366-833b-42ac-9b81-4302deac0e8b",
+            "admission_ms": 1372.7474589977646,
+            "accepted_to_native_bound_ms": 4739.775,
+            "native_terminal_to_journal_ms": 26582.388000000003,
+            "journal_to_sse_ms": 164.973,
+            "journal_to_last_subscriber_ms": 164.973
+          },
+          {
+            "turn_id": "f88fb037-1788-4738-b5e3-a4a26287c7d3",
+            "admission_ms": 753.4869450028054,
+            "accepted_to_native_bound_ms": 2422.585,
+            "native_terminal_to_journal_ms": 29083.958,
+            "journal_to_sse_ms": 46.733999999999995,
+            "journal_to_last_subscriber_ms": 46.733999999999995
+          },
+          {
+            "turn_id": "2513af63-439e-4937-b3be-c1db0fdad0ec",
+            "admission_ms": 2272.330753010465,
+            "accepted_to_native_bound_ms": 1741.583,
+            "native_terminal_to_journal_ms": 30079.062,
+            "journal_to_sse_ms": 42.199,
+            "journal_to_last_subscriber_ms": 42.199
+          },
+          {
+            "turn_id": "47a2231c-0aa9-45e9-a42c-2aef0fad4ae5",
+            "admission_ms": 1260.8283379959175,
+            "accepted_to_native_bound_ms": 4380.692,
+            "native_terminal_to_journal_ms": 27296.763,
+            "journal_to_sse_ms": 49.56,
+            "journal_to_last_subscriber_ms": 49.56
+          },
+          {
+            "turn_id": "4540968a-af4f-4ec0-9f8f-5fe1a983dfc6",
+            "admission_ms": 1344.152870005928,
+            "accepted_to_native_bound_ms": 3917.6890000000003,
+            "native_terminal_to_journal_ms": 27849.712,
+            "journal_to_sse_ms": 217.19299999999998,
+            "journal_to_last_subscriber_ms": 217.19299999999998
+          },
+          {
+            "turn_id": "6a0a1941-c668-4508-b7e0-038ced38822c",
+            "admission_ms": 677.767205008422,
+            "accepted_to_native_bound_ms": 2431.2309999999998,
+            "native_terminal_to_journal_ms": 793.159,
+            "journal_to_sse_ms": 70.75399999999999,
+            "journal_to_last_subscriber_ms": 70.75399999999999
+          },
+          {
+            "turn_id": "cea8eddd-f8c1-4b19-be86-ec70cce9b2c7",
+            "admission_ms": 612.8803129977314,
+            "accepted_to_native_bound_ms": 1745.312,
+            "native_terminal_to_journal_ms": 3033.3770000000004,
+            "journal_to_sse_ms": 68.613,
+            "journal_to_last_subscriber_ms": 68.613
+          },
+          {
+            "turn_id": "f9f74f64-b382-448f-8b5a-77c04cf4bb5c",
+            "admission_ms": 805.4244189988822,
+            "accepted_to_native_bound_ms": 2655.632,
+            "native_terminal_to_journal_ms": 699.57,
+            "journal_to_sse_ms": 61.013999999999996,
+            "journal_to_last_subscriber_ms": 61.013999999999996
+          },
+          {
+            "turn_id": "521724fb-49ed-45b5-bc08-2f29a00b8cfa",
+            "admission_ms": 1182.6071359973866,
+            "accepted_to_native_bound_ms": 4058.003,
+            "native_terminal_to_journal_ms": 28354.317000000003,
+            "journal_to_sse_ms": 46.1,
+            "journal_to_last_subscriber_ms": 46.1
+          },
+          {
+            "turn_id": "c8b871cb-e544-45c7-a1fc-01333be56763",
+            "admission_ms": 1296.5556410053978,
+            "accepted_to_native_bound_ms": 4429.055,
+            "native_terminal_to_journal_ms": 26203.617000000002,
+            "journal_to_sse_ms": 86.425,
+            "journal_to_last_subscriber_ms": 86.425
+          },
+          {
+            "turn_id": "b8f344cb-bb74-4fa7-8b90-863a9450f299",
+            "admission_ms": 1210.2723279967904,
+            "accepted_to_native_bound_ms": 3885.8630000000003,
+            "native_terminal_to_journal_ms": 28742.775999999998,
+            "journal_to_sse_ms": 260.40200000000004,
+            "journal_to_last_subscriber_ms": 260.40200000000004
+          },
+          {
+            "turn_id": "f84b7cd1-ddc3-4d8f-a086-5e273863ef86",
+            "admission_ms": 1060.5657390115084,
+            "accepted_to_native_bound_ms": 3385.409,
+            "native_terminal_to_journal_ms": 28574.039,
+            "journal_to_sse_ms": 101.476,
+            "journal_to_last_subscriber_ms": 101.476
+          },
+          {
+            "turn_id": "edfa9cbf-8bb8-44cb-82f5-90370f3a2893",
+            "admission_ms": 707.6910220057471,
+            "accepted_to_native_bound_ms": 2689.791,
+            "native_terminal_to_journal_ms": 307.316,
+            "journal_to_sse_ms": 31.298,
+            "journal_to_last_subscriber_ms": 31.298
+          },
+          {
+            "turn_id": "9c079c83-84dc-41b7-bbc9-a24ef00b7f1a",
+            "admission_ms": 742.3360000102548,
+            "accepted_to_native_bound_ms": 2420.367,
+            "native_terminal_to_journal_ms": 194.843,
+            "journal_to_sse_ms": 62.385000000000005,
+            "journal_to_last_subscriber_ms": 62.385000000000005
+          },
+          {
+            "turn_id": "247bc937-2638-4b36-8d1e-99c2cc06fa08",
+            "admission_ms": 964.8208690050524,
+            "accepted_to_native_bound_ms": 3743.7740000000003,
+            "native_terminal_to_journal_ms": 28482.871,
+            "journal_to_sse_ms": 160.661,
+            "journal_to_last_subscriber_ms": 160.661
+          },
+          {
+            "turn_id": "6d875571-26f1-4cb3-b1ef-a1282f3a7ca2",
+            "admission_ms": 1249.9724939989392,
+            "accepted_to_native_bound_ms": 3948.341,
+            "native_terminal_to_journal_ms": 28137.399999999998,
+            "journal_to_sse_ms": 228.076,
+            "journal_to_last_subscriber_ms": 228.076
+          },
+          {
+            "turn_id": "765c87d1-35bb-414f-931f-ce8da5807ce0",
+            "admission_ms": 827.7334419981344,
+            "accepted_to_native_bound_ms": 3097.5570000000002,
+            "native_terminal_to_journal_ms": 27092.936999999998,
+            "journal_to_sse_ms": 51.641,
+            "journal_to_last_subscriber_ms": 51.641
+          },
+          {
+            "turn_id": "12390bad-bcdc-4bfd-b31a-7b52ba36a226",
+            "admission_ms": 889.7844040038763,
+            "accepted_to_native_bound_ms": 2622.366,
+            "native_terminal_to_journal_ms": 30006.799,
+            "journal_to_sse_ms": 88.53800000000001,
+            "journal_to_last_subscriber_ms": 88.53800000000001
+          },
+          {
+            "turn_id": "7113b7c2-7288-44c7-a761-f2683e3f2944",
+            "admission_ms": 1240.3658769908361,
+            "accepted_to_native_bound_ms": 2588.3579999999997,
+            "native_terminal_to_journal_ms": 28929.211,
+            "journal_to_sse_ms": 85.65599999999999,
+            "journal_to_last_subscriber_ms": 85.65599999999999
+          },
+          {
+            "turn_id": "cc756e44-349d-4696-9d6b-107efe82c0b2",
+            "admission_ms": 1172.8897040011361,
+            "accepted_to_native_bound_ms": 4236.467000000001,
+            "native_terminal_to_journal_ms": 27201.097,
+            "journal_to_sse_ms": 114.14,
+            "journal_to_last_subscriber_ms": 114.14
+          },
+          {
+            "turn_id": "7b1b8033-274d-468f-b0ca-4a4fbd9dee93",
+            "admission_ms": 735.952440998517,
+            "accepted_to_native_bound_ms": 2545.836,
+            "native_terminal_to_journal_ms": 700.897,
+            "journal_to_sse_ms": 104.159,
+            "journal_to_last_subscriber_ms": 104.159
+          }
+        ]
+      }
+    ]
+  }
+}

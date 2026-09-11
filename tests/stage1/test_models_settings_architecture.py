@@ -106,7 +106,5 @@ def test_production_dependency_graph_has_no_stage1_legacy_runtime() -> None:
     assert all(name not in pyproject for name in removed)
     # 继续执行前验证内部不变量。
     assert config["graphs"] == {
-        "finance_agent_v1_6_0": "./financeclaw/agent_server/graphs/bff_graphs.py:finance_agent",
+        "finance_agent": "./financeclaw/agent_server/graphs/product.py:finance_agent",
     }
-    local_config = json.loads((ROOT / "langgraph.local.json").read_text())
-    assert local_config["graphs"] == config["graphs"]

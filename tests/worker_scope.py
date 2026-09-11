@@ -1,19 +1,17 @@
 """Test-only root admission for focused Worker graph tests."""
 
 from contextlib import contextmanager
-from datetime import UTC, datetime, timedelta
 
 from financeclaw.agent_server.tools.subgraph_scope import InvocationScope, active_scope
 from financeclaw.kernel.agents import AgentProfile
-from financeclaw.shared.execution_ledger.run_tables import RunAuthorizationRow
-from financeclaw.shared.execution_ledger.snapshots import agent_snapshot
-from financeclaw.shared.execution_ledger.tables import RunExecutionRow
 from financeclaw.shared.releases.subgraphs import worker_declaration
+from financeclaw.shared.turns.snapshots import agent_snapshot
+from tests.turn_support import seed_execution
 
 
 def worker_snapshot(profile, context, catalog, models, *, thread_id="test-root", input_hash="test"):
     """Pin a Worker under a synthetic root with real schema and authorization checks."""
-    context = context.model_copy(update={"root_run_id": context.run_id})
+    context = context.model_copy(update={"turn_id": context.turn_id})
     declaration = worker_declaration(profile, catalog, models)
     root = AgentProfile(
         agent_id="test_orchestrator",
@@ -30,24 +28,9 @@ def worker_snapshot(profile, context, catalog, models, *, thread_id="test-root",
 @contextmanager
 def invocation(execution, profile, catalog, models, context):
     """Enter the same server-owned scope as a composite Tool while exposing graph state to tests."""
-    context = context.model_copy(update={"root_run_id": context.run_id})
+    context = context.model_copy(update={"turn_id": context.turn_id})
     declaration = worker_declaration(profile, catalog, models)
-    with execution.sessions() as session:
-        exists = session.get(RunExecutionRow, context.run_id) is not None
-    if not exists:
-        execution.register(context.run_id, worker_snapshot(profile, context, catalog, models))
-    with execution.sessions.begin() as session:
-        if session.get(RunAuthorizationRow, context.run_id) is None:
-            session.add(
-                RunAuthorizationRow(
-                    run_id=context.run_id,
-                    scopes=sorted(context.scopes),
-                    source="test",
-                    source_hash="a" * 64,
-                    issued_at=datetime.now(UTC),
-                    expires_at=datetime.now(UTC) + timedelta(hours=1),
-                )
-            )
+    context = seed_execution(execution, context, worker_snapshot(profile, context, catalog, models))
     token = active_scope.set(InvocationScope(declaration, context, "test-tool-call", "b" * 64))
     try:
         yield context

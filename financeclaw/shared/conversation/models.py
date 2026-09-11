@@ -10,6 +10,8 @@ from typing import Any, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from financeclaw.kernel.turn_status import TurnStatus
+
 
 class FrozenRecord(BaseModel):
     """所有会话领域记录共用的冻结基类。
@@ -41,35 +43,6 @@ class ConversationStatus(StrEnum):
     ARCHIVED = "archived"
 
 
-class TurnStatus(StrEnum):
-    """一次对话 turn 的执行状态。
-
-    使用场景：BFF 创建 turn 时置为 ACCEPTED，Agent Server 认领后流转到
-    RUNNING/WAITING_CHILD 等中间态，最终收敛到 COMPLETED 或 FAILED；
-    非终态 turn 可被对账流程扫描并跨 Agent Server 重启继续。
-
-    成员（StrEnum 取值即入库字符串）：
-        ACCEPTED：BFF 已受理并写入用户消息，尚未被 Agent Server 认领。
-        PENDING：状态归一化时的兜底取值，表示等待执行。
-        RUNNING：Agent Server 正在执行该 turn。
-        WAITING_CHILD：正在等待子 Agent 或子流程返回。
-        INTERRUPTED：执行被中断，尚未到达终态。
-        COMPLETED：执行成功，assistant 回复已落库。
-        FAILED：执行失败，turn 进入终态。
-    """
-
-    ACCEPTED = "accepted"
-    PENDING = "pending"
-    RUNNING = "running"
-    WAITING_CHILD = "waiting_child"
-    INTERRUPTED = "interrupted"
-    COMPLETED = "completed"
-    FAILED = "failed"
-    CANCELLATION_REQUESTED = "cancellation_requested"
-    CANCELLED = "cancelled"
-    NEEDS_ATTENTION = "needs_attention"
-
-
 class MessageRole(StrEnum):
     """对话原文消息的角色枚举。
 
@@ -88,7 +61,7 @@ class MessageRole(StrEnum):
 class Conversation(FrozenRecord):
     """一次持久化对话的聚合根记录，固定绑定租户、主体与 Agent 线程。
 
-    使用场景：BFF 创建会话时写入；后续所有 turn、消息、摘要与 Manifest 都通过
+    使用场景：API 创建会话时写入；后续所有 turn、消息、摘要与 Manifest 都通过
     conversation_id 关联到该记录，agent_thread_id 唯一，支撑跨重启继续。
 
     Attributes:
@@ -146,43 +119,18 @@ class ChannelConversationBinding(FrozenRecord):
 
 
 class ConversationTurn(FrozenRecord):
-    """一次对话轮次的执行记录，承载幂等键与 Agent Server 运行绑定。
-
-    使用场景：BFF 以 client_idempotency_key 幂等创建 turn 并写入用户消息；
-    Agent Server 通过 bind_server_run 绑定 server_run_id，重启后按状态对账续跑。
-
-    Attributes:
-        turn_id: turn 全局唯一标识，形如 "turn-<hex>"，作为主键。
-        conversation_id: 所属会话标识，关联 Conversation。
-        tenant_id: 租户标识，与 subject_id 共同用于归属校验。
-        subject_id: 主体标识，与 tenant_id、client_idempotency_key 构成幂等约束。
-        run_id: 平台侧运行标识，形如 "run-<hex>"，Agent Server 由此定位 turn。
-        server_run_id: Agent Server 侧运行标识；一个 turn 至多绑定一个，未绑定为 None。
-        client_idempotency_key: 客户端幂等键，同租户同主体下唯一，防止重复提交。
-        request_hash: 请求内容哈希，用于检测幂等键复用但请求不同的情况。
-        target_type: 目标对象类型（被操作的领域对象类别）。
-        target_id: 目标对象标识。
-        target_version: 目标对象版本，用于并发与兼容控制。
-        status: turn 当前状态，取值见 TurnStatus。
-        created_at: turn 创建时间（UTC）。
-        completed_at: turn 到达终态的时间（UTC）；未完成时为 None。
-
-    """
+    """Read-only business identity and Journal state for one accepted user request."""
 
     turn_id: str
     conversation_id: str
     tenant_id: str
     subject_id: str
-    run_id: str
-    server_run_id: str | None = None
-    client_idempotency_key: str
+    idempotency_key: str
     request_hash: str
-    target_type: str
-    target_id: str
-    target_version: str
+    thread_id: str
     status: TurnStatus
     created_at: datetime
-    completed_at: datetime | None = None
+    finished_at: datetime | None = None
 
 
 class ConversationMessage(FrozenRecord):
@@ -274,7 +222,6 @@ class ModelContextManifest(FrozenRecord):
     model_call_id: str
     conversation_id: str
     turn_id: str
-    run_id: str
     prompt_template_version: str
     agent_profile_version: str
     model_profile_version: str

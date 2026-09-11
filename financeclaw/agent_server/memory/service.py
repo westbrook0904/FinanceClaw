@@ -1,6 +1,5 @@
 """原生 Store 上的画像字段与事件；业务层只负责证据、确认和生命周期。"""
 
-import base64
 import json
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -9,7 +8,6 @@ from typing import Any
 
 from langgraph.store.base import BaseStore, GetOp, Item
 
-from financeclaw.agent_server.memory.deletion import deletion_event
 from financeclaw.agent_server.memory.models import (
     MemoryDraft,
     MemoryProposal,
@@ -18,7 +16,6 @@ from financeclaw.agent_server.memory.models import (
     MemoryRecord,
     MemoryStatus,
 )
-from financeclaw.agent_server.memory.observability import store_operation
 from financeclaw.agent_server.memory.policy import MemoryPolicy
 from financeclaw.agent_server.memory.profiles import ProfileField
 from financeclaw.kernel.context import ExecutionContext
@@ -26,6 +23,9 @@ from financeclaw.shared.audit.models import AuditEventType, AuditRecord
 from financeclaw.shared.audit.repository import AuditRepository
 from financeclaw.shared.conversation.models import MessageRole
 from financeclaw.shared.conversation.repository import ConversationRepository
+from financeclaw.shared.memory.deletion import deletion_event
+from financeclaw.shared.memory.namespace import owner_namespace
+from financeclaw.shared.memory.observability import store_operation
 from financeclaw.shared.outbox.repository import OutboxRepository
 
 
@@ -60,15 +60,6 @@ class MemoryStoreUnavailable(MemoryServiceError):
 
 class MemoryReceiptPending(MemoryServiceError):
     """Store 已变更，但审计回执尚未完成；不可把该错误描述为已回滚。"""
-
-
-def owner_namespace(context) -> tuple[str, ...]:
-    """使用可信主体构造 v2 Store 路径；编码避免 namespace 保留字符。"""
-    labels = [
-        base64.urlsafe_b64encode(value.encode()).decode().rstrip("=")
-        for value in (context.tenant_id, context.subject_id)
-    ]
-    return ("financeclaw", "v2", *labels)
 
 
 def _hash(value: Any) -> str:
@@ -217,10 +208,10 @@ class LongTermMemoryService:
         key = (
             normalized.field.value
             if normalized.field
-            else f"mem-{_hash([context.run_id, mutation_id])}"
+            else f"mem-{_hash([context.turn_id, mutation_id])}"
         )
         identity = f"profile:{key}" if normalized.field else key
-        mutation = _hash([context.run_id, mutation_id, normalized.model_dump()])
+        mutation = _hash([context.turn_id, mutation_id, normalized.model_dump()])
         existing_item = target.get(namespace, key)
         existing = self._project(existing_item, context) if existing_item else None
         if existing and existing.mutation_id == mutation:
@@ -253,7 +244,6 @@ class LongTermMemoryService:
             provenance=MemoryProvenance(
                 conversation_id=context.conversation_id,
                 turn_id=context.turn_id,
-                run_id=context.run_id,
             ),
         )
         if supersedes_id:
@@ -431,7 +421,6 @@ class LongTermMemoryService:
             subject_id=context.subject_id,
             conversation_id=context.conversation_id,
             turn_id=context.turn_id,
-            run_id=context.run_id,
             resource_type="memory",
             resource_id=record.memory_id,
             resource_version=str(record.revision),

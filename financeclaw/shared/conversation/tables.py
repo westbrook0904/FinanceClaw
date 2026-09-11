@@ -4,6 +4,11 @@
 conversation_messages、model_context_manifests 与 artifacts 表。
 """
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from financeclaw.shared.turns.tables import ConversationTurnRow
+
 from datetime import datetime
 from typing import Any
 
@@ -12,6 +17,7 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     String,
@@ -48,6 +54,9 @@ class ConversationRow(Base):
     __table_args__ = (
         Index("ix_conversations_owner", "tenant_id", "subject_id", "conversation_id"),
         UniqueConstraint("agent_thread_id", name="uq_conversations_agent_thread"),
+        UniqueConstraint(
+            "conversation_id", "tenant_id", "subject_id", name="uq_conversation_owner"
+        ),
     )
 
     conversation_id: Mapped[str] = mapped_column(String(128), primary_key=True)
@@ -65,7 +74,9 @@ class ConversationRow(Base):
     )
 
     turns: Mapped[list["ConversationTurnRow"]] = relationship(
-        back_populates="conversation", cascade="all, delete-orphan"
+        back_populates="conversation",
+        cascade="all, delete-orphan",
+        foreign_keys="ConversationTurnRow.conversation_id",
     )
 
 
@@ -120,69 +131,6 @@ class ChannelConversationBindingRow(Base):
     )
 
 
-class ConversationTurnRow(Base):
-    """轮次表：持久化 ConversationTurn 记录，承载幂等键与 Agent Server 绑定。
-
-    使用场景：BFF 幂等创建 turn 后写入本表；（租户，主体，幂等键）唯一约束
-    保证 append-only；run_id 唯一约束供 Agent Server 定位轮次。
-
-    Attributes:
-        turn_id: turn 标识，主键（String(128)）。
-        conversation_id: 所属会话标识，外键指向 conversations.conversation_id，非空。
-        tenant_id: 租户标识（String(128)），非空，参与幂等唯一约束。
-        subject_id: 主体标识（String(128)），非空，参与幂等唯一约束。
-        run_id: 平台运行标识（String(128)），非空，全局唯一约束。
-        server_run_id: Agent Server 运行标识（String(128)）；未绑定时为 NULL。
-        client_idempotency_key: 客户端幂等键（String(200)），非空，参与幂等唯一约束。
-        request_hash: 请求内容哈希（String(64)），非空。
-        target_type: 目标对象类型（String(32)），非空。
-        target_id: 目标对象标识（String(128)），非空。
-        target_version: 目标对象版本（String(32)），非空。
-        status: turn 状态字符串，非空，默认 "accepted"。
-        created_at: 创建时间（带时区），非空，默认当前 UTC 时间。
-        completed_at: 终态完成时间（带时区）；未完成时为 NULL。
-        conversation: 所属会话的关联对象（多对一）。
-        messages: 该 turn 下的消息列表；随 turn 级联删除。
-
-    """
-
-    __tablename__ = "conversation_turns"
-    __table_args__ = (
-        UniqueConstraint("run_id", name="uq_conversation_turns_run"),
-        UniqueConstraint(
-            "tenant_id",
-            "subject_id",
-            "client_idempotency_key",
-            name="uq_conversation_turns_owner_idempotency",
-        ),
-        Index("ix_conversation_turns_conversation_created", "conversation_id", "created_at"),
-    )
-
-    turn_id: Mapped[str] = mapped_column(String(128), primary_key=True)
-    conversation_id: Mapped[str] = mapped_column(
-        ForeignKey("conversations.conversation_id"), nullable=False
-    )
-    tenant_id: Mapped[str] = mapped_column(String(128), nullable=False)
-    subject_id: Mapped[str] = mapped_column(String(128), nullable=False)
-    run_id: Mapped[str] = mapped_column(String(128), nullable=False)
-    server_run_id: Mapped[str | None] = mapped_column(String(128))
-    client_idempotency_key: Mapped[str] = mapped_column(String(200), nullable=False)
-    request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
-    target_type: Mapped[str] = mapped_column(String(32), nullable=False)
-    target_id: Mapped[str] = mapped_column(String(128), nullable=False)
-    target_version: Mapped[str] = mapped_column(String(32), nullable=False)
-    status: Mapped[str] = mapped_column(String(32), nullable=False, default="accepted")
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=utcnow
-    )
-    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-
-    conversation: Mapped[ConversationRow] = relationship(back_populates="turns")
-    messages: Mapped[list["ConversationMessageRow"]] = relationship(
-        back_populates="turn", cascade="all, delete-orphan"
-    )
-
-
 class ConversationMessageRow(Base):
     """消息表：持久化 ConversationMessage 原文日志，append-only 且按序号排列。
 
@@ -207,6 +155,14 @@ class ConversationMessageRow(Base):
     __tablename__ = "conversation_messages"
     __table_args__ = (
         UniqueConstraint("conversation_id", "sequence", name="uq_messages_conversation_sequence"),
+        UniqueConstraint("turn_id", "message_id", name="uq_message_turn"),
+        ForeignKeyConstraint(
+            ["turn_id", "conversation_id"],
+            ["conversation_turns.turn_id", "conversation_turns.conversation_id"],
+            name="fk_message_turn_conversation",
+            deferrable=True,
+            initially="DEFERRED",
+        ),
         Index("ix_messages_turn_role", "turn_id", "role"),
         Index(
             "uq_messages_final_assistant",
@@ -221,7 +177,7 @@ class ConversationMessageRow(Base):
     conversation_id: Mapped[str] = mapped_column(
         ForeignKey("conversations.conversation_id"), nullable=False
     )
-    turn_id: Mapped[str] = mapped_column(ForeignKey("conversation_turns.turn_id"), nullable=False)
+    turn_id: Mapped[str] = mapped_column(String(128), nullable=False)
     sequence: Mapped[int] = mapped_column(Integer, nullable=False)
     parent_message_id: Mapped[str | None] = mapped_column(
         ForeignKey("conversation_messages.message_id")
@@ -234,7 +190,9 @@ class ConversationMessageRow(Base):
         DateTime(timezone=True), nullable=False, default=utcnow
     )
 
-    turn: Mapped[ConversationTurnRow] = relationship(back_populates="messages")
+    turn: Mapped["ConversationTurnRow"] = relationship(
+        back_populates="messages", foreign_keys=[turn_id]
+    )
 
 
 class ModelContextManifestRow(Base):
@@ -243,7 +201,7 @@ class ModelContextManifestRow(Base):
     __tablename__ = "model_context_manifests"
     __table_args__ = (
         UniqueConstraint("model_call_id", name="uq_manifests_model_call"),
-        Index("ix_manifests_run", "conversation_id", "turn_id", "run_id"),
+        Index("ix_manifests_turn", "conversation_id", "turn_id"),
     )
 
     manifest_id: Mapped[str] = mapped_column(String(128), primary_key=True)
@@ -252,7 +210,6 @@ class ModelContextManifestRow(Base):
         ForeignKey("conversations.conversation_id"), nullable=False
     )
     turn_id: Mapped[str] = mapped_column(ForeignKey("conversation_turns.turn_id"), nullable=False)
-    run_id: Mapped[str] = mapped_column(String(128), nullable=False)
     prompt_template_version: Mapped[str] = mapped_column(String(64), nullable=False)
     agent_profile_version: Mapped[str] = mapped_column(String(32), nullable=False)
     model_profile_version: Mapped[str] = mapped_column(String(32), nullable=False)

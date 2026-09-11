@@ -27,7 +27,7 @@ class AuditRecordRow(Base):
         subject_id: 主体标识，最长 128 字符，非空。
         conversation_id: 关联会话标识，最长 128 字符；非会话场景为 NULL。
         turn_id: 事件所属的对话轮次标识，最长 128 字符，非空。
-        run_id: 事件所属的 Agent 运行标识，最长 128 字符，非空。
+        turn_id: 事件所属的 Agent 运行标识，最长 128 字符，非空。
         tool_call_id: 关联的工具调用标识，最长 128 字符；仅工具类事件存在。
         resource_type: 被操作资源类型，最长 64 字符，非空。
         resource_id: 被操作资源标识，最长 128 字符，非空。
@@ -46,7 +46,7 @@ class AuditRecordRow(Base):
     __tablename__ = "audit_records"
     __table_args__ = (
         Index("ix_audit_owner_time", "tenant_id", "subject_id", "occurred_at"),
-        Index("ix_audit_run", "run_id", "event_type"),
+        Index("ix_audit_run", "turn_id", "event_type"),
     )
 
     audit_id: Mapped[str] = mapped_column(String(128), primary_key=True)
@@ -58,7 +58,6 @@ class AuditRecordRow(Base):
     subject_id: Mapped[str] = mapped_column(String(128), nullable=False)
     conversation_id: Mapped[str | None] = mapped_column(String(128))
     turn_id: Mapped[str] = mapped_column(String(128), nullable=False)
-    run_id: Mapped[str] = mapped_column(String(128), nullable=False)
     tool_call_id: Mapped[str | None] = mapped_column(String(128))
     resource_type: Mapped[str] = mapped_column(String(64), nullable=False)
     resource_id: Mapped[str] = mapped_column(String(128), nullable=False)

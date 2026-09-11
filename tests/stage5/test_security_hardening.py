@@ -7,7 +7,7 @@ import pytest
 from cryptography.hazmat.primitives.asymmetric import rsa
 from pydantic import SecretStr, ValidationError
 
-from financeclaw.bff.http.auth import OIDCJWTAuthenticator
+from financeclaw.api.http.auth import OIDCJWTAuthenticator
 from financeclaw.shared.infrastructure.security.egress import EgressDenied, EgressPolicy
 from financeclaw.shared.infrastructure.settings import FinanceClawSettings
 
@@ -80,7 +80,7 @@ def test_production_settings_require_oidc_internal_auth_s3_and_telemetry() -> No
         oidc_audience="financeclaw-api",
         oidc_jwks_url="https://id.example.test/jwks.json",
         oidc_algorithms=("RS256",),
-        agent_server_service_token=SecretStr("service-secret"),
+        integration_service_token=SecretStr("synthetic-integration-service-secret-32-bytes"),
         database_url=SecretStr("postgresql+psycopg://user:secret@db/financeclaw_app"),
         database_auto_create_schema=False,
         artifact_backend="s3",
@@ -99,7 +99,7 @@ def test_production_settings_require_oidc_internal_auth_s3_and_telemetry() -> No
     )
 
     # 继续执行前验证内部不变量。
-    assert settings.bff_auth_token is None
+    assert settings.api_auth_token is None
     # 继续执行前验证内部不变量。
     assert settings.artifact_backend.value == "s3"
 

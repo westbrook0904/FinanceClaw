@@ -28,7 +28,6 @@ class ToolResultArchive:
             update={
                 "conversation_id": source.get("conversation_id", context.conversation_id),
                 "turn_id": source.get("turn_id", context.turn_id),
-                "run_id": source.get("run_id", context.run_id),
             }
         )
         payload = {

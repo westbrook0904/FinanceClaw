@@ -19,14 +19,13 @@ def _settings() -> FinanceClawSettings:
     return FinanceClawSettings(environment="test", offline_model=True, debug_full_io=False)
 
 
-def _context(*scopes: str, run_id: str) -> ExecutionContext:
+def _context(*scopes: str, turn_id: str) -> ExecutionContext:
     """处理 `当前操作`，并返回边界约定的结果。"""
     return ExecutionContext(
         tenant_id="tenant-a",
         subject_id="subject-a",
         scopes=frozenset(scopes),
-        turn_id=f"turn-{run_id}",
-        run_id=run_id,
+        turn_id=f"turn-{turn_id}",
     )
 
 
@@ -63,7 +62,7 @@ def test_complete_tool_directive_calls_only_the_named_tool_with_validated_argume
             ]
         },
         config={"configurable": {"thread_id": "directive-complete"}},
-        context=_context("tools:read", run_id="directive-complete"),
+        context=_context("tools:read", turn_id="directive-complete"),
         version="v2",
     )
 
@@ -92,7 +91,7 @@ def test_missing_required_slots_elicits_without_executing_the_tool() -> None:
     result = agent.invoke(
         {"messages": [{"role": "user", "content": "/tool market_snapshot"}]},
         config={"configurable": {"thread_id": "directive-missing"}},
-        context=_context("market:read", run_id="directive-missing"),
+        context=_context("market:read", turn_id="directive-missing"),
         version="v2",
     )
 
@@ -149,7 +148,7 @@ def test_incomplete_directive_is_denied_again_if_the_model_invents_arguments() -
     result = agent.invoke(
         {"messages": [{"role": "user", "content": "/tool market_snapshot"}]},
         config={"configurable": {"thread_id": "directive-forged-slot"}},
-        context=_context("market:read", run_id="directive-forged-slot"),
+        context=_context("market:read", turn_id="directive-forged-slot"),
         version="v2",
     )
 
@@ -170,7 +169,7 @@ def test_workflow_directive_does_not_turn_into_a_public_target_or_tool_substitut
     result = agent.invoke(
         {"messages": [{"role": "user", "content": "/workflow portfolio_review account A-001"}]},
         config={"configurable": {"thread_id": "directive-workflow"}},
-        context=_context("market:read", run_id="directive-workflow"),
+        context=_context("market:read", turn_id="directive-workflow"),
         version="v2",
     )
 

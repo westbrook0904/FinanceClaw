@@ -36,7 +36,6 @@ def context(**changes) -> ExecutionContext:
         **{
             "tenant_id": "synthetic-tenant",
             "subject_id": "synthetic-owner",
-            "run_id": "ziwei-child",
             "turn_id": "turn-ziwei",
             "conversation_id": None,
             "request_clock": "2026-09-06T01:00:00+08:00",

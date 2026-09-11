@@ -8,9 +8,9 @@ from pydantic import ValidationError
 
 from financeclaw.agent_server.middleware.middleware import _context
 from financeclaw.agent_server.tools.subgraphs import SubagentTool
-from financeclaw.shared.execution_ledger.repository import ExecutionConflict, digest
-from financeclaw.shared.execution_ledger.snapshots import verify_agent_snapshot
 from financeclaw.shared.releases.interactions import CLARIFICATION_TOOL
+from financeclaw.shared.turns.snapshots import verify_agent_snapshot
+from financeclaw.shared.turns.types import ExecutionConflict, digest
 
 
 class WorkerClarificationMiddleware(AgentMiddleware):
@@ -80,10 +80,10 @@ class WorkerClarificationMiddleware(AgentMiddleware):
         if self.execution is None:
             raise ExecutionConflict("Worker clarification requires persistent root execution")
         self.execution.verify_context(context)
-        execution = self.execution.get(context.run_id)
-        if execution["cancellation_requested"]:
+        execution = self.execution.get(context.turn_id)
+        if execution["cancel_requested_at"]:
             raise ExecutionConflict("root cancellation requested")
-        verify_agent_snapshot(self.profile, execution["snapshot"])
+        verify_agent_snapshot(self.profile, execution["release_snapshot"])
         # 多个对象分别提问；同对象相同问题去重。不得生成新的缺失字段值。
         content = (
             questions[0][1]
@@ -95,7 +95,7 @@ class WorkerClarificationMiddleware(AgentMiddleware):
         if len(content) > 2000:
             raise ExecutionConflict("root clarification exceeds the published question limit")
         # 调用 ID 取根身份与本批回执；重放不能产生另一个待回答实例。
-        identifier = "clarification-" + digest([context.run_id, requests])[:24]
+        identifier = "clarification-" + digest([context.turn_id, requests])[:24]
         return {
             "messages": [
                 AIMessage(

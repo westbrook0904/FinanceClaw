@@ -12,8 +12,8 @@ from financeclaw.agent_server.middleware.middleware import ToolGovernanceMiddlew
 from financeclaw.agent_server.tools.task_context import answered_clarifications, task_context
 from financeclaw.agent_server.tools.ziwei import ziwei_tools
 from financeclaw.kernel.ziwei_tools import ZIWEI_TOOL_INPUTS
-from financeclaw.shared.execution_ledger.repository import ExecutionConflict
 from financeclaw.shared.releases.interactions import CLARIFICATION_TOOL
+from financeclaw.shared.turns.types import ExecutionConflict
 from tests.stage7.support import context
 
 

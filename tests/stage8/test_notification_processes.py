@@ -10,12 +10,12 @@ from types import SimpleNamespace
 import pytest
 from sqlalchemy import select
 
-from financeclaw.bff.notifications.feishu import Receipt
-from financeclaw.bff.notifications.repository import NotificationRepository
-from financeclaw.bff.notifications.worker import run_worker
-from financeclaw.shared.execution_ledger.root_repository import now
+from financeclaw.integrations.notifications.feishu import Receipt
+from financeclaw.integrations.notifications.repository import NotificationRepository
+from financeclaw.integrations.notifications.worker import run_worker
 from financeclaw.shared.infrastructure.database import ApplicationDatabase
 from financeclaw.shared.notifications.tables import NotificationDeliveryRow
+from financeclaw.shared.turns.types import now
 from tests.stage8.test_notifications import completed
 
 

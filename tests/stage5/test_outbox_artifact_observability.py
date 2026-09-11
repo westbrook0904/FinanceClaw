@@ -26,7 +26,6 @@ def _audit_record() -> AuditRecord:
         tenant_id="tenant-a",
         subject_id="subject-a",
         turn_id="turn-a",
-        run_id="run-a",
         resource_type="tool",
         resource_id="market_snapshot",
         resource_version="1.0.0",

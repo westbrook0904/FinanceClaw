@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import httpx
 import pytest
 
-from financeclaw.bff.notifications.feishu import FeishuNotificationGateway
+from financeclaw.integrations.notifications.feishu import FeishuNotificationGateway
 
 
 @pytest.fixture
@@ -166,7 +166,7 @@ async def test_real_channel_callback_waits_for_durable_business_ack(monkeypatch)
 
     from lark_channel.event.callback.model.p2_card_action_trigger import P2CardActionTrigger
 
-    from financeclaw.bff.channels.feishu import FeishuChannelAdapter
+    from financeclaw.integrations.feishu.channel import FeishuChannelAdapter
 
     received = []
 
@@ -214,7 +214,7 @@ async def test_callback_capacity_and_shutdown_drain():
     """并发上限拒绝额外回调，关闭必须等待已桥接的持久受理结束。"""
     import asyncio
 
-    from financeclaw.bff.channels.feishu import FeishuChannelAdapter
+    from financeclaw.integrations.feishu.channel import FeishuChannelAdapter
 
     entered, release = asyncio.Event(), asyncio.Event()
 

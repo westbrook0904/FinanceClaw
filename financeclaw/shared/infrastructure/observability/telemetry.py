@@ -1,4 +1,4 @@
-"""OpenTelemetry 遥测：全局 Provider 装配、BFF 请求观测中间件与 SQLAlchemy 插桩。
+"""OpenTelemetry 遥测：全局 Provider 装配、API 请求观测中间件与 SQLAlchemy 插桩。
 
 本模块属于 infrastructure 层的观测适配：把 HTTP 请求、数据库调用等
 统一纳入链路与指标，支撑 p95 延迟 SLO 判定与优雅停机时的数据落盘。
@@ -136,12 +136,12 @@ class _RequestObservabilityMiddleware:
         self._first_byte = meter.create_histogram(
             "financeclaw.http.server.first_byte",
             unit="ms",
-            description="BFF time to first response byte",
+            description="API time to first response byte",
         )
         self._completion = meter.create_histogram(
             "financeclaw.http.server.duration",
             unit="ms",
-            description="BFF request completion latency",
+            description="API request completion latency",
         )
         self._p95_target_ms = p95_target_ms
 

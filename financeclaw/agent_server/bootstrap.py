@@ -102,7 +102,7 @@ def build_components(
     resources: ApplicationResources | None = None,
     resource_concurrency: int = 8,
 ) -> AgentServerComponents:
-    """装配执行端；不创建 BFF 业务服务或飞书连接。"""
+    """装配执行端；不创建 API 业务服务或飞书连接。"""
     resources = resources or build_resources(
         settings, audit=audit, enable_persistence=enable_persistence
     )

@@ -48,7 +48,6 @@ class ArtifactMetadataRow(Base):
     source_id: Mapped[str] = mapped_column(String(128), nullable=False)
     conversation_id: Mapped[str | None] = mapped_column(String(128))
     source_turn_id: Mapped[str | None] = mapped_column(String(128))
-    source_run_id: Mapped[str | None] = mapped_column(String(128))
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     access_policy: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)

@@ -1,0 +1,138 @@
+name: financeclaw-stage10-probe
+x-native: &native
+  image: financeclaw-langgraph-api:latest
+  pull_policy: never
+  volumes:
+    - ./:/stage10
+  env_file:
+    - ../../.env.agent-server.local
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+x-environment: &environment
+  POSTGRES_URI: postgres://probe:probe@postgres:5432/probe
+  REDIS_URI: redis://redis:6379
+  LANGSERVE_GRAPHS: '{"probe":"/stage10/contract_app.py:graph"}'
+  LANGGRAPH_HTTP: '{"app":"/stage10/contract_app.py:app"}'
+  LANGSMITH_TRACING: "false"
+  LANGCHAIN_TRACING_V2: "false"
+  LANGGRAPH_AUTH_TYPE: noop
+  LANGGRAPH_API_DO_NOT_TRACK: "true"
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: probe
+      POSTGRES_PASSWORD: probe
+      POSTGRES_DB: probe
+    volumes:
+      - ./init.sql:/docker-entrypoint-initdb.d/10-probe.sql:ro
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U probe -d probe"]
+      interval: 1s
+      retries: 30
+  redis:
+    image: redis:8-alpine
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 1s
+      retries: 30
+  api:
+    <<: *native
+    environment:
+      <<: *environment
+      FINANCECLAW_PROCESS_ROLE: api
+      N_JOBS_PER_WORKER: "0"
+    ports:
+      - "127.0.0.1:18240:8000"
+  worker:
+    <<: *native
+    entrypoint: [/storage/queue_entrypoint.sh]
+    environment:
+      <<: *environment
+      FINANCECLAW_PROCESS_ROLE: worker
+      N_JOBS_PER_WORKER: "4"
+  product-api: &product-api
+    <<: *native
+    image: financeclaw:stage10
+    entrypoint: [/bin/sh, /project/experiments/stage10/fixture_entrypoint.sh]
+    profiles: [product]
+    working_dir: /app/financeclaw
+    volumes:
+      - ../..:/project
+    environment: &product-environment
+      <<: *environment
+      PYTHONPATH: /app/financeclaw
+      LANGSERVE_GRAPHS: '{"finance_agent":"/project/financeclaw/agent_server/graphs/product.py:finance_agent"}'
+      LANGGRAPH_HTTP: '{"app":"/project/financeclaw/api/bootstrap.py:app"}'
+      LANGGRAPH_AUTH: '{"path":"/project/financeclaw/api/native_auth.py:auth"}'
+      FINANCECLAW_PROCESS_ROLE: api
+      FINANCECLAW_ENVIRONMENT: test
+      FINANCECLAW_DATABASE_URL: postgresql+psycopg://probe:probe@postgres:5432/stage10_product
+      FINANCECLAW_DATABASE_AUTO_CREATE_SCHEMA: "false"
+      FINANCECLAW_OFFLINE_MODEL: "true"
+      FINANCECLAW_ZIWEI_ENABLED: "false"
+      FINANCECLAW_ARTIFACT_BACKEND: local
+      FINANCECLAW_ARTIFACT_ROOT: /tmp/stage10-artifacts
+      FINANCECLAW_FEISHU_ENABLED: "false"
+      FINANCECLAW_API_AUTH_TOKEN: stage10-product-test
+      FINANCECLAW_INTEGRATION_SERVICE_TOKEN: stage10-integration-service-test-token
+      FINANCECLAW_API_SCOPES: '["market:read","tools:read","tools:approve","watchlist:write","artifacts:read","memory:read","memory:write","portfolio:review","workflows:approve"]'
+      FINANCECLAW_API_TENANT_ID: probe
+      FINANCECLAW_API_SUBJECT_ID: probe
+      N_JOBS_PER_WORKER: "0"
+      FINANCECLAW_TURN_JOIN_SLOTS: "1"
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://localhost:8000/v1/health/ready', timeout=3)"]
+      interval: 10s
+      start_period: 60s
+    ports:
+      - "127.0.0.1:18241:8000"
+  product-worker:
+    <<: *native
+    image: financeclaw:stage10
+    entrypoint: [/bin/sh, /project/experiments/stage10/fixture_entrypoint.sh]
+    profiles: [product]
+    working_dir: /app/financeclaw
+    volumes:
+      - ../..:/project
+    environment:
+      <<: *product-environment
+      FINANCECLAW_PROCESS_ROLE: worker
+      N_JOBS_PER_WORKER: "4"
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://localhost:8000/ok?check_db=1', timeout=3)"]
+      interval: 10s
+      start_period: 60s
+  product-integrations:
+    <<: *native
+    image: financeclaw:stage10
+    profiles: [product]
+    working_dir: /app/financeclaw
+    volumes:
+      - ../..:/project
+    environment:
+      <<: *product-environment
+      FINANCECLAW_PROCESS_ROLE: integrations
+      FINANCECLAW_INTERNAL_API_URL: http://product-api:8000
+      FINANCECLAW_INTERNAL_SERVICE_HOSTS: '["product-api"]'
+    healthcheck:
+      test: [CMD, python, -m, financeclaw.integrations.health]
+      interval: 10s
+      start_period: 30s
+  product-api-2:
+    <<: *product-api
+    ports: []
+  product-migrate:
+    <<: *native
+    image: financeclaw:stage10
+    profiles: [product]
+    working_dir: /app/financeclaw
+    entrypoint: [python, -m, alembic]
+    command: [upgrade, head]
+    environment:
+      <<: *product-environment
+    healthcheck:
+      disable: true

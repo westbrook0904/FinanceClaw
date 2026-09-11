@@ -1,145 +1,54 @@
 # FinanceClaw
 
-FinanceClaw 基于 LangChain、LangGraph Agent Server 与 LangSmith，提供金融场景的会话、受治理工具、人工审批、上下文、记忆、制品与审计。
+FinanceClaw 基于 LangChain、LangGraph AgentServer 与 LangSmith，提供金融场景的会话、工具治理、人工交互、上下文、记忆、制品与审计。
 
-当前架构由 BFF 与 Agent Server 两个服务组成：BFF 负责 start、人工 resume、cancel、授权和永久聊天记录；顶层 ReAct 通过 Tool 调用领域 Agent 或 Workflow subgraph。一个业务 Turn 只有一个根执行，Worker 不创建独立 thread/run。当前只注册 finance_agent_v1_6_0 根图。
+Stage 10 将业务 API 合入 AgentServer 的自定义 FastAPI 应用。API 通过 `get_client(url=None, api_key=None)` 使用进程内 ASGI transport；独立的原生 queue worker 执行图。飞书连接、通知投递和历史索引由 integrations 进程负责。三个角色使用同一镜像，公开根图只有 `finance_agent`。
 
-BFF 的 Webhook 接收器和后台结果核对独立于客户端连接。最终答案、运行状态、审计和通知意图同事务落库；BFF 内置飞书发送器按持久责任交付。未知提交不会自动换 ID 重发。
+一个 `turn_id` 对应一个业务任务，开始和每次人工恢复分别记录不可变 `turn_commands`。真实 `native_run_id` 只作为内部执行回执。应用库共 14 张表，运行控制仅保留 Turn、Command、Interaction 三种事实；没有独立 BFF 服务、Webhook、运行进度历史表或旧接口兼容层。
 
-产品仅通过 Conversation 与 message-only Turn 发起执行，查询和 SSE 只读。/tool、/agent、/workflow 是调用偏好；人工回复统一经 interaction responses。代码目录与依赖见 [包结构](docs/architecture/package-layout.md)，实施契约见 [Stage 8 Hotfix](.redesign/stages/stage-8-hotfix-实施方案.md)。
+[包结构](docs/architecture/package-layout.md) · [Stage 10 设计](.redesign/stages/stage-10-统一API与运行模型收敛实施方案.md) · [实现与验证](.redesign/stages/stage-10-实现与验证.md) · [运行手册](docs/operations/turn-control.md)
 
-项目尚未上线：数据库迁移为当前的 0001_initial，不维护未发布 schema 的升级兼容。使用新空开发库初始化，已有本机数据库不会自动删除或重置。
+## 启动
 
-[飞书交互卡片实现](.redesign/stages/Feishu-交互卡片适配实施方案.md) · [BFF 运行手册](docs/operations/bff-run-control.md) · [飞书通知](docs/operations/notifications.md) · [紫微候选](docs/operations/ziwei-agent.md)
-
-Stage 9 实现：[Stage 9：上下文与记忆优化实施方案](.redesign/stages/stage-9-上下文与记忆优化实施方案.md)，依据[当前系统评估](docs/architecture/memory-assessment-2026-09-10.md)。实现与验证见[Stage 9 验收记录](.redesign/stages/stage-9-实现与验证.md)。
-
-## 环境
-
-推荐用 conda 管理解释器，用 uv 把锁定依赖安装到同一个项目内环境：
+项目尚未上线，初始迁移只面向空应用库。`compose.yml` 使用独立的 `financeclaw-stage10` 项目和新卷，不会清空或复用原有本地数据库。业务库与原生库分开初始化；Alembic 不管理 LangGraph 原生表。
 
 ```bash
-conda create --yes --prefix .conda/envs/financeclaw python=3.13 pip uv=0.12.9
-
-UV_PROJECT_ENVIRONMENT="$PWD/.conda/envs/financeclaw" \
-  .conda/envs/financeclaw/bin/uv sync \
-  --all-extras --frozen \
-  --python .conda/envs/financeclaw/bin/python
+cp config/environments/unified.env.example .env
+# 填写数据库密码、产品令牌、集成令牌和官方 AgentServer 所需凭据。
+docker compose build
+docker compose up -d
 ```
 
-本地从 `config/environments/development.env.example` 生成 `.env`；生产从
-`config/environments/production.env.example` 生成部署配置，并由 Secret Manager 注入真实凭据。
-DeepSeek 通过 OpenAI 协议接入时，核心配置为：
+API 默认监听 `127.0.0.1:8000`。原生 API 必须配置 `N_JOBS_PER_WORKER=0`；Worker 必须配置正数并发并通过官方 `/storage/queue_entrypoint.sh` 启动。镜像入口会验证这些条件。
 
-```dotenv
-FINANCECLAW_MODEL=openai:deepseek-v4-pro
-FINANCECLAW_PROVIDER_BASE_URL=https://api.deepseek.com
-FINANCECLAW_PROVIDER_API_KEY=your-deepseek-api-key
-```
+本地示例使用确定性离线模型和共享本地制品卷。真实 Provider、OIDC、加密 S3、飞书与观测配置见 [环境说明](config/environments/README.md) 和[本地完整链路](docs/operations/local-full-stack.md)。生产部署从 `production.env.example` 注入策略与密钥，使用不可变应用镜像摘要。
 
-默认上下文容量上限为 800,000 token；原生 state 保留近期消息，达到阈值后摘要旧 Turn，保护当前 Turn 及最近 4 个已完成 Turn。画像直接读 Store，长期事件按 Turn 语义召回一次，历史原文按需分页回读；工具结果清理前归档。配置与后台角色见[上下文与记忆运维](docs/operations/context-budget.md)。
+## 产品接口
 
-Secret 只放 `.env` 或部署平台 Secret Manager，不要写入 Git 跟踪的 example 文件。
+先 `POST /v1/conversations`，再向 `POST /v1/conversations/{id}/turns` 提交 `{"message":"..."}` 和 `Idempotency-Key`，返回 202 与 `turn_id`。API 不接受用户指定的 thread、checkpoint、native run 或 callback。
 
-飞书一期使用企业自建应用。在飞书后台启用机器人、WebSocket 事件订阅和
-`im.message.receive_v1` 和 `card.action.trigger`，并授予消息收发与 CardKit 创建/更新权限；权限变化后需重新发布、安装应用。
-BFF 配置至少包含：
+- `GET /v1/conversations/{id}/turns/{turn_id}`：当前状态快照。
+- `GET /v1/conversations/{id}/turns/{turn_id}/events`：`turn.snapshot` 与心跳；重连只返回最新 revision。
+- `POST .../cancel`：记录取消意图，确认原生停止后才进入 cancelled。
+- `POST/DELETE .../authorization`：带 `expected_grant_revision` 和幂等键的有限授权更新。
+- `GET /v1/interactions/{id}`、`POST /v1/interactions/{id}/responses`：读取问题与提交 typed response。
+- `GET /v1/conversations/{id}/messages`：按 `after`、`limit` 分页读取永久 Journal。
+- `/v1/health/live`、`/v1/health/ready`：业务进程健康。
 
-```dotenv
-FINANCECLAW_FEISHU_ENABLED=true
-FINANCECLAW_FEISHU_APP_ID=cli_xxx
-FINANCECLAW_FEISHU_APP_SECRET=<from-secret-manager>
-FINANCECLAW_FEISHU_ALLOWED_OPEN_IDS='["ou_allowed_user"]'
-FINANCECLAW_FEISHU_SCOPES='["market:read","tools:read","artifacts:read","memory:read"]'
-FINANCECLAW_FEISHU_MAX_CONCURRENCY=8
-FINANCECLAW_FEISHU_SECURITY_MODE=audit
-```
+最终答案、Turn 状态、审计、通知和历史索引意图在一个事务中提交。观察任务独立于客户端，浏览器断开不会停止执行。未知提交会保留为 uncertain 并查找原回执，不自动重新发送。失败或确认取消后的下一轮使用干净 thread，已完成历史仍由 Journal 与 Stage 9 机制保留。
 
-生产启用时必须把 security mode 切换为 `strict`，且同一部署只允许一个 BFF 实例开启 Channel。
+外部普通用户不能直接操作原生 thread/run/store。integrations 凭据只开放标准化渠道入口与限定 namespace 的 Store 维护；checkpoint 回收另需用户的 `maintenance:checkpoints` 权限并验证归档会话已无待办。
 
-使用空数据库执行初始迁移；生产使用 PostgreSQL 并关闭自动建表：
+## 开发与验证
 
 ```bash
-.conda/envs/financeclaw/bin/alembic upgrade head
+uv sync --frozen --extra dev --extra ziwei
+.venv/bin/pytest -q
+.venv/bin/ruff check financeclaw tests scripts deploy experiments/stage10
+.venv/bin/ruff format --check financeclaw tests scripts deploy experiments/stage10
+.venv/bin/python scripts/check_secret_leaks.py
 ```
 
-## 运行
+持久化 API/Worker、故障恢复、权限和 PostgreSQL 并发探针见 [experiments/stage10](experiments/stage10/README.md)。探针使用隔离数据库和合成输入，不发送真实飞书消息。
 
-需要在本机同时启动 Docker PostgreSQL、共享 MinIO、持久化 Agent Server、BFF，
-并接入真实 DeepSeek 与 LangSmith 时，直接按[本地完整链路启动手册](docs/operations/local-full-stack.md)
-执行；对应配置模板是 `config/environments/local-*.env.example`，本地基础设施定义是
-`compose.local.yml`。
-
-先启动内部 Agent Server：
-
-```bash
-.conda/envs/financeclaw/bin/langgraph dev --no-browser --no-reload --port 2024
-```
-
-按 [BFF 运行手册](docs/operations/bff-run-control.md) 配置 Webhook，
-BFF 就绪后直接受理。执行与卡片投递循环随 BFF 启停：
-
-```bash
-.conda/envs/financeclaw/bin/uvicorn main:app --host 127.0.0.1 --port 8000
-```
-
-通过 `POST /v1/conversations` 创建会话，再调用
-`POST /v1/conversations/{conversation_id}/turns`，请求体只传 `message`。后续轮次复用同一 ID；
-原始问答与 Manifest 由业务数据库持久化；工作消息/摘要由原生 checkpoint 保存，画像和事件由原生 Store 保存。需要明确表达调用偏好时，把
-`/tool ...`、`/workflow ...` 或 `/agent ...` 直接写入 `message`，不要在请求体中传 Target。
-长期记忆由 Agent Server 的 LangGraph Store 持久化；生产部署需把 Agent Server Store 配置为
-PostgreSQL-backed 实现。记忆写入会暂停为审批，通过 `/v1/interactions/{interaction_id}/responses` 批准或拒绝。
-
-隔离的 BFF／Agent Server 原生验证：
-
-```bash
-.venv/bin/python -m experiments.stage8_hotfix.hf2_native --report /tmp/bff-native.json
-.venv/bin/python -m experiments.stage8_hotfix.hf2_native --scenario hitl --report /tmp/bff-hitl.json
-```
-
-探针启动自己的临时服务与数据库，覆盖子图调用、人工恢复、Webhook 与最终聊天记录。
-
-配置真实 Provider 与 LangSmith 后执行在线门禁：
-
-```bash
-.conda/envs/financeclaw/bin/python -m financeclaw.operations.provider_probe
-```
-
-DeepSeek thinking 模型目前用 JSON mode 完成 structured output；默认原生 JSON Schema
-`response_format` 和强制 `tool_choice` 在该兼容端点上可能返回 HTTP 400。
-
-## 测试
-
-```bash
-.conda/envs/financeclaw/bin/python -m pytest -q
-.conda/envs/financeclaw/bin/ruff check financeclaw tests scripts
-.conda/envs/financeclaw/bin/ruff format --check financeclaw tests scripts
-.conda/envs/financeclaw/bin/python scripts/generate_sbom.py
-.conda/envs/financeclaw/bin/uv export --frozen --no-dev --no-emit-project \
-  --format requirements-txt --output-file build/production-requirements.txt
-.conda/envs/financeclaw/bin/pip-audit --strict --require-hashes --disable-pip \
-  --requirement build/production-requirements.txt
-```
-
-配置 `LANGSMITH_API_KEY` 后，可创建带版本名的 Stage-5 发布回归数据集：
-
-```bash
-.conda/envs/financeclaw/bin/python -m financeclaw.evaluation.publish_dataset \
-  --name financeclaw-stage5-regression-v1
-```
-
-## 目标架构
-
-```text
-FinanceClaw API / BFF
-  → LangGraph Agent Server
-      → LangChain Agent / Models / BaseTool / Middleware
-      → MCP / Financial Services
-      → PostgreSQL / Redis / Artifact Store
-  → Conversation / Memory / Published Workflows / Governance / Audit
-  → LangSmith Trace / Evaluation
-```
-
-真实上线仍须完成组织级许可证/数据驻留评审、真实容量与故障注入、恢复演练和安全评审；清单见
-[`docs/operations/release-checklist.md`](docs/operations/release-checklist.md)。任何后续功能都不得恢复
-第二套 Runtime、Registry、Provider SPI 或 Plugin 生命周期。
+Stage 9 的当前 Turn 保护、原生工作摘要、画像直读、每 Turn 召回、工具结果归档和历史按需读取继续成立，详见[上下文与记忆运维](docs/operations/context-budget.md)。领域能力包括[紫微候选](docs/operations/ziwei-agent.md)；`/tool`、`/agent`、`/workflow` 是消息中的调用偏好，子图始终使用同一 Turn 的预算和授权。

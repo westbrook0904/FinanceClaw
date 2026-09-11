@@ -98,7 +98,6 @@ class RequestRecorder:
             model_call_id=f"model-call-{uuid4().hex}",
             conversation_id=context.conversation_id,
             turn_id=context.turn_id,
-            run_id=context.run_id,
             prompt_template_version=f"native-thread/{self.profile_version}",
             agent_profile_version=self.profile_version,
             model_profile_version=(getattr(model, "metadata", None) or {})

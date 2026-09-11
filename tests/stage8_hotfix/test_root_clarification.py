@@ -12,12 +12,13 @@ from financeclaw.agent_server.agents.offline import OfflineFinanceModel
 from financeclaw.agent_server.agents.ziwei_offline import offline_chart_call
 from financeclaw.agent_server.graphs.ziwei_agent import build_ziwei_agent
 from financeclaw.agent_server.tools.task_context import answered_clarifications
-from financeclaw.shared.execution_ledger.repository import ExecutionConflict
 from financeclaw.shared.releases.interactions import CLARIFICATION_TOOL
+from financeclaw.shared.turns.types import ExecutionConflict
 from tests.stage6fix.test_batch_tools import call
 from tests.stage7.support import request
 from tests.stage8_hotfix.test_production_subgraphs import root_graph
 from tests.stage8_hotfix.test_worker_policies import stack as stack
+from tests.turn_support import cancel_execution
 
 
 class ContinuingRoot(OfflineFinanceModel):
@@ -121,7 +122,9 @@ async def test_one_field_answer_resumes_same_task_with_original_context(stack, d
     graph, kwargs = root_graph(stack, calls, model=ContinuingRoot(calls=calls))
     install_child(stack)
     text = ("/agent ziwei_doushu_agent 请使用以下合成资料\n" if directive else "") + original()
-    value = await graph.ainvoke({"messages": [HumanMessage(content=text, id="original")]}, **kwargs)
+    value = await graph.ainvoke(
+        {"messages": [HumanMessage(content=text, id="root-input")]}, **kwargs
+    )
     wait = value["__interrupt__"][0]
     assert wait.value["point_id"] == "clarification" and "历" in wait.value["question"]
     before = stack.conversation_repository.execution.get("root")
@@ -138,7 +141,7 @@ async def test_one_field_answer_resumes_same_task_with_original_context(stack, d
     assert result["messages"][-1].content == "任务已完成，已复用成功结果。"
     assert len(IncrementalZiwei.seen) == 2
     second = IncrementalZiwei.seen[-1]
-    assert second["user_context"] == {"message_id": "original", "content": text}
+    assert second["user_context"] == {"message_id": "root-input", "content": text}
     assert second["arguments"] == {}  # 父模型没有重复提取完整参数
     assert second["clarifications"][0]["answer"] == {"text": "公历"}
     assert second["clarifications"][0]["requests"][0]["missing_fields"] == ["birth.calendar"]
@@ -173,7 +176,9 @@ async def test_batch_waits_for_success_and_only_retries_unfinished_worker(stack)
     ]
     graph, kwargs = root_graph(stack, calls, model=ContinuingRoot(calls=calls))
     install_child(stack)
-    first = await graph.ainvoke({"messages": [HumanMessage(content=original())]}, **kwargs)
+    first = await graph.ainvoke(
+        {"messages": [HumanMessage(content=original(), id="root-input")]}, **kwargs
+    )
     assert len(first["__interrupt__"]) == 1
     receipts = [m for m in first["messages"] if isinstance(m, ToolMessage)]
     assert [json.loads(m.content)["outcome"] for m in receipts] == [
@@ -195,7 +200,7 @@ async def test_multiple_answers_accumulate_without_losing_previous_reply(stack):
     graph, kwargs = root_graph(stack, calls, model=ContinuingRoot(calls=calls))
     install_child(stack)
     first = await graph.ainvoke(
-        {"messages": [HumanMessage(content=original(two_missing=True))]}, **kwargs
+        {"messages": [HumanMessage(content=original(two_missing=True), id="root-input")]}, **kwargs
     )
     second = await graph.ainvoke(resume(first["__interrupt__"][0], "公历"), **kwargs)
     wait = second["__interrupt__"][0]
@@ -215,8 +220,10 @@ async def test_cancel_during_root_clarification_blocks_resume(stack):
     calls = [call("call_agent__ziwei_doushu_agent", 1, task="排盘", arguments={})]
     graph, kwargs = root_graph(stack, calls, model=ContinuingRoot(calls=calls))
     install_child(stack)
-    first = await graph.ainvoke({"messages": [HumanMessage(content=original())]}, **kwargs)
-    stack.conversation_repository.execution.request_cancel("root")
+    first = await graph.ainvoke(
+        {"messages": [HumanMessage(content=original(), id="root-input")]}, **kwargs
+    )
+    cancel_execution(stack.conversation_repository.execution, "root")
     with pytest.raises(ExecutionConflict, match="cancel"):
         await graph.ainvoke(resume(first["__interrupt__"][0], "公历"), **kwargs)
     assert len(IncrementalZiwei.seen) == 1

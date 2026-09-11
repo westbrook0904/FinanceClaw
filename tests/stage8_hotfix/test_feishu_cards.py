@@ -7,22 +7,16 @@ from types import SimpleNamespace
 import pytest
 from sqlalchemy import func, select
 
-from financeclaw.bff.application.feishu_card_actions import button_values
-from financeclaw.bff.application.feishu_cards import parse_fields, render_card
-from financeclaw.bff.application.runs.interactions import public_interaction
-from financeclaw.bff.notifications.repository import NotificationRepository
-from financeclaw.bff.notifications.worker import deliver
+from financeclaw.api.application.feishu_card_actions import button_values
+from financeclaw.integrations.notifications.repository import NotificationRepository
+from financeclaw.integrations.notifications.worker import deliver
 from financeclaw.kernel.interactions import InteractionPoint
-from financeclaw.shared.execution_ledger.interaction_tables import PendingInteractionRow
-from financeclaw.shared.execution_ledger.interactions import export
-from financeclaw.shared.execution_ledger.root_repository import now
-from financeclaw.shared.execution_ledger.run_tables import RootRunRow, RunAuthorizationRow
-from financeclaw.shared.execution_ledger.tables import RunOperationRow
+from financeclaw.shared.channels.feishu.cards import parse_fields, render_card
 from financeclaw.shared.notifications.tables import NotificationEventRow as Event
 from financeclaw.shared.notifications.tables import NotificationTargetRow as Target
+from financeclaw.shared.turns.tables import ConversationTurnRow, InteractionRow, TurnCommandRow
+from financeclaw.shared.turns.types import now
 from tests.stage8.test_notifications import Gateway
-from tests.stage8_hotfix.test_bff_runs import runtime as runtime
-from tests.stage8_hotfix.test_bff_runs import tick
 from tests.stage8_hotfix.test_feishu_clarification import (
     OWNER,
     Replies,
@@ -31,12 +25,14 @@ from tests.stage8_hotfix.test_feishu_clarification import (
     message,
     waiting,
 )
+from tests.stage10.runtime import runtime as runtime
+from tests.stage10.runtime import tick
 
 
 async def publish(runtime, gateway=None):
     """消费所有已有快照，返回最后一份已确认送达的任务卡。"""
     repository = NotificationRepository(
-        runtime.runs.store.sessions, app_id="app", allowed_open_ids=frozenset({"user"})
+        runtime.turns.store.sessions, app_id="app", allowed_open_ids=frozenset({"user"})
     )
     while repository.materialize():
         pass
@@ -45,7 +41,7 @@ async def publish(runtime, gateway=None):
         claim = repository.claim("synthetic-sender", lease_seconds=60)
         if claim is None:
             break
-        await deliver(repository, gateway, claim, runtime.runs.settings)
+        await deliver(repository, gateway, claim, runtime.turns.settings)
     else:
         raise AssertionError("notification loop did not drain")
     with repository.sessions() as session:
@@ -88,9 +84,9 @@ async def fresh(runtime):
     """经过飞书入口受理，尚未启动后端就可看到停止按钮。"""
     service = channel(runtime)
     assert await service.process(message(), Replies()) == "accepted"
-    with runtime.runs.store.sessions() as session:
-        root = session.scalar(select(RootRunRow))
-        accepted = SimpleNamespace(run_id=root.run_id, thread_id=root.projection["thread_id"])
+    with runtime.turns.store.sessions() as session:
+        root = session.scalar(select(ConversationTurnRow))
+        accepted = SimpleNamespace(turn_id=root.turn_id, thread_id=root.thread_id)
     event, gateway = await publish(runtime)
     return service, accepted, event, gateway
 
@@ -103,10 +99,10 @@ async def test_stop_before_dispatch_is_durable_and_allows_next_turn(runtime):
     first = await service.card_actions.handle(raw)
     assert first["toast"]["content"] == "停止请求已受理"
     assert await channel(runtime).card_actions.handle(raw) == first
-    assert (await runtime.runs.status(accepted.run_id, **OWNER)).status == "cancellation_requested"
+    assert (await runtime.turns.status(accepted.turn_id, **OWNER)).status == "cancelling"
     await tick(runtime)
     assert not runtime.client.runs.calls
-    assert (await runtime.runs.status(accepted.run_id, **OWNER)).status == "cancelled"
+    assert (await runtime.turns.status(accepted.turn_id, **OWNER)).status == "cancelled"
     final, _ = await publish(runtime, gateway)
     assert not list(button_values(render_card(final.event_id, final.payload)))
     assert len({c["target_message_id"] for c in gateway.calls[1:]}) == 1
@@ -122,7 +118,7 @@ async def test_stop_running_turn_cancels_exact_remote_attempt(runtime):
     assert (await service.card_actions.handle(callback(event, "cancel")))["toast"]["type"] == "info"
     await tick(runtime)
     assert runtime.client.cancelled == [native_id]
-    assert (await runtime.runs.status(accepted.run_id, **OWNER)).status == "cancelled"
+    assert (await runtime.turns.status(accepted.turn_id, **OWNER)).status == "cancelled"
 
 
 @pytest.mark.asyncio
@@ -133,10 +129,10 @@ async def test_answer_commits_before_ack_and_replays_cannot_answer_next_question
     raw = callback(event, "answer", form={"f0": "当地钟表时间"})
     result = await service.card_actions.handle(raw)
     assert result["toast"]["type"] == "info"
-    with runtime.runs.store.sessions() as session:
-        row = session.get(PendingInteractionRow, item["interaction_id"])
+    with runtime.turns.store.sessions() as session:
+        row = session.get(InteractionRow, item["interaction_id"])
         assert row.response["answer"] == {"text": "当地钟表时间"}
-        operation_id = row.operation_id
+        operation_id = row.resume_command_id
     raw["header"]["event_id"] = "duplicate-physical-click"
     assert await channel(runtime).card_actions.handle(raw) == result
     await tick(runtime)
@@ -146,11 +142,9 @@ async def test_answer_commits_before_ack_and_replays_cannot_answer_next_question
     changed["header"]["event_id"] = "changed-answer"
     changed["event"]["action"]["form_value"] = {"f0": "真太阳时"}
     assert (await service.card_actions.handle(changed))["toast"]["type"] == "error"
-    with runtime.runs.store.sessions() as session:
-        assert session.get(PendingInteractionRow, second["interaction_id"]).response is None
-        assert (
-            session.get(PendingInteractionRow, item["interaction_id"]).operation_id == operation_id
-        )
+    with runtime.turns.store.sessions() as session:
+        assert session.get(InteractionRow, second["interaction_id"]).response is None
+        assert session.get(InteractionRow, item["interaction_id"]).resume_command_id == operation_id
     current, _ = await publish(runtime, gateway)
     assert current.payload["interaction"]["interaction_id"] == second["interaction_id"]
 
@@ -169,10 +163,10 @@ async def test_approval_binds_visible_action_and_creates_one_resume(runtime, dec
         event, "reject" if decision == "approve" else "approve", event_id="opposite"
     )
     assert (await service.card_actions.handle(opposite))["toast"]["type"] == "error"
-    with runtime.runs.store.sessions() as session:
-        response = session.get(PendingInteractionRow, item["interaction_id"]).response
+    with runtime.turns.store.sessions() as session:
+        response = session.get(InteractionRow, item["interaction_id"]).response
         assert response["decision"] == decision and response["action_hash"] == item["action_hash"]
-        assert session.scalar(select(func.count()).select_from(RunOperationRow)) == 2
+        assert session.scalar(select(func.count()).select_from(TurnCommandRow)) == 2
 
 
 @pytest.mark.asyncio
@@ -181,21 +175,25 @@ async def test_revoke_and_reauthorize_replay_never_extends_grant(runtime):
     service, accepted, event, gateway = await fresh(runtime)
     revoke = callback(event, "revoke")
     assert (await service.card_actions.handle(revoke))["toast"]["type"] == "info"
-    with runtime.runs.store.sessions() as session:
-        assert session.get(RunAuthorizationRow, accepted.run_id).revoked
+    with runtime.turns.store.sessions() as session:
+        assert session.get(ConversationTurnRow, accepted.turn_id).grant_revoked
     revoked, _ = await publish(runtime, gateway)
     authorize = callback(revoked, "authorize", event_id="authorize")
     assert (await service.card_actions.handle(authorize))["toast"]["type"] == "info"
-    with runtime.runs.store.sessions() as session:
-        grant = session.get(RunAuthorizationRow, accepted.run_id)
-        revision, expires = grant.revision, grant.expires_at
-        assert not grant.revoked
+    with runtime.turns.store.sessions() as session:
+        grant = session.get(ConversationTurnRow, accepted.turn_id)
+        revision, expires = grant.grant_revision, grant.grant_expires_at
+        assert not grant.grant_revoked
     authorize["header"]["event_id"] = "authorize-repeated"
     assert (await service.card_actions.handle(authorize))["toast"]["type"] == "info"
     assert (await service.card_actions.handle(revoke))["toast"]["type"] == "info"
-    with runtime.runs.store.sessions() as session:
-        grant = session.get(RunAuthorizationRow, accepted.run_id)
-        assert (grant.revision, grant.expires_at, grant.revoked) == (revision, expires, False)
+    with runtime.turns.store.sessions() as session:
+        grant = session.get(ConversationTurnRow, accepted.turn_id)
+        assert (grant.grant_revision, grant.grant_expires_at, grant.grant_revoked) == (
+            revision,
+            expires,
+            False,
+        )
 
 
 @pytest.mark.asyncio
@@ -217,7 +215,7 @@ async def test_callback_rejects_forged_or_forwarded_context(runtime, field):
     else:
         raw["event"]["action"]["form_value"] = {"injected": "value"}
     assert (await service.card_actions.handle(raw))["toast"]["type"] == "error"
-    assert (await runtime.runs.status(accepted.run_id, **OWNER)).status == "accepted"
+    assert (await runtime.turns.status(accepted.turn_id, **OWNER)).status == "accepted"
 
 
 @pytest.mark.asyncio
@@ -227,9 +225,9 @@ async def test_old_answer_cannot_resume_expired_or_stopped_turn(runtime, closed)
     service, _, accepted, item = await waiting(runtime)
     event, _ = await publish(runtime)
     if closed == "expired":
-        with runtime.runs.store.sessions.begin() as session:
-            session.get(PendingInteractionRow, item["interaction_id"]).expires_at = (
-                now() - timedelta(seconds=1)
+        with runtime.turns.store.sessions.begin() as session:
+            session.get(InteractionRow, item["interaction_id"]).expires_at = now() - timedelta(
+                seconds=1
             )
     else:
         await service.card_actions.handle(callback(event, "cancel", event_id="stop"))
@@ -242,7 +240,7 @@ async def test_old_answer_cannot_resume_expired_or_stopped_turn(runtime, closed)
 @pytest.mark.asyncio
 async def test_callback_receipt_failure_rolls_back_decision_and_can_retry(runtime, monkeypatch):
     """回执与决定原子提交，提交前崩溃不会留下半个决定。"""
-    import financeclaw.bff.application.feishu_card_actions as actions
+    import financeclaw.api.application.feishu_card_actions as actions
 
     service, _, _, item = await waiting(runtime)
     event, _ = await publish(runtime)
@@ -255,9 +253,9 @@ async def test_callback_receipt_failure_rolls_back_decision_and_can_retry(runtim
 
     monkeypatch.setattr(actions, "save_receipt", crash)
     assert (await service.card_actions.handle(raw))["toast"]["type"] == "warning"
-    with runtime.runs.store.sessions() as session:
-        assert session.get(PendingInteractionRow, item["interaction_id"]).response is None
-        assert session.scalar(select(func.count()).select_from(RunOperationRow)) == 1
+    with runtime.turns.store.sessions() as session:
+        assert session.get(InteractionRow, item["interaction_id"]).response is None
+        assert session.scalar(select(func.count()).select_from(TurnCommandRow)) == 1
     monkeypatch.setattr(actions, "save_receipt", original)
     assert (await service.card_actions.handle(raw))["toast"]["type"] == "info"
 
@@ -277,16 +275,16 @@ async def test_choice_card_uses_frozen_options_and_business_validation(runtime, 
         min_selected=1,
         max_selected=2,
     )
-    with runtime.runs.store.sessions.begin() as session:
-        row = session.get(PendingInteractionRow, item["interaction_id"])
+    with runtime.turns.store.sessions.begin() as session:
+        row = session.get(InteractionRow, item["interaction_id"])
         row.kind = "choice"
         row.request = {
             **row.request,
-            "bff": {**row.request["bff"], "point": point.model_dump(mode="json")},
+            "point": point.model_dump(mode="json"),
         }
-        updated = public_interaction(export(row))
-        root = runtime.runs.store.lock(session, accepted.run_id)
-        runtime.runs.store.project(session, root, pending_interactions=[updated])
+        session.flush()
+        root = runtime.turns.store.lock(session, accepted.turn_id)
+        runtime.turns.store.transition(session, root, root.status, root.status_reason, changed=True)
     event, _ = await publish(runtime)
     bad = callback(
         event, "choose", form={"selection": ["o0", "o1", "o2"] if multiple else "unknown"}
@@ -300,8 +298,8 @@ async def test_choice_card_uses_frozen_options_and_business_validation(runtime, 
         raw["header"]["event_id"] = "reordered"
         raw["event"]["action"]["form_value"]["selection"].reverse()
         assert (await service.card_actions.handle(raw))["toast"]["type"] == "info"
-    with runtime.runs.store.sessions() as session:
-        assert session.get(PendingInteractionRow, item["interaction_id"]).response["answer"] == (
+    with runtime.turns.store.sessions() as session:
+        assert session.get(InteractionRow, item["interaction_id"]).response["answer"] == (
             ["甲", "丙"] if multiple else "乙"
         )
 
@@ -364,7 +362,7 @@ def test_agent_rejects_invalid_multiple_choice(monkeypatch, answer):
 
 def test_short_choice_buttons_have_unique_names_and_fixed_values():
     """少量短选项使用独立组件名称，回调仍绑定冻结选项编码。"""
-    from financeclaw.bff.application.feishu_cards import interaction_elements
+    from financeclaw.shared.channels.feishu.cards import interaction_elements
 
     item = {
         "status": "pending",

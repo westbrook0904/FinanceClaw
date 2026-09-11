@@ -6,16 +6,16 @@ from types import SimpleNamespace
 import pytest
 from langgraph.store.memory import InMemoryStore
 
-from financeclaw.agent_server.memory.deletion import (
-    MEMORY_DELETE_DESTINATION,
-    MemoryDeletionConsumer,
-)
 from financeclaw.agent_server.memory.history import HistoryService
-from financeclaw.agent_server.memory.indexing import HistoryIndexer
 from financeclaw.agent_server.memory.models import MemoryDraft
+from financeclaw.integrations.history_indexer import HistoryIndexer
 from financeclaw.shared.artifacts.tables import ArtifactMetadataRow
 from financeclaw.shared.conversation.lifecycle import ConversationRetention
 from financeclaw.shared.conversation.tables import ConversationMessageRow, ConversationRow
+from financeclaw.shared.memory.deletion import (
+    MEMORY_DELETE_DESTINATION,
+    MemoryDeletionConsumer,
+)
 from financeclaw.shared.outbox.models import OutboxEvent
 from financeclaw.shared.outbox.repository import SqlAlchemyOutboxRepository
 from financeclaw.shared.outbox.tables import OutboxEventRow
@@ -54,8 +54,10 @@ class StoreClient:
 
 def complete(repository, context):
     """把当前合成 Turn 推进到正常完成并取得定向索引任务。"""
-    repository.bind_server_run(context.turn_id, "native-completed", "success")
-    repository.append_assistant_message(run_id=context.run_id, content="历史尾部的唯一决策" * 500)
+    from tests.turn_support import finish_turn
+
+    finish_turn(repository, context.turn_id)
+    repository.append_assistant_message(turn_id=context.turn_id, content="历史尾部的唯一决策" * 500)
     outbox = SqlAlchemyOutboxRepository(repository._sessions)
     return outbox.claim_pending(destination="history_index", limit=1)[0]
 
@@ -182,16 +184,25 @@ def test_expired_artifacts_remain_protected_until_turn_settles(memory_stack):
     assert page["artifacts"][0]["status"] == "deleted"
 
 
-def test_checkpoint_cleanup_requires_archived_business_and_idle_native_state(memory_stack):
+@pytest.mark.asyncio
+async def test_checkpoint_cleanup_requires_archived_business_and_idle_native_state(memory_stack):
     """业务已完成仍不够：活动会话及原生 interrupt 必须阻止回收。"""
     context, _, repository, artifacts, _, _ = memory_stack
     complete(repository, context)
     called = []
+    from unittest.mock import AsyncMock
+
+    from financeclaw.api.application.maintenance import CheckpointMaintenance
+
     native = SimpleNamespace(
         threads=SimpleNamespace(
-            get=lambda _: {"status": "idle"},
-            get_state=lambda *args, **kwargs: {"next": [], "tasks": []},
-            prune=lambda ids, **kwargs: called.append((ids, kwargs)) or {"pruned_count": len(ids)},
+            get=AsyncMock(return_value={"status": "idle"}),
+            get_state=AsyncMock(return_value={"next": [], "tasks": []}),
+            prune=AsyncMock(
+                side_effect=lambda ids, **kwargs: (
+                    called.append((ids, kwargs)) or {"pruned_count": len(ids)}
+                )
+            ),
         )
     )
     retention = ConversationRetention(repository._sessions, artifacts.store)
@@ -202,15 +213,15 @@ def test_checkpoint_cleanup_requires_archived_business_and_idle_native_state(mem
         apply=True,
     )
     with pytest.raises(ValueError, match="archived"):
-        retention.prune_checkpoints(native, **arguments)
+        await CheckpointMaintenance(retention, native).prune(**arguments)
     with repository._sessions.begin() as session:
         session.get(ConversationRow, context.conversation_id).status = "archived"
-    native.threads.get_state = lambda *args, **kwargs: {"tasks": [{"interrupts": ["pending"]}]}
+    native.threads.get_state = AsyncMock(return_value={"tasks": [{"interrupts": ["pending"]}]})
     with pytest.raises(ValueError, match="pending"):
-        retention.prune_checkpoints(native, **arguments)
+        await CheckpointMaintenance(retention, native).prune(**arguments)
     assert not called
-    native.threads.get_state = lambda *args, **kwargs: {"next": [], "tasks": []}
-    assert retention.prune_checkpoints(native, **arguments)["applied"]
+    native.threads.get_state = AsyncMock(return_value={"next": [], "tasks": []})
+    assert (await CheckpointMaintenance(retention, native).prune(**arguments))["applied"]
     assert called[0][1]["strategy"] == "keep_latest"
 
 

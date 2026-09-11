@@ -9,7 +9,7 @@ from langchain_core.messages import AIMessage, ToolMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 
 from financeclaw.agent_server.agents.offline import OfflineFinanceModel
-from financeclaw.shared.execution_ledger.repository import ExecutionConflict
+from financeclaw.shared.turns.types import ExecutionConflict
 from tests.stage1.test_agent import components_with_tools, context
 
 

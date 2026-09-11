@@ -1,0 +1,26 @@
+{
+  "passed": true,
+  "application_tables": [
+    "artifacts",
+    "audit_records",
+    "channel_conversation_bindings",
+    "conversation_messages",
+    "conversation_turns",
+    "conversations",
+    "interactions",
+    "model_context_manifests",
+    "notification_deliveries",
+    "notification_events",
+    "notification_senders",
+    "notification_targets",
+    "outbox_events",
+    "turn_commands"
+  ],
+  "same_key_requests": 32,
+  "accepted_turns": 1,
+  "replica_claims": 32,
+  "lease_winners": 1,
+  "budget_attempts": 64,
+  "model_calls": 5,
+  "deferred_command_fk": true
+}

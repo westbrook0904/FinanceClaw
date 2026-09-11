@@ -9,7 +9,7 @@ from langgraph.types import Command
 
 from financeclaw.agent_server.tools.interaction import request_user_interaction
 from financeclaw.kernel.interactions import InteractionPoint
-from financeclaw.shared.execution_ledger.repository import digest
+from financeclaw.shared.turns.types import digest
 
 
 class State(TypedDict, total=False):

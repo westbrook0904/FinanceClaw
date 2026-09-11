@@ -1,0 +1,25 @@
+{
+  "thread_id": "7d6845be-ed99-4e83-8b7f-cf38ca453b01",
+  "native_run_id": "01a08eae-6a12-7162-802e-9abbb95f6274",
+  "api_does_not_execute": true,
+  "versions": {
+    "langgraph-api": "0.14.0",
+    "langgraph-sdk": "0.4.4",
+    "langgraph": "1.2.11"
+  },
+  "runtime": "postgres",
+  "loopback_create_and_join": true,
+  "separate_worker_execution": true,
+  "interrupt_thread": "38b38f4a-3a0d-42d7-a24f-2703c3a371c3",
+  "interrupt_checkpoint": {
+    "checkpoint_id": "1f1ad97e-0fb3-67d4-8000-e02e5b3b535c",
+    "thread_id": "38b38f4a-3a0d-42d7-a24f-2703c3a371c3",
+    "checkpoint_ns": ""
+  },
+  "interrupt_native_status": "success",
+  "checkpoint_survives_api_worker_restart": true,
+  "exact_resume": true,
+  "passed": true,
+  "baseline_commit": "a6817295c42d2489c65a3cedfe96ac23980d0cf3",
+  "worker_entrypoint": "/storage/queue_entrypoint.sh"
+}

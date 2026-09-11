@@ -11,8 +11,9 @@ from financeclaw.agent_server.domains.ziwei.errors import ZiweiError
 from financeclaw.agent_server.middleware.artifact_middleware import ToolResultArtifactMiddleware
 from financeclaw.agent_server.middleware.middleware import ToolGovernanceMiddleware
 from financeclaw.shared.audit.models import AuditEventType
-from financeclaw.shared.execution_ledger.repository import ExecutionConflict
+from financeclaw.shared.turns.types import ExecutionConflict
 from tests.stage7.support import build_ziwei_agent, components, context, envelope, request
+from tests.turn_support import seed_execution
 from tests.worker_scope import worker_snapshot
 
 
@@ -70,7 +71,7 @@ async def test_finalization_cannot_bypass_persistent_root_budget(tmp_path):
     """根总预算为 2 时，仅够取证的两个模型轮次，finalization 必须拒绝。"""
     stack = components(tmp_path)
     profile = stack.agent_profiles.resolve("ziwei_doushu_agent")
-    owner = context(root_run_id="ziwei-child")
+    owner = context(turn_id="ziwei-child")
     snapshot = worker_snapshot(
         profile,
         owner,
@@ -80,14 +81,14 @@ async def test_finalization_cannot_bypass_persistent_root_budget(tmp_path):
         input_hash="synthetic",
     )
     snapshot["limits"]["model"] = 2
-    stack.conversation_repository.execution.register(owner.run_id, snapshot)
+    owner = seed_execution(stack.conversation_repository.execution, owner, snapshot)
     try:
         graph = build_ziwei_agent(
             stack.agent_factory, profile, stack.ziwei_service, model=OfflineZiweiModel()
         )
         with pytest.raises(ExecutionConflict, match="budget"):
             await graph.ainvoke(envelope(request(mode="interpretation")), context=owner)
-        assert stack.conversation_repository.execution.get(owner.run_id)["model_calls"] == 2
+        assert stack.conversation_repository.execution.get(owner.turn_id)["model_calls"] == 2
     finally:
         stack.database.close()
 
@@ -97,7 +98,7 @@ async def test_initialize_rejects_release_drift_even_for_clarification(tmp_path)
     """没有模型调用的澄清分支也不能用不同发布恢复旧任务。"""
     stack = components(tmp_path)
     profile = stack.agent_profiles.resolve("ziwei_doushu_agent")
-    owner = context(root_run_id="ziwei-child")
+    owner = context(turn_id="ziwei-child")
     snapshot = worker_snapshot(
         profile,
         owner,
@@ -106,7 +107,7 @@ async def test_initialize_rejects_release_drift_even_for_clarification(tmp_path)
         thread_id="pinned-child",
         input_hash="synthetic",
     )
-    stack.conversation_repository.execution.register(owner.run_id, snapshot)
+    owner = seed_execution(stack.conversation_repository.execution, owner, snapshot)
     drifted = profile.model_copy(update={"configuration_fingerprint": "different-release"})
     try:
         graph = build_ziwei_agent(
@@ -114,7 +115,7 @@ async def test_initialize_rejects_release_drift_even_for_clarification(tmp_path)
         )
         with pytest.raises(ExecutionConflict, match="pinned"):
             await graph.ainvoke(envelope(request(birth={})), context=owner)
-        assert stack.conversation_repository.execution.get(owner.run_id)["model_calls"] == 0
+        assert stack.conversation_repository.execution.get(owner.turn_id)["model_calls"] == 0
     finally:
         stack.database.close()
 

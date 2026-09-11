@@ -1,31 +1,13 @@
-# Environment profiles
+# 环境配置
 
-These examples define policy, not credentials. Render the selected profile into
-the deployment environment and inject every secret from a Secret Manager.
-Development may use the static bearer adapter; staging and production must use
-OIDC, PostgreSQL, internal Agent Server service auth and S3-compatible artifacts.
+统一部署使用 `compose.yml` 和 `unified.env.example`。复制到 `.env` 后填写密钥；示例不得保存真实凭据。API、worker、integrations 的角色、数据库和内部地址由 Compose 注入，三个角色使用同一镜像及发布策略。
 
-For the complete local Docker PostgreSQL + MinIO + persistent Agent Server setup,
-use `local-bff.env.example` and `local-agent-server.env.example` with
-`docs/operations/local-full-stack.md`.
+- development/test：允许静态产品 Bearer 认证和确定性离线模型。
+- production：使用 `production.env.example` 的 OIDC、PostgreSQL、加密 S3、遥测和隐私策略；令牌由 Secret Manager 注入。
+- `FINANCECLAW_INTEGRATION_SERVICE_TOKEN` 至少 32 字符；用于渠道入口和限定 Store namespace 的维护，不能操作原生运行。
+- `FINANCECLAW_INTERNAL_API_URL` 只供 integrations 使用。API 的核心 SDK 固定为 `get_client(url=None, api_key=None)`。
+- API 的 `N_JOBS_PER_WORKER=0`；worker 的并发必须为正，使用官方 queue entrypoint。
 
-The Feishu P2P channel is disabled in every profile by default. Enable it only
-on one BFF instance, inject the app secret externally, configure a non-empty
-`FINANCECLAW_FEISHU_ALLOWED_OPEN_IDS` canary list, and use `strict` security mode
-when enabling it in production.
+飞书默认关闭。启用时配置 APP_ID、APP_SECRET、ALLOWED_OPEN_IDS、SCOPES，并在生产使用 strict 模式。只有 integrations 建立 WebSocket，API 副本数不影响连接数量；默认运行一个开启渠道的 integrations 实例。通知和历史索引在独立任务中执行。
 
-The Stage 7 Ziwei candidate is also disabled by default and restricted to
-development/test. It requires an explicit candidate convention, an externally
-provided HMAC key, hidden LangSmith inputs/outputs and disabled full-I/O debugging.
-Do not enable it for real personal data yet. Follow
-[`docs/operations/ziwei-agent.md`](../../docs/operations/ziwei-agent.md) for matching
-BFF/Agent Server configuration and explicit `ziwei:read` authorization.
-
-BFF is the product run controller. Use [`bff-run-control.env.example`](bff-run-control.env.example)
-with the selected profile, and follow [`BFF operations`](../../docs/operations/bff-run-control.md)
-for initial schema setup, admission and dispatch controls.
-
-Stage 8B adds [`notifications.env.example`](notifications.env.example) and a separate sender role.
-Keep the notification admission switch disabled until the real Feishu canary passes; configure the
-same app and allowlist as the BFF. The sender has no WebSocket. See
-[`Notification operations`](../../docs/operations/notifications.md).
+Ziwei 仍为开发/测试候选，需要显式约定、HMAC 密钥和隐私设置，见 [领域说明](../../docs/operations/ziwei-agent.md)。所有改变发布指纹的配置应在 API 与 worker 间一致。

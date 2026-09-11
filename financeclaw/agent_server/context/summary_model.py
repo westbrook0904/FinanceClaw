@@ -34,9 +34,9 @@ class MeteredSummaryModel(BaseChatModel):
             raise ValueError("summary attempt budget exhausted")
         self._attempts += 1
         context = self.execution_context
-        if self.execution is not None and context.root_run_id:
+        if self.execution is not None and context.turn_id:
             self.execution.verify_context(context)
-            self.execution.consume(context.run_id, "model")
+            self.execution.consume(context.turn_id, "model")
         self.recorder.record(context, self.delegate, messages, subtype="summary")
 
     def _generate(self, messages, stop=None, run_manager=None, **kwargs):

@@ -12,7 +12,7 @@ def test_only_code_published_workflows_are_registered_without_legacy_runtime() -
     """验证函数名所描述的业务场景符合预期。"""
     config = json.loads((ROOT / "langgraph.json").read_text())
     # HF-3 workflows are Tools inside the sole product root, not standalone HTTP graphs.
-    assert set(config["graphs"]) == {"finance_agent_v1_6_0"}
+    assert set(config["graphs"]) == {"finance_agent"}
     production_source = "\n".join(
         path.read_text() for path in sorted((ROOT / "financeclaw").rglob("*.py"))
     )

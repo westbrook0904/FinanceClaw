@@ -24,7 +24,6 @@ def enqueue_history_index(session, turn, user, answer):
             payload={
                 "conversation_id": turn.conversation_id,
                 "turn_id": turn.turn_id,
-                "run_id": turn.run_id,
                 "version": 1,
                 "sources": [
                     {"message_id": item.message_id, "content_hash": item.content_hash}
@@ -54,8 +53,8 @@ def requeue_history(
     from financeclaw.shared.conversation.tables import (
         ConversationMessageRow,
         ConversationRow,
-        ConversationTurnRow,
     )
+    from financeclaw.shared.turns.tables import ConversationTurnRow
 
     if not 1 <= limit <= 1000 or offset < 0:
         raise ValueError("invalid history rebuild page")

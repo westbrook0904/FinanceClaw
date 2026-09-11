@@ -1,0 +1,67 @@
+{
+  "date": "2026-09-11",
+  "baseline_commit": "a6817295c42d2489c65a3cedfe96ac23980d0cf3",
+  "tested_product_image": "sha256:01111509562e6d0cd274dbfc58abdf69be251e5b72ce9ebcc736c9f28b847bc3",
+  "native_versions": {
+    "langgraph-api": "0.14.0",
+    "langgraph-sdk": "0.4.4",
+    "langgraph": "1.2.11"
+  },
+  "tests": {
+    "passed": 420,
+    "skipped": 4,
+    "warnings": 2,
+    "seconds": 107.79
+  },
+  "ruff_check": true,
+  "ruff_format_check": true,
+  "formatted_files": 300,
+  "secret_check": true,
+  "sbom_generated": true,
+  "dependency_audit": {
+    "known_vulnerabilities": 0,
+    "scope": "frozen production requirements with ziwei extra"
+  },
+  "compose_example_config_valid": true,
+  "postgres_migration": {
+    "revision": "0001_initial",
+    "autogenerate_diff": false,
+    "application_tables": 14
+  },
+  "business_snapshot_sql": {
+    "unfinished_turns": 16,
+    "queries": 2,
+    "release_snapshot_loaded": false
+  },
+  "core_native_transport": {
+    "kind": "SDK ASGI loopback",
+    "outbound_http_requests": 0,
+    "basis": "native-contract plus get_client(url=None, api_key=None)"
+  },
+  "measurement_environment": {
+    "docker_vm_logical_cpus": 12,
+    "docker_vm_memtotal_kib": 8027456,
+    "container_cpu_limit": "none",
+    "container_memory_limit": "none",
+    "api_observed_peak_memory_bytes": 389185536,
+    "api_replicas_capacity_test": 1,
+    "worker_jobs": 4,
+    "shared_desktop_environment": true
+  },
+  "limitations": [
+    "No live Feishu sends or paid provider calls",
+    "Single API burst capacity at 32/128 exceeds suggested latency budgets",
+    "Native SQL statement counts are not instrumented by application tests",
+    "Resource memory is an observed cgroup peak, not a controlled sizing benchmark"
+  ],
+  "multi_api_and_integrations_verified": true,
+  "join_saturation_verified": true,
+  "source_digest": "a679a6450d17dc18cab093aed5746e483d72eefb69cc106501f76cb2b828263f",
+  "source_digest_scope": "sorted path + NUL + bytes + NUL: financeclaw/**/*.py, deploy/**/*.py, deploy/entrypoint.sh, Dockerfile, langgraph.json",
+  "roles_healthy_before_shutdown": [
+    "product-api",
+    "product-api-2",
+    "product-worker",
+    "product-integrations"
+  ]
+}

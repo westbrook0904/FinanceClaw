@@ -1,0 +1,51 @@
+{
+  "native_external_denied": true,
+  "accepted": {
+    "conversation_id": "conversation-4a49cbd1def640fb99ce261458aadebd",
+    "turn_id": "ac896ed0-b319-4b84-9b39-64602ff4d541",
+    "status": "accepted",
+    "revision": 1,
+    "idempotent_replay": false
+  },
+  "acceptance_ms": 51.1,
+  "snapshot": {
+    "conversation_id": "conversation-4a49cbd1def640fb99ce261458aadebd",
+    "turn_id": "ac896ed0-b319-4b84-9b39-64602ff4d541",
+    "status": "completed",
+    "revision": 4,
+    "reason": null,
+    "pending_interactions": [],
+    "output": {
+      "messages": [
+        {
+          "type": "assistant",
+          "content": "Tool result: {\"value\": \"3.0\"}"
+        }
+      ]
+    },
+    "authorization_revision": 1
+  },
+  "messages": {
+    "conversation_id": "conversation-4a49cbd1def640fb99ce261458aadebd",
+    "messages": [
+      {
+        "message_id": "7543dd31-e2ae-4f75-a7d5-c4f14a06403b",
+        "turn_id": "ac896ed0-b319-4b84-9b39-64602ff4d541",
+        "sequence": 1,
+        "parent_message_id": null,
+        "role": "user",
+        "content": "请计算 2 + 3",
+        "created_at": "2026-09-11T04:54:13.378177+00:00"
+      },
+      {
+        "message_id": "message-586c66324b5e48ed82556357b0dbd73f",
+        "turn_id": "ac896ed0-b319-4b84-9b39-64602ff4d541",
+        "sequence": 2,
+        "parent_message_id": null,
+        "role": "assistant",
+        "content": "Tool result: {\"value\": \"3.0\"}",
+        "created_at": "2026-09-11T04:54:16.564929+00:00"
+      }
+    ]
+  }
+}

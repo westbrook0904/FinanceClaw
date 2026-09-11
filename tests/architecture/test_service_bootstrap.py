@@ -15,13 +15,13 @@ ROOT = Path(__file__).parents[2]
     [
         (
             "financeclaw",
-            ["financeclaw.bff", "financeclaw.coordination", "financeclaw.agent_server"],
+            ["financeclaw.api", "financeclaw.coordination", "financeclaw.agent_server"],
         ),
         (
-            "financeclaw.bff.bootstrap",
+            "financeclaw.api.bootstrap",
             ["financeclaw.agent_server", "financeclaw.coordination", "langgraph.graph"],
         ),
-        ("financeclaw.agent_server.bootstrap", ["financeclaw.bff", "financeclaw.coordination"]),
+        ("financeclaw.agent_server.bootstrap", ["financeclaw.api", "financeclaw.coordination"]),
     ],
 )
 def test_imports_do_not_initialize_other_services(entry: str, forbidden: list[str]) -> None:
@@ -43,11 +43,11 @@ assert set(threading.enumerate()) == before
 
 
 @pytest.mark.parametrize("ziwei_enabled", [False, True])
-def test_bff_can_boot_without_agent_implementation(tmp_path: Path, ziwei_enabled: bool) -> None:
+def test_api_can_boot_without_agent_implementation(tmp_path: Path, ziwei_enabled: bool) -> None:
     """即使启用领域 Agent，BFF 装配也不能初始化图、工具、模型或排盘依赖。"""
     script = f"""
 import sys
-from financeclaw.bff.bootstrap import create_default_app
+from financeclaw.api.bootstrap import create_default_app
 from financeclaw.shared.infrastructure.settings import FinanceClawSettings
 settings = FinanceClawSettings(
     _env_file=None, environment="test", offline_model=False, debug_full_io=False,
@@ -57,15 +57,17 @@ settings = FinanceClawSettings(
     database_url={f"sqlite:///{tmp_path}/bff.db"!r}, artifact_root={str(tmp_path / "artifacts")!r},
     database_auto_create_schema=True, feishu_enabled=False,
 )
-app = create_default_app(settings)
-try:
-    assert app.state.financeclaw_database.ping()
-    assert any(route.path == "/v1/conversations" for route in app.routes)
-    for prefix in ["financeclaw.agent_server", "langgraph.graph", "x_iztro", "lark_channel"]:
-        loaded = [name for name in sys.modules if name == prefix or name.startswith(prefix + ".")]
-        assert not loaded, loaded
-finally:
-    app.state.financeclaw_database.close()
+app = create_default_app(settings, client=object())
+import asyncio
+async def inspect_app():
+    async with app.router.lifespan_context(app):
+        assert app.state.resources.database.ping()
+        assert "/v1/conversations" in app.openapi()["paths"]
+        for prefix in ["financeclaw.agent_server", "langgraph.graph", "x_iztro", "lark_channel"]:
+            loaded = [name for name in sys.modules
+                      if name == prefix or name.startswith(prefix + ".")]
+            assert not loaded, loaded
+asyncio.run(inspect_app())
 """
     result = subprocess.run(
         [sys.executable, "-c", script], cwd=ROOT, capture_output=True, text=True, timeout=30
@@ -74,13 +76,13 @@ finally:
 
 
 @pytest.mark.parametrize("ziwei_enabled", [False, True])
-def test_bff_and_runtime_share_exact_release_contracts(tmp_path: Path, ziwei_enabled: bool) -> None:
+def test_api_and_runtime_share_exact_release_contracts(tmp_path: Path, ziwei_enabled: bool) -> None:
     """独立装配的发布快照必须一致，工作流图仅存在于执行端。"""
     if ziwei_enabled:
         pytest.importorskip("x_iztro")
         pytest.importorskip("tzdata")
     from financeclaw.agent_server.bootstrap import build_components
-    from financeclaw.bff.application.runs.bootstrap import build_bff_runs
+    from financeclaw.api.application.turns.bootstrap import build_turns
     from financeclaw.shared.infrastructure.resources import build_resources
     from financeclaw.shared.infrastructure.settings import FinanceClawSettings
 
@@ -100,12 +102,12 @@ def test_bff_and_runtime_share_exact_release_contracts(tmp_path: Path, ziwei_ena
     )
     resources = build_resources(settings, enable_persistence=True)
     try:
-        bff = build_bff_runs(settings, resources=resources)
+        bff = build_turns(settings, resources, client=object())
         runtime = build_components(resources=resources)
-        assert runtime.conversation_repository is bff.runs.repository
-        assert bff.runs.execution.sessions is resources.database.session_factory
-        assert set(runtime.agent_profiles) == set(bff.releases.agent_profiles)
-        for key, declared in bff.releases.agent_profiles.items():
+        assert runtime.conversation_repository is bff.journal
+        assert bff.execution.sessions is resources.database.session_factory
+        assert set(runtime.agent_profiles) == set(bff.releases.agents)
+        for key, declared in bff.releases.agents.items():
             actual = runtime.agent_profiles[key]
             assert actual.model_dump(mode="json") == declared.model_dump(mode="json")
             for attr in ("input_schema", "output_schema"):
@@ -113,11 +115,11 @@ def test_bff_and_runtime_share_exact_release_contracts(tmp_path: Path, ziwei_ena
                 assert (schema.model_json_schema() if schema else None) == (
                     getattr(declared, attr).model_json_schema() if getattr(declared, attr) else None
                 )
-        assert set(runtime.tool_catalog) == set(bff.releases.tool_catalog)
-        for key, declared in bff.releases.tool_catalog.items():
+        assert set(runtime.tool_catalog) == set(bff.releases.tools)
+        for key, declared in bff.releases.tools.items():
             assert runtime.tool_catalog[key].governance == declared.governance
             assert not hasattr(declared, "tool")
-        for key, declared in bff.releases.workflow_catalog.items():
+        for key, declared in bff.releases.workflows.items():
             actual = runtime.workflow_catalog[key]
             assert actual.graph is not None and not hasattr(declared, "graph")
             assert {field.name: getattr(declared, field.name) for field in fields(declared)} == {

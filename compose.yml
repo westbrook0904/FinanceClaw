@@ -1,0 +1,103 @@
+name: financeclaw-stage10
+
+x-application: &application
+  image: financeclaw:stage10
+  build: .
+  env_file: ["${FINANCECLAW_ENV_FILE:-.env}"]
+  volumes:
+    - artifacts:/data/artifacts
+  restart: unless-stopped
+  stop_grace_period: 45s
+
+x-environment: &environment
+  POSTGRES_URI: postgres://financeclaw:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@postgres:5432/financeclaw_native
+  REDIS_URI: redis://redis:6379
+  FINANCECLAW_DATABASE_URL: postgresql+psycopg://financeclaw:${POSTGRES_PASSWORD}@postgres:5432/financeclaw_app
+  FINANCECLAW_DATABASE_AUTO_CREATE_SCHEMA: "false"
+  FINANCECLAW_INTERNAL_API_URL: http://api:8000
+  FINANCECLAW_INTERNAL_SERVICE_HOSTS: '["api"]'
+  FINANCECLAW_ARTIFACT_ROOT: /data/artifacts
+  LANGGRAPH_AUTH_TYPE: noop
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: financeclaw
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: financeclaw_app
+    volumes:
+      - postgres:/var/lib/postgresql/data
+      - ./deploy/postgres/init.sql:/docker-entrypoint-initdb.d/10-native.sql:ro
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U financeclaw -d financeclaw_app"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+  redis:
+    image: redis:8-alpine
+    command: [redis-server, --appendonly, "yes"]
+    volumes: ["redis:/data"]
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 3s
+      retries: 30
+  migrate:
+    <<: *application
+    entrypoint: [python, -m, alembic]
+    command: [upgrade, head]
+    environment:
+      <<: *environment
+      FINANCECLAW_PROCESS_ROLE: api
+    depends_on:
+      postgres: {condition: service_healthy}
+    restart: "no"
+  api:
+    <<: *application
+    environment:
+      <<: *environment
+      FINANCECLAW_PROCESS_ROLE: api
+      N_JOBS_PER_WORKER: "0"
+    ports: ["127.0.0.1:${API_PORT:-8000}:8000"]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      redis: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/v1/health/ready', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      start_period: 60s
+      retries: 5
+  worker:
+    <<: *application
+    environment:
+      <<: *environment
+      FINANCECLAW_PROCESS_ROLE: worker
+      N_JOBS_PER_WORKER: ${WORKER_JOBS:-4}
+      PORT: "8080"
+    depends_on:
+      api: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/ok?check_db=1', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      start_period: 60s
+      retries: 5
+  integrations:
+    <<: *application
+    environment:
+      <<: *environment
+      FINANCECLAW_PROCESS_ROLE: integrations
+    depends_on:
+      api: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, python, -m, financeclaw.integrations.health]
+      interval: 15s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+
+volumes:
+  postgres: {}
+  redis: {}
+  artifacts: {}

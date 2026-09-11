@@ -119,6 +119,17 @@ def test_empty_recall_is_reused_and_next_turn_queries_again(memory_stack):
         mutation_id="goal",
         approved=True,
     )
+    from tests.turn_support import finish_turn, seed_execution
+
+    repository = memory_stack[2]
+    finish_turn(repository, context.turn_id)
+    context = seed_execution(
+        repository.execution,
+        context.model_copy(update={"turn_id": "next", "command_id": None}),
+        {"user_message_id": "next-user", "limits": {"model": 100, "tool": 100, "command": 100}},
+        message="新问题",
+    )
+    runtime = Runtime(context=context, store=store)
     state["messages"].append(HumanMessage(content="新问题", id="next-user"))
     state.update(middleware.before_model(state, runtime))
     assert embeddings.queries == 1

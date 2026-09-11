@@ -7,8 +7,8 @@ from langchain_core.messages import AIMessage, ToolMessage
 
 from financeclaw.kernel.context import ExecutionContext
 from financeclaw.kernel.turns import current_turn_start
-from financeclaw.shared.execution_ledger.repository import ExecutionConflict
 from financeclaw.shared.releases.interactions import CLARIFICATION_TOOL, ROOT_CLARIFICATION
+from financeclaw.shared.turns.types import ExecutionConflict
 
 
 def answered_clarifications(messages):
@@ -50,7 +50,7 @@ def answered_clarifications(messages):
 
 
 def task_context(runtime, snapshot):
-    """使用 BFF 固定的本轮消息锚点；恢复不会改成最后一条回答或混入旧任务。"""
+    """使用 API 固定的本轮消息锚点；恢复不会改成最后一条回答或混入旧任务。"""
     messages = runtime.state.get("messages", [])
     origin = snapshot.get("user_message_id")
     try:

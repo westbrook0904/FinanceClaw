@@ -4,25 +4,10 @@
     "."
   ],
   "graphs": {
-    "finance_agent_v1_6_0": "./financeclaw/agent_server/graphs/bff_graphs.py:finance_agent"
+    "finance_agent": "./financeclaw/agent_server/graphs/product.py:finance_agent"
   },
   "env": ".env",
   "python_version": "3.13",
-  "webhooks": {
-    "headers": {
-      "Authorization": "Bearer ${{ env.LG_WEBHOOK_BFF_TOKEN }}"
-    },
-    "url": {
-      "allowed_domains": [
-        "bff.internal"
-      ],
-      "allowed_ports": [
-        443
-      ],
-      "require_https": true,
-      "disable_loopback": true
-    }
-  },
   "store": {
     "index": {
       "embed": "./financeclaw/agent_server/memory/embeddings.py:embeddings",
@@ -31,5 +16,11 @@
         "content"
       ]
     }
+  },
+  "http": {
+    "app": "./financeclaw/api/bootstrap.py:app"
+  },
+  "auth": {
+    "path": "./financeclaw/api/native_auth.py:auth"
   }
 }

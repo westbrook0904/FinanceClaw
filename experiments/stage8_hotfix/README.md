@@ -2,7 +2,7 @@
 
 真实 LangChain `create_agent`、ToolNode、LangGraph 子图、checkpoint 和 interrupt/resume
 探针。模型只做确定性合成决策，叶子工具只记录合成标记，不调用真实 LLM、金融服务或渠道。
-HF-0 图探针独立于应用装配；BFF HTTP 探针验证当前生产运行控制。
+HF-0 图探针独立于应用装配。当前产品验证以 Stage 10 为准。
 
 ## 运行
 
@@ -48,13 +48,6 @@ HTTP 模式只注册 `hf0_orchestrator_v1`，每个场景一个顶层 thread，
 全量核对原生 thread/run 清单，确保没有额外 child HTTP 创建。
 两个模式都检查实际节点计数和顶层 ToolMessage／最终回答，而不只检查流结束或 HTTP 200。
 
-## 当前 BFF 闭环
+## 当前运行模型
 
-```bash
-.venv/bin/python -m experiments.stage8_hotfix.hf2_native --report /tmp/bff-native.json
-.venv/bin/python -m experiments.stage8_hotfix.hf2_native --scenario hitl --report /tmp/bff-hitl.json
-```
-
-验证 BFF 受理、四次连续等待或原生 HITL、HTTP resume、客户端离线、BFF 重启、重复 Webhook 和最终 Journal。业务库与原生服务均使用本次探针的临时目录；HITL 使用明确的合成 Worker 发布。源码摘要和能力边界随 JSON 报告保存。
-
-当前架构契约见 [Stage 8 Hotfix](../../.redesign/stages/stage-8-hotfix-实施方案.md)。
+旧 BFF HTTP 与 Webhook 探针已随 Stage 10 删除。保留本目录的原生子图契约实验；当前统一 API/Worker 的持久化验收见 [Stage 10](../stage10/README.md)。

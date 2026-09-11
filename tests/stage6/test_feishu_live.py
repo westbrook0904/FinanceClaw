@@ -5,7 +5,7 @@ from typing import Any
 
 import pytest
 
-from financeclaw.bff.channels.feishu import FeishuChannelAdapter
+from financeclaw.integrations.feishu.channel import FeishuChannelAdapter
 
 _APP_ID = os.getenv("FINANCECLAW_FEISHU_E2E_APP_ID")
 _APP_SECRET = os.getenv("FINANCECLAW_FEISHU_E2E_APP_SECRET")

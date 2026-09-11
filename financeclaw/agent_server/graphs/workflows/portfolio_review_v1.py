@@ -33,8 +33,9 @@ from financeclaw.kernel.workflows.portfolio_review import (
 from financeclaw.shared.artifacts.service import ArtifactService
 from financeclaw.shared.audit.models import AuditEventType, AuditRecord
 from financeclaw.shared.audit.repository import AuditRepository
-from financeclaw.shared.execution_ledger.repository import ExecutionConflict, ExecutionRepository
 from financeclaw.shared.releases.workflows import portfolio_review_release
+from financeclaw.shared.turns.budget import TurnExecutionRepository
+from financeclaw.shared.turns.types import ExecutionConflict
 
 
 class PortfolioReviewState(TypedDict, total=False):
@@ -58,7 +59,7 @@ class PortfolioReviewState(TypedDict, total=False):
         error: 当前错误信息，空串表示无错误。
         workflow_id: 工作流标识回填（终态输出用）。
         workflow_version: 工作流版本回填（终态输出用）。
-        run_id: 本次运行 ID 回填（终态输出用）。
+        turn_id: 本次运行 ID 回填（终态输出用）。
         status: 终态状态回填：completed/rejected/failed。
         total_market_value: 组合总市值（两位小数字符串）；未分析时缺省。
         largest_position_weight: 最大持仓权重（四位小数字符串）；未分析时缺省。
@@ -82,7 +83,7 @@ class PortfolioReviewState(TypedDict, total=False):
     error: str
     workflow_id: str
     workflow_version: str
-    run_id: str
+    turn_id: str
     status: str
     total_market_value: str | None
     largest_position_weight: str | None
@@ -99,7 +100,7 @@ class PortfolioReviewProjection(TypedDict, total=False):
     Attributes:
         workflow_id: 工作流标识（portfolio_review）。
         workflow_version: 工作流版本（1.0.0）。
-        run_id: 本次运行的唯一 ID。
+        turn_id: 本次运行的唯一 ID。
         status: 终态：completed/rejected/failed。
         arguments_hash: 归一化输入的规范哈希。
         portfolio_name: 组合名称。
@@ -115,7 +116,7 @@ class PortfolioReviewProjection(TypedDict, total=False):
 
     workflow_id: str
     workflow_version: str
-    run_id: str
+    turn_id: str
     status: str
     arguments_hash: str
     portfolio_name: str
@@ -129,7 +130,7 @@ class PortfolioReviewProjection(TypedDict, total=False):
 
 
 def _parse_decision(value: Any) -> dict[str, Any]:
-    """解析审批恢复负载，使用 BFF 冻结的单条决定对象。
+    """解析审批恢复负载，使用 API 冻结的单条决定对象。
 
     Args:
         value: interrupt 恢复时得到的审批决定负载。
@@ -173,7 +174,7 @@ def build_portfolio_review_graph(
     checkpointer: Any = None,
     read_max_attempts: int = 3,
     clock: Callable[[], datetime] | None = None,
-    execution: ExecutionRepository | None = None,
+    execution: TurnExecutionRepository | None = None,
     release: Any,
     resource_gate: Any = None,
 ) -> Any:
@@ -244,7 +245,6 @@ def build_portfolio_review_graph(
                 subject_id=context.subject_id,
                 conversation_id=None,
                 turn_id=context.turn_id,
-                run_id=context.run_id,
                 resource_id=managed_market.governance.tool_id,
                 resource_version=managed_market.governance.version,
                 action="read",
@@ -346,11 +346,11 @@ def build_portfolio_review_graph(
             )
             # 3. 调用行情工具并校验返回：必须是 JSON 对象，价格正数、时点带时区。
             try:
-                if runtime.context.root_run_id is not None:
+                if runtime.context.turn_id is not None:
                     if execution is None:
                         raise ExecutionConflict("Workflow execution budget is not configured")
                     execution.verify_context(runtime.context)
-                    execution.consume(runtime.context.run_id, "tool")
+                    execution.consume(runtime.context.turn_id, "tool")
                 verify_worker(runtime.context)
                 with resource_gate if resource_gate is not None else nullcontext():
                     result = managed_market.tool.invoke(arguments)
@@ -488,7 +488,7 @@ def build_portfolio_review_graph(
     ) -> dict[str, Any]:
         """LangGraph 节点（publication_approval）：发布前人工审批中断点。
 
-        位于 analyze_exposure 之后：按（run_id，工作流标识与版本，审批
+        位于 analyze_exposure 之后：按（turn_id，工作流标识与版本，审批
         点，入参哈希）派生确定性审批标识，经 LangGraph interrupt 挂起，
         携带分析摘要与所需权限域；恢复时复验审批决定——reject 置驳回，
         approve 必须携带与挂起一致的入参哈希，缺失或不一致判 invalid。
@@ -508,7 +508,7 @@ def build_portfolio_review_graph(
             raise ExecutionConflict("Workflow approval expired")
         approval_identity = {
             **binding,
-            "run_id": runtime.context.run_id,
+            "turn_id": runtime.context.turn_id,
             "workflow_id": WORKFLOW_ID,
             "workflow_version": workflow_version,
             "approval_point": APPROVAL_POINT,
@@ -543,7 +543,7 @@ def build_portfolio_review_graph(
         decision_type = decision.get("type")
         # 3. 解析恢复负载：reject 置驳回；approve 复验入参哈希一致性。
         if decision_type == "reject":
-            execution.deny_side_effects(runtime.context.run_id)
+            execution.deny_side_effects(runtime.context.turn_id)
             return {
                 "approval_id": approval_id,
                 "approval_outcome": "rejected",
@@ -580,7 +580,7 @@ def build_portfolio_review_graph(
 
         Args:
             state: 当前图 State，读取分析结果与快照。
-            runtime: LangGraph 运行时，提供 run_id 等运行定位。
+            runtime: LangGraph 运行时，提供 turn_id 等运行定位。
 
         Returns:
             写入 State 的增量：artifact 制品引用字典。
@@ -592,7 +592,7 @@ def build_portfolio_review_graph(
             "schema_version": 1,
             "workflow_id": WORKFLOW_ID,
             "workflow_version": workflow_version,
-            "run_id": runtime.context.run_id,
+            "turn_id": runtime.context.turn_id,
             "portfolio_name": state["portfolio_name"],
             "arguments_hash": state["arguments_hash"],
             "analysis": state["analysis"],
@@ -600,13 +600,13 @@ def build_portfolio_review_graph(
             "disclaimer": "Point-in-time analytical report; not investment advice.",
         }
         # 2. 以 run+审批点级幂等键持久化，重放恢复时天然命中同一制品。
-        if runtime.context.root_run_id is not None:
+        if runtime.context.turn_id is not None:
             if execution is None:
                 raise ExecutionConflict("Workflow execution budget is not configured")
             execution.verify_context(runtime.context)
-            if execution.get(runtime.context.root_run_id)["side_effects_denied"]:
+            if execution.get(runtime.context.turn_id)["side_effects_denied"]:
                 raise ExecutionConflict("publication is denied after rejection")
-            execution.consume(runtime.context.run_id, "tool")
+            execution.consume(runtime.context.turn_id, "tool")
         publication_key = scope.identity
         with resource_gate if resource_gate is not None else nullcontext():
             metadata = artifact_service.persist(
@@ -614,7 +614,7 @@ def build_portfolio_review_graph(
                 context=runtime.context,
                 source_type="workflow_report",
                 source_id=f"{WORKFLOW_ID}@{workflow_version}",
-                idempotency_key=f"{runtime.context.run_id}:{publication_key}:publish:v1",
+                idempotency_key=f"{runtime.context.turn_id}:{publication_key}:publish:v1",
             )
         return {"artifact": _artifact_reference(metadata)}
 
@@ -627,7 +627,7 @@ def build_portfolio_review_graph(
 
         Args:
             state: 当前图 State，含分析结果、审批结论或错误信息。
-            runtime: LangGraph 运行时，提供 run_id。
+            runtime: LangGraph 运行时，提供 turn_id。
 
         Returns:
             PortfolioReviewOutput 的 JSON 字典，经 output_schema 过滤后输出。
@@ -659,7 +659,7 @@ def build_portfolio_review_graph(
         output = output_type(
             workflow_id=WORKFLOW_ID,
             workflow_version=workflow_version,
-            run_id=runtime.context.run_id,
+            turn_id=runtime.context.turn_id,
             status=status,
             arguments_hash=state["arguments_hash"],
             portfolio_name=state["portfolio_name"],
@@ -724,7 +724,7 @@ def portfolio_review_definition(
     run_timeout_seconds: int = 300,
     approval_timeout_seconds: int = 900,
     clock: Callable[[], datetime] | None = None,
-    execution: ExecutionRepository | None = None,
+    execution: TurnExecutionRepository | None = None,
 ) -> WorkflowDefinition:
     """把流程图封装为可注册进工作流目录的发布定义。
 

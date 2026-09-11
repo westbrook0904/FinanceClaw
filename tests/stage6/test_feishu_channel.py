@@ -6,7 +6,7 @@ import pytest
 from lark_channel import Conversation, Identity, InboundMessage, TextContent
 from pydantic import SecretStr, ValidationError
 
-from financeclaw.bff.channels.feishu import FeishuChannelAdapter
+from financeclaw.integrations.feishu.channel import FeishuChannelAdapter
 from financeclaw.shared.infrastructure.settings import FinanceClawSettings
 
 

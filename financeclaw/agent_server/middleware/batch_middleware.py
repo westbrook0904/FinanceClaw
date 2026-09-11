@@ -13,8 +13,8 @@ from financeclaw.agent_server.middleware.middleware import _context
 from financeclaw.agent_server.tools.catalog import ToolCatalog
 from financeclaw.agent_server.tools.policy import ToolDecisionType, ToolPolicy
 from financeclaw.kernel.tools import SideEffect
-from financeclaw.shared.execution_ledger.repository import ExecutionConflict
 from financeclaw.shared.releases.subgraphs import is_parallel_read_worker
+from financeclaw.shared.turns.types import ExecutionConflict
 
 
 class ToolBatchMiddleware(AgentMiddleware):
@@ -58,8 +58,8 @@ class ToolBatchMiddleware(AgentMiddleware):
         if len(calls) > self.max_batch:
             return "tool batch exceeds the configured limit"
         context = _context(runtime.context)
-        if self.execution is not None and context.root_run_id is not None:
-            root = self.execution.get(context.root_run_id or context.run_id)
+        if self.execution is not None and context.turn_id is not None:
+            root = self.execution.get(context.turn_id)
             if root["side_effects_denied"]:
                 for call in calls:
                     try:

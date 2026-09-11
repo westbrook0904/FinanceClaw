@@ -12,11 +12,12 @@ from financeclaw.agent_server.agents.offline import OfflineFinanceModel
 from financeclaw.agent_server.agents.ziwei_offline import offline_chart_call
 from financeclaw.agent_server.tools.subgraph_scope import active_scope
 from financeclaw.shared.artifacts.repository import ArtifactNotFound
-from financeclaw.shared.execution_ledger.repository import ExecutionConflict
 from financeclaw.shared.releases.subgraphs import is_parallel_read_worker
+from financeclaw.shared.turns.types import ExecutionConflict
 from tests.stage6fix.test_batch_tools import BatchModel, call
 from tests.stage7.support import components, request
 from tests.stage8_hotfix.test_production_subgraphs import root_graph
+from tests.turn_support import cancel_execution
 
 
 @pytest.fixture
@@ -64,7 +65,9 @@ async def test_root_clarifies_before_model_can_invent_missing_arguments(stack):
     graph, kwargs = root_graph(
         stack, calls, model=FabricatingRootModel(calls=calls), limits={"model": 2}
     )
-    result = await graph.ainvoke({"messages": [HumanMessage(content="请排盘")]}, **kwargs)
+    result = await graph.ainvoke(
+        {"messages": [HumanMessage(content="请排盘", id="root-input")]}, **kwargs
+    )
     receipts = [m for m in result["messages"] if isinstance(m, ToolMessage)]
     assert len(receipts) == 1
     public = json.loads(receipts[0].content)
@@ -95,7 +98,9 @@ async def test_parallel_clarifications_preserve_all_receipts_and_do_not_retry(
         ),
     ]
     graph, kwargs = root_graph(stack, calls, model=FabricatingRootModel(calls=calls))
-    result = await graph.ainvoke({"messages": [HumanMessage(content="两人排盘")]}, **kwargs)
+    result = await graph.ainvoke(
+        {"messages": [HumanMessage(content="两人排盘", id="root-input")]}, **kwargs
+    )
     assert FabricatingRootModel.rounds == 1
     receipts = [m for m in result["messages"] if isinstance(m, ToolMessage)]
     assert {m.tool_call_id for m in receipts} == {"call-1", "call-2"}
@@ -116,14 +121,14 @@ async def test_clarification_cannot_bypass_cancellation(stack, monkeypatch):
 
     def cancelled(*args, **kwargs):
         """在工具执行期间取消，随后让 Worker 返回澄清。"""
-        stack.conversation_repository.execution.request_cancel("root")
+        cancel_execution(stack.conversation_repository.execution, "root")
         raise ZiweiError("ZIWEI_INPUT_INCOMPLETE", "请补充查询日期。", ("target",))
 
     monkeypatch.setattr(stack.ziwei_service, "validate_input", cancelled)
     calls = [call("call_agent__ziwei_doushu_agent", 1, task="排盘", arguments={})]
     graph, kwargs = root_graph(stack, calls, model=FabricatingRootModel(calls=calls))
     with pytest.raises(ExecutionConflict, match="cancel"):
-        await graph.ainvoke({"messages": [HumanMessage(content="排盘")]}, **kwargs)
+        await graph.ainvoke({"messages": [HumanMessage(content="排盘", id="root-input")]}, **kwargs)
 
 
 @pytest.mark.parametrize("capability", ["write", "approval", "interaction", "memory", "nested"])
@@ -177,7 +182,9 @@ async def test_parallel_ziwei_workers_isolate_charts_and_share_root_budget(
     ]
     graph, kwargs = root_graph(stack, calls, model=BatchModel(calls=calls))
     message = ("/agent ziwei_doushu_agent " if directive else "") + "查询本命盘和流年盘"
-    result = await graph.ainvoke({"messages": [HumanMessage(content=message)]}, **kwargs)
+    result = await graph.ainvoke(
+        {"messages": [HumanMessage(content=message, id="root-input")]}, **kwargs
+    )
     receipts = [m for m in result["messages"] if isinstance(m, ToolMessage)]
     assert len(receipts) == 2 and all(m.status == "success" for m in receipts)
     charts = {m.tool_call_id: json.loads(m.content)["charts_used"][0] for m in receipts}
@@ -219,7 +226,9 @@ async def test_parallel_workers_cannot_overdraw_root_tool_budget(stack):
     ]
     graph, kwargs = root_graph(stack, calls, model=BatchModel(calls=calls), limits={"tool": 2})
     with pytest.raises(ExecutionConflict, match="budget"):
-        await graph.ainvoke({"messages": [HumanMessage(content="同时排盘")]}, **kwargs)
+        await graph.ainvoke(
+            {"messages": [HumanMessage(content="同时排盘", id="root-input")]}, **kwargs
+        )
     assert stack.conversation_repository.execution.get("root")["tool_calls"] == 2
 
 
@@ -230,7 +239,9 @@ async def test_explicit_json_directive_still_allows_exactly_one_worker_invocatio
     calls = [call("call_agent__ziwei_doushu_agent", index, **arguments) for index in (1, 2)]
     graph, kwargs = root_graph(stack, calls, model=BatchModel(calls=calls))
     message = "/agent ziwei_doushu_agent " + json.dumps(arguments)
-    result = await graph.ainvoke({"messages": [HumanMessage(content=message)]}, **kwargs)
+    result = await graph.ainvoke(
+        {"messages": [HumanMessage(content=message, id="root-input")]}, **kwargs
+    )
     receipts = [m for m in result["messages"] if isinstance(m, ToolMessage)]
     assert len(receipts) == 2
     assert all(json.loads(m.content)["error"] == "unsupported_tool_batch" for m in receipts)
@@ -263,7 +274,9 @@ async def test_parallel_same_chart_reuses_artifact_without_duplicate_insert(stac
         for index in (1, 2)
     ]
     graph, kwargs = root_graph(stack, calls, model=BatchModel(calls=calls))
-    result = await graph.ainvoke({"messages": [HumanMessage(content="两个独立排盘任务")]}, **kwargs)
+    result = await graph.ainvoke(
+        {"messages": [HumanMessage(content="两个独立排盘任务", id="root-input")]}, **kwargs
+    )
     receipts = [m for m in result["messages"] if isinstance(m, ToolMessage)]
     assert len(receipts) == 2 and all(m.status == "success" for m in receipts)
     charts = [json.loads(m.content)["charts_used"][0] for m in receipts]
@@ -341,8 +354,8 @@ async def test_child_function_call_uses_original_context_with_unstructured_paren
     result = await graph.ainvoke(
         {
             "messages": [
-                HumanMessage(content="不属于当前任务的旧消息"),
-                HumanMessage(content=original, id="original"),
+                HumanMessage(content="不属于当前任务的旧消息", id="root-input"),
+                HumanMessage(content=original, id="root-input"),
             ]
         },
         **kwargs,
@@ -351,7 +364,7 @@ async def test_child_function_call_uses_original_context_with_unstructured_paren
     assert public["outcome"] == "chart_only"
     assert len(ContextReadingZiweiModel.inputs) == 1
     value = ContextReadingZiweiModel.inputs[0]
-    assert value["user_context"] == {"message_id": "original", "content": original}
+    assert value["user_context"] == {"message_id": "root-input", "content": original}
     assert value["arguments"]["birth"] == "见用户原问题或引用"
     assert value["task"] == "读取所给资料排盘"
     assert "不属于当前任务的旧消息" not in json.dumps(value, ensure_ascii=False)
@@ -382,4 +395,4 @@ async def test_context_reference_cannot_read_another_subject_artifact(stack):
     ]
     graph, kwargs = root_graph(stack, calls)
     with pytest.raises(ArtifactNotFound):
-        await graph.ainvoke({"messages": [HumanMessage(content="排盘")]}, **kwargs)
+        await graph.ainvoke({"messages": [HumanMessage(content="排盘", id="root-input")]}, **kwargs)

@@ -67,9 +67,9 @@ class FinanceClawSettings(BaseSettings):
         approval_timeout_seconds: 工作流人工审批的等待超时（秒），超时按未决处理。
         workflow_run_timeout_seconds: 工作流单次运行的软超时（秒）。
         mcp_timeout_seconds: 单次 MCP 工具调用的超时（秒）。
-        agent_server_url: 内部 LangGraph Agent Server 地址，启动时按内部主机 allowlist 校验。
-        agent_server_timeout_seconds: Agent Server 出站调用的超时（秒）。
-        agent_server_service_token: Agent Server 服务间 Bearer 令牌，生产必填。
+        internal_api_url: 内部 LangGraph Agent Server 地址，启动时按内部主机 allowlist 校验。
+        native_timeout_seconds: Agent Server 出站调用的超时（秒）。
+        integration_service_token: Agent Server 服务间 Bearer 令牌，生产必填。
         oidc_issuer: OIDC 签发者标识，用于 JWT 校验，生产必填且必须为 HTTPS。
         oidc_audience: OIDC 受众（aud claim 的期望值），生产必填。
         oidc_jwks_url: JWKS 公钥集地址，生产必须为 HTTPS 并通过出站 allowlist 校验。
@@ -79,10 +79,10 @@ class FinanceClawSettings(BaseSettings):
         oidc_scope_claim: JWT 中承载作用域的 claim 名。
         oidc_clock_skew_seconds: JWT 时间断言校验容忍的时钟偏移（秒）。
         oidc_jwks_timeout_seconds: 拉取 JWKS 公钥集的超时（秒）。
-        bff_auth_token: 开发期 BFF 使用的本地静态令牌，属于开发适配，生产禁止配置。
-        bff_tenant_id: 开发期固定的租户 ID。
-        bff_subject_id: 开发期固定的主体 ID。
-        bff_scopes: 开发期授予 BFF 的作用域集合，模拟真实 OIDC scope。
+        api_auth_token: 开发期 API 使用的本地静态令牌，属于开发适配，生产禁止配置。
+        api_tenant_id: 开发期固定的租户 ID。
+        api_subject_id: 开发期固定的主体 ID。
+        api_scopes: 开发期授予 API 的作用域集合，模拟真实 OIDC scope。
         langsmith_project: LangSmith 追踪上报的项目名。
         langsmith_endpoint: LangSmith API 端点，启动时通过出站 allowlist 校验。
         langsmith_trace_sample_rate: LangSmith 追踪采样率 [0, 1]，生产不得超过 0.1。
@@ -163,22 +163,19 @@ class FinanceClawSettings(BaseSettings):
     approval_timeout_seconds: int = Field(default=900, ge=30, le=86_400)
     workflow_run_timeout_seconds: int = Field(default=300, ge=1, le=86_400)
     mcp_timeout_seconds: float = Field(default=10.0, gt=0, le=60)
-    agent_server_url: str = "http://127.0.0.1:2024"
-    agent_server_timeout_seconds: float = Field(default=30.0, gt=0, le=300)
-    agent_server_service_token: SecretStr | None = None
-    bff_backend_instance_id: str = Field(
-        default="langgraph-main", pattern=r"^[A-Za-z0-9._-]{1,128}$"
-    )
-    bff_callback_url: str | None = None
-    bff_webhook_token: SecretStr | None = None
-    bff_approval_scope: str = Field(default="tools:approve", min_length=1, max_length=128)
-    bff_run_max_step_seconds: float = Field(default=120, ge=1, le=1800)
-    bff_run_ready_backlog_seconds: float = Field(default=120, ge=1, le=86400)
-    bff_run_poll_seconds: float = Field(default=1, ge=0.05, le=30)
-    bff_run_reconcile_seconds: float = Field(default=10, ge=0.1, le=300)
-    bff_run_lease_seconds: float = Field(default=60, ge=3, le=600)
-    bff_run_concurrency: int = Field(default=4, ge=1, le=32)
-    bff_run_grant_seconds: int = Field(default=1800, ge=1, le=86400)
+    process_role: str = Field(default="api", pattern="^(api|worker|integrations)$")
+    internal_api_url: str = "http://127.0.0.1:2024"
+    turn_command_slots: int = Field(default=8, ge=1, le=64)
+    turn_scanner_slots: int = Field(default=8, ge=1, le=64)
+    turn_join_slots: int = Field(default=128, ge=1, le=1024)
+    turn_join_seconds: float = Field(default=20, ge=1, le=60)
+    turn_lease_seconds: int = Field(default=60, ge=10, le=600)
+    turn_renew_seconds: int = Field(default=15, ge=1, le=60)
+    turn_fallback_seconds: float = Field(default=30, ge=0.1, le=300)
+    native_timeout_seconds: float = Field(default=30.0, gt=0, le=300)
+    integration_service_token: SecretStr | None = None
+    approval_scope: str = Field(default="tools:approve", min_length=1, max_length=128)
+    turn_grant_seconds: int = Field(default=1800, ge=1, le=86400)
     feishu_enabled: bool = False
     notification_poll_seconds: float = Field(default=0.2, ge=0.05, le=30)
     notification_lease_seconds: float = Field(default=60, ge=15, le=600)
@@ -207,10 +204,10 @@ class FinanceClawSettings(BaseSettings):
     oidc_scope_claim: str = "scope"
     oidc_clock_skew_seconds: int = Field(default=30, ge=0, le=300)
     oidc_jwks_timeout_seconds: float = Field(default=5.0, gt=0, le=30)
-    bff_auth_token: SecretStr | None = None
-    bff_tenant_id: str = "development"
-    bff_subject_id: str = "developer"
-    bff_scopes: frozenset[str] = Field(
+    api_auth_token: SecretStr | None = None
+    api_tenant_id: str = "development"
+    api_subject_id: str = "developer"
+    api_scopes: frozenset[str] = Field(
         default_factory=lambda: frozenset(
             {
                 "market:read",
@@ -252,15 +249,13 @@ class FinanceClawSettings(BaseSettings):
         default_factory=lambda: frozenset({"api.deepseek.com"})
     )
     internal_service_hosts: frozenset[str] = Field(
-        default_factory=lambda: frozenset(
-            {"127.0.0.1", "localhost", "agent-server", "artifact-store"}
-        )
+        default_factory=lambda: frozenset({"127.0.0.1", "localhost", "api", "artifact-store"})
     )
     readiness_timeout_seconds: float = Field(default=3.0, gt=0, le=30)
     shutdown_timeout_seconds: float = Field(default=20.0, gt=0, le=120)
     outbox_batch_size: int = Field(default=100, ge=1, le=1_000)
     outbox_max_attempts: int = Field(default=8, ge=1, le=100)
-    api_p95_target_ms: int = Field(default=2_500, ge=1)
+    api_p95_target_ms: int = Field(default=500, ge=1)
     context_input_limit: int = Field(default=800_000, ge=1_024)
     context_reserved_output: int = Field(default=32_768, ge=64)
     context_system_policy_reserve: int = Field(default=8_192, ge=0)
@@ -314,30 +309,13 @@ class FinanceClawSettings(BaseSettings):
             ValueError: 生产环境违反安全基线，或通用约束（算法、加密配置）非法。
 
         """
-        if self.bff_callback_url or self.bff_webhook_token:
-            callback = urlparse(self.bff_callback_url or "")
-            if (
-                callback.scheme not in {"http", "https"}
-                or not callback.hostname
-                or callback.username
-                or callback.password
-                or callback.query
-                or callback.fragment
-                or callback.path != f"/internal/webhooks/langgraph/{self.bff_backend_instance_id}"
-            ):
-                raise ValueError("bff_callback_url must be a fixed BFF LangGraph ingress URL")
-            if (
-                self.environment in {Environment.PRODUCTION, Environment.STAGING}
-                and callback.scheme != "https"
-            ):
-                raise ValueError("deployed BFF callback requires HTTPS")
-            if callback.hostname not in self.internal_service_hosts:
-                raise ValueError("BFF callback host must be in internal_service_hosts")
-            if (
-                self.bff_webhook_token is None
-                or len(self.bff_webhook_token.get_secret_value()) < 32
-            ):
-                raise ValueError("bff_webhook_token requires at least 32 characters")
+        if self.turn_lease_seconds <= self.turn_renew_seconds * 2:
+            raise ValueError("Turn lease must exceed two renewal intervals")
+        if (
+            self.integration_service_token
+            and len(self.integration_service_token.get_secret_value()) < 32
+        ):
+            raise ValueError("integration_service_token must contain at least 32 characters")
         # 1. 生产环境基线：禁用调试输出与离线模型。
         if self.ziwei_allow_full_io and self.environment not in {
             Environment.DEVELOPMENT,
@@ -371,9 +349,9 @@ class FinanceClawSettings(BaseSettings):
             raise ValueError("offline_model is only valid for development and tests")
         # 2. 生产环境认证基线：禁用开发令牌，强制完整且仅 HTTPS 的 OIDC 配置。
         if self.environment is Environment.PRODUCTION:
-            if self.bff_auth_token is not None:
+            if self.api_auth_token is not None:
                 raise ValueError(
-                    "bff_auth_token is a development adapter and is forbidden in production"
+                    "api_auth_token is a development adapter and is forbidden in production"
                 )
             oidc_values = (self.oidc_issuer, self.oidc_audience, self.oidc_jwks_url)
             if not all(oidc_values):
@@ -391,8 +369,8 @@ class FinanceClawSettings(BaseSettings):
             if urlparse(self.oidc_jwks_url or "").scheme != "https":
                 raise ValueError("production oidc_jwks_url must use HTTPS")
             # 3. 生产环境服务间与持久化基线：强制服务令牌、PostgreSQL、Alembic 迁移。
-            if self.agent_server_service_token is None:
-                raise ValueError("agent_server_service_token is required in production")
+            if self.integration_service_token is None:
+                raise ValueError("integration_service_token is required in production")
             database_url = self.database_url.get_secret_value()
             if not database_url.startswith(("postgresql+psycopg://", "postgresql://")):
                 raise ValueError("production database_url must use PostgreSQL")

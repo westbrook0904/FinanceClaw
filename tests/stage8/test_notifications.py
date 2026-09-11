@@ -7,23 +7,22 @@ from datetime import timedelta
 import pytest
 from sqlalchemy import func, select
 
-from financeclaw.bff.application.feishu_channel_service import (
+from financeclaw.api.application.feishu_channel_service import (
     FeishuChannelService,
     FeishuInboundMessage,
 )
-from financeclaw.bff.notifications.feishu import Receipt
-from financeclaw.bff.notifications.repository import NotificationRepository, StaleSender
-from financeclaw.bff.notifications.worker import deliver
+from financeclaw.integrations.notifications.feishu import Receipt
+from financeclaw.integrations.notifications.repository import NotificationRepository, StaleSender
+from financeclaw.integrations.notifications.worker import deliver
 from financeclaw.shared.conversation.tables import (
     ChannelConversationBindingRow,
     ConversationMessageRow,
 )
-from financeclaw.shared.execution_ledger.interaction_tables import PendingInteractionRow
-from financeclaw.shared.execution_ledger.root_repository import now
-from financeclaw.shared.execution_ledger.run_tables import RootRunRow
 from financeclaw.shared.notifications.tables import NotificationDeliveryRow as Delivery
 from financeclaw.shared.notifications.tables import NotificationEventRow as Event
 from financeclaw.shared.notifications.tables import NotificationTargetRow as Target
+from financeclaw.shared.turns.tables import ConversationTurnRow, InteractionRow
+from financeclaw.shared.turns.types import now
 from tests.stage8.support import tick
 
 
@@ -68,9 +67,9 @@ class Gateway:
 
 async def admitted(setup):
     """实际飞书应用受理即退出，后续通过BFF 后台循环与 Sender 推进。"""
-    setup.bff.runs.settings = setup.settings
+    setup.api.turns.settings = setup.settings
     service = FeishuChannelService(
-        setup.bff, app_id="app", allowed_open_ids=frozenset({"user"}), scopes=setup.scopes
+        setup.api, app_id="app", allowed_open_ids=frozenset({"user"}), scopes=setup.scopes
     )
     message = FeishuInboundMessage(
         message_id="original",
@@ -85,11 +84,11 @@ async def admitted(setup):
     assert await service.process(message, NoDisplay()) == "accepted"
     with setup.store.sessions() as session:
         target = session.scalar(select(Target))
-        run_id = target.run_id
+        turn_id = target.turn_id
     repository = NotificationRepository(
         setup.store.sessions, app_id="app", allowed_open_ids=frozenset({"user"})
     )
-    return service, message, run_id, repository
+    return service, message, turn_id, repository
 
 
 async def completed(setup):
@@ -120,7 +119,7 @@ def delivery(repository):
 @pytest.mark.asyncio
 async def test_final_intent_atomic_and_independent_of_display(setup):
     """展示退出、重推原消息及审计发布都不会丢失或重复最终投递。"""
-    service, message, run_id, repository = await completed(setup)
+    service, message, turn_id, repository = await completed(setup)
     assert await service.process(message, NoDisplay()) == "accepted"
     with setup.store.sessions() as session:
         event = session.scalar(select(Event).where(Event.kind == "terminal"))
@@ -150,22 +149,22 @@ async def test_notification_failure_rolls_back_journal_and_completion(setup, mon
     """通知意图写入后事务异常，Journal 与 completed 一起回滚；恢复不重跑模型。"""
     from financeclaw.shared.notifications import facts
 
-    _, _, run_id, _ = await admitted(setup)
+    _, _, turn_id, _ = await admitted(setup)
     await tick(setup)
     original = facts.record_progress
 
     def fail_after_intent(session, root):
         """在通知写入与提交之间注入崩溃。"""
         original(session, root)
-        if root.projection["status"] == "completed":
+        if root.status == "completed":
             session.flush()
             raise RuntimeError("synthetic transaction failure")
 
     monkeypatch.setattr(facts, "record_progress", fail_after_intent)
     await tick(setup)
     with setup.store.sessions() as session:
-        assert session.get(RootRunRow, run_id).projection["status"] != "completed"
-        assert session.get(RootRunRow, run_id).last_error == "RuntimeError"
+        assert session.get(ConversationTurnRow, turn_id).status != "completed"
+        assert session.get(ConversationTurnRow, turn_id).last_error_code == "RuntimeError"
         assert set(session.scalars(select(Event.kind))) == {"card"}
         assert session.scalar(select(func.count()).select_from(ConversationMessageRow)) == 1
     monkeypatch.setattr(facts, "record_progress", original)
@@ -248,10 +247,10 @@ async def test_crashed_sender_fencing_and_expired_window(setup):
 @pytest.mark.parametrize("change", ["revoke", "chat", "user", "allowlist"])
 async def test_revoked_or_changed_target_never_receives_final(setup, change):
     """目的地撤销或重绑定，保存 suppressed 结果，不切换其他收件人或发送方式。"""
-    _, _, run_id, repository = await completed(setup)
+    _, _, turn_id, repository = await completed(setup)
     if change == "revoke":
-        setup.bff.runs.notifications(
-            run_id, tenant_id="feishu:tenant", subject_id="feishu:user", revoke=True
+        setup.api.turns.notifications(
+            turn_id, tenant_id="feishu:tenant", subject_id="feishu:user", revoke=True
         )
     elif change == "allowlist":
         repository.allowed_open_ids = frozenset()
@@ -273,11 +272,11 @@ async def test_revoked_or_changed_target_never_receives_final(setup, change):
 async def test_answer_reuses_subscription_and_suppresses_old_interaction(setup):
     """决定消息不另订阅最终回复；已回答的旧提示在发送前被抑制。"""
     setup.backend.questions = True
-    service, message, run_id, repository = await admitted(setup)
+    service, message, turn_id, repository = await admitted(setup)
     for _ in range(8):
         await tick(setup)
     with setup.store.sessions() as session:
-        interaction = session.scalar(select(PendingInteractionRow))
+        interaction = session.scalar(select(InteractionRow))
         identifier, revision = interaction.interaction_id, interaction.revision
     repository.materialize()
     assert (
@@ -285,7 +284,7 @@ async def test_answer_reuses_subscription_and_suppresses_old_interaction(setup):
             replace(
                 message,
                 message_id="answer-message",
-                text=f'/answer {identifier} {revision} {{"analysis_period": "2026"}}',
+                text=f'/answer {identifier} {revision} {{"text": "2026"}}',
             ),
             NoDisplay(),
         )
@@ -303,7 +302,8 @@ async def test_answer_reuses_subscription_and_suppresses_old_interaction(setup):
     with repository.sessions() as session:
         assert session.scalar(select(func.count()).select_from(Target)) == 1
         assert {row.status for row in session.scalars(select(Delivery))} == {"sent"}
-    assert len(gateway.calls) == 1
+    assert len(gateway.calls) == 2  # 最新任务卡及唯一最终文本。
+    assert all("请补充时制" not in call["content"] for call in gateway.calls)
     assert "analysis_period" not in gateway.calls[0]["content"]
     assert gateway.calls[0]["address"]["message_id"] == "original"
 
@@ -311,7 +311,7 @@ async def test_answer_reuses_subscription_and_suppresses_old_interaction(setup):
 @pytest.mark.asyncio
 async def test_chunks_are_ordered_and_uncertain_blocks_later_parts(setup):
     """每片有固定 UUID；前片未知时不能越过它，重启不再切分或补发首片。"""
-    from financeclaw.bff.notifications.rendering import chunks
+    from financeclaw.integrations.notifications.rendering import chunks
 
     assert "".join(part.split("\n", 1)[1] for part in chunks("数据🧪" * 1500)) == "数据🧪" * 1500
     _, _, _, repository = await completed(setup)
@@ -346,14 +346,16 @@ async def test_concurrent_sender_claims_one_original_delivery(setup):
 async def test_expired_or_cancelled_interaction_is_not_prompted(setup, obsolete):
     """即使原事件未消费或 BFF 尚未处理过期，也不能发送旧决定请求。"""
     setup.backend.questions = True
-    _, _, run_id, repository = await admitted(setup)
+    _, _, turn_id, repository = await admitted(setup)
     for _ in range(8):
         await tick(setup)
     if obsolete == "expired":
         with repository.sessions.begin() as session:
-            session.scalar(select(PendingInteractionRow)).expires_at = now() - timedelta(seconds=1)
+            session.scalar(select(InteractionRow)).expires_at = now() - timedelta(seconds=1)
     else:
-        await setup.bff.cancel(run_id, tenant_id="feishu:tenant", subject_id="feishu:user")
+        await setup.api.turns.cancel(
+            turn_id, tenant_id="feishu:tenant", subject_id="feishu:user", command_id="test-cancel"
+        )
     while repository.materialize():
         pass
     gateway = Gateway()

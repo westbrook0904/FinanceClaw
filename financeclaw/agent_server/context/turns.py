@@ -16,11 +16,11 @@ def trusted_context(runtime: Any) -> ExecutionContext:
 def user_anchor(context: ExecutionContext, repository: Any) -> str | None:
     """生产执行使用业务快照冻结的当前用户消息 ID。"""
     execution = getattr(repository, "execution", None)
-    if context.root_run_id and execution is not None:
+    if context.turn_id and execution is not None:
         execution.verify_context(context)
-        snapshot = execution.get(context.root_run_id)["snapshot"]
+        snapshot = execution.get(context.turn_id)["release_snapshot"]
         anchor = snapshot.get("user_message_id")
-        if snapshot.get("driver_version") and not anchor:
+        if not anchor:
             raise ValueError("business root snapshot is missing its user message anchor")
         return anchor
     return None

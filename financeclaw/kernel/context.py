@@ -1,6 +1,6 @@
 """跨层共享的运行时上下文契约：租户、主体、会话定位与数据分级。
 
-本模块属于 kernel，共享给 BFF、Agent Server 与持久化设施，
+本模块属于 kernel，共享给 API、Agent Server 与持久化设施，
 自身不依赖业务实现。
 """
 
@@ -30,7 +30,7 @@ Identifier = Annotated[str, Field(min_length=1, max_length=128, pattern=r"^[A-Za
 class ExecutionContext(BaseModel):
     """一次运行的执行上下文：携带租户、主体、会话定位与数据分级等背景信息。
 
-    使用场景：BFF 受理请求后构造，随根执行贯穿服务与持久化设施，
+    使用场景：API 受理请求后构造，随根执行贯穿服务与持久化设施，
     用于多租户隔离、授权判定、审计归属与观测标注。
 
     Attributes:
@@ -39,7 +39,7 @@ class ExecutionContext(BaseModel):
         scopes: 授予本次运行的作用域集合，供 Tool/Workflow 的授权策略校验。
         conversation_id: 会话 ID；独立领域单元测试可省略。
         turn_id: 轮次 ID，定位会话中由一次用户输入触发的工作单元。
-        run_id: 本次运行的唯一 ID，贯穿审计、状态查询与流式事件。
+        turn_id: 本次运行的唯一 ID，贯穿审计、状态查询与流式事件。
         data_classification: 本次运行的数据密级，默认 ``INTERNAL``。
         locale: 语言环境标签，影响回复语言与本地化格式，默认 ``zh-CN``。
         timezone: IANA 时区名，用于时间展示与调度类逻辑，默认 ``Asia/Shanghai``。
@@ -53,9 +53,8 @@ class ExecutionContext(BaseModel):
     scopes: frozenset[str] = Field(default_factory=frozenset)
     conversation_id: Identifier | None = None
     turn_id: Identifier
-    run_id: Identifier
+    command_id: Identifier | None = None
     # 产品执行始终指向自身，Worker 继承该 ID；独立叶子测试可省略。
-    root_run_id: Identifier | None = None
     # 服务端固定的带时区 ISO 时间，供“今年”等相对时间解析及恢复重放使用。
     request_clock: str | None = None
     data_classification: DataClassification = DataClassification.INTERNAL
@@ -85,6 +84,5 @@ class ExecutionContext(BaseModel):
             "tenant_hash": digest(self.tenant_id),
             "subject_hash": digest(self.subject_id),
             "turn_id": self.turn_id,
-            "run_id": self.run_id,
             "data_classification": self.data_classification.value,
         }

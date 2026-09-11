@@ -46,7 +46,7 @@ agent-server = [
 ]
 dev = [
     "langgraph-cli[inmem]==0.4.31",
-    "langgraph-api==0.13.3",
+    "langgraph-api==0.14.0",
     "pip-audit>=2.9,<3",
     "pytest>=9,<10",
     "pytest-asyncio>=1.3,<2",
@@ -74,9 +74,6 @@ ignore = [
     "D400",  # Ruff 尚不能识别中文句号作为结尾标点。
     "D415",  # 中文说明统一使用全角句号。
 ]
-
-[tool.setuptools]
-py-modules = ["main"]
 
 [tool.setuptools.packages.find]
 include = ["financeclaw*"]

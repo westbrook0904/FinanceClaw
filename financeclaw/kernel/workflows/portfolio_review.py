@@ -119,7 +119,7 @@ class PortfolioReviewOutput(_FrozenModel):
     Attributes:
         workflow_id: 工作流标识，固定为 portfolio_review。
         workflow_version: 工作流版本，固定为 1.0.0。
-        run_id: 本次运行的唯一 ID。
+        turn_id: 本次运行的唯一 ID。
         status: 终态：completed（已发布报告）、rejected（审批驳回）或 failed。
         arguments_hash: 归一化输入的规范哈希，串联审计与审批比对。
         portfolio_name: 组合名称（回显输入）。
@@ -135,7 +135,7 @@ class PortfolioReviewOutput(_FrozenModel):
 
     workflow_id: Literal["portfolio_review"]
     workflow_version: Literal["1.1.0"]
-    run_id: str
+    turn_id: str
     status: Literal["completed", "rejected", "failed"]
     arguments_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
     portfolio_name: str

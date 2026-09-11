@@ -1,6 +1,6 @@
 """跨层共享的请求/响应契约模型，覆盖根运行受理、会话轮次与只读投影。
 
-本模块属于 kernel（稳定共享契约层）：BFF 与共享持久化设施据此
+本模块属于 kernel（稳定共享契约层）：API 与共享持久化设施据此
 收发数据；所有模型均继承 ``ContractModel``，禁止未声明的额外字段。
 """
 
@@ -20,9 +20,9 @@ class ContractModel(BaseModel):
 
 
 class ConversationTurnRequest(ContractModel):
-    """创建 message-only Turn 的请求体，即 BFF 唯一产品写入口的入参。
+    """创建 message-only Turn 的请求体，即 API 唯一产品写入口的入参。
 
-    使用场景：终端用户在会话中发言时，BFF 用它创建 Conversation + Turn，
+    使用场景：终端用户在会话中发言时，API 用它创建 Conversation + Turn，
     由 finance_agent 决定直接回答、调用能力或子图调用。
 
     Attributes:
@@ -33,52 +33,14 @@ class ConversationTurnRequest(ContractModel):
     message: Annotated[str, Field(min_length=1, max_length=32_000)]
 
 
-class RunAccepted(ContractModel):
-    """Run 受理成功的响应体：返回运行定位信息与初始状态。
+class TurnAccepted(ContractModel):
+    """Durably accepted input; native admission may still be pending."""
 
-    使用场景：运行入口同步受理请求后立即返回，调用方凭 ``run_id``
-    查询状态或订阅流式事件。
-
-    Attributes:
-        run_id: 受理的运行 ID。
-        thread_id: LangGraph 线程 ID，用于状态查询与流式订阅。
-        status: 受理时的初始状态字符串，由服务端状态机定义。
-        target_kind: 当前固定为 agent，表示顶层会话根。
-        idempotent_replay: True 表示本次为幂等重放，复用了先前同键请求的结果。
-        conversation_id: 关联的会话 ID；无会话上下文时为 None。
-        turn_id: 关联的轮次 ID；无会话上下文时为 None。
-
-    """
-
-    run_id: str
-    thread_id: str
-    status: str
-    target_kind: str
-    idempotent_replay: bool = False
-    conversation_id: str | None = None
-    turn_id: str | None = None
-
-
-class ConversationTurnAccepted(ContractModel):
-    """会话轮次受理成功的响应体：返回会话、轮次与运行的定位信息。
-
-    使用场景：BFF 创建 message-only Turn 成功后返回，客户端据此轮询
-    ``run_id`` 或订阅流式事件以获取 Agent 回复。
-
-    Attributes:
-        run_id: 本轮触发的运行 ID。
-        status: 受理时的初始状态字符串，由服务端状态机定义。
-        idempotent_replay: True 表示本次为幂等重放，复用了先前同键请求的结果。
-        conversation_id: 会话 ID。
-        turn_id: 本轮次 ID。
-
-    """
-
-    run_id: str
-    status: str
-    idempotent_replay: bool = False
     conversation_id: str
     turn_id: str
+    status: str
+    revision: int
+    idempotent_replay: bool = False
 
 
 class CreateConversationRequest(ContractModel):
@@ -150,28 +112,17 @@ class ConversationMessagesResponse(ContractModel):
     messages: tuple[ConversationMessageResponse, ...]
 
 
-class RunStatusResponse(ContractModel):
-    """Run 状态查询的响应体。
+class TurnSnapshot(ContractModel):
+    """Safe current product state, independent of native resource identifiers."""
 
-    使用场景：客户端轮询运行状态时使用；到达终态后 ``output`` 携带
-    运行输出。
-
-    Attributes:
-        run_id: 被查询的运行 ID。
-        thread_id: LangGraph 线程 ID。
-        status: 当前状态字符串，由服务端状态机定义。
-        output: 运行输出（对象或列表）；尚未产生输出时为 None。
-
-    """
-
-    run_id: str
-    thread_id: str
+    conversation_id: str
+    turn_id: str
     status: str
-    output: dict[str, Any] | list[Any] | None = None
-    waiting_reason: str | None = None
+    revision: int
+    reason: str | None = None
     pending_interactions: tuple[dict[str, Any], ...] = ()
-    last_decision: str | None = None
-    authorization_revision: int | None = None
+    output: dict[str, Any] | None = None
+    authorization_revision: int
 
 
 class ArtifactReference(ContractModel):

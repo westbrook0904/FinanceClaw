@@ -1,0 +1,205 @@
+{
+  "queued": {
+    "conversation_id": "conversation-67cc6d1d18854d27b0d142784d79d583",
+    "turn_id": "c4f5307a-ad8b-4ddf-b4c5-c1fb2f53d0b3",
+    "status": "accepted",
+    "revision": 1,
+    "idempotent_replay": false
+  },
+  "product_api_does_not_execute": true,
+  "root": {
+    "conversation_id": "conversation-a92107870cef489187afae68b9444418",
+    "turn_id": "52cbd310-7d53-41ab-85d0-e6a68095fe72",
+    "status": "accepted",
+    "revision": 1,
+    "idempotent_replay": false
+  },
+  "root_wait": {
+    "conversation_id": "conversation-a92107870cef489187afae68b9444418",
+    "turn_id": "52cbd310-7d53-41ab-85d0-e6a68095fe72",
+    "status": "waiting",
+    "revision": 4,
+    "reason": "user_interaction",
+    "pending_interactions": [
+      {
+        "interaction_id": "interaction-515d88528c18dbc0fdfa7b89e15a05f3099467f12e8ce814d4d885c3b948f60f",
+        "turn_id": "52cbd310-7d53-41ab-85d0-e6a68095fe72",
+        "revision": 1,
+        "kind": "input",
+        "status": "pending",
+        "question": "合成问题：选择哪个市场？",
+        "expires_at": "2026-09-11T06:58:09.563450+00:00",
+        "response_url": "/v1/interactions/interaction-515d88528c18dbc0fdfa7b89e15a05f3099467f12e8ce814d4d885c3b948f60f/responses",
+        "response_schema": {
+          "type": "object",
+          "required": [
+            "text"
+          ],
+          "properties": {
+            "text": {
+              "type": "string",
+              "title": "你的回答",
+              "maxLength": 8000,
+              "minLength": 1
+            }
+          },
+          "additionalProperties": false
+        }
+      }
+    ],
+    "output": null,
+    "authorization_revision": 1
+  },
+  "nested": {
+    "conversation_id": "conversation-9061af8c9da548969c70199a721c1db9",
+    "turn_id": "cd2af605-721b-46f6-b1e7-e4a983e0da9c",
+    "status": "accepted",
+    "revision": 1,
+    "idempotent_replay": false
+  },
+  "nested_wait": {
+    "conversation_id": "conversation-9061af8c9da548969c70199a721c1db9",
+    "turn_id": "cd2af605-721b-46f6-b1e7-e4a983e0da9c",
+    "status": "waiting",
+    "revision": 4,
+    "reason": "user_interaction",
+    "pending_interactions": [
+      {
+        "interaction_id": "interaction-7abe98ed07bb0268211319d4b6a9e713d7ad8fd08eb2abac1e72dae0a0e8bc62",
+        "turn_id": "cd2af605-721b-46f6-b1e7-e4a983e0da9c",
+        "revision": 1,
+        "kind": "approval",
+        "status": "pending",
+        "question": "请确认 publish_portfolio_report",
+        "expires_at": "2026-09-11T06:58:10.203718+00:00",
+        "response_url": "/v1/interactions/interaction-7abe98ed07bb0268211319d4b6a9e713d7ad8fd08eb2abac1e72dae0a0e8bc62/responses",
+        "action_hash": "a4f553743f354902a23c6af0cc6a50a981acef92c70941e7ce4682a93574e816",
+        "allowed_decisions": [
+          "approve",
+          "reject"
+        ],
+        "action": {
+          "summary": {
+            "risk_band": "high",
+            "total_market_value": "200.00",
+            "largest_position_weight": "1.0000"
+          },
+          "turn_id": "cd2af605-721b-46f6-b1e7-e4a983e0da9c",
+          "worker_id": "portfolio_review",
+          "expires_at": "2026-09-11T06:58:10.203718+00:00",
+          "approval_id": "approval-8f69b10a35a8ec31514d2aeb",
+          "worker_kind": "workflow",
+          "workflow_id": "portfolio_review",
+          "invocation_id": "2c69fd0dc8076b228555728e8d8e8741bf6a6d321591870a48d40b702e43fe1f",
+          "approval_point": "publish_portfolio_report",
+          "arguments_hash": "bc82e08049ae1d5682492ae5bda2aa5c36c852ec205b6c7ef6edca5e05ed9555",
+          "required_scope": "workflows:approve",
+          "worker_version": "1.1.0",
+          "requested_action": "publish_portfolio_report",
+          "workflow_version": "1.1.0",
+          "allowed_decisions": [
+            "approve",
+            "reject"
+          ],
+          "root_tool_call_id": "offline-call_workflow__portfolio_review-call"
+        }
+      }
+    ],
+    "output": null,
+    "authorization_revision": 1
+  },
+  "nested_native_hitl": true,
+  "root_decision": {
+    "interaction_id": "interaction-515d88528c18dbc0fdfa7b89e15a05f3099467f12e8ce814d4d885c3b948f60f",
+    "turn_id": "52cbd310-7d53-41ab-85d0-e6a68095fe72",
+    "revision": 1,
+    "kind": "input",
+    "status": "resolved",
+    "question": "合成问题：选择哪个市场？",
+    "expires_at": "2026-09-11T06:58:09.563450+00:00",
+    "response_url": "/v1/interactions/interaction-515d88528c18dbc0fdfa7b89e15a05f3099467f12e8ce814d4d885c3b948f60f/responses",
+    "response_schema": {
+      "type": "object",
+      "required": [
+        "text"
+      ],
+      "properties": {
+        "text": {
+          "type": "string",
+          "title": "你的回答",
+          "maxLength": 8000,
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "nested_decision": {
+    "interaction_id": "interaction-7abe98ed07bb0268211319d4b6a9e713d7ad8fd08eb2abac1e72dae0a0e8bc62",
+    "turn_id": "cd2af605-721b-46f6-b1e7-e4a983e0da9c",
+    "revision": 1,
+    "kind": "approval",
+    "status": "rejected",
+    "question": "请确认 publish_portfolio_report",
+    "expires_at": "2026-09-11T06:58:10.203718+00:00",
+    "response_url": "/v1/interactions/interaction-7abe98ed07bb0268211319d4b6a9e713d7ad8fd08eb2abac1e72dae0a0e8bc62/responses",
+    "action_hash": "a4f553743f354902a23c6af0cc6a50a981acef92c70941e7ce4682a93574e816",
+    "allowed_decisions": [
+      "approve",
+      "reject"
+    ],
+    "action": {
+      "summary": {
+        "risk_band": "high",
+        "total_market_value": "200.00",
+        "largest_position_weight": "1.0000"
+      },
+      "turn_id": "cd2af605-721b-46f6-b1e7-e4a983e0da9c",
+      "worker_id": "portfolio_review",
+      "expires_at": "2026-09-11T06:58:10.203718+00:00",
+      "approval_id": "approval-8f69b10a35a8ec31514d2aeb",
+      "worker_kind": "workflow",
+      "workflow_id": "portfolio_review",
+      "invocation_id": "2c69fd0dc8076b228555728e8d8e8741bf6a6d321591870a48d40b702e43fe1f",
+      "approval_point": "publish_portfolio_report",
+      "arguments_hash": "bc82e08049ae1d5682492ae5bda2aa5c36c852ec205b6c7ef6edca5e05ed9555",
+      "required_scope": "workflows:approve",
+      "worker_version": "1.1.0",
+      "requested_action": "publish_portfolio_report",
+      "workflow_version": "1.1.0",
+      "allowed_decisions": [
+        "approve",
+        "reject"
+      ],
+      "root_tool_call_id": "offline-call_workflow__portfolio_review-call"
+    }
+  },
+  "waiting_survives_api_worker_restart": true,
+  "root_final": {
+    "status": "completed",
+    "journal_messages": 2
+  },
+  "nested_final": {
+    "status": "completed",
+    "journal_messages": 2
+  },
+  "resume_survives_api_worker_restart": true,
+  "native_external_access": {
+    "/threads": 403,
+    "/assistants/search": 403,
+    "/crons/search": 403,
+    "/mcp": 403,
+    "/threads/search": 403,
+    "/runs": 403,
+    "/store/items": 403,
+    "/noauth/threads": 403,
+    "/a2a/finance_agent": 403
+  },
+  "store_maintenance": {
+    "scoped_crud": true,
+    "thread_denied": true,
+    "unbounded_namespace_denied": true
+  },
+  "passed": true,
+  "quote_fixture": "Current synthetic quote timestamp; unchanged product graph/policies"
+}
