@@ -203,7 +203,13 @@ class NotificationRepository:
                 return False
             if row.first_attempt_at is None:
                 root = session.get(ConversationTurnRow, target.turn_id)
-                if event.revision < root.revision:
+                if event.payload.get("revision", event.revision) < root.revision:
+                    return False
+                if event.payload.get("stream") and (
+                    not target.active
+                    or root.cancel_requested_at
+                    or event.revision < target.card_payload.get("card_revision", 0)
+                ):
                     return False
                 item = event.payload.get("interaction")
                 if item:

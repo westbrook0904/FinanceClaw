@@ -6,6 +6,7 @@ from uuid import uuid4
 
 from sqlalchemy import update
 
+from financeclaw.api.application.turns.answer_stream import TurnAnswerStream
 from financeclaw.api.application.turns.commands import CommandService
 from financeclaw.api.application.turns.results import ResultService
 from financeclaw.shared.infrastructure.asyncio import run_sync
@@ -22,6 +23,7 @@ class TurnLifecycle:
         """Inject dependencies without starting background work."""
         self.service, self.native, self.settings = service, native, service.settings
         self.commands, self.results = CommandService(service, native), ResultService(service)
+        self.answers = TurnAnswerStream(service, native)
         self.owner = f"api-{uuid4()}"
         self._wake = asyncio.Event()
         self._tasks = []
@@ -162,7 +164,7 @@ class TurnLifecycle:
         try:
             # Join waits for a native fact without holding a Turn lease or executing a graph.
             async with asyncio.timeout(self.settings.turn_join_seconds):
-                await self.native.join(turn, command)
+                await self.answers.join(turn, command)
         except Exception as exc:
             if not isinstance(exc, TimeoutError):
                 LOGGER.info(

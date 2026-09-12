@@ -123,6 +123,7 @@ def record_progress(session, root) -> None:
         )
     pending = projection.get("pending_interactions", [])
     payload = {
+        "revision": root.revision,
         "turn_id": root.turn_id,
         "status": projection["status"],
         "waiting_reason": projection.get("reason"),
@@ -137,14 +138,23 @@ def record_progress(session, root) -> None:
         },
         "created_at": now().isoformat(),
     }
-    target.card_payload = payload
     event_id = digest([target.target_id, "card", root.revision])
     if session.get(NotificationEventRow, event_id) is None:
+        stream = target.card_payload.get("stream", {})
+        if (
+            projection["status"] in {"queued", "running", "resuming"}
+            and stream.get("command_id") == root.current_command_id
+        ):
+            payload["stream"] = stream
+        payload["card_revision"] = max(
+            root.revision, target.card_payload.get("card_revision", target.card_sequence) + 1
+        )
+        target.card_payload = payload
         session.add(
             NotificationEventRow(
                 event_id=event_id,
                 target_id=target.target_id,
-                revision=root.revision,
+                revision=payload["card_revision"],
                 kind="card",
                 payload=payload,
             )

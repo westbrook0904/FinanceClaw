@@ -300,6 +300,11 @@ def render_card(event_id, payload):
         )
     else:
         elements.append({"tag": "markdown", "content": payload.get("task", "本轮任务")})
+    preview = payload.get("stream", {}).get("text")
+    if preview and status in {"queued", "running", "resuming"}:
+        elements.append({"tag": "markdown", "content": preview})
+        if payload["stream"].get("truncated"):
+            elements.append({"tag": "markdown", "content": "正文较长，完整回复将在生成后送达。"})
     grant = payload["grant"]
     if not ended:
         unavailable = grant["revoked"] or payload.get("waiting_reason") == "authorization_required"

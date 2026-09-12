@@ -1,5 +1,7 @@
 """Native LangGraph commands and checkpoint evidence through the injected SDK client."""
 
+from contextlib import aclosing
+
 from langgraph_sdk.errors import NotFoundError
 
 from financeclaw.kernel.turns import current_turn_start, is_user_message
@@ -147,12 +149,28 @@ class NativeRuns:
             },
             multitask_strategy="reject",
             durability="sync",
+            stream_mode=["messages-tuple"],
+            stream_resumable=True,
         )
         return self.verify(run, turn, command)["run_id"]
 
     async def join(self, turn, command):
         """Wait for a native terminal hint without leasing or executing graph work."""
         await self.client.runs.join(turn["thread_id"], command["native_run_id"])
+
+    async def stream(self, turn, command, *, last_event_id):
+        """订阅已核对身份的原生运行，断开订阅不取消执行；游标用于断点续传。"""
+        await self.get(turn, command)
+        async with aclosing(
+            self.client.runs.join_stream(
+                turn["thread_id"],
+                command["native_run_id"],
+                last_event_id=last_event_id,
+                cancel_on_disconnect=False,
+            )
+        ) as stream:
+            async for part in stream:
+                yield part
 
     async def cancel(self, turn, command):
         """核对原生回执；已结束的运行无需再次取消，避免取消接口 404 阻塞会话。"""

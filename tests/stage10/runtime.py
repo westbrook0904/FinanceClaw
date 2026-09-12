@@ -75,6 +75,11 @@ class NativeClient:
         """Provide the join boundary for this test scenario."""
         await asyncio.Event().wait()
 
+    async def join_stream(self, *args, **kwargs):
+        """默认保持订阅，流式测试通过可控事件源替换该传输。"""
+        await asyncio.Event().wait()
+        yield
+
 
 @pytest_asyncio.fixture
 async def runtime(tmp_path):
