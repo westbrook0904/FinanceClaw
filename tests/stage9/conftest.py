@@ -7,7 +7,8 @@ from financeclaw.agent_server.memory.service import LongTermMemoryService
 from financeclaw.shared.artifacts.repository import SqlAlchemyArtifactRepository
 from financeclaw.shared.artifacts.service import ArtifactService
 from financeclaw.shared.artifacts.storage import LocalArtifactStore
-from financeclaw.shared.audit.repository import InMemoryAuditRepository
+from financeclaw.shared.memory.intake import MemoryIntake
+from financeclaw.shared.memory.models import MemoryActor
 from tests.stage3.support import conversation_context, journal
 
 
@@ -22,7 +23,21 @@ def memory_stack(tmp_path):
         inline_bytes=512,
     )
     service = LongTermMemoryService(
-        conversation_repository=repository, audit=InMemoryAuditRepository()
+        sessions=database.session_factory, conversation_repository=repository
     )
+    with database.session_factory.begin() as session:
+        MemoryIntake(
+            database.session_factory, auto_commit_low_risk=False
+        ).register_message_in_session(
+            session,
+            MemoryActor(
+                tenant_id=context.tenant_id,
+                subject_id=context.subject_id,
+                scopes=context.scopes,
+                turn_id=context.turn_id,
+                conversation_id=context.conversation_id,
+            ),
+            message_id,
+        )
     yield context, message_id, repository, artifacts, service, InMemoryStore()
     database.close()

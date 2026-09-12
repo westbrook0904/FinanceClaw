@@ -51,4 +51,19 @@ def conversation_context(
     context = seed_execution(repository.execution, context, snapshot, message=message)
     with repository._sessions() as session:
         message_id = session.get(ConversationTurnRow, context.turn_id).user_message_id
+    from financeclaw.shared.memory.intake import MemoryIntake
+    from financeclaw.shared.memory.models import MemoryActor
+
+    with repository._sessions.begin() as session:
+        MemoryIntake(repository._sessions, auto_commit_low_risk=False).register_message_in_session(
+            session,
+            MemoryActor(
+                tenant_id=context.tenant_id,
+                subject_id=context.subject_id,
+                scopes=context.scopes,
+                turn_id=context.turn_id,
+                conversation_id=context.conversation_id,
+            ),
+            message_id,
+        )
     return context, message_id

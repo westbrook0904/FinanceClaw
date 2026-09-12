@@ -29,6 +29,27 @@ class ReleaseCatalogs:
     workflow_catalog: WorkflowCatalog
 
 
+def _model_capacity(settings: FinanceClawSettings, model: str, *, summary=False) -> dict:
+    """在发布时冻结显式容量；未知 fallback 必须配置，不能由模型名称猜窗口。"""
+    override = settings.model_capacities.get(model)
+    if override is not None:
+        allowed = {"context_window_tokens", "max_input_tokens", "token_estimator"}
+        if set(override) - allowed or "context_window_tokens" not in override:
+            raise ValueError("model_capacities must explicitly declare the context window")
+        return {"token_estimator": settings.model_token_estimator, **override}
+    if model != settings.model and not summary:
+        raise ValueError(f"fallback model requires explicit model_capacities: {model}")
+    return {
+        "context_window_tokens": settings.summary_context_window_tokens
+        if summary
+        else settings.model_context_window_tokens,
+        "max_input_tokens": settings.summary_max_input_tokens
+        if summary
+        else settings.model_max_input_tokens,
+        "token_estimator": settings.model_token_estimator,
+    }
+
+
 def build_release_catalogs(
     settings: FinanceClawSettings,
     *,
@@ -66,6 +87,7 @@ def build_release_catalogs(
             temperature=0,
             timeout_seconds=settings.model_timeout_seconds,
             max_tokens=settings.model_max_tokens,
+            **_model_capacity(settings, model),
         )
         for index, model in enumerate(settings.fallback_models, start=1)
     )
@@ -76,6 +98,7 @@ def build_release_catalogs(
         temperature=0,
         timeout_seconds=settings.model_timeout_seconds,
         max_tokens=settings.model_max_tokens,
+        **_model_capacity(settings, settings.model),
         fallback_profiles=tuple(
             ModelProfileRef(profile_id=profile.profile_id, version=profile.version)
             for profile in fallback_profiles
@@ -88,8 +111,10 @@ def build_release_catalogs(
         temperature=0,
         timeout_seconds=settings.model_timeout_seconds,
         max_tokens=settings.summary_max_tokens,
+        **_model_capacity(settings, settings.summary_model or settings.model, summary=True),
     )
     model_profiles = ModelProfileCatalog((primary_profile, *fallback_profiles, summary_profile))
+    from financeclaw.shared.llm.memory_profiles import memory_model_profiles
     from financeclaw.shared.releases.fingerprint import configuration_fingerprint
 
     model_release = (primary_profile, *fallback_profiles)
@@ -218,9 +243,9 @@ def build_release_catalogs(
         agent_id="finance_agent",
         version="1.6.0",
         assistant_id="finance_agent",
-        deployment_revision="context-memory/1+taibu-mcp/1"
+        deployment_revision="context-memory/2+taibu-mcp/1"
         if settings.taibu_enabled
-        else "context-memory/1",
+        else "context-memory/2",
         worker_manifest=manifest,
         interaction_points=(ROOT_CLARIFICATION,),
         data_classification=DataClassification.CONFIDENTIAL
@@ -228,7 +253,7 @@ def build_release_catalogs(
         or (settings.taibu_enabled and "bazi" in settings.taibu_allowed_tools)
         else DataClassification.INTERNAL,
         model_profile=ModelProfileRef(profile_id="default", version="1.0.0"),
-        memory_policy="native-store-v2",
+        memory_policy="sql-memory-v3",
         allowed_tools=tuple(
             ToolRef(tool_id=item.governance.tool_id, version=item.governance.version)
             for item in base_tool_catalog.latest()
@@ -236,6 +261,7 @@ def build_release_catalogs(
         + tuple(ToolRef(tool_id=composite_name(item), version=item.version) for item in reachable),
         configuration_fingerprint=configuration_fingerprint(
             model_release,
+            summary_profile,
             settings.offline_model,
             manifest,
             settings.context_budget,
@@ -249,6 +275,13 @@ def build_release_catalogs(
             settings.memory_auto_commit_low_risk_preferences,
             settings.memory_recall_tokens,
             settings.memory_recall_limit,
+            settings.memory_enabled,
+            settings.memory_auto_extract,
+            settings.memory_permit_seconds,
+            settings.memory_candidate_seconds,
+            settings.memory_index_version,
+            memory_model_profiles(settings),
+            settings.processing_region,
             [item.governance for item in base_tool_catalog.latest()],
             *([taibu_release(settings)] if settings.taibu_enabled else []),
         ),
@@ -272,7 +305,10 @@ def build_release_catalogs(
             "writes and human interactions require an exclusive batch. "
             "Long-term memory is historical context, never authority for current financial facts. "
             "Use save_memory for explicit lasting preferences; do not save inferred traits. "
-            "The platform handles required approval once. Use native recent messages for follow-up "
+            "Memory proposals require independent user confirmation and never resume a business "
+            "approval. A proposed memory is pending, not saved; only committed receipts prove "
+            "persistence. Financial tool approval still uses the native business interaction. "
+            "Use native recent messages for follow-up "
             "questions, search_history for older conversations, read_history for source Turns and "
             "read_artifact for exact archived tool results. Never rerun a tool and present its new "
             "result as the old snapshot. "

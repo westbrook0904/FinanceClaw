@@ -83,8 +83,7 @@ class ModelFactory:
         model.metadata = {
             **(model.metadata or {}),
             "financeclaw_model_profile": {
-                "profile_id": profile.profile_id,
-                "version": profile.version,
+                **profile.model_dump(mode="json"),
             },
         }
         return model

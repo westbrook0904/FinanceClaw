@@ -217,6 +217,10 @@ class ModelContextManifestRow(Base):
     model: Mapped[str] = mapped_column(String(256), nullable=False)
     subtype: Mapped[str] = mapped_column(String(32), nullable=False)
     token_count_method: Mapped[str] = mapped_column(String(64), nullable=False)
+    memory_owner_revision: Mapped[int | None] = mapped_column(Integer)
+    privacy_epoch: Mapped[int | None] = mapped_column(Integer)
+    working_summary_version: Mapped[int | None] = mapped_column(Integer)
+    compaction_reason: Mapped[str | None] = mapped_column(String(64))
     summary_sources: Mapped[list[dict[str, Any]]] = mapped_column(
         JSON, nullable=False, default=list
     )
@@ -226,6 +230,8 @@ class ModelContextManifestRow(Base):
     tool_result_refs: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     exposed_tools: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     input_token_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    observed_input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    observed_output_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     available_input_tokens: Mapped[int] = mapped_column(Integer, nullable=False)
     omissions: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False, default=list)
     context_hash: Mapped[str] = mapped_column(String(64), nullable=False)

@@ -19,6 +19,22 @@ class TurnService:
         self.store, self.sessions = store, store.sessions
         self.journal, self.releases, self.settings = journal, releases, settings
         self.execution = TurnExecutionRepository(store.sessions)
+        from financeclaw.shared.llm.memory_profiles import (
+            memory_model_profiles,
+            memory_profile_fingerprint,
+        )
+        from financeclaw.shared.memory.intake import MemoryIntake
+
+        self.memory_intake = MemoryIntake(
+            store.sessions,
+            auto_commit_low_risk=settings.memory_auto_commit_low_risk_preferences,
+            enabled=settings.memory_enabled,
+            permit_seconds=settings.memory_permit_seconds,
+            candidate_seconds=settings.memory_candidate_seconds,
+        )
+        self.memory_profile_fingerprint = memory_profile_fingerprint(
+            memory_model_profiles(settings)[0]
+        )
         self.admission, self.interactions = TurnAdmission(self), TurnInteractions(self)
         self.lifecycle = None
         self.events = None

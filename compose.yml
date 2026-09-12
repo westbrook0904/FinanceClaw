@@ -1,7 +1,7 @@
-name: financeclaw-stage10
+name: financeclaw-stage11
 
 x-application: &application
-  image: financeclaw:stage10
+  image: financeclaw:stage11
   build: .
   env_file: ["${FINANCECLAW_ENV_FILE:-.env}"]
   volumes:
@@ -44,11 +44,12 @@ services:
       retries: 30
   migrate:
     <<: *application
-    entrypoint: [python, -m, alembic]
-    command: [upgrade, head]
+    entrypoint: [python, deploy/migrate.py]
+    command: []
     environment:
       <<: *environment
       FINANCECLAW_PROCESS_ROLE: api
+      MEMORY_POSTGRES_PASSWORD: ${MEMORY_POSTGRES_PASSWORD:?Set a separate MEMORY_POSTGRES_PASSWORD}
     depends_on:
       postgres: {condition: service_healthy}
     restart: "no"
@@ -92,6 +93,27 @@ services:
       api: {condition: service_healthy}
     healthcheck:
       test: [CMD, python, -m, financeclaw.integrations.health]
+      interval: 15s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+  memory_worker:
+    <<: *application
+    env_file: ["${FINANCECLAW_MEMORY_ENV_FILE:-.env.memory}"]
+    entrypoint: [python, deploy/memory_worker_entrypoint.py]
+    command: []
+    volumes: []
+    environment:
+      FINANCECLAW_PROCESS_ROLE: memory_worker
+      FINANCECLAW_OTEL_SERVICE_NAME: financeclaw-memory-worker
+      FINANCECLAW_DATABASE_AUTO_CREATE_SCHEMA: "false"
+      MEMORY_POSTGRES_PASSWORD: ${MEMORY_POSTGRES_PASSWORD:?Set a separate MEMORY_POSTGRES_PASSWORD}
+      MEMORY_POSTGRES_HOST: postgres
+      MEMORY_POSTGRES_DATABASE: financeclaw_app
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+    healthcheck:
+      test: [CMD, python, -m, financeclaw.memory_worker.health]
       interval: 15s
       timeout: 5s
       start_period: 30s

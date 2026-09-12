@@ -74,8 +74,11 @@ class OutboxPublisher:
         count = 0
         for _ in range(self._batch_size):
             # 按条领取，后续任务不会在等待前一条执行时消耗租约。
-            events = self._repository.claim_pending(
-                limit=1, lease_seconds=60, destination=self._destination
+            events = await asyncio.to_thread(
+                self._repository.claim_pending,
+                limit=1,
+                lease_seconds=60,
+                destination=self._destination,
             )
             if not events:
                 break
@@ -85,12 +88,15 @@ class OutboxPublisher:
                 async with asyncio.timeout(50):
                     await self._sink.publish(event)
             except Exception as exc:
-                self._repository.mark_failed(
+                await asyncio.to_thread(
+                    self._repository.mark_failed,
                     event.event_id,
                     f"{type(exc).__name__}: {exc}",
                     max_attempts=self._max_attempts,
                     claim_epoch=event.claim_epoch,
                 )
             else:
-                self._repository.mark_published(event.event_id, claim_epoch=event.claim_epoch)
+                await asyncio.to_thread(
+                    self._repository.mark_published, event.event_id, claim_epoch=event.claim_epoch
+                )
         return count

@@ -29,7 +29,7 @@ def test_initial_schema_matches_runtime_and_rejects_child_executions(tmp_path, m
                 *Base.metadata.tables,
                 "alembic_version",
             }
-            assert len(Base.metadata.tables) == 14
+            assert len(Base.metadata.tables) == 18
             assert "run_executions" not in Base.metadata.tables
             assert "run_control" not in Base.metadata.tables
         command.downgrade(config, "base")

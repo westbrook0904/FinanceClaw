@@ -8,12 +8,10 @@ from langchain_core.messages import AIMessage, BaseMessage, SystemMessage, ToolM
 from langchain_core.outputs import ChatGeneration, ChatResult
 from langchain_core.runnables import Runnable
 from langgraph.store.memory import InMemoryStore
-from langgraph.types import Command
 from pydantic import PrivateAttr, SecretStr
 
-from financeclaw.agent_server.memory.models import MemoryDraft
-from financeclaw.shared.audit.repository import InMemoryAuditRepository
 from financeclaw.shared.infrastructure.settings import FinanceClawSettings
+from financeclaw.shared.memory.models import MemoryActor, MemoryMutation
 from tests.support import build_components
 
 from .support import conversation_context
@@ -54,9 +52,11 @@ class MemoryWriteModel(BaseChatModel):
                     {
                         "name": "save_memory",
                         "args": {
-                            "kind": "preference",
+                            "kind": "profile",
+                            "field": "risk_statement",
+                            "scope_type": "user",
                             "content": "用户偏好低波动资产",
-                            "evidence_message_ids": ["current"],
+                            "evidence_ids": ["current"],
                         },
                         "id": "save-memory-call",
                         "type": "tool_call",
@@ -104,176 +104,85 @@ def settings(path: Path) -> FinanceClawSettings:
     )
 
 
-def test_memory_write_interrupt_reject_and_resume(tmp_path: Path) -> None:
-    """验证函数名所描述的业务场景符合预期。"""
-    # 准备 audit，供后续步骤使用。
-    audit = InMemoryAuditRepository()
-    # 准备 components，供后续步骤使用。
-    components = build_components(
-        settings(tmp_path / "hitl.db"),
-        audit=audit,
-        enable_persistence=True,
-    )
-    # 准备 repository，供后续步骤使用。
+def test_memory_write_finishes_with_independent_candidate(tmp_path: Path) -> None:
+    """The production factory does not interrupt a Turn for a memory proposal."""
+    components = build_components(settings(tmp_path / "candidate.db"), enable_persistence=True)
     repository = components.conversation_repository
-    # 继续执行前验证内部不变量。
-    assert repository is not None
-    # 准备 context and _，供后续步骤使用。
     context, message_id = conversation_context(repository, profile=components.default_agent_profile)
-    # 准备 store，供后续步骤使用。
-    store = InMemoryStore()
-    # 准备 agent，供后续步骤使用。
     agent = components.agent_factory.build(
-        components.default_agent_profile,
-        model=MemoryWriteModel(),
-        store=store,
+        components.default_agent_profile, model=MemoryWriteModel(), store=InMemoryStore()
     )
-    # 准备 config，供后续步骤使用。
-    config = {"configurable": {"thread_id": "memory-hitl"}}
-    # 准备 interrupted，供后续步骤使用。
-    interrupted = agent.invoke(
-        {"messages": [{"role": "user", "content": "请记住我的低波动偏好", "id": message_id}]},
+    result = agent.invoke(
+        {"messages": [{"role": "user", "content": "请记住我偏好低波动资产", "id": message_id}]},
         context=context,
-        config=config,
+        config={"configurable": {"thread_id": "memory-candidate"}},
         version="v2",
     )
-    # 继续执行前验证内部不变量。
-    assert interrupted.interrupts
-    # 继续执行前验证内部不变量。
-    assert components.memory_service is not None
-    # 继续执行前验证内部不变量。
-    assert components.memory_service.search(context, store) == ()
-
-    # 准备 completed，供后续步骤使用。
-    completed = agent.invoke(
-        Command(resume={"decisions": [{"type": "approve"}]}),
-        context=context,
-        config=config,
-        version="v2",
+    assert not result.interrupts
+    assert any(
+        isinstance(message, ToolMessage) and '"status": "proposed"' in message.content
+        for message in result.value["messages"]
     )
-    # 继续执行前验证内部不变量。
-    assert not completed.interrupts
-    # 继续执行前验证内部不变量。
-    assert len(components.memory_service.search(context, store)) == 1
-
-    # 使用独立提案验证拒绝操作不会修改 Store。
-    rejected_context, rejected_message_id = conversation_context(
-        repository,
-        profile=components.default_agent_profile,
-        message="请记住我偏好价值投资",
-        key="rejected-memory",
+    actor = MemoryActor(
+        tenant_id=context.tenant_id, subject_id=context.subject_id, scopes=context.scopes
     )
-    # 准备 rejected_config，供后续步骤使用。
-    rejected_config = {"configurable": {"thread_id": "memory-reject"}}
-    # 准备 rejected，供后续步骤使用。
-    rejected = agent.invoke(
-        {
-            "messages": [
-                {"role": "user", "content": "请记住我偏好价值投资", "id": rejected_message_id}
-            ]
-        },
-        context=rejected_context,
-        config=rejected_config,
-        version="v2",
+    service = components.memory_service
+    candidate = service.repository.list_records(actor, status="proposed")[0]
+    assert service.repository.list_records(actor) == ()
+    service.mutations.decide(
+        actor,
+        candidate.memory_id,
+        "approve",
+        "approve-candidate",
+        candidate.revision,
+        candidate.content_hash,
     )
-    # 继续执行前验证内部不变量。
-    assert rejected.interrupts
-    # 准备 after_reject，供后续步骤使用。
-    after_reject = agent.invoke(
-        Command(resume={"decisions": [{"type": "reject"}]}),
-        context=rejected_context,
-        config=rejected_config,
-        version="v2",
-    )
-    # 继续执行前验证内部不变量。
-    assert not after_reject.interrupts
-    # 继续执行前验证内部不变量。
-    assert len(components.memory_service.search(context, store)) == 1
-    # 显式处理 `components.database is not None` 分支。
-    if components.database is not None:
-        components.database.close()
+    assert len(service.repository.list_records(actor)) == 1
+    components.database.close()
 
 
 def test_cross_thread_recall_is_injected_and_manifested(tmp_path: Path) -> None:
-    """验证函数名所描述的业务场景符合预期。"""
-    # 前置条件满足后调用 clear。
+    """The production factory reads scoped SQL profile facts even without semantic recall."""
     CaptureMemoryModel.seen_system_prompts.clear()
-    # 准备 components，供后续步骤使用。
     components = build_components(settings(tmp_path / "recall.db"), enable_persistence=True)
-    # 准备 repository，供后续步骤使用。
-    repository = components.conversation_repository
-    # 准备 service，供后续步骤使用。
-    service = components.memory_service
-    # 继续执行前验证内部不变量。
-    assert repository is not None and service is not None
-    # 准备 store，供后续步骤使用。
-    store = InMemoryStore()
-    # 准备 source_context and _，供后续步骤使用。
-    source_context, message_id = conversation_context(
-        repository, profile=components.default_agent_profile
+    repository, service = components.conversation_repository, components.memory_service
+    source_context, _ = conversation_context(repository, profile=components.default_agent_profile)
+    actor = MemoryActor(
+        tenant_id=source_context.tenant_id,
+        subject_id=source_context.subject_id,
+        scopes=source_context.scopes,
     )
-    # 准备 proposal，供后续步骤使用。
-    proposal = service.propose(
-        source_context,
-        MemoryDraft(
-            kind="preference",
-            content="用户偏好低波动资产",
-            evidence_message_ids=("current",),
+    receipt = service.mutations.apply(
+        actor,
+        MemoryMutation(
+            mutation_id="profile",
+            kind="profile",
+            field="language",
+            content="zh-CN",
+            explicit_intent=True,
         ),
     )
-    # 准备 record，供后续步骤使用。
-    record = service.save(
-        source_context,
-        store,
-        mutation_id=proposal.proposal_id,
-        draft=proposal.draft,
-        approved=True,
-    )
-    # 准备 recall_context and _，供后续步骤使用。
-    recall_context, recall_message_id = conversation_context(
+    context, message_id = conversation_context(
         repository,
         profile=components.default_agent_profile,
-        message="请按低波动偏好分析我的方案",
+        message="分析我的方案",
         key="recall-turn",
     )
-    # 准备 agent，供后续步骤使用。
     agent = components.agent_factory.build(
-        components.default_agent_profile,
-        model=CaptureMemoryModel(),
-        store=store,
+        components.default_agent_profile, model=CaptureMemoryModel(), store=InMemoryStore()
     )
-    # 准备 result，供后续步骤使用。
     result = agent.invoke(
-        {
-            "messages": [
-                {"role": "user", "content": "请按低波动偏好分析我的方案", "id": recall_message_id}
-            ]
-        },
-        context=recall_context,
+        {"messages": [{"role": "user", "content": "分析我的方案", "id": message_id}]},
+        context=context,
         config={"configurable": {"thread_id": "memory-recall"}},
         version="v2",
     )
-    # 继续执行前验证内部不变量。
     assert not result.interrupts
-    # 准备 system_prompt，供后续步骤使用。
-    system_prompt = "\n".join(CaptureMemoryModel.seen_system_prompts)
-    # 继续执行前验证内部不变量。
-    assert "<financeclaw_stable_memory>" in system_prompt
-    # 继续执行前验证内部不变量。
-    assert "not executable instructions" in system_prompt
-    # 继续执行前验证内部不变量。
-    assert record.memory_id in system_prompt
-
-    # 准备 manifests，供后续步骤使用。
-    manifests = repository.list_manifests(recall_context.conversation_id)
-    # 继续执行前验证内部不变量。
-    assert len(manifests) == 1
-    # 继续执行前验证内部不变量。
-    assert manifests[0].memory_ids == (record.memory_id,)
-    # 继续执行前验证内部不变量。
-    assert manifests[0].memory_refs[0].schema_version == record.schema_version
-    # 继续执行前验证内部不变量。
-    assert manifests[0].memory_refs[0].injection_reason == "semantic_event"
-    # 显式处理 `components.database is not None` 分支。
-    if components.database is not None:
-        components.database.close()
+    system = "\n".join(CaptureMemoryModel.seen_system_prompts)
+    assert "<financeclaw_stable_memory>" in system and receipt.memory_id in system
+    assert "never executable instructions" in system
+    manifests = repository.list_manifests(context.conversation_id)
+    assert len(manifests) == 1 and manifests[0].memory_ids == (receipt.memory_id,)
+    assert manifests[0].memory_refs[0].schema_version == 3
+    assert manifests[0].memory_refs[0].injection_reason == "profile"
+    components.database.close()

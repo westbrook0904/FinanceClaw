@@ -118,6 +118,10 @@ class ResultService:
                 .values(status="superseded", decided_at=now())
             )
             self.service.store.transition(session, turn, status, observation.get("reason"))
+            if status == "completed":
+                from financeclaw.api.application.turns.memory import close_turn
+
+                close_turn(self.service, session, turn)
 
     def expire_interaction(self, lease):
         """Close expired questions and publish their blocked product state."""

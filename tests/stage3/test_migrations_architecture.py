@@ -4,16 +4,15 @@ from pathlib import Path
 
 from alembic import command
 from alembic.config import Config
-from langgraph.store.memory import InMemoryStore
 from pydantic import SecretStr
 from sqlalchemy import create_engine, inspect
 
-from financeclaw.agent_server.memory.models import MemoryDraft
 from financeclaw.operations.memory_eval_seed import SAMPLES
 from financeclaw.shared.audit.models import AuditEventType
 from financeclaw.shared.audit.repository import SqlAlchemyAuditRepository
 from financeclaw.shared.infrastructure.database import ApplicationDatabase
 from financeclaw.shared.infrastructure.settings import FinanceClawSettings
+from financeclaw.shared.memory.models import MemoryActor, MemoryMutation
 from tests.support import build_components
 
 from .support import conversation_context
@@ -115,15 +114,17 @@ def test_memory_audit_survives_repository_reconstruction(tmp_path: Path) -> None
     # 准备 context and _，供后续步骤使用。
     context, _ = conversation_context(repository, key="persistent-audit")
     # 前置条件满足后调用 propose。
-    service.save(
-        context,
-        InMemoryStore(),
-        mutation_id="audit-probe",
-        approved=True,
-        draft=MemoryDraft(
-            kind="goal",
-            content="用户希望建立长期投资计划",
-            evidence_message_ids=("current",),
+    actor = MemoryActor(
+        tenant_id=context.tenant_id, subject_id=context.subject_id, scopes=context.scopes
+    )
+    service.mutations.apply(
+        actor,
+        MemoryMutation(
+            mutation_id="audit-probe",
+            kind="profile",
+            field="language",
+            content="zh-CN",
+            explicit_intent=True,
         ),
     )
     # 继续执行前验证内部不变量。

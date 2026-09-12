@@ -1,10 +1,8 @@
 """执行端 Turn 定位与消息来源适配。"""
 
-from collections.abc import Sequence
 from typing import Any
 
 from financeclaw.kernel.context import ExecutionContext
-from financeclaw.kernel.turns import current_turn_start, is_user_message
 
 
 def trusted_context(runtime: Any) -> ExecutionContext:
@@ -24,10 +22,3 @@ def user_anchor(context: ExecutionContext, repository: Any) -> str | None:
             raise ValueError("business root snapshot is missing its user message anchor")
         return anchor
     return None
-
-
-def protected_start(messages: Sequence[Any], anchor: str | None, recent_turns: int) -> int:
-    """保留当前完整 Turn 及指定数量的近期完整 Turn。"""
-    current = current_turn_start(messages, anchor)
-    starts = [index for index in range(current) if is_user_message(messages[index])]
-    return starts[max(0, len(starts) - recent_turns)] if starts and recent_turns else current

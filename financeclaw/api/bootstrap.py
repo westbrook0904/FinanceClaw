@@ -55,6 +55,11 @@ def create_default_app(settings=None, *, resources=None, client=None):
                         max_concurrency=settings.feishu_max_concurrency,
                     )
                 app.state.turns = turns
+                from financeclaw.api.application.memory_service import MemoryManagementService
+
+                app.state.memory = MemoryManagementService(
+                    shared.database.session_factory, settings
+                )
                 await turns.events.start()
                 await turns.lifecycle.start()
             app.state.resources = shared
@@ -68,7 +73,7 @@ def create_default_app(settings=None, *, resources=None, client=None):
             if resources is None:
                 await run_sync(close_process_resources if shared_process else shared.database.close)
 
-    app = FastAPI(title="FinanceClaw API", version="10", lifespan=lifespan)
+    app = FastAPI(title="FinanceClaw API", version="11", lifespan=lifespan)
     from financeclaw.api.http.errors import install_error_handlers
     from financeclaw.shared.infrastructure.observability.telemetry import (
         install_request_observability,
@@ -95,6 +100,9 @@ def create_default_app(settings=None, *, resources=None, client=None):
                 ServiceProxy("conversations"), ServiceProxy("turns"), build_authenticator(settings)
             )
         )
+        from financeclaw.api.http.memory import memory_router
+
+        app.include_router(memory_router(ServiceProxy("memory"), build_authenticator(settings)))
         if settings.feishu_enabled:
             from financeclaw.api.http.channels import channel_router
 

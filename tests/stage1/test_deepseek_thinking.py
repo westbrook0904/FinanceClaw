@@ -7,9 +7,9 @@ import pytest
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from pydantic import SecretStr
 
-from financeclaw.agent_server.llm import factory as factory_module
-from financeclaw.agent_server.llm.factory import ModelFactory
 from financeclaw.kernel.models import ModelProfile, ModelProfileCatalog, ModelProfileRef
+from financeclaw.shared.llm import factory as factory_module
+from financeclaw.shared.llm.factory import ModelFactory
 from financeclaw.shared.releases.interactions import CLARIFICATION_TOOL
 
 

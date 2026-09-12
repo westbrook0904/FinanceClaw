@@ -58,6 +58,7 @@ class ExecutionContext(BaseModel):
     # 服务端固定的带时区 ISO 时间，供“今年”等相对时间解析及恢复重放使用。
     request_clock: str | None = None
     data_classification: DataClassification = DataClassification.INTERNAL
+    processing_region: Annotated[str, Field(min_length=1, max_length=64)] = "global"
     locale: Annotated[str, Field(min_length=2, max_length=32)] = "zh-CN"
     timezone: Annotated[str, Field(min_length=1, max_length=64)] = "Asia/Shanghai"
 

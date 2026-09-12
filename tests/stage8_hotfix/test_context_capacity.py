@@ -3,8 +3,8 @@
 import pytest
 from pydantic import ValidationError
 
-from financeclaw.agent_server.context import budget as context_module
 from financeclaw.shared.infrastructure.settings import FinanceClawSettings
+from financeclaw.shared.llm import budget as context_module
 from financeclaw.shared.releases.catalog import build_release_catalogs
 
 
@@ -41,11 +41,19 @@ def test_disabled_tokenizer_cache_never_loads_encoding(tmp_path, monkeypatch):
     assert counter.truncate("中文 abc", 5) == "中"
 
 
-@pytest.mark.parametrize("changes", [{"model_max_tokens": 65_536}, {"context_input_limit": 65_536}])
+@pytest.mark.parametrize("changes", [{"model_max_tokens": 65_536}, {"context_input_limit": 4096}])
 def test_invalid_generation_or_reserve_budget_is_rejected(tmp_path, changes):
     """不能把最大生成量设得高于预留，或让各预留占满上下文。"""
     with pytest.raises(ValidationError, match="context"):
         config(tmp_path, **changes)
+
+
+def test_application_input_cap_does_not_duplicate_the_output_reserve(tmp_path):
+    """Stage11：独立应用输入cap与总窗口分别限制，不从输入cap再次扣输出。"""
+    settings = config(tmp_path, context_input_limit=80_000)
+    assert settings.context_input_limit == 80_000
+    budget = context_module.ContextBudget(**settings.context_budget)
+    assert budget.model_request_limit == 80_000 - settings.context_safety_margin
 
 
 def test_history_window_participates_in_shared_release_fingerprint(tmp_path):

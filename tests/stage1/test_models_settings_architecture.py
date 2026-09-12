@@ -6,9 +6,9 @@ from pathlib import Path
 import pytest
 from pydantic import SecretStr, ValidationError
 
-from financeclaw.agent_server.llm.factory import ModelFactory
 from financeclaw.kernel.models import ModelProfile, ModelProfileCatalog, ModelProfileRef
 from financeclaw.shared.infrastructure.settings import FinanceClawSettings
+from financeclaw.shared.llm.factory import ModelFactory
 from tests.support import build_components
 
 ROOT = Path(__file__).resolve().parents[2]

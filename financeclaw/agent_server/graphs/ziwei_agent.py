@@ -7,13 +7,11 @@ from typing import Annotated, Any, NotRequired, TypedDict
 from langchain.agents import AgentState
 from langchain.agents.middleware import AgentMiddleware, hook_config
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
-from langchain_core.utils.function_calling import convert_to_openai_tool
 from langgraph.graph import END, START, StateGraph
 from langgraph.runtime import Runtime
 from pydantic import ValidationError
 
 from financeclaw.agent_server.agents.factory import AgentFactory
-from financeclaw.agent_server.context.budget import TokenCounter
 from financeclaw.agent_server.domains.ziwei.application import ZiweiService
 from financeclaw.agent_server.domains.ziwei.errors import ZiweiError
 from financeclaw.agent_server.domains.ziwei.tool_inputs import tool_schema_error
@@ -21,6 +19,7 @@ from financeclaw.kernel.agents import AgentProfile
 from financeclaw.kernel.context import DataClassification, ExecutionContext
 from financeclaw.kernel.ziwei import ChartProjection, ZiweiAnalysisRequest, ZiweiTextResult
 from financeclaw.kernel.ziwei_tools import ZIWEI_TOOL_INPUTS
+from financeclaw.shared.llm.budget import TokenCounter, request_payload
 
 
 def merge_evidence(left: list[dict], right: list[dict]) -> list[dict]:
@@ -64,9 +63,12 @@ def check_prompt(
     counter: TokenCounter | None = None,
 ) -> None:
     """统计完整消息与工具 Schema 的 token 数，绝不截断事实来塞入窗口。"""
-    payload = [message.model_dump(mode="json") for message in messages]
-    schemas = [convert_to_openai_tool(tool) for tool in (tools or [])]
-    serialized = json.dumps([payload, schemas], ensure_ascii=False, default=str)
+    serialized = json.dumps(
+        request_payload(messages, tools=tools or ()),
+        ensure_ascii=False,
+        sort_keys=True,
+        default=str,
+    )
     if (counter or _PROMPT_TOKEN_COUNTER).text(serialized) > limit:
         raise ZiweiError(
             "ZIWEI_CONTEXT_BUDGET_EXCEEDED", "完整证据超过模型输入预算，请缩小查询范围。"
@@ -279,7 +281,7 @@ def build_ziwei_agent(
 ) -> Any:
     """装配原生 LangGraph；service 关闭时安全返回 unsupported，不调用模型或引擎。"""
     if input_budget is None:
-        input_budget = factory.context_budget.model_request_limit
+        input_budget = factory.context_planner(profile).input_limit
     if (
         profile.context_policy != "worker-task-only-v1"
         or profile.output_schema is not ZiweiTextResult

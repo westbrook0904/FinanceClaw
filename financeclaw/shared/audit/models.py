@@ -9,7 +9,7 @@ from enum import StrEnum
 from typing import Any
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class AuditEventType(StrEnum):
@@ -46,6 +46,12 @@ class AuditEventType(StrEnum):
     TOOL_REJECTED = "tool.rejected"
     FINANCIAL_TOOL_EXECUTED = "financial_tool.executed"
     FINANCIAL_TOOL_FAILED = "financial_tool.failed"
+    MEMORY_PROPOSED = "memory.proposed"
+    MEMORY_DECIDED = "memory.decided"
+    MEMORY_SETTINGS_UPDATED = "memory.settings_updated"
+    MEMORY_SOURCE_INVALIDATED = "memory.source_invalidated"
+    MEMORY_JOB_REPLAYED = "memory.job_replayed"
+    MEMORY_REINDEX_REQUESTED = "memory.reindex_requested"
     MEMORY_COMMITTED = "memory.committed"
     MEMORY_SUPERSEDED = "memory.superseded"
     MEMORY_REVOKED = "memory.revoked"
@@ -101,7 +107,7 @@ class AuditRecord(BaseModel):
     tenant_id: str
     subject_id: str
     conversation_id: str | None = None
-    turn_id: str
+    turn_id: str | None = None
     tool_call_id: str | None = None
     resource_type: str = "tool"
     resource_id: str
@@ -113,3 +119,10 @@ class AuditRecord(BaseModel):
     evidence_refs: tuple[str, ...] = ()
     artifact_refs: tuple[str, ...] = ()
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def require_real_turn_for_execution_events(self):
+        """Only owner-level memory events may omit a real business Turn identity."""
+        if self.turn_id is None and not self.event_type.value.startswith("memory."):
+            raise ValueError("execution audit events require a real turn_id")
+        return self

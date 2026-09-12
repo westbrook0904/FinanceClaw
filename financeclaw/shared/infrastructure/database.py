@@ -17,6 +17,7 @@ import financeclaw.shared.artifacts.tables as _artifact_tables  # noqa: F401
 # 导入各模块的表定义，将 ORM 模型注册到 Base.metadata（建表与迁移都依赖它）。
 import financeclaw.shared.audit.tables as _audit_tables  # noqa: F401
 import financeclaw.shared.conversation.tables as _conversation_tables  # noqa: F401
+import financeclaw.shared.memory.tables as _memory_tables  # noqa: F401
 import financeclaw.shared.notifications.tables as _notification_tables  # noqa: F401
 import financeclaw.shared.outbox.tables as _outbox_tables  # noqa: F401
 import financeclaw.shared.turns.tables as _turn_tables  # noqa: F401

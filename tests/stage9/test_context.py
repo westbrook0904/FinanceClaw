@@ -9,8 +9,9 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph.graph.message import add_messages
 from langgraph.runtime import Runtime
 
-from financeclaw.agent_server.context.budget import ContextBudget
 from financeclaw.agent_server.context.compaction import NativeContextMiddleware
+from financeclaw.agent_server.context.planning import working_message
+from financeclaw.agent_server.context.state import WorkingContextDraft
 from financeclaw.agent_server.middleware.artifact_middleware import ToolResultArtifactMiddleware
 from financeclaw.agent_server.middleware.context_editing import ToolContextEditingMiddleware
 from financeclaw.agent_server.middleware.final_context import (
@@ -18,6 +19,25 @@ from financeclaw.agent_server.middleware.final_context import (
     RequestRecorder,
 )
 from financeclaw.kernel.turns import current_turn_start
+from financeclaw.shared.artifacts.repository import SqlAlchemyArtifactRepository
+from financeclaw.shared.artifacts.service import ArtifactService
+from financeclaw.shared.artifacts.storage import LocalArtifactStore
+from financeclaw.shared.llm.budget import ContextBudget
+from tests.stage3.support import conversation_context, journal
+
+
+@pytest.fixture
+def context_stack(tmp_path):
+    """上下文验证只依赖真实Journal和工件库，不借用已替换的记忆服务契约。"""
+    database, repository = journal(tmp_path / "context.db")
+    context, message_id = conversation_context(repository, message="继续比较")
+    artifacts = ArtifactService(
+        SqlAlchemyArtifactRepository(database.session_factory),
+        LocalArtifactStore(str(tmp_path / "artifacts")),
+        inline_bytes=512,
+    )
+    yield context, message_id, repository, artifacts, None, None
+    database.close()
 
 
 def budget(**updates):
@@ -36,9 +56,9 @@ def budget(**updates):
 
 @pytest.mark.parametrize("asynchronous", [False, True])
 @pytest.mark.asyncio
-async def test_summary_preserves_current_turn_and_archives_old_result(memory_stack, asynchronous):
+async def test_summary_preserves_current_turn_and_archives_old_result(context_stack, asynchronous):
     """旧结果归档，当前完整工具后缀原样保留，摘要没有冒充真实用户。"""
-    context, identity, repository, artifacts, _, _ = memory_stack
+    context, identity, repository, artifacts, _, _ = context_stack
     current = [
         HumanMessage(content="继续比较", id=identity),
         AIMessage(
@@ -67,7 +87,11 @@ async def test_summary_preserves_current_turn_and_archives_old_result(memory_sta
         budget(),
         repository,
         artifacts,
-        FakeMessagesListChatModel(responses=[AIMessage(content="旧决定和未决事项")]),
+        FakeMessagesListChatModel(
+            responses=[
+                AIMessage(content=WorkingContextDraft(goal="旧决定和未决事项").model_dump_json())
+            ]
+        ),
     )
     runtime = Runtime(context=context)
     update = (
@@ -77,8 +101,10 @@ async def test_summary_preserves_current_turn_and_archives_old_result(memory_sta
     )
     result = add_messages(state["messages"], update["messages"])
     assert result[-len(current) :] == current
-    assert current_turn_start(result, identity) == 1
-    assert result[0].additional_kwargs["lc_source"] == "summarization"
+    assert current_turn_start(result, identity) == 0
+    assert (
+        working_message(update["working_context"]).additional_kwargs["lc_source"] == "summarization"
+    )
     catalog = artifacts.repository.list_turn(
         context.conversation_id, context.turn_id, context.tenant_id, context.subject_id
     )
@@ -88,9 +114,9 @@ async def test_summary_preserves_current_turn_and_archives_old_result(memory_sta
     assert repository.list_manifests(context.conversation_id)[0].subtype == "summary"
 
 
-def test_unknown_tool_gets_default_archive_and_small_result_survives_cleanup(memory_stack):
+def test_unknown_tool_gets_default_archive_and_small_result_survives_cleanup(context_stack):
     """无任何保留标注的工具也能归档；小结果清理前才保存。"""
-    context, identity, repository, artifacts, _, _ = memory_stack
+    context, identity, repository, artifacts, _, _ = context_stack
     request = SimpleNamespace(
         runtime=Runtime(context=context), tool_call={"name": "external_mcp", "id": "call"}
     )
@@ -99,32 +125,27 @@ def test_unknown_tool_gets_default_archive_and_small_result_survives_cleanup(mem
     projected = middleware._project(request, raw)
     assert projected.additional_kwargs["artifact_ref"]
     assert middleware._project(request, raw).artifact == projected.artifact
-    small = ToolMessage(content="精确小结果 42.58", tool_call_id="small", name="external_mcp")
+    small = ToolMessage(
+        content="精确小结果 42.58", id="small-result", tool_call_id="small", name="external_mcp"
+    )
     assert middleware._project(request, small).content == small.content
     messages = [
         HumanMessage(content="查数据" * 200, id=identity),
         AIMessage(content="", tool_calls=[{"id": "small", "name": "external_mcp", "args": {}}]),
         small,
     ]
-    model = FakeMessagesListChatModel(responses=[AIMessage(content="ok")])
     edit = ToolContextEditingMiddleware(
         artifacts, budget(soft_input_tokens=256, tool_results_to_keep=0)
     )
-    req = ModelRequest(
-        model=model,
-        messages=messages,
-        tools=[],
-        runtime=request.runtime,
-        state={"messages": messages},
-    )
-    changed = edit.wrap_model_call(req, lambda value: value)
-    assert changed.messages[-1].additional_kwargs["artifact_ref"]
+    update = edit.before_model({"messages": messages}, request.runtime)
+    # A tiny result is never enlarged merely to replace it with an artifact envelope.
+    assert update is None
     assert messages[-1].content == "精确小结果 42.58"
 
 
-def test_final_guard_does_not_empty_user_input(memory_stack):
+def test_final_guard_does_not_empty_user_input(context_stack):
     """超硬容量明确失败，原始用户输入不被修改。"""
-    context, identity, _, _, _, _ = memory_stack
+    context, identity, _, _, _, _ = context_stack
     user = HumanMessage(content="原始用户输入" * 10000, id=identity)
     req = ModelRequest(
         model=FakeMessagesListChatModel(responses=[AIMessage(content="ok")]),
@@ -139,9 +160,9 @@ def test_final_guard_does_not_empty_user_input(memory_stack):
     assert user.content == "原始用户输入" * 10000
 
 
-def test_summary_failure_keeps_original_messages(memory_stack):
+def test_summary_failure_keeps_original_messages(context_stack):
     """摘要失败不生成假摘要，是否可继续由最终硬预算决定。"""
-    context, identity, repository, artifacts, _, _ = memory_stack
+    context, identity, repository, artifacts, _, _ = context_stack
 
     class Broken(FakeMessagesListChatModel):
         """确定性模拟摘要供应商不可用。"""
@@ -161,12 +182,12 @@ def test_summary_failure_keeps_original_messages(memory_stack):
     assert "messages" not in result
     assert messages[0].content == "旧" * 2000
     manifests = repository.list_manifests(context.conversation_id)
-    assert len(manifests) == 3 and all(item.subtype == "summary" for item in manifests)
+    assert len(manifests) == 1 and all(item.subtype == "summary" for item in manifests)
 
 
-def test_bootstrap_reads_only_completed_pairs_once(memory_stack, monkeypatch):
+def test_bootstrap_reads_only_completed_pairs_once(context_stack, monkeypatch):
     """更换 thread 时只初始化完成问答，失败 Turn 不进入新 state。"""
-    context, identity, repository, artifacts, _, _ = memory_stack
+    context, identity, repository, artifacts, _, _ = context_stack
     from tests.turn_support import finish_turn, seed_execution
 
     finish_turn(repository, context.turn_id)
@@ -207,9 +228,9 @@ def test_bootstrap_reads_only_completed_pairs_once(memory_stack, monkeypatch):
     assert middleware.before_agent(state, Runtime(context=current)) is None
 
 
-def test_archive_failure_cannot_discard_unique_tool_result(memory_stack, monkeypatch):
+def test_archive_failure_cannot_discard_unique_tool_result(context_stack, monkeypatch):
     """摘要完成也不能越过归档失败；旧唯一工具原文保持不变。"""
-    context, identity, repository, artifacts, _, _ = memory_stack
+    context, identity, repository, artifacts, _, _ = context_stack
     raw = ToolMessage(content="唯一原始明细" * 500, id="raw", name="mcp", tool_call_id="call")
     messages = [
         HumanMessage(content="旧问题", id="old"),
@@ -228,16 +249,18 @@ def test_archive_failure_cannot_discard_unique_tool_result(memory_stack, monkeyp
         budget(),
         repository,
         artifacts,
-        FakeMessagesListChatModel(responses=[AIMessage(content="摘要")]),
+        FakeMessagesListChatModel(
+            responses=[AIMessage(content=WorkingContextDraft(goal="摘要").model_dump_json())]
+        ),
     )
     with pytest.raises(ConnectionError):
         middleware.before_model({"messages": messages}, Runtime(context=context))
     assert messages[2] is raw and raw.content == "唯一原始明细" * 500
 
 
-def test_successful_forget_resets_mixed_summary_and_prior_recall(memory_stack):
+def test_successful_forget_resets_mixed_summary_and_prior_recall(context_stack):
     """保留用户删除请求与执行回执，不让混合摘要和本轮中间解释继续携带旧事实。"""
-    context, identity, repository, artifacts, _, _ = memory_stack
+    context, identity, repository, artifacts, _, _ = context_stack
     messages = [
         HumanMessage(
             content="旧秘密画像", id="summary", additional_kwargs={"lc_source": "summarization"}
@@ -262,6 +285,6 @@ def test_successful_forget_resets_mixed_summary_and_prior_recall(memory_stack):
         {"messages": messages, "memory_forget_requested": True}, Runtime(context=context)
     )
     result = add_messages(messages, update["messages"])
-    assert [message.type for message in result] == ["human", "ai", "tool"]
+    assert [message.type for message in result] == ["human", "ai", "tool", "ai", "tool"]
     assert result[0].id == identity and result[-1].tool_call_id == "forget"
     assert "旧秘密画像" not in str([message.content for message in result])

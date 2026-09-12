@@ -1,0 +1,163 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "persistent_zh",
+      "text": "以后都用中文回答，简短一些",
+      "expected_auto_preferences": {
+        "language": "zh-CN",
+        "verbosity": "concise"
+      },
+      "profile_candidate_permitted": true,
+      "task_suggestion_permitted": false
+    },
+    {
+      "id": "persistent_en",
+      "text": "From now on, please answer in English",
+      "expected_auto_preferences": {
+        "language": "en"
+      },
+      "profile_candidate_permitted": true,
+      "task_suggestion_permitted": false
+    },
+    {
+      "id": "persistent_table",
+      "text": "以后请用表格输出",
+      "expected_auto_preferences": {
+        "output_format": "table"
+      },
+      "profile_candidate_permitted": true,
+      "task_suggestion_permitted": false
+    },
+    {
+      "id": "persistent_markdown",
+      "text": "今后使用markdown回复",
+      "expected_auto_preferences": {
+        "output_format": "markdown"
+      },
+      "profile_candidate_permitted": true,
+      "task_suggestion_permitted": false
+    },
+    {
+      "id": "english_concise",
+      "text": "Always keep answers concise",
+      "expected_auto_preferences": {
+        "verbosity": "concise"
+      },
+      "profile_candidate_permitted": true,
+      "task_suggestion_permitted": false
+    },
+    {
+      "id": "temporary",
+      "text": "这次请用英文解释债券久期",
+      "expected_auto_preferences": {},
+      "profile_candidate_permitted": false,
+      "task_suggestion_permitted": false
+    },
+    {
+      "id": "negative",
+      "text": "以后不要用英文回答",
+      "expected_auto_preferences": {},
+      "profile_candidate_permitted": false,
+      "task_suggestion_permitted": false
+    },
+    {
+      "id": "quote",
+      "text": "他说“以后用中文回答”",
+      "expected_auto_preferences": {},
+      "profile_candidate_permitted": false,
+      "task_suggestion_permitted": false
+    },
+    {
+      "id": "hypothesis",
+      "text": "假设我偏好高风险资产，你会怎么建议？",
+      "expected_auto_preferences": {},
+      "profile_candidate_permitted": false,
+      "task_suggestion_permitted": false
+    },
+    {
+      "id": "contradiction",
+      "text": "以后用中文回答，用英文回答",
+      "expected_auto_preferences": {},
+      "profile_candidate_permitted": false,
+      "task_suggestion_permitted": false
+    },
+    {
+      "id": "question",
+      "text": "以后用中文回答好吗？",
+      "expected_auto_preferences": {},
+      "profile_candidate_permitted": false,
+      "task_suggestion_permitted": false
+    },
+    {
+      "id": "mixed_temporary",
+      "text": "这次 answer in English，后面再说",
+      "expected_auto_preferences": {},
+      "profile_candidate_permitted": false,
+      "task_suggestion_permitted": false
+    },
+    {
+      "id": "correction",
+      "text": "更正：购房目标是2028年，不是2027年，预算300万元。请记住。",
+      "expected_auto_preferences": {},
+      "profile_candidate_permitted": true,
+      "task_suggestion_permitted": false
+    },
+    {
+      "id": "financial_authority",
+      "text": "请记住我愿意研究股票，但这不授权你下单",
+      "expected_auto_preferences": {},
+      "profile_candidate_permitted": true,
+      "task_suggestion_permitted": false
+    },
+    {
+      "id": "live_market",
+      "text": "当前股票价格是100元，请长期记住",
+      "expected_auto_preferences": {},
+      "profile_candidate_permitted": false,
+      "task_suggestion_permitted": false
+    },
+    {
+      "id": "live_balance",
+      "text": "现在账户余额10000元，明天可能变化",
+      "expected_auto_preferences": {},
+      "profile_candidate_permitted": false,
+      "task_suggestion_permitted": false
+    },
+    {
+      "id": "sensitive_field",
+      "text": "请记住我的投资期限是五年",
+      "expected_auto_preferences": {},
+      "profile_candidate_permitted": true,
+      "task_suggestion_permitted": false
+    },
+    {
+      "id": "isolated_calculation",
+      "text": "计算12乘以18",
+      "expected_auto_preferences": {},
+      "profile_candidate_permitted": false,
+      "task_suggestion_permitted": false
+    },
+    {
+      "id": "task_history",
+      "text": "2026年9月完成债券比较，使用三年持有期，结论仅适用于该次研究",
+      "expected_auto_preferences": {},
+      "profile_candidate_permitted": false,
+      "task_suggestion_permitted": true
+    },
+    {
+      "id": "partial_failure",
+      "text": "债券研究尚未完成，数据源失败，不能认为已经给出结论",
+      "expected_auto_preferences": {},
+      "profile_candidate_permitted": false,
+      "task_suggestion_permitted": false
+    },
+    {
+      "id": "negated_inference",
+      "text": "我研究了高波动股票，并不代表我偏好高风险",
+      "expected_auto_preferences": {},
+      "profile_candidate_permitted": false,
+      "task_suggestion_permitted": false
+    }
+  ]
+}

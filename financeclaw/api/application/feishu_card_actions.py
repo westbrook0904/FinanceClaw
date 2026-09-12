@@ -11,6 +11,7 @@ from financeclaw.api.application.turns.controls import apply_control
 from financeclaw.kernel.authorization import AuthorizationEvidence
 from financeclaw.shared.channels.feishu.cards import render_card, response_from_card, toast
 from financeclaw.shared.infrastructure.asyncio import run_sync
+from financeclaw.shared.memory.models import MemoryNotFound
 from financeclaw.shared.notifications.facts import target_valid
 from financeclaw.shared.notifications.tables import NotificationEventRow, NotificationTargetRow
 from financeclaw.shared.turns.receipts import read_receipt, save_receipt
@@ -46,7 +47,14 @@ class FeishuCardActions:
             if self.runs.lifecycle:
                 self.runs.lifecycle.wake()
             return result
-        except (ValueError, KeyError, TypeError, ExecutionConflict) as exc:
+        except (
+            ValueError,
+            KeyError,
+            TypeError,
+            ExecutionConflict,
+            MemoryNotFound,
+            PermissionError,
+        ) as exc:
             LOGGER.info("Feishu card action rejected", extra={"error_type": type(exc).__name__})
             return toast("未受理：请检查输入，并使用原单聊中的最新卡片。", "error")
         except Exception as exc:
@@ -82,8 +90,21 @@ class FeishuCardActions:
                 session.execute(text("SET LOCAL lock_timeout = '750ms'"))
                 session.execute(text("SET LOCAL statement_timeout = '1200ms'"))
             view = session.get(NotificationEventRow, value["view"])
-            if view is None or view.kind != "card":
+            if view is None or view.kind not in {"card", "memory_candidates"}:
                 raise ValueError("unknown view")
+            if view.kind == "memory_candidates":
+                from financeclaw.api.application.memory_card_actions import accept_memory_card
+
+                return accept_memory_card(
+                    self,
+                    session,
+                    view,
+                    tenant=tenant,
+                    operator=operator,
+                    context=context,
+                    value=value,
+                    form=form,
+                )
             target = session.get(NotificationTargetRow, view.target_id)
             root = self.runs.store.lock(session, target.turn_id)
             # 根锁之后刷新发送回执与绑定，避免读取到撤权或消息发送前的旧状态。

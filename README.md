@@ -2,24 +2,27 @@
 
 FinanceClaw 基于 LangChain、LangGraph AgentServer 与 LangSmith，提供金融场景的会话、工具治理、人工交互、上下文、记忆、制品与审计。
 
-Stage 10 将业务 API 合入 AgentServer 的自定义 FastAPI 应用。API 通过 `get_client(url=None, api_key=None)` 使用进程内 ASGI transport；独立的原生 queue worker 执行图。飞书连接、通知投递和历史索引由 integrations 进程负责。三个角色使用同一镜像，公开根图只有 `finance_agent`。
+业务 API 位于 AgentServer 的自定义 FastAPI 应用内，通过 `get_client(url=None, api_key=None)` 使用进程内 ASGI transport；独立的原生 queue worker 执行图。Stage 11 增加 memory_worker，在回答之外提取、整合长期记忆；integrations 负责渠道、通知和索引。四个角色使用同一镜像，公开根图只有 `finance_agent`。
 
-一个 `turn_id` 对应一个业务任务，开始和每次人工恢复分别记录不可变 `turn_commands`。真实 `native_run_id` 只作为内部执行回执。应用库共 14 张表，运行控制仅保留 Turn、Command、Interaction 三种事实；没有独立 BFF 服务、Webhook、运行进度历史表或旧接口兼容层。
+一个 `turn_id` 对应一个业务任务，开始和每次人工恢复分别记录不可变 `turn_commands`。真实 `native_run_id` 只作为内部执行回执。应用库共 18 张表；运行控制保留 Turn、Command、Interaction，记忆新增 owner、source、extraction、record 四张表。SQL 是记忆事实源，原生 Store 是可重建索引；记忆确认不恢复业务 interrupt。
 
-[包结构](docs/architecture/package-layout.md) · [Stage 10 设计](.redesign/stages/stage-10-统一API与运行模型收敛实施方案.md) · [实现与验证](.redesign/stages/stage-10-实现与验证.md) · [运行手册](docs/operations/turn-control.md)
+[包结构](docs/architecture/package-layout.md) · [Stage 11 设计](.redesign/stages/stage-11-异步记忆与上下文治理实施方案.md) · [Stage 11 实现与验证](.redesign/stages/stage-11-实现与验证.md) · [运行手册](docs/operations/turn-control.md)
 
 ## 启动
 
-项目尚未上线，初始迁移只面向空应用库。`compose.yml` 使用独立的 `financeclaw-stage10` 项目和新卷，不会清空或复用原有本地数据库。业务库与原生库分开初始化；Alembic 不管理 LangGraph 原生表。
+项目尚未上线，初始迁移只面向空应用库。`compose.yml` 使用独立的 `financeclaw-stage11` 项目和新卷，不会清空原有本地数据库。业务库与原生库分开初始化；Alembic 不管理 LangGraph 原生表。
 
 ```bash
 cp config/environments/unified.env.example .env
+cp config/environments/memory.env.example .env.memory
 # 填写数据库密码、产品令牌、集成令牌和官方 AgentServer 所需凭据。
 docker compose build
 docker compose up -d
 ```
 
 API 默认监听 `127.0.0.1:8000`。原生 API 必须配置 `N_JOBS_PER_WORKER=0`；Worker 必须配置正数并发并通过官方 `/storage/queue_entrypoint.sh` 启动。镜像入口会验证这些条件。
+
+`.env.memory` 只包含记忆 Worker 的数据库密码、模型凭据和处理策略；其 `MEMORY_POSTGRES_PASSWORD` 必须与迁移进程一致。空库迁移后显式创建有限权限的记忆角色，不向记忆 Worker 传递应用管理员 DSN、产品令牌或原生 Store 凭据。
 
 本地示例使用确定性离线模型和共享本地制品卷。真实 Provider、OIDC、加密 S3、飞书与观测配置见 [环境说明](config/environments/README.md) 和[本地完整链路](docs/operations/local-full-stack.md)。生产部署从 `production.env.example` 注入策略与密钥，使用不可变应用镜像摘要。
 
@@ -33,9 +36,11 @@ API 默认监听 `127.0.0.1:8000`。原生 API 必须配置 `N_JOBS_PER_WORKER=0
 - `POST/DELETE .../authorization`：带 `expected_grant_revision` 和幂等键的有限授权更新。
 - `GET /v1/interactions/{id}`、`POST /v1/interactions/{id}/responses`：读取问题与提交 typed response。
 - `GET /v1/conversations/{id}/messages`：按 `after`、`limit` 分页读取永久 Journal。
+- `/v1/memory/settings`、`/v1/memories`：记忆开关、分页查询、创建、纠正和遗忘。
+- `POST /v1/memory/candidates/{id}/decision`：独立确认或拒绝冻结版本的候选。
 - `/v1/health/live`、`/v1/health/ready`：业务进程健康。
 
-最终答案、Turn 状态、审计、通知和历史索引意图在一个事务中提交。观察任务独立于客户端，浏览器断开不会停止执行。未知提交会保留为 uncertain 并查找原回执，不自动重新发送。失败或确认取消后的下一轮使用干净 thread，已完成历史仍由 Journal 与 Stage 9 机制保留。
+最终答案、Turn 状态、审计、通知、历史索引和记忆提取意图在一个事务中提交。观察任务独立于客户端，浏览器断开不会停止执行。未知提交会保留为 uncertain 并查找原回执，不自动重新发送。失败或确认取消后的下一轮使用干净 thread，已完成历史仍由 Journal 保留。
 
 外部普通用户不能直接操作原生 thread/run/store。integrations 凭据只开放标准化渠道入口与限定 namespace 的 Store 维护；checkpoint 回收另需用户的 `maintenance:checkpoints` 权限并验证归档会话已无待办。
 
@@ -51,4 +56,4 @@ uv sync --frozen --extra dev --extra ziwei
 
 持久化 API/Worker、故障恢复、权限和 PostgreSQL 并发探针见 [experiments/stage10](experiments/stage10/README.md)。探针使用隔离数据库和合成输入，不发送真实飞书消息。
 
-Stage 9 的当前 Turn 保护、原生工作摘要、画像直读、每 Turn 召回、工具结果归档和历史按需读取继续成立，详见[上下文与记忆运维](docs/operations/context-budget.md)。领域能力包括[紫微候选](docs/operations/ziwei-agent.md)；`/tool`、`/agent`、`/workflow` 是消息中的调用偏好，子图始终使用同一 Turn 的预算和授权。
+Stage 11 将有限画像按 Turn 冻结，历史任务按需召回；已完成的轮内工具片段可在归档后压缩为 checkpoint WorkingContext，真实用户输入和未完成工具配对继续受保护。详见[上下文与记忆运维](docs/operations/context-budget.md)。领域能力包括[紫微候选](docs/operations/ziwei-agent.md)；`/tool`、`/agent`、`/workflow` 是消息中的调用偏好，子图始终使用同一 Turn 的预算和授权。

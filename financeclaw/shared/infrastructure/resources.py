@@ -86,7 +86,7 @@ def build_resources(
     if audit is not None:
         effective_audit = audit
     elif database is not None:
-        effective_audit = SqlAlchemyAuditRepository(database.session_factory)
+        effective_audit = SqlAlchemyAuditRepository(database.session_factory, emit_outbox=False)
     else:
         effective_audit = InMemoryAuditRepository()
 

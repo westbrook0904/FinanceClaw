@@ -4,22 +4,36 @@ from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
+from langchain_core.embeddings import Embeddings
 from langgraph.store.memory import InMemoryStore
 
 from financeclaw.agent_server.memory.history import HistoryService
-from financeclaw.agent_server.memory.models import MemoryDraft
 from financeclaw.integrations.history_indexer import HistoryIndexer
+from financeclaw.integrations.memory_indexer import MemoryIndexer
 from financeclaw.shared.artifacts.tables import ArtifactMetadataRow
 from financeclaw.shared.conversation.lifecycle import ConversationRetention
 from financeclaw.shared.conversation.tables import ConversationMessageRow, ConversationRow
-from financeclaw.shared.memory.deletion import (
-    MEMORY_DELETE_DESTINATION,
-    MemoryDeletionConsumer,
-)
+from financeclaw.shared.memory.models import MemoryActor, MemoryMutation
 from financeclaw.shared.outbox.models import OutboxEvent
 from financeclaw.shared.outbox.repository import SqlAlchemyOutboxRepository
 from financeclaw.shared.outbox.tables import OutboxEventRow
-from tests.stage9.test_memory import CountingEmbeddings
+
+
+class CountingEmbeddings(Embeddings):
+    """Count real Store embedding work without an external provider."""
+
+    def __init__(self):
+        """Start counters independently for each history rebuild test."""
+        self.documents = 0
+
+    def embed_documents(self, texts):
+        """Produce deterministic vectors and count each indexed chunk."""
+        self.documents += len(texts)
+        return [[1.0, 0.5, 0.1] for _ in texts]
+
+    def embed_query(self, text):
+        """Return a stable query vector compatible with document dimensions."""
+        return [1.0, 0.5, 0.1]
 
 
 class StoreClient:
@@ -62,6 +76,15 @@ def complete(repository, context):
     return outbox.claim_pending(destination="history_index", limit=1)[0]
 
 
+def settle_memory(repository, context):
+    """Disable synthetic source derivation when a test only exercises business retention."""
+    from financeclaw.shared.memory.lifecycle import revoke_turn_sources_in_session
+
+    actor = MemoryActor(tenant_id=context.tenant_id, subject_id=context.subject_id)
+    with repository._sessions.begin() as session:
+        revoke_turn_sources_in_session(session, actor, context.turn_id)
+
+
 @pytest.mark.asyncio
 async def test_history_index_retries_skips_unchanged_and_removes_obsolete_chunks(memory_stack):
     """原文尾部有索引；重复投递不再 embedding，重建不遗留旧块。"""
@@ -92,42 +115,47 @@ async def test_history_index_retries_skips_unchanged_and_removes_obsolete_chunks
 
 
 @pytest.mark.asyncio
-async def test_delete_failure_has_persistent_retry_and_does_not_delete_new_profile(memory_stack):
-    """失败任务无正文；后来同字段有新值时，旧消费者不能误删。"""
-    context, identity, repository, _, service, _ = memory_stack
-    outbox = SqlAlchemyOutboxRepository(repository._sessions)
-    service.outbox = outbox
-
-    class FailingStore(InMemoryStore):
-        """可控制一次删除失败的真实 Store。"""
-
-        fail_delete = False
-
-        def delete(self, *args, **kwargs):
-            """仅故障阶段拒绝删除，其余使用原生实现。"""
-            if self.fail_delete:
-                raise ConnectionError("Store unavailable")
-            return super().delete(*args, **kwargs)
-
-    store = FailingStore()
-    draft = MemoryDraft(
-        kind="preference", field="language", content="zh-CN", evidence_message_ids=(identity,)
+async def test_delete_failure_is_durable_and_sql_forget_is_already_effective(memory_stack):
+    """A Store outage cannot undo SQL forgetting or expose a deleted body on retries."""
+    context, _, repository, _, service, store = memory_stack
+    actor = MemoryActor(
+        tenant_id=context.tenant_id, subject_id=context.subject_id, scopes=context.scopes
     )
-    record = service.save(context, store, draft=draft, mutation_id="first")
-    store.fail_delete = True
+    record = service.mutations.apply(
+        actor,
+        MemoryMutation(
+            mutation_id="task", kind="task", content="完成过债券研究", explicit_intent=True
+        ),
+    )
+    outbox = SqlAlchemyOutboxRepository(repository._sessions)
+    client = StoreClient(store)
+    indexer = MemoryIndexer(repository._sessions, client, outbox)
+    original = outbox.claim_pending(destination="memory_index", limit=1)[0]
+    await indexer.publish(original)
+    outbox.mark_published(original.event_id, claim_epoch=original.claim_epoch)
+    result = service.mutations.apply(
+        actor,
+        MemoryMutation(
+            mutation_id="forget-task",
+            operation="forget",
+            memory_id=record.memory_id,
+            expected_revision=record.revision,
+            explicit_intent=True,
+        ),
+    )
+    assert result.status == "forgotten" and service.get(context, record.memory_id) is None
+    event = outbox.claim_pending(destination="memory_index_delete", limit=1)[0]
+    assert "content" not in event.payload
+    from unittest.mock import AsyncMock
+
+    original_delete = client.delete_item
+    client.delete_item = AsyncMock(side_effect=ConnectionError("Store unavailable"))
     with pytest.raises(ConnectionError):
-        service.forget(context, store, record.memory_id, mode="delete")
-    task = outbox.claim_pending(destination=MEMORY_DELETE_DESTINATION, limit=1)[0]
-    assert "content" not in task.payload and "zh-CN" not in str(task.payload)
-    store.fail_delete = False
-    consumer = MemoryDeletionConsumer(StoreClient(store), service.audit)
-    await consumer.publish(task)
-    assert store.get(record.namespace, "language") is None
-    service.save(context, store, draft=draft, mutation_id="new")
-    await consumer.publish(task)
-    assert service.get(context, store, record.memory_id).mutation_id != record.mutation_id
-    deleted = [item for item in service.audit.records() if item.action == "delete"]
-    assert len(deleted) == 1
+        await indexer.publish(event)
+    assert service.get(context, record.memory_id) is None
+    client.delete_item = original_delete
+    await indexer.publish(event)
+    outbox.mark_published(event.event_id, claim_epoch=event.claim_epoch)
 
 
 def test_outbox_destination_and_expired_claim_fencing(memory_stack):
@@ -176,6 +204,7 @@ def test_expired_artifacts_remain_protected_until_turn_settles(memory_stack):
     retention = ConversationRetention(repository._sessions, artifacts.store)
     assert retention.cleanup_artifacts(apply=True)[0]["status"] == "protected"
     complete(repository, context)
+    settle_memory(repository, context)
     assert retention.cleanup_artifacts()[0]["status"] == "eligible"
     assert retention.cleanup_artifacts(apply=True)[0]["status"] == "deleted"
     with pytest.raises(FileNotFoundError):
@@ -189,6 +218,7 @@ async def test_checkpoint_cleanup_requires_archived_business_and_idle_native_sta
     """业务已完成仍不够：活动会话及原生 interrupt 必须阻止回收。"""
     context, _, repository, artifacts, _, _ = memory_stack
     complete(repository, context)
+    settle_memory(repository, context)
     called = []
     from unittest.mock import AsyncMock
 

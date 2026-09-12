@@ -43,6 +43,10 @@ class ArtifactRepository(Protocol):
         """有活动运行、审批或待核对操作的会话，暂缓工件回收。"""
         ...
 
+    def memory_access_state(self, tenant_id: str, subject_id: str) -> tuple[int, bool]:
+        """读取派生工件所属用户当前隐私版本与读取开关。"""
+        ...
+
     def list_turn(
         self,
         conversation_id: str,
@@ -98,6 +102,14 @@ class SqlAlchemyArtifactRepository:
 
         """
         self._sessions = sessions
+
+    def memory_access_state(self, tenant_id: str, subject_id: str) -> tuple[int, bool]:
+        """在读取工件正文前后核验SQL owner状态，不依赖Agent运行实现。"""
+        from financeclaw.shared.memory.tables import MemoryOwnerRow
+
+        with self._sessions() as session:
+            owner = session.get(MemoryOwnerRow, (tenant_id, subject_id))
+            return (owner.privacy_epoch, owner.read_enabled) if owner is not None else (0, True)
 
     def save(self, metadata: ArtifactMetadata) -> ArtifactMetadata:
         """写入 Artifact 元数据；并发重复提交完全相同内容时返回已提交记录。

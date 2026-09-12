@@ -1,6 +1,6 @@
 # FinanceClaw 当前架构
 
-Stage 10 将业务 API 合入 AgentServer，同一镜像分为 api、worker、integrations 三个角色。业务运行模型收敛为 Turn、Command、Interaction；14 张应用表使用唯一初始迁移。
+Stage 10 的统一 AgentServer API 与 Turn/Command/Interaction 继续保留。Stage 11 新增独立 memory_worker，形成 api、worker、integrations、memory_worker 四种角色；18 张应用表使用唯一初始迁移。SQL 管理长期记忆与画像事实，Store 管理派生检索索引，checkpoint 管理工作上下文。
 
 - [架构基线](00-最终架构设计.md)
 - [架构决议](01-架构决议汇总.md)
@@ -13,6 +13,9 @@ Stage 10 将业务 API 合入 AgentServer，同一镜像分为 api、worker、in
 - [Stage 9 实现与验证](stages/stage-9-实现与验证.md)
 - [Stage 10：统一 API 与运行模型收敛实施方案](stages/stage-10-统一API与运行模型收敛实施方案.md)
 - [Stage 10 实现与验证](stages/stage-10-实现与验证.md)
+- [Stage 11：异步记忆与上下文治理实施方案](stages/stage-11-异步记忆与上下文治理实施方案.md)
+- [Stage 11 场景链路与验收矩阵](stages/stage-11-场景链路与验收矩阵.md)
+- [Stage 11 实现与验证](stages/stage-11-实现与验证.md)
 - [上下文与记忆评估依据](../docs/architecture/memory-assessment-2026-09-10.md)
 - [清理与验证](stages/stage-8-hotfix-清理与验证.md)
 - [Stage 6：Feishu P2P Channel](./stages/Stage-6-Feishu-P2P-Channel-实施说明.md)

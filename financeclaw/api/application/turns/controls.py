@@ -45,6 +45,9 @@ def apply_control(service, session, turn, op, *, scopes=(), authorization=None, 
         )
     else:
         turn.grant_revoked = True
+        from financeclaw.api.application.turns.memory import revoke_derivation
+
+        revoke_derivation(service, session, turn)
     turn.grant_revision += 1
     record_grant(session, turn)
     pending = session.scalar(

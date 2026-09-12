@@ -1,0 +1,147 @@
+{
+  "mode": "offline",
+  "native_api_version": "0.14.0",
+  "native_runtime": "langgraph_runtime_inmem 0.34.0",
+  "database": "new isolated temporary SQLite",
+  "native_state_isolated": true,
+  "processing_region_setting": "omitted; server default global",
+  "server_stopped": true,
+  "turns": [
+    {
+      "turn_id": "b0e69a8a-6bb2-4a6d-9961-738dcab79798",
+      "status": "completed",
+      "elapsed_seconds": 2.056
+    },
+    {
+      "turn_id": "39097cb9-1239-48d2-9ecb-a4f46cefc2be",
+      "status": "completed",
+      "elapsed_seconds": 1.148
+    }
+  ],
+  "memory_receipt": {
+    "status": "committed",
+    "memory_id": "memory-35132ed670161fad56101113c7465ffaf7919369a88a69ad",
+    "revision": 1,
+    "candidate_id": null,
+    "owner_revision": 1,
+    "privacy_epoch": 0,
+    "replayed": false,
+    "purge_status": null
+  },
+  "turn_processing_regions": [
+    "global",
+    "global"
+  ],
+  "sources": [
+    {
+      "source_id": "source-8adfafcf90bd148af0d35f350b3dac7e1c6f973f83dbcba8",
+      "turn_id": "b0e69a8a-6bb2-4a6d-9961-738dcab79798",
+      "source_kind": "user_message",
+      "processing_region": "global",
+      "data_classification": "internal",
+      "permit_present": true
+    },
+    {
+      "source_id": "source-e7f77c31749598efc476c2b5dc4a8f7b4f55338e62ceedd3",
+      "turn_id": "b0e69a8a-6bb2-4a6d-9961-738dcab79798",
+      "source_kind": "assistant_message",
+      "processing_region": "global",
+      "data_classification": "internal",
+      "permit_present": true
+    },
+    {
+      "source_id": "source-06bb575959d76c2ae29504cb56c09974a1a8dabdc5ef0c2c",
+      "turn_id": "39097cb9-1239-48d2-9ecb-a4f46cefc2be",
+      "source_kind": "user_message",
+      "processing_region": "global",
+      "data_classification": "internal",
+      "permit_present": true
+    },
+    {
+      "source_id": "source-86a98e9f589d9932bf73d0be52bdc8538976cadd7209559b",
+      "turn_id": "39097cb9-1239-48d2-9ecb-a4f46cefc2be",
+      "source_kind": "assistant_message",
+      "processing_region": "global",
+      "data_classification": "internal",
+      "permit_present": true
+    }
+  ],
+  "extraction_intents": [
+    {
+      "event_id": "memory-prepare-ffd20c94b7a0e01edb20a291179192e014b140320128d07e0600f7de07850043",
+      "status": "pending",
+      "source_count": 2,
+      "model_fingerprint": "09b6271dc5bb7e6b2a712a95c290c08517ae1e74689f88059d34e2d8cf6c0573"
+    },
+    {
+      "event_id": "memory-prepare-6b7974e33f1b3804a47830e573b1153f20e9ba4771044ef5fc63a5e7a2b53d02",
+      "status": "pending",
+      "source_count": 2,
+      "model_fingerprint": "09b6271dc5bb7e6b2a712a95c290c08517ae1e74689f88059d34e2d8cf6c0573"
+    }
+  ],
+  "manifests": [
+    {
+      "turn_id": "b0e69a8a-6bb2-4a6d-9961-738dcab79798",
+      "memory_owner_revision": 0,
+      "privacy_epoch": 0,
+      "input_token_count": 3971,
+      "available_input_tokens": 65536,
+      "token_count_method": "cl100k_base-v1",
+      "memory_refs": []
+    },
+    {
+      "turn_id": "b0e69a8a-6bb2-4a6d-9961-738dcab79798",
+      "memory_owner_revision": 0,
+      "privacy_epoch": 0,
+      "input_token_count": 4290,
+      "available_input_tokens": 65536,
+      "token_count_method": "cl100k_base-v1",
+      "memory_refs": []
+    },
+    {
+      "turn_id": "39097cb9-1239-48d2-9ecb-a4f46cefc2be",
+      "memory_owner_revision": 1,
+      "privacy_epoch": 0,
+      "input_token_count": 4865,
+      "available_input_tokens": 65536,
+      "token_count_method": "cl100k_base-v1",
+      "memory_refs": [
+        {
+          "memory_id": "memory-35132ed670161fad56101113c7465ffaf7919369a88a69ad",
+          "schema_version": 3,
+          "memory_type": "profile",
+          "injection_reason": "profile",
+          "revision": 1
+        }
+      ]
+    },
+    {
+      "turn_id": "39097cb9-1239-48d2-9ecb-a4f46cefc2be",
+      "memory_owner_revision": 1,
+      "privacy_epoch": 0,
+      "input_token_count": 5179,
+      "available_input_tokens": 65536,
+      "token_count_method": "cl100k_base-v1",
+      "memory_refs": [
+        {
+          "memory_id": "memory-35132ed670161fad56101113c7465ffaf7919369a88a69ad",
+          "schema_version": 3,
+          "memory_type": "profile",
+          "injection_reason": "profile",
+          "revision": 1
+        }
+      ]
+    }
+  ],
+  "journal_roles": [
+    "user",
+    "assistant",
+    "user",
+    "assistant"
+  ],
+  "limitations": [
+    "Memory Worker was not launched; extraction is pending, not completed.",
+    "Offline synthetic model; no real-provider quality, PostgreSQL/Redis multi-process reliability or latency SLO claim."
+  ]
+}

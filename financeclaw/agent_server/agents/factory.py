@@ -23,9 +23,7 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.store.base import BaseStore
 
-from financeclaw.agent_server.context.budget import ContextBudget
 from financeclaw.agent_server.context.compaction import NativeContextMiddleware
-from financeclaw.agent_server.llm.factory import ModelFactory
 from financeclaw.agent_server.memory.service import LongTermMemoryService
 from financeclaw.agent_server.middleware.artifact_middleware import ToolResultArtifactMiddleware
 from financeclaw.agent_server.middleware.batch_middleware import ToolBatchMiddleware
@@ -53,6 +51,8 @@ from financeclaw.kernel.tools import ApprovalMode, RetryProfile
 from financeclaw.shared.artifacts.service import ArtifactService
 from financeclaw.shared.audit.repository import AuditRepository
 from financeclaw.shared.conversation.repository import ConversationRepository
+from financeclaw.shared.llm.budget import ContextBudget, ContextBudgetPlanner
+from financeclaw.shared.llm.factory import ModelFactory
 
 # build 的 checkpointer 参数哨兵值：调用方未显式传入时使用内存 Checkpointer。
 _DEFAULT_CHECKPOINTER = object()
@@ -135,6 +135,19 @@ class AgentFactory:
         self.memory_recall_limit = memory_recall_limit
         self.resource_gate = BoundedSemaphore(resource_concurrency)
 
+    def context_planner(self, profile: AgentProfile) -> ContextBudgetPlanner:
+        """根图、子图和最终检查共用发布时冻结的主模型及降级容量。"""
+        model = self.model_factory.catalog.resolve(profile.model_profile)
+        return ContextBudgetPlanner(
+            model,
+            self.context_budget.model_input_limit,
+            safety_margin=self.context_budget.safety_margin,
+            output_reserve=self.context_budget.reserved_output_tokens,
+            fallback_profiles=tuple(
+                self.model_factory.catalog.resolve(ref) for ref in model.fallback_profiles
+            ),
+        )
+
     def build(
         self,
         profile: AgentProfile,
@@ -186,6 +199,13 @@ class AgentFactory:
             if fallback_models is not None
             else self.model_factory.fallback_models(model_profile)
         )
+        planner = self.context_planner(profile)
+        context_options = {
+            "planner": planner,
+            "system_prompt": profile.system_prompt_template,
+            "tools": tuple(managed.tool for managed in resolved_tools),
+            "output_schema": profile.output_schema if use_profile_response_format else None,
+        }
         # 3. 收集按瞬时失败重试策略配置的只读工具名，供后续挂载重试中间件。
         read_retry_tools = [
             managed.tool.name
@@ -223,7 +243,7 @@ class AgentFactory:
                 "when": requires_approval,
             }
             for managed in resolved_tools
-            if managed.governance.approval in {ApprovalMode.ALWAYS, ApprovalMode.POLICY}
+            if managed.governance.approval is ApprovalMode.ALWAYS
         }
         # 5. 按顺序装配治理类中间件：人工审批、工具治理与调用偏好指令。
         middleware: list[Any] = list(additional_middleware)
@@ -285,6 +305,13 @@ class AgentFactory:
                     self.memory_service,
                     max_tokens=self.memory_recall_tokens,
                     max_memories=self.memory_recall_limit,
+                    **context_options,
+                )
+            )
+        if self.artifact_service is not None:
+            middleware.append(
+                ToolContextEditingMiddleware(
+                    self.artifact_service, self.context_budget, **context_options
                 )
             )
         if profile.context_policy == "native-thread-v1":
@@ -302,11 +329,13 @@ class AgentFactory:
                         )
                     ),
                     profile_version=profile.version,
+                    privacy_epoch_reader=(
+                        self.memory_service.privacy_epoch
+                        if self.memory_service is not None
+                        else None
+                    ),
+                    **context_options,
                 )
-            )
-        if self.artifact_service is not None:
-            middleware.append(
-                ToolContextEditingMiddleware(self.artifact_service, self.context_budget)
             )
         # 7. 挂载追踪与输入输出调试中间件。
         middleware.extend(
@@ -384,7 +413,11 @@ class AgentFactory:
                     self.context_budget,
                     self.conversation_repository,
                     profile_version=profile.version,
-                )
+                    planner=planner,
+                ),
+                privacy_epoch_reader=(
+                    self.memory_service.privacy_epoch if self.memory_service is not None else None
+                ),
             )
         )
         # 11. 解析 Checkpointer（缺省用内存实现），交给 create_agent 装配。

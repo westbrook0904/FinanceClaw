@@ -3,14 +3,11 @@
 from dataclasses import dataclass
 
 from financeclaw.agent_server.agents.factory import AgentFactory
-from financeclaw.agent_server.context.budget import ContextBudget
 from financeclaw.agent_server.domains.ziwei.application import ZiweiService
 from financeclaw.agent_server.graphs.workflows.portfolio_review_v1 import (
     portfolio_review_definition,
 )
-from financeclaw.agent_server.llm.factory import ModelFactory
 from financeclaw.agent_server.memory.history import HistoryService
-from financeclaw.agent_server.memory.policy import MemoryPolicy
 from financeclaw.agent_server.memory.service import LongTermMemoryService
 from financeclaw.agent_server.tools.catalog import ToolCatalog
 from financeclaw.agent_server.tools.history import history_tools
@@ -33,6 +30,8 @@ from financeclaw.shared.conversation.repository import (
 from financeclaw.shared.infrastructure.database import ApplicationDatabase
 from financeclaw.shared.infrastructure.resources import ApplicationResources, build_resources
 from financeclaw.shared.infrastructure.settings import FinanceClawSettings
+from financeclaw.shared.llm.budget import ContextBudget
+from financeclaw.shared.llm.factory import ModelFactory
 from financeclaw.shared.outbox.repository import OutboxRepository
 from financeclaw.shared.releases.catalog import build_release_catalogs
 
@@ -116,12 +115,12 @@ def build_components(
     context_budget = ContextBudget(**settings.context_budget)
     memory_service = (
         LongTermMemoryService(
+            sessions=database.session_factory,
             conversation_repository=conversation_repository,
-            audit=effective_audit,
-            outbox=outbox_repository,
-            policy=MemoryPolicy(
-                auto_commit_low_risk_preferences=(settings.memory_auto_commit_low_risk_preferences)
-            ),
+            index_version=settings.memory_index_version,
+            auto_commit_low_risk=settings.memory_auto_commit_low_risk_preferences,
+            candidate_seconds=settings.memory_candidate_seconds,
+            enabled=settings.memory_enabled,
         )
         if conversation_repository is not None
         else None
@@ -144,13 +143,7 @@ def build_components(
     else:
         base_tool_catalog = tool_catalog
     # 工具调用策略与目录解耦，使用默认规则集独立实例化。
-    tool_policy = ToolPolicy(
-        approval_policies={
-            "save_memory": memory_service.requires_approval,
-        }
-        if memory_service is not None
-        else {}
-    )
+    tool_policy = ToolPolicy()
     # 7. 装配 Workflow 目录：仅在制品服务可用（已启用持久化）时注册组合复盘流程。
     workflow_catalog = WorkflowCatalog(
         (

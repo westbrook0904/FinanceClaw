@@ -70,10 +70,6 @@ class ToolPolicy:
 
     version = "tool-policy/1.0.0"
 
-    def __init__(self, *, approval_policies=None):
-        """仅接受启动期注入的服务端确认规则，不读取模型自报标志。"""
-        self.approval_policies = approval_policies or {}
-
     def evaluate(
         self,
         context: ExecutionContext,
@@ -119,27 +115,6 @@ class ToolPolicy:
                 policy_version=self.version,
             )
         # 4. 写类 Tool 触发人工审批，其余可信上下文直接放行。
-        if governance.approval is ApprovalMode.POLICY:
-            policy = self.approval_policies.get(governance.tool_id)
-            if policy is None:
-                return ToolDecision(
-                    effect=ToolDecisionType.DENY,
-                    reason="required approval policy is not configured",
-                    policy_version=self.version,
-                )
-            try:
-                confirmation = not arguments or policy(context, arguments)
-            except (ValueError, RuntimeError, LookupError, PermissionError) as exc:
-                return ToolDecision(
-                    effect=ToolDecisionType.DENY, reason=str(exc), policy_version=self.version
-                )
-            return ToolDecision(
-                effect=ToolDecisionType.REQUIRE_APPROVAL
-                if confirmation
-                else ToolDecisionType.ALLOW,
-                reason="server-verified memory evidence policy",
-                policy_version=self.version,
-            )
         if governance.approval is ApprovalMode.ALWAYS:
             return ToolDecision(
                 effect=ToolDecisionType.REQUIRE_APPROVAL,

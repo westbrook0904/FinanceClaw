@@ -12,6 +12,8 @@ from urllib.parse import urlparse
 from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from financeclaw.kernel.context import DataClassification
+
 
 class Environment(StrEnum):
     """部署环境枚举：标识当前运行所处的基础设施环境。
@@ -159,6 +161,10 @@ class FinanceClawSettings(BaseSettings):
     model_timeout_seconds: float = Field(default=300.0, gt=0, le=600)
     model_max_tokens: int = Field(default=32_768, ge=64, le=384_000)
     model_max_retries: int = Field(default=2, ge=0, le=8)
+    model_context_window_tokens: int = Field(default=131_072, ge=1_024)
+    model_max_input_tokens: int | None = Field(default=None, ge=1_024)
+    model_token_estimator: str = "cl100k_base-v1"
+    model_capacities: dict[str, dict[str, int | str | None]] = Field(default_factory=dict)
     read_max_attempts: int = Field(default=3, ge=1, le=8)
     approval_timeout_seconds: int = Field(default=900, ge=30, le=86_400)
     workflow_run_timeout_seconds: int = Field(default=300, ge=1, le=86_400)
@@ -173,7 +179,7 @@ class FinanceClawSettings(BaseSettings):
     taibu_projection_bytes: int = Field(default=8192, ge=2048, le=65_536)
     taibu_result_max_bytes: int = Field(default=262_144, ge=4096, le=2_097_152)
     taibu_contract_cache_seconds: float = Field(default=300, ge=0, le=300)
-    process_role: str = Field(default="api", pattern="^(api|worker|integrations)$")
+    process_role: str = Field(default="api", pattern="^(api|worker|integrations|memory_worker)$")
     internal_api_url: str = "http://127.0.0.1:2024"
     turn_command_slots: int = Field(default=8, ge=1, le=64)
     turn_scanner_slots: int = Field(default=8, ge=1, le=64)
@@ -251,6 +257,7 @@ class FinanceClawSettings(BaseSettings):
     artifact_s3_prefix: str = "financeclaw"
     artifact_s3_endpoint_url: str | None = None
     artifact_s3_region: str | None = None
+    processing_region: str = Field(default="global", min_length=1, max_length=64)
     artifact_s3_sse_algorithm: str = "AES256"
     artifact_s3_kms_key_id: str | None = None
     artifact_s3_timeout_seconds: float = Field(default=10.0, gt=0, le=60)
@@ -277,6 +284,8 @@ class FinanceClawSettings(BaseSettings):
     context_tool_results_to_keep: int = Field(default=3, ge=0, le=100)
     summary_model: str | None = None
     summary_max_tokens: int = Field(default=4_096, ge=256)
+    summary_context_window_tokens: int = Field(default=131_072, ge=1_024)
+    summary_max_input_tokens: int | None = Field(default=None, ge=1_024)
     embedding_model: str | None = None
     embedding_base_url: str | None = None
     embedding_api_key: SecretStr | None = None
@@ -289,6 +298,23 @@ class FinanceClawSettings(BaseSettings):
     memory_recall_tokens: int = Field(default=4_096, ge=64, le=8_192)
     memory_recall_limit: int = Field(default=6, ge=1, le=20)
     memory_auto_commit_low_risk_preferences: bool = True
+    memory_enabled: bool = True
+    memory_auto_extract: bool = True
+    memory_permit_seconds: int = Field(default=86_400, ge=60, le=86_400)
+    memory_candidate_seconds: int = Field(default=604_800, ge=60, le=2_592_000)
+    memory_index_version: Literal["memory-v1"] = "memory-v1"
+    memory_extraction_concurrency: int = Field(default=2, ge=1, le=16)
+    memory_consolidation_concurrency: int = Field(default=1, ge=1, le=16)
+    memory_worker_poll_seconds: float = Field(default=1, ge=0.05, le=30)
+    memory_worker_lease_seconds: int = Field(default=120, ge=30, le=600)
+    memory_worker_renew_seconds: int = Field(default=20, ge=1, le=60)
+    memory_model_timeout_seconds: float = Field(default=45, gt=0, le=120)
+    memory_extraction_model: str | None = None
+    memory_consolidation_model: str | None = None
+    memory_model_allowed_data_classes: frozenset[DataClassification] = Field(
+        default_factory=lambda: frozenset(DataClassification)
+    )
+    memory_model_allowed_regions: frozenset[str] = frozenset({"global"})
 
     @property
     def context_budget(self) -> dict[str, int]:
@@ -365,23 +391,25 @@ class FinanceClawSettings(BaseSettings):
                 raise ValueError(
                     "api_auth_token is a development adapter and is forbidden in production"
                 )
-            oidc_values = (self.oidc_issuer, self.oidc_audience, self.oidc_jwks_url)
-            if not all(oidc_values):
-                raise ValueError("oidc_issuer, oidc_audience and oidc_jwks_url are required")
-            # 拒绝 HS 系对称算法与 none，防止 JWT 伪造。
-            if any(
-                algorithm.startswith("HS") or algorithm == "none"
-                for algorithm in self.oidc_algorithms
-            ):
-                raise ValueError("production OIDC must use configured asymmetric algorithms")
-            if not self.oidc_algorithms:
-                raise ValueError("at least one OIDC algorithm is required")
-            if urlparse(self.oidc_issuer or "").scheme != "https":
-                raise ValueError("production oidc_issuer must use HTTPS")
-            if urlparse(self.oidc_jwks_url or "").scheme != "https":
-                raise ValueError("production oidc_jwks_url must use HTTPS")
+            # Memory derives from source permits and never accepts user tokens or reads artifacts.
+            if self.process_role != "memory_worker":
+                oidc_values = (self.oidc_issuer, self.oidc_audience, self.oidc_jwks_url)
+                if not all(oidc_values):
+                    raise ValueError("oidc_issuer, oidc_audience and oidc_jwks_url are required")
+                # 拒绝 HS 系对称算法与 none，防止 JWT 伪造。
+                if any(
+                    algorithm.startswith("HS") or algorithm == "none"
+                    for algorithm in self.oidc_algorithms
+                ):
+                    raise ValueError("production OIDC must use configured asymmetric algorithms")
+                if not self.oidc_algorithms:
+                    raise ValueError("at least one OIDC algorithm is required")
+                if urlparse(self.oidc_issuer or "").scheme != "https":
+                    raise ValueError("production oidc_issuer must use HTTPS")
+                if urlparse(self.oidc_jwks_url or "").scheme != "https":
+                    raise ValueError("production oidc_jwks_url must use HTTPS")
             # 3. 生产环境服务间与持久化基线：强制服务令牌、PostgreSQL、Alembic 迁移。
-            if self.integration_service_token is None:
+            if self.process_role != "memory_worker" and self.integration_service_token is None:
                 raise ValueError("integration_service_token is required in production")
             database_url = self.database_url.get_secret_value()
             if not database_url.startswith(("postgresql+psycopg://", "postgresql://")):
@@ -389,7 +417,9 @@ class FinanceClawSettings(BaseSettings):
             if self.database_auto_create_schema:
                 raise ValueError("database_auto_create_schema must be disabled in production")
             # 4. 生产环境存储与观测基线：S3 产物桶、双 OTel 端点、低采样并隐藏输入输出。
-            if self.artifact_backend is not ArtifactBackend.S3 or not self.artifact_s3_bucket:
+            if self.process_role != "memory_worker" and (
+                self.artifact_backend is not ArtifactBackend.S3 or not self.artifact_s3_bucket
+            ):
                 raise ValueError("production artifact storage must use a configured S3 bucket")
             if not self.otel_exporter_endpoint or not self.otel_metrics_exporter_endpoint:
                 raise ValueError(
@@ -434,16 +464,21 @@ class FinanceClawSettings(BaseSettings):
         if self.context_reserved_output < self.model_max_tokens:
             raise ValueError("context output reserve must cover model_max_tokens")
         if (
-            self.context_input_limit
+            min(
+                self.context_input_limit,
+                self.model_max_input_tokens or self.model_context_window_tokens,
+                self.model_context_window_tokens - self.context_reserved_output,
+            )
             - (
-                self.context_reserved_output
-                + self.context_system_policy_reserve
+                self.context_system_policy_reserve
                 + self.context_tool_schema_reserve
                 + self.context_safety_margin
             )
             < 256
         ):
             raise ValueError("context reserves leave insufficient input budget")
+        if self.memory_worker_renew_seconds * 2 >= self.memory_worker_lease_seconds:
+            raise ValueError("memory worker renewal must leave room for lease recovery")
         return self
 
     def validate_taibu(self) -> None:

@@ -3,6 +3,7 @@
 import json
 from typing import Any
 
+from langchain_core.messages import ToolMessage
 from langchain_core.tools import BaseTool, ToolException
 from pydantic import Field, PrivateAttr
 
@@ -55,15 +56,24 @@ class HistoryTool(BaseTool):
         """用可信身份执行明确的历史检索或分页回读。"""
         context = trusted_context(runtime)
         try:
+            epoch = self._service.privacy_epoch(context)
             if self.name == "search_history":
                 result = self._service.search(context, runtime.store, **arguments)
             elif self.name == "read_history":
                 result = self._service.read(context, **arguments)
             else:
                 result = self._service.read_artifact(context, **arguments)
+            provenance = self._service.result_provenance(
+                context, result, tool_name=self.name, initial_epoch=epoch
+            )
         except (ValueError, LookupError, PermissionError) as exc:
             raise ToolException(str(exc)) from exc
-        return json.dumps(result, ensure_ascii=False)
+        return ToolMessage(
+            name=self.name,
+            tool_call_id=runtime.tool_call_id,
+            content=json.dumps(result, ensure_ascii=False),
+            additional_kwargs=provenance,
+        )
 
 
 def history_tools(service) -> tuple[ManagedTool, ...]:

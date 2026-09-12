@@ -188,7 +188,7 @@ class ContextOmission(FrozenRecord):
         "artifact_offloaded",
         "current_input_truncated",
     ]
-    item_type: Literal["message", "summary", "tool_result", "current_input"]
+    item_type: Literal["message", "summary", "tool_result", "current_input", "memory"]
     item_id: str
     token_count: int = Field(ge=0)
 
@@ -202,15 +202,14 @@ class ManifestMemoryReference(FrozenRecord):
     Attributes:
         memory_id: 被注入记忆的唯一标识。
         schema_version: 记忆条目的 schema 版本，从 1 起。
-        memory_type: 记忆类型；preference=偏好、goal=目标、constraint=约束、
-            decision_note=决策备注。
+        memory_type: 记忆类型；profile=用户画像、task=历史任务事实。
         injection_reason: 注入该记忆的原因说明。
 
     """
 
     memory_id: str
     schema_version: int = Field(ge=1)
-    memory_type: Literal["preference", "goal", "constraint", "decision_note"]
+    memory_type: Literal["profile", "task"]
     injection_reason: str
     revision: int = Field(default=1, ge=1)
 
@@ -229,6 +228,10 @@ class ModelContextManifest(FrozenRecord):
     model: str = "unknown"
     subtype: Literal["answer", "summary"] = "answer"
     token_count_method: str = "estimated"
+    memory_owner_revision: int | None = Field(default=None, ge=0)
+    privacy_epoch: int | None = Field(default=None, ge=0)
+    working_summary_version: int | None = Field(default=None, ge=0)
+    compaction_reason: str | None = None
     summary_sources: tuple[dict[str, Any], ...] = ()
     memory_ids: tuple[str, ...] = ()
     memory_refs: tuple[ManifestMemoryReference, ...] = ()
@@ -236,6 +239,8 @@ class ModelContextManifest(FrozenRecord):
     tool_result_refs: tuple[str, ...] = ()
     exposed_tools: tuple[str, ...] = ()
     input_token_count: int = Field(ge=0)
+    observed_input_tokens: int | None = Field(default=None, ge=0)
+    observed_output_tokens: int | None = Field(default=None, ge=0)
     available_input_tokens: int = Field(ge=1)
     omissions: tuple[ContextOmission, ...] = ()
     context_hash: str = Field(pattern=r"^[0-9a-f]{64}$")

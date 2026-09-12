@@ -162,6 +162,12 @@ class ConversationRepository(Protocol):
         """按 model_call_id 幂等保存模型调用 Manifest，返回已保存记录。"""
         ...
 
+    def record_manifest_usage(
+        self, manifest_id: str, *, input_tokens: int | None, output_tokens: int | None
+    ) -> None:
+        """回填Provider实际token用量；未知值为空，不冒充零用量。"""
+        ...
+
 
 def content_hash(content: str) -> str:
     """计算文本内容的 SHA-256 十六进制摘要。
@@ -756,6 +762,31 @@ class SqlAlchemyConversationRepository:
             )
             session.add(row)
         return manifest
+
+    def record_manifest_usage(
+        self, manifest_id: str, *, input_tokens: int | None, output_tokens: int | None
+    ) -> None:
+        """幂等补充真实用量；估算不覆盖，冲突用量不可静默替换。"""
+        for value in (input_tokens, output_tokens):
+            if value is not None and (type(value) is not int or value < 0):
+                raise ValueError("observed model usage must contain non-negative integers")
+        with self._sessions.begin() as session:
+            row = session.scalar(
+                select(ModelContextManifestRow)
+                .where(ModelContextManifestRow.manifest_id == manifest_id)
+                .with_for_update()
+            )
+            if row is None:
+                raise ConversationConflict("model usage has no matching request manifest")
+            for name, value in (
+                ("observed_input_tokens", input_tokens),
+                ("observed_output_tokens", output_tokens),
+            ):
+                existing = getattr(row, name)
+                if existing is not None and value is not None and existing != value:
+                    raise ConversationConflict("model request has conflicting observed usage")
+                if value is not None:
+                    setattr(row, name, value)
 
     def list_manifests(self, conversation_id: str) -> tuple[ModelContextManifest, ...]:
         """按创建时间升序返回会话的全部 Manifest。

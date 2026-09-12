@@ -1,72 +1,89 @@
-# Stage 9 上下文与记忆运维
+# Stage 11 上下文与异步记忆运维
 
-近期上下文由 LangGraph state 的 `messages` 和原生工作摘要提供。每个模型请求不再重读 Journal。新 thread 只初始化一次有界的已完成问答；失败或取消后更换 thread 时，不恢复旧审批或未完成工具动作。Journal 保存业务原文，历史检索通过 `search_history` 定位，`read_history`、`read_artifact` 分页回读。
+短期执行内容由原生 state/checkpoint 和唯一的 `WorkingContext` 管理；业务 Journal 保留原始问答。长期记忆及画像以应用 PostgreSQL 为事实源，Store 只用于检索 ID，返回正文前必须回读 SQL 的当前可见版本。详细契约见 [Stage 11 方案](../../.redesign/stages/stage-11-异步记忆与上下文治理实施方案.md)。
 
-## 容量与摘要
+## 进程与配置
 
-以下环境变量均加 `FINANCECLAW_` 前缀，API 与 Worker 的策略值需要一致，以匹配冻结发布指纹。
+同一镜像运行 `api`、原生 `worker`、`integrations`、`memory_worker`。记忆工作进程不导入 AgentFactory、不使用原生图队列；模型调用、整合和索引不会占用业务图执行槽。以下变量均加 `FINANCECLAW_` 前缀；API 和执行 Worker 的发布策略必须一致。
 
-| 配置 | 默认 | 作用 |
+| 配置 | 默认 | 含义 |
 |---|---:|---|
-| `CONTEXT_INPUT_LIMIT` | 800000 | 发布配置的模型容量上界 |
-| `CONTEXT_RESERVED_OUTPUT` | 32768 | 回答生成预留，不能小于 `MODEL_MAX_TOKENS` |
-| `CONTEXT_SYSTEM_POLICY_RESERVE` | 8192 | 摘要/初始化规划的系统文本预留 |
-| `CONTEXT_TOOL_SCHEMA_RESERVE` | 32768 | 摘要/初始化规划的工具定义预留 |
-| `CONTEXT_SAFETY_MARGIN` | 32768 | 输入估算余量 |
-| `CONTEXT_RECENT_TURNS` | 4 | 摘要时保护的最近已完成 Turn 数 |
-| `CONTEXT_SUMMARY_TRIGGER_TOKENS` | 64000 | 消息达到此阈值后尝试摘要旧 Turn |
-| `CONTEXT_SOFT_INPUT_TOKENS` | 96000 | 工具结果清理的软目标 |
-| `CONTEXT_TOOL_RESULTS_TO_KEEP` | 3 | 原生清理器保留的最近可清理结果数 |
-| `SUMMARY_MODEL` | 与主模型一致 | 摘要模型名，复用聊天供应商连接配置 |
-| `SUMMARY_MAX_TOKENS` | 4096 | 摘要输出上限 |
+| `MEMORY_ENABLED` | true | 允许记忆写入和运行时召回；关闭仍可遗忘/拒绝 |
+| `MEMORY_AUTO_EXTRACT` | true | 允许来源派生和后台提取 |
+| `MEMORY_AUTO_COMMIT_LOW_RISK_PREFERENCES` | true | 明确且持续的有限语言/格式偏好可即时写入 |
+| `MEMORY_PERMIT_SECONDS` | 86400 | 单来源有限派生许可；重试不延期 |
+| `MEMORY_CANDIDATE_SECONDS` | 604800 | 候选有效期 |
+| `MEMORY_EXTRACTION_CONCURRENCY` | 2 | 每进程提取并发 |
+| `MEMORY_CONSOLIDATION_CONCURRENCY` | 1 | 每进程整合并发；同 owner 仍由 SQL 串行化 |
+| `MEMORY_WORKER_LEASE_SECONDS` / `MEMORY_WORKER_RENEW_SECONDS` | 120 / 20 | 任务租约和续租间隔 |
+| `MEMORY_MODEL_TIMEOUT_SECONDS` | 45 | 每次后台模型调用超时 |
+| `MEMORY_EXTRACTION_MODEL` / `MEMORY_CONSOLIDATION_MODEL` | 主模型 | 分别冻结的结构化模型档案 |
+| `MEMORY_MODEL_ALLOWED_DATA_CLASSES` | 全部已知分级 | 后台模型可处理的来源最高分类 |
+| `MEMORY_MODEL_ALLOWED_REGIONS` | `["global"]` | 后台模型允许处理的区域 |
+| `PROCESSING_REGION` | global | 受理时写入执行快照和来源许可的处理区域 |
+| `MEMORY_RECALL_TOKENS` / `MEMORY_RECALL_LIMIT` | 4096 / 6 | 任务检索与目录的有限注入预算 |
 
-`SummarizationMiddleware` 的公开 `keep` 参数按真实用户锚点动态计算；当前 Turn 全部消息受保护。摘要最多 3 次实际尝试（含首次调用），每次实际尝试都计入根执行预算与 `subtype=summary` Manifest。摘要失败保留原 state，硬容量检查仍然生效。
-
-原生 `ContextEditingMiddleware`/`ClearToolUsesEdit` 负责请求投影中的工具清理。平台对所有工具应用同一默认规则：大结果立即归档，小结果在首次清理或摘要移除前归档。MCP 无需额外保留注解；未来通过受管工具通道执行的 Skill 也使用相同规则。只在模型上下文移除内容不会物理删除归档。
-
-最终请求检查覆盖系统提示、工具 schema、消息、画像、事件及结构化输出 schema；位于 fallback/重试内部，按实际尝试保存 `model_context_manifests`。模型提供容量元数据时取更小上界，否则使用发布配置。超限明确失败，不截断用户原文或结构保护结果。
-
-计数为近似值：仅使用本地 `cl100k_base` 缓存，缺失时按 UTF-8 字节保守估算；`TIKTOKEN_CACHE_DIR=""` 强制离线字节路径。Manifest 标记 `token_count_method=estimated`，不能当作供应商结算 token。
-
-## Store 与 embedding
-
-Store namespace 为 `financeclaw/v2/<编码tenant>/<编码subject>/<类别>`。画像在 `profile` 下以字段为 key，原生 `get/batch` 读取、`index=False` 写入；不需要 embedding。长期事件在 `events` 下索引 `content`。原生消息 state 持有当前用户消息 ID 和已召回事件 ID，空结果也缓存；普通工具循环、重试和恢复不会重复初始查询。明确写入/遗忘会使召回失效，显式 `search_memories`/`search_history` 属于额外查询。
-
-真实 embedding 必须独立配置：
-
-- `EMBEDDING_MODEL`、`EMBEDDING_BASE_URL`、`EMBEDDING_API_KEY`：OpenAI 兼容 embeddings 服务；密钥只需提供给 Agent Server。
-- `EMBEDDING_DIMENSIONS` 默认 1536，必须与所用 `langgraph*.json` 的 `store.index.dims` 一致。
-- `EMBEDDING_TIMEOUT_SECONDS` 默认 30；SDK 隐式重试关闭。失败不降级为词法检索。
-- 将供应商主机加入 `EGRESS_ALLOWED_HOSTS`；API 只需同一模型名、URL、维度等发布策略，不需 embedding 密钥。
-
-配置文件的 `store.index.embed` 指向 `financeclaw/agent_server/memory/embeddings.py:embeddings`，框架负责文档索引和查询编码。日志以 `embedding method=documents/query` 记录实际方法调用次数、字符量、耗时与失败，`memory_store purpose=...` 区分初始召回、更新后召回、主动搜索和历史索引。PostgreSQL Store 也会用 `embed_documents` 批量编码查询，不能仅凭方法名推断用途；不记录被编码的正文。`OFFLINE_MODEL=true` 使用框架的确定性假向量，仅供机制验证，不能证明中文语义检索质量。
-
-画像不存在通用版本指针表。每字段保存来源、业务版本与本次修改标识，用于回读追踪及同一工具调用重入。明确且持续的低风险偏好自动保存；高影响写入由一次原生 HITL 批准。模型推断不自动生效，未建设后台画像提取进程。
-
-已验证 PostgreSQL Store 的 `index=False` 不会擦除已有向量。因此撤销/替代通过强制 `status=active` 搜索过滤与读取复验退出正常召回；仅需停止使用时保留历史记录。物理删除正文和向量必须执行 `Store.delete`，不能把停止索引当成删除成功。
-
-## 后台索引与删除恢复
-
-完成 Turn 在业务事务内写入 `destination=history_index` 的 outbox 任务，回答不等待 embedding。运行独立后台角色：
+来源、模型档案、pipeline、schema、policy 版本在任务中冻结。不同版本的部署不能静默接管旧模型任务；过期、撤销、无输出分别留下正常完成回执。模型调用次数和输入/输出预算在发请求前预留并持久化，重启或重领不重置。
 
 ```bash
-python -m financeclaw.integrations --once
-python -m financeclaw.integrations
+FINANCECLAW_PROCESS_ROLE=memory_worker .venv/bin/python -m financeclaw.memory_worker
+.venv/bin/python -m financeclaw.memory_worker.operations status
+.venv/bin/python -m financeclaw.memory_worker.operations replay EVENT_ID --operator OPERATOR --reason REASON
+.venv/bin/python -m financeclaw.memory_worker.operations retain
+# 查看预览后，在授权范围内执行清理。
+.venv/bin/python -m financeclaw.memory_worker.operations retain --apply
 ```
 
-保存或遗忘时若 Store 已成功、审计失败，工具返回 `receipt_pending` 错误并使旧召回失效，不能声称回滚或全部完成。同一修改重入补齐回执；删除还由持久 outbox 恢复。
-
-该进程使用 Agent Server Store API，先处理 `memory_delete` 恢复，再处理历史索引。按来源 hash、索引版本、embedding 服务地址、模型名、维度及离线模式跳过未变化切块，尾部原文也会分块；切块重建移除多余旧块。后台不会写入画像。默认每批 4 个任务、轮询 5 秒，单条最多执行 50 秒，原生 Store 写入成功后 ack 丢失可以重试。旧 claim epoch 不能确认新的租约。
-
-尚未索引的明确 Turn 仍可直接回读。重建可按已认证主体的会话分页预览和入队，返回 `next_offset` 时继续下一页；正在执行的消费者会被跳过，不重放 audit 或 memory_delete：
+Compose 中通过专用入口构造同一身份的 DSN，不假定 `docker exec` 会继承 PID 1 动态设置的环境；本机直接运行则须显式设置对应 `FINANCECLAW_DATABASE_URL`：
 
 ```bash
-python -m financeclaw.integrations.maintenance history \
+docker compose exec memory_worker python deploy/memory_worker_entrypoint.py operations status
+```
+
+将 `status` 替换为相应运维子命令即可在容器内操作。索引重建按当前 SQL active task 分页，使用同一 request ID 重试同一页：
+
+```bash
+.venv/bin/python -m financeclaw.memory_worker.operations reindex \
+  --tenant-id TENANT --subject-id SUBJECT --operator OPERATOR --reason REASON \
+  --request-id REBUILD_ID
+```
+
+响应包含 `next_after` 时以 `--after` 继续；重建不会增加事实 revision，也不会重建已遗忘或来源已失效的记录。
+
+重放不延长来源许可，默认复用剩余预算；显式 `--new-model-budget` 才创建新预算并记录运维审计。没有自动扫描旧聊天的启动回填。角色健康由心跳与独立消费者存活判断；`status` 提供队列状态、最老任务、成功时间和模型预算，不能仅靠容器存活判断积压已经处理。
+
+## 用户写入、确认与遗忘
+
+`POST/PATCH/DELETE /v1/memories`、`PATCH /v1/memory/settings` 和候选决定均要求 `Idempotency-Key`。编辑、删除、决定使用唯一的 `expected_revision`；相同 key 不同内容返回冲突。owner 和权限来自认证身份。
+
+明确长期偏好在原始输入受理事务中解析；普通问答在最终 Journal 同事务入队后由后台提取、跨会话整合。模型产物只能引用服务端登记的原文，助手答案不能作为用户画像依据。重要字段产生 `proposed` 候选，通过 `/v1/memory/candidates/{id}/decision` 确认。飞书候选卡使用独立消息和回执，不占用或覆盖任务卡，也不创建 resume 命令。
+
+遗忘先清除 SQL 可读正文、建立防重放屏障并撤销相关派生内容，再异步清理精确 Store 版本。`forgotten` 是逻辑可见性结果，`purge_pending` 表示物化副本尚未核对；未知或可能迟到的 HTTP 写不能被报告成物理清理完成。旧用户来源、旧模型产物和旧幂等重试均不能自动重新记住。
+
+## 上下文容量与压缩
+
+`MODEL_CONTEXT_WINDOW_TOKENS`、`MODEL_MAX_INPUT_TOKENS`、`MODEL_MAX_TOKENS` 和 `MODEL_CAPACITIES` 冻结真实模型容量；fallback 使用所有候选的共同最小窗口。输入上限综合独立输入 cap、总窗口减输出预留和应用上限，独立输入 cap 不再重复扣输出。
+
+一个 Turn 冻结 SQL 画像和有限任务目录，普通新任务不强制做 embedding 查询；明确历史延续或 `search_memories` 才检索。Store 不可用或没有有效命中时有界回退 SQL。后台普通更新下一 Turn 生效；遗忘/关闭读取/source 隐藏提高隐私版本，每次真正模型尝试都重新检查。画像和检索内容仍是历史数据，不能成为交易授权、当前行情或可执行指令。
+
+已完成的较早工具批次可压缩；真实用户原文、澄清、未完成的完整调用/结果配对必须保留。先归档唯一原文，再生成受限结构化 WorkingContext，校验后通过公开原生 reducer 一次提交。状态内不重复存摘要正文，不直接改 checkpoint 私有表。相同输入摘要失败最多两次，最终无法容纳必保内容时明确失败并保留原文。
+
+每次实际回答/摘要请求的 Manifest 记录估算器、完整输入容量、模型版本、记忆 ID/revision、owner/隐私版本、摘要来源和可选项省略原因；Provider 返回用量时另记 observed tokens，缺失时留空。离线 tokenizer 无本地缓存时采用 UTF-8 字节保守估算，不进行运行时下载。
+
+## Store 与后台索引
+
+记忆 namespace 为 `financeclaw/v3/<编码 tenant>/<编码 subject>/memory_index/memory-v1`，key 为 `memory_id:revision`；原有问答历史检索保持其独立 v2 namespace。画像直接读 SQL，不做 embedding。当前发布固定 `memory-v1`，更换向量 schema 或 embedding 档案必须通过明确的新索引发布和重建，不接受任意配置版本后静默忽略。
+
+历史索引、记忆索引、删除各有独立消费循环。内容不写入 Outbox；事件只带 owner、ID、revision 和版本，由消费者回读当前 SQL 事实，HTTP 前后都核验。乱序删除只针对旧版本 key。
+
+真实 embedding 仍由原生 Agent Server 配置 `EMBEDDING_MODEL`、`EMBEDDING_BASE_URL`、`EMBEDDING_API_KEY`、`EMBEDDING_DIMENSIONS`；维度必须与 `langgraph*.json` 一致，供应商主机须位于出站允许列表。离线模型使用确定性假向量，不能证明中文检索质量。
+
+已完成问答历史重建保留现有显式命令：
+
+```bash
+.venv/bin/python -m financeclaw.integrations.maintenance history \
   --tenant-id TENANT --subject-id SUBJECT --conversation-id CONVERSATION
-# 确认范围后追加 --apply；下一页使用返回的 --offset。
 ```
-
-更换 embedding 服务、模型或维度时先停索引 worker，按框架要求重建向量索引/部署，再重新入队目标历史任务。切勿修改原始问答来触发重建。
 
 ## 数据保留
 

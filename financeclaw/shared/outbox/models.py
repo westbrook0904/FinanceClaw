@@ -69,6 +69,7 @@ class OutboxEvent(BaseModel):
     tenant_id: str
     subject_id: str
     payload: dict[str, Any] = Field(default_factory=dict)
+    processing_metadata: dict[str, Any] = Field(default_factory=dict)
     status: OutboxStatus = OutboxStatus.PENDING
     attempts: int = Field(default=0, ge=0)
     available_at: datetime = Field(default_factory=lambda: datetime.now(UTC))

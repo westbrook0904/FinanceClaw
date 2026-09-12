@@ -235,6 +235,9 @@ class TurnInteractions:
             saved.decided_by, saved.decided_at = subject_id, now()
             saved.resume_command_id = command_id
             saved.status = "rejected" if response.decision == "reject" else "resolved"
+            from financeclaw.api.application.turns.memory import register_answer
+
+            register_answer(self.service, session, turn, saved, effective)
             turn.current_command_id = command_id
             if response.decision == "reject":
                 turn.side_effects_denied = True

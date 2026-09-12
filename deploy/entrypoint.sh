@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 . /app/financeclaw/native-env.sh
-case "${FINANCECLAW_PROCESS_ROLE:?Set api, worker or integrations}" in
+case "${FINANCECLAW_PROCESS_ROLE:?Set api, worker, integrations or memory_worker}" in
   api)
     [ "${N_JOBS_PER_WORKER:?API requires N_JOBS_PER_WORKER=0}" = 0 ] || {
       echo "API must not execute native jobs" >&2; exit 1;
@@ -14,6 +14,9 @@ case "${FINANCECLAW_PROCESS_ROLE:?Set api, worker or integrations}" in
     ;;
   integrations)
     exec python -m financeclaw.integrations "$@"
+    ;;
+  memory_worker)
+    exec python -m financeclaw.memory_worker "$@"
     ;;
   *) echo "Unknown FinanceClaw process role" >&2; exit 1 ;;
 esac

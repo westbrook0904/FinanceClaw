@@ -2,7 +2,7 @@
 
 from datetime import UTC, datetime
 
-from financeclaw.agent_server.memory.service import owner_namespace
+from financeclaw.shared.memory.namespace import owner_namespace
 from financeclaw.shared.memory.observability import store_operation
 
 
@@ -13,6 +13,29 @@ class HistoryService:
         """保存历史原文及工件读取所需的服务。"""
         self.conversations = conversations
         self.artifacts = artifacts
+
+    def privacy_epoch(self, context):
+        """在派生历史内容读取前固定隐私版本，完成后再次核对。"""
+        return self.artifacts.memory_privacy_epoch(context)
+
+    def result_provenance(self, context, result, *, tool_name, initial_epoch):
+        """历史派生文本保留版本；业务原始工件仍按其原始访问策略处理。"""
+        if self.privacy_epoch(context) != initial_epoch:
+            raise PermissionError("privacy changed while reading historical context")
+        if tool_name == "read_artifact":
+            metadata = self.artifacts.repository.get_owned(
+                result["artifact_id"], context.tenant_id, context.subject_id
+            )
+            self.artifacts.validate_memory_access(metadata, context)
+            epoch = metadata.access_policy.get("memory_privacy_epoch")
+            if epoch is None:
+                return {}
+            return {
+                "memory_derived": True,
+                "memory_privacy_epoch": epoch,
+                "financeclaw_memory_refs": metadata.access_policy.get("memory_refs", []),
+            }
+        return {"memory_derived": True, "memory_privacy_epoch": initial_epoch}
 
     @staticmethod
     def namespace(context, conversation_id=None):

@@ -34,10 +34,16 @@ def create_app(
             for hook in reversed(shutdown_hooks):
                 await hook()
 
-    app = FastAPI(title="FinanceClaw API", version="10", lifespan=lifespan)
+    app = FastAPI(title="FinanceClaw API", version="11", lifespan=lifespan)
     install_error_handlers(app)
     install_request_observability(app, p95_target_ms=p95_target_ms)
     app.include_router(product_router(conversations, turns, authenticator))
+    from financeclaw.api.application.memory_service import MemoryManagementService
+    from financeclaw.api.http.memory import memory_router
+
+    app.include_router(
+        memory_router(MemoryManagementService(turns.sessions, turns.settings), authenticator)
+    )
 
     @app.get("/v1/health/live")
     async def live():

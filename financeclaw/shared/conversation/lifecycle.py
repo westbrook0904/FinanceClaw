@@ -9,10 +9,13 @@ from financeclaw.shared.conversation.tables import ConversationRow
 from financeclaw.shared.turns.tables import ConversationTurnRow, InteractionRow, TurnCommandRow
 
 
-def has_open_responsibility(session, conversation_id: str | None) -> bool:
+def responsibility_reasons(session, conversation_id: str | None) -> tuple[str, ...]:
     """未知会话不推断终态；活动 Turn、审批和未确认的出站命令都阻止回收。"""
     if not conversation_id:
-        return True
+        return ("unknown_conversation",)
+    conversation = session.get(ConversationRow, conversation_id)
+    if conversation is None:
+        return ("unknown_conversation",)
     turn_ids = select(ConversationTurnRow.turn_id).where(
         ConversationTurnRow.conversation_id == conversation_id
     )
@@ -29,7 +32,22 @@ def has_open_responsibility(session, conversation_id: str | None) -> bool:
             TurnCommandRow.state.in_(("prepared", "sending", "submitted", "uncertain")),
         ),
     )
-    return any(session.scalar(statement.limit(1)) is not None for statement in checks)
+    reasons = [
+        reason
+        for reason, statement in zip(
+            ("active_turn", "pending_interaction", "pending_command"), checks, strict=True
+        )
+        if session.scalar(statement.limit(1)) is not None
+    ]
+    from financeclaw.shared.memory.retention import memory_retention_reasons
+
+    reasons.extend(memory_retention_reasons(session, conversation))
+    return tuple(reasons)
+
+
+def has_open_responsibility(session, conversation_id: str | None) -> bool:
+    """Protect unfinished business and memory source/candidate responsibilities together."""
+    return bool(responsibility_reasons(session, conversation_id))
 
 
 class ConversationRetention:
@@ -69,13 +87,16 @@ class ConversationRetention:
                     .where(ConversationRow.conversation_id == artifact.conversation_id)
                     .values(status=ConversationRow.status, updated_at=ConversationRow.updated_at)
                 )
-                protected = has_open_responsibility(session, artifact.conversation_id)
+                reasons = responsibility_reasons(session, artifact.conversation_id)
+                protected = bool(reasons)
                 status = "protected" if protected else "eligible"
                 if apply and not protected:
                     self.artifact_store.delete(artifact.storage_uri)
                     artifact.deleted_at = now
                     status = "deleted"
-                results.append({"artifact_id": identity, "status": status})
+                results.append(
+                    {"artifact_id": identity, "status": status, "protection_reasons": list(reasons)}
+                )
         return results
 
     def checkpoint_candidates(self, *, conversation_id: str, tenant_id: str, subject_id: str):

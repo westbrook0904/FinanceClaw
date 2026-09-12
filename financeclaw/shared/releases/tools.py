@@ -116,7 +116,7 @@ def memory_tool_governance() -> tuple[ToolGovernance, ...]:
             idempotency=Idempotency.KEY_REQUIRED,
             risk_level=RiskLevel.MEDIUM,
             required_scopes=frozenset({"memory:write"}),
-            approval=ApprovalMode.POLICY,
+            approval=ApprovalMode.MEMORY_CANDIDATE,
             **internal,
         ),
         ToolGovernance(
@@ -125,7 +125,7 @@ def memory_tool_governance() -> tuple[ToolGovernance, ...]:
             idempotency=Idempotency.IDEMPOTENT,
             risk_level=RiskLevel.MEDIUM,
             required_scopes=frozenset({"memory:delete"}),
-            approval=ApprovalMode.ALWAYS,
+            approval=ApprovalMode.MEMORY_CANDIDATE,
             **internal,
         ),
     )

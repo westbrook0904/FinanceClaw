@@ -54,7 +54,7 @@ class ApprovalMode(StrEnum):
 
     NONE = "none"
     ALWAYS = "always"
-    POLICY = "policy"
+    MEMORY_CANDIDATE = "memory_candidate"
 
 
 class Egress(StrEnum):
@@ -166,10 +166,18 @@ class ToolGovernance(BaseModel):
         # 1. 写入与外部动作类 Tool 必须强制人工审批。
         mutable_effects = {SideEffect.WRITE, SideEffect.EXTERNAL_ACTION}
         conditional_internal_write = (
-            self.approval is ApprovalMode.POLICY
+            self.approval is ApprovalMode.MEMORY_CANDIDATE
             and self.side_effect is SideEffect.WRITE
             and self.egress is Egress.INTERNAL
+            and self.tool_id in {"save_memory", "forget_memory"}
+            and {"memory:write" if self.tool_id == "save_memory" else "memory:delete"}.issubset(
+                self.required_scopes
+            )
         )
+        if self.approval is ApprovalMode.MEMORY_CANDIDATE and not conditional_internal_write:
+            raise ValueError(
+                "independent memory candidates are limited to registered memory writes"
+            )
         if (
             self.side_effect in mutable_effects
             and self.approval is not ApprovalMode.ALWAYS

@@ -1,6 +1,6 @@
-# Stage 10 包结构与依赖
+# Stage 11 包结构与依赖
 
-业务 API 与 LangGraph 原生 API 在同一 ASGI 进程内。API 只受理业务命令、观察原生事实和提交产品结果；原生 queue worker 执行图；integrations 处理外部渠道和持久投递。
+业务 API 与 LangGraph 原生 API 在同一 ASGI 进程内。API 受理业务命令、观察原生事实和提交产品结果；原生 queue worker 执行图；memory_worker 处理有限、结构化的异步提取与整合；integrations 处理渠道、通知和索引。
 
 ```text
 financeclaw/
@@ -14,29 +14,37 @@ financeclaw/
       feishu_channel_service.py  标准化消息的业务语义
       feishu_card_actions.py     卡片决定的原子受理
       maintenance.py             已归档会话 checkpoint 回收
+      memory_service.py          认证用户的记忆、设置与独立候选决定
   agent_server/
     graphs/product.py            唯一 finance_agent 工厂
     graphs/                      顶层 Agent 与内部 Worker/Workflow
     middleware/ tools/           同一 Turn 的授权、预算与调用治理
     context/ memory/ domains/    上下文、记忆和领域能力
+  memory_worker/
+    bootstrap.py runner.py       独立进程、租约续期与持久模型预算
+    extraction.py consolidation.py  闭合输入拆批提取、owner 串行整合
+    model.py prompts/            受限结构化模型调用及版本化契约
+    operations.py               状态、受控重放与保留清理
   integrations/
     __main__.py                  统一集成进程
     feishu/                      WebSocket、标准化事件 HTTP transport
     notifications/               原有投递租约、重试和不确定回执处理
-    history.py history_indexer.py 历史与删除 outbox 消费
+    history.py history_indexer.py 历史索引独立消费
+    memory_indexer.py             版本化记忆索引与删除独立消费
     maintenance.py               显式维护 CLI
   shared/
     turns/                       三种运行事实、授权、预算、租约、审计、投影
     conversation/                永久 Journal、渠道绑定、Manifest、保留规则
     channels/                    渠道数据契约与纯展示逻辑
-    memory/                      跨进程 namespace 与删除契约
+    memory/                      SQL 权威领域、来源、许可、版本、候选和隐私屏障
+    llm/                         共享模型工厂、容量与 token 计数
     notifications/               事务性通知意图和表
     artifacts/ audit/ outbox/    共享持久事实
     releases/ infrastructure/   静态发布清单与基础设施
   kernel/                        不依赖服务实现的领域契约
 ```
 
-依赖规则由 `tests/stage5/test_package_architecture.py` 强制检查：api、agent_server、integrations 只依赖自身、shared 和 kernel；shared 只依赖 shared/kernel；kernel 不反向依赖服务。API 不导入 AgentFactory 或领域引擎；静态发布目录负责 API/Worker 的发布一致性。
+依赖规则由 `tests/stage5/test_package_architecture.py` 强制检查：api、agent_server、integrations、memory_worker 只依赖自身、shared 和 kernel；shared 只依赖 shared/kernel；kernel 不反向依赖服务。API 不导入 AgentFactory 或领域引擎；静态发布目录负责角色间发布一致性。
 
 ```mermaid
 flowchart LR
@@ -46,8 +54,9 @@ flowchart LR
   API -->|进程内 ASGI SDK| Native[原生 threads / runs / state]
   Native --> Queue[原生 Postgres + Redis]
   Queue --> Worker[独立 queue worker]
-  API --> AppDB[应用 Postgres：14 表]
+  API --> AppDB[应用 Postgres：18 表]
   Worker --> AppDB
+  MemoryWorker[memory_worker] <--> AppDB
   Integrations --> AppDB
   Integrations -->|受限服务身份| Store[原生 Store]
 ```

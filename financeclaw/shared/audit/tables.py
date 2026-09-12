@@ -57,7 +57,7 @@ class AuditRecordRow(Base):
     tenant_id: Mapped[str] = mapped_column(String(128), nullable=False)
     subject_id: Mapped[str] = mapped_column(String(128), nullable=False)
     conversation_id: Mapped[str | None] = mapped_column(String(128))
-    turn_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    turn_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     tool_call_id: Mapped[str | None] = mapped_column(String(128))
     resource_type: Mapped[str] = mapped_column(String(64), nullable=False)
     resource_id: Mapped[str] = mapped_column(String(128), nullable=False)

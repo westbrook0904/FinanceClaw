@@ -143,6 +143,7 @@ class TurnAdmission:
                     turn_id=turn_id,
                     request_clock=now().isoformat(),
                     data_classification=profile.data_classification,
+                    processing_region=service.settings.processing_region,
                 )
                 sequence = (
                     session.scalar(
@@ -232,6 +233,9 @@ class TurnAdmission:
                         replay=False,
                     )
                 record_grant(session, turn)
+                from financeclaw.api.application.turns.memory import register_message
+
+                register_message(service, session, turn)
                 service.store.wake(session, turn)
                 from financeclaw.shared.notifications.facts import record_progress
 

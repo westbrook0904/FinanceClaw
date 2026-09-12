@@ -1,0 +1,171 @@
+{
+  "mode": "offline",
+  "native_api_version": "0.14.0",
+  "native_runtime": "langgraph_runtime_inmem 0.34.0",
+  "database": "isolated temporary SQLite",
+  "native_state_isolated": true,
+  "turns": [
+    {
+      "turn_id": "47b3c8be-411c-446e-a17f-6e8d490931a3",
+      "status": "completed",
+      "elapsed_seconds": 2.615
+    },
+    {
+      "turn_id": "3bd1d761-2d94-4ed1-aaf1-657f70ef00f1",
+      "status": "completed",
+      "elapsed_seconds": 1.335
+    }
+  ],
+  "memory_receipt": {
+    "status": "committed",
+    "memory_id": "memory-35132ed670161fad56101113c7465ffaf7919369a88a69ad",
+    "revision": 1,
+    "candidate_id": null,
+    "owner_revision": 1,
+    "privacy_epoch": 0,
+    "replayed": false,
+    "purge_status": null
+  },
+  "journal_roles": [
+    "user",
+    "assistant",
+    "user",
+    "assistant"
+  ],
+  "sources": [
+    {
+      "source_id": "source-c480798017034ab22894aaeb74c2a62d54e669b21373cda6",
+      "source_kind": "user_message",
+      "turn_id": "47b3c8be-411c-446e-a17f-6e8d490931a3",
+      "source_seq": 2,
+      "visible": 1,
+      "permit_revoked": 0,
+      "permit_exists": true,
+      "permit_policy_revision": 1
+    },
+    {
+      "source_id": "source-229b01fea749d359fba7639b54719913178c792179c8d790",
+      "source_kind": "assistant_message",
+      "turn_id": "47b3c8be-411c-446e-a17f-6e8d490931a3",
+      "source_seq": 3,
+      "visible": 1,
+      "permit_revoked": 0,
+      "permit_exists": true,
+      "permit_policy_revision": 1
+    },
+    {
+      "source_id": "source-743c5a80a9b146fd7cf80e1e1ca2dc2003d1b8641f778e14",
+      "source_kind": "user_message",
+      "turn_id": "3bd1d761-2d94-4ed1-aaf1-657f70ef00f1",
+      "source_seq": 5,
+      "visible": 1,
+      "permit_revoked": 0,
+      "permit_exists": true,
+      "permit_policy_revision": 1
+    },
+    {
+      "source_id": "source-d49086c56b554ea83694a6b8f1300f2e6319b5384b087f22",
+      "source_kind": "assistant_message",
+      "turn_id": "3bd1d761-2d94-4ed1-aaf1-657f70ef00f1",
+      "source_seq": 6,
+      "visible": 1,
+      "permit_revoked": 0,
+      "permit_exists": true,
+      "permit_policy_revision": 1
+    }
+  ],
+  "extraction_intents": [
+    {
+      "destination": "memory_extract",
+      "event_type": "memory.extract.prepare",
+      "aggregate_id": "47b3c8be-411c-446e-a17f-6e8d490931a3",
+      "status": "pending",
+      "turn_id": "47b3c8be-411c-446e-a17f-6e8d490931a3",
+      "source_ids": [
+        "source-c480798017034ab22894aaeb74c2a62d54e669b21373cda6",
+        "source-229b01fea749d359fba7639b54719913178c792179c8d790"
+      ],
+      "pipeline_version": "memory/1",
+      "model_profile_version": "3efb8ab579daed68dce783dd21588142627a58dc12fa2b7e7b9e228a9e973881"
+    },
+    {
+      "destination": "memory_extract",
+      "event_type": "memory.extract.prepare",
+      "aggregate_id": "3bd1d761-2d94-4ed1-aaf1-657f70ef00f1",
+      "status": "pending",
+      "turn_id": "3bd1d761-2d94-4ed1-aaf1-657f70ef00f1",
+      "source_ids": [
+        "source-743c5a80a9b146fd7cf80e1e1ca2dc2003d1b8641f778e14",
+        "source-d49086c56b554ea83694a6b8f1300f2e6319b5384b087f22"
+      ],
+      "pipeline_version": "memory/1",
+      "model_profile_version": "3efb8ab579daed68dce783dd21588142627a58dc12fa2b7e7b9e228a9e973881"
+    }
+  ],
+  "manifests": [
+    {
+      "turn_id": "47b3c8be-411c-446e-a17f-6e8d490931a3",
+      "memory_owner_revision": 0,
+      "privacy_epoch": 0,
+      "memory_refs": [],
+      "token_count_method": "cl100k_base-v1",
+      "input_token_count": 3959,
+      "available_input_tokens": 65536
+    },
+    {
+      "turn_id": "47b3c8be-411c-446e-a17f-6e8d490931a3",
+      "memory_owner_revision": 0,
+      "privacy_epoch": 0,
+      "memory_refs": [],
+      "token_count_method": "cl100k_base-v1",
+      "input_token_count": 4279,
+      "available_input_tokens": 65536
+    },
+    {
+      "turn_id": "3bd1d761-2d94-4ed1-aaf1-657f70ef00f1",
+      "memory_owner_revision": 1,
+      "privacy_epoch": 0,
+      "memory_refs": [
+        {
+          "memory_id": "memory-35132ed670161fad56101113c7465ffaf7919369a88a69ad",
+          "schema_version": 3,
+          "memory_type": "profile",
+          "injection_reason": "profile",
+          "revision": 1
+        }
+      ],
+      "token_count_method": "cl100k_base-v1",
+      "input_token_count": 4849,
+      "available_input_tokens": 65536
+    },
+    {
+      "turn_id": "3bd1d761-2d94-4ed1-aaf1-657f70ef00f1",
+      "memory_owner_revision": 1,
+      "privacy_epoch": 0,
+      "memory_refs": [
+        {
+          "memory_id": "memory-35132ed670161fad56101113c7465ffaf7919369a88a69ad",
+          "schema_version": 3,
+          "memory_type": "profile",
+          "injection_reason": "profile",
+          "revision": 1
+        }
+      ],
+      "token_count_method": "cl100k_base-v1",
+      "input_token_count": 5169,
+      "available_input_tokens": 65536
+    }
+  ],
+  "limitations": [
+    "memory_worker not run by this probe",
+    "no real provider calls",
+    "not a production PostgreSQL/Redis multi-process fault test"
+  ],
+  "isolated_server_stopped": true,
+  "initial_probe_failure": {
+    "cause": "cold async graph factory performed synchronous imports and tokenizer cache discovery on the event loop",
+    "error": "blockbuster.BlockingError: Blocking call to os.getcwd",
+    "fix": "finance_agent awaits asyncio.to_thread(_graph)",
+    "post_fix_result": "two Turns completed without allow-blocking override"
+  }
+}

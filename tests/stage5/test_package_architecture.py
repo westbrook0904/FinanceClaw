@@ -45,6 +45,7 @@ def test_service_dependency_direction_is_enforced() -> None:
         "agent_server": {"kernel", "shared", "agent_server"},
         "api": {"kernel", "shared", "api"},
         "integrations": {"kernel", "shared", "integrations"},
+        "memory_worker": {"kernel", "shared", "memory_worker"},
     }
     violations = []
     for owner, dependencies in allowed.items():

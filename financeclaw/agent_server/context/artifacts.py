@@ -45,6 +45,16 @@ class ToolResultArchive:
             source_type="tool_result",
             source_id=message.tool_call_id,
             idempotency_key=f"{owner.turn_id}:{message.tool_call_id}:{content_hash}",
+            **(
+                {
+                    "memory_privacy_epoch": message.additional_kwargs["memory_privacy_epoch"],
+                    "memory_references": tuple(
+                        message.additional_kwargs.get("financeclaw_memory_refs", ())
+                    ),
+                }
+                if message.additional_kwargs.get("memory_derived")
+                else {}
+            ),
         )
         return {
             "artifact_id": metadata.artifact_id,

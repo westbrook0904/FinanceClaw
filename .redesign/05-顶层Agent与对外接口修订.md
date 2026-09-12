@@ -1,8 +1,10 @@
-# Stage 10 产品 API
+# Stage 11 产品 API
 
 唯一启动路径是创建 Conversation，再提交带 Idempotency-Key 的 message-only Turn。公开根图为 `finance_agent`；领域 Agent 和 Workflow 都是内部 Tool/subgraph，不创建独立业务任务。
 
 当前接口与示例见 [README](../README.md#产品接口)，完整语义见 [Turn 运行手册](../docs/operations/turn-control.md)。所有 Turn 查询、取消和授权路径都嵌套在 Conversation 下，必须同时验证两者的归属关系。
+
+记忆接口位于 `/v1/memories`、`/v1/memory/settings` 和 `/v1/memory/candidates/{id}/decision`，以当前认证 owner、操作权限、幂等键和 expected_revision 处理。独立候选决定不创建 Turn、Interaction 或 resume，也不改变已完成任务的状态。详细请求契约见 [Stage 11 方案](stages/stage-11-异步记忆与上下文治理实施方案.md#12-产品-api-与飞书链路)。
 
 HTTP/SSE 查询只读；人工交互使用 interaction_id、revision 和 typed response，不能提供原生 thread/run/checkpoint。回复决定必须在返回 202 前持久化。
 

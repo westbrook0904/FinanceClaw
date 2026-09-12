@@ -1,5 +1,6 @@
 """The sole published graph factory; all specialist graphs remain internal tools."""
 
+import asyncio
 from functools import lru_cache
 
 from financeclaw.shared.infrastructure.runtime import process_resources
@@ -21,5 +22,5 @@ def _graph():
 
 
 async def finance_agent(config):
-    """Native workers inject checkpointer/store; the API never invokes this graph directly."""
-    return _graph()
+    """Compile cold graphs off-loop; native workers inject the checkpointer and Store."""
+    return await asyncio.to_thread(_graph)

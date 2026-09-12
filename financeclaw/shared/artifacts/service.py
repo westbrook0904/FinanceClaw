@@ -141,6 +141,8 @@ class ArtifactService:
         source_id: str,
         idempotency_key: str,
         content_type: str = "application/json",
+        memory_privacy_epoch: int | None = None,
+        memory_references: tuple[dict, ...] = (),
     ) -> ArtifactMetadata:
         """按幂等键持久化工具结果，重复提交相同内容时返回既有元数据。
 
@@ -154,6 +156,8 @@ class ArtifactService:
             source_id: 来源标识，参与幂等标识推导与溯源。
             idempotency_key: 调用方提供的幂等键，相同键必须对应相同内容。
             content_type: 工件内容的 MIME 类型，默认 ``application/json``。
+            memory_privacy_epoch: 记忆派生结果读取时冻结的隐私版本；业务原始结果为空。
+            memory_references: 派生结果实际包含的有界记忆版本引用。
 
         Returns:
             幂等命中的既有元数据，或新写入的工件元数据。
@@ -166,6 +170,22 @@ class ArtifactService:
         serialized = _serialize(value)
         payload = serialized.encode()
         content_hash = sha256(payload).hexdigest()
+        memory_policy = {}
+        if memory_privacy_epoch is not None:
+            if type(memory_privacy_epoch) is not int or memory_privacy_epoch < 0:
+                raise ValueError("derived artifact requires a valid privacy epoch")
+            memory_policy = {
+                "memory_privacy_epoch": memory_privacy_epoch,
+                "memory_owner": [context.tenant_id, context.subject_id],
+                "memory_refs": list(memory_references),
+            }
+            if len(memory_references) > 64:
+                raise ValueError("derived artifact memory references must be bounded")
+            current, enabled = self.repository.memory_access_state(
+                context.tenant_id, context.subject_id
+            )
+            if current != memory_privacy_epoch or not enabled:
+                raise ArtifactNotFound("derived artifact was invalidated before persistence")
         # 2. 用归属、来源与幂等键推导确定性的工件标识，保证幂等。
         identity = json.dumps(
             {
@@ -174,6 +194,7 @@ class ArtifactService:
                 "source_type": source_type,
                 "source_id": source_id,
                 "idempotency_key": idempotency_key,
+                "memory_policy": memory_policy,
             },
             sort_keys=True,
             separators=(",", ":"),
@@ -216,6 +237,7 @@ class ArtifactService:
             access_policy={
                 "required_scope": "artifacts:read",
                 "data_classification": context.data_classification.value,
+                **memory_policy,
             },
             encryption_metadata=self.store.encryption_metadata(),
         )
@@ -242,6 +264,7 @@ class ArtifactService:
             raise PermissionError("artifacts:read scope is required")
         # 2. 按归属读取元数据，确保 owner 隔离。
         metadata = self.repository.get_owned(artifact_id, context.tenant_id, context.subject_id)
+        self.validate_memory_access(metadata, context)
         levels = list(DataClassification)
         classification = DataClassification(
             metadata.access_policy.get("data_classification", "restricted")
@@ -249,15 +272,39 @@ class ArtifactService:
         if levels.index(classification) > levels.index(context.data_classification):
             raise PermissionError("artifact exceeds the execution data classification")
         expires = metadata.expires_at
-        if expires is not None and expires.replace(tzinfo=expires.tzinfo or UTC) <= datetime.now(
-            UTC
+        if (
+            expires is not None
+            and expires.replace(tzinfo=expires.tzinfo or UTC) <= datetime.now(UTC)
+            and not self.repository.is_protected(metadata)
         ):
             raise ArtifactNotFound("artifact retention period has expired")
         # 3. 读取内容并校验 SHA256，防止存储侧内容损坏或被篡改。
         payload = self.store.get(metadata.storage_uri)
         if sha256(payload).hexdigest() != metadata.content_hash:
             raise ValueError("artifact content hash mismatch")
+        self.validate_memory_access(metadata, context)
         return payload
+
+    def memory_privacy_epoch(self, context: ExecutionContext) -> int:
+        """为历史派生结果绑定真实owner隐私版本，不将当前版本改写到旧内容。"""
+        epoch, _ = self.repository.memory_access_state(context.tenant_id, context.subject_id)
+        return epoch
+
+    def validate_memory_access(self, metadata: ArtifactMetadata, context: ExecutionContext) -> None:
+        """旧记忆派生副本不能通过read_artifact绕过遗忘或读取关闭。"""
+        policy = metadata.access_policy
+        expected = policy.get("memory_privacy_epoch")
+        if expected is None:
+            return
+        if not {"*", "memory:read"}.intersection(context.scopes):
+            raise PermissionError("memory:read scope is required for derived artifacts")
+        if policy.get("memory_owner") != [context.tenant_id, context.subject_id]:
+            raise PermissionError("derived artifact memory owner mismatch")
+        current, enabled = self.repository.memory_access_state(
+            context.tenant_id, context.subject_id
+        )
+        if current != expected or not enabled:
+            raise ArtifactNotFound("derived artifact was invalidated by a privacy change")
 
 
 def _serialize(value: Any) -> str:

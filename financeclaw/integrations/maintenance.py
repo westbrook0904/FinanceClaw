@@ -7,7 +7,11 @@ import os
 import httpx
 
 from financeclaw.shared.conversation.indexing import requeue_history
-from financeclaw.shared.conversation.lifecycle import ConversationRetention
+from financeclaw.shared.conversation.lifecycle import (
+    ConversationRetention,
+    responsibility_reasons,
+)
+from financeclaw.shared.conversation.tables import ConversationRow
 from financeclaw.shared.infrastructure.resources import build_resources
 from financeclaw.shared.infrastructure.settings import FinanceClawSettings
 
@@ -15,7 +19,7 @@ from financeclaw.shared.infrastructure.settings import FinanceClawSettings
 def main():
     """执行显式回收；运维身份来自部署配置，不接受模型提供的 URL 或存储路径。"""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("operation", choices=("artifacts", "checkpoints", "history"))
+    parser.add_argument("operation", choices=("artifacts", "checkpoints", "history", "protection"))
     parser.add_argument("--apply", action="store_true")
     parser.add_argument("--strategy", choices=("keep_latest", "delete"), default="keep_latest")
     parser.add_argument("--offset", type=int, default=0)
@@ -32,6 +36,22 @@ def main():
     try:
         if args.operation == "artifacts":
             result = retention.cleanup_artifacts(limit=args.limit, apply=args.apply)
+        elif args.operation == "protection":
+            if not all((args.conversation_id, args.tenant_id, args.subject_id)):
+                parser.error("protection requires conversation, tenant and subject IDs")
+            with resources.database.session_factory() as session:
+                conversation = session.get(ConversationRow, args.conversation_id)
+                if conversation is None or (conversation.tenant_id, conversation.subject_id) != (
+                    args.tenant_id,
+                    args.subject_id,
+                ):
+                    raise LookupError("conversation was not found for owner")
+                reasons = responsibility_reasons(session, args.conversation_id)
+                result = {
+                    "conversation_id": args.conversation_id,
+                    "protected": bool(reasons),
+                    "protection_reasons": list(reasons),
+                }
         elif args.operation == "history":
             if not all((args.conversation_id, args.tenant_id, args.subject_id)):
                 parser.error("history requires conversation, tenant and subject IDs")

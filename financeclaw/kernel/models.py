@@ -3,7 +3,7 @@
 from collections.abc import Iterable, Iterator, Mapping
 from types import MappingProxyType
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
 
 from financeclaw.kernel.context import DataClassification
 
@@ -39,6 +39,9 @@ class ModelProfile(BaseModel):
         temperature: 采样温度 [0, 2]，金融场景默认 0 以保证确定性。
         timeout_seconds: 单次调用超时（秒），取值范围 (0, 600]。
         max_tokens: 单次生成的最大 token 数，下限 64。
+        context_window_tokens: 冻结的输入与输出总窗口，不从模型名推断。
+        max_input_tokens: Provider独立输入cap；为空表示由总窗口和输出预留限制。
+        token_estimator: 配置的估算器版本，实际离线降级另在Manifest记录。
         fallback_profiles: 降级档案引用序列，按顺序尝试。
         allowed_data_classes: 允许处理的数据敏感级别集合，默认放开全部分级。
         allowed_regions: 允许部署/处理数据的区域集合，默认仅 ``global``。
@@ -55,6 +58,11 @@ class ModelProfile(BaseModel):
     temperature: float = Field(default=0, ge=0, le=2)
     timeout_seconds: float = Field(default=60, gt=0, le=600)
     max_tokens: int = Field(default=4096, ge=64)
+    context_window_tokens: int = Field(default=131_072, ge=1_024)
+    max_input_tokens: int | None = Field(default=None, ge=256)
+    token_estimator: str = Field(
+        default="cl100k_base-v1", pattern=r"^(cl100k_base-v1|utf8-bytes-v1)$"
+    )
     fallback_profiles: tuple[ModelProfileRef, ...] = ()
     allowed_data_classes: frozenset[DataClassification] = Field(
         default_factory=lambda: frozenset(DataClassification)
@@ -62,6 +70,18 @@ class ModelProfile(BaseModel):
     allowed_regions: frozenset[str] = Field(default_factory=lambda: frozenset({"global"}))
     supports_tool_calling: bool = True
     supports_structured_output: bool = True
+
+    @field_serializer("allowed_data_classes", "allowed_regions")
+    def serialize_capability_sets(self, value) -> list[str]:
+        """Serialize set-valued capabilities identically in every API and worker process."""
+        return sorted(str(item) for item in value)
+
+    @model_validator(mode="after")
+    def validate_capacity(self) -> "ModelProfile":
+        """拒绝输出预留已经占满冻结总窗口的模型档案。"""
+        if self.context_window_tokens - self.max_tokens < 256:
+            raise ValueError("model output reserve leaves fewer than 256 input tokens")
+        return self
 
     @property
     def key(self) -> tuple[str, str]:

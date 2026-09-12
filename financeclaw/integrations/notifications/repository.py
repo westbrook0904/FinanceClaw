@@ -9,6 +9,7 @@ from sqlalchemy.orm import aliased
 
 from financeclaw.integrations.notifications.rendering import chunks
 from financeclaw.shared.channels.feishu.cards import render_card
+from financeclaw.shared.channels.feishu.memory_cards import render_memory_card
 from financeclaw.shared.notifications.facts import require_schema, target_valid
 from financeclaw.shared.notifications.tables import (
     NotificationDeliveryRow as Delivery,
@@ -73,6 +74,12 @@ class NotificationRepository:
                 return True
             if event.kind == "card":
                 parts = [json.dumps(render_card(event.event_id, event.payload), ensure_ascii=False)]
+            elif event.kind == "memory_candidates":
+                parts = [
+                    json.dumps(
+                        render_memory_card(event.event_id, event.payload), ensure_ascii=False
+                    )
+                ]
             else:
                 parts = chunks(event.payload["content"] or "处理已完成。")
             for index, content in enumerate(parts):
@@ -85,7 +92,9 @@ class NotificationRepository:
                         parts=len(parts),
                         content=content,
                         content_hash=digest(content),
-                        message_type="card" if event.kind == "card" else "text",
+                        message_type="card"
+                        if event.kind in {"card", "memory_candidates"}
+                        else "text",
                         send_key=str(uuid5(NAMESPACE_URL, "financeclaw:notification:" + identity)),
                     )
                 )
@@ -141,7 +150,7 @@ class NotificationRepository:
             row.owner, row.epoch = owner, row.epoch + 1
             row.lease_until = utcnow() + timedelta(seconds=lease_seconds)
             target = session.get(Target, session.get(Event, row.event_id).target_id)
-            if row.message_type == "card":
+            if session.get(Event, row.event_id).kind == "card":
                 if row.card_id is None and target.card_message_id:
                     row.card_id = target.card_id
                 if row.first_attempt_at is None:
@@ -204,6 +213,30 @@ class NotificationRepository:
                         or aware(interaction.expires_at) <= utcnow()
                     ):
                         return False
+        if event.kind == "memory_candidates":
+            from financeclaw.shared.memory.models import (
+                MemoryActor,
+                MemoryNotFound,
+                MemoryPermissionError,
+            )
+            from financeclaw.shared.memory.repository import MemoryRepository
+
+            actor = MemoryActor(
+                tenant_id=target.tenant_id, subject_id=target.subject_id, scopes={"memory:read"}
+            )
+            try:
+                record = MemoryRepository(self.sessions).get_in_session(
+                    session, actor, event.payload["candidate_id"], include_candidates=True
+                )
+            except (MemoryNotFound, MemoryPermissionError):
+                return False
+            if (
+                record is None
+                or record.status != "proposed"
+                or record.revision != event.payload["revision"]
+                or record.content_hash != event.payload["content_hash"]
+            ):
+                return False
         return not session.scalar(
             select(Delivery.delivery_id)
             .where(
@@ -274,9 +307,13 @@ class NotificationRepository:
         with self.sessions.begin() as session:
             row = self._locked(session, claim)
             target = session.get(Target, session.get(Event, row.event_id).target_id)
-            if target.card_message_id and target.card_id != card_id:
-                raise StaleSender("card instance was already bound")
-            target.card_id = row.card_id = card_id
+            if row.card_id is not None and row.card_id != card_id:
+                raise StaleSender("delivery card instance was already bound")
+            if session.get(Event, row.event_id).kind == "card":
+                if target.card_message_id and target.card_id != card_id:
+                    raise StaleSender("card instance was already bound")
+                target.card_id = card_id
+            row.card_id = card_id
             claim["card_id"] = card_id
 
     @staticmethod
@@ -293,7 +330,7 @@ class NotificationRepository:
             row = self._locked(session, claim)
             if receipt.status == "sent" and receipt.message_id:
                 row.message_id, row.uncertain = receipt.message_id, False
-                if row.message_type == "card":
+                if session.get(Event, row.event_id).kind == "card":
                     event = session.get(Event, row.event_id)
                     target = session.get(Target, event.target_id)
                     if target.card_message_id and target.card_message_id != receipt.message_id:

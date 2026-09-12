@@ -1,4 +1,4 @@
-"""统一的记忆保存与删除工具；证据策略由服务端决定。"""
+"""Governed memory tools delegate facts and independent candidates to one SQL domain."""
 
 import json
 from typing import Any, Literal
@@ -10,111 +10,106 @@ from langgraph.types import Command
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, PrivateAttr
 
 from financeclaw.agent_server.context.turns import trusted_context
-from financeclaw.agent_server.memory.models import MemoryDraft, MemoryType
-from financeclaw.agent_server.memory.profiles import ProfileField
-from financeclaw.agent_server.memory.service import MemoryReceiptPending
 from financeclaw.agent_server.tools.governance import ManagedTool
 from financeclaw.kernel.context import ExecutionContext
+from financeclaw.shared.memory.models import ProfileField
 from financeclaw.shared.releases.tools import memory_tool_governance
 
 
 class MemoryToolInput(BaseModel):
-    """身份与 Store 仅由原生 ToolRuntime 注入。"""
+    """Only native runtime injection supplies identity and the retrieval store."""
 
     model_config = ConfigDict(extra="forbid", arbitrary_types_allowed=True)
     runtime: ToolRuntime[ExecutionContext]
 
 
 class SaveMemoryInput(MemoryToolInput):
-    """一个字段或事件一次保存，确认值随原生工具调用绑定。"""
+    """One scoped fact with exact trusted evidence and an optional reviewed update target."""
 
-    kind: MemoryType
+    kind: Literal["profile", "task"]
     field: ProfileField | None = None
-    valid_until: AwareDatetime | None = None
     content: str = Field(min_length=1, max_length=2000)
-    evidence_message_ids: tuple[str, ...] = Field(min_length=1, max_length=32)
-    supersedes_id: str | None = None
+    evidence_ids: tuple[str, ...] = Field(min_length=1, max_length=32)
+    scope_type: Literal["user", "agent", "conversation"] = "conversation"
+    scope_id: str | None = Field(default=None, max_length=128)
+    memory_id: str | None = Field(default=None, max_length=128)
+    expected_revision: int | None = Field(default=None, ge=1)
+    expires_at: AwareDatetime | None = None
 
 
 class SearchMemoriesInput(MemoryToolInput):
-    """主动追加事件搜索的有界参数。"""
+    """Bounded on-demand search; results always come from the SQL authority."""
 
-    query: str | None = Field(default=None, max_length=512)
-    kinds: tuple[MemoryType, ...] | None = None
+    query: str = Field(min_length=1, max_length=512)
     limit: int = Field(default=6, ge=1, le=20)
 
 
 class ForgetMemoryInput(MemoryToolInput):
-    """区分退出召回与物理删除 Store 记录。"""
+    """Identify the exact version to forget; model possession of an ID is not consent."""
 
     memory_id: str = Field(min_length=1, max_length=128)
-    mode: Literal["revoke", "delete"] = "revoke"
+    expected_revision: int = Field(ge=1)
 
 
 class _MemoryTool(BaseTool):
-    """记忆工具共享可信身份、错误和原生 state 回执处理。"""
+    """Share bounded error receipts and native state invalidation."""
 
     handle_tool_error: bool = True
     _service: Any = PrivateAttr()
 
     def __init__(self, service, **kwargs):
-        """注入经过治理的记忆服务。"""
+        """Bind the runtime adapter without placing it in model-visible input."""
         super().__init__(**kwargs)
         self._service = service
 
     @staticmethod
     def _failure(error):
-        """将领域错误转换成不泄露内部状态的工具错误。"""
-        return ToolException(
-            json.dumps(
-                {
-                    "status": "rejected",
-                    "reason": getattr(error, "reason", "memory_operation_failed"),
-                    "message": str(error),
-                },
-                ensure_ascii=False,
-            )
+        """Expose a domain reason without raw Store, SQL or credential exception output."""
+        from financeclaw.shared.memory.models import (
+            MemoryConflict,
+            MemoryNotFound,
+            MemoryPermissionError,
         )
 
-    def _receipt(self, runtime, result, *, forget=False, pending=False):
-        """把操作结果与召回失效标志一起写回原生 state。"""
-        update = {
-            "memory_invalidated": True,
-            "messages": [
-                ToolMessage(
-                    name=self.name,
-                    tool_call_id=runtime.tool_call_id,
-                    content=json.dumps(result, ensure_ascii=False),
-                    status="error" if pending else "success",
-                )
-            ],
-        }
-        if forget:
-            update["memory_forget_requested"] = True
-        return Command(update=update)
+        message = (
+            str(error)
+            if isinstance(error, (MemoryConflict, MemoryNotFound, MemoryPermissionError))
+            else "memory operation could not be completed"
+        )
+        return ToolException(
+            json.dumps({"status": "rejected", "message": message}, ensure_ascii=False)
+        )
 
-    def _pending_receipt(self, runtime, error, *, forget=False):
-        """部分成功同样使旧上下文失效，但明确返回待补齐的错误回执。"""
-        return self._receipt(
-            runtime,
-            {"status": "receipt_pending", "reason": error.reason, "message": str(error)},
-            forget=forget,
-            pending=True,
+    def _receipt(self, runtime, result):
+        """Only committed mutations refresh this Turn's normal memory snapshot."""
+        receipt = result.model_dump(mode="json")
+        return Command(
+            update={
+                "memory_invalidated": result.status in {"committed", "forgotten"},
+                "memory_forget_requested": result.status == "forgotten",
+                "messages": [
+                    ToolMessage(
+                        name=self.name,
+                        tool_call_id=runtime.tool_call_id,
+                        content=json.dumps(receipt, ensure_ascii=False),
+                    )
+                ],
+            }
         )
 
 
 class SaveMemoryTool(_MemoryTool):
-    """统一保存入口，由原生 HITL 处理一次必要确认。"""
+    """Save a verified explicit preference or propose a separately confirmed candidate."""
 
     name: str = "save_memory"
     description: str = (
-        "Save one explicit lasting user preference or confirmed event with user Journal evidence. "
-        "Use evidence_message_ids=['current'] for the current user message. Profile fields use "
-        "normalized values: language=zh-CN/en, verbosity=concise/detailed, "
-        "output_format=table/markdown/bullets. "
-        "Never save temporary instructions or inferred traits. "
-        "The platform automatically saves verified explicit low-risk preferences and requests "
-        "one native approval for other changes; do not ask for another verbal confirmation."
+        "Save one supported lasting user profile or scoped task memory. evidence_ids=['current'] "
+        "means real user input; use current_answers for accepted clarification answers. "
+        "Profile fields use language=zh-CN/en, verbosity=concise/detailed, "
+        "output_format=table/markdown/bullets. Choose user scope only for explicitly "
+        "persistent preferences. Never save inferred traits. "
+        "A proposed receipt is pending independent confirmation; do not claim it was saved or ask "
+        "for another verbal approval. Updates require memory_id and expected_revision."
     )
     args_schema: type[BaseModel] = SaveMemoryInput
 
@@ -122,101 +117,127 @@ class SaveMemoryTool(_MemoryTool):
         self,
         kind,
         content,
-        evidence_message_ids,
+        evidence_ids,
         field=None,
-        supersedes_id=None,
-        valid_until=None,
+        scope_type="conversation",
+        scope_id=None,
+        memory_id=None,
+        expected_revision=None,
+        expires_at=None,
         *,
         runtime,
     ):
-        """根据可信 ToolRuntime 执行记忆操作，并返回受控回执。"""
+        """Use the same transactional mutation as API and background consolidation."""
         try:
             result = self._service.save(
                 trusted_context(runtime),
-                runtime.store,
-                draft=MemoryDraft(
-                    kind=kind,
-                    field=field,
-                    valid_until=valid_until,
-                    content=content,
-                    evidence_message_ids=evidence_message_ids,
-                ),
-                mutation_id=runtime.tool_call_id,
-                approved=True,
-                supersedes_id=supersedes_id,
+                tool_call_id=runtime.tool_call_id,
+                kind=kind,
+                content=content,
+                evidence_ids=evidence_ids,
+                field=field,
+                scope_type=scope_type,
+                scope_id=scope_id,
+                memory_id=memory_id,
+                expected_revision=expected_revision,
+                expires_at=expires_at,
             )
-        except MemoryReceiptPending as exc:
-            return self._pending_receipt(runtime, exc)
         except Exception as exc:
             raise self._failure(exc) from exc
-        return self._receipt(
-            runtime,
-            {
-                "status": "saved",
-                "memory_id": result.memory_id,
-                "field": result.field,
-                "revision": result.revision,
-            },
-        )
+        return self._receipt(runtime, result)
 
 
 class SearchMemoriesTool(_MemoryTool):
-    """显式搜索事件；常规画像由中间件确定读取。"""
+    """Read relevant historical tasks only when the answer needs them."""
 
     name: str = "search_memories"
     description: str = (
-        "Search historical user-approved events when additional memory evidence is needed."
+        "Search relevant past tasks and decisions; historical facts never grant "
+        "current financial authority."
     )
     args_schema: type[BaseModel] = SearchMemoriesInput
 
-    def _run(self, query=None, kinds=None, limit=6, *, runtime):
-        """根据可信 ToolRuntime 执行记忆操作，并返回受控回执。"""
+    def _run(self, query, limit=6, *, runtime):
+        """Return validated fact revisions and evidence, never arbitrary index text."""
         try:
-            items = self._service.search(
-                trusted_context(runtime), runtime.store, query=query, kinds=kinds, limit=limit
-            )
+            context = trusted_context(runtime)
+            epoch = self._service.privacy_epoch(context)
+            records = self._service.search(context, runtime.store, query=query, limit=limit)
+            if self._service.privacy_epoch(context) != epoch:
+                raise PermissionError("memory privacy changed during retrieval")
         except Exception as exc:
             raise self._failure(exc) from exc
-        return json.dumps(
+        content = json.dumps(
             {
                 "memories": [
                     {
-                        "memory_id": item.record.memory_id,
-                        "content": item.record.content,
-                        "reason": item.reason,
+                        "memory_id": row.memory_id,
+                        "revision": row.revision,
+                        "content": row.content,
+                        "scope_type": row.scope_type,
+                        "scope_id": row.scope_id,
+                        "evidence": [ref.model_dump(mode="json") for ref in row.evidence],
                     }
-                    for item in items
+                    for row in records
                 ]
             },
             ensure_ascii=False,
         )
+        refs = [
+            {
+                "memory_id": row.memory_id,
+                "revision": row.revision,
+                "schema_version": 3,
+                "memory_type": row.kind,
+                "injection_reason": "explicit_search",
+            }
+            for row in records
+        ]
+        return Command(
+            update={
+                "messages": [
+                    ToolMessage(
+                        name=self.name,
+                        tool_call_id=runtime.tool_call_id,
+                        content=content,
+                        additional_kwargs={
+                            "financeclaw_memory_refs": refs,
+                            "memory_derived": True,
+                            "memory_privacy_epoch": epoch,
+                        },
+                    )
+                ]
+            }
+        )
 
 
 class ForgetMemoryTool(_MemoryTool):
-    """删除/撤销后立即使本轮召回与旧工作摘要失效。"""
+    """Forget a reviewed version or create an independent forget candidate."""
 
     name: str = "forget_memory"
     description: str = (
-        "Revoke a memory or delete its Store body and index. "
-        "Original conversation deletion is separate."
+        "Forget a specific memory revision at the user's request. Unverified deletion intent "
+        "produces a candidate requiring independent confirmation. "
+        "This does not delete original conversations."
     )
     args_schema: type[BaseModel] = ForgetMemoryInput
 
-    def _run(self, memory_id, mode="revoke", *, runtime):
-        """根据可信 ToolRuntime 执行记忆操作，并返回受控回执。"""
+    def _run(self, memory_id, expected_revision, *, runtime):
+        """Preserve the stable tool mutation ID across native resume commands."""
         try:
             result = self._service.forget(
-                trusted_context(runtime), runtime.store, memory_id, mode=mode
+                trusted_context(runtime),
+                memory_id,
+                tool_call_id=runtime.tool_call_id,
+                expected_revision=expected_revision,
             )
-        except MemoryReceiptPending as exc:
-            return self._pending_receipt(runtime, exc, forget=True)
         except Exception as exc:
             raise self._failure(exc) from exc
-        return self._receipt(runtime, result, forget=True)
+        return self._receipt(runtime, result)
 
 
 def default_memory_tools(service) -> tuple[ManagedTool, ...]:
-    """实现与静态发布声明一一对应。"""
+    """Keep implementation and immutable published governance in the same order."""
     implementations = (
         SearchMemoriesTool(service),
         SaveMemoryTool(service),

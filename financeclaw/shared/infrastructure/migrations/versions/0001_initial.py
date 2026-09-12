@@ -1,4 +1,4 @@
-"""Stage 10 initial schema, for an empty application database only."""
+"""Stage 11 initial schema, for an empty application database only."""
 
 import sqlalchemy as sa
 from alembic import op
@@ -11,7 +11,7 @@ depends_on = None
 
 
 def upgrade():
-    """Create the 14-table application schema; native persistence belongs to Agent Server."""
+    """Create the 18-table application schema; native persistence belongs to Agent Server."""
     op.create_table(
         "artifacts",
         sa.Column("artifact_id", sa.String(length=128), nullable=False),
@@ -49,7 +49,7 @@ def upgrade():
         sa.Column("tenant_id", sa.String(length=128), nullable=False),
         sa.Column("subject_id", sa.String(length=128), nullable=False),
         sa.Column("conversation_id", sa.String(length=128), nullable=True),
-        sa.Column("turn_id", sa.String(length=128), nullable=False),
+        sa.Column("turn_id", sa.String(length=128), nullable=True),
         sa.Column("tool_call_id", sa.String(length=128), nullable=True),
         sa.Column("resource_type", sa.String(length=64), nullable=False),
         sa.Column("resource_id", sa.String(length=128), nullable=False),
@@ -106,6 +106,7 @@ def upgrade():
     )
     op.create_table(
         "outbox_events",
+        sa.Column("processing_metadata", sa.JSON(), nullable=False),
         sa.Column("event_id", sa.String(length=128), nullable=False),
         sa.Column("event_type", sa.String(length=128), nullable=False),
         sa.Column("destination", sa.String(length=64), nullable=False),
@@ -326,6 +327,12 @@ def upgrade():
         sa.Column("model", sa.String(length=256), nullable=False),
         sa.Column("subtype", sa.String(length=32), nullable=False),
         sa.Column("token_count_method", sa.String(length=64), nullable=False),
+        sa.Column("memory_owner_revision", sa.Integer(), nullable=True),
+        sa.Column("privacy_epoch", sa.Integer(), nullable=True),
+        sa.Column("working_summary_version", sa.Integer(), nullable=True),
+        sa.Column("compaction_reason", sa.String(length=64), nullable=True),
+        sa.Column("observed_input_tokens", sa.Integer(), nullable=True),
+        sa.Column("observed_output_tokens", sa.Integer(), nullable=True),
         sa.Column("summary_sources", sa.JSON(), nullable=False),
         sa.Column("memory_ids", sa.JSON(), nullable=False),
         sa.Column("memory_refs", sa.JSON(), nullable=False),
@@ -568,6 +575,216 @@ def upgrade():
         unique=True,
     )
 
+    op.create_table(
+        "memory_owners",
+        sa.Column("tenant_id", sa.String(length=128), nullable=False),
+        sa.Column("subject_id", sa.String(length=128), nullable=False),
+        sa.Column("memory_revision", sa.Integer(), nullable=False),
+        sa.Column("source_seq", sa.Integer(), nullable=False),
+        sa.Column("extraction_revision", sa.Integer(), nullable=False),
+        sa.Column("consolidated_revision", sa.Integer(), nullable=False),
+        sa.Column("policy_revision", sa.Integer(), nullable=False),
+        sa.Column("privacy_epoch", sa.Integer(), nullable=False),
+        sa.Column("read_enabled", sa.Boolean(), nullable=False),
+        sa.Column("auto_enabled", sa.Boolean(), nullable=False),
+        sa.Column("active_consolidation_event_id", sa.String(length=128), nullable=True),
+        sa.Column(
+            "digest",
+            sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), "postgresql"),
+            nullable=False,
+        ),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.PrimaryKeyConstraint("tenant_id", "subject_id"),
+    )
+    op.create_table(
+        "memory_extractions",
+        sa.Column("extraction_id", sa.String(length=128), nullable=False),
+        sa.Column("tenant_id", sa.String(length=128), nullable=False),
+        sa.Column("subject_id", sa.String(length=128), nullable=False),
+        sa.Column("closure_hash", sa.String(length=64), nullable=False),
+        sa.Column("prepare_event_id", sa.String(length=128), nullable=False),
+        sa.Column("part_index", sa.Integer(), nullable=False),
+        sa.Column("part_count", sa.Integer(), nullable=False),
+        sa.Column("pipeline_version", sa.String(length=64), nullable=False),
+        sa.Column("model_profile_version", sa.String(length=128), nullable=False),
+        sa.Column("schema_version", sa.String(length=64), nullable=False),
+        sa.Column(
+            "evidence_source_ids",
+            sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), "postgresql"),
+            nullable=False,
+        ),
+        sa.Column(
+            "evidence",
+            sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), "postgresql"),
+            nullable=False,
+        ),
+        sa.Column(
+            "output",
+            sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), "postgresql"),
+            nullable=False,
+        ),
+        sa.Column(
+            "coverage",
+            sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), "postgresql"),
+            nullable=False,
+        ),
+        sa.Column("extraction_revision", sa.Integer(), nullable=True),
+        sa.Column("disposition", sa.String(length=24), nullable=False),
+        sa.Column("disposition_reason", sa.String(length=128), nullable=True),
+        sa.Column("consumed_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.ForeignKeyConstraint(
+            ["tenant_id", "subject_id"],
+            ["memory_owners.tenant_id", "memory_owners.subject_id"],
+        ),
+        sa.PrimaryKeyConstraint("extraction_id"),
+        sa.UniqueConstraint(
+            "tenant_id",
+            "subject_id",
+            "closure_hash",
+            "part_index",
+            "pipeline_version",
+            name="uq_memory_extraction_part",
+        ),
+    )
+    op.create_index(
+        "ix_memory_extraction_ready",
+        "memory_extractions",
+        ["tenant_id", "subject_id", "disposition", "extraction_revision"],
+        unique=False,
+    )
+    op.create_index(
+        "ix_memory_extraction_sources",
+        "memory_extractions",
+        ["evidence_source_ids"],
+        unique=False,
+        postgresql_using="gin",
+    )
+    op.create_table(
+        "memory_records",
+        sa.Column("memory_id", sa.String(length=128), nullable=False),
+        sa.Column("revision", sa.Integer(), nullable=False),
+        sa.Column("tenant_id", sa.String(length=128), nullable=False),
+        sa.Column("subject_id", sa.String(length=128), nullable=False),
+        sa.Column("owner_revision", sa.Integer(), nullable=False),
+        sa.Column("is_current", sa.Boolean(), nullable=False),
+        sa.Column("kind", sa.String(length=24), nullable=False),
+        sa.Column("status", sa.String(length=24), nullable=False),
+        sa.Column("scope_type", sa.String(length=24), nullable=False),
+        sa.Column("scope_id", sa.String(length=128), nullable=False),
+        sa.Column("field", sa.String(length=64), nullable=True),
+        sa.Column("content", sa.Text(), nullable=False),
+        sa.Column("content_hash", sa.String(length=64), nullable=False),
+        sa.Column(
+            "evidence_source_ids",
+            sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), "postgresql"),
+            nullable=False,
+        ),
+        sa.Column(
+            "evidence",
+            sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), "postgresql"),
+            nullable=False,
+        ),
+        sa.Column("source_watermark", sa.Integer(), nullable=False),
+        sa.Column("mutation_id", sa.String(length=256), nullable=False),
+        sa.Column("operation", sa.String(length=16), nullable=False),
+        sa.Column("target_memory_id", sa.String(length=128), nullable=True),
+        sa.Column("expected_target_revision", sa.Integer(), nullable=True),
+        sa.Column("expires_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("forgotten_through_seq", sa.Integer(), nullable=True),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.ForeignKeyConstraint(
+            ["tenant_id", "subject_id"],
+            ["memory_owners.tenant_id", "memory_owners.subject_id"],
+        ),
+        sa.PrimaryKeyConstraint("memory_id", "revision"),
+        sa.UniqueConstraint(
+            "tenant_id",
+            "subject_id",
+            "memory_id",
+            "revision",
+            name="uq_memory_record_owner_version",
+        ),
+    )
+    op.create_index(
+        "ix_memory_record_owner_status",
+        "memory_records",
+        ["tenant_id", "subject_id", "is_current", "status"],
+        unique=False,
+    )
+    op.create_index(
+        "ix_memory_record_sources",
+        "memory_records",
+        ["evidence_source_ids"],
+        unique=False,
+        postgresql_using="gin",
+    )
+    op.create_index(
+        "uq_memory_active_profile",
+        "memory_records",
+        ["tenant_id", "subject_id", "scope_type", "scope_id", "field"],
+        unique=True,
+        postgresql_where=sa.text("is_current AND status = 'active' AND kind = 'profile'"),
+        sqlite_where=sa.text("is_current = 1 AND status = 'active' AND kind = 'profile'"),
+    )
+    op.create_index(
+        "uq_memory_current",
+        "memory_records",
+        ["tenant_id", "subject_id", "memory_id"],
+        unique=True,
+        postgresql_where=sa.text("is_current"),
+        sqlite_where=sa.text("is_current = 1"),
+    )
+    op.create_table(
+        "memory_sources",
+        sa.Column("source_id", sa.String(length=128), nullable=False),
+        sa.Column("tenant_id", sa.String(length=128), nullable=False),
+        sa.Column("subject_id", sa.String(length=128), nullable=False),
+        sa.Column("source_seq", sa.Integer(), nullable=False),
+        sa.Column("source_kind", sa.String(length=32), nullable=False),
+        sa.Column("object_id", sa.String(length=256), nullable=False),
+        sa.Column("source_version", sa.Integer(), nullable=False),
+        sa.Column("content_hash", sa.String(length=64), nullable=False),
+        sa.Column("conversation_id", sa.String(length=128), nullable=True),
+        sa.Column("turn_id", sa.String(length=128), nullable=True),
+        sa.Column("visible", sa.Boolean(), nullable=False),
+        sa.Column("version_valid", sa.Boolean(), nullable=False),
+        sa.Column("reuse_blocked", sa.Boolean(), nullable=False),
+        sa.Column(
+            "permit",
+            sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), "postgresql"),
+            nullable=True,
+        ),
+        sa.Column("permit_revoked", sa.Boolean(), nullable=False),
+        sa.Column("data_classification", sa.String(length=32), nullable=False),
+        sa.Column("processing_region", sa.String(length=64), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.ForeignKeyConstraint(
+            ["tenant_id", "subject_id"],
+            ["memory_owners.tenant_id", "memory_owners.subject_id"],
+        ),
+        sa.PrimaryKeyConstraint("source_id"),
+        sa.UniqueConstraint("tenant_id", "subject_id", "source_id", name="uq_memory_source_owner"),
+        sa.UniqueConstraint(
+            "tenant_id",
+            "subject_id",
+            "source_kind",
+            "object_id",
+            "source_version",
+            name="uq_memory_source_object",
+        ),
+        sa.UniqueConstraint(
+            "tenant_id", "subject_id", "source_seq", name="uq_memory_source_sequence"
+        ),
+    )
+    op.create_index(
+        "ix_memory_source_turn",
+        "memory_sources",
+        ["tenant_id", "subject_id", "turn_id"],
+        unique=False,
+    )
+
     if op.get_bind().dialect.name == "postgresql":
         op.create_foreign_key(
             "fk_turn_current_command",
@@ -591,6 +808,10 @@ def upgrade():
 
 def downgrade():
     """Explicitly remove the application schema."""
+    op.drop_table("memory_records")
+    op.drop_table("memory_extractions")
+    op.drop_table("memory_sources")
+    op.drop_table("memory_owners")
     if op.get_bind().dialect.name == "postgresql":
         op.drop_constraint("fk_turn_current_command", "conversation_turns", type_="foreignkey")
         op.drop_constraint("fk_turn_user_message", "conversation_turns", type_="foreignkey")

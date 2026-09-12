@@ -32,14 +32,14 @@ async def deny_native(ctx, value):
 
 @auth.on.store
 async def maintenance_store(ctx, value):
-    """Permit history indexing and memory deletion, with a complete owner namespace."""
+    """Permit scoped history and derived memory index IO, never profile authority writes."""
     namespace = value.get("namespace") or value.get("namespace_prefix") or ()
     if (
         ctx.user.identity != "financeclaw-integrations"
         or "store:maintenance" not in ctx.permissions
         or not isinstance(namespace, (list, tuple))
         or len(namespace) not in {5, 6}
-        or tuple(namespace[:2]) != ("financeclaw", "v2")
+        or tuple(namespace[:2]) not in {("financeclaw", "v2"), ("financeclaw", "v3")}
         or any(not isinstance(part, str) or not part or "*" in part for part in namespace)
     ):
         raise Auth.exceptions.HTTPException(
@@ -47,15 +47,18 @@ async def maintenance_store(ctx, value):
         )
     category = namespace[4]
     if (
-        category == "history"
+        tuple(namespace[:2]) == ("financeclaw", "v2")
+        and category == "history"
         and len(namespace) == 6
         and ctx.action in {"get", "put", "delete", "search"}
     ):
         return True
     if (
-        category in {"events", "profile"}
-        and len(namespace) == 5
-        and ctx.action in {"get", "delete"}
+        tuple(namespace[:2]) == ("financeclaw", "v3")
+        and category == "memory_index"
+        and len(namespace) == 6
+        and namespace[5] == "memory-v1"
+        and ctx.action in {"get", "put", "delete", "search"}
     ):
         return True
     raise Auth.exceptions.HTTPException(

@@ -207,7 +207,10 @@ def test_terminal_journal_outbox_and_state_are_atomic(service, admit, monkeypatc
     value = service.read_snapshot(accepted.turn_id, tenant_id="tenant", subject_id="user")
     assert value.status == "completed" and value.output["messages"][0]["content"] == "final answer"
     with service.sessions() as session:
-        assert session.scalar(select(func.count()).select_from(OutboxEventRow)) == 1
+        assert set(session.scalars(select(OutboxEventRow.destination))) == {
+            "history_index",
+            "memory_extract",
+        }
         assert session.scalar(select(func.count()).select_from(ConversationMessageRow)) == 2
 
 

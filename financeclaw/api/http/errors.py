@@ -2,11 +2,13 @@
 
 from fastapi.responses import JSONResponse
 
+from financeclaw.api.application.memory_service import InvalidMemoryInput
 from financeclaw.shared.conversation.repository import (
     ConversationConflict,
     ConversationNotFound,
     IdempotencyConflict,
 )
+from financeclaw.shared.memory.models import MemoryConflict, MemoryNotFound
 from financeclaw.shared.turns.types import (
     ExecutionConflict,
     InteractionConflict,
@@ -26,6 +28,9 @@ def install_error_handlers(app):
         InteractionConflict: (409, "INTERACTION_CONFLICT"),
         ExecutionConflict: (409, "EXECUTION_CONFLICT"),
         PermissionError: (403, "AUTHORIZATION_DENIED"),
+        MemoryNotFound: (404, "MEMORY_NOT_FOUND"),
+        MemoryConflict: (409, "MEMORY_CONFLICT"),
+        InvalidMemoryInput: (422, "INVALID_MEMORY_INPUT"),
     }
 
     def handler(status, code):
