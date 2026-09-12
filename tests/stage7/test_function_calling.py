@@ -36,6 +36,71 @@ class PlannedZiweiModel(OfflineZiweiModel):
         )
 
 
+class MalformedZiweiModel(PlannedZiweiModel):
+    """复现模型同时返回有效排盘调用与损坏 JSON 的生产请求。"""
+
+    repeat_invalid: bool = False
+
+    def _generate(self, messages, *args, **kwargs):
+        """实际 OpenAI 转换里的两个调用都必须收到回执，再允许一次格式修复。"""
+        from langchain_openai.chat_models.base import _convert_message_to_dict
+
+        from financeclaw.agent_server.context.planning import completed_tool_batches
+
+        assert completed_tool_batches(messages) is not None
+        for index, message in enumerate(messages):
+            if isinstance(message, AIMessage) and message.invalid_tool_calls:
+                calls = _convert_message_to_dict(message)["tool_calls"]
+                assert {item["id"] for item in calls} == {
+                    item.tool_call_id
+                    for item in messages[index + 1 : index + 3]
+                    if isinstance(item, ToolMessage)
+                }
+        if self.repeat_invalid or not any(isinstance(m, AIMessage) for m in messages):
+            return ChatResult(
+                generations=[
+                    ChatGeneration(
+                        message=AIMessage(
+                            content="",
+                            tool_calls=[offline_chart_call(self.batches[0][0], "valid-first")],
+                            invalid_tool_calls=[
+                                {
+                                    "name": "ziwei_natal_chart",
+                                    "id": "invalid-first",
+                                    "args": "{",
+                                    "error": "invalid JSON",
+                                }
+                            ],
+                        )
+                    )
+                ]
+            )
+        return super()._generate(messages, *args, **kwargs)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("repeat_invalid", [False, True])
+async def test_invalid_json_batch_is_repaired_once_without_partial_calculation(repeat_invalid):
+    """混合批次整体拒绝，格式修复成功才计算；重复损坏则受控结束。"""
+    from tests.stage7.support import envelope
+
+    stack = components()
+    value = request(level="natal", target=None)
+    graph = build_ziwei_agent(
+        stack.agent_factory,
+        stack.agent_profiles.resolve("ziwei_doushu_agent"),
+        stack.ziwei_service,
+        model=MalformedZiweiModel(
+            batches=[[value.model_dump(mode="json")]] * 2,
+            repeat_invalid=repeat_invalid,
+        ),
+    )
+    result = await graph.ainvoke(envelope(value), context=context())
+    assert result["ziwei_input_repairs"] == 1
+    assert result["ziwei_result"]["outcome"] == ("unsupported" if repeat_invalid else "chart_only")
+    assert len(result.get("ziwei_evidence", [])) == (0 if repeat_invalid else 1)
+
+
 async def invoke(stack, batches):
     """参数完全由 function call 提供，入口只包含自然语言任务和原始提示。"""
     graph = build_ziwei_agent(
@@ -67,7 +132,7 @@ async def invoke(stack, batches):
     "arguments, expected",
     [
         (
-            {"level": "yearly"},
+            {"level": "yearly", "birth": {"time_basis": None}},
             {
                 "birth.calendar",
                 "birth.date",

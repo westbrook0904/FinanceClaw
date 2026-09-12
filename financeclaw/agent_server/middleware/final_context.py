@@ -11,6 +11,7 @@ from langchain.agents.middleware import AgentMiddleware
 from langchain_core.messages import BaseMessage
 from langchain_core.utils.function_calling import convert_to_openai_tool
 
+from financeclaw.agent_server.context.planning import completed_tool_batches
 from financeclaw.agent_server.context.turns import trusted_context
 from financeclaw.shared.conversation.models import ManifestMemoryReference, ModelContextManifest
 from financeclaw.shared.llm.budget import (
@@ -19,6 +20,7 @@ from financeclaw.shared.llm.budget import (
     TokenCounter,
     request_payload,
 )
+from financeclaw.shared.turns.types import ExecutionConflict
 
 MEMORY_REFS_KEY = "financeclaw_memory_refs"
 logger = logging.getLogger(__name__)
@@ -157,6 +159,8 @@ class FinalContextMiddleware(AgentMiddleware):
 
     def _record(self, request):
         """记录完成全部输入变换后的实际模型请求。"""
+        if completed_tool_batches(request.messages) is None:
+            raise ExecutionConflict("model request contains an incomplete tool batch")
         if self.privacy_epoch_reader is not None:
             expected = request.state.get("context_privacy_epoch")
             if expected is not None:

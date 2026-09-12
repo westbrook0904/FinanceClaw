@@ -69,7 +69,7 @@ async def test_pending_card_passes_platform_limits_and_resumes_exact_task(runtim
 
 @pytest.mark.parametrize("status", ["accepted", "queued", "running", "resuming", "cancelling"])
 def test_processing_animation_and_controls_are_separate(status):
-    """加载动图不依赖消息轮询，两个控制按钮只存在于默认关闭的任务选项中。"""
+    """加载动图不依赖消息轮询，默认关闭的任务选项仅显示停止按钮。"""
     card = render_card(
         "view",
         {
@@ -89,7 +89,9 @@ def test_processing_animation_and_controls_are_separate(status):
     if status != "cancelling":
         panel = next(node for node in elements if node["tag"] == "collapsible_panel")
         assert panel["expanded"] is False
-        assert {value["op"] for value in button_values(panel)} == {"cancel", "revoke"}
+        assert {value["op"] for value in button_values(panel)} == {"cancel"}
+        assert len(panel["elements"]) == 1
+        assert "授权范围" not in json.dumps(card, ensure_ascii=False)
 
 
 def test_card_limit_does_not_shrink_business_answers_and_unfillable_forms_fall_back():

@@ -116,9 +116,19 @@ async def test_stop_running_turn_cancels_exact_remote_attempt(runtime):
     await tick(runtime)
     native_id = next(iter(runtime.client.runs.values))
     assert (await service.card_actions.handle(callback(event, "cancel")))["toast"]["type"] == "info"
+    stopping, _ = await publish(runtime, gateway)
+    assert stopping.payload["status"] == "cancelling"
+    assert "正在停止本轮" in gateway.calls[-1]["content"]
     await tick(runtime)
     assert runtime.client.cancelled == [native_id]
     assert (await runtime.turns.status(accepted.turn_id, **OWNER)).status == "cancelled"
+    stopped, _ = await publish(runtime, gateway)
+    card = render_card(stopped.event_id, stopped.payload)
+    assert card["header"]["title"]["content"] == "本轮已停止"
+    assert not list(button_values(card))
+    assert "custom_icon" not in gateway.calls[-1]["content"]
+    assert {call["target_message_id"] for call in gateway.calls[1:]} == {"message-1"}
+    assert len({call["card_id"] for call in gateway.calls}) == 1
 
 
 @pytest.mark.asyncio
@@ -171,10 +181,10 @@ async def test_approval_binds_visible_action_and_creates_one_resume(runtime, dec
 
 @pytest.mark.asyncio
 async def test_revoke_and_reauthorize_replay_never_extends_grant(runtime):
-    """撤权与授权按钮各产生一次有限授权变更。"""
+    """撤权保留显式命令入口；卡片只在确需授权时展示继续操作。"""
     service, accepted, event, gateway = await fresh(runtime)
-    revoke = callback(event, "revoke")
-    assert (await service.card_actions.handle(revoke))["toast"]["type"] == "info"
+    revoke = message(f"/revoke {accepted.turn_id}", identifier="revoke")
+    await service.process(revoke, Replies())
     with runtime.turns.store.sessions() as session:
         assert session.get(ConversationTurnRow, accepted.turn_id).grant_revoked
     revoked, _ = await publish(runtime, gateway)
@@ -186,7 +196,7 @@ async def test_revoke_and_reauthorize_replay_never_extends_grant(runtime):
         assert not grant.grant_revoked
     authorize["header"]["event_id"] = "authorize-repeated"
     assert (await service.card_actions.handle(authorize))["toast"]["type"] == "info"
-    assert (await service.card_actions.handle(revoke))["toast"]["type"] == "info"
+    await service.process(revoke, Replies())
     with runtime.turns.store.sessions() as session:
         grant = session.get(ConversationTurnRow, accepted.turn_id)
         assert (grant.grant_revision, grant.grant_expires_at, grant.grant_revoked) == (

@@ -18,6 +18,7 @@ from financeclaw.agent_server.context.planning import (
     canonical_content,
     compactable_indices,
     completed_tool_batches,
+    history_messages,
     projected_messages,
     working_message,
 )
@@ -75,7 +76,7 @@ class NativeContextMiddleware(AgentMiddleware):
         self.privacy_epoch_reader = privacy_epoch_reader
 
     def before_agent(self, state, runtime):
-        """空的新 thread 在冻结用户消息之前补入有限的已完成问答。"""
+        """新 thread 在冻结用户消息之前补入历史问答、失败状态与已确认补充。"""
         if state.get("context_bootstrapped"):
             return None
         context = trusted_context(runtime)
@@ -86,32 +87,15 @@ class NativeContextMiddleware(AgentMiddleware):
             current = self.repository.get_message_owned(
                 anchor, context.tenant_id, context.subject_id
             )
-            records = self.repository.completed_history(
+            records = self.repository.context_history(
                 context.conversation_id,
                 before_sequence=current.sequence,
                 turns=self.budget.recent_turns,
             )
-            # Add only complete Turns that fit the bootstrap allocation.
+            # 按整轮预算保留近期事实，不能越过最近失败问题去补更早的成功结果。
             remaining = min(self.budget.soft_input_tokens, self.budget.available_input_tokens) // 2
-            for index in range(len(records) - 2, -1, -2):
-                pair = records[index : index + 2]
-                if len(pair) != 2 or pair[0].turn_id != pair[1].turn_id:
-                    continue
-                projected = [
-                    (HumanMessage if item.role.value == "user" else AIMessage)(
-                        content=item.content,
-                        id=item.message_id,
-                        additional_kwargs={
-                            "financeclaw_source": {
-                                "conversation_id": item.conversation_id,
-                                "turn_id": item.turn_id,
-                                "sequence": item.sequence,
-                                "source": "journal_bootstrap",
-                            }
-                        },
-                    )
-                    for item in pair
-                ]
+            for turn in reversed(records):
+                projected = history_messages(turn)
                 cost = sum(self.counter.message(message) for message in projected)
                 if cost > remaining:
                     break

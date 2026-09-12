@@ -215,7 +215,11 @@ class NativeRuns:
         }:
             raise ExecutionConflict("completed Turn has no final assistant message")
         final = messages[-1]
-        if final.get("tool_calls") or final.get("additional_kwargs", {}).get("tool_calls"):
+        if (
+            final.get("tool_calls")
+            or final.get("invalid_tool_calls")
+            or final.get("additional_kwargs", {}).get("tool_calls")
+        ):
             raise ExecutionConflict("assistant still has pending Tool calls")
         content = final_text(final)
         if not content:

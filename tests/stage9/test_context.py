@@ -185,8 +185,9 @@ def test_summary_failure_keeps_original_messages(context_stack):
     assert len(manifests) == 1 and all(item.subtype == "summary" for item in manifests)
 
 
-def test_bootstrap_reads_only_completed_pairs_once(context_stack, monkeypatch):
-    """更换 thread 时只初始化完成问答，失败 Turn 不进入新 state。"""
+@pytest.mark.parametrize("followup", ["重试", "刚才的问题继续分析"])
+def test_bootstrap_keeps_failed_question_and_outcome_once(context_stack, monkeypatch, followup):
+    """更换线程后失败原问题和状态也进入模型历史，普通追问同样可理解。"""
     context, identity, repository, artifacts, _, _ = context_stack
     from tests.turn_support import finish_turn, seed_execution
 
@@ -204,7 +205,7 @@ def test_bootstrap_reads_only_completed_pairs_once(context_stack, monkeypatch):
         repository.execution,
         context.model_copy(update={"turn_id": "new", "command_id": None}),
         {"limits": {"model": 100, "tool": 100, "command": 100}},
-        message="新问题",
+        message=followup,
     )
     user = repository.list_messages(context.conversation_id)[-1]
     monkeypatch.setattr(
@@ -223,8 +224,16 @@ def test_bootstrap_reads_only_completed_pairs_once(context_stack, monkeypatch):
     update = middleware.before_agent(state, Runtime(context=current))
     state["messages"] = add_messages(state["messages"], update["messages"])
     state["context_bootstrapped"] = update["context_bootstrapped"]
-    assert [item.id for item in state["messages"]] == [identity, answer.message_id, user.message_id]
-    assert failed_user.message_id not in [item.id for item in state["messages"]]
+    assert [item.id for item in state["messages"]] == [
+        identity,
+        answer.message_id,
+        failed_user.message_id,
+        f"turn-outcome-{failed.turn_id}",
+        user.message_id,
+    ]
+    assert state["messages"][-3].content == "未完成的问题"
+    assert "本轮处理失败" in state["messages"][-2].content
+    assert state["messages"][-1].content == followup
     assert middleware.before_agent(state, Runtime(context=current)) is None
 
 

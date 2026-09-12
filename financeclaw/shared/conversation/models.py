@@ -165,6 +165,15 @@ class ConversationMessage(FrozenRecord):
     created_at: datetime
 
 
+class ConversationHistoryTurn(FrozenRecord):
+    """新线程补入的一轮会话事实；失败状态和已确认回答与成功正文分开保存。"""
+
+    user: ConversationMessage
+    assistant: ConversationMessage | None = None
+    status: Literal["completed", "failed", "cancelled"]
+    clarifications: tuple[dict[str, Any], ...] = ()
+
+
 class ContextOmission(FrozenRecord):
     """上下文装配中被省略项的记录，用于审计与调试 token 取舍。
 

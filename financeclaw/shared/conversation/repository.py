@@ -18,6 +18,7 @@ from financeclaw.kernel.turn_status import TurnStatus
 from financeclaw.shared.conversation.models import (
     ChannelConversationBinding,
     Conversation,
+    ConversationHistoryTurn,
     ConversationMessage,
     ConversationStatus,
     ConversationTurn,
@@ -30,7 +31,7 @@ from financeclaw.shared.conversation.tables import (
     ConversationRow,
     ModelContextManifestRow,
 )
-from financeclaw.shared.turns.tables import ConversationTurnRow
+from financeclaw.shared.turns.tables import ConversationTurnRow, InteractionRow
 
 
 class ConversationNotFound(LookupError):
@@ -114,6 +115,12 @@ class ConversationRepository(Protocol):
         self, conversation_id: str, *, before_sequence: int, turns: int
     ) -> tuple[ConversationMessage, ...]:
         """新 thread 初始化时使用的有界已完成问答。"""
+        ...
+
+    def context_history(
+        self, conversation_id: str, *, before_sequence: int, turns: int
+    ) -> tuple[ConversationHistoryTurn, ...]:
+        """按完整轮次读取成功、失败和停止记录；调用方先验证会话归属。"""
         ...
 
     def get_channel_binding(
@@ -680,6 +687,70 @@ class SqlAlchemyConversationRepository:
         )
         with self._sessions() as session:
             return tuple(reversed([_message(row) for row in session.scalars(statement)]))
+
+    def context_history(
+        self, conversation_id: str, *, before_sequence: int, turns: int
+    ) -> tuple[ConversationHistoryTurn, ...]:
+        """以原始用户序号选择完整历史轮次，失败正文和原生工具链不作为成功答案。"""
+        if not 0 <= turns <= 100:
+            raise ValueError("invalid bootstrap Turn limit")
+        statement = (
+            select(ConversationTurnRow, ConversationMessageRow)
+            .join(
+                ConversationMessageRow,
+                ConversationMessageRow.message_id == ConversationTurnRow.user_message_id,
+            )
+            .where(
+                ConversationTurnRow.conversation_id == conversation_id,
+                ConversationTurnRow.status.in_(["completed", "failed", "cancelled"]),
+                ConversationMessageRow.conversation_id == conversation_id,
+                ConversationMessageRow.sequence < before_sequence,
+                ConversationMessageRow.visible.is_(True),
+            )
+            .order_by(ConversationMessageRow.sequence.desc())
+            .limit(turns)
+        )
+        with self._sessions() as session:
+            result = []
+            for turn, user in reversed(session.execute(statement).all()):
+                assistant = (
+                    session.scalar(
+                        select(ConversationMessageRow).where(
+                            ConversationMessageRow.turn_id == turn.turn_id,
+                            ConversationMessageRow.role == "assistant",
+                            ConversationMessageRow.parent_message_id.is_(None),
+                            ConversationMessageRow.visible.is_(True),
+                        )
+                    )
+                    if turn.status == "completed"
+                    else None
+                )
+                clarifications = tuple(
+                    {
+                        "interaction_id": item.interaction_id,
+                        "question": item.request["question"],
+                        "answer": item.response["answer"],
+                    }
+                    for item in session.scalars(
+                        select(InteractionRow)
+                        .where(
+                            InteractionRow.turn_id == turn.turn_id,
+                            InteractionRow.kind.in_(["input", "choice"]),
+                            InteractionRow.status == "resolved",
+                            InteractionRow.response.is_not(None),
+                        )
+                        .order_by(InteractionRow.revision)
+                    )
+                )
+                result.append(
+                    ConversationHistoryTurn(
+                        user=_message(user),
+                        assistant=_message(assistant) if assistant else None,
+                        status=turn.status,
+                        clarifications=clarifications,
+                    )
+                )
+            return tuple(result)
 
     def list_messages(
         self,

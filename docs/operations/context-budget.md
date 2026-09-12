@@ -2,6 +2,10 @@
 
 短期执行内容由原生 state/checkpoint 和唯一的 `WorkingContext` 管理；业务 Journal 保留原始问答。长期记忆及画像以应用 PostgreSQL 为事实源，Store 只用于检索 ID，返回正文前必须回读 SQL 的当前可见版本。详细契约见 [Stage 11 方案](../../.redesign/stages/stage-11-异步记忆与上下文治理实施方案.md)。
 
+失败或停止后，新执行线程按近期轮次与 token 预算补入会话历史：成功问答保留原文，失败和停止轮次保留原始用户问题、已确认的输入/选择回答及明确的执行状态。失败任务不会被当成已完成，也不会因下一句是普通追问而丢失；“重试”无需专门的关键词路由。恢复不复制未完成的工具调用链、异常堆栈或旧审批授权，也不把失败状态自动登记为长期画像。该规则在新线程初始化时生效，已初始化的旧 checkpoint 不会因部署被重写。
+
+工具批次包含 `invalid_tool_calls` 时整批拒绝，按有效与无效调用的全部 ID 补齐错误 ToolMessage，之后才让模型修正参数；紫微取证只允许一次格式修复。无法唯一对应的调用 ID 受控停止。最终模型入口也检查完整配对，避免将缺回执的历史请求发给 Provider。协议要求参见 [LangChain 工具回执文档](https://docs.langchain.com/oss/python/langchain/errors/INVALID_TOOL_RESULTS)。
+
 ## 进程与配置
 
 同一镜像运行 `api`、原生 `worker`、`integrations`、`memory_worker`。记忆工作进程不导入 AgentFactory、不使用原生图队列；模型调用、整合和索引不会占用业务图执行槽。以下变量均加 `FINANCECLAW_` 前缀；API 和执行 Worker 的发布策略必须一致。

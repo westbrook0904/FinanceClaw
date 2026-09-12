@@ -190,7 +190,11 @@ class ZiweiEvidenceMiddleware(AgentMiddleware):
                 )
                 return {"ziwei_result": result.model_dump(mode="json"), "jump_to": "end"}
             if (
-                all(message.additional_kwargs.get("ziwei_repairable") for message in failures)
+                all(
+                    message.additional_kwargs.get("ziwei_repairable")
+                    or message.additional_kwargs.get("invalid_tool_arguments")
+                    for message in failures
+                )
                 and state.get("ziwei_input_repairs", 0) < 1
             ):
                 repair = {"ziwei_input_repairs": 1}

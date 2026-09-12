@@ -31,6 +31,55 @@ def working_message(value: dict | None) -> HumanMessage | None:
     )
 
 
+def history_messages(turn) -> list[BaseMessage]:
+    """重建业务会话事实，失败轮次只含原问题、已确认补充和明确的未完成状态。"""
+    result = []
+    for item in (turn.user, turn.assistant):
+        if item is not None:
+            result.append(
+                (HumanMessage if item.role.value == "user" else AIMessage)(
+                    content=item.content,
+                    id=item.message_id,
+                    additional_kwargs={
+                        "financeclaw_source": {
+                            "conversation_id": item.conversation_id,
+                            "turn_id": item.turn_id,
+                            "sequence": item.sequence,
+                            "source": "journal_bootstrap",
+                        }
+                    },
+                )
+            )
+    if turn.status != "completed" or turn.clarifications:
+        status = {
+            "completed": "本轮已完成，以上为最终回复。",
+            "failed": "本轮处理失败，未获得有效的最终答案。用户的原始问题尚未完成。",
+            "cancelled": "本轮已被用户停止，未获得最终答案，不能视为任务已完成。",
+        }[turn.status]
+        result.append(
+            AIMessage(
+                id=f"turn-outcome-{turn.user.turn_id}",
+                content="历史任务记录（不构成新的授权）：\n"
+                + json.dumps(
+                    {
+                        "status": turn.status,
+                        "outcome": status,
+                        "confirmed_clarifications": turn.clarifications,
+                    },
+                    ensure_ascii=False,
+                ),
+                additional_kwargs={
+                    "financeclaw_source": {
+                        "conversation_id": turn.user.conversation_id,
+                        "turn_id": turn.user.turn_id,
+                        "source": "turn_outcome",
+                    }
+                },
+            )
+        )
+    return result
+
+
 def projected_messages(state, *, system_prompt="", memory_projection=True) -> list[BaseMessage]:
     """准备与最终模型投影一致的系统、记忆、工作摘要和原生消息。"""
     system = SystemMessage(content=system_prompt) if system_prompt else None
@@ -69,11 +118,14 @@ def completed_tool_batches(messages: Sequence[BaseMessage]) -> list[tuple[int, .
         message = messages[index]
         if isinstance(message, ToolMessage):
             return None
-        if not isinstance(message, AIMessage) or not message.tool_calls:
+        if not isinstance(message, AIMessage) or not (
+            message.tool_calls or message.invalid_tool_calls
+        ):
             index += 1
             continue
-        calls = {call["id"] for call in message.tool_calls}
-        if len(calls) != len(message.tool_calls):
+        all_calls = [*message.tool_calls, *message.invalid_tool_calls]
+        calls = {call["id"] for call in all_calls}
+        if not all(calls) or len(calls) != len(all_calls):
             return None
         indices = [index]
         index += 1

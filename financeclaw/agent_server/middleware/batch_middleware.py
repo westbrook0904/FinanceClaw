@@ -112,7 +112,35 @@ class ToolBatchMiddleware(AgentMiddleware):
     def after_model(self, state: Any, runtime: Any) -> dict[str, Any] | None:
         """未准入的任何调用都不执行，保留 AIMessage 与结果消息完整对应。"""
         message = state["messages"][-1]
-        if not isinstance(message, AIMessage) or not message.tool_calls:
+        if not isinstance(message, AIMessage):
+            return None
+        if message.invalid_tool_calls:
+            # OpenAI 会同时回传有效和无效调用；ToolNode 只执行有效调用。
+            # 整批拒绝并逐个补齐回执，避免部分执行后遗留悬空的调用 ID。
+            calls = [*message.tool_calls, *message.invalid_tool_calls]
+            identifiers = [call.get("id") for call in calls]
+            if any(not item for item in identifiers) or len(set(identifiers)) != len(calls):
+                raise ExecutionConflict("tool batch has missing or duplicate call IDs")
+            return {
+                "messages": [
+                    ToolMessage(
+                        content=json.dumps(
+                            {
+                                "error": "invalid_tool_arguments",
+                                "reason": "No tools in this batch were executed. Reissue the "
+                                "calls with valid JSON object arguments matching their schemas.",
+                            }
+                        ),
+                        name=call.get("name"),
+                        tool_call_id=call["id"],
+                        status="error",
+                        additional_kwargs={"invalid_tool_arguments": True},
+                    )
+                    for call in calls
+                ],
+                "jump_to": "model",
+            }
+        if not message.tool_calls:
             return None
         reason = self._reason(message.tool_calls, state, runtime)
         if reason is None:

@@ -15,7 +15,15 @@ from tests.stage10.runtime import runtime as runtime
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "mutation",
-    ["foreign_attempt", "pending_next", "tool_call", "old_turn", "empty", "foreign_receipt"],
+    [
+        "foreign_attempt",
+        "pending_next",
+        "tool_call",
+        "invalid_tool_call",
+        "old_turn",
+        "empty",
+        "foreign_receipt",
+    ],
 )
 async def test_invalid_final_proof_never_enters_journal(runtime, mutation):
     """Success requires current command, current input and a final answer without pending work."""
@@ -28,6 +36,8 @@ async def test_invalid_final_proof_never_enters_journal(runtime, mutation):
         state["next"] = ["tools"]
     elif mutation == "tool_call":
         state["values"]["messages"][-1]["tool_calls"] = [{"id": "pending"}]
+    elif mutation == "invalid_tool_call":
+        state["values"]["messages"][-1]["invalid_tool_calls"] = [{"id": "invalid"}]
     elif mutation == "old_turn":
         state["values"]["messages"][0]["id"] = "old"
     elif mutation == "empty":

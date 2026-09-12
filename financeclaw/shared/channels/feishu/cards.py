@@ -2,8 +2,6 @@
 
 import json
 import math
-from datetime import datetime
-from zoneinfo import ZoneInfo
 
 from financeclaw.kernel.interactions import InteractionResponse
 from financeclaw.shared.channels.feishu.interactions import format_interactions
@@ -271,7 +269,7 @@ def response_from_card(payload, value, form):
 
 
 def render_card(event_id, payload):
-    """处理中显示加载动画，交互优先展示，授权和停止收纳在折叠面板。"""
+    """处理中显示加载动画，交互优先展示，任务选项仅提供停止入口。"""
     status = payload["status"]
     titles = {
         "accepted": "已收到，正在处理",
@@ -335,26 +333,12 @@ def render_card(event_id, payload):
                 )
         if payload.get("last_decision") and not payload.get("interaction"):
             elements.append({"tag": "markdown", "content": payload["last_decision"]})
-        deadline = (
-            datetime.fromisoformat(grant["expires_at"])
-            .astimezone(ZoneInfo("Asia/Shanghai"))
-            .strftime("%Y-%m-%d %H:%M:%S（北京时间）")
-        )
-        controls = [
-            {
-                "tag": "markdown",
-                "content": "授权范围：" + "、".join(grant["scopes"]) + "\n授权截至：" + deadline,
-            }
-        ]
-        if not unavailable:
-            controls.append(button(event_id, "revoke", "撤销后台授权"))
-        controls.append(button(event_id, "cancel", "停止本轮"))
         elements.append(
             {
                 "tag": "collapsible_panel",
                 "expanded": False,
                 "header": {"title": plain("任务选项")},
-                "elements": controls,
+                "elements": [button(event_id, "cancel", "停止本轮")],
             }
         )
     elif status == "cancelling":
