@@ -8,6 +8,12 @@ from zoneinfo import ZoneInfo
 from financeclaw.kernel.interactions import InteractionResponse
 from financeclaw.shared.channels.feishu.interactions import format_interactions
 
+# 飞书输入框的客户端上限；业务回答 Schema 仍保留自己的容量。
+INPUT_MAX_LENGTH = 1000
+# 飞书官方插件使用的加载动图，动画在客户端播放，不产生后台轮询更新。
+# https://github.com/larksuite/openclaw-lark/blob/main/src/card/builder.ts
+LOADING_IMAGE_KEY = "img_v3_02vb_496bec09-4b43-4773-ad6b-0cdd103cd2bg"
+
 
 class UnsupportedForm(ValueError):
     """复杂 Schema 保留明确的 JSON 命令入口。"""
@@ -28,10 +34,10 @@ def button(event_id, op, label, *, primary=False, submit=False, option=None):
         "name": f"{op}_{option}" if option is not None else op,
         "text": plain(label),
         "type": "primary" if primary else "default",
-        "value": value,
+        "behaviors": [{"type": "callback", "value": value}],
     }
     if submit:
-        result["action_type"] = "form_submit"
+        result["form_action_type"] = "submit"
     return result
 
 
@@ -66,6 +72,12 @@ def fields(schema):
             raise UnsupportedForm("unsupported enum")
         if kind == "array" and enum is None:
             raise UnsupportedForm("array requires an enum")
+        if (
+            kind == "string"
+            and enum is None
+            and (spec.get("minLength", 0) > INPUT_MAX_LENGTH or spec.get("maxLength", 1) < 1)
+        ):
+            raise UnsupportedForm("text cannot fit the input widget")
         result.append((f"f{index}", key, spec, key in schema.get("required", []), enum))
     return result
 
@@ -91,7 +103,7 @@ def widget(name, label, spec, required, enum):
         "label": plain(label),
         "required": required,
         "placeholder": plain("请输入"),
-        "max_length": min(spec.get("maxLength", 4000), 16000),
+        "max_length": min(spec.get("maxLength", INPUT_MAX_LENGTH), INPUT_MAX_LENGTH),
     }
 
 
@@ -159,13 +171,13 @@ def interaction_elements(event_id, item):
         elements.append(
             {
                 "tag": "form",
-                "name": "approval",
+                "name": "form_approval",
                 "elements": [
                     {
                         "tag": "input",
                         "name": "reason",
                         "label": plain("处理说明（可选）"),
-                        "max_length": 2000,
+                        "max_length": INPUT_MAX_LENGTH,
                     },
                     *[
                         button(
@@ -191,7 +203,7 @@ def interaction_elements(event_id, item):
             elements.append(
                 {
                     "tag": "form",
-                    "name": "choice",
+                    "name": "form_choice",
                     "elements": [
                         widget(
                             "selection",
@@ -212,7 +224,7 @@ def interaction_elements(event_id, item):
         elements.append(
             {
                 "tag": "form",
-                "name": "answer",
+                "name": "form_answer",
                 "elements": [
                     *controls,
                     button(event_id, "answer", "提交回答", primary=True, submit=True),
@@ -259,7 +271,7 @@ def response_from_card(payload, value, form):
 
 
 def render_card(event_id, payload):
-    """每轮一张可更新任务卡；停止按钮随状态关闭，不承诺在途副作用回滚。"""
+    """处理中显示加载动画，交互优先展示，授权和停止收纳在折叠面板。"""
     status = payload["status"]
     titles = {
         "accepted": "已收到，正在处理",
@@ -274,7 +286,22 @@ def render_card(event_id, payload):
         "failed": "本轮处理失败",
     }
     ended = status in {"completed", "failed", "cancelled", "cancelling"}
-    elements = [{"tag": "markdown", "content": payload.get("task", "本轮任务")}]
+    active = status in {"accepted", "running", "queued", "resuming", "cancelling"}
+    elements = []
+    if active:
+        elements.append(
+            {
+                "tag": "markdown",
+                "content": titles[status] + "…",
+                "icon": {
+                    "tag": "custom_icon",
+                    "img_key": LOADING_IMAGE_KEY,
+                    "size": "16px 16px",
+                },
+            }
+        )
+    else:
+        elements.append({"tag": "markdown", "content": payload.get("task", "本轮任务")})
     grant = payload["grant"]
     if not ended:
         unavailable = grant["revoked"] or payload.get("waiting_reason") == "authorization_required"
@@ -313,15 +340,23 @@ def render_card(event_id, payload):
             .astimezone(ZoneInfo("Asia/Shanghai"))
             .strftime("%Y-%m-%d %H:%M:%S（北京时间）")
         )
-        elements.append(
+        controls = [
             {
                 "tag": "markdown",
                 "content": "授权范围：" + "、".join(grant["scopes"]) + "\n授权截至：" + deadline,
             }
-        )
+        ]
         if not unavailable:
-            elements.append(button(event_id, "revoke", "撤销后台授权"))
-        elements.append(button(event_id, "cancel", "停止本轮"))
+            controls.append(button(event_id, "revoke", "撤销后台授权"))
+        controls.append(button(event_id, "cancel", "停止本轮"))
+        elements.append(
+            {
+                "tag": "collapsible_panel",
+                "expanded": False,
+                "header": {"title": plain("任务选项")},
+                "elements": controls,
+            }
+        )
     elif status == "cancelling":
         elements.append({"tag": "markdown", "content": "停止请求已受理，正在确认执行结束。"})
     elif status == "cancelled":
@@ -331,12 +366,20 @@ def render_card(event_id, payload):
                 "content": "可以发送新消息开始下一轮。已经发生的外部操作不会自动撤回。",
             }
         )
-    return {
+    card = {
         "schema": "2.0",
-        "config": {"update_multi": True},
-        "header": {"title": plain(titles.get(status, status)), "template": "blue"},
+        "config": {
+            "update_multi": True,
+            "summary": {"content": titles.get(status, status)},
+        },
         "body": {"elements": elements},
     }
+    if not active:
+        card["header"] = {
+            "title": plain(titles.get(status, status)),
+            "template": "orange" if status in {"waiting", "blocked", "failed"} else "blue",
+        }
+    return card
 
 
 def toast(message, kind="info"):

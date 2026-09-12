@@ -23,8 +23,12 @@ LOGGER = logging.getLogger(__name__)
 def button_values(node):
     """列出冻结视图里真实提供的按钮，拒绝客户端构造额外动作。"""
     if isinstance(node, dict):
-        if node.get("tag") == "button" and "value" in node:
-            yield node["value"]
+        if node.get("tag") == "button":
+            if "value" in node:
+                yield node["value"]
+            for behavior in node.get("behaviors", []):
+                if behavior.get("type") == "callback":
+                    yield behavior["value"]
         for child in node.values():
             yield from button_values(child)
     elif isinstance(node, list):

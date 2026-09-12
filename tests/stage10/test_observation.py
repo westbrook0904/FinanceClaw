@@ -137,6 +137,31 @@ async def test_cancellation_requires_stop_and_next_turn_has_clean_thread(runtime
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("native_status", ["success", "interrupted", "error", "timeout"])
+async def test_cancel_ended_native_run_releases_conversation(runtime, monkeypatch, native_status):
+    """原生已结束时不调用会返回 404 的取消接口，停止意图仍关闭交互并释放会话。"""
+    accepted = await admit(runtime)
+    await tick(runtime)
+    await question(runtime, accepted)
+    native = next(iter(runtime.client.values.values()))
+    native["status"] = native_status
+
+    async def cannot_cancel_ended_run(*args, **kwargs):
+        """模拟真实服务拒绝重复取消已结束运行的边界。"""
+        raise AssertionError("ended native run must not receive another cancel request")
+
+    monkeypatch.setattr(runtime.client, "cancel", cannot_cancel_ended_run)
+    await runtime.turns.cancel(accepted.turn_id, **OWNER, command_id="cancel-after-interrupt")
+    await tick(runtime)
+    assert (await runtime.turns.status(accepted.turn_id, **OWNER)).status == "cancelled"
+    with runtime.turns.sessions() as session:
+        assert set(session.scalars(select(InteractionRow.status))) == {"cancelled"}
+    next_turn = await admit(runtime, conversation_id=accepted.conversation_id)
+    assert runtime.turns.store.owned(next_turn.turn_id, **OWNER)["thread_id"] != native["thread_id"]
+    assert len(runtime.client.calls) == 1
+
+
+@pytest.mark.asyncio
 async def test_cancel_unknown_submission_keeps_conversation_busy(runtime, monkeypatch):
     """Absence from run lookup cannot prove that an uncertain submission never executed."""
 

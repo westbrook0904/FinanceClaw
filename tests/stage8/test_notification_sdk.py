@@ -160,6 +160,22 @@ async def test_sdk_cardkit_create_reply_and_update_one_message(sdk):
 
 
 @pytest.mark.asyncio
+async def test_sdk_schema_error_is_not_an_unknown_card_update(sdk):
+    """真实 SDK 解码卡片格式拒绝，保留明确失败和数字错误码。"""
+    from financeclaw.integrations.notifications.feishu import CardCreationRejected
+
+    sdk.reply = {"code": 11310, "msg": "synthetic schema rejection"}
+    with pytest.raises(CardCreationRejected) as rejected:
+        await sdk.gateway.create_card("{}")
+    assert rejected.value.code == 11310
+    sdk.claim.update(
+        message_type="card", card_id="card-1", target_message_id="om_receipt", sequence=4
+    )
+    receipt = await sdk.gateway.send(sdk.claim)
+    assert receipt.status == "failed" and receipt.error_class == "card_schema_rejected_11310"
+
+
+@pytest.mark.asyncio
 async def test_real_channel_callback_waits_for_durable_business_ack(monkeypatch):
     """同一个官方 WS Channel 的同步入口返回事务结果；未走 SDK 的异步空回包。"""
     import asyncio

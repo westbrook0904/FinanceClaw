@@ -155,8 +155,10 @@ class NativeRuns:
         await self.client.runs.join(turn["thread_id"], command["native_run_id"])
 
     async def cancel(self, turn, command):
-        """Persist cancellation intent; observation confirms when execution has stopped."""
-        await self.get(turn, command)
+        """核对原生回执；已结束的运行无需再次取消，避免取消接口 404 阻塞会话。"""
+        native = await self.get(turn, command)
+        if native["status"] in {"success", "interrupted", "error", "timeout"}:
+            return
         await self.client.runs.cancel(turn["thread_id"], command["native_run_id"], wait=True)
 
     async def checkpoint_state(self, thread_id):

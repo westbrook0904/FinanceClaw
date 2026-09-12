@@ -81,7 +81,7 @@ def callback(event, op, *, event_id="event-1", form=None, option=None):
 
 
 async def fresh(runtime):
-    """经过飞书入口受理，尚未启动后端就可看到停止按钮。"""
+    """经过飞书入口受理，尚未启动后端就可从任务选项停止。"""
     service = channel(runtime)
     assert await service.process(message(), Replies()) == "accepted"
     with runtime.turns.store.sessions() as session:
@@ -373,4 +373,4 @@ def test_short_choice_buttons_have_unique_names_and_fixed_values():
     }
     controls = [node for node in interaction_elements("view", item) if node["tag"] == "button"]
     assert len({node["name"] for node in controls}) == 3
-    assert [node["value"]["option"] for node in controls] == ["o0", "o1", "o2"]
+    assert [value["option"] for value in button_values(controls)] == ["o0", "o1", "o2"]

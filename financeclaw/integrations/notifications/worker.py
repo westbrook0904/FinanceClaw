@@ -5,7 +5,11 @@ import logging
 from contextlib import suppress
 from uuid import uuid4
 
-from financeclaw.integrations.notifications.feishu import FeishuNotificationGateway, Receipt
+from financeclaw.integrations.notifications.feishu import (
+    CardCreationRejected,
+    FeishuNotificationGateway,
+    Receipt,
+)
 from financeclaw.integrations.notifications.repository import StaleSender
 
 LOGGER = logging.getLogger(__name__)
@@ -53,6 +57,18 @@ async def deliver(repository, gateway, claim, settings):
             async with asyncio.timeout(settings.notification_timeout_seconds):
                 card_id = await gateway.create_card(claim["content"])
             await asyncio.to_thread(repository.attach_card, claim, card_id)
+        except CardCreationRejected as exc:
+            LOGGER.warning("Feishu card creation rejected: code=%s", exc.code)
+            await asyncio.to_thread(
+                repository.settle,
+                claim,
+                Receipt(
+                    "failed" if exc.code == 11310 else "retry",
+                    error_class=f"card_creation_rejected_{exc.code}",
+                ),
+                max_failures=settings.notification_max_failures,
+            )
+            return
         except Exception:
             await asyncio.to_thread(
                 repository.settle,
@@ -113,9 +129,7 @@ async def run_worker(repository, gateway, settings, stop, *, worker_id=None):
         except StaleSender:
             LOGGER.info("Discarded stale notification receipt")
         except Exception as exc:
-            LOGGER.warning(
-                "Notification worker step failed", extra={"error_type": type(exc).__name__}
-            )
+            LOGGER.warning("Notification worker step failed: %s", type(exc).__name__)
         finally:
             if task is not None and not task.done():
                 task.cancel()

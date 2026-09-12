@@ -7,7 +7,7 @@ from uuid import NAMESPACE_URL, uuid5
 from sqlalchemy import exists, func, or_, select, update
 from sqlalchemy.orm import aliased
 
-from financeclaw.integrations.notifications.rendering import chunks
+from financeclaw.integrations.notifications.rendering import answer_cards
 from financeclaw.shared.channels.feishu.cards import render_card
 from financeclaw.shared.channels.feishu.memory_cards import render_memory_card
 from financeclaw.shared.notifications.facts import require_schema, target_valid
@@ -81,7 +81,10 @@ class NotificationRepository:
                     )
                 ]
             else:
-                parts = chunks(event.payload["content"] or "处理已完成。")
+                parts = [
+                    json.dumps(card, ensure_ascii=False)
+                    for card in answer_cards(event.payload["content"] or "处理已完成。")
+                ]
             for index, content in enumerate(parts):
                 identity = digest([event.target_id, event.event_id, 1, index])
                 session.add(
@@ -92,9 +95,7 @@ class NotificationRepository:
                         parts=len(parts),
                         content=content,
                         content_hash=digest(content),
-                        message_type="card"
-                        if event.kind in {"card", "memory_candidates"}
-                        else "text",
+                        message_type="card",
                         send_key=str(uuid5(NAMESPACE_URL, "financeclaw:notification:" + identity)),
                     )
                 )

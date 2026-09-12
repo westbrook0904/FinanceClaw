@@ -1,8 +1,20 @@
 """飞书官方 SDK 底层接口适配：只回复原消息，不使用高层重试、分片或降级。"""
 
 import json
+import logging
 from dataclasses import dataclass
 from typing import Literal
+
+LOGGER = logging.getLogger(__name__)
+
+
+class CardCreationRejected(ValueError):
+    """保存平台明确拒绝的数字错误码，不将消息正文或原始响应写入日志。"""
+
+    def __init__(self, code):
+        """绑定平台错误码，供发送器区分卡片格式错误和临时故障。"""
+        self.code = code
+        super().__init__(f"card creation rejected: {code}")
 
 
 @dataclass(frozen=True)
@@ -122,8 +134,10 @@ class FeishuNotificationGateway:
             .request_body(CreateCardRequestBody.builder().type("card_json").data(content).build())
             .build()
         )
-        if response.code != 0 or not getattr(response.data, "card_id", None):
-            raise ValueError("card creation rejected")
+        if response.code != 0:
+            raise CardCreationRejected(response.code)
+        if not getattr(response.data, "card_id", None):
+            raise ValueError("card creation receipt missing")
         return response.data.card_id
 
     async def update_card(self, claim):
@@ -148,4 +162,7 @@ class FeishuNotificationGateway:
             return Receipt("sent", message_id=claim["target_message_id"])
         if response.code in {230020, 99991400}:
             return Receipt("retry", error_class="rate_limited")
-        return Receipt("uncertain", error_class="card_update_unconfirmed")
+        LOGGER.warning("Feishu card update rejected: code=%s", response.code)
+        if response.code == 11310:
+            return Receipt("failed", error_class="card_schema_rejected_11310")
+        return Receipt("uncertain", error_class=f"card_update_unconfirmed_{response.code}")
