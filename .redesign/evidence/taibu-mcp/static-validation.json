@@ -1,0 +1,62 @@
+{
+  "passed": true,
+  "checks": [
+    {
+      "command": [
+        ".venv/bin/ruff",
+        "check",
+        "financeclaw/agent_server/agents/factory.py",
+        "financeclaw/agent_server/bootstrap.py",
+        "financeclaw/shared/infrastructure/settings.py",
+        "financeclaw/shared/releases/catalog.py",
+        "financeclaw/agent_server/tools/taibu.py",
+        "financeclaw/agent_server/tools/mcp_client.py",
+        "financeclaw/agent_server/middleware/taibu_failure.py",
+        "financeclaw/kernel/taibu.py",
+        "financeclaw/shared/releases/taibu.py",
+        "tests/taibu",
+        "experiments/taibu"
+      ],
+      "exit_code": 0,
+      "output": "All checks passed!\n"
+    },
+    {
+      "command": [
+        ".venv/bin/ruff",
+        "format",
+        "--check",
+        "financeclaw/agent_server/agents/factory.py",
+        "financeclaw/agent_server/bootstrap.py",
+        "financeclaw/shared/infrastructure/settings.py",
+        "financeclaw/shared/releases/catalog.py",
+        "financeclaw/agent_server/tools/taibu.py",
+        "financeclaw/agent_server/tools/mcp_client.py",
+        "financeclaw/agent_server/middleware/taibu_failure.py",
+        "financeclaw/kernel/taibu.py",
+        "financeclaw/shared/releases/taibu.py",
+        "tests/taibu",
+        "experiments/taibu"
+      ],
+      "exit_code": 0,
+      "output": "18 files already formatted\n"
+    },
+    {
+      "command": [
+        ".venv/bin/python",
+        "scripts/check_secret_leaks.py"
+      ],
+      "exit_code": 0,
+      "output": "No recognizable credential material found in application surfaces\n"
+    },
+    {
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exit_code": 0,
+      "output": ""
+    }
+  ],
+  "checked_at": "2026-09-12T06:29:13.890470+00:00"
+}

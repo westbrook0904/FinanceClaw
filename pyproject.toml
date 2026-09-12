@@ -81,6 +81,7 @@ include = ["financeclaw*"]
 [tool.setuptools.package-data]
 financeclaw = [
     "py.typed",
+    "shared/releases/taibu_contracts.json",
     "shared/infrastructure/migrations/*.py",
     "shared/infrastructure/migrations/*.mako",
     "shared/infrastructure/migrations/versions/*.py",

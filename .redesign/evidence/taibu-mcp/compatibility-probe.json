@@ -1,0 +1,1195 @@
+{
+  "checked_at": "2026-09-12T05:23:23.343123+00:00",
+  "endpoint": "https://mcp.mingai.fun/mcp",
+  "inputs": "Only fixed test dates and synthetic birth parameters; no user data.",
+  "versions": {
+    "mcp": "1.29.1",
+    "langchain-mcp-adapters": "0.3.2",
+    "langchain": "1.3.18",
+    "langchain-core": "1.6.1"
+  },
+  "info": {
+    "http_status": 200,
+    "body": {
+      "name": "TaiBu MCP Server",
+      "version": "3.1.1",
+      "status": "ok",
+      "transport": "streamable-http",
+      "protocol_version": "2026-07-28",
+      "legacy_compatibility": "stateless",
+      "auth": "none",
+      "mcp_endpoint": "/mcp"
+    }
+  },
+  "initialize": {
+    "protocolVersion": "2025-11-25",
+    "capabilities": {
+      "tools": {
+        "listChanged": true
+      }
+    },
+    "serverInfo": {
+      "name": "taibu-mcp-online",
+      "version": "3.1.1"
+    },
+    "instructions": "太卜提供命理、术数与占卜计算工具。工具结果同时包含规范文本与 canonical JSON。"
+  },
+  "tools": [
+    {
+      "name": "astrology",
+      "has_output_schema": true,
+      "required": [
+        "birthYear",
+        "birthMonth",
+        "birthDay",
+        "birthHour"
+      ]
+    },
+    {
+      "name": "bazi",
+      "has_output_schema": true,
+      "required": [
+        "gender",
+        "birthYear",
+        "birthMonth",
+        "birthDay",
+        "birthHour"
+      ]
+    },
+    {
+      "name": "bazi_pillars_resolve",
+      "has_output_schema": true,
+      "required": [
+        "yearPillar",
+        "monthPillar",
+        "dayPillar",
+        "hourPillar"
+      ]
+    },
+    {
+      "name": "ziwei",
+      "has_output_schema": true,
+      "required": [
+        "gender",
+        "birthYear",
+        "birthMonth",
+        "birthDay",
+        "birthHour"
+      ]
+    },
+    {
+      "name": "ziwei_horoscope",
+      "has_output_schema": true,
+      "required": [
+        "gender",
+        "birthYear",
+        "birthMonth",
+        "birthDay",
+        "birthHour"
+      ]
+    },
+    {
+      "name": "ziwei_flying_star",
+      "has_output_schema": true,
+      "required": [
+        "gender",
+        "birthYear",
+        "birthMonth",
+        "birthDay",
+        "birthHour",
+        "queries"
+      ]
+    },
+    {
+      "name": "liuyao",
+      "has_output_schema": true,
+      "required": [
+        "question",
+        "yongShenTargets",
+        "date"
+      ]
+    },
+    {
+      "name": "meihua",
+      "has_output_schema": true,
+      "required": [
+        "question",
+        "date"
+      ]
+    },
+    {
+      "name": "tarot",
+      "has_output_schema": true,
+      "required": []
+    },
+    {
+      "name": "taiyi",
+      "has_output_schema": true,
+      "required": [
+        "mode",
+        "date"
+      ]
+    },
+    {
+      "name": "almanac",
+      "has_output_schema": true,
+      "required": []
+    },
+    {
+      "name": "bazi_dayun",
+      "has_output_schema": true,
+      "required": [
+        "gender",
+        "birthYear",
+        "birthMonth",
+        "birthDay",
+        "birthHour"
+      ]
+    },
+    {
+      "name": "qimen",
+      "has_output_schema": true,
+      "required": [
+        "year",
+        "month",
+        "day",
+        "hour"
+      ]
+    },
+    {
+      "name": "daliuren",
+      "has_output_schema": true,
+      "required": [
+        "date",
+        "hour"
+      ]
+    },
+    {
+      "name": "xiaoliuren",
+      "has_output_schema": true,
+      "required": [
+        "lunarMonth",
+        "lunarDay",
+        "hour"
+      ]
+    }
+  ],
+  "calls": {
+    "almanac": {
+      "arguments": {
+        "date": "2026-09-12"
+      },
+      "elapsed_seconds": 0.831,
+      "is_error": false,
+      "wire_json_bytes": 1618,
+      "structured_keys": [
+        "基础与个性化坐标",
+        "传统黄历基调",
+        "择日宜忌",
+        "神煞参考"
+      ],
+      "structured_json_bytes": 846,
+      "content_types": [
+        "text"
+      ]
+    },
+    "bazi": {
+      "arguments": {
+        "gender": "male",
+        "birthYear": 1990,
+        "birthMonth": 1,
+        "birthDay": 15,
+        "birthHour": 9,
+        "birthMinute": 0,
+        "calendarType": "solar",
+        "isLeapMonth": false,
+        "detailLevel": "default"
+      },
+      "elapsed_seconds": 0.827,
+      "is_error": false,
+      "wire_json_bytes": 1792,
+      "structured_keys": [
+        "基本信息",
+        "四柱",
+        "干支关系",
+        "placeResolutionInfo"
+      ],
+      "structured_json_bytes": 1114,
+      "content_types": [
+        "text"
+      ]
+    }
+  },
+  "adapter": {
+    "simple_ainvoke_result_type": "list",
+    "simple_has_artifact": false,
+    "tool_call_result_type": "ToolMessage",
+    "tool_call_artifact_keys": [
+      "structured_content"
+    ],
+    "tool_call_has_structured_content": true
+  },
+  "financeclaw_commit": "7dab6d47af6a6e0fcfe59caca04918b3c91cf058",
+  "upstream_commit": "e8f636972a6fdb14f2a532ee223101f889ab4820",
+  "validation_scope": "Public HTTP info, MCP initialize, tool discovery, almanac and bazi calls, and LangChain structured-result preservation. No FinanceClaw product graph, Feishu, Docker deployment, or algorithm accuracy validation.",
+  "timing_scope": "Single sequential calls within one established MCP session, excluding connection and initialization; not a latency benchmark or SLA.",
+  "sample_contracts": [
+    {
+      "tool": "bazi",
+      "sha256": "a34b272bedebee43902267f69bda1c619b9638be867915188865e92f5a65f68f",
+      "contract": {
+        "name": "bazi",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "gender": {
+              "type": "string",
+              "enum": [
+                "male",
+                "female"
+              ],
+              "description": "性别"
+            },
+            "birthYear": {
+              "type": "number",
+              "description": "出生年 (1900-2100)"
+            },
+            "birthMonth": {
+              "type": "number",
+              "description": "出生月 (1-12)"
+            },
+            "birthDay": {
+              "type": "number",
+              "description": "出生日"
+            },
+            "birthHour": {
+              "type": "number",
+              "description": "出生时 (0-23)"
+            },
+            "birthMinute": {
+              "type": "number",
+              "description": "出生分 (0-59)",
+              "default": 0
+            },
+            "calendarType": {
+              "type": "string",
+              "enum": [
+                "solar",
+                "lunar"
+              ],
+              "description": "历法类型（solar=公历，lunar=农历）",
+              "default": "solar"
+            },
+            "isLeapMonth": {
+              "type": "boolean",
+              "description": "农历闰月标记",
+              "default": false
+            },
+            "birthPlace": {
+              "type": "string",
+              "description": "出生地点文本"
+            },
+            "longitude": {
+              "type": "number",
+              "description": "出生地经度"
+            },
+            "detailLevel": {
+              "type": "string",
+              "enum": [
+                "default",
+                "full"
+              ],
+              "description": "输出细节级别。",
+              "default": "default"
+            }
+          },
+          "required": [
+            "gender",
+            "birthYear",
+            "birthMonth",
+            "birthDay",
+            "birthHour"
+          ],
+          "examples": [
+            {
+              "gender": "male",
+              "birthYear": 1990,
+              "birthMonth": 1,
+              "birthDay": 15,
+              "birthHour": 9
+            },
+            {
+              "gender": "female",
+              "birthYear": 1995,
+              "birthMonth": 6,
+              "birthDay": 20,
+              "birthHour": 23,
+              "calendarType": "lunar"
+            }
+          ]
+        },
+        "outputSchema": {
+          "type": "object",
+          "properties": {
+            "基本信息": {
+              "type": "object",
+              "properties": {
+                "性别": {
+                  "type": "string",
+                  "description": "性别标记"
+                },
+                "日主": {
+                  "type": "string",
+                  "description": "日主天干"
+                },
+                "命主五行": {
+                  "type": "string",
+                  "description": "日主所属五行"
+                },
+                "空亡": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "空亡列表"
+                },
+                "出生地": {
+                  "type": "string",
+                  "description": "出生地点文本"
+                },
+                "真太阳时": {
+                  "type": "object",
+                  "properties": {
+                    "钟表时间": {
+                      "type": "string",
+                      "description": "原始钟表时间"
+                    },
+                    "真太阳时": {
+                      "type": "string",
+                      "description": "校正后的真太阳时"
+                    },
+                    "经度": {
+                      "type": "number",
+                      "description": "经度值"
+                    },
+                    "校正分钟": {
+                      "type": "number",
+                      "description": "校正分钟数"
+                    }
+                  }
+                },
+                "胎元": {
+                  "type": "string",
+                  "description": "胎元文本"
+                },
+                "命宫": {
+                  "type": "string",
+                  "description": "命宫文本"
+                }
+              }
+            },
+            "四柱": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "柱": {
+                    "type": "string",
+                    "description": "柱名文本"
+                  },
+                  "干支": {
+                    "type": "string",
+                    "description": "干支文本"
+                  },
+                  "天干十神": {
+                    "type": "string",
+                    "description": "十神关系"
+                  },
+                  "藏干": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "天干": {
+                          "type": "string",
+                          "description": "藏干天干文本"
+                        },
+                        "十神": {
+                          "type": "string",
+                          "description": "藏干十神文本"
+                        },
+                        "气性": {
+                          "type": "string",
+                          "description": "藏干气性"
+                        }
+                      }
+                    }
+                  },
+                  "地势": {
+                    "type": "string",
+                    "description": "十二长生状态"
+                  },
+                  "纳音": {
+                    "type": "string",
+                    "description": "纳音属性"
+                  },
+                  "神煞": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "空亡": {
+                    "type": "string",
+                    "description": "是否空亡文本"
+                  }
+                }
+              },
+              "description": "四柱列表"
+            },
+            "干支关系": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "干支关系列表"
+            },
+            "大运": {
+              "type": "object",
+              "properties": {
+                "起运信息": {
+                  "type": "string",
+                  "description": "起运说明"
+                },
+                "大运列表": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "起运年份": {
+                        "type": "number",
+                        "description": "起始年份"
+                      },
+                      "起运年龄": {
+                        "type": "number",
+                        "description": "起运年龄"
+                      },
+                      "干支": {
+                        "type": "string",
+                        "description": "干支文本"
+                      },
+                      "天干": {
+                        "type": "string",
+                        "description": "天干文本"
+                      },
+                      "地支": {
+                        "type": "string",
+                        "description": "地支文本"
+                      },
+                      "十神": {
+                        "type": "string",
+                        "description": "十神关系"
+                      },
+                      "地支主气十神": {
+                        "type": "string",
+                        "description": "地支主气十神"
+                      },
+                      "藏干": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "天干": {
+                              "type": "string",
+                              "description": "藏干天干文本"
+                            },
+                            "十神": {
+                              "type": "string",
+                              "description": "藏干十神文本"
+                            },
+                            "气性": {
+                              "type": "string",
+                              "description": "藏干气性"
+                            }
+                          }
+                        }
+                      },
+                      "地势": {
+                        "type": "string",
+                        "description": "十二长生状态"
+                      },
+                      "纳音": {
+                        "type": "string",
+                        "description": "纳音属性"
+                      },
+                      "神煞": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        },
+                        "description": "神煞列表"
+                      },
+                      "原局关系": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "类型": {
+                              "type": "string",
+                              "description": "关系类型"
+                            },
+                            "地支": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              },
+                              "description": "涉及地支列表"
+                            },
+                            "描述": {
+                              "type": "string",
+                              "description": "关系描述文本"
+                            }
+                          }
+                        },
+                        "description": "与原局的关系列表"
+                      },
+                      "流年列表": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "流年": {
+                              "type": "number",
+                              "description": "流年年份"
+                            },
+                            "年龄": {
+                              "type": "number",
+                              "description": "对应年龄"
+                            },
+                            "干支": {
+                              "type": "string",
+                              "description": "干支文本"
+                            },
+                            "天干": {
+                              "type": "string",
+                              "description": "天干文本"
+                            },
+                            "地支": {
+                              "type": "string",
+                              "description": "地支文本"
+                            },
+                            "十神": {
+                              "type": "string",
+                              "description": "十神关系"
+                            },
+                            "纳音": {
+                              "type": "string",
+                              "description": "纳音属性"
+                            },
+                            "藏干": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "天干": {
+                                    "type": "string",
+                                    "description": "藏干天干文本"
+                                  },
+                                  "十神": {
+                                    "type": "string",
+                                    "description": "藏干十神文本"
+                                  },
+                                  "气性": {
+                                    "type": "string",
+                                    "description": "藏干气性"
+                                  }
+                                }
+                              }
+                            },
+                            "地势": {
+                              "type": "string",
+                              "description": "十二长生状态"
+                            },
+                            "神煞": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              },
+                              "description": "神煞列表"
+                            },
+                            "原局关系": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "类型": {
+                                    "type": "string",
+                                    "description": "关系类型"
+                                  },
+                                  "地支": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    },
+                                    "description": "涉及地支列表"
+                                  },
+                                  "描述": {
+                                    "type": "string",
+                                    "description": "关系描述文本"
+                                  }
+                                }
+                              },
+                              "description": "与原局的关系列表"
+                            },
+                            "太岁关系": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              },
+                              "description": "与太岁的关系列表"
+                            }
+                          }
+                        },
+                        "description": "流年列表"
+                      }
+                    }
+                  },
+                  "description": "大运列表"
+                }
+              }
+            },
+            "placeResolutionInfo": {
+              "type": "object",
+              "description": "出生地点解析信息",
+              "properties": {
+                "requestedPlace": {
+                  "type": "string",
+                  "description": "原始地点文本"
+                },
+                "resolved": {
+                  "type": "boolean",
+                  "description": "解析成功标记"
+                },
+                "provider": {
+                  "type": "string",
+                  "description": "解析服务提供方",
+                  "enum": [
+                    "amap"
+                  ]
+                },
+                "level": {
+                  "type": "string",
+                  "description": "解析精度级别"
+                },
+                "formattedAddress": {
+                  "type": "string",
+                  "description": "标准化地点文本"
+                },
+                "adcode": {
+                  "type": "string",
+                  "description": "行政区编码"
+                },
+                "usedLongitude": {
+                  "type": "number",
+                  "description": "实际采用的经度"
+                },
+                "usedLatitude": {
+                  "type": "number",
+                  "description": "实际采用的纬度"
+                },
+                "source": {
+                  "type": "string",
+                  "description": "地点来源",
+                  "enum": [
+                    "manual_input",
+                    "birth_place",
+                    "fallback"
+                  ]
+                },
+                "fallbackReason": {
+                  "type": "string",
+                  "description": "未采用地点增强的原因",
+                  "enum": [
+                    "no_birth_place",
+                    "geocoder_disabled",
+                    "geocode_failed",
+                    "precision_too_low",
+                    "invalid_location"
+                  ]
+                },
+                "locationMode": {
+                  "type": "string",
+                  "description": "地点增强用途",
+                  "enum": [
+                    "coordinates",
+                    "true_solar_time"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "annotations": {
+          "title": null,
+          "readOnlyHint": true,
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "openWorldHint": false
+        }
+      }
+    },
+    {
+      "tool": "almanac",
+      "sha256": "d70596584368c9630a34312666b84cdcafd110af4bb0c586768818a158d4752f",
+      "contract": {
+        "name": "almanac",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "dayMaster": {
+              "type": "string",
+              "enum": [
+                "甲",
+                "乙",
+                "丙",
+                "丁",
+                "戊",
+                "己",
+                "庚",
+                "辛",
+                "壬",
+                "癸"
+              ],
+              "description": "日主天干"
+            },
+            "birthYear": {
+              "type": "number",
+              "description": "出生年，用于推导日主"
+            },
+            "birthMonth": {
+              "type": "number",
+              "description": "出生月，用于推导日主"
+            },
+            "birthDay": {
+              "type": "number",
+              "description": "出生日，用于推导日主"
+            },
+            "birthHour": {
+              "type": "number",
+              "description": "出生时，用于推导日主"
+            },
+            "date": {
+              "type": "string",
+              "description": "目标日期 (YYYY-MM-DD，省略时取当前日期)"
+            }
+          },
+          "required": [],
+          "examples": [
+            {
+              "birthYear": 1990,
+              "birthMonth": 1,
+              "birthDay": 15,
+              "birthHour": 9,
+              "date": "2026-02-14"
+            },
+            {
+              "dayMaster": "丙",
+              "date": "2026-02-14"
+            }
+          ]
+        },
+        "outputSchema": {
+          "type": "object",
+          "properties": {
+            "基础与个性化坐标": {
+              "type": "object",
+              "properties": {
+                "日期": {
+                  "type": "string",
+                  "description": "日期文本"
+                },
+                "日干支": {
+                  "type": "string",
+                  "description": "当日干支"
+                },
+                "流日十神": {
+                  "type": "string",
+                  "description": "当日十神"
+                }
+              }
+            },
+            "传统黄历基调": {
+              "type": "object",
+              "properties": {
+                "农历": {
+                  "type": "string",
+                  "description": "农历日期文本"
+                },
+                "生肖": {
+                  "type": "string",
+                  "description": "生肖名称"
+                },
+                "节气": {
+                  "type": "string",
+                  "description": "所属节气"
+                },
+                "冲煞": {
+                  "type": "string",
+                  "description": "冲煞信息"
+                },
+                "彭祖百忌": {
+                  "type": "string",
+                  "description": "彭祖百忌内容"
+                },
+                "胎神占方": {
+                  "type": "string",
+                  "description": "胎神方位说明"
+                },
+                "日九星": {
+                  "type": "object",
+                  "properties": {
+                    "描述": {
+                      "type": "string",
+                      "description": "描述文本"
+                    },
+                    "方位": {
+                      "type": "string",
+                      "description": "方位信息"
+                    }
+                  }
+                }
+              }
+            },
+            "择日宜忌": {
+              "type": "object",
+              "properties": {
+                "宜": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "宜事项列表"
+                },
+                "忌": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "忌事项列表"
+                }
+              }
+            },
+            "神煞参考": {
+              "type": "object",
+              "properties": {
+                "吉神宜趋": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "吉神列表"
+                },
+                "凶煞宜忌": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "凶煞列表"
+                }
+              }
+            },
+            "方位信息": {
+              "type": "object",
+              "properties": {
+                "财神": {
+                  "type": "string",
+                  "description": "财神方位"
+                },
+                "喜神": {
+                  "type": "string",
+                  "description": "喜神方位"
+                },
+                "福神": {
+                  "type": "string",
+                  "description": "福神方位"
+                },
+                "阳贵人": {
+                  "type": "string",
+                  "description": "阳贵人方位"
+                },
+                "阴贵人": {
+                  "type": "string",
+                  "description": "阴贵人方位"
+                }
+              }
+            },
+            "值日信息": {
+              "type": "object",
+              "properties": {
+                "建除十二值星": {
+                  "type": "string",
+                  "description": "当日建除值星"
+                },
+                "天神": {
+                  "type": "string",
+                  "description": "天神名称"
+                },
+                "天神类型": {
+                  "type": "string",
+                  "description": "天神类别"
+                },
+                "天神吉凶": {
+                  "type": "string",
+                  "description": "天神吉凶判断"
+                },
+                "二十八星宿": {
+                  "type": "string",
+                  "description": "当日星宿"
+                },
+                "星宿吉凶": {
+                  "type": "string",
+                  "description": "星宿吉凶判断"
+                },
+                "星宿歌诀": {
+                  "type": "string",
+                  "description": "星宿歌诀原文"
+                },
+                "日柱纳音": {
+                  "type": "string",
+                  "description": "日柱纳音"
+                }
+              }
+            },
+            "时辰吉凶": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "时辰": {
+                    "type": "string",
+                    "description": "时辰名称"
+                  },
+                  "天神": {
+                    "type": "string",
+                    "description": "天神名称"
+                  },
+                  "天神类型": {
+                    "type": "string",
+                    "description": "天神类别"
+                  },
+                  "天神吉凶": {
+                    "type": "string",
+                    "description": "天神吉凶判断"
+                  },
+                  "冲煞": {
+                    "type": "string",
+                    "description": "冲煞信息"
+                  },
+                  "宜": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "宜事项列表"
+                  },
+                  "忌": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "忌事项列表"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "annotations": {
+          "title": null,
+          "readOnlyHint": true,
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "openWorldHint": false
+        }
+      }
+    }
+  ],
+  "results": {
+    "almanac": {
+      "content": [
+        {
+          "type": "text",
+          "text": "# 每日黄历\n\n## 基础与个性化坐标\n- 日期: 2026-09-12 (己丑日)\n\n## 传统黄历基调\n- 农历: 二〇二六年八月初二 (生肖马)\n- 冲煞: 冲(癸未)羊 / 煞东\n- 彭祖百忌: 己不破券二比并亡 / 丑不冠带主不还乡\n- 胎神占方: 占门厕 外正北\n- 日九星: 五黄土 中(中宫) 玉衡 玄空[廉贞 凶] 奇门[天禽 大吉 阳] 太乙[天符 凶神]\n\n## 择日宜忌\n- 宜: 嫁娶, 祭祀, 祈福, 求嗣, 开光, 出行, 出火, 拆卸, 修造, 动土, 进人口, 入宅, 移徙, 安床, 开市, 交易, 立券, 挂匾, 栽种, 纳畜, 入殓, 安葬, 除服, 成服\n- 忌: 无\n\n## 神煞参考 (择日背景)\n- 吉神宜趋: 母仓, 三合, 时阴, 金堂\n- 凶煞宜忌: 死气, 勾陈"
+        }
+      ],
+      "structuredContent": {
+        "基础与个性化坐标": {
+          "日期": "2026-09-12",
+          "日干支": "己丑"
+        },
+        "传统黄历基调": {
+          "农历": "二〇二六年八月初二",
+          "生肖": "马",
+          "冲煞": "冲(癸未)羊 煞东",
+          "彭祖百忌": "己不破券二比并亡 丑不冠带主不还乡",
+          "胎神占方": "占门厕 外正北",
+          "日九星": {
+            "描述": "五黄土 中(中宫) 玉衡 玄空[廉贞 凶] 奇门[天禽 大吉 阳] 太乙[天符 凶神]",
+            "方位": "中宫"
+          }
+        },
+        "择日宜忌": {
+          "宜": [
+            "嫁娶",
+            "祭祀",
+            "祈福",
+            "求嗣",
+            "开光",
+            "出行",
+            "出火",
+            "拆卸",
+            "修造",
+            "动土",
+            "进人口",
+            "入宅",
+            "移徙",
+            "安床",
+            "开市",
+            "交易",
+            "立券",
+            "挂匾",
+            "栽种",
+            "纳畜",
+            "入殓",
+            "安葬",
+            "除服",
+            "成服"
+          ],
+          "忌": [
+            "无"
+          ]
+        },
+        "神煞参考": {
+          "吉神宜趋": [
+            "母仓",
+            "三合",
+            "时阴",
+            "金堂"
+          ],
+          "凶煞宜忌": [
+            "死气",
+            "勾陈"
+          ]
+        }
+      },
+      "isError": false
+    },
+    "bazi": {
+      "content": [
+        {
+          "type": "text",
+          "text": "# 八字命盘\n\n## 命局全盘\n- 性别: 男\n- 日主: 庚\n\n| 柱 | 干支 | 天干(十神) | 地支藏干(十神) | 地势 | 空亡 |\n|---|------|------------|----------------|------|------|\n| 年柱 | 己巳 | 己(正印) | 丙(七杀) 庚(比肩) 戊(偏印) | 长生 | - |\n| 月柱 | 丁丑 | 丁(正官) | 己(正印) 癸(伤官) 辛(劫财) | 墓 | - |\n| 日柱 | 庚辰 | 庚(日主) | 戊(偏印) 乙(正财) 癸(伤官) | 养 | - |\n| 时柱 | 辛巳 | 辛(劫财) | 丙(七杀) 庚(比肩) 戊(偏印) | 长生 | - |\n\n## 干支关系\n- 地支: 巳丑半合金局；巳刑（无恩之刑）\n\n## 出生地解析\n- **解析状态**: 未完成\n- **原因**: 未提供出生地点"
+        }
+      ],
+      "structuredContent": {
+        "基本信息": {
+          "性别": "男",
+          "日主": "庚"
+        },
+        "四柱": [
+          {
+            "柱": "年柱",
+            "干支": "己巳",
+            "天干十神": "正印",
+            "藏干": [
+              {
+                "天干": "丙",
+                "十神": "七杀"
+              },
+              {
+                "天干": "庚",
+                "十神": "比肩"
+              },
+              {
+                "天干": "戊",
+                "十神": "偏印"
+              }
+            ],
+            "地势": "长生"
+          },
+          {
+            "柱": "月柱",
+            "干支": "丁丑",
+            "天干十神": "正官",
+            "藏干": [
+              {
+                "天干": "己",
+                "十神": "正印"
+              },
+              {
+                "天干": "癸",
+                "十神": "伤官"
+              },
+              {
+                "天干": "辛",
+                "十神": "劫财"
+              }
+            ],
+            "地势": "墓"
+          },
+          {
+            "柱": "日柱",
+            "干支": "庚辰",
+            "天干十神": "-",
+            "藏干": [
+              {
+                "天干": "戊",
+                "十神": "偏印"
+              },
+              {
+                "天干": "乙",
+                "十神": "正财"
+              },
+              {
+                "天干": "癸",
+                "十神": "伤官"
+              }
+            ],
+            "地势": "养"
+          },
+          {
+            "柱": "时柱",
+            "干支": "辛巳",
+            "天干十神": "劫财",
+            "藏干": [
+              {
+                "天干": "丙",
+                "十神": "七杀"
+              },
+              {
+                "天干": "庚",
+                "十神": "比肩"
+              },
+              {
+                "天干": "戊",
+                "十神": "偏印"
+              }
+            ],
+            "地势": "长生"
+          }
+        ],
+        "干支关系": [
+          "巳丑半合金局",
+          "巳刑（无恩之刑）"
+        ],
+        "placeResolutionInfo": {
+          "resolved": false,
+          "source": "fallback",
+          "fallbackReason": "no_birth_place",
+          "locationMode": "true_solar_time"
+        }
+      },
+      "isError": false
+    }
+  }
+}

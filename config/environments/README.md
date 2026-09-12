@@ -11,3 +11,5 @@
 飞书默认关闭。启用时配置 APP_ID、APP_SECRET、ALLOWED_OPEN_IDS、SCOPES，并在生产使用 strict 模式。只有 integrations 建立 WebSocket，API 副本数不影响连接数量；默认运行一个开启渠道的 integrations 实例。通知和历史索引在独立任务中执行。
 
 Ziwei 仍为开发/测试候选，需要显式约定、HMAC 密钥和隐私设置，见 [领域说明](../../docs/operations/ziwei-agent.md)。所有改变发布指纹的配置应在 API 与 worker 间一致。
+
+Taibu MCP 默认关闭。叠加 `compose.taibu.yml` 可启用内网黄历、八字服务；API 与 Worker 同步获得配置，身份仍需单独授予 `taibu:read`。出生资料要求关闭完整 I/O 调试并隐藏追踪输入输出，具体启动、验收和回退命令见 [Taibu 运行说明](../../docs/operations/taibu-mcp.md)。

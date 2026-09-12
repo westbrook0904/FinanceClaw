@@ -7,6 +7,7 @@ from financeclaw.kernel.models import ModelProfile, ModelProfileCatalog, ModelPr
 from financeclaw.kernel.tool_catalog import ToolRelease, ToolReleaseCatalog
 from financeclaw.kernel.workflows.catalog import WorkflowCatalog
 from financeclaw.shared.infrastructure.settings import FinanceClawSettings
+from financeclaw.shared.releases.taibu import taibu_governance, taibu_release
 from financeclaw.shared.releases.tools import (
     history_tool_governance,
     local_tool_governance,
@@ -41,6 +42,7 @@ def build_release_catalogs(
             for item in (
                 *local_tool_governance(),
                 mcp_quote_governance(),
+                *taibu_governance(settings),
                 *(memory_tool_governance() if enable_persistence else ()),
                 *(history_tool_governance() if enable_persistence else ()),
             )
@@ -216,11 +218,14 @@ def build_release_catalogs(
         agent_id="finance_agent",
         version="1.6.0",
         assistant_id="finance_agent",
-        deployment_revision="context-memory/1",
+        deployment_revision="context-memory/1+taibu-mcp/1"
+        if settings.taibu_enabled
+        else "context-memory/1",
         worker_manifest=manifest,
         interaction_points=(ROOT_CLARIFICATION,),
         data_classification=DataClassification.CONFIDENTIAL
         if settings.ziwei_enabled
+        or (settings.taibu_enabled and "bazi" in settings.taibu_allowed_tools)
         else DataClassification.INTERNAL,
         model_profile=ModelProfileRef(profile_id="default", version="1.0.0"),
         memory_policy="native-store-v2",
@@ -245,6 +250,7 @@ def build_release_catalogs(
             settings.memory_recall_tokens,
             settings.memory_recall_limit,
             [item.governance for item in base_tool_catalog.latest()],
+            *([taibu_release(settings)] if settings.taibu_enabled else []),
         ),
         system_prompt_template=(
             "You are FinanceClaw's top-level governed financial Agent. Use a ReAct loop. "
@@ -274,6 +280,19 @@ def build_release_catalogs(
             "or financial evidence. "
             "Preserve charts_used and warnings; never invent birth details or store "
             "them in long-term memory."
+            + (
+                " Taibu tools provide traditional calculation data, never financial evidence. "
+                "Use taibu_almanac for almanac requests and taibu_bazi for bazi requests. "
+                "Ask request_user__clarification for missing date, calendar, birth minute or "
+                "time convention; never silently assume solar calendar or zero minutes. "
+                "Use day_offset=0 only for an explicit request for today. Birth inputs must "
+                "be confirmed China standard time; never invent or double-correct longitude. "
+                "Preserve outcome, convention, warnings and artifact_ref. Failed or incomplete "
+                "calculations are not successful interpretations. Never store birth details "
+                "or inferred traits in long-term memory."
+                if settings.taibu_enabled
+                else ""
+            )
         ),
     )
     return ReleaseCatalogs(

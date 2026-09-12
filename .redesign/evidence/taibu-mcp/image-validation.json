@@ -1,0 +1,17 @@
+{
+  "passed": true,
+  "image_tag": "financeclaw-taibu:e8f6369",
+  "local_image_id": "sha256:afe348f37b37e1b2aed2e0839a2dbed79351dcac347b63691888d299edef5e9a",
+  "repository_digests": [],
+  "size_bytes": 258933932,
+  "platform": "linux/amd64",
+  "source_commit": "e8f636972a6fdb14f2a532ee223101f889ab4820",
+  "base_image": "node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32",
+  "pnpm": "10.11.0",
+  "core": "3.5.0",
+  "mcp_server": "3.1.1",
+  "production_packages": 99,
+  "core_and_mcp_server_licenses_present": true,
+  "web_and_compiler_packages_absent": true,
+  "pushed": false
+}

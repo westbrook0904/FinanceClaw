@@ -163,6 +163,16 @@ class FinanceClawSettings(BaseSettings):
     approval_timeout_seconds: int = Field(default=900, ge=30, le=86_400)
     workflow_run_timeout_seconds: int = Field(default=300, ge=1, le=86_400)
     mcp_timeout_seconds: float = Field(default=10.0, gt=0, le=60)
+    taibu_enabled: bool = False
+    taibu_mcp_url: str = "http://taibu-mcp:3001/mcp"
+    taibu_egress: Literal["internal", "external"] = "internal"
+    taibu_allowed_hosts: frozenset[str] = frozenset({"taibu-mcp"})
+    taibu_allowed_tools: frozenset[Literal["almanac", "bazi"]] = frozenset({"almanac", "bazi"})
+    taibu_tenant_allowlist: frozenset[str] | None = None
+    taibu_timeout_seconds: float = Field(default=10.0, gt=0, le=60)
+    taibu_projection_bytes: int = Field(default=8192, ge=2048, le=65_536)
+    taibu_result_max_bytes: int = Field(default=262_144, ge=4096, le=2_097_152)
+    taibu_contract_cache_seconds: float = Field(default=300, ge=0, le=300)
     process_role: str = Field(default="api", pattern="^(api|worker|integrations)$")
     internal_api_url: str = "http://127.0.0.1:2024"
     turn_command_slots: int = Field(default=8, ge=1, le=64)
@@ -311,6 +321,8 @@ class FinanceClawSettings(BaseSettings):
         """
         if self.turn_lease_seconds <= self.turn_renew_seconds * 2:
             raise ValueError("Turn lease must exceed two renewal intervals")
+        if self.taibu_enabled:
+            self.validate_taibu()
         if (
             self.integration_service_token
             and len(self.integration_service_token.get_secret_value()) < 32
@@ -433,3 +445,36 @@ class FinanceClawSettings(BaseSettings):
         ):
             raise ValueError("context reserves leave insufficient input budget")
         return self
+
+    def validate_taibu(self) -> None:
+        """校验受信端点、出生资料出域和预算；只检查配置，不进行网络发现。"""
+        from financeclaw.shared.infrastructure.security.egress import EgressPolicy
+
+        parsed = urlparse(self.taibu_mcp_url)
+        if parsed.query or parsed.fragment or parsed.path != "/mcp":
+            raise ValueError("taibu_mcp_url must use /mcp without query or fragment")
+        if not self.taibu_allowed_hosts or not self.taibu_allowed_tools:
+            raise ValueError("enabled Taibu requires explicit allowed hosts and tools")
+        EgressPolicy(
+            self.taibu_allowed_hosts, require_https=self.taibu_egress == "external"
+        ).validate(self.taibu_mcp_url)
+        if (
+            self.taibu_egress == "internal"
+            and (parsed.hostname or "").rstrip(".").lower() == "mcp.mingai.fun"
+        ):
+            raise ValueError("the public Taibu endpoint must be classified external")
+        if "bazi" in self.taibu_allowed_tools:
+            if self.taibu_egress != "internal":
+                raise ValueError("Taibu birth parameters require an explicitly internal service")
+            if (
+                self.debug_full_io
+                or not self.langsmith_hide_inputs
+                or not self.langsmith_hide_outputs
+            ):
+                raise ValueError(
+                    "Taibu bazi requires disabled full I/O and hidden tracing payloads"
+                )
+        if self.artifact_inline_bytes < 4096:
+            raise ValueError("Taibu requires at least 4096 inline bytes for its bounded result")
+        if self.taibu_result_max_bytes < self.taibu_projection_bytes:
+            raise ValueError("Taibu result limit must cover the projection budget")

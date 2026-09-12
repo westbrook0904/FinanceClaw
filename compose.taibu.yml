@@ -1,0 +1,35 @@
+# Opt in with: docker compose -f compose.yml -f compose.taibu.yml up -d --build
+x-taibu-config: &taibu-config
+  FINANCECLAW_TAIBU_ENABLED: "true"
+  FINANCECLAW_TAIBU_MCP_URL: http://taibu-mcp:3001/mcp
+  FINANCECLAW_TAIBU_EGRESS: internal
+  FINANCECLAW_TAIBU_ALLOWED_HOSTS: '["taibu-mcp"]'
+  FINANCECLAW_TAIBU_ALLOWED_TOOLS: '["almanac","bazi"]'
+  FINANCECLAW_DEBUG_FULL_IO: "false"
+  FINANCECLAW_LANGSMITH_HIDE_INPUTS: "true"
+  FINANCECLAW_LANGSMITH_HIDE_OUTPUTS: "true"
+
+services:
+  taibu-mcp:
+    image: ${TAIBU_IMAGE:-financeclaw-taibu:e8f6369}
+    build:
+      context: ./deploy/taibu
+      additional_contexts:
+        taibu-src: https://github.com/hhszzzz/taibu.git#e8f636972a6fdb14f2a532ee223101f889ab4820
+    environment:
+      # Upstream matches the complete Host header, including the port.
+      MCP_ALLOWED_HOSTS: taibu-mcp:3001
+      MCP_REQUEST_LOG: "false"
+      MCP_TRUST_PROXY: "false"
+    expose: ["3001"]
+    cpus: 1.0
+    mem_limit: 768m
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 15s
+  api:
+    environment: *taibu-config
+  worker:
+    environment: *taibu-config
+    depends_on:
+      taibu-mcp: {condition: service_healthy}

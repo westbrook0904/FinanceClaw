@@ -1,0 +1,23 @@
+{
+  "passed": true,
+  "wheel": "financeclaw-0.1.0-py3-none-any.whl",
+  "taibu_files": [
+    "financeclaw/agent_server/middleware/taibu_failure.py",
+    "financeclaw/agent_server/tools/mcp_client.py",
+    "financeclaw/agent_server/tools/taibu.py",
+    "financeclaw/kernel/taibu.py",
+    "financeclaw/shared/releases/taibu_contracts.json"
+  ],
+  "schema_tools": [
+    "almanac",
+    "bazi"
+  ],
+  "source_hashes": {
+    "financeclaw/agent_server/middleware/taibu_failure.py": "ccf66530998d22ef2fb76d7488393be564b1f15c26121c5d07625d8362710c25",
+    "financeclaw/agent_server/tools/mcp_client.py": "c5a319afac9bfe2d6e960a48e1c7dd0477da17221869eebfad20e8bd61b8d35f",
+    "financeclaw/agent_server/tools/taibu.py": "894057c2596825a5db6c253043112fd08dc1171d4eab00bdae41f44569eb33e6",
+    "financeclaw/kernel/taibu.py": "6064905805bedbe5cf0fed2c6c1b3a53dc0cf045e4bca7b7c6915d02caf91f82",
+    "financeclaw/shared/releases/taibu_contracts.json": "602fa7740e4150d0f16f3a4ef854f9a95abe725cd2dd07ce06f382e85f21e608"
+  },
+  "wheel_sha256": "f974229a6852208eb1304a5267bf9510a4be6e0fa33c71e29901fdbc7ca4fe42"
+}

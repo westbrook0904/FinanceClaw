@@ -1,0 +1,73 @@
+{
+  "checked_at": "2026-09-12T06:30:01.580814+00:00",
+  "implementation_scope": [
+    "taibu_almanac",
+    "taibu_bazi"
+  ],
+  "default_enabled": false,
+  "workspace_taibu_tests": {
+    "passed": 66,
+    "elapsed_seconds": 5.29
+  },
+  "isolated_full_suite": {
+    "base_commit": "7dab6d47af6a6e0fcfe59caca04918b3c91cf058",
+    "overlay": "Taibu-only additions and wiring; excludes concurrent Stage 11 changes",
+    "passed": 486,
+    "skipped": 4,
+    "warnings": 2,
+    "elapsed_seconds": 101.63,
+    "tokenizer_cache": ""
+  },
+  "workspace_full_suite": {
+    "passed": 553,
+    "failed": 1,
+    "skipped": 8,
+    "failure": "tests/stage11/test_api_memory.py::test_http_candidate_confirm_update_forget_and_permanent_replay",
+    "reason": "Concurrent Stage 11 MemoryRepository.list_page scope_type interface change",
+    "evidence": "workspace-tests.json",
+    "taibu_tests_failed": 0
+  },
+  "static_checks": {
+    "passed": true,
+    "evidence": "static-validation.json"
+  },
+  "live": {
+    "internal_cases": 6,
+    "internal_success_cases": 5,
+    "internal_expected_error_cases": 1,
+    "after_mcp_restart_cases": 6,
+    "public_almanac_cases": 1,
+    "synthetic_only": true,
+    "evidence": [
+      "self-hosted-probe.json",
+      "after-restart-probe.json",
+      "public-almanac-probe.json"
+    ]
+  },
+  "packaging": [
+    "image-validation.json",
+    "package-validation.json",
+    "compose-validation.json"
+  ],
+  "production_services_changed": false,
+  "feishu_messages_sent": false,
+  "images_pushed": false,
+  "probe_container_cleaned_up": true,
+  "not_validated": [
+    "real-model execution (default provider_api_key is unset)",
+    "live Feishu continuation and duplicate replies",
+    "persistent native API/Worker joint execution and restart recovery",
+    "actual production rollout and rollback"
+  ],
+  "source_sha256": {
+    "financeclaw/kernel/taibu.py": "6064905805bedbe5cf0fed2c6c1b3a53dc0cf045e4bca7b7c6915d02caf91f82",
+    "financeclaw/shared/releases/taibu.py": "448771fddce34ffd8502853de370ec4474f77ad0f690fc3e4570ee739768a719",
+    "financeclaw/shared/releases/taibu_contracts.json": "602fa7740e4150d0f16f3a4ef854f9a95abe725cd2dd07ce06f382e85f21e608",
+    "financeclaw/agent_server/tools/mcp_client.py": "c5a319afac9bfe2d6e960a48e1c7dd0477da17221869eebfad20e8bd61b8d35f",
+    "financeclaw/agent_server/tools/taibu.py": "894057c2596825a5db6c253043112fd08dc1171d4eab00bdae41f44569eb33e6",
+    "financeclaw/agent_server/middleware/taibu_failure.py": "ccf66530998d22ef2fb76d7488393be564b1f15c26121c5d07625d8362710c25",
+    "deploy/taibu/Dockerfile": "a7674bb87285074eafea229e1f1fed48f3ce61647ca8440f82cfc0b99ffe5090",
+    "compose.taibu.yml": "73ba653e5b8632daeb8cde88f99f404f4ca1992e79ae9f84fe4a8955e9e9ca5d",
+    "experiments/taibu/probe.py": "0707de0cc77565eaa9e7db030c1f9b780af233d62f3c08975d9cbdeda1520939"
+  }
+}

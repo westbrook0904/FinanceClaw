@@ -1,0 +1,23 @@
+{
+  "passed": true,
+  "api_worker_taibu_config": {
+    "FINANCECLAW_DEBUG_FULL_IO": "false",
+    "FINANCECLAW_LANGSMITH_HIDE_INPUTS": "true",
+    "FINANCECLAW_LANGSMITH_HIDE_OUTPUTS": "true",
+    "FINANCECLAW_TAIBU_ALLOWED_HOSTS": "[\"taibu-mcp\"]",
+    "FINANCECLAW_TAIBU_ALLOWED_TOOLS": "[\"almanac\",\"bazi\"]",
+    "FINANCECLAW_TAIBU_CONTRACT_CACHE_SECONDS": "300",
+    "FINANCECLAW_TAIBU_EGRESS": "internal",
+    "FINANCECLAW_TAIBU_ENABLED": "true",
+    "FINANCECLAW_TAIBU_MCP_URL": "http://taibu-mcp:3001/mcp",
+    "FINANCECLAW_TAIBU_PROJECTION_BYTES": "8192",
+    "FINANCECLAW_TAIBU_RESULT_MAX_BYTES": "262144",
+    "FINANCECLAW_TAIBU_TIMEOUT_SECONDS": "10"
+  },
+  "mcp_host_header": "taibu-mcp:3001",
+  "host_ports": [],
+  "source_context": {
+    "taibu-src": "https://github.com/hhszzzz/taibu.git#e8f636972a6fdb14f2a532ee223101f889ab4820"
+  },
+  "worker_waits_for_mcp_health": true
+}

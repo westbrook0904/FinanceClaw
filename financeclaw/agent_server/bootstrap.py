@@ -18,6 +18,7 @@ from financeclaw.agent_server.tools.local import default_local_tools
 from financeclaw.agent_server.tools.mcp import managed_mcp_quote_tool
 from financeclaw.agent_server.tools.memory import default_memory_tools
 from financeclaw.agent_server.tools.policy import ToolPolicy
+from financeclaw.agent_server.tools.taibu import taibu_tools
 from financeclaw.kernel.agents import AgentProfile, AgentProfileCatalog
 from financeclaw.kernel.models import ModelProfileCatalog, ModelProfileRef
 from financeclaw.kernel.tool_catalog import ToolRelease, ToolReleaseCatalog
@@ -131,6 +132,7 @@ def build_components(
             (
                 *default_local_tools(),
                 managed_mcp_quote_tool(timeout_seconds=settings.mcp_timeout_seconds),
+                *taibu_tools(settings, artifact_service),
                 *(default_memory_tools(memory_service) if memory_service is not None else ()),
                 *(
                     history_tools(HistoryService(conversation_repository, artifact_service))

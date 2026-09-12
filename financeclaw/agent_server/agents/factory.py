@@ -42,6 +42,7 @@ from financeclaw.agent_server.middleware.middleware import (
     FullIODebugMiddleware,
     ToolGovernanceMiddleware,
 )
+from financeclaw.agent_server.middleware.taibu_failure import TaibuFailureMiddleware
 from financeclaw.agent_server.middleware.worker_clarification import WorkerClarificationMiddleware
 from financeclaw.agent_server.tools.catalog import ToolCatalog
 from financeclaw.agent_server.tools.policy import ToolDecisionType, ToolPolicy, TransientToolError
@@ -328,6 +329,8 @@ class AgentFactory:
             )
         )
         # 9. 只读工具存在时挂载瞬时错误重试中间件。
+        if any(name in {"taibu_almanac", "taibu_bazi"} for name in read_retry_tools):
+            middleware.append(TaibuFailureMiddleware())
         if read_retry_tools:
             middleware.append(
                 ToolRetryMiddleware(

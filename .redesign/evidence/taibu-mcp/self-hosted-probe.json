@@ -1,0 +1,1286 @@
+{
+  "passed": true,
+  "checked_at": "2026-09-12T06:13:17.196710+00:00",
+  "url": "http://127.0.0.1:49984/mcp",
+  "synthetic_only": true,
+  "source_commit": "e8f636972a6fdb14f2a532ee223101f889ab4820",
+  "server_version": "3.1.1",
+  "dependencies": {
+    "langchain": "1.3.18",
+    "langchain-mcp-adapters": "0.3.2",
+    "mcp": "1.29.1"
+  },
+  "scope": "real HTTP, SDK, local tools and temporary artifacts; no model/channel",
+  "artifact_storage": "temporary storage removed; synthetic snapshots embedded below",
+  "cases": [
+    {
+      "case": "almanac",
+      "elapsed_ms": 341.1,
+      "projection_bytes": 1412,
+      "projection": {
+        "schema_version": 1,
+        "outcome": "success",
+        "tool": "taibu_almanac",
+        "remote_tool": "almanac",
+        "provider": "taibu",
+        "server_version": "3.1.1",
+        "contract_hash": "d70596584368c9630a34312666b84cdcafd110af4bb0c586768818a158d4752f",
+        "called_at": "2026-09-12T06:13:16.546919+00:00",
+        "elapsed_ms": 296.349,
+        "convention": {
+          "date": "2026-09-12",
+          "timezone": "Asia/Shanghai"
+        },
+        "data": {
+          "基础与个性化坐标": {
+            "日期": "2026-09-12",
+            "日干支": "己丑"
+          },
+          "传统黄历基调": {
+            "农历": "二〇二六年八月初二",
+            "生肖": "马",
+            "冲煞": "冲(癸未)羊 煞东",
+            "彭祖百忌": "己不破券二比并亡 丑不冠带主不还乡",
+            "胎神占方": "占门厕 外正北",
+            "日九星": {
+              "描述": "五黄土 中(中宫) 玉衡 玄空[廉贞 凶] 奇门[天禽 大吉 阳] 太乙[天符 凶神]",
+              "方位": "中宫"
+            }
+          },
+          "择日宜忌": {
+            "宜": [
+              "嫁娶",
+              "祭祀",
+              "祈福",
+              "求嗣",
+              "开光",
+              "出行",
+              "出火",
+              "拆卸",
+              "修造",
+              "动土",
+              "进人口",
+              "入宅",
+              "移徙",
+              "安床",
+              "开市",
+              "交易",
+              "立券",
+              "挂匾",
+              "栽种",
+              "纳畜",
+              "入殓",
+              "安葬",
+              "除服",
+              "成服"
+            ],
+            "忌": [
+              "无"
+            ]
+          },
+          "神煞参考": {
+            "吉神宜趋": [
+              "母仓",
+              "三合",
+              "时阴",
+              "金堂"
+            ],
+            "凶煞宜忌": [
+              "死气",
+              "勾陈"
+            ]
+          }
+        },
+        "warnings": [],
+        "error": null,
+        "artifact_ref": {
+          "artifact_id": "artifact-103679a07c843da0f7608ea1c5ee5be29156139c9f85961e5f1116830cb13594",
+          "content_hash": "167530efc63dd226429c8ab8ea9a4de8f60a8eb90a1db7ba3e48112653464ec1",
+          "size_bytes": 2057,
+          "source_turn_id": "synthetic-almanac"
+        }
+      },
+      "archived_snapshot": {
+        "arguments": {
+          "date": "2026-09-12"
+        },
+        "called_at": "2026-09-12T06:13:16.546919+00:00",
+        "contract_hash": "d70596584368c9630a34312666b84cdcafd110af4bb0c586768818a158d4752f",
+        "convention": {
+          "date": "2026-09-12",
+          "timezone": "Asia/Shanghai"
+        },
+        "elapsed_ms": 296.349,
+        "provider": "taibu",
+        "remote_tool": "almanac",
+        "response": {
+          "content": [
+            {
+              "text": "# 每日黄历\n\n## 基础与个性化坐标\n- 日期: 2026-09-12 (己丑日)\n\n## 传统黄历基调\n- 农历: 二〇二六年八月初二 (生肖马)\n- 冲煞: 冲(癸未)羊 / 煞东\n- 彭祖百忌: 己不破券二比并亡 / 丑不冠带主不还乡\n- 胎神占方: 占门厕 外正北\n- 日九星: 五黄土 中(中宫) 玉衡 玄空[廉贞 凶] 奇门[天禽 大吉 阳] 太乙[天符 凶神]\n\n## 择日宜忌\n- 宜: 嫁娶, 祭祀, 祈福, 求嗣, 开光, 出行, 出火, 拆卸, 修造, 动土, 进人口, 入宅, 移徙, 安床, 开市, 交易, 立券, 挂匾, 栽种, 纳畜, 入殓, 安葬, 除服, 成服\n- 忌: 无\n\n## 神煞参考 (择日背景)\n- 吉神宜趋: 母仓, 三合, 时阴, 金堂\n- 凶煞宜忌: 死气, 勾陈",
+              "type": "text"
+            }
+          ],
+          "isError": false,
+          "structuredContent": {
+            "传统黄历基调": {
+              "农历": "二〇二六年八月初二",
+              "冲煞": "冲(癸未)羊 煞东",
+              "彭祖百忌": "己不破券二比并亡 丑不冠带主不还乡",
+              "日九星": {
+                "描述": "五黄土 中(中宫) 玉衡 玄空[廉贞 凶] 奇门[天禽 大吉 阳] 太乙[天符 凶神]",
+                "方位": "中宫"
+              },
+              "生肖": "马",
+              "胎神占方": "占门厕 外正北"
+            },
+            "基础与个性化坐标": {
+              "日干支": "己丑",
+              "日期": "2026-09-12"
+            },
+            "择日宜忌": {
+              "宜": [
+                "嫁娶",
+                "祭祀",
+                "祈福",
+                "求嗣",
+                "开光",
+                "出行",
+                "出火",
+                "拆卸",
+                "修造",
+                "动土",
+                "进人口",
+                "入宅",
+                "移徙",
+                "安床",
+                "开市",
+                "交易",
+                "立券",
+                "挂匾",
+                "栽种",
+                "纳畜",
+                "入殓",
+                "安葬",
+                "除服",
+                "成服"
+              ],
+              "忌": [
+                "无"
+              ]
+            },
+            "神煞参考": {
+              "凶煞宜忌": [
+                "死气",
+                "勾陈"
+              ],
+              "吉神宜趋": [
+                "母仓",
+                "三合",
+                "时阴",
+                "金堂"
+              ]
+            }
+          }
+        },
+        "server_version": "3.1.1",
+        "tool": "taibu_almanac"
+      }
+    },
+    {
+      "case": "bazi_standard",
+      "elapsed_ms": 56.1,
+      "projection_bytes": 1891,
+      "projection": {
+        "schema_version": 1,
+        "outcome": "success",
+        "tool": "taibu_bazi",
+        "remote_tool": "bazi",
+        "provider": "taibu",
+        "server_version": "3.1.1",
+        "contract_hash": "a34b272bedebee43902267f69bda1c619b9638be867915188865e92f5a65f68f",
+        "called_at": "2026-09-12T06:13:16.886369+00:00",
+        "elapsed_ms": 46.281,
+        "convention": {
+          "calendar_type": "solar",
+          "is_leap_month": null,
+          "time_basis": "china_standard",
+          "solar_time": "standard",
+          "detail_level": "default"
+        },
+        "data": {
+          "基本信息": {
+            "性别": "男",
+            "日主": "庚"
+          },
+          "四柱": [
+            {
+              "柱": "年柱",
+              "干支": "己巳",
+              "天干十神": "正印",
+              "藏干": [
+                {
+                  "天干": "丙",
+                  "十神": "七杀"
+                },
+                {
+                  "天干": "庚",
+                  "十神": "比肩"
+                },
+                {
+                  "天干": "戊",
+                  "十神": "偏印"
+                }
+              ],
+              "地势": "长生"
+            },
+            {
+              "柱": "月柱",
+              "干支": "丁丑",
+              "天干十神": "正官",
+              "藏干": [
+                {
+                  "天干": "己",
+                  "十神": "正印"
+                },
+                {
+                  "天干": "癸",
+                  "十神": "伤官"
+                },
+                {
+                  "天干": "辛",
+                  "十神": "劫财"
+                }
+              ],
+              "地势": "墓"
+            },
+            {
+              "柱": "日柱",
+              "干支": "庚辰",
+              "天干十神": "-",
+              "藏干": [
+                {
+                  "天干": "戊",
+                  "十神": "偏印"
+                },
+                {
+                  "天干": "乙",
+                  "十神": "正财"
+                },
+                {
+                  "天干": "癸",
+                  "十神": "伤官"
+                }
+              ],
+              "地势": "养"
+            },
+            {
+              "柱": "时柱",
+              "干支": "辛巳",
+              "天干十神": "劫财",
+              "藏干": [
+                {
+                  "天干": "丙",
+                  "十神": "七杀"
+                },
+                {
+                  "天干": "庚",
+                  "十神": "比肩"
+                },
+                {
+                  "天干": "戊",
+                  "十神": "偏印"
+                }
+              ],
+              "地势": "长生"
+            }
+          ],
+          "干支关系": [
+            "巳丑半合金局",
+            "巳刑（无恩之刑）"
+          ],
+          "placeResolutionInfo": {
+            "resolved": false,
+            "source": "fallback",
+            "fallbackReason": "no_birth_place",
+            "locationMode": "true_solar_time"
+          }
+        },
+        "warnings": [
+          "按明确的中国标准时间排盘，未进行出生地或真太阳时校正。",
+          "首期返回默认级别八字事实；术数解读不作为金融事实或已验证预测。"
+        ],
+        "error": null,
+        "artifact_ref": {
+          "artifact_id": "artifact-c7a712895b8b45be095ee059e8f0ce372a95c4659744afc5eef907763198ace9",
+          "content_hash": "14a6faaabda2bedb9393964202fdd5831d40df03f0e20d775696ddc651db50a5",
+          "size_bytes": 2506,
+          "source_turn_id": "synthetic-bazi_standard"
+        }
+      },
+      "archived_snapshot": {
+        "arguments": {
+          "birthDay": 15,
+          "birthHour": 9,
+          "birthMinute": 0,
+          "birthMonth": 1,
+          "birthYear": 1990,
+          "calendarType": "solar",
+          "detailLevel": "default",
+          "gender": "male",
+          "isLeapMonth": false
+        },
+        "called_at": "2026-09-12T06:13:16.886369+00:00",
+        "contract_hash": "a34b272bedebee43902267f69bda1c619b9638be867915188865e92f5a65f68f",
+        "convention": {
+          "calendar_type": "solar",
+          "detail_level": "default",
+          "is_leap_month": null,
+          "solar_time": "standard",
+          "time_basis": "china_standard"
+        },
+        "elapsed_ms": 46.281,
+        "provider": "taibu",
+        "remote_tool": "bazi",
+        "response": {
+          "content": [
+            {
+              "text": "# 八字命盘\n\n## 命局全盘\n- 性别: 男\n- 日主: 庚\n\n| 柱 | 干支 | 天干(十神) | 地支藏干(十神) | 地势 | 空亡 |\n|---|------|------------|----------------|------|------|\n| 年柱 | 己巳 | 己(正印) | 丙(七杀) 庚(比肩) 戊(偏印) | 长生 | - |\n| 月柱 | 丁丑 | 丁(正官) | 己(正印) 癸(伤官) 辛(劫财) | 墓 | - |\n| 日柱 | 庚辰 | 庚(日主) | 戊(偏印) 乙(正财) 癸(伤官) | 养 | - |\n| 时柱 | 辛巳 | 辛(劫财) | 丙(七杀) 庚(比肩) 戊(偏印) | 长生 | - |\n\n## 干支关系\n- 地支: 巳丑半合金局；巳刑（无恩之刑）\n\n## 出生地解析\n- **解析状态**: 未完成\n- **原因**: 未提供出生地点",
+              "type": "text"
+            }
+          ],
+          "isError": false,
+          "structuredContent": {
+            "placeResolutionInfo": {
+              "fallbackReason": "no_birth_place",
+              "locationMode": "true_solar_time",
+              "resolved": false,
+              "source": "fallback"
+            },
+            "四柱": [
+              {
+                "地势": "长生",
+                "天干十神": "正印",
+                "干支": "己巳",
+                "柱": "年柱",
+                "藏干": [
+                  {
+                    "十神": "七杀",
+                    "天干": "丙"
+                  },
+                  {
+                    "十神": "比肩",
+                    "天干": "庚"
+                  },
+                  {
+                    "十神": "偏印",
+                    "天干": "戊"
+                  }
+                ]
+              },
+              {
+                "地势": "墓",
+                "天干十神": "正官",
+                "干支": "丁丑",
+                "柱": "月柱",
+                "藏干": [
+                  {
+                    "十神": "正印",
+                    "天干": "己"
+                  },
+                  {
+                    "十神": "伤官",
+                    "天干": "癸"
+                  },
+                  {
+                    "十神": "劫财",
+                    "天干": "辛"
+                  }
+                ]
+              },
+              {
+                "地势": "养",
+                "天干十神": "-",
+                "干支": "庚辰",
+                "柱": "日柱",
+                "藏干": [
+                  {
+                    "十神": "偏印",
+                    "天干": "戊"
+                  },
+                  {
+                    "十神": "正财",
+                    "天干": "乙"
+                  },
+                  {
+                    "十神": "伤官",
+                    "天干": "癸"
+                  }
+                ]
+              },
+              {
+                "地势": "长生",
+                "天干十神": "劫财",
+                "干支": "辛巳",
+                "柱": "时柱",
+                "藏干": [
+                  {
+                    "十神": "七杀",
+                    "天干": "丙"
+                  },
+                  {
+                    "十神": "比肩",
+                    "天干": "庚"
+                  },
+                  {
+                    "十神": "偏印",
+                    "天干": "戊"
+                  }
+                ]
+              }
+            ],
+            "基本信息": {
+              "性别": "男",
+              "日主": "庚"
+            },
+            "干支关系": [
+              "巳丑半合金局",
+              "巳刑（无恩之刑）"
+            ]
+          }
+        },
+        "server_version": "3.1.1",
+        "tool": "taibu_bazi"
+      }
+    },
+    {
+      "case": "bazi_true_solar",
+      "elapsed_ms": 56.6,
+      "projection_bytes": 1895,
+      "projection": {
+        "schema_version": 1,
+        "outcome": "success",
+        "tool": "taibu_bazi",
+        "remote_tool": "bazi",
+        "provider": "taibu",
+        "server_version": "3.1.1",
+        "contract_hash": "a34b272bedebee43902267f69bda1c619b9638be867915188865e92f5a65f68f",
+        "called_at": "2026-09-12T06:13:16.941862+00:00",
+        "elapsed_ms": 45.083,
+        "convention": {
+          "calendar_type": "solar",
+          "is_leap_month": null,
+          "time_basis": "china_standard",
+          "solar_time": "true_solar",
+          "detail_level": "default"
+        },
+        "data": {
+          "基本信息": {
+            "性别": "男",
+            "日主": "庚",
+            "真太阳时": {
+              "钟表时间": "09:00",
+              "真太阳时": "08:36",
+              "经度": 116.4,
+              "校正分钟": -23.7
+            }
+          },
+          "四柱": [
+            {
+              "柱": "年柱",
+              "干支": "己巳",
+              "天干十神": "正印",
+              "藏干": [
+                {
+                  "天干": "丙",
+                  "十神": "七杀"
+                },
+                {
+                  "天干": "庚",
+                  "十神": "比肩"
+                },
+                {
+                  "天干": "戊",
+                  "十神": "偏印"
+                }
+              ],
+              "地势": "长生"
+            },
+            {
+              "柱": "月柱",
+              "干支": "丁丑",
+              "天干十神": "正官",
+              "藏干": [
+                {
+                  "天干": "己",
+                  "十神": "正印"
+                },
+                {
+                  "天干": "癸",
+                  "十神": "伤官"
+                },
+                {
+                  "天干": "辛",
+                  "十神": "劫财"
+                }
+              ],
+              "地势": "墓"
+            },
+            {
+              "柱": "日柱",
+              "干支": "庚辰",
+              "天干十神": "-",
+              "藏干": [
+                {
+                  "天干": "戊",
+                  "十神": "偏印"
+                },
+                {
+                  "天干": "乙",
+                  "十神": "正财"
+                },
+                {
+                  "天干": "癸",
+                  "十神": "伤官"
+                }
+              ],
+              "地势": "养"
+            },
+            {
+              "柱": "时柱",
+              "干支": "庚辰",
+              "天干十神": "比肩",
+              "藏干": [
+                {
+                  "天干": "戊",
+                  "十神": "偏印"
+                },
+                {
+                  "天干": "乙",
+                  "十神": "正财"
+                },
+                {
+                  "天干": "癸",
+                  "十神": "伤官"
+                }
+              ],
+              "地势": "养"
+            }
+          ],
+          "干支关系": [
+            "巳丑半合金局",
+            "辰刑（辰自刑）"
+          ],
+          "placeResolutionInfo": {
+            "resolved": true,
+            "usedLongitude": 116.4,
+            "source": "manual_input",
+            "locationMode": "true_solar_time"
+          }
+        },
+        "warnings": [
+          "首期返回默认级别八字事实；术数解读不作为金融事实或已验证预测。"
+        ],
+        "error": null,
+        "artifact_ref": {
+          "artifact_id": "artifact-e8d174f9a9d7f0cd665ddf91af4d4ed8dc3bfb06cdc166fb2c2ae95df73c468b",
+          "content_hash": "73a84762f70559b064ce2104e881a91056dabb55e3e66a0a38590c28bee23043",
+          "size_bytes": 2741,
+          "source_turn_id": "synthetic-bazi_true_solar"
+        }
+      },
+      "archived_snapshot": {
+        "arguments": {
+          "birthDay": 15,
+          "birthHour": 9,
+          "birthMinute": 0,
+          "birthMonth": 1,
+          "birthYear": 1990,
+          "calendarType": "solar",
+          "detailLevel": "default",
+          "gender": "male",
+          "isLeapMonth": false,
+          "longitude": 116.4
+        },
+        "called_at": "2026-09-12T06:13:16.941862+00:00",
+        "contract_hash": "a34b272bedebee43902267f69bda1c619b9638be867915188865e92f5a65f68f",
+        "convention": {
+          "calendar_type": "solar",
+          "detail_level": "default",
+          "is_leap_month": null,
+          "solar_time": "true_solar",
+          "time_basis": "china_standard"
+        },
+        "elapsed_ms": 45.083,
+        "provider": "taibu",
+        "remote_tool": "bazi",
+        "response": {
+          "content": [
+            {
+              "text": "# 八字命盘\n\n## 命局全盘\n- 性别: 男\n- 日主: 庚\n- 钟表时间: 09:00\n- 真太阳时: 08:36（经度 116.4°，校正 -23.7 分钟）\n- 真太阳时索引: 4\n- 跨日偏移: 当日\n\n| 柱 | 干支 | 天干(十神) | 地支藏干(十神) | 地势 | 空亡 |\n|---|------|------------|----------------|------|------|\n| 年柱 | 己巳 | 己(正印) | 丙(七杀) 庚(比肩) 戊(偏印) | 长生 | - |\n| 月柱 | 丁丑 | 丁(正官) | 己(正印) 癸(伤官) 辛(劫财) | 墓 | - |\n| 日柱 | 庚辰 | 庚(日主) | 戊(偏印) 乙(正财) 癸(伤官) | 养 | - |\n| 时柱 | 庚辰 | 庚(比肩) | 戊(偏印) 乙(正财) 癸(伤官) | 养 | - |\n\n## 干支关系\n- 地支: 巳丑半合金局；辰刑（辰自刑）\n\n## 出生地解析\n- **来源**: 显式经度\n- **使用经度**: 116.4°",
+              "type": "text"
+            }
+          ],
+          "isError": false,
+          "structuredContent": {
+            "placeResolutionInfo": {
+              "locationMode": "true_solar_time",
+              "resolved": true,
+              "source": "manual_input",
+              "usedLongitude": 116.4
+            },
+            "四柱": [
+              {
+                "地势": "长生",
+                "天干十神": "正印",
+                "干支": "己巳",
+                "柱": "年柱",
+                "藏干": [
+                  {
+                    "十神": "七杀",
+                    "天干": "丙"
+                  },
+                  {
+                    "十神": "比肩",
+                    "天干": "庚"
+                  },
+                  {
+                    "十神": "偏印",
+                    "天干": "戊"
+                  }
+                ]
+              },
+              {
+                "地势": "墓",
+                "天干十神": "正官",
+                "干支": "丁丑",
+                "柱": "月柱",
+                "藏干": [
+                  {
+                    "十神": "正印",
+                    "天干": "己"
+                  },
+                  {
+                    "十神": "伤官",
+                    "天干": "癸"
+                  },
+                  {
+                    "十神": "劫财",
+                    "天干": "辛"
+                  }
+                ]
+              },
+              {
+                "地势": "养",
+                "天干十神": "-",
+                "干支": "庚辰",
+                "柱": "日柱",
+                "藏干": [
+                  {
+                    "十神": "偏印",
+                    "天干": "戊"
+                  },
+                  {
+                    "十神": "正财",
+                    "天干": "乙"
+                  },
+                  {
+                    "十神": "伤官",
+                    "天干": "癸"
+                  }
+                ]
+              },
+              {
+                "地势": "养",
+                "天干十神": "比肩",
+                "干支": "庚辰",
+                "柱": "时柱",
+                "藏干": [
+                  {
+                    "十神": "偏印",
+                    "天干": "戊"
+                  },
+                  {
+                    "十神": "正财",
+                    "天干": "乙"
+                  },
+                  {
+                    "十神": "伤官",
+                    "天干": "癸"
+                  }
+                ]
+              }
+            ],
+            "基本信息": {
+              "性别": "男",
+              "日主": "庚",
+              "真太阳时": {
+                "校正分钟": -23.7,
+                "真太阳时": "08:36",
+                "经度": 116.4,
+                "钟表时间": "09:00"
+              }
+            },
+            "干支关系": [
+              "巳丑半合金局",
+              "辰刑（辰自刑）"
+            ]
+          }
+        },
+        "server_version": "3.1.1",
+        "tool": "taibu_bazi"
+      }
+    },
+    {
+      "case": "bazi_lunar",
+      "elapsed_ms": 64.3,
+      "projection_bytes": 1896,
+      "projection": {
+        "schema_version": 1,
+        "outcome": "success",
+        "tool": "taibu_bazi",
+        "remote_tool": "bazi",
+        "provider": "taibu",
+        "server_version": "3.1.1",
+        "contract_hash": "a34b272bedebee43902267f69bda1c619b9638be867915188865e92f5a65f68f",
+        "called_at": "2026-09-12T06:13:16.998676+00:00",
+        "elapsed_ms": 53.6,
+        "convention": {
+          "calendar_type": "lunar",
+          "is_leap_month": false,
+          "time_basis": "china_standard",
+          "solar_time": "standard",
+          "detail_level": "default"
+        },
+        "data": {
+          "基本信息": {
+            "性别": "男",
+            "日主": "壬"
+          },
+          "四柱": [
+            {
+              "柱": "年柱",
+              "干支": "己巳",
+              "天干十神": "正官",
+              "藏干": [
+                {
+                  "天干": "丙",
+                  "十神": "偏财"
+                },
+                {
+                  "天干": "庚",
+                  "十神": "偏印"
+                },
+                {
+                  "天干": "戊",
+                  "十神": "七杀"
+                }
+              ],
+              "地势": "绝"
+            },
+            {
+              "柱": "月柱",
+              "干支": "丁丑",
+              "天干十神": "正财",
+              "藏干": [
+                {
+                  "天干": "己",
+                  "十神": "正官"
+                },
+                {
+                  "天干": "癸",
+                  "十神": "劫财"
+                },
+                {
+                  "天干": "辛",
+                  "十神": "正印"
+                }
+              ],
+              "地势": "衰"
+            },
+            {
+              "柱": "日柱",
+              "干支": "壬辰",
+              "天干十神": "-",
+              "藏干": [
+                {
+                  "天干": "戊",
+                  "十神": "七杀"
+                },
+                {
+                  "天干": "乙",
+                  "十神": "伤官"
+                },
+                {
+                  "天干": "癸",
+                  "十神": "劫财"
+                }
+              ],
+              "地势": "墓"
+            },
+            {
+              "柱": "时柱",
+              "干支": "乙巳",
+              "天干十神": "伤官",
+              "藏干": [
+                {
+                  "天干": "丙",
+                  "十神": "偏财"
+                },
+                {
+                  "天干": "庚",
+                  "十神": "偏印"
+                },
+                {
+                  "天干": "戊",
+                  "十神": "七杀"
+                }
+              ],
+              "地势": "绝"
+            }
+          ],
+          "干支关系": [
+            "巳丑半合金局",
+            "巳刑（无恩之刑）",
+            "丁壬合木"
+          ],
+          "placeResolutionInfo": {
+            "resolved": false,
+            "source": "fallback",
+            "fallbackReason": "no_birth_place",
+            "locationMode": "true_solar_time"
+          }
+        },
+        "warnings": [
+          "按明确的中国标准时间排盘，未进行出生地或真太阳时校正。",
+          "首期返回默认级别八字事实；术数解读不作为金融事实或已验证预测。"
+        ],
+        "error": null,
+        "artifact_ref": {
+          "artifact_id": "artifact-38b01ac6b10cd8991969cf3dd60a14d5f28e0942c2b6d6e135cf3a4ec40f38ee",
+          "content_hash": "c39a103cfba844312fec701dd02ecb976ae302cb7e05bbd324c4a1687ae698b2",
+          "size_bytes": 2532,
+          "source_turn_id": "synthetic-bazi_lunar"
+        }
+      },
+      "archived_snapshot": {
+        "arguments": {
+          "birthDay": 1,
+          "birthHour": 9,
+          "birthMinute": 0,
+          "birthMonth": 1,
+          "birthYear": 1990,
+          "calendarType": "lunar",
+          "detailLevel": "default",
+          "gender": "male",
+          "isLeapMonth": false
+        },
+        "called_at": "2026-09-12T06:13:16.998676+00:00",
+        "contract_hash": "a34b272bedebee43902267f69bda1c619b9638be867915188865e92f5a65f68f",
+        "convention": {
+          "calendar_type": "lunar",
+          "detail_level": "default",
+          "is_leap_month": false,
+          "solar_time": "standard",
+          "time_basis": "china_standard"
+        },
+        "elapsed_ms": 53.6,
+        "provider": "taibu",
+        "remote_tool": "bazi",
+        "response": {
+          "content": [
+            {
+              "text": "# 八字命盘\n\n## 命局全盘\n- 性别: 男\n- 日主: 壬\n\n| 柱 | 干支 | 天干(十神) | 地支藏干(十神) | 地势 | 空亡 |\n|---|------|------------|----------------|------|------|\n| 年柱 | 己巳 | 己(正官) | 丙(偏财) 庚(偏印) 戊(七杀) | 绝 | - |\n| 月柱 | 丁丑 | 丁(正财) | 己(正官) 癸(劫财) 辛(正印) | 衰 | - |\n| 日柱 | 壬辰 | 壬(日主) | 戊(七杀) 乙(伤官) 癸(劫财) | 墓 | - |\n| 时柱 | 乙巳 | 乙(伤官) | 丙(偏财) 庚(偏印) 戊(七杀) | 绝 | - |\n\n## 干支关系\n- 天干: 丁壬合木\n- 地支: 巳丑半合金局；巳刑（无恩之刑）\n\n## 出生地解析\n- **解析状态**: 未完成\n- **原因**: 未提供出生地点",
+              "type": "text"
+            }
+          ],
+          "isError": false,
+          "structuredContent": {
+            "placeResolutionInfo": {
+              "fallbackReason": "no_birth_place",
+              "locationMode": "true_solar_time",
+              "resolved": false,
+              "source": "fallback"
+            },
+            "四柱": [
+              {
+                "地势": "绝",
+                "天干十神": "正官",
+                "干支": "己巳",
+                "柱": "年柱",
+                "藏干": [
+                  {
+                    "十神": "偏财",
+                    "天干": "丙"
+                  },
+                  {
+                    "十神": "偏印",
+                    "天干": "庚"
+                  },
+                  {
+                    "十神": "七杀",
+                    "天干": "戊"
+                  }
+                ]
+              },
+              {
+                "地势": "衰",
+                "天干十神": "正财",
+                "干支": "丁丑",
+                "柱": "月柱",
+                "藏干": [
+                  {
+                    "十神": "正官",
+                    "天干": "己"
+                  },
+                  {
+                    "十神": "劫财",
+                    "天干": "癸"
+                  },
+                  {
+                    "十神": "正印",
+                    "天干": "辛"
+                  }
+                ]
+              },
+              {
+                "地势": "墓",
+                "天干十神": "-",
+                "干支": "壬辰",
+                "柱": "日柱",
+                "藏干": [
+                  {
+                    "十神": "七杀",
+                    "天干": "戊"
+                  },
+                  {
+                    "十神": "伤官",
+                    "天干": "乙"
+                  },
+                  {
+                    "十神": "劫财",
+                    "天干": "癸"
+                  }
+                ]
+              },
+              {
+                "地势": "绝",
+                "天干十神": "伤官",
+                "干支": "乙巳",
+                "柱": "时柱",
+                "藏干": [
+                  {
+                    "十神": "偏财",
+                    "天干": "丙"
+                  },
+                  {
+                    "十神": "偏印",
+                    "天干": "庚"
+                  },
+                  {
+                    "十神": "七杀",
+                    "天干": "戊"
+                  }
+                ]
+              }
+            ],
+            "基本信息": {
+              "性别": "男",
+              "日主": "壬"
+            },
+            "干支关系": [
+              "巳丑半合金局",
+              "巳刑（无恩之刑）",
+              "丁壬合木"
+            ]
+          }
+        },
+        "server_version": "3.1.1",
+        "tool": "taibu_bazi"
+      }
+    },
+    {
+      "case": "bazi_leap_month",
+      "elapsed_ms": 78.7,
+      "projection_bytes": 1659,
+      "projection": {
+        "schema_version": 1,
+        "outcome": "success",
+        "tool": "taibu_bazi",
+        "remote_tool": "bazi",
+        "provider": "taibu",
+        "server_version": "3.1.1",
+        "contract_hash": "a34b272bedebee43902267f69bda1c619b9638be867915188865e92f5a65f68f",
+        "called_at": "2026-09-12T06:13:17.063327+00:00",
+        "elapsed_ms": 67.105,
+        "convention": {
+          "calendar_type": "lunar",
+          "is_leap_month": true,
+          "time_basis": "china_standard",
+          "solar_time": "standard",
+          "detail_level": "default"
+        },
+        "data": {
+          "基本信息": {
+            "性别": "男",
+            "日主": "己"
+          },
+          "四柱": [
+            {
+              "柱": "年柱",
+              "干支": "癸卯",
+              "天干十神": "偏财",
+              "藏干": [
+                {
+                  "天干": "乙",
+                  "十神": "七杀"
+                }
+              ],
+              "地势": "病"
+            },
+            {
+              "柱": "月柱",
+              "干支": "乙卯",
+              "天干十神": "七杀",
+              "藏干": [
+                {
+                  "天干": "乙",
+                  "十神": "七杀"
+                }
+              ],
+              "地势": "病"
+            },
+            {
+              "柱": "日柱",
+              "干支": "己卯",
+              "天干十神": "-",
+              "藏干": [
+                {
+                  "天干": "乙",
+                  "十神": "七杀"
+                }
+              ],
+              "地势": "病"
+            },
+            {
+              "柱": "时柱",
+              "干支": "己巳",
+              "天干十神": "比肩",
+              "藏干": [
+                {
+                  "天干": "丙",
+                  "十神": "正印"
+                },
+                {
+                  "天干": "庚",
+                  "十神": "伤官"
+                },
+                {
+                  "天干": "戊",
+                  "十神": "劫财"
+                }
+              ],
+              "地势": "帝旺"
+            }
+          ],
+          "干支关系": [
+            "卯刑（无礼之刑）"
+          ],
+          "placeResolutionInfo": {
+            "resolved": false,
+            "source": "fallback",
+            "fallbackReason": "no_birth_place",
+            "locationMode": "true_solar_time"
+          }
+        },
+        "warnings": [
+          "按明确的中国标准时间排盘，未进行出生地或真太阳时校正。",
+          "首期返回默认级别八字事实；术数解读不作为金融事实或已验证预测。"
+        ],
+        "error": null,
+        "artifact_ref": {
+          "artifact_id": "artifact-35eb09e34d674a775a6b2fc262dad677b6e77301ca1f1f0c937d6b6419360ee4",
+          "content_hash": "e915a0cd2df6412ce84778ba7d12d88fe3e652b7d64f29ba1b024f3e2da763fa",
+          "size_bytes": 2149,
+          "source_turn_id": "synthetic-bazi_leap_month"
+        }
+      },
+      "archived_snapshot": {
+        "arguments": {
+          "birthDay": 1,
+          "birthHour": 9,
+          "birthMinute": 0,
+          "birthMonth": 2,
+          "birthYear": 2023,
+          "calendarType": "lunar",
+          "detailLevel": "default",
+          "gender": "male",
+          "isLeapMonth": true
+        },
+        "called_at": "2026-09-12T06:13:17.063327+00:00",
+        "contract_hash": "a34b272bedebee43902267f69bda1c619b9638be867915188865e92f5a65f68f",
+        "convention": {
+          "calendar_type": "lunar",
+          "detail_level": "default",
+          "is_leap_month": true,
+          "solar_time": "standard",
+          "time_basis": "china_standard"
+        },
+        "elapsed_ms": 67.105,
+        "provider": "taibu",
+        "remote_tool": "bazi",
+        "response": {
+          "content": [
+            {
+              "text": "# 八字命盘\n\n## 命局全盘\n- 性别: 男\n- 日主: 己\n\n| 柱 | 干支 | 天干(十神) | 地支藏干(十神) | 地势 | 空亡 |\n|---|------|------------|----------------|------|------|\n| 年柱 | 癸卯 | 癸(偏财) | 乙(七杀) | 病 | - |\n| 月柱 | 乙卯 | 乙(七杀) | 乙(七杀) | 病 | - |\n| 日柱 | 己卯 | 己(日主) | 乙(七杀) | 病 | - |\n| 时柱 | 己巳 | 己(比肩) | 丙(正印) 庚(伤官) 戊(劫财) | 帝旺 | - |\n\n## 干支关系\n- 地支: 卯刑（无礼之刑）\n\n## 出生地解析\n- **解析状态**: 未完成\n- **原因**: 未提供出生地点",
+              "type": "text"
+            }
+          ],
+          "isError": false,
+          "structuredContent": {
+            "placeResolutionInfo": {
+              "fallbackReason": "no_birth_place",
+              "locationMode": "true_solar_time",
+              "resolved": false,
+              "source": "fallback"
+            },
+            "四柱": [
+              {
+                "地势": "病",
+                "天干十神": "偏财",
+                "干支": "癸卯",
+                "柱": "年柱",
+                "藏干": [
+                  {
+                    "十神": "七杀",
+                    "天干": "乙"
+                  }
+                ]
+              },
+              {
+                "地势": "病",
+                "天干十神": "七杀",
+                "干支": "乙卯",
+                "柱": "月柱",
+                "藏干": [
+                  {
+                    "十神": "七杀",
+                    "天干": "乙"
+                  }
+                ]
+              },
+              {
+                "地势": "病",
+                "天干十神": "-",
+                "干支": "己卯",
+                "柱": "日柱",
+                "藏干": [
+                  {
+                    "十神": "七杀",
+                    "天干": "乙"
+                  }
+                ]
+              },
+              {
+                "地势": "帝旺",
+                "天干十神": "比肩",
+                "干支": "己巳",
+                "柱": "时柱",
+                "藏干": [
+                  {
+                    "十神": "正印",
+                    "天干": "丙"
+                  },
+                  {
+                    "十神": "伤官",
+                    "天干": "庚"
+                  },
+                  {
+                    "十神": "劫财",
+                    "天干": "戊"
+                  }
+                ]
+              }
+            ],
+            "基本信息": {
+              "性别": "男",
+              "日主": "己"
+            },
+            "干支关系": [
+              "卯刑（无礼之刑）"
+            ]
+          }
+        },
+        "server_version": "3.1.1",
+        "tool": "taibu_bazi"
+      }
+    },
+    {
+      "case": "bazi_invalid_leap",
+      "elapsed_ms": 55.8,
+      "projection_bytes": 795,
+      "projection": {
+        "schema_version": 1,
+        "outcome": "error",
+        "tool": "taibu_bazi",
+        "remote_tool": "bazi",
+        "provider": "taibu",
+        "server_version": "3.1.1",
+        "contract_hash": "a34b272bedebee43902267f69bda1c619b9638be867915188865e92f5a65f68f",
+        "called_at": "2026-09-12T06:13:17.142153+00:00",
+        "elapsed_ms": 47.982,
+        "convention": {
+          "calendar_type": "lunar",
+          "is_leap_month": true,
+          "time_basis": "china_standard",
+          "solar_time": "standard",
+          "detail_level": "default"
+        },
+        "data": {},
+        "warnings": [],
+        "error": "TAIBU_REMOTE_ERROR: 太卜执行失败，请核对历法及出生信息，原响应已归档。",
+        "artifact_ref": {
+          "artifact_id": "artifact-cb5a1b3330a0ef73ff752c68dd6d550a753b429008acd112d91ec846fbda3926",
+          "content_hash": "0d74abe14764524ceb6684f733616db2146e40fa77c9d93332201aab159f80df",
+          "size_bytes": 684,
+          "source_turn_id": "synthetic-bazi_invalid_leap"
+        }
+      },
+      "archived_snapshot": {
+        "arguments": {
+          "birthDay": 1,
+          "birthHour": 9,
+          "birthMinute": 0,
+          "birthMonth": 1,
+          "birthYear": 2023,
+          "calendarType": "lunar",
+          "detailLevel": "default",
+          "gender": "male",
+          "isLeapMonth": true
+        },
+        "called_at": "2026-09-12T06:13:17.142153+00:00",
+        "contract_hash": "a34b272bedebee43902267f69bda1c619b9638be867915188865e92f5a65f68f",
+        "convention": {
+          "calendar_type": "lunar",
+          "detail_level": "default",
+          "is_leap_month": true,
+          "solar_time": "standard",
+          "time_basis": "china_standard"
+        },
+        "elapsed_ms": 47.982,
+        "provider": "taibu",
+        "remote_tool": "bazi",
+        "response": {
+          "content": [
+            {
+              "text": "Tool execution failed",
+              "type": "text"
+            }
+          ],
+          "isError": true
+        },
+        "server_version": "3.1.1",
+        "tool": "taibu_bazi"
+      }
+    }
+  ]
+}
