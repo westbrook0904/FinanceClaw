@@ -15,13 +15,15 @@ x-environment: &environment
   FINANCECLAW_DATABASE_URL: postgresql+psycopg://financeclaw:${POSTGRES_PASSWORD}@postgres:5432/financeclaw_app
   FINANCECLAW_DATABASE_AUTO_CREATE_SCHEMA: "false"
   FINANCECLAW_INTERNAL_API_URL: http://api:8000
-  FINANCECLAW_INTERNAL_SERVICE_HOSTS: '["api"]'
+  FINANCECLAW_INTERNAL_SERVICE_HOSTS: ${FINANCECLAW_INTERNAL_SERVICE_HOSTS:-["api"]}
   FINANCECLAW_ARTIFACT_ROOT: /data/artifacts
   LANGGRAPH_AUTH_TYPE: noop
 
 services:
   postgres:
     image: pgvector/pgvector:pg16
+    ports:
+      - "127.0.0.1:5433:5432"
     environment:
       POSTGRES_USER: financeclaw
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}

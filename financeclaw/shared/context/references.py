@@ -12,6 +12,10 @@ _REFERENCE = re.compile(r"^(message|artifact):([A-Za-z0-9._:-]{1,128})@([0-9a-f]
 _CLASSIFICATION = {value: index for index, value in enumerate(DataClassification)}
 
 
+class ContextReferenceFormatError(ValueError):
+    """调用方把普通文本等内容误填为引用；与归属、内容版本等错误分开处理。"""
+
+
 def resolve_context_refs(
     refs: tuple[str, ...],
     *,
@@ -30,7 +34,9 @@ def resolve_context_refs(
     for ref in refs:
         match = _REFERENCE.fullmatch(ref)
         if match is None:
-            raise ValueError("context reference must be a supported ID with an explicit SHA-256")
+            raise ContextReferenceFormatError(
+                "context reference must be a supported ID with an explicit SHA-256"
+            )
         kind, identifier, expected_hash = match.groups()
         classification = DataClassification.INTERNAL
         if kind == "message":

@@ -135,7 +135,7 @@ async def test_real_graph_produces_validated_evidence_and_result(mode):
     assert value.outcome == ("answer" if mode == "interpretation" else "chart_only")
     assert len(value.charts_used) == 1 and value.charts_used[0].level == "daily"
     assert sum(m.type == "tool" for m in result["messages"]) == 1
-    assert result["ziwei_model_calls"] == (3 if mode == "interpretation" else 2)
+    assert result["ziwei_model_calls"] == 2
     if mode == "interpretation":
         assert value.answer_text and value.schema_version == 2
         assert "interpretations" not in result["ziwei_result"]

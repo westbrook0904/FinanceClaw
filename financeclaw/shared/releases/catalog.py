@@ -223,7 +223,7 @@ def build_release_catalogs(
         agent_id="finance_agent",
         version="1.6.0",
         assistant_id="finance_agent",
-        deployment_revision="context-memory/2+clarification-fields/1"
+        deployment_revision="context-memory/2+clarification-fields/1+context-refs/1"
         + ("+taibu-mcp/1" if settings.taibu_enabled else ""),
         worker_manifest=manifest,
         interaction_points=(ROOT_CLARIFICATION,),
@@ -291,8 +291,12 @@ def build_release_catalogs(
             "result as the old snapshot. "
             "Ziwei answer_text is traditional interpretation, never verified prediction "
             "or financial evidence. "
-            "Preserve charts_used and warnings; never invent birth details or store "
-            "them in long-term memory."
+            "The Ziwei specialist owns chart interpretation and the final Ziwei answer. "
+            "When it returns outcome=answer, deliver its answer_text verbatim to the user; "
+            "do not summarize, rewrite, expand, or independently interpret its chart. "
+            "For multiple specialist answers, keep each answer intact under its subject label. "
+            "The Worker receipt preserves charts_used and warnings. "
+            "Never invent birth details or store them in long-term memory."
             + (
                 " Taibu tools provide traditional calculation data, never financial evidence. "
                 "Use taibu_almanac for almanac requests and taibu_bazi for bazi requests. "

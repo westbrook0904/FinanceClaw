@@ -313,7 +313,18 @@ async def test_repeated_workflow_invocations_have_distinct_approval_and_artifact
 @pytest.mark.asyncio
 @pytest.mark.parametrize("stack", [True], indirect=True)
 async def test_ziwei_text_result_survives_root_tool_projection(stack, mode):
-    """Real Ziwei engine and text graph preserve the Stage-7 text hotfix contract."""
+    """真实子图的最后解读原样到达根工具回执，途中没有独立的 finalize 模型请求。"""
+    from financeclaw.agent_server.graphs.ziwei_agent import build_ziwei_agent
+    from tests.stage7.test_text_output import TextResponseModel
+
+    text = "## 紫微专业解答\n\n这里保留子 Agent 的原始正文，不另行生成第二份解读。"
+    child = stack.tool_catalog.resolve("call_agent__ziwei_doushu_agent").tool
+    child.graph = build_ziwei_agent(
+        stack.agent_factory,
+        child.release,
+        stack.ziwei_service,
+        model=TextResponseModel(final_response=AIMessage(content=text)),
+    )
     graph, kwargs = root_graph(
         stack,
         [
@@ -332,7 +343,8 @@ async def test_ziwei_text_result_survives_root_tool_projection(stack, mode):
     assert output["outcome"] == ("chart_only" if mode == "chart_only" else "answer")
     assert output["schema_version"] == 2 and len(output["charts_used"]) == 1
     if mode == "interpretation":
-        assert output["answer_text"] and "interpretations" not in output
+        assert output["answer_text"] == text and "interpretations" not in output
+    assert stack.conversation_repository.execution.get("root")["model_calls"] == 4
 
 
 class ClarifyingRootModel(SerialModel):

@@ -51,6 +51,44 @@ class ContinuingRoot(OfflineFinanceModel):
         return ChatResult(generations=[ChatGeneration(message=answer)])
 
 
+class ReferenceRepairingRoot(ContinuingRoot):
+    """澄清后误把回答当作引用，再根据错误回执自行修正参数。"""
+
+    bad_ref: str
+
+    def _generate(self, messages, *args, **kwargs):
+        """只有收到格式错误回执后才重发调用，用来验证真实图没有直接失败。"""
+        last = messages[-1]
+        if (
+            isinstance(last, ToolMessage)
+            and last.status == "error"
+            and json.loads(last.content).get("error") == "invalid_context_reference"
+        ):
+            return ChatResult(
+                generations=[
+                    ChatGeneration(
+                        message=AIMessage(
+                            content="",
+                            tool_calls=[
+                                call(
+                                    "call_agent__ziwei_doushu_agent",
+                                    "reference-fixed",
+                                    task="继续未完成排盘",
+                                    arguments={},
+                                    context_refs=[],
+                                )
+                            ],
+                        )
+                    )
+                ]
+            )
+        result = super()._generate(messages, *args, **kwargs)
+        if isinstance(last, ToolMessage) and last.name == CLARIFICATION_TOOL:
+            for tool_call in result.generations[0].message.tool_calls:
+                tool_call["args"]["context_refs"] = [self.bad_ref]
+        return result
+
+
 class IncrementalZiwei(OfflineFinanceModel):
     """对合成 JSON 原文应用真实澄清短句，执行实际排盘工具。"""
 
@@ -112,6 +150,41 @@ def original(*, two_missing=False):
 def resume(wait, text):
     """只回复一个自然语言字段，不能通过测试替身暗中重传整份参数。"""
     return Command(resume={wait.id: {"kind": "input", "answer": {"text": text}}})
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("bad_ref", ["user_clarification:2027年", "message:root-input"])
+async def test_bad_reference_after_clarification_returns_error_and_model_can_correct(
+    stack, bad_ref
+):
+    """格式误填不执行子图也不终止根任务；模型修正后仍收到原问题及真实回答。"""
+    calls = [call("call_agent__ziwei_doushu_agent", 1, task="排盘", arguments={})]
+    graph, kwargs = root_graph(
+        stack, calls, model=ReferenceRepairingRoot(calls=calls, bad_ref=bad_ref)
+    )
+    install_child(stack)
+    text = original()
+    first = await graph.ainvoke(
+        {"messages": [HumanMessage(content=text, id="root-input")]}, **kwargs
+    )
+    result = await graph.ainvoke(resume(first["__interrupt__"][0], "公历"), **kwargs)
+    assert not result.get("__interrupt__")
+    receipts = [
+        message
+        for message in result["messages"]
+        if isinstance(message, ToolMessage) and message.name == "call_agent__ziwei_doushu_agent"
+    ]
+    assert [message.status for message in receipts] == ["success", "error", "success"]
+    assert json.loads(receipts[1].content)["error"] == "invalid_context_reference"
+    assert receipts[1].tool_call_id == "call-retry-1-0"
+    assert json.loads(receipts[-1].content)["outcome"] == "chart_only"
+    assert len(IncrementalZiwei.seen) == 2
+    assert IncrementalZiwei.seen[-1]["user_context"] == {
+        "message_id": "root-input",
+        "content": text,
+    }
+    assert IncrementalZiwei.seen[-1]["clarifications"][0]["answer"] == {"text": "公历"}
+    assert IncrementalZiwei.seen[-1]["context_refs"] == []
 
 
 @pytest.mark.asyncio

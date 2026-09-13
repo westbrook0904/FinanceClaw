@@ -66,6 +66,11 @@ LANGSMITH_HIDE_OUTPUTS=false
 `call_agent__ziwei_doushu_agent` Tool 调用 `ziwei_doushu_agent@2.2.0` 内部子图。
 `langgraph.json` 只注册顶层根，子图继承本次执行的权限、预算与 checkpoint；
 完整文本解读通过 Tool 结果交回根 Agent，再由 BFF 写入 Journal。
+紫微 Agent 自己在 ReAct 循环内根据盘面完成专业解读，最后一条正文直接成为 `answer_text`。
+`finalize` 仅封装该正文、`charts_used` 等已有结果，不再发起独立模型请求。
+一次排盘调用的常规解读路径只需两次子模型请求：选择工具、读取结果后解答。
+根 Agent 的提示词要求原样转发 `answer_text`；多对象答案保留各自正文并标注对象，避免二次解盘。
+根 Agent 的调度、澄清和最终输出通道保持不变，仍有根模型的输出轮次。
 业务库使用当前 `0001_initial`，候选能力不新增独立运行表。
 
 子图入口接受自然语言 `task`、可选原始 `arguments` 提示、本次根任务固定的原问题 `user_context`，
@@ -74,6 +79,9 @@ LANGSMITH_HIDE_OUTPUTS=false
 `time_context` 提供固定的 `request_clock` 和查询时区；它来自可信运行上下文，模型不能覆盖。
 另可提供经归属、内容版本和权限校验的 `context_refs`。其他历史消息和制品通过显式引用提供，
 不自动复制整段根历史。父 Agent 无需提前抽取或冻结完整出生参数。
+`context_refs` 只接受工具实际返回的 `message:id@sha256` 或 `artifact:id@sha256`，
+其中摘要必须完整。本轮原问题与澄清回答已自动传递，不应填成 `user_clarification:回答`。
+引用格式误填会返回工具错误回执，供根模型修正参数；子图尚未启动，也不会自动删除引用后重试。
 子模型从五个独立排盘工具中选择，每个工具固定自己的层级，不再接受 `level` 或通用 `target`。
 五个入口共用出生资料、主题与输出模式，各自仅暴露对应的日期参数；运行时参数由框架注入。
 本命没有查询日期，不会因模型漏填或多填流运目标而触发冻结对象赋值错误。
@@ -98,9 +106,11 @@ LANGSMITH_HIDE_OUTPUTS=false
 
 ```mermaid
 flowchart LR
-    R[根 Agent：任务与上下文] --> W[子 Agent：function call]
+    R[根 Agent：任务与上下文] --> W[紫微 Agent：取证与专业解答]
     W --> T[五个独立排盘入口：校验与计算]
-    T -->|成功| F[证据汇合与解读]
+    T -->|成功| W
+    W -->|最终正文| F[finalize：代码封装结果]
+    F --> D[根 Agent：交付紫微正文]
     T -->|缺资料| E[子图 END]
     E --> Q[根图汇合当前批次]
     Q --> I[统一澄清 Tool：原生 interrupt]

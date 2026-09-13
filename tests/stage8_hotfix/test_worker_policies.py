@@ -437,3 +437,29 @@ async def test_context_reference_cannot_read_another_subject_artifact(stack):
     graph, kwargs = root_graph(stack, calls)
     with pytest.raises(ArtifactNotFound):
         await graph.ainvoke({"messages": [HumanMessage(content="排盘", id="root-input")]}, **kwargs)
+
+
+@pytest.mark.asyncio
+async def test_context_reference_version_error_is_not_treated_as_a_format_typo(stack):
+    """合法格式但版本不匹配仍按原引用边界失败，不能静默丢弃引用继续执行。"""
+    from tests.stage7.support import context
+
+    metadata = stack.ziwei_service.artifacts.persist(
+        request().model_dump(mode="json"),
+        context=context(),
+        source_type="test",
+        source_id="versioned-input",
+        idempotency_key="versioned-fixture",
+    )
+    calls = [
+        call(
+            "call_agent__ziwei_doushu_agent",
+            1,
+            task="读取资料",
+            arguments={},
+            context_refs=[f"artifact:{metadata.artifact_id}@{'0' * 64}"],
+        )
+    ]
+    graph, kwargs = root_graph(stack, calls)
+    with pytest.raises(ValueError, match="context reference content version changed"):
+        await graph.ainvoke({"messages": [HumanMessage(content="排盘", id="root-input")]}, **kwargs)

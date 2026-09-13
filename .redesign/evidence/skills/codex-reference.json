@@ -1,0 +1,231 @@
+{
+  "record_type": "source_reference",
+  "review_date": "2026-09-12",
+  "status": "source_review_only_not_implementation_validation",
+  "financeclaw_commit": "7dab6d47af6a6e0fcfe59caca04918b3c91cf058",
+  "reference_repository": "https://github.com/openai/codex",
+  "reference_commit": "c4017a87aacc7558002b7cb510025e967c1d765e",
+  "reference_commit_committed_at": "2026-09-12T05:04:11Z",
+  "retrieval_method": "GitHub connector; raw UTF-8 files pinned to commit",
+  "content_hash_definition": "SHA-256 of the UTF-8 text returned by the connector, before local reference-copy formatting",
+  "official_documentation": [
+    "https://learn.chatgpt.com/docs/build-skills"
+  ],
+  "scope": [
+    "metadata and parsing",
+    "discovery and snapshots",
+    "explicit and implicit selection",
+    "message roles and context fragments",
+    "catalog budgets",
+    "package resource reads",
+    "MCP dependency policy boundaries"
+  ],
+  "limitations": [
+    "Focused source review; Codex was not built or executed.",
+    "FinanceClaw skill runtime is a proposal and was not implemented or runtime-tested in this task.",
+    "Reference commit does not establish identical behavior in every Codex distribution or feature configuration."
+  ],
+  "files": [
+    {
+      "path": "codex-rs/skills/src/model.rs",
+      "url": "https://github.com/openai/codex/blob/c4017a87aacc7558002b7cb510025e967c1d765e/codex-rs/skills/src/model.rs",
+      "sha256": "b7e4f5cd8b8c7955f148686ef7edd37885ac697abd229e1ec59c345a5a2edccf",
+      "utf8_bytes": 3391,
+      "line_count": 112,
+      "referenced_in_plan": true
+    },
+    {
+      "path": "codex-rs/skills/src/parser.rs",
+      "url": "https://github.com/openai/codex/blob/c4017a87aacc7558002b7cb510025e967c1d765e/codex-rs/skills/src/parser.rs",
+      "sha256": "f3532df1cc16f4da423b8e5c813269940c90317bcd211b6659cad449fd877e89",
+      "utf8_bytes": 7250,
+      "line_count": 225,
+      "referenced_in_plan": false
+    },
+    {
+      "path": "codex-rs/skills/src/loading.rs",
+      "url": "https://github.com/openai/codex/blob/c4017a87aacc7558002b7cb510025e967c1d765e/codex-rs/skills/src/loading.rs",
+      "sha256": "2278998af22d9a887d50dd5704858706398d46590f1689d68079414015aa60ad",
+      "utf8_bytes": 3776,
+      "line_count": 119,
+      "referenced_in_plan": false
+    },
+    {
+      "path": "codex-rs/skills/src/selection.rs",
+      "url": "https://github.com/openai/codex/blob/c4017a87aacc7558002b7cb510025e967c1d765e/codex-rs/skills/src/selection.rs",
+      "sha256": "c83073e6b5f1d5964d8a72c91c12f6297ffb892fd1decc5d79d7f441f30ed318",
+      "utf8_bytes": 7170,
+      "line_count": 205,
+      "referenced_in_plan": true
+    },
+    {
+      "path": "codex-rs/skills/src/invocation.rs",
+      "url": "https://github.com/openai/codex/blob/c4017a87aacc7558002b7cb510025e967c1d765e/codex-rs/skills/src/invocation.rs",
+      "sha256": "63294bd89a3dfe7a66204b1e3c911dfa238b5debc219fa7ef9d8935cfc801a84",
+      "utf8_bytes": 4905,
+      "line_count": 160,
+      "referenced_in_plan": false
+    },
+    {
+      "path": "codex-rs/ext/skills/src/host_roots.rs",
+      "url": "https://github.com/openai/codex/blob/c4017a87aacc7558002b7cb510025e967c1d765e/codex-rs/ext/skills/src/host_roots.rs",
+      "sha256": "d4290ba4d783110e7533586ad19719536aa9b23f517b43e3147d3afb40c91d56",
+      "utf8_bytes": 9511,
+      "line_count": 278,
+      "referenced_in_plan": true
+    },
+    {
+      "path": "codex-rs/ext/skills/src/host_service.rs",
+      "url": "https://github.com/openai/codex/blob/c4017a87aacc7558002b7cb510025e967c1d765e/codex-rs/ext/skills/src/host_service.rs",
+      "sha256": "0c77829ea20f6af113b55289d73862f06fe7ab511a3681eb81cb67f1b52daee3",
+      "utf8_bytes": 17057,
+      "line_count": 510,
+      "referenced_in_plan": true
+    },
+    {
+      "path": "codex-rs/ext/skills/src/host_prompt.rs",
+      "url": "https://github.com/openai/codex/blob/c4017a87aacc7558002b7cb510025e967c1d765e/codex-rs/ext/skills/src/host_prompt.rs",
+      "sha256": "a3e3880595446b788abc18ef96cb49f1e3f396d4bfd5f2edbd3a2bc0579513c1",
+      "utf8_bytes": 3890,
+      "line_count": 110,
+      "referenced_in_plan": true
+    },
+    {
+      "path": "codex-rs/ext/skills/src/render.rs",
+      "url": "https://github.com/openai/codex/blob/c4017a87aacc7558002b7cb510025e967c1d765e/codex-rs/ext/skills/src/render.rs",
+      "sha256": "139e0af686ff573fc80f663eadbf43c6ff72f2e3ff3805bba0b00da2dbcbdb68",
+      "utf8_bytes": 39784,
+      "line_count": 1187,
+      "referenced_in_plan": true
+    },
+    {
+      "path": "codex-rs/ext/skills/src/extension.rs",
+      "url": "https://github.com/openai/codex/blob/c4017a87aacc7558002b7cb510025e967c1d765e/codex-rs/ext/skills/src/extension.rs",
+      "sha256": "983a72a885a06b6ae3f91161d668ca1e19d7933506efedbde23c101d320d6b79",
+      "utf8_bytes": 26619,
+      "line_count": 682,
+      "referenced_in_plan": true
+    },
+    {
+      "path": "codex-rs/ext/skills/src/state.rs",
+      "url": "https://github.com/openai/codex/blob/c4017a87aacc7558002b7cb510025e967c1d765e/codex-rs/ext/skills/src/state.rs",
+      "sha256": "1da09574f35c86868f9ae7bd7ef4b664d6ae8e7dbc330dc3e1641dc60173e93f",
+      "utf8_bytes": 14101,
+      "line_count": 421,
+      "referenced_in_plan": false
+    },
+    {
+      "path": "codex-rs/ext/skills/src/selection.rs",
+      "url": "https://github.com/openai/codex/blob/c4017a87aacc7558002b7cb510025e967c1d765e/codex-rs/ext/skills/src/selection.rs",
+      "sha256": "383245c7d4eec13fb696e137e3aaa83287fa7a86cbfa1ed0cd12eb749e05936e",
+      "utf8_bytes": 4039,
+      "line_count": 141,
+      "referenced_in_plan": false
+    },
+    {
+      "path": "codex-rs/ext/skills/src/invocation.rs",
+      "url": "https://github.com/openai/codex/blob/c4017a87aacc7558002b7cb510025e967c1d765e/codex-rs/ext/skills/src/invocation.rs",
+      "sha256": "d21fdaec0aa1ad30db81150ae81b4d9e59301892200ecbaf6d9eec34e32f70fc",
+      "utf8_bytes": 3228,
+      "line_count": 87,
+      "referenced_in_plan": true
+    },
+    {
+      "path": "codex-rs/ext/skills/src/dynamic_skill_selector.rs",
+      "url": "https://github.com/openai/codex/blob/c4017a87aacc7558002b7cb510025e967c1d765e/codex-rs/ext/skills/src/dynamic_skill_selector.rs",
+      "sha256": "d38e78a3f654ca90ed76e527e413a78ee582ac6913c39476fe82815eada91dd2",
+      "utf8_bytes": 2251,
+      "line_count": 58,
+      "referenced_in_plan": true
+    },
+    {
+      "path": "codex-rs/ext/skills/src/fragments.rs",
+      "url": "https://github.com/openai/codex/blob/c4017a87aacc7558002b7cb510025e967c1d765e/codex-rs/ext/skills/src/fragments.rs",
+      "sha256": "4e61b21994402a08554ae02352a3eb5c99f13f7a7f974ec656a22a3b5eb05a42",
+      "utf8_bytes": 3413,
+      "line_count": 111,
+      "referenced_in_plan": true
+    },
+    {
+      "path": "codex-rs/ext/skills/src/catalog.rs",
+      "url": "https://github.com/openai/codex/blob/c4017a87aacc7558002b7cb510025e967c1d765e/codex-rs/ext/skills/src/catalog.rs",
+      "sha256": "92287e41fdfc26963dc60128f11b833239955fdcc3182204f7cfee0e19d3fe3f",
+      "utf8_bytes": 10145,
+      "line_count": 354,
+      "referenced_in_plan": true
+    },
+    {
+      "path": "codex-rs/ext/skills/src/tools/read.rs",
+      "url": "https://github.com/openai/codex/blob/c4017a87aacc7558002b7cb510025e967c1d765e/codex-rs/ext/skills/src/tools/read.rs",
+      "sha256": "62bccc396069191e2c9a94cf81c38e23cb7d91e9211c8a59cbcfe5e2ec94de8f",
+      "utf8_bytes": 13869,
+      "line_count": 331,
+      "referenced_in_plan": true
+    },
+    {
+      "path": "codex-rs/ext/skills/src/tools/schema.rs",
+      "url": "https://github.com/openai/codex/blob/c4017a87aacc7558002b7cb510025e967c1d765e/codex-rs/ext/skills/src/tools/schema.rs",
+      "sha256": "575acb4f66c61e142b953b5a389f41f96bc4263a0fdb4b061d8ac4fb9ee6bbd0",
+      "utf8_bytes": 1299,
+      "line_count": 42,
+      "referenced_in_plan": false
+    },
+    {
+      "path": "codex-rs/ext/skills/src/loader/discovery.rs",
+      "url": "https://github.com/openai/codex/blob/c4017a87aacc7558002b7cb510025e967c1d765e/codex-rs/ext/skills/src/loader/discovery.rs",
+      "sha256": "931e1f72f4338d611630cdedfed9eb08295586a09c357ca29242f29f927cb2c7",
+      "utf8_bytes": 7019,
+      "line_count": 224,
+      "referenced_in_plan": false
+    },
+    {
+      "path": "codex-rs/ext/skills/src/loader/host_merge.rs",
+      "url": "https://github.com/openai/codex/blob/c4017a87aacc7558002b7cb510025e967c1d765e/codex-rs/ext/skills/src/loader/host_merge.rs",
+      "sha256": "7e2bce7a2bfb98401a3adf60fadf6a92ad8824b3dc9ad523fbc50997342e5532",
+      "utf8_bytes": 10998,
+      "line_count": 273,
+      "referenced_in_plan": false
+    },
+    {
+      "path": "codex-rs/ext/skills/src/provider/host.rs",
+      "url": "https://github.com/openai/codex/blob/c4017a87aacc7558002b7cb510025e967c1d765e/codex-rs/ext/skills/src/provider/host.rs",
+      "sha256": "145038f6b27bcdf97f03ccf9cd43075a211f97cbcf69d933fcc84174d248b8bf",
+      "utf8_bytes": 5264,
+      "line_count": 156,
+      "referenced_in_plan": true
+    },
+    {
+      "path": "codex-rs/ext/skills/src/catalog_prompt.rs",
+      "url": "https://github.com/openai/codex/blob/c4017a87aacc7558002b7cb510025e967c1d765e/codex-rs/ext/skills/src/catalog_prompt.rs",
+      "sha256": "ba8bb4b4369301af0ad75c8762f01b3067a91942790c08e3bdeda55f13a7ebaa",
+      "utf8_bytes": 9398,
+      "line_count": 105,
+      "referenced_in_plan": false
+    },
+    {
+      "path": "codex-rs/ext/skills/src/config.rs",
+      "url": "https://github.com/openai/codex/blob/c4017a87aacc7558002b7cb510025e967c1d765e/codex-rs/ext/skills/src/config.rs",
+      "sha256": "abc45e8f6c38b7ed9d4a65f101c128927ca7d4869a0e8317cb586d8b3fbd4887",
+      "utf8_bytes": 742,
+      "line_count": 16,
+      "referenced_in_plan": false
+    },
+    {
+      "path": "codex-rs/skills/src/interface.rs",
+      "url": "https://github.com/openai/codex/blob/c4017a87aacc7558002b7cb510025e967c1d765e/codex-rs/skills/src/interface.rs",
+      "sha256": "78dc273c51397dbd5c0184923693036a6aef500aac27e230761f7932674bacb6",
+      "utf8_bytes": 6315,
+      "line_count": 201,
+      "referenced_in_plan": false
+    },
+    {
+      "path": "codex-rs/core/src/mcp_skill_dependencies.rs",
+      "url": "https://github.com/openai/codex/blob/c4017a87aacc7558002b7cb510025e967c1d765e/codex-rs/core/src/mcp_skill_dependencies.rs",
+      "sha256": "f2257c472161a4973138d61e96d4b8b2c04a4b76f4bf9203a9e32b4ea06bec92",
+      "utf8_bytes": 19270,
+      "line_count": 531,
+      "referenced_in_plan": true
+    }
+  ],
+  "workspace_note": "Concurrent uncommitted Stage 11 changes appeared during drafting, including shared/llm/budget.py, agent_server/context/planning.py and WorkingContext. They were inspected for integration alignment, not modified or validated by this task. The baseline table refers to financeclaw_commit."
+}

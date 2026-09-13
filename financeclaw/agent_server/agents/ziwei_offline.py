@@ -43,16 +43,14 @@ class OfflineZiweiModel(OfflineFinanceModel):
 
     def _generate(self, messages, stop=None, run_manager=None, **kwargs) -> ChatResult:
         """模拟取证与文本解读，只覆盖当前文本结果协议。"""
-        if not self._bound_tool_names:
-            # finalize 不绑定工具，也不要求 JSON；只返回清晰标识的合成正文。
+        if not self._bound_tool_names or isinstance(messages[-1], ToolMessage):
+            # 工具返回后在同一 ReAct 循环给出正文，结果封装节点直接复用。
             message = AIMessage(
                 content=(
                     "离线测试取得真实盘面，仅验证文本交付，不是正式命理解读。\n\n"
                     "请在规则批准和真实模型评测后进行传统文化解读。"
                 )
             )
-        elif isinstance(messages[-1], ToolMessage):
-            message = AIMessage(content="盘面证据已取得，交由结构化节点处理。")
         else:
             task = next(json.loads(m.content) for m in reversed(messages) if m.type == "human")
             call = offline_chart_call(task["arguments"], "offline-ziwei-chart")

@@ -1,7 +1,9 @@
-"""文本解读热修复：自由正文、可信外壳与有界预算。"""
+"""子 Agent 在同一 ReAct 循环输出解读，结果封装直接复用最终正文。"""
+
+from typing import ClassVar
 
 import pytest
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, ToolMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 from pydantic import ValidationError
 
@@ -16,18 +18,19 @@ from tests.stage7.support import build_ziwei_agent, components, context, envelop
 
 
 class TextResponseModel(OfflineZiweiModel):
-    """用普通响应覆盖一次解读调用；真实工具取证不变。"""
+    """在工具返回后的 ReAct 轮次提供指定正文，拒绝额外的独立解读请求。"""
 
     final_response: AIMessage
-    final_calls: int = 0
+    final_calls: ClassVar[int] = 0
 
     def _generate(self, messages, stop=None, run_manager=None, **kwargs):
-        """禁止文本解读请求重新绑定 JSON mode 或温度。"""
-        if not self._bound_tool_names:
+        """取证和解读都在原生工具循环内，封装节点不能另起模型调用。"""
+        assert self._bound_tool_names, "unexpected standalone finalization model call"
+        if isinstance(messages[-1], ToolMessage):
             assert not kwargs.get("response_format")
             assert "temperature" not in kwargs
             assert "JSON Schema" not in messages[0].content
-            self.final_calls += 1
+            type(self).final_calls += 1
             return ChatResult(generations=[ChatGeneration(message=self.final_response)])
         return super()._generate(messages, stop=stop, run_manager=run_manager, **kwargs)
 
@@ -45,6 +48,7 @@ class TextResponseModel(OfflineZiweiModel):
 async def test_free_text_is_delivered_without_json_parsing_or_repair(text):
     """JSON 风格正文只是文本，不能覆盖程序生成的 outcome／盘面身份。"""
     stack = components()
+    TextResponseModel.final_calls = 0
     model = TextResponseModel(final_response=AIMessage(content=text))
     profile = stack.agent_profiles.resolve("ziwei_doushu_agent")
     result = await build_ziwei_agent(
@@ -56,7 +60,8 @@ async def test_free_text_is_delivered_without_json_parsing_or_repair(text):
     assert value.charts_used[0].chart_id != "forged"
     assert "interpretations" not in result["ziwei_result"]
     assert "evidence_refs" not in result["ziwei_result"]
-    assert model.final_calls == 1 and result["ziwei_model_calls"] == 3
+    assert value.answer_text == result["messages"][-1].content
+    assert model.final_calls == 1 and result["ziwei_model_calls"] == 2
     assert stack.model_profiles.resolve(profile.model_profile).temperature == 0
 
 
@@ -82,26 +87,13 @@ async def test_free_text_is_delivered_without_json_parsing_or_repair(text):
             ),
             "ZIWEI_INTERPRETATION_INCOMPLETE",
         ),
-        (
-            AIMessage(
-                content="不应调用工具",
-                tool_calls=[
-                    {
-                        "id": "unexpected",
-                        "name": "ziwei_natal_chart",
-                        "args": {},
-                        "type": "tool_call",
-                    }
-                ],
-            ),
-            "ZIWEI_INTERPRETATION_INCOMPLETE",
-        ),
     ],
 )
 @pytest.mark.asyncio
 async def test_incomplete_or_empty_output_fails_without_format_retry(response, code):
-    """去除业务表达 Schema 不会把空输出、截断或工具调用冒充完整解读。"""
+    """最终 ReAct 回复为空或被截断时，封装节点不另调模型修复。"""
     stack = components()
+    TextResponseModel.final_calls = 0
     model = TextResponseModel(final_response=response)
     graph = build_ziwei_agent(
         stack.agent_factory,
@@ -130,6 +122,17 @@ def test_content_blocks_only_extract_visible_text():
         interpretation_text(AIMessage(content=[{"type": "reasoning", "text": "private"}]))
 
 
+def test_tool_call_message_is_not_a_final_interpretation():
+    """模型仍请求工具时不能把过程文字包装成最终解读。"""
+    response = AIMessage(
+        content="需要继续查盘",
+        tool_calls=[{"id": "more", "name": "ziwei_natal_chart", "args": {}}],
+    )
+    with pytest.raises(ZiweiError) as error:
+        interpretation_text(response)
+    assert error.value.code == "ZIWEI_INTERPRETATION_INCOMPLETE"
+
+
 def test_v2_envelope_still_rejects_missing_charts_or_wrong_protocol():
     """Worker 返回边界校验的是协议与业务状态，不是算命答案对不对。"""
     with pytest.raises(ValidationError, match="calculated charts"):
@@ -149,13 +152,11 @@ def test_v2_envelope_still_rejects_missing_charts_or_wrong_protocol():
         ZiweiTextResult(outcome="chart_only", charts_used=())
 
 
-def test_evidence_budget_does_not_expand_when_json_repair_is_removed():
-    """当前发布最多 6 次取证＋1 次文本。"""
+def test_react_budget_includes_the_final_interpretation():
+    """当前发布最多 6 次 ReAct 调用，结果封装没有额外模型额度。"""
     stack = components()
     profile = stack.agent_profiles.resolve("ziwei_doushu_agent", "2.2.0")
-    middleware = ZiweiEvidenceMiddleware(
-        max_calls=profile.max_model_calls, input_budget=24_000, finalization_calls=1
-    )
+    middleware = ZiweiEvidenceMiddleware(max_calls=profile.max_model_calls, input_budget=24_000)
     assert middleware.before_model({"ziwei_model_calls": 5}, None)["ziwei_model_calls"] == 6
     with pytest.raises(ZiweiError, match="取证调用预算"):
         middleware.before_model({"ziwei_model_calls": 6}, None)

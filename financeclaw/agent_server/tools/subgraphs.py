@@ -5,7 +5,7 @@ import json
 from typing import Any
 
 from langchain.tools import ToolRuntime
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import HumanMessage, ToolMessage
 from langchain_core.tools import BaseTool
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
@@ -16,7 +16,7 @@ from financeclaw.agent_server.tools.subgraph_scope import (
     verify_scope,
 )
 from financeclaw.kernel.context import ExecutionContext
-from financeclaw.shared.context.references import resolve_context_refs
+from financeclaw.shared.context.references import ContextReferenceFormatError, resolve_context_refs
 from financeclaw.shared.releases.subgraphs import (
     composite_governance,
     composite_name,
@@ -32,7 +32,16 @@ class SubagentInput(BaseModel):
     model_config = ConfigDict(extra="forbid", arbitrary_types_allowed=True)
     task: str = Field(min_length=1, max_length=8000)
     arguments: dict[str, Any] = Field(default_factory=dict)
-    context_refs: tuple[str, ...] = Field(default=(), max_length=32)
+    context_refs: tuple[str, ...] = Field(
+        default=(),
+        max_length=32,
+        description=(
+            "可选的额外资料引用，只复制工具实际返回的 message:id@sha256 或 artifact:id@sha256；"
+            "sha256 是完整的 64 位小写十六进制内容摘要，不能编造。"
+            "本轮原问题和已回答的澄清由系统自动传递，不要把回答文本、交互 ID 填进这里。"
+            "不需要额外资料时省略此字段或传空数组。"
+        ),
+    )
     runtime: ToolRuntime[ExecutionContext]
 
 
@@ -99,7 +108,28 @@ class SubgraphTool(BaseTool):
         arguments = self.args_schema.model_validate({**arguments, "runtime": runtime}).model_dump(
             mode="json", exclude={"runtime"}
         )
-        scope, refs = await asyncio.to_thread(self.prepare, runtime, arguments)
+        try:
+            scope, refs = await asyncio.to_thread(self.prepare, runtime, arguments)
+        except ContextReferenceFormatError:
+            # 沿用现有解析器的检查，只改变格式错误的交付方式，不替模型删除或补造引用。
+            return ToolMessage(
+                name=self.name,
+                tool_call_id=runtime.tool_call_id,
+                status="error",
+                content=json.dumps(
+                    {
+                        "error": "invalid_context_reference",
+                        "reason": (
+                            "context_refs only accepts message:id@sha256 or artifact:id@sha256 "
+                            "with a full 64-character lowercase SHA-256 copied from a tool result. "
+                            "The original user question and answered clarifications are passed "
+                            "automatically; do not put answer text or interaction IDs here. "
+                            "This Worker was not started. Correct the references, or omit "
+                            "context_refs/use [] if no additional reference is needed."
+                        ),
+                    }
+                ),
+            )
         token = active_scope.set(scope)
         try:
             await asyncio.to_thread(verify_scope, self.execution, scope.context, self.declaration)

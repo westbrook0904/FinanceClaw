@@ -53,10 +53,10 @@ flowchart TD
     Q --> W[原生 queue worker]
     API --> DB[(应用 PostgreSQL)]
     W --> DB
-    DB --> MW[memory_worker：提取与整合]
+    DB --> MW[memory_worker:提取与整合]
     MW --> LLM[受限结构化模型调用]
     MW --> DB
-    DB --> I[integrations：通知 / 索引 / 清理]
+    DB --> I[integrations:通知 / 索引 / 清理]
     I -->|受限 HTTP Store API| S[LangGraph Store 检索索引]
     W -->|原生 Store 检索 ID| S
     W --> A[工件存储]

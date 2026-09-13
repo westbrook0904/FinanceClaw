@@ -172,10 +172,10 @@ class BirthInput(ZiweiModel):
         description="出生时间或时辰，保留实际精度；用户没提供时不能补造 12:00 等默认时间。",
     )
     time_basis: Literal["civil", "apparent_solar"] | None = Field(
-        default=None,
+        default="civil",
         description=(
             "出生记录时制：civil=当地民用钟表时间，apparent_solar=真太阳"
-            "时。当前仅支持 civil；未明确时制时留空，不根据时区猜测。"
+            "时。当前仅支持 civil；未明确时制时默认使用 civil。"
         ),
     )
     place: BirthPlace | None = Field(

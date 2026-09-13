@@ -31,7 +31,7 @@ class OversizedInterpretationModel(OfflineZiweiModel):
     def _generate(self, messages, stop=None, run_manager=None, **kwargs):
         """只有最终文本变大，取证保持不变。"""
         result = super()._generate(messages, stop=stop, run_manager=run_manager, **kwargs)
-        if not self._bound_tool_names:
+        if isinstance(messages[-1], ToolMessage):
             result.generations[0].message.content = "文" * 12_000
         return result
 
@@ -67,8 +67,9 @@ async def test_absent_chart_fails():
 
 
 @pytest.mark.asyncio
-async def test_finalization_cannot_bypass_persistent_root_budget(tmp_path):
-    """根总预算为 2 时，仅够取证的两个模型轮次，finalization 必须拒绝。"""
+@pytest.mark.parametrize("limit", [1, 2])
+async def test_react_interpretation_uses_persistent_root_budget_without_extra_call(tmp_path, limit):
+    """两次模型额度足以取证并解读；只有一次时仍在解读前被原有总预算拒绝。"""
     stack = components(tmp_path)
     profile = stack.agent_profiles.resolve("ziwei_doushu_agent")
     owner = context(turn_id="ziwei-child")
@@ -80,15 +81,20 @@ async def test_finalization_cannot_bypass_persistent_root_budget(tmp_path):
         thread_id="budget-child",
         input_hash="synthetic",
     )
-    snapshot["limits"]["model"] = 2
+    snapshot["limits"]["model"] = limit
     owner = seed_execution(stack.conversation_repository.execution, owner, snapshot)
     try:
         graph = build_ziwei_agent(
             stack.agent_factory, profile, stack.ziwei_service, model=OfflineZiweiModel()
         )
-        with pytest.raises(ExecutionConflict, match="budget"):
-            await graph.ainvoke(envelope(request(mode="interpretation")), context=owner)
-        assert stack.conversation_repository.execution.get(owner.turn_id)["model_calls"] == 2
+        if limit == 1:
+            with pytest.raises(ExecutionConflict, match="budget"):
+                await graph.ainvoke(envelope(request(mode="interpretation")), context=owner)
+        else:
+            result = await graph.ainvoke(envelope(request(mode="interpretation")), context=owner)
+            assert result["ziwei_result"]["outcome"] == "answer"
+            assert result["ziwei_model_calls"] == 2
+        assert stack.conversation_repository.execution.get(owner.turn_id)["model_calls"] == limit
     finally:
         stack.database.close()
 
