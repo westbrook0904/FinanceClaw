@@ -4,11 +4,38 @@
 SDK 层重试统一关闭（``max_retries=0``），由上层按预算控制重试策略。
 """
 
+from collections.abc import Mapping
+from dataclasses import dataclass
+
 from langchain.chat_models import init_chat_model
 from langchain_core.language_models.chat_models import BaseChatModel
 from pydantic import SecretStr
 
 from financeclaw.kernel.models import ModelProfile, ModelProfileCatalog, ModelProfileRef
+
+
+@dataclass(frozen=True)
+class ModelConnection:
+    """模型连接的运行期凭据；不进入模型档案、发布快照或 tracing metadata。"""
+
+    api_key: SecretStr | None
+    base_url: str | None
+
+
+def configured_connections(
+    settings, refs, *, enabled=True, include_fallbacks=True
+) -> dict[str, ModelConnection]:
+    """按本进程执行用途读取凭据；离线运行不初始化远程连接。"""
+    if not enabled:
+        return {}
+    return {
+        alias: ModelConnection(
+            provider.secret(env_file=settings.model_credentials_env_file), provider.base_url
+        )
+        for alias, provider in settings.model_configuration.active_providers(
+            refs, include_fallbacks=include_fallbacks
+        ).items()
+    }
 
 
 class ModelFactory:
@@ -20,8 +47,7 @@ class ModelFactory:
 
     Attributes:
         catalog: 不可变模型档案目录，负责按 (profile_id, version) 解析档案。
-        _api_key: Provider API 密钥；为 None 交由环境变量等默认机制提供。
-        _base_url: OpenAI 兼容 API 基址；为 None 时使用 SDK 默认端点。
+        _connections: 档案引用的供应商连接目录，按 connection_id 选择地址与凭据。
 
     """
 
@@ -31,6 +57,7 @@ class ModelFactory:
         *,
         api_key: SecretStr | None,
         base_url: str | None,
+        connections: Mapping[str, ModelConnection] | None = None,
     ) -> None:
         """保存目录与连接参数，实际构建延迟到 ``create()`` 调用时。
 
@@ -38,11 +65,11 @@ class ModelFactory:
             catalog: 模型档案目录。
             api_key: Provider API 密钥。
             base_url: OpenAI 兼容 API 基址。
+            connections: 按档案 connection_id 选择的独立连接，缺失引用立即报错。
 
         """
         self.catalog = catalog
-        self._api_key = api_key
-        self._base_url = base_url
+        self._connections = {"default": ModelConnection(api_key, base_url), **(connections or {})}
 
     def create(self, ref: ModelProfileRef) -> BaseChatModel:
         """按档案引用初始化一个聊天模型实例。
@@ -60,6 +87,9 @@ class ModelFactory:
         """
         # 1. 解析档案得到调用参数。
         profile = self.catalog.resolve(ref)
+        if profile.connection_id not in self._connections:
+            raise ValueError(f"model connection is not configured: {profile.connection_id}")
+        connection = self._connections[profile.connection_id]
         kwargs: dict[str, object] = {
             "temperature": profile.temperature,
             "timeout": profile.timeout_seconds,
@@ -68,10 +98,10 @@ class ModelFactory:
             "max_retries": 0,
         }
         # 2. 注入密钥与 OpenAI 兼容基址（如 DeepSeek）。
-        if self._api_key is not None:
-            kwargs["api_key"] = self._api_key.get_secret_value()
-        if self._base_url is not None:
-            kwargs["base_url"] = self._base_url
+        if connection.api_key is not None:
+            kwargs["api_key"] = connection.api_key.get_secret_value()
+        if connection.base_url is not None:
+            kwargs["base_url"] = connection.base_url
         # 通用 ChatOpenAI 不保留 DeepSeek 的 reasoning_content；在完整回传链路
         # 接入前显式使用非思考模式，避免工具往返及澄清恢复时被 Provider 拒绝。
         if profile.model.startswith("openai:deepseek-"):

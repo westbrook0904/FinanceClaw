@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 
 from financeclaw.kernel.agents import AgentProfile, AgentProfileCatalog, ToolRef
-from financeclaw.kernel.models import ModelProfile, ModelProfileCatalog, ModelProfileRef
+from financeclaw.kernel.models import ModelProfileCatalog
 from financeclaw.kernel.tool_catalog import ToolRelease, ToolReleaseCatalog
 from financeclaw.kernel.workflows.catalog import WorkflowCatalog
 from financeclaw.shared.infrastructure.settings import FinanceClawSettings
@@ -27,27 +27,6 @@ class ReleaseCatalogs:
     agent_profiles: AgentProfileCatalog
     tool_catalog: ToolReleaseCatalog
     workflow_catalog: WorkflowCatalog
-
-
-def _model_capacity(settings: FinanceClawSettings, model: str, *, summary=False) -> dict:
-    """在发布时冻结显式容量；未知 fallback 必须配置，不能由模型名称猜窗口。"""
-    override = settings.model_capacities.get(model)
-    if override is not None:
-        allowed = {"context_window_tokens", "max_input_tokens", "token_estimator"}
-        if set(override) - allowed or "context_window_tokens" not in override:
-            raise ValueError("model_capacities must explicitly declare the context window")
-        return {"token_estimator": settings.model_token_estimator, **override}
-    if model != settings.model and not summary:
-        raise ValueError(f"fallback model requires explicit model_capacities: {model}")
-    return {
-        "context_window_tokens": settings.summary_context_window_tokens
-        if summary
-        else settings.model_context_window_tokens,
-        "max_input_tokens": settings.summary_max_input_tokens
-        if summary
-        else settings.model_max_input_tokens,
-        "token_estimator": settings.model_token_estimator,
-    }
 
 
 def build_release_catalogs(
@@ -78,46 +57,46 @@ def build_release_catalogs(
         if enable_persistence
         else ()
     )
-    # 8. 装配模型档案目录：主模型 + 按序降级的候选模型链（fallback）。
-    fallback_profiles = tuple(
-        ModelProfile(
-            profile_id=f"fallback-{index}",
-            version="1.0.0",
-            model=model,
-            temperature=0,
-            timeout_seconds=settings.model_timeout_seconds,
-            max_tokens=settings.model_max_tokens,
-            **_model_capacity(settings, model),
+    configuration = settings.model_configuration
+    model_profiles = ModelProfileCatalog(configuration.profiles())
+    unknown_agents = set(configuration.agents) - {
+        "finance_agent",
+        "ziwei_doushu_agent",
+        "market_research_agent",
+    }
+    if unknown_agents:
+        raise ValueError(f"unknown Agent model bindings: {sorted(unknown_agents)}")
+    used_profiles = {
+        profile.key: profile
+        for ref in configuration.agent_refs(ziwei_enabled=settings.ziwei_enabled)
+        for profile in model_profiles.dependencies(ref)
+    }
+    for profile in used_profiles.values():
+        if profile.max_tokens > settings.context_reserved_output:
+            raise ValueError(f"context output reserve must cover model alias: {profile.profile_id}")
+        available = min(
+            settings.context_input_limit,
+            profile.max_input_tokens or profile.context_window_tokens,
+            profile.context_window_tokens - settings.context_reserved_output,
         )
-        for index, model in enumerate(settings.fallback_models, start=1)
-    )
-    primary_profile = ModelProfile(
-        profile_id="default",
-        version="1.0.0",
-        model=settings.model,
-        temperature=0,
-        timeout_seconds=settings.model_timeout_seconds,
-        max_tokens=settings.model_max_tokens,
-        **_model_capacity(settings, settings.model),
-        fallback_profiles=tuple(
-            ModelProfileRef(profile_id=profile.profile_id, version=profile.version)
-            for profile in fallback_profiles
-        ),
-    )
-    summary_profile = ModelProfile(
-        profile_id="summary",
-        version="1.0.0",
-        model=settings.summary_model or settings.model,
-        temperature=0,
-        timeout_seconds=settings.model_timeout_seconds,
-        max_tokens=settings.summary_max_tokens,
-        **_model_capacity(settings, settings.summary_model or settings.model, summary=True),
-    )
-    model_profiles = ModelProfileCatalog((primary_profile, *fallback_profiles, summary_profile))
+        reserves = (
+            settings.context_system_policy_reserve
+            + settings.context_tool_schema_reserve
+            + settings.context_safety_margin
+        )
+        if available - reserves < 256:
+            raise ValueError(f"insufficient context budget for model alias: {profile.profile_id}")
     from financeclaw.shared.llm.memory_profiles import memory_model_profiles
     from financeclaw.shared.releases.fingerprint import configuration_fingerprint
 
-    model_release = (primary_profile, *fallback_profiles)
+    def model_ref(agent_id):
+        """按 Agent 覆盖或默认别名解析固定模型引用。"""
+        return configuration.ref(agent_id)
+
+    def model_release(agent_id):
+        """仅把该 Agent 可达的模型和端点纳入其发布身份。"""
+        return configuration.release(model_ref(agent_id))
+
     # 10. 定义只读市场调研领域 Agent：仅暴露市场类工具，不允许二次子图调用或写操作。
     domain_tool_refs = tuple(
         ToolRef(
@@ -167,7 +146,7 @@ def build_release_catalogs(
             "and returns a concise synthesis to the parent Agent."
         ),
         required_scopes=frozenset({"market:read"}),
-        model_profile=ModelProfileRef(profile_id="default", version="1.0.0"),
+        model_profile=model_ref("market_research_agent"),
         system_prompt_template=(
             "You are FinanceClaw's read-only market research domain Agent. Complete only the "
             "bounded task supplied by the orchestrator, use the available market Tools "
@@ -184,7 +163,7 @@ def build_release_catalogs(
         ),
         allowed_tools=domain_tool_refs,
         configuration_fingerprint=configuration_fingerprint(
-            model_release,
+            model_release("market_research_agent"),
             settings.offline_model,
             MarketResearchInput.model_json_schema(),
             MarketResearchResult.model_json_schema(),
@@ -206,7 +185,7 @@ def build_release_catalogs(
     specialist = ziwei_profile(
         configuration_fingerprint(
             configuration_fingerprint(
-                model_release,
+                model_release("ziwei_doushu_agent"),
                 settings.offline_model,
                 convention,
                 settings.ziwei_enabled,
@@ -223,6 +202,7 @@ def build_release_catalogs(
             "ziwei-five-tools-v1-text-result-v2",
         )
     )
+    specialist = specialist.model_copy(update={"model_profile": model_ref("ziwei_doushu_agent")})
     tool_catalog = ToolReleaseCatalog((*base_tool_catalog.values(), *chart_tools))
     workers = (domain_agent_profile, specialist)
     from financeclaw.shared.releases.subgraphs import (
@@ -243,16 +223,15 @@ def build_release_catalogs(
         agent_id="finance_agent",
         version="1.6.0",
         assistant_id="finance_agent",
-        deployment_revision="context-memory/2+taibu-mcp/1"
-        if settings.taibu_enabled
-        else "context-memory/2",
+        deployment_revision="context-memory/2+clarification-fields/1"
+        + ("+taibu-mcp/1" if settings.taibu_enabled else ""),
         worker_manifest=manifest,
         interaction_points=(ROOT_CLARIFICATION,),
         data_classification=DataClassification.CONFIDENTIAL
         if settings.ziwei_enabled
         or (settings.taibu_enabled and "bazi" in settings.taibu_allowed_tools)
         else DataClassification.INTERNAL,
-        model_profile=ModelProfileRef(profile_id="default", version="1.0.0"),
+        model_profile=model_ref("finance_agent"),
         memory_policy="sql-memory-v3",
         allowed_tools=tuple(
             ToolRef(tool_id=item.governance.tool_id, version=item.governance.version)
@@ -260,13 +239,11 @@ def build_release_catalogs(
         )
         + tuple(ToolRef(tool_id=composite_name(item), version=item.version) for item in reachable),
         configuration_fingerprint=configuration_fingerprint(
-            model_release,
-            summary_profile,
+            model_release("finance_agent"),
+            configuration.release(configuration.task_ref("summary")),
             settings.offline_model,
             manifest,
             settings.context_budget,
-            settings.summary_model,
-            settings.summary_max_tokens,
             settings.embedding_model,
             settings.embedding_base_url,
             settings.embedding_dimensions,

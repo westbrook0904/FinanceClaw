@@ -2,6 +2,8 @@
 
 统一部署使用 `compose.yml`。将 `unified.env.example` 复制到 `.env`、`memory.env.example` 复制到 `.env.memory` 后填写凭据。四个角色使用同一镜像；memory_worker 仅加载独立环境文件和有限权限数据库身份，不接收业务管理员、产品、渠道或原生 Store 凭据。两个文件中的 `MEMORY_POSTGRES_PASSWORD` 必须一致。使用 `FINANCECLAW_MEMORY_ENV_FILE` 可以指定另一个记忆环境文件路径。
 
+模型服务商、名称、容量及默认别名统一在 `config/models.toml` 声明，环境文件通过 `FINANCECLAW_MODEL_CONFIG_PATH` 指定同一文件，并分别注入本进程需要的模型密钥。Agent、摘要和记忆任务未单独指定时都使用 `defaults.model`，详见[统一模型配置](../../docs/operations/model-configuration.md)。
+
 - development/test：允许静态产品 Bearer 认证和确定性离线模型。
 - production：使用 `production.env.example` 的 OIDC、PostgreSQL、加密 S3、遥测和隐私策略；令牌由 Secret Manager 注入。
 - `FINANCECLAW_INTEGRATION_SERVICE_TOKEN` 至少 32 字符；用于渠道入口和限定 Store namespace 的维护，不能操作原生运行。

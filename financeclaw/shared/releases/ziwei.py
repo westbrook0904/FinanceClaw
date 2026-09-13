@@ -38,7 +38,7 @@ def ziwei_profile(configuration_fingerprint: str) -> AgentProfile:
         agent_id="ziwei_doushu_agent",
         version="2.2.0",
         assistant_id="ziwei_doushu_agent_v2_2_0",
-        deployment_revision="ziwei-five-tools/1",
+        deployment_revision="ziwei-five-tools/2",
         configuration_fingerprint=configuration_fingerprint,
         description=(
             "紫微斗数只读排盘与传统文化解读；支持本命、大限、流年、流月和流日。"

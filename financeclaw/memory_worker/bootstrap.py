@@ -11,7 +11,7 @@ from financeclaw.memory_worker.model import OfflineMemoryModel, StructuredMemory
 from financeclaw.memory_worker.runner import MemoryJobRunner
 from financeclaw.shared.infrastructure.database import ApplicationDatabase
 from financeclaw.shared.infrastructure.security.egress import EgressPolicy
-from financeclaw.shared.llm.factory import ModelFactory
+from financeclaw.shared.llm.factory import ModelFactory, configured_connections
 from financeclaw.shared.llm.memory_profiles import memory_model_profiles
 from financeclaw.shared.memory.tables import (
     MemoryExtractionRow,
@@ -36,17 +36,24 @@ def build_memory_worker(settings) -> MemoryWorkerResources:
     """Keep both worker purposes separately bounded and freeze their complete profiles."""
     if settings.process_role != "memory_worker":
         raise ValueError("memory worker process_role is required")
-    if not settings.offline_model and settings.provider_base_url:
-        EgressPolicy(
-            settings.egress_allowed_hosts,
-            require_https=settings.environment.value in {"staging", "production"},
-        ).validate(settings.provider_base_url)
     profiles = memory_model_profiles(settings)
     enabled = settings.memory_enabled and settings.memory_auto_extract
+    refs = settings.model_configuration.memory_refs()
+    if not settings.offline_model and enabled:
+        for provider in settings.model_configuration.active_providers(
+            refs, include_fallbacks=False
+        ).values():
+            EgressPolicy(
+                settings.egress_allowed_hosts,
+                require_https=settings.environment.value in {"staging", "production"},
+            ).validate(provider.base_url)
     factory = ModelFactory(
         ModelProfileCatalog(profiles),
-        api_key=settings.provider_api_key,
-        base_url=settings.provider_base_url,
+        api_key=None,
+        base_url=None,
+        connections=configured_connections(
+            settings, refs, enabled=enabled and not settings.offline_model, include_fallbacks=False
+        ),
     )
     database = ApplicationDatabase(
         settings.database_url.get_secret_value(),
@@ -66,7 +73,7 @@ def build_memory_worker(settings) -> MemoryWorkerResources:
                 ),
                 profile,
                 outbox,
-                timeout_seconds=settings.memory_model_timeout_seconds,
+                timeout_seconds=profile.timeout_seconds,
             )
             for profile in profiles
         ]

@@ -36,6 +36,7 @@ class ModelProfile(BaseModel):
         profile_id: 档案标识。
         version: 档案版本，须符合语义化版本。
         model: 模型标识，格式为 ``provider:model``（如 ``openai:deepseek-v4-pro``）。
+        connection_id: 服务商连接引用，只保存标识，不携带地址或密钥。
         temperature: 采样温度 [0, 2]，金融场景默认 0 以保证确定性。
         timeout_seconds: 单次调用超时（秒），取值范围 (0, 600]。
         max_tokens: 单次生成的最大 token 数，下限 64。
@@ -55,6 +56,7 @@ class ModelProfile(BaseModel):
     profile_id: str
     version: str = Field(pattern=r"^\d+\.\d+\.\d+$")
     model: str
+    connection_id: str = "default"
     temperature: float = Field(default=0, ge=0, le=2)
     timeout_seconds: float = Field(default=60, gt=0, le=600)
     max_tokens: int = Field(default=4096, ge=64)
@@ -144,3 +146,19 @@ class ModelProfileCatalog(Mapping[tuple[str, str], ModelProfile]):
             return self._entries[(ref.profile_id, ref.version)]
         except KeyError as exc:
             raise LookupError(f"unknown model profile: {ref.profile_id}@{ref.version}") from exc
+
+    def dependencies(self, ref: ModelProfileRef) -> tuple[ModelProfile, ...]:
+        """只收集当前模型与可达降级档案，避免其他 Agent 的模型污染发布身份。"""
+        profiles: dict[tuple[str, str], ModelProfile] = {}
+
+        def visit(reference):
+            """递归收集引用的档案，每个版本只加入一次。"""
+            profile = self.resolve(reference)
+            if profile.key in profiles:
+                return
+            profiles[profile.key] = profile
+            for fallback in profile.fallback_profiles:
+                visit(fallback)
+
+        visit(ref)
+        return tuple(profiles.values())

@@ -26,6 +26,8 @@ API 默认监听 `127.0.0.1:8000`。原生 API 必须配置 `N_JOBS_PER_WORKER=0
 
 本地示例使用确定性离线模型和共享本地制品卷。真实 Provider、OIDC、加密 S3、飞书与观测配置见 [环境说明](config/environments/README.md) 和[本地完整链路](docs/operations/local-full-stack.md)。生产部署从 `production.env.example` 注入策略与密钥，使用不可变应用镜像摘要。
 
+模型供应商、默认别名及 Agent / 摘要 / 记忆任务覆盖统一在 [config/models.toml](config/models.toml) 声明；未覆盖的用途使用默认模型。配置方式见[模型配置](docs/operations/model-configuration.md)。
+
 ## 产品接口
 
 先 `POST /v1/conversations`，再向 `POST /v1/conversations/{id}/turns` 提交 `{"message":"..."}` 和 `Idempotency-Key`，返回 202 与 `turn_id`。API 不接受用户指定的 thread、checkpoint、native run 或 callback。

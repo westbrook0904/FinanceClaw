@@ -15,13 +15,15 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 @pytest.mark.parametrize("model_name", ["deepseek-v4-pro", "deepseek-v4-flash"])
-def test_deepseek_openai_compatible_configuration_is_explicit(model_name: str) -> None:
+def test_deepseek_openai_compatible_configuration_is_explicit(model_name: str, tmp_path) -> None:
     """验证函数名所描述的业务场景符合预期。"""
+    configuration = tmp_path / "models.toml"
+    configuration.write_text(
+        (ROOT / "tests/fixtures/models.toml").read_text().replace("deepseek-v4-pro", model_name)
+    )
     settings = FinanceClawSettings(
         environment="test",
-        model=f"openai:{model_name}",
-        provider_base_url="https://api.deepseek.com",
-        provider_api_key=SecretStr("test-placeholder"),
+        model_config_path=str(configuration),
         debug_full_io=False,
     )
     components = build_components(settings)

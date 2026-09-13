@@ -13,6 +13,7 @@ from pydantic import ValidationError
 
 from financeclaw.agent_server.agents.factory import AgentFactory
 from financeclaw.agent_server.domains.ziwei.application import ZiweiService
+from financeclaw.agent_server.domains.ziwei.clarification import merge_clarification_questions
 from financeclaw.agent_server.domains.ziwei.errors import ZiweiError
 from financeclaw.agent_server.domains.ziwei.tool_inputs import tool_schema_error
 from financeclaw.kernel.agents import AgentProfile
@@ -170,9 +171,7 @@ class ZiweiEvidenceMiddleware(AgentMiddleware):
             if clarification:
                 result = clarification[0].model_copy(
                     update={
-                        "question": "\n".join(
-                            dict.fromkeys(item.question for item in clarification)
-                        ),
+                        "question": merge_clarification_questions(clarification),
                         "missing_fields": tuple(
                             dict.fromkeys(
                                 field for item in clarification for field in item.missing_fields

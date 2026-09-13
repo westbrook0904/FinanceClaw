@@ -11,6 +11,7 @@ from financeclaw.agent_server.agents.ziwei_offline import OfflineZiweiModel, off
 from financeclaw.agent_server.domains.ziwei.errors import ZiweiError
 from financeclaw.kernel.ziwei import ZiweiTextResult
 from tests.stage7.support import build_ziwei_agent, components, context, envelope, request
+from tests.stage7.test_function_calling import invoke
 
 
 class RepeatingEvidenceModel(OfflineZiweiModel):
@@ -109,6 +110,27 @@ async def test_parallel_evidence_failures_have_one_terminal_result(monkeypatch):
     assert {m.tool_call_id for m in receipts} == {"chart-1-0", "chart-1-1"}
     assert all(m.status == "error" for m in receipts)
     assert RepeatingEvidenceModel.calls == ["evidence"]
+
+
+@pytest.mark.asyncio
+async def test_overlapping_tool_clarifications_ask_each_field_once():
+    """本命缺时辰、流年缺时辰及年份时，实际校验回执合成一份无重复问题。"""
+    stack = components()
+    arguments = request(level="natal", target=None).model_dump(mode="json")
+    arguments["birth"]["time"] = {"kind": "range", "clock": "13:00", "end": "15:00"}
+    result = await invoke(stack, [[arguments, {**arguments, "level": "yearly"}]])
+    public = ZiweiTextResult.model_validate(result["ziwei_result"])
+    assert public.outcome == "needs_clarification"
+    assert public.question.count("出生时间区间跨时辰，请进一步确认。") == 1
+    assert public.question.count("要查询的年份") == 1
+    assert public.missing_fields == ("birth.time", "year")
+    assert [issue.field for issue in public.issues] == ["birth.time", "year"]
+    assert result["ziwei_model_calls"] == 1
+    receipts = [message for message in result["messages"] if isinstance(message, ToolMessage)]
+    assert [message.tool_call_id for message in receipts] == ["chart-0-0", "chart-0-1"]
+    assert all(message.status == "error" for message in receipts)
+    assert json.loads(receipts[0].content)["missing_fields"] == ["birth.time"]
+    assert json.loads(receipts[1].content)["missing_fields"] == ["birth.time", "year"]
 
 
 @pytest.mark.asyncio

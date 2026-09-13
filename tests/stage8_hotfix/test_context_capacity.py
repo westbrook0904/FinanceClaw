@@ -41,7 +41,7 @@ def test_disabled_tokenizer_cache_never_loads_encoding(tmp_path, monkeypatch):
     assert counter.truncate("中文 abc", 5) == "中"
 
 
-@pytest.mark.parametrize("changes", [{"model_max_tokens": 65_536}, {"context_input_limit": 4096}])
+@pytest.mark.parametrize("changes", [{"context_input_limit": 4096}])
 def test_invalid_generation_or_reserve_budget_is_rejected(tmp_path, changes):
     """不能把最大生成量设得高于预留，或让各预留占满上下文。"""
     with pytest.raises(ValidationError, match="context"):

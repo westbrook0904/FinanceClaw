@@ -17,7 +17,7 @@ from financeclaw.agent_server.tools.memory import default_memory_tools
 from financeclaw.agent_server.tools.policy import ToolPolicy
 from financeclaw.agent_server.tools.taibu import taibu_tools
 from financeclaw.kernel.agents import AgentProfile, AgentProfileCatalog
-from financeclaw.kernel.models import ModelProfileCatalog, ModelProfileRef
+from financeclaw.kernel.models import ModelProfileCatalog
 from financeclaw.kernel.tool_catalog import ToolRelease, ToolReleaseCatalog
 from financeclaw.kernel.workflows.catalog import WorkflowCatalog
 from financeclaw.shared.artifacts.service import ArtifactService
@@ -31,7 +31,7 @@ from financeclaw.shared.infrastructure.database import ApplicationDatabase
 from financeclaw.shared.infrastructure.resources import ApplicationResources, build_resources
 from financeclaw.shared.infrastructure.settings import FinanceClawSettings
 from financeclaw.shared.llm.budget import ContextBudget
-from financeclaw.shared.llm.factory import ModelFactory
+from financeclaw.shared.llm.factory import ModelFactory, configured_connections
 from financeclaw.shared.outbox.repository import OutboxRepository
 from financeclaw.shared.releases.catalog import build_release_catalogs
 
@@ -172,7 +172,14 @@ def build_components(
     model_profiles = releases.model_profiles
     agent_profiles = releases.agent_profiles
     model_factory = ModelFactory(
-        model_profiles, api_key=settings.provider_api_key, base_url=settings.provider_base_url
+        model_profiles,
+        api_key=None,
+        base_url=None,
+        connections=configured_connections(
+            settings,
+            settings.model_configuration.agent_refs(ziwei_enabled=settings.ziwei_enabled),
+            enabled=not settings.offline_model,
+        ),
     )
     from financeclaw.agent_server.domains.ziwei.adapters.x_iztro import XIztroEngine
     from financeclaw.agent_server.domains.ziwei.service import ZiweiCalculationService
@@ -199,7 +206,7 @@ def build_components(
         debug_full_io=settings.debug_full_io,
         context_budget=context_budget,
         model_max_retries=settings.model_max_retries,
-        summary_profile=ModelProfileRef(profile_id="summary", version="1.0.0"),
+        summary_profile=settings.model_configuration.task_ref("summary"),
         conversation_repository=conversation_repository,
         artifact_service=artifact_service,
         memory_service=memory_service,

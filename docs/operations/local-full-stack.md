@@ -7,7 +7,7 @@
 3. `docker compose up -d` 先在空应用库执行初始迁移，再启动 API 与其余角色。
 4. 检查 `http://127.0.0.1:8000/v1/health/ready`；使用产品 Bearer Token 创建 Conversation 与 Turn。
 
-默认离线模型是确定性验证模型，不代表真实行情或模型回答质量。真实 DeepSeek 配置为 `FINANCECLAW_OFFLINE_MODEL=false`，并填写 `MODEL`、`PROVIDER_BASE_URL`、`PROVIDER_API_KEY`。API 与 Worker 的模型名、发布策略、领域开关必须一致。
+默认离线模型是确定性验证模型，不代表真实行情或模型回答质量。使用真实模型时设置 `FINANCECLAW_OFFLINE_MODEL=false`，在 `config/models.toml` 中配置供应商、模型及默认别名，并通过环境文件注入 `api_key_env` 引用的密钥。API 与各 Worker 应读取同一份 TOML，发布策略、领域开关保持一致，详见[统一模型配置](model-configuration.md)。
 
 本地默认制品目录挂载到所有角色的 `/data/artifacts`。生产使用 `production.env.example` 的 S3 加密与 OIDC 设置；S3 endpoint 及遥测地址须存在并通过主机 allowlist。Compose 不自动创建生产对象桶、OIDC 或遥测服务。
 

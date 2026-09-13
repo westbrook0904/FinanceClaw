@@ -1,0 +1,53 @@
+[defaults]
+model = "ziwei-main"
+
+# 默认读取本文件；可通过 FINANCECLAW_MODEL_CONFIG_PATH 指定其他 TOML。
+# 模型容量需按实际服务确认；这里沿用项目现有 DeepSeek 默认配置。
+
+[providers.deepseek]
+base_url = "https://api.deepseek.com"
+api_key_env = "FINANCECLAW_DEEPSEEK_API_KEY"
+
+[providers.qwen]
+base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+api_key_env = "FINANCECLAW_QWEN_API_KEY"
+
+
+[models.root-main]
+provider = "qwen"
+model = "openai:qwen3.8-flash"
+temperature = 0
+timeout_seconds = 300
+max_tokens = 32768
+context_window_tokens = 131072
+# fallbacks = ["root-backup"]
+
+[models.ziwei-main]
+provider = "qwen"
+model = "openai:qwen3.8-flash"
+temperature = 0
+timeout_seconds = 300
+max_tokens = 32768
+context_window_tokens = 131072
+
+# 添加 OpenAI 兼容供应商时，取消下面注释并填写真实地址、模型和容量。
+# [providers.new-provider]
+# base_url = "https://provider.example/v1"
+# api_key_env = "NEW_PROVIDER_API_KEY"
+#
+# [models.root-next]
+# provider = "new-provider"
+# model = "openai:实际模型 ID"
+# max_tokens = 8192
+# context_window_tokens = 131072 # 替换为服务商确认的容量
+
+[agents]
+finance_agent = "root-main"
+ziwei_doushu_agent = "ziwei-main"
+# 未指定的 Agent 和后台任务均使用 defaults.model；下面是可选覆盖：
+# market_research_agent = "root-main"
+
+# [tasks]
+# summary = "ziwei-main"
+# memory_extraction = "ziwei-main"
+# memory_consolidation = "ziwei-main"

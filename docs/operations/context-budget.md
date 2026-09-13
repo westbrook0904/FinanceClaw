@@ -20,12 +20,12 @@
 | `MEMORY_EXTRACTION_CONCURRENCY` | 2 | 每进程提取并发 |
 | `MEMORY_CONSOLIDATION_CONCURRENCY` | 1 | 每进程整合并发；同 owner 仍由 SQL 串行化 |
 | `MEMORY_WORKER_LEASE_SECONDS` / `MEMORY_WORKER_RENEW_SECONDS` | 120 / 20 | 任务租约和续租间隔 |
-| `MEMORY_MODEL_TIMEOUT_SECONDS` | 45 | 每次后台模型调用超时 |
-| `MEMORY_EXTRACTION_MODEL` / `MEMORY_CONSOLIDATION_MODEL` | 主模型 | 分别冻结的结构化模型档案 |
 | `MEMORY_MODEL_ALLOWED_DATA_CLASSES` | 全部已知分级 | 后台模型可处理的来源最高分类 |
 | `MEMORY_MODEL_ALLOWED_REGIONS` | `["global"]` | 后台模型允许处理的区域 |
 | `PROCESSING_REGION` | global | 受理时写入执行快照和来源许可的处理区域 |
 | `MEMORY_RECALL_TOKENS` / `MEMORY_RECALL_LIMIT` | 4096 / 6 | 任务检索与目录的有限注入预算 |
+
+模型与调用超时统一在 [TOML 模型配置](model-configuration.md) 中声明。`tasks.memory_extraction` 和 `tasks.memory_consolidation` 可分别绑定别名，省略时使用 `defaults.model`；实际超时来自模型别名的 `timeout_seconds`。
 
 来源、模型档案、pipeline、schema、policy 版本在任务中冻结。不同版本的部署不能静默接管旧模型任务；过期、撤销、无输出分别留下正常完成回执。模型调用次数和输入/输出预算在发请求前预留并持久化，重启或重领不重置。
 
@@ -66,7 +66,7 @@ docker compose exec memory_worker python deploy/memory_worker_entrypoint.py oper
 
 ## 上下文容量与压缩
 
-`MODEL_CONTEXT_WINDOW_TOKENS`、`MODEL_MAX_INPUT_TOKENS`、`MODEL_MAX_TOKENS` 和 `MODEL_CAPACITIES` 冻结真实模型容量；fallback 使用所有候选的共同最小窗口。输入上限综合独立输入 cap、总窗口减输出预留和应用上限，独立输入 cap 不再重复扣输出。
+TOML 中模型别名的 `context_window_tokens`、`max_input_tokens` 和 `max_tokens` 冻结真实模型容量；fallback 使用所有候选的共同最小窗口。输入上限综合独立输入 cap、总窗口减输出预留和应用上限，独立输入 cap 不再重复扣输出。
 
 一个 Turn 冻结 SQL 画像和有限任务目录，普通新任务不强制做 embedding 查询；明确历史延续或 `search_memories` 才检索。Store 不可用或没有有效命中时有界回退 SQL。后台普通更新下一 Turn 生效；遗忘/关闭读取/source 隐藏提高隐私版本，每次真正模型尝试都重新检查。画像和检索内容仍是历史数据，不能成为交易授权、当前行情或可执行指令。
 

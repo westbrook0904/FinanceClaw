@@ -115,6 +115,47 @@ async def test_parallel_clarifications_preserve_all_receipts_and_do_not_retry(
 
 
 @pytest.mark.asyncio
+async def test_same_subject_worker_clarifications_merge_fields_and_keep_requests(stack):
+    """同一对象的两个 Worker 缺项重叠时只问一次，保留各调用供回答后继续。"""
+    FabricatingRootModel.rounds = 0
+    arguments = request(subject_label="甲", level="natal", target=None).model_dump(mode="json")
+    arguments["birth"]["time"] = {"kind": "range", "clock": "13:00", "end": "15:00"}
+    calls = [
+        call(
+            "call_agent__ziwei_doushu_agent",
+            index,
+            task="甲排盘",
+            arguments={**arguments, "level": level},
+        )
+        for index, level in ((1, "natal"), (2, "yearly"))
+    ]
+    graph, kwargs = root_graph(stack, calls, model=FabricatingRootModel(calls=calls))
+    result = await graph.ainvoke(
+        {"messages": [HumanMessage(content="甲的本命与流年", id="root-input")]}, **kwargs
+    )
+    assert len(result["__interrupt__"]) == 1
+    question = result["__interrupt__"][0].value["question"]
+    assert question.count("出生时间区间跨时辰，请进一步确认。") == 1
+    assert question.count("要查询的年份") == 1
+    assert FabricatingRootModel.rounds == 1
+    receipts = [message for message in result["messages"] if isinstance(message, ToolMessage)]
+    assert [message.tool_call_id for message in receipts] == ["call-1", "call-2"]
+    requests = result["messages"][-1].additional_kwargs["clarification_requests"]
+    assert requests == [
+        {
+            "tool_call_id": message.tool_call_id,
+            "tool": message.name,
+            "subject_label": "甲",
+            "missing_fields": json.loads(message.content)["missing_fields"],
+            "question": json.loads(message.content)["question"],
+        }
+        for message in receipts
+    ]
+    assert requests[0]["missing_fields"] == ["birth.time"]
+    assert requests[1]["missing_fields"] == ["birth.time", "year"]
+
+
+@pytest.mark.asyncio
 async def test_clarification_cannot_bypass_cancellation(stack, monkeypatch):
     """不调用第二次模型也必须复验根授权与取消状态。"""
     from financeclaw.agent_server.domains.ziwei.errors import ZiweiError

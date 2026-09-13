@@ -57,6 +57,8 @@ def is_parallel_read_worker(declaration: str) -> bool:
 def worker_declaration(release, tools, models):
     """Pin profile, schemas, models, leaf governance and human interaction declarations."""
     agent = isinstance(release, AgentProfile)
+    # 当前确定性工作流不调用模型；Agent 只固定自身使用的档案与降级候选。
+    model_dependencies = models.dependencies(release.model_profile) if agent else ()
     profile = (
         release.model_dump(mode="json")
         if agent
@@ -78,7 +80,7 @@ def worker_declaration(release, tools, models):
         "profile": profile,
         "input_schema": release.input_schema.model_json_schema(),
         "output_schema": release.output_schema.model_json_schema(),
-        "models": [model.model_dump(mode="python") for model in models.values()],
+        "models": [model.model_dump(mode="python") for model in model_dependencies],
         "tools": [
             tools.resolve(ref.tool_id, ref.version).governance.model_dump(mode="python")
             for ref in release.allowed_tools

@@ -1,0 +1,25 @@
+[defaults]
+model = "default"
+
+[providers.default]
+base_url = "https://api.deepseek.com"
+api_key_env = "FINANCECLAW_TEST_MODEL_API_KEY"
+
+[models.default]
+provider = "default"
+model = "openai:deepseek-v4-pro"
+max_tokens = 32768
+timeout_seconds = 300
+context_window_tokens = 131072
+
+[models.summary]
+provider = "default"
+model = "openai:deepseek-v4-pro"
+max_tokens = 4096
+timeout_seconds = 45
+context_window_tokens = 131072
+
+[tasks]
+summary = "summary"
+memory_extraction = "summary"
+memory_consolidation = "summary"

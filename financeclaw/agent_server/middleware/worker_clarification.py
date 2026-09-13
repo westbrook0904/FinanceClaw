@@ -6,8 +6,10 @@ from langchain.agents.middleware import AgentMiddleware, hook_config
 from langchain_core.messages import AIMessage, ToolMessage
 from pydantic import ValidationError
 
+from financeclaw.agent_server.domains.ziwei.clarification import merge_clarification_questions
 from financeclaw.agent_server.middleware.middleware import _context
 from financeclaw.agent_server.tools.subgraphs import SubagentTool
+from financeclaw.kernel.ziwei import ZiweiTextResult
 from financeclaw.shared.releases.interactions import CLARIFICATION_TOOL
 from financeclaw.shared.turns.snapshots import verify_agent_snapshot
 from financeclaw.shared.turns.types import ExecutionConflict, digest
@@ -42,7 +44,7 @@ class WorkerClarificationMiddleware(AgentMiddleware):
             if isinstance(previous, AIMessage)
             else {}
         )
-        questions, requests = [], []
+        groups, requests = {}, []
         for receipt in reversed(receipts):
             if receipt.name == CLARIFICATION_TOOL and receipt.status == "error":
                 raise ExecutionConflict("root clarification tool failed; no user answer received")
@@ -71,10 +73,9 @@ class WorkerClarificationMiddleware(AgentMiddleware):
                         "question": question,
                     }
                 )
-                item = (getattr(public, "subject_label", ""), question)
-                if item not in questions:
-                    questions.append(item)
-        if not questions:
+                key = (receipt.name, getattr(public, "subject_label", ""))
+                groups.setdefault(key, []).append(public)
+        if not groups:
             return None
         context = _context(runtime.context)
         if self.execution is None:
@@ -84,7 +85,16 @@ class WorkerClarificationMiddleware(AgentMiddleware):
         if execution["cancel_requested_at"]:
             raise ExecutionConflict("root cancellation requested")
         verify_agent_snapshot(self.profile, execution["release_snapshot"])
-        # 多个对象分别提问；同对象相同问题去重。不得生成新的缺失字段值。
+        # 展示按 Worker 类型和对象分组，原始 requests 保留各调用的缺项和问题供恢复。
+        questions = [
+            (
+                label,
+                merge_clarification_questions(items)
+                if all(isinstance(item, ZiweiTextResult) for item in items)
+                else "\n\n".join(dict.fromkeys(item.question for item in items)),
+            )
+            for (_, label), items in groups.items()
+        ]
         content = (
             questions[0][1]
             if len(questions) == 1

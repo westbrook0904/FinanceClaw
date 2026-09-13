@@ -6,10 +6,11 @@
 """
 
 from enum import StrEnum
-from typing import Literal
+from functools import cached_property
+from typing import Any, Literal
 from urllib.parse import urlparse
 
-from pydantic import Field, SecretStr, model_validator
+from pydantic import Field, PrivateAttr, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from financeclaw.kernel.context import DataClassification
@@ -55,15 +56,9 @@ class FinanceClawSettings(BaseSettings):
 
     Attributes:
         environment: 部署环境，驱动各处的环境差异分支与安全基线强度。
-        model: 主模型标识，格式为 ``provider:model``（如 ``openai:deepseek-v4-pro``）。
-        fallback_models: 主模型不可用时的降级模型序列，按顺序尝试，格式同 ``model``。
-        provider_base_url: LLM Provider 的 OpenAI 兼容 API 基址，启动时经出站 allowlist 校验。
-        provider_api_key: Provider API 密钥，SecretStr 防止其在日志与报错中泄露。
         offline_model: 是否以离线桩模型运行，仅用于开发与测试，生产禁止开启。
         debug_full_io: 是否在日志与追踪中记录完整模型输入输出，生产必须关闭。
         log_level: 结构化日志级别（如 INFO、DEBUG）。
-        model_timeout_seconds: 单次模型调用超时（秒），取值范围 (0, 600]。
-        model_max_tokens: 单次生成允许的最大 token 数，取值范围 [64, 384000]。
         model_max_retries: 模型调用最大重试次数，取值范围 [0, 8]。
         read_max_attempts: 读操作（幂等查询类）的最大尝试次数，取值范围 [1, 8]。
         approval_timeout_seconds: 工作流人工审批的等待超时（秒），超时按未决处理。
@@ -125,7 +120,6 @@ class FinanceClawSettings(BaseSettings):
         context_summary_trigger_tokens: 旧 Turn 摘要触发阈值。
         context_soft_input_tokens: 原生工具结果清理的软目标。
         context_tool_results_to_keep: 清理时保留的最近工具结果数。
-        summary_model: 可独立配置的摘要模型名。
         embedding_model: 独立 embedding 模型名，画像直接读取不依赖此模型。
         embedding_dimensions: 必须与原生 Store index 的 dims 一致。
         artifact_retention_days: 工件默认保留天数，活动引用延后回收。
@@ -143,10 +137,6 @@ class FinanceClawSettings(BaseSettings):
     )
 
     environment: Environment = Environment.DEVELOPMENT
-    model: str = "openai:deepseek-v4-pro"
-    fallback_models: tuple[str, ...] = ()
-    provider_base_url: str | None = "https://api.deepseek.com"
-    provider_api_key: SecretStr | None = None
     offline_model: bool = False
     ziwei_enabled: bool = False
     # 默认不放行紫微完整 I/O；开发/测试联调需显式开启此例外，
@@ -158,13 +148,9 @@ class FinanceClawSettings(BaseSettings):
     ziwei_projection_bytes: int = Field(default=14_000, ge=2_048, le=64_000)
     debug_full_io: bool = True
     log_level: str = "INFO"
-    model_timeout_seconds: float = Field(default=300.0, gt=0, le=600)
-    model_max_tokens: int = Field(default=32_768, ge=64, le=384_000)
     model_max_retries: int = Field(default=2, ge=0, le=8)
-    model_context_window_tokens: int = Field(default=131_072, ge=1_024)
-    model_max_input_tokens: int | None = Field(default=None, ge=1_024)
-    model_token_estimator: str = "cl100k_base-v1"
-    model_capacities: dict[str, dict[str, int | str | None]] = Field(default_factory=dict)
+    # 统一声明模型连接、参数、默认别名及各用途覆盖；每个进程启动后固定。
+    model_config_path: str = "config/models.toml"
     read_max_attempts: int = Field(default=3, ge=1, le=8)
     approval_timeout_seconds: int = Field(default=900, ge=30, le=86_400)
     workflow_run_timeout_seconds: int = Field(default=300, ge=1, le=86_400)
@@ -282,10 +268,6 @@ class FinanceClawSettings(BaseSettings):
     context_summary_trigger_tokens: int = Field(default=64_000, ge=256)
     context_soft_input_tokens: int = Field(default=96_000, ge=256)
     context_tool_results_to_keep: int = Field(default=3, ge=0, le=100)
-    summary_model: str | None = None
-    summary_max_tokens: int = Field(default=4_096, ge=256)
-    summary_context_window_tokens: int = Field(default=131_072, ge=1_024)
-    summary_max_input_tokens: int | None = Field(default=None, ge=1_024)
     embedding_model: str | None = None
     embedding_base_url: str | None = None
     embedding_api_key: SecretStr | None = None
@@ -308,9 +290,6 @@ class FinanceClawSettings(BaseSettings):
     memory_worker_poll_seconds: float = Field(default=1, ge=0.05, le=30)
     memory_worker_lease_seconds: int = Field(default=120, ge=30, le=600)
     memory_worker_renew_seconds: int = Field(default=20, ge=1, le=60)
-    memory_model_timeout_seconds: float = Field(default=45, gt=0, le=120)
-    memory_extraction_model: str | None = None
-    memory_consolidation_model: str | None = None
     memory_model_allowed_data_classes: frozenset[DataClassification] = Field(
         default_factory=lambda: frozenset(DataClassification)
     )
@@ -461,14 +440,8 @@ class FinanceClawSettings(BaseSettings):
                 raise ValueError("feishu_scopes cannot grant wildcard or internal invocation")
             if self.environment is Environment.PRODUCTION and self.feishu_security_mode != "strict":
                 raise ValueError("production Feishu channel requires strict security mode")
-        if self.context_reserved_output < self.model_max_tokens:
-            raise ValueError("context output reserve must cover model_max_tokens")
         if (
-            min(
-                self.context_input_limit,
-                self.model_max_input_tokens or self.model_context_window_tokens,
-                self.model_context_window_tokens - self.context_reserved_output,
-            )
+            self.context_input_limit
             - (
                 self.context_system_policy_reserve
                 + self.context_tool_schema_reserve
@@ -480,6 +453,25 @@ class FinanceClawSettings(BaseSettings):
         if self.memory_worker_renew_seconds * 2 >= self.memory_worker_lease_seconds:
             raise ValueError("memory worker renewal must leave room for lease recovery")
         return self
+
+    _model_env_file: Any = PrivateAttr(default=None)
+
+    def __init__(self, **values):
+        """保留本实例实际使用的 dotenv 路径，供供应商按变量名读取凭据。"""
+        super().__init__(**values)
+        self._model_env_file = values.get("_env_file", self.model_config.get("env_file"))
+
+    @property
+    def model_credentials_env_file(self):
+        """显式 _env_file=None 也必须生效，不能重新读取工作目录里的密钥。"""
+        return self._model_env_file
+
+    @cached_property
+    def model_configuration(self):
+        """只读取不含密钥的模型声明；同一 Settings 实例始终使用同一份配置。"""
+        from financeclaw.shared.llm.configuration import ModelConfiguration
+
+        return ModelConfiguration.from_file(self.model_config_path)
 
     def validate_taibu(self) -> None:
         """校验受信端点、出生资料出域和预算；只检查配置，不进行网络发现。"""

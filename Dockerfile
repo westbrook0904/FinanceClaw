@@ -11,6 +11,7 @@ COPY pyproject.toml uv.lock README.md ./
 RUN uv export --frozen --no-dev --extra ziwei --no-emit-project -o /tmp/requirements.txt \
     && uv pip install --system --no-cache -r /tmp/requirements.txt
 COPY financeclaw ./financeclaw
+COPY config/*.toml ./config/
 COPY langgraph.json alembic.ini ./
 COPY deploy ./deploy
 RUN uv pip install --system --no-deps --no-cache . \

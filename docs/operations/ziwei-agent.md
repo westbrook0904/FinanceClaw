@@ -112,6 +112,11 @@ Tool 一次返回当前能确定的全部缺失／无效资料，包括出生日
 子图返回 `needs_clarification`、`missing_fields`、结构化 `issues` 和问题，
 根图先等待当前并发批次的所有回执，保留成功结果，再直接派发一个 `request_user__clarification`，
 由这个工具触发原生 `interrupt`。汇总与派发不消耗额外模型轮次，不能让主模型自行补造参数重试。
+同一对象的多个排盘工具按 `issues.field` 合并展示，每个字段只列一次，并保留其不同校验原因。
+例如本命缺出生时辰、流年缺出生时辰和年份时，只问一次时辰和一次年份。
+根图对同一对象的多个紫微 Worker 使用相同合并规则；不同对象、不同类型的 Worker 分别展示。
+缺少完整结构化说明时保留原问题。各工具回执以及 `clarification_requests` 中的调用 ID、
+缺项与原问题仍完整保留，用户回答后可继续各自未完成的任务。
 根 Agent 自己发现缺资料时，也调用同一澄清工具。BFF 将任务和 Turn 标记为 `interrupted`，
 登记 `pending_interactions`，问题不会被误记为已经完成的最终答案。
 用户回答后，由 BFF 按原始 interrupt ID 和 checkpoint 恢复同一根任务；后续子 Agent 接收原问题

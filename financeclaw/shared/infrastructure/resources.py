@@ -92,11 +92,15 @@ def build_resources(
 
     # 4. 出站网络策略校验：逐一校验模型提供方、Agent Server 与各类外部端点。
     # 4.1 校验模型提供方地址（离线模式或未配置时跳过）。
-    if not settings.offline_model and settings.provider_base_url:
-        EgressPolicy(
-            settings.egress_allowed_hosts,
-            require_https=settings.environment.value in {"staging", "production"},
-        ).validate(settings.provider_base_url)
+    if not settings.offline_model:
+        providers = settings.model_configuration.active_providers(
+            settings.model_configuration.agent_refs(ziwei_enabled=settings.ziwei_enabled)
+        )
+        for provider in providers.values():
+            EgressPolicy(
+                settings.egress_allowed_hosts,
+                require_https=settings.environment.value in {"staging", "production"},
+            ).validate(provider.base_url)
     # 4.3 生产环境额外校验认证、LangSmith 与 OpenTelemetry 观测端点。
     if settings.environment.value == "production" and settings.oidc_jwks_url:
         EgressPolicy(settings.egress_allowed_hosts).validate(settings.oidc_jwks_url)

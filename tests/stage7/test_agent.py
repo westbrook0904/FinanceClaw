@@ -196,14 +196,23 @@ async def test_too_small_prompt_budget_fails_instead_of_truncating():
 
 
 @pytest.mark.asyncio
-async def test_configured_prompt_budget_applies_without_persistence():
+async def test_configured_prompt_budget_applies_without_persistence(tmp_path):
     """直接装配子图也继承配置上限，不能因关闭历史持久化而使用固定默认值。"""
     pytest.importorskip("x_iztro")
     pytest.importorskip("tzdata")
+    from pathlib import Path
+
+    config_path = tmp_path / "models.toml"
+    config_path.write_text(
+        Path("tests/fixtures/models.toml")
+        .read_text()
+        .replace("max_tokens = 32768", "max_tokens = 1024")
+        .replace("max_tokens = 4096", "max_tokens = 1024")
+    )
     stack = build_components(
         settings(
             context_input_limit=4_096,
-            model_max_tokens=1_024,
+            model_config_path=str(config_path),
             context_reserved_output=1_024,
             context_system_policy_reserve=64,
             context_tool_schema_reserve=64,

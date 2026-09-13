@@ -4,7 +4,6 @@ import pytest
 
 from financeclaw.kernel.context import DataClassification
 from financeclaw.memory_worker.model import validate_model_sources
-from financeclaw.shared.infrastructure.settings import FinanceClawSettings
 from financeclaw.shared.llm.memory_profiles import memory_model_profiles, memory_profile_fingerprint
 from financeclaw.shared.memory.models import MemoryPermissionError
 from tests.stage11.test_worker_pipeline import pipeline as pipeline_fixture
@@ -12,38 +11,41 @@ from tests.stage11.test_worker_pipeline import pipeline as pipeline_fixture
 pipeline = pipeline_fixture
 
 
-def test_explicit_primary_memory_model_uses_primary_capacity():
-    """Keep the primary capacity when an explicit memory model selects the primary."""
-    settings = FinanceClawSettings(
-        _env_file=None,
-        model="openai:primary",
-        summary_model="openai:summary",
-        memory_extraction_model="openai:primary",
-        model_context_window_tokens=64000,
-        model_max_input_tokens=32000,
-        summary_context_window_tokens=128000,
-        summary_max_input_tokens=96000,
-        model_max_tokens=2000,
-        context_reserved_output=2000,
-        context_tool_schema_reserve=1000,
-        context_system_policy_reserve=1000,
-        context_safety_margin=256,
+def test_explicit_memory_alias_uses_its_own_capacity(tmp_path):
+    """提取和整理分别绑定别名，不从摘要或默认模型继承错误容量。"""
+    from tests.stage1.test_model_configuration import CONFIG, configured
+
+    content = CONFIG.replace(
+        "context_window_tokens = 131072",
+        "context_window_tokens = 64000\nmax_input_tokens = 32000",
+        1,
     )
-    extraction, consolidation = memory_model_profiles(settings)
+    content = content.replace(
+        "context_window_tokens = 131072", "context_window_tokens = 128000\nmax_input_tokens = 96000"
+    )
+    content += '\n[tasks]\nmemory_extraction = "root-main"\nmemory_consolidation = "child-main"\n'
+    extraction, consolidation = memory_model_profiles(configured(tmp_path, content))
     assert extraction.context_window_tokens == 64000 and extraction.max_input_tokens == 32000
     assert consolidation.context_window_tokens == 128000 and consolidation.max_input_tokens == 96000
+    assert extraction.max_tokens == 2000 and consolidation.max_tokens == 4000
 
 
-def test_provider_change_or_policy_change_invalidates_frozen_memory_profile():
-    """Endpoint, class and region changes cannot silently consume already queued work."""
-    first = FinanceClawSettings(_env_file=None, provider_base_url="https://one.example/v1")
-    second = first.model_copy(update={"provider_base_url": "https://two.example/v1"})
+def test_provider_change_or_policy_change_invalidates_frozen_memory_profile(tmp_path):
+    """端点及处理权限改变后，不允许静默消费原发布身份的记忆任务。"""
+    from tests.stage1.test_model_configuration import CONFIG, configured
+
+    first = configured(tmp_path)
+    before = memory_profile_fingerprint(memory_model_profiles(first)[0])
+    second = configured(tmp_path, CONFIG.replace("child.example", "changed.example"))
     restricted = first.model_copy(
         update={"memory_model_allowed_data_classes": frozenset({DataClassification.PUBLIC})}
     )
     fingerprints = {
-        memory_profile_fingerprint(memory_model_profiles(settings)[0])
-        for settings in (first, second, restricted)
+        before,
+        *(
+            memory_profile_fingerprint(memory_model_profiles(settings)[0])
+            for settings in (second, restricted)
+        ),
     }
     assert len(fingerprints) == 3
 
