@@ -126,8 +126,9 @@ async def test_final_answer_is_delivered_as_markdown_card(runtime):
     final_state(runtime, accepted, content=markdown)
     await tick(runtime)
     await publish(runtime, gateway)
-    answers = [call for call in gateway.calls if not call["target_message_id"]][1:]
+    answers = gateway.calls[1:]
     assert len(answers) == 1 and answers[0]["message_type"] == "card"
+    assert answers[0]["target_message_id"] == "message-1"
     card = json.loads(answers[0]["content"])
     assert card["schema"] == "2.0"
     assert card["body"]["elements"] == [{"tag": "markdown", "content": markdown}]

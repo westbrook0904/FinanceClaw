@@ -8,6 +8,11 @@ from langgraph_sdk.schema import StreamPart
 from sqlalchemy import select
 
 from financeclaw.api.application.turns.answer_stream import PREVIEW_BYTES, TurnAnswerStream, consume
+from financeclaw.integrations.notifications.feishu import Receipt
+from financeclaw.integrations.notifications.repository import NotificationRepository
+from financeclaw.integrations.notifications.worker import deliver
+from financeclaw.shared.channels.feishu.answers import answer_cards
+from financeclaw.shared.notifications.tables import NotificationDeliveryRow as Delivery
 from financeclaw.shared.notifications.tables import NotificationEventRow as Event
 from financeclaw.shared.notifications.tables import NotificationTargetRow as Target
 from financeclaw.shared.turns.tables import ConversationTurnRow, TurnCommandRow
@@ -181,6 +186,101 @@ async def test_cursor_cas_and_coalescing_do_not_change_business_revision(runtime
         assert session.get(ConversationTurnRow, turn["turn_id"]).revision == turn["revision"]
         assert event.revision > turn["revision"]
         assert not list(session.scalars(select(Event).where(Event.kind == "terminal")))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("cancel", [False, True])
+async def test_new_tokens_during_target_check_do_not_starve_delivery(runtime, cancel):
+    """复现线上时序：检查原消息期间持续产生新版正文，已领取的片段仍须送达。"""
+    service, _, event, gateway, turn, command = await started(runtime)
+    answers = runtime.turns.lifecycle.answers
+    state = answers.read(turn, command)
+    consume(state, chunk("第一段", "1"))
+    assert answers.save(turn, command, state, expected_cursor=None)
+    repository = NotificationRepository(
+        runtime.turns.sessions, app_id="app", allowed_open_ids=frozenset({"user"})
+    )
+    while repository.materialize():
+        pass
+    checking, release = asyncio.Event(), asyncio.Event()
+
+    async def slow_check(address):
+        """阻塞检查，确保新版正文恰好在 validate 与 prepare 之间落库。"""
+        checking.set()
+        await release.wait()
+
+    gateway.check_target = slow_check
+    claim = repository.claim("slow-sender", lease_seconds=60)
+    sending = asyncio.create_task(deliver(repository, gateway, claim, runtime.turns.settings))
+    await asyncio.wait_for(checking.wait(), timeout=3)
+    try:
+        for index in range(2, 8):
+            cursor = state["cursor"]
+            consume(state, chunk("追加正文", str(index)))
+            assert answers.save(turn, command, state, expected_cursor=cursor)
+        if cancel:
+            await service.card_actions.handle(callback(event, "cancel"))
+    finally:
+        release.set()
+        await asyncio.wait_for(sending, timeout=3)
+    if cancel:
+        assert len(gateway.calls) == 1
+        with runtime.turns.sessions() as session:
+            assert session.get(Delivery, claim["delivery_id"]).status == "suppressed"
+        return
+    assert len(gateway.calls) == 2
+    assert "第一段" in gateway.calls[-1]["content"]
+    assert gateway.calls[-1]["target_message_id"] == "message-1"
+    with runtime.turns.sessions() as session:
+        assert session.get(Delivery, claim["delivery_id"]).status == "sent"
+        assert session.get(ConversationTurnRow, turn["turn_id"]).status == "running"
+    # 发送完成后才合并积压片段，不改写已经发出的内容和发送键。
+    _, gateway = await publish(runtime, gateway)
+    assert state["text"] in gateway.calls[-1]["content"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("long_answer", [False, True])
+async def test_final_answer_stays_in_original_card_without_duplicate_first_part(
+    runtime, long_answer
+):
+    """原任务卡直接定稿；长回复只补发后续分片，首片沿用已确认的原卡回执。"""
+    _, accepted, _, gateway, turn, command = await started(runtime)
+    text = "**完整正文**" if not long_answer else "```text\n" + "长正文\n" * 3000 + "```"
+    final_state(runtime, accepted, content=text)
+    await tick(runtime)
+    _, gateway = await publish(runtime, gateway)
+    cards = answer_cards(text)
+    assert len(gateway.calls) == 1 + len(cards)
+    assert gateway.calls[1]["target_message_id"] == "message-1"
+    assert json.loads(gateway.calls[1]["content"]) == cards[0]
+    assert "本轮已完成" not in gateway.calls[1]["content"]
+    with runtime.turns.sessions() as session:
+        parts = list(
+            session.scalars(
+                select(Delivery).join(Event).where(Event.kind == "terminal").order_by(Delivery.part)
+            )
+        )
+        assert all(part.status == "sent" for part in parts)
+        assert parts[0].message_id == "message-1" and parts[0].attempts == 0
+        assert all(part.attempts == 1 for part in parts[1:])
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["failed", "uncertain"])
+async def test_final_card_failure_keeps_independent_complete_answer_delivery(runtime, status):
+    """原卡定稿失败或回执丢失时，最终文本仍可通过独立的既有投递责任送达。"""
+    _, accepted, _, gateway, turn, command = await started(runtime)
+    final_state(runtime, accepted, content="**确认的最终答案**")
+    await tick(runtime)
+    gateway.receipts = [Receipt(status, error_class="synthetic_update_failure")]
+    _, gateway = await publish(runtime, gateway)
+    assert len(gateway.calls) == 3
+    assert gateway.calls[-1]["target_message_id"] is None
+    assert "**确认的最终答案**" in gateway.calls[-1]["content"]
+    with runtime.turns.sessions() as session:
+        final = session.scalar(select(Delivery).join(Event).where(Event.kind == "terminal"))
+        assert final.status == "sent" and final.attempts == 1
 
 
 @pytest.mark.asyncio

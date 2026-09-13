@@ -205,11 +205,11 @@ class NotificationRepository:
                 root = session.get(ConversationTurnRow, target.turn_id)
                 if event.payload.get("revision", event.revision) < root.revision:
                     return False
-                if event.payload.get("stream") and (
-                    not target.active
-                    or root.cancel_requested_at
-                    or event.revision < target.card_payload.get("card_revision", 0)
-                ):
+                # 新 token 只更新展示版本，不能使正在检查目标的片段永远失效。
+                # 积压片段在 materialize 合并；停止与交互仍由业务 revision 拦截。
+                if event.payload.get("stream") and (not target.active or root.cancel_requested_at):
+                    return False
+                if "content" in event.payload and not target.active:
                     return False
                 item = event.payload.get("interaction")
                 if item:
@@ -266,7 +266,32 @@ class NotificationRepository:
             if not self._valid(session, row):
                 self._finish(row, "suppressed", "target_or_event_obsolete")
                 return False
+            if self._reuse_answer_receipt(session, row):
+                return False
             return True
+
+    def _reuse_answer_receipt(self, session, row):
+        """最终首片与已送达原卡完全相同时沿用回执，卡片失败时仍保留独立投递。"""
+        event = session.get(Event, row.event_id)
+        if event.kind != "terminal" or row.part != 0 or row.first_attempt_at is not None:
+            return False
+        delivered = session.scalar(
+            select(Delivery)
+            .join(Event)
+            .where(
+                Event.target_id == event.target_id,
+                Event.kind == "card",
+                Delivery.status == "sent",
+                Delivery.content_hash == row.content_hash,
+                Delivery.message_id.is_not(None),
+            )
+            .limit(1)
+        )
+        if delivered is None or delivered.content != row.content:
+            return False
+        row.message_id = delivered.message_id
+        self._finish(row, "sent")
+        return True
 
     def prepare(self, claim, *, recovery_seconds, timeout_seconds, recovery_evidence=None):
         """先持久化 sending，再做唯一网络调用；没有验证过的窗口时不重发未知结果。"""
@@ -288,6 +313,8 @@ class NotificationRepository:
                 return False
             if not self._valid(session, row):
                 self._finish(row, "suppressed", "target_or_event_obsolete")
+                return False
+            if self._reuse_answer_receipt(session, row):
                 return False
             if row.uncertain and (
                 row.recover_until is None

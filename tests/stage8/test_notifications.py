@@ -302,7 +302,7 @@ async def test_answer_reuses_subscription_and_suppresses_old_interaction(setup):
     with repository.sessions() as session:
         assert session.scalar(select(func.count()).select_from(Target)) == 1
         assert {row.status for row in session.scalars(select(Delivery))} == {"sent"}
-    assert len(gateway.calls) == 2  # 最新任务卡及唯一最终文本。
+    assert len(gateway.calls) == 1  # 任务卡直接承载最终正文，最终投递沿用同一回执。
     assert all("请补充时制" not in call["content"] for call in gateway.calls)
     assert "analysis_period" not in gateway.calls[0]["content"]
     assert gateway.calls[0]["address"]["message_id"] == "original"

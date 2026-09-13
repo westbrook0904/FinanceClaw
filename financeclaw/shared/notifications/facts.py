@@ -99,7 +99,7 @@ def target_valid(session, target, *, require_active=True) -> bool:
 
 
 def record_progress(session, root) -> None:
-    """根状态变化生成任务卡快照，成功完成另记最终文本；API 任务不自动补发。"""
+    """根状态变化生成任务卡，完成时原卡定稿并保留最终交付责任；API 不自动补发。"""
     target = session.scalar(
         select(NotificationTargetRow).where(NotificationTargetRow.turn_id == root.turn_id)
     )
@@ -138,6 +138,21 @@ def record_progress(session, root) -> None:
         },
         "created_at": now().isoformat(),
     }
+    if projection["status"] == "completed":
+        content = session.scalar(
+            select(ConversationMessageRow.content)
+            .join(
+                ConversationTurnRow, ConversationMessageRow.turn_id == ConversationTurnRow.turn_id
+            )
+            .where(
+                ConversationTurnRow.turn_id == root.turn_id,
+                ConversationMessageRow.role == "assistant",
+                ConversationMessageRow.parent_message_id.is_(None),
+            )
+        )
+        if content is None:
+            raise ExecutionConflict("completed notification requires Journal answer")
+        payload["content"] = content
     event_id = digest([target.target_id, "card", root.revision])
     if session.get(NotificationEventRow, event_id) is None:
         stream = target.card_payload.get("stream", {})
@@ -160,19 +175,6 @@ def record_progress(session, root) -> None:
             )
         )
     if projection["status"] == "completed":
-        content = session.scalar(
-            select(ConversationMessageRow.content)
-            .join(
-                ConversationTurnRow, ConversationMessageRow.turn_id == ConversationTurnRow.turn_id
-            )
-            .where(
-                ConversationTurnRow.turn_id == root.turn_id,
-                ConversationMessageRow.role == "assistant",
-                ConversationMessageRow.parent_message_id.is_(None),
-            )
-        )
-        if content is None:
-            raise ExecutionConflict("completed notification requires Journal answer")
         terminal_id = digest([target.target_id, "terminal"])
         if session.get(NotificationEventRow, terminal_id) is None:
             session.add(

@@ -4,6 +4,7 @@ import json
 import math
 
 from financeclaw.kernel.interactions import InteractionResponse
+from financeclaw.shared.channels.feishu.answers import answer_cards
 from financeclaw.shared.channels.feishu.interactions import format_interactions
 
 # 飞书输入框的客户端上限；业务回答 Schema 仍保留自己的容量。
@@ -271,6 +272,8 @@ def response_from_card(payload, value, form):
 def render_card(event_id, payload):
     """处理中显示加载动画，交互优先展示，任务选项仅提供停止入口。"""
     status = payload["status"]
+    if status == "completed" and "content" in payload:
+        return answer_cards(payload["content"] or "处理已完成。")[0]
     titles = {
         "accepted": "已收到，正在处理",
         "running": "正在处理",
