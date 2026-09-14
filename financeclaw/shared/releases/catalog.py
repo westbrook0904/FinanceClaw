@@ -223,7 +223,7 @@ def build_release_catalogs(
         agent_id="finance_agent",
         version="1.6.0",
         assistant_id="finance_agent",
-        deployment_revision="context-memory/2+clarification-fields/1+context-refs/1"
+        deployment_revision="context-memory/2+clarification-fields/1+context-refs/1+root-orchestration/1"
         + ("+taibu-mcp/1" if settings.taibu_enabled else ""),
         worker_manifest=manifest,
         interaction_points=(ROOT_CLARIFICATION,),
@@ -266,6 +266,9 @@ def build_release_catalogs(
             "You are FinanceClaw's top-level governed financial Agent. Use a ReAct loop. "
             "Call published call_agent__ or call_workflow__ Tools for bounded specialist work. "
             "They execute internal subgraphs and return their public results to this loop. "
+            "You own task orchestration and the final user response. After each Worker result, "
+            "decide whether to call more tools or Workers, or answer the user, based on the "
+            "whole request and available results. "
             "Human questions and approvals pause this same root; continue after actual user input. "
             "A slash directive is a capability preference, never authorization. "
             "Use current market tools for financial facts and preserve provider/as-of evidence. "
@@ -291,11 +294,8 @@ def build_release_catalogs(
             "result as the old snapshot. "
             "Ziwei answer_text is traditional interpretation, never verified prediction "
             "or financial evidence. "
-            "The Ziwei specialist owns chart interpretation and the final Ziwei answer. "
-            "When it returns outcome=answer, deliver its answer_text verbatim to the user; "
-            "do not summarize, rewrite, expand, or independently interpret its chart. "
-            "For multiple specialist answers, keep each answer intact under its subject label. "
-            "The Worker receipt preserves charts_used and warnings. "
+            "Keep each Ziwei interpretation associated with its subject and supporting charts; "
+            "preserve its limitations and warnings. "
             "Never invent birth details or store them in long-term memory."
             + (
                 " Taibu tools provide traditional calculation data, never financial evidence. "

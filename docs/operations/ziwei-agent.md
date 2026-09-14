@@ -65,12 +65,13 @@ LANGSMITH_HIDE_OUTPUTS=false
 新建会话绑定 `finance_agent@1.6.0`。候选启用后，根可以使用
 `call_agent__ziwei_doushu_agent` Tool 调用 `ziwei_doushu_agent@2.2.0` 内部子图。
 `langgraph.json` 只注册顶层根，子图继承本次执行的权限、预算与 checkpoint；
-完整文本解读通过 Tool 结果交回根 Agent，再由 BFF 写入 Journal。
+完整文本解读通过 Tool 结果交回根 Agent，根 Agent 的最终回复再由 BFF 写入 Journal。
 紫微 Agent 自己在 ReAct 循环内根据盘面完成专业解读，最后一条正文直接成为 `answer_text`。
 `finalize` 仅封装该正文、`charts_used` 等已有结果，不再发起独立模型请求。
 一次排盘调用的常规解读路径只需两次子模型请求：选择工具、读取结果后解答。
-根 Agent 的提示词要求原样转发 `answer_text`；多对象答案保留各自正文并标注对象，避免二次解盘。
-根 Agent 的调度、澄清和最终输出通道保持不变，仍有根模型的输出轮次。
+根 Agent 负责中心化任务编排；收到 `answer_text` 等公开结果后，根据完整用户请求和已有结果，
+自行决定继续调用工具或 Worker，还是组织最终回复。回复保留各对象对应的解读、盘面依据与限制。
+子工具返回后仍进入根模型的下一轮判断，澄清和最终输出沿用现有通道。
 业务库使用当前 `0001_initial`，候选能力不新增独立运行表。
 
 子图入口接受自然语言 `task`、可选原始 `arguments` 提示、本次根任务固定的原问题 `user_context`，
@@ -110,7 +111,10 @@ flowchart LR
     W --> T[五个独立排盘入口：校验与计算]
     T -->|成功| W
     W -->|最终正文| F[finalize：代码封装结果]
-    F --> D[根 Agent：交付紫微正文]
+    F --> R
+    R -->|其他工具| O[工具执行]
+    O --> R
+    R -->|任务完成| D[根 Agent：组织最终回复]
     T -->|缺资料| E[子图 END]
     E --> Q[根图汇合当前批次]
     Q --> I[统一澄清 Tool：原生 interrupt]
