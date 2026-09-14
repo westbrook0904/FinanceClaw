@@ -41,6 +41,7 @@ from financeclaw.agent_server.middleware.middleware import (
     ToolGovernanceMiddleware,
 )
 from financeclaw.agent_server.middleware.taibu_failure import TaibuFailureMiddleware
+from financeclaw.agent_server.middleware.tool_progress import ToolProgressMiddleware
 from financeclaw.agent_server.middleware.worker_clarification import WorkerClarificationMiddleware
 from financeclaw.agent_server.tools.catalog import ToolCatalog
 from financeclaw.agent_server.tools.policy import ToolDecisionType, ToolPolicy, TransientToolError
@@ -246,7 +247,10 @@ class AgentFactory:
             if managed.governance.approval is ApprovalMode.ALWAYS
         }
         # 5. 按顺序装配治理类中间件：人工审批、工具治理与调用偏好指令。
-        middleware: list[Any] = list(additional_middleware)
+        middleware: list[Any] = [
+            ToolProgressMiddleware(profile.agent_id, (item.tool.name for item in resolved_tools)),
+            *additional_middleware,
+        ]
         if profile.worker_manifest:
             middleware.append(
                 WorkerClarificationMiddleware(

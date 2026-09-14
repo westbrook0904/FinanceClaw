@@ -11,6 +11,7 @@ from financeclaw.api.application.turns.answer_stream import PREVIEW_BYTES, TurnA
 from financeclaw.integrations.notifications.feishu import Receipt
 from financeclaw.integrations.notifications.repository import NotificationRepository
 from financeclaw.integrations.notifications.worker import deliver
+from financeclaw.kernel.tool_progress import ToolProgress
 from financeclaw.shared.channels.feishu.answers import answer_cards
 from financeclaw.shared.notifications.tables import NotificationDeliveryRow as Delivery
 from financeclaw.shared.notifications.tables import NotificationEventRow as Event
@@ -131,7 +132,8 @@ async def test_tokens_arrive_before_completion_and_reconnect_without_duplication
     assert "**完整回复**" in gateway.calls[-1]["content"]
     assert {c["target_message_id"] for c in gateway.calls[1:-1]} == {"message-1"}
     assert runtime.client.calls[0]["stream_resumable"] is True
-    assert runtime.client.calls[0]["stream_mode"] == ["messages-tuple"]
+    assert runtime.client.calls[0]["stream_mode"] == ["messages-tuple", "custom"]
+    assert runtime.client.calls[0]["stream_subgraphs"] is True
 
 
 @pytest.mark.asyncio
@@ -141,6 +143,8 @@ async def test_late_tokens_cannot_overwrite_lifecycle(runtime, ending):
     service, accepted, event, gateway, turn, command = await started(runtime)
     answers = runtime.turns.lifecycle.answers
     state = answers.read(turn, command)
+    tool = ToolProgress(call_id="a" * 64, agent="root", tool="market_snapshot", status="started")
+    consume(state, StreamPart("custom", tool.model_dump(), "tool-start"))
     consume(state, chunk("不完整正文"))
     assert answers.save(turn, command, state, expected_cursor=None)
     event, gateway = await publish(runtime, gateway)
@@ -156,6 +160,7 @@ async def test_late_tokens_cannot_overwrite_lifecycle(runtime, ending):
         with runtime.turns.sessions.begin() as session:
             session.scalar(select(Target)).active = False
     consume(state, chunk("迟到文字", "2"))
+    consume(state, StreamPart("custom", {**tool.model_dump(), "status": "completed"}, "tool-end"))
     assert not answers.save(turn, command, state, expected_cursor="1")
     if ending != "mute":
         final, gateway = await publish(runtime, gateway)
@@ -302,7 +307,8 @@ async def test_real_graph_token_protocol_matches_public_filter():
 
 
 @pytest.mark.asyncio
-async def test_inprocess_sdk_does_not_buffer_until_stream_ends(runtime, monkeypatch):
+@pytest.mark.parametrize("tool_event", [False, True])
+async def test_inprocess_sdk_does_not_buffer_until_stream_ends(runtime, monkeypatch, tool_event):
     """使用已安装的 Agent Server ASGI 传输和 SDK，源连接未结束时完成卡片投递。"""
     import httpx
     from langgraph_sdk.client import LangGraphClient
@@ -330,8 +336,18 @@ async def test_inprocess_sdk_does_not_buffer_until_stream_ends(runtime, monkeypa
         )
         if is_stream:
             assert dict(scope["headers"])[b"last-event-id"] == b"-1"
-            part = chunk("尚未完成的正文", "native-event-1")
-            body = f"id: {part.id}\nevent: messages\ndata: {json.dumps(part.data)}\n\n"
+            part = (
+                StreamPart(
+                    "custom|tools:root|evidence:child",
+                    ToolProgress(
+                        call_id="a" * 64, agent="worker", tool="leaf", status="started"
+                    ).model_dump(),
+                    "native-event-1",
+                )
+                if tool_event
+                else chunk("尚未完成的正文", "native-event-1")
+            )
+            body = f"id: {part.id}\nevent: {part.event}\ndata: {json.dumps(part.data)}\n\n"
             await send({"type": "http.response.body", "body": body.encode(), "more_body": True})
             await release.wait()
         await send(
@@ -350,13 +366,13 @@ async def test_inprocess_sdk_does_not_buffer_until_stream_ends(runtime, monkeypa
         observer = asyncio.create_task(answers.join(turn, command))
         try:
             async with asyncio.timeout(3):
-                while answers.read(turn, command).get("text") != "尚未完成的正文":
+                while answers.read(turn, command).get("cursor") != "native-event-1":
                     if observer.done():
                         await observer
                     await asyncio.sleep(0.01)
             assert not observer.done() and not release.is_set()
             _, gateway = await publish(runtime, gateway)
-            assert "尚未完成的正文" in gateway.calls[-1]["content"]
+            assert ("正在使用" if tool_event else "尚未完成的正文") in gateway.calls[-1]["content"]
         finally:
             release.set()
             await asyncio.wait_for(observer, timeout=3)

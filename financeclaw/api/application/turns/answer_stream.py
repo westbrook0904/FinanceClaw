@@ -1,11 +1,13 @@
-"""原生正文流的有界展示投影；执行结果和最终交付仍由 checkpoint 与 Journal 确认。"""
+"""原生正文与工具进度的有界展示投影；最终交付仍由 checkpoint 与 Journal 确认。"""
 
 import asyncio
 from contextlib import aclosing
 from time import monotonic
 
+from pydantic import ValidationError
 from sqlalchemy import select
 
+from financeclaw.kernel.tool_progress import TOOL_PROGRESS_LIMIT, ToolProgress
 from financeclaw.shared.infrastructure.asyncio import run_sync
 from financeclaw.shared.notifications.facts import target_valid
 from financeclaw.shared.notifications.tables import NotificationEventRow, NotificationTargetRow
@@ -16,13 +18,19 @@ PREVIEW_BYTES = 12000
 
 
 def consume(state, part):
-    """只合并根 model 的公开文本；工具、子图、思考块和其他节点均不能成为预览。"""
+    """合并公开工具状态和根 model 正文；原始工具结果与子图正文不进入预览。"""
     if not part.id or part.id == state.get("cursor"):
         return
     state["cursor"] = part.id
-    if part.event != "messages" or not isinstance(part.data, (list, tuple)):
+    mode = part.event.split("|", 1)[0]
+    if mode == "custom":
+        consume_tool_progress(state, part.data)
+        return
+    if mode != "messages" or not isinstance(part.data, (list, tuple)) or len(part.data) != 2:
         return
     message, metadata = part.data
+    if not isinstance(message, dict) or not isinstance(metadata, dict):
+        return
     namespace = metadata.get("langgraph_checkpoint_ns", "")
     if (
         metadata.get("langgraph_node") != "model"
@@ -52,6 +60,33 @@ def consume(state, part):
     text = (state.get("text", "") if message["type"] == "AIMessageChunk" else "") + content
     state["truncated"] = state.get("truncated", False) or len(text.encode()) > PREVIEW_BYTES
     state["text"] = text.encode()[:PREVIEW_BYTES].decode("utf-8", errors="ignore")
+
+
+def consume_tool_progress(state, data):
+    """只持久化固定公开契约，按调用关联状态，并优先保留尚未完成的工具。"""
+    if not isinstance(data, dict) or data.get("type") != "tool.progress":
+        return
+    try:
+        event = ToolProgress.model_validate(data).model_dump()
+    except ValidationError:
+        return
+    tools = [dict(item) for item in state.get("tools", [])]
+    existing = next((item for item in tools if item["call_id"] == event["call_id"]), None)
+    if existing is not None:
+        existing.update(event)
+    else:
+        tools.append(event)
+    while len(tools) > TOOL_PROGRESS_LIMIT:
+        index = next((i for i, item in enumerate(tools) if item["status"] != "started"), 0)
+        tools.pop(index)
+    state["tools"] = tools
+    if event["status"] == "started":
+        state.update(text="", blocked=True, truncated=False)
+
+
+def presentation(state):
+    """卡片可见内容变化才创建通知事件；原生游标变化仍持久化以支持重连。"""
+    return state.get("text", ""), state.get("truncated", False), state.get("tools", [])
 
 
 class TurnAnswerStream:
@@ -102,10 +137,7 @@ class TurnAnswerStream:
             if previous.get("cursor") != expected_cursor:
                 return False
             payload = {**target.card_payload, "stream": dict(state), "revision": root.revision}
-            if (previous.get("text", ""), previous.get("truncated", False)) != (
-                state.get("text", ""),
-                state.get("truncated", False),
-            ):
+            if presentation(previous) != presentation(state):
                 sequence = (
                     max(root.revision, payload.get("card_revision", target.card_sequence)) + 1
                 )

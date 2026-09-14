@@ -4,6 +4,7 @@ import json
 import math
 
 from financeclaw.kernel.interactions import InteractionResponse
+from financeclaw.kernel.tool_progress import TOOL_PROGRESS_LIMIT
 from financeclaw.shared.channels.feishu.answers import answer_cards
 from financeclaw.shared.channels.feishu.interactions import format_interactions
 
@@ -303,7 +304,25 @@ def render_card(event_id, payload):
         )
     else:
         elements.append({"tag": "markdown", "content": payload.get("task", "本轮任务")})
-    preview = payload.get("stream", {}).get("text")
+    stream = payload.get("stream", {})
+    if stream.get("tools") and status in {"queued", "running", "resuming"}:
+        labels = {
+            "started": "⏳ 正在使用",
+            "completed": "✓ 已完成",
+            "failed": "✗ 调用失败",
+            "interrupted": "⏸ 等待回答",
+            "cancelled": "已停止",
+        }
+        elements.append(
+            {
+                "tag": "markdown",
+                "content": "\n".join(
+                    f"{labels[item['status']]} `{item['tool']}` · `{item['agent']}`"
+                    for item in stream["tools"][-TOOL_PROGRESS_LIMIT:]
+                ),
+            }
+        )
+    preview = stream.get("text")
     if preview and status in {"queued", "running", "resuming"}:
         elements.append({"tag": "markdown", "content": preview})
         if payload["stream"].get("truncated"):

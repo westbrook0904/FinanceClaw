@@ -149,7 +149,8 @@ class NativeRuns:
             },
             multitask_strategy="reject",
             durability="sync",
-            stream_mode=["messages-tuple"],
+            stream_mode=["messages-tuple", "custom"],
+            stream_subgraphs=True,
             stream_resumable=True,
         )
         return self.verify(run, turn, command)["run_id"]
