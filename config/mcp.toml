@@ -1,0 +1,51 @@
+# 通用 MCP 接入。先配置密钥、运行 scripts/mcp_catalog.py import，再启用服务。
+# enabled=false 不读取契约或认证；绑定保留，启用后自动装配到对应 Agent。
+# 运行身份还需 travel:read；紫微/八字启用时根任务为 confidential，须明确部署策略。
+# 具体导入、授权与数据级别配置见 docs/operations/mcp.md。
+[defaults]
+timeout_seconds = 30
+
+[servers.rollinggo_hotel]
+enabled = false
+transport = "streamable_http"
+url = "https://mcp.rollinggo.cn/mcp"
+allowed_hosts = ["mcp.rollinggo.cn"]
+allowed_tools = ["searchHotels", "getHotelDetail", "getHotelSearchTags"]
+contracts = "mcp/rollinggo_hotel.json"
+
+[servers.rollinggo_hotel.auth]
+type = "bearer"
+token_env = "FINANCECLAW_ROLLINGGO_API_KEY"
+
+[servers.rollinggo_hotel.policy]
+side_effect = "read"
+required_scopes = ["travel:read"]
+egress = "external"
+allowed_data_classes = ["public", "internal"]
+
+[servers.rollinggo_flight]
+enabled = false
+transport = "streamable_http"
+url = "https://mcp.rollinggo.cn/mcp/flight"
+allowed_hosts = ["mcp.rollinggo.cn"]
+allowed_tools = ["searchAirports", "searchFlights"]
+contracts = "mcp/rollinggo_flight.json"
+
+[servers.rollinggo_flight.auth]
+type = "bearer"
+token_env = "FINANCECLAW_ROLLINGGO_API_KEY"
+
+[servers.rollinggo_flight.policy]
+side_effect = "read"
+required_scopes = ["travel:read"]
+egress = "external"
+allowed_data_classes = ["public", "internal"]
+
+[agents.finance_agent]
+mcp_tools = [
+  "rollinggo_hotel.searchHotels",
+  "rollinggo_hotel.getHotelDetail",
+  "rollinggo_hotel.getHotelSearchTags",
+  "rollinggo_flight.searchAirports",
+  "rollinggo_flight.searchFlights",
+]

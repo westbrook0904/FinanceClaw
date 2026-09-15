@@ -12,6 +12,7 @@ RUN uv export --frozen --no-dev --extra ziwei --no-emit-project -o /tmp/requirem
     && uv pip install --system --no-cache -r /tmp/requirements.txt
 COPY financeclaw ./financeclaw
 COPY config/*.toml ./config/
+COPY config/mcp ./config/mcp
 COPY langgraph.json alembic.ini ./
 COPY deploy ./deploy
 RUN uv pip install --system --no-deps --no-cache . \

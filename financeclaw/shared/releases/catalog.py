@@ -36,6 +36,11 @@ def build_release_catalogs(
     base_tool_catalog: ToolReleaseCatalog | None = None,
 ) -> ReleaseCatalogs:
     """根据相同配置固定发布指纹；可注入测试或定制工具的声明目录。"""
+    mcp = settings.mcp_release
+    known_agents = {"finance_agent", "ziwei_doushu_agent", "market_research_agent"}
+    if set(mcp.configuration.agents) - known_agents:
+        raise ValueError("unknown MCP Agent binding")
+    mcp_ids = {item.governance.tool_id for item in mcp.entries.values()}
     if base_tool_catalog is None:
         base_tool_catalog = ToolReleaseCatalog(
             ToolRelease(item)
@@ -43,6 +48,7 @@ def build_release_catalogs(
                 *local_tool_governance(),
                 mcp_quote_governance(),
                 *taibu_governance(settings),
+                *(item.governance for item in mcp.entries.values()),
                 *(memory_tool_governance() if enable_persistence else ()),
                 *(history_tool_governance() if enable_persistence else ()),
             )
@@ -106,7 +112,7 @@ def build_release_catalogs(
         for tool_id in ("market_snapshot", "get_demo_quote")
         if any(key[0] == tool_id for key in base_tool_catalog)
         for managed in (base_tool_catalog.resolve(tool_id),)
-    )
+    ) + mcp.refs("market_research_agent")
     from financeclaw.kernel.interactions import InteractionPoint
     from financeclaw.kernel.market_research import (
         MarketResearchInput,
@@ -171,6 +177,11 @@ def build_release_catalogs(
                 base_tool_catalog.resolve(ref.tool_id, ref.version).governance
                 for ref in domain_tool_refs
             ],
+            *(
+                [mcp.fingerprint("market_research_agent")]
+                if mcp.refs("market_research_agent")
+                else []
+            ),
         ),
         memory_policy="none",
         max_model_calls=6,
@@ -203,6 +214,15 @@ def build_release_catalogs(
         )
     )
     specialist = specialist.model_copy(update={"model_profile": model_ref("ziwei_doushu_agent")})
+    if mcp.refs("ziwei_doushu_agent"):
+        specialist = specialist.model_copy(
+            update={
+                "allowed_tools": specialist.allowed_tools + mcp.refs("ziwei_doushu_agent"),
+                "configuration_fingerprint": configuration_fingerprint(
+                    specialist.configuration_fingerprint, mcp.fingerprint("ziwei_doushu_agent")
+                ),
+            }
+        )
     tool_catalog = ToolReleaseCatalog((*base_tool_catalog.values(), *chart_tools))
     workers = (domain_agent_profile, specialist)
     from financeclaw.shared.releases.subgraphs import (
@@ -219,6 +239,11 @@ def build_release_catalogs(
     manifest = tuple(worker_declaration(item, tool_catalog, model_profiles) for item in reachable)
     from financeclaw.shared.releases.interactions import ROOT_CLARIFICATION
 
+    root_base_tools = tuple(
+        item for item in base_tool_catalog.latest() if item.governance.tool_id not in mcp_ids
+    ) + tuple(
+        base_tool_catalog.resolve(ref.tool_id, ref.version) for ref in mcp.refs("finance_agent")
+    )
     root = AgentProfile(
         agent_id="finance_agent",
         version="1.6.0",
@@ -235,7 +260,7 @@ def build_release_catalogs(
         memory_policy="sql-memory-v3",
         allowed_tools=tuple(
             ToolRef(tool_id=item.governance.tool_id, version=item.governance.version)
-            for item in base_tool_catalog.latest()
+            for item in root_base_tools
         )
         + tuple(ToolRef(tool_id=composite_name(item), version=item.version) for item in reachable),
         configuration_fingerprint=configuration_fingerprint(
@@ -259,8 +284,9 @@ def build_release_catalogs(
             settings.memory_index_version,
             memory_model_profiles(settings),
             settings.processing_region,
-            [item.governance for item in base_tool_catalog.latest()],
+            [item.governance for item in root_base_tools],
             *([taibu_release(settings)] if settings.taibu_enabled else []),
+            *([mcp.fingerprint("finance_agent")] if mcp.refs("finance_agent") else []),
         ),
         system_prompt_template=(
             "You are FinanceClaw's top-level governed financial Agent. Use a ReAct loop. "
@@ -297,6 +323,17 @@ def build_release_catalogs(
             "Keep each Ziwei interpretation associated with its subject and supporting charts; "
             "preserve its limitations and warnings. "
             "Never invent birth details or store them in long-term memory."
+            + (
+                " You may also fulfill requests using the configured MCP tools, including "
+                "travel queries when available. Call them through the ordinary tool loop. "
+                "Send only the information needed for this query, not unrelated conversation "
+                "history. Use returned identifiers and current query conditions; historical "
+                "quotes are not current availability. Preserve source, query time, currency, "
+                "price units and supplied cancellation terms. A search result or booking "
+                "link does not confirm a reservation or payment."
+                if mcp.refs("finance_agent")
+                else ""
+            )
             + (
                 " Taibu tools provide traditional calculation data, never financial evidence. "
                 "Use taibu_almanac for almanac requests and taibu_bazi for bazi requests. "

@@ -17,6 +17,7 @@ Stage 10 的统一 AgentServer API 与 Turn/Command/Interaction 继续保留。S
 - [Stage 11 场景链路与验收矩阵](stages/stage-11-场景链路与验收矩阵.md)
 - [Stage 11 实现与验证](stages/stage-11-实现与验证.md)
 - [Skills 运行时接入实施方案（待实施，参考 Codex）](stages/skills-运行时接入实施方案.md)
+- [通用 MCP 与 RollingGo 接入方案（通用链路已实现，RollingGo 待账户联调）](stages/MCP-工具主动发现与配置化接入实施方案.md)
 - [上下文与记忆评估依据](../docs/architecture/memory-assessment-2026-09-10.md)
 - [清理与验证](stages/stage-8-hotfix-清理与验证.md)
 - [Stage 6：Feishu P2P Channel](./stages/Stage-6-Feishu-P2P-Channel-实施说明.md)

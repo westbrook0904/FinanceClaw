@@ -44,6 +44,7 @@ from financeclaw.agent_server.middleware.taibu_failure import TaibuFailureMiddle
 from financeclaw.agent_server.middleware.tool_progress import ToolProgressMiddleware
 from financeclaw.agent_server.middleware.worker_clarification import WorkerClarificationMiddleware
 from financeclaw.agent_server.tools.catalog import ToolCatalog
+from financeclaw.agent_server.tools.mcp_errors import tool_retry_failure
 from financeclaw.agent_server.tools.policy import ToolDecisionType, ToolPolicy, TransientToolError
 from financeclaw.kernel.agents import AgentProfile
 from financeclaw.kernel.context import ExecutionContext
@@ -372,7 +373,7 @@ class AgentFactory:
                     retry_on=TransientToolError,
                     initial_delay=0,
                     jitter=False,
-                    on_failure="error",
+                    on_failure=tool_retry_failure,
                 )
             )
         # 10. 挂载模型与工具的运行内调用限额中间件。

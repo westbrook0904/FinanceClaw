@@ -28,6 +28,8 @@ API 默认监听 `127.0.0.1:8000`。原生 API 必须配置 `N_JOBS_PER_WORKER=0
 
 模型供应商、默认别名及 Agent / 摘要 / 记忆任务覆盖统一在 [config/models.toml](config/models.toml) 声明；未覆盖的用途使用默认模型。配置方式见[模型配置](docs/operations/model-configuration.md)。
 
+通用 MCP 服务和 Agent 工具绑定在 [config/mcp.toml](config/mcp.toml) 声明。已提供 RollingGo 酒店/机票查询配置，默认关闭；凭据、工具定义导入和启用步骤见 [MCP 接入手册](docs/operations/mcp.md)。
+
 ## 产品接口
 
 先 `POST /v1/conversations`，再向 `POST /v1/conversations/{id}/turns` 提交 `{"message":"..."}` 和 `Idempotency-Key`，返回 202 与 `turn_id`。API 不接受用户指定的 thread、checkpoint、native run 或 callback。

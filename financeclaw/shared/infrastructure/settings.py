@@ -64,6 +64,7 @@ class FinanceClawSettings(BaseSettings):
         approval_timeout_seconds: 工作流人工审批的等待超时（秒），超时按未决处理。
         workflow_run_timeout_seconds: 工作流单次运行的软超时（秒）。
         mcp_timeout_seconds: 单次 MCP 工具调用的超时（秒）。
+        mcp_config_path: 通用 MCP 服务、允许工具与 Agent 绑定的 TOML 路径。
         internal_api_url: 内部 LangGraph Agent Server 地址，启动时按内部主机 allowlist 校验。
         native_timeout_seconds: Agent Server 出站调用的超时（秒）。
         integration_service_token: Agent Server 服务间 Bearer 令牌，生产必填。
@@ -155,6 +156,7 @@ class FinanceClawSettings(BaseSettings):
     approval_timeout_seconds: int = Field(default=900, ge=30, le=86_400)
     workflow_run_timeout_seconds: int = Field(default=300, ge=1, le=86_400)
     mcp_timeout_seconds: float = Field(default=10.0, gt=0, le=60)
+    mcp_config_path: str = "config/mcp.toml"
     taibu_enabled: bool = False
     taibu_mcp_url: str = "http://taibu-mcp:3001/mcp"
     taibu_egress: Literal["internal", "external"] = "internal"
@@ -472,6 +474,13 @@ class FinanceClawSettings(BaseSettings):
         from financeclaw.shared.llm.configuration import ModelConfiguration
 
         return ModelConfiguration.from_file(self.model_config_path)
+
+    @cached_property
+    def mcp_release(self):
+        """固定本进程的 MCP 发布目录，不初始化 SDK 或读取执行凭据。"""
+        from financeclaw.shared.mcp.configuration import MCPRelease
+
+        return MCPRelease(self.mcp_config_path, env_file=self.model_credentials_env_file)
 
     def validate_taibu(self) -> None:
         """校验受信端点、出生资料出域和预算；只检查配置，不进行网络发现。"""
