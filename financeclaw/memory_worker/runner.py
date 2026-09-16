@@ -88,7 +88,9 @@ class MemoryJobRunner:
             except LookupError:
                 logger.warning("memory_job_failure_claim_lost", extra={"event_id": event.event_id})
             logger.warning(
-                "memory_job_failed",
+                "memory_job_failed event_id=%s reason=%s",
+                event.event_id,
+                type(exc).__name__,
                 extra={
                     "event_id": event.event_id,
                     "reason": type(exc).__name__,

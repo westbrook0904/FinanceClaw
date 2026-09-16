@@ -139,6 +139,7 @@ class FinanceClawSettings(BaseSettings):
 
     environment: Environment = Environment.DEVELOPMENT
     offline_model: bool = False
+    skills_enabled: bool = True
     ziwei_enabled: bool = False
     # 默认不放行紫微完整 I/O；开发/测试联调需显式开启此例外，
     # 日志和 tracing 的实际开关仍分别控制，正式环境始终禁止该例外。
@@ -273,7 +274,7 @@ class FinanceClawSettings(BaseSettings):
     embedding_model: str | None = None
     embedding_base_url: str | None = None
     embedding_api_key: SecretStr | None = None
-    embedding_dimensions: int = Field(default=1536, ge=1, le=65536)
+    embedding_dimensions: int = Field(default=1024, ge=1, le=65536)
     embedding_timeout_seconds: float = Field(default=30, gt=0, le=120)
     history_index_version: str = "history/1"
     history_index_batch_size: int = Field(default=4, ge=1, le=100)

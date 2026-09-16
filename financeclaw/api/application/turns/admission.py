@@ -1,5 +1,6 @@
 """Atomic product admission. No graph, native client or network call belongs here."""
 
+from contextlib import nullcontext
 from uuid import uuid4
 
 from sqlalchemy import func, select, update
@@ -50,8 +51,9 @@ class TurnAdmission:
         idempotency_key,
         authorization=None,
         notification_address=None,
+        transaction=None,
     ):
-        """Persist input, finite grant and one immutable start command before returning 202."""
+        """原子受理任务；渠道表单可传入同库事务，将原卡绑定和回执一并提交。"""
         service = self.service
         if not idempotency_key.strip() or len(idempotency_key) > 256:
             raise IdempotencyConflict("a bounded idempotency key is required")
@@ -101,7 +103,9 @@ class TurnAdmission:
             return None
 
         try:
-            with service.sessions.begin() as session:
+            with (
+                nullcontext(transaction) if transaction is not None else service.sessions.begin()
+            ) as session:
                 # A conversation serializes its message sequence and active Turn admission.
                 session.execute(
                     update(ConversationRow)
@@ -157,6 +161,16 @@ class TurnAdmission:
                     profile, context, thread_id=current.agent_thread_id, input_hash=fingerprint
                 )
                 release.update(user_message_id=message_id, user_message_sequence=sequence)
+                from financeclaw.shared.skills.directives import requested_skill
+
+                selection = requested_skill(request.message)
+                if selection:
+                    selected, _ = service.releases.skills.authorize(
+                        profile, context, selection, explicit=True, invoke=True
+                    )
+                    release["requested_skills"] = [selected.ref.model_dump(mode="json")]
+                else:
+                    release["requested_skills"] = []
                 turn = ConversationTurnRow(
                     turn_id=turn_id,
                     conversation_id=conversation_id,
@@ -242,6 +256,8 @@ class TurnAdmission:
                 record_progress(session, turn)
                 return accepted(turn)
         except IntegrityError:
+            if transaction is not None:
+                raise
             # Covers races involving the same principal's key in different conversations.
             with service.sessions() as session:
                 result = replay(session)

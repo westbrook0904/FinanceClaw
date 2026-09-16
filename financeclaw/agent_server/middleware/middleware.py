@@ -454,7 +454,9 @@ class ToolGovernanceMiddleware(AgentMiddleware):
             )
             raise
         # ToolException 可能已被框架转换为错误消息，不能误记为执行成功。
-        failed = isinstance(response, ToolMessage) and response.status == "error"
+        from financeclaw.agent_server.middleware.tool_progress import ToolProgressMiddleware
+
+        failed = ToolProgressMiddleware._status(response, request.tool_call["id"]) == "failed"
         self._audit(
             context,
             managed,
@@ -502,7 +504,9 @@ class ToolGovernanceMiddleware(AgentMiddleware):
                 tool_call_id=str(request.tool_call.get("id", "")) or None,
             )
             raise
-        failed = isinstance(response, ToolMessage) and response.status == "error"
+        from financeclaw.agent_server.middleware.tool_progress import ToolProgressMiddleware
+
+        failed = ToolProgressMiddleware._status(response, request.tool_call["id"]) == "failed"
         await asyncio.to_thread(
             self._audit,
             context,

@@ -71,14 +71,17 @@ def target_valid(session, target, *, require_active=True) -> bool:
         return False
     address = target.address
     conversation = session.get(ConversationRow, binding.conversation_id)
-    turn = session.scalar(
-        select(ConversationTurnRow).where(ConversationTurnRow.turn_id == target.turn_id)
+    turn = session.get(ConversationTurnRow, target.turn_id) if target.turn_id else None
+    belongs = (
+        turn is not None and turn.conversation_id == binding.conversation_id
+        if target.turn_id
+        else target.card_payload.get("kind") == "skill_form"
+        and target.card_payload.get("conversation_id") == binding.conversation_id
     )
     return bool(
         conversation
-        and turn
+        and belongs
         and conversation.status == "active"
-        and turn.conversation_id == conversation.conversation_id
         and (conversation.tenant_id, conversation.subject_id)
         == (target.tenant_id, target.subject_id)
         and (
@@ -138,6 +141,8 @@ def record_progress(session, root) -> None:
         },
         "created_at": now().isoformat(),
     }
+    if target.card_payload.get("skill_name"):
+        payload["skill_name"] = target.card_payload["skill_name"]
     if projection["status"] == "completed":
         content = session.scalar(
             select(ConversationMessageRow.content)
@@ -209,3 +214,9 @@ def require_schema(sessions) -> None:
                 row.__table__.columns.keys()
             ).issubset({column["name"] for column in inspector.get_columns(row.__tablename__)}):
                 raise RuntimeError("application database migration is required")
+        if not next(
+            column
+            for column in inspector.get_columns(NotificationTargetRow.__tablename__)
+            if column["name"] == "turn_id"
+        )["nullable"]:
+            raise RuntimeError("application database migration is required for skill forms")

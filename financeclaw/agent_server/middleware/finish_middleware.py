@@ -9,6 +9,14 @@ from financeclaw.agent_server.context.state import ConversationState
 from financeclaw.agent_server.context.turns import trusted_context
 from financeclaw.shared.turns.types import ExecutionConflict
 
+FINISH_INSTRUCTION = (
+    "\nThe task has reached its final answer allowance. No further tools or delegation "
+    "are available. Answer now using only evidence already read in this task. "
+    "Explain incomplete coverage or missing facts plainly; do not invent results, "
+    "treat a preview as exhaustive, or expose internal tool names, file references, "
+    "budget counters or errors. Follow the required final response format."
+)
+
 
 class FinishMiddleware(AgentMiddleware):
     """预留根最后一次模型调用，超预算批次补齐回执后转入回答。"""
@@ -99,20 +107,21 @@ class FinishMiddleware(AgentMiddleware):
         if not request.state.get("finishing"):
             return request
         original = request.system_message.content if request.system_message else ""
-        instruction = (
-            "\nThe task has reached its final answer allowance. No further tools or delegation "
-            "are available. Answer now using only evidence already read in this task. "
-            "Explain incomplete coverage or missing facts plainly; do not invent results, "
-            "treat a preview as exhaustive, or expose internal tool names, file references, "
-            "budget counters or errors. Follow the required final response format."
-        )
+        instruction = FINISH_INSTRUCTION
         content = (
             original + instruction
             if isinstance(original, str)
             else [*original, {"type": "text", "text": instruction}]
         )
         return request.override(
-            tools=[], tool_choice=None, system_message=SystemMessage(content=content)
+            tools=[],
+            tool_choice=None,
+            system_message=SystemMessage(
+                content=content,
+                additional_kwargs=(
+                    request.system_message.additional_kwargs if request.system_message else {}
+                ),
+            ),
         )
 
     def wrap_model_call(self, request, handler):

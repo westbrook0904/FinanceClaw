@@ -32,6 +32,7 @@ from financeclaw.agent_server.context.turns import trusted_context, user_anchor
 from financeclaw.agent_server.middleware.final_context import RequestRecorder
 from financeclaw.kernel.turns import current_turn_start, is_user_message
 from financeclaw.shared.llm.budget import ContextBudgetPlanner
+from financeclaw.shared.skills.access import ACCESS_KEY, RESOURCE_KEY, merge_access
 
 SUMMARY_PROMPT = """Return one JSON working-context object matching this schema: {schema}
 Summarize only the completed execution excerpts and previous working context, in their language.
@@ -60,7 +61,9 @@ class NativeContextMiddleware(AgentMiddleware):
         system_prompt="",
         tools=(),
         output_schema=None,
+        skill_projection=None,
         privacy_epoch_reader=None,
+        skill_validator=None,
     ):
         """冻结完整请求容量及工具 Schema，隐私读取由受信任领域适配器提供。"""
         self.budget = budget
@@ -73,6 +76,8 @@ class NativeContextMiddleware(AgentMiddleware):
         self.system_prompt = system_prompt
         self.tools = tools
         self.output_schema = output_schema
+        self.skill_projection = skill_projection
+        self.skill_validator = skill_validator
         self.privacy_epoch_reader = privacy_epoch_reader
 
     def before_agent(self, state, runtime):
@@ -192,7 +197,9 @@ class NativeContextMiddleware(AgentMiddleware):
         epoch = self._epoch(state, context)
         messages = state["messages"]
         total = self.planner.estimate(
-            projected_messages(state, system_prompt=self.system_prompt),
+            projected_messages(
+                state, system_prompt=self.system_prompt, skill_projection=self.skill_projection
+            ),
             tools=self.tools,
             output_schema=self.output_schema,
         )
@@ -268,6 +275,14 @@ class NativeContextMiddleware(AgentMiddleware):
                 )
             ),
         ]
+        refs = merge_access(
+            *(m.additional_kwargs.get(ACCESS_KEY, []) for m in removed),
+            (previous or {}).get("skill_access_refs", []),
+        )
+        prompt[-1].additional_kwargs[ACCESS_KEY] = refs
+        prompt[-1].additional_kwargs[RESOURCE_KEY] = merge_access(
+            *(m.additional_kwargs.get(RESOURCE_KEY, []) for m in removed)
+        )
         metered = MeteredSummaryModel(
             delegate=self.summary_model,
             recorder=self.recorder,
@@ -276,8 +291,13 @@ class NativeContextMiddleware(AgentMiddleware):
             max_attempts=1,
             privacy_epoch_reader=self.privacy_epoch_reader,
             expected_privacy_epoch=epoch,
+            skill_guard=(lambda: self.skill_validator(runtime, state, prompt))
+            if self.skill_validator
+            else None,
         )
         return {
+            "skill_access_refs": refs,
+            "skill_guard": metered.skill_guard,
             "indices": indices,
             "fingerprint": fingerprint,
             "attempts": attempts,
@@ -294,6 +314,8 @@ class NativeContextMiddleware(AgentMiddleware):
         """校验有界摘要、用户输入与调用配对后返回一次原生 reducer 更新。"""
         if self._epoch(state, operation["context"]) != operation["epoch"]:
             raise ValueError("privacy epoch changed while preparing working context")
+        if operation["skill_guard"]:
+            operation["skill_guard"]()
         text = response.content if isinstance(response.content, str) else ""
         if text.startswith("```json\n") and text.endswith("\n```"):
             text = text[8:-4]
@@ -305,6 +327,7 @@ class NativeContextMiddleware(AgentMiddleware):
         summary = WorkingContext(
             **draft.model_dump(),
             evidence_refs=operation["references"],
+            skill_access_refs=operation["skill_access_refs"],
             summary_version=(state.get("working_context") or {}).get("summary_version", 0) + 1,
             source_boundary=removed[-1].id or operation["fingerprint"],
             privacy_epoch=operation["epoch"],
@@ -320,7 +343,9 @@ class NativeContextMiddleware(AgentMiddleware):
             "working_context": summary.model_dump(mode="json"),
         }
         tokens = self.planner.estimate(
-            projected_messages(projected, system_prompt=self.system_prompt),
+            projected_messages(
+                projected, system_prompt=self.system_prompt, skill_projection=self.skill_projection
+            ),
             tools=self.tools,
             output_schema=self.output_schema,
         )

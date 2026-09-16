@@ -227,6 +227,9 @@ class NativeRuns:
             return {"status": "waiting", "state": state, "native_run_id": native_run_id}
         if status != "success" or anchor != native_run_id or state.get("next"):
             raise ExecutionConflict("final checkpoint does not prove active attempt completion")
+        preparation_error = state.get("values", {}).get("skill_state", {}).get("preparation_error")
+        if preparation_error:
+            return {"status": "failed", "reason": preparation_error["code"]}
         messages = current_messages(state, turn["release_snapshot"])
         if not messages or messages[-1].get("type", messages[-1].get("role")) not in {
             "ai",

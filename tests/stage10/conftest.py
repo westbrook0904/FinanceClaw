@@ -36,7 +36,7 @@ def admit(service):
                 tenant_id="tenant",
                 subject_id="user",
                 agent_id="finance_agent",
-                agent_profile_version="1.6.0",
+                agent_profile_version="1.8.0",
             ).conversation_id
         return service.admission.accept(
             conversation_id,

@@ -14,6 +14,7 @@ from financeclaw.kernel.context import DataClassification, ExecutionContext
 from financeclaw.shared.artifacts.models import ArtifactMetadata
 from financeclaw.shared.artifacts.repository import ArtifactNotFound, ArtifactRepository
 from financeclaw.shared.artifacts.storage import ArtifactStore
+from financeclaw.shared.skills.access import merge_access, require_access
 
 
 class ArtifactService:
@@ -143,6 +144,7 @@ class ArtifactService:
         content_type: str = "application/json",
         memory_privacy_epoch: int | None = None,
         memory_references: tuple[dict, ...] = (),
+        skill_access_refs: tuple[dict, ...] = (),
     ) -> ArtifactMetadata:
         """按幂等键持久化工具结果，重复提交相同内容时返回既有元数据。
 
@@ -158,6 +160,7 @@ class ArtifactService:
             content_type: 工件内容的 MIME 类型，默认 ``application/json``。
             memory_privacy_epoch: 记忆派生结果读取时冻结的隐私版本；业务原始结果为空。
             memory_references: 派生结果实际包含的有界记忆版本引用。
+            skill_access_refs: 平台生成的技能派生访问约束，后续回读须逐项复验。
 
         Returns:
             幂等命中的既有元数据，或新写入的工件元数据。
@@ -170,6 +173,9 @@ class ArtifactService:
         serialized = _serialize(value)
         payload = serialized.encode()
         content_hash = sha256(payload).hexdigest()
+        skill_policy = (
+            {"skill_access_refs": merge_access(skill_access_refs)} if skill_access_refs else {}
+        )
         memory_policy = {}
         if memory_privacy_epoch is not None:
             if type(memory_privacy_epoch) is not int or memory_privacy_epoch < 0:
@@ -195,6 +201,7 @@ class ArtifactService:
                 "source_id": source_id,
                 "idempotency_key": idempotency_key,
                 "memory_policy": memory_policy,
+                **skill_policy,
             },
             sort_keys=True,
             separators=(",", ":"),
@@ -238,16 +245,18 @@ class ArtifactService:
                 "required_scope": "artifacts:read",
                 "data_classification": context.data_classification.value,
                 **memory_policy,
+                **skill_policy,
             },
             encryption_metadata=self.store.encryption_metadata(),
         )
         return self.repository.save(metadata)
 
-    def read(self, artifact_id: str, *, context: ExecutionContext) -> bytes:
+    def read(self, artifact_id: str, *, context: ExecutionContext, skill_authorizer=None) -> bytes:
         """读取 Artifact 内容字节，读取前强制校验权限、归属与完整性。
 
         Args:
             artifact_id: 工件唯一标识。
+            skill_authorizer: 当前受信任运行的技能校验器；缺失时受限工件拒绝读取。
             context: 当前执行上下文，用于权限范围与归属校验。
 
         Returns:
@@ -265,6 +274,7 @@ class ArtifactService:
         # 2. 按归属读取元数据，确保 owner 隔离。
         metadata = self.repository.get_owned(artifact_id, context.tenant_id, context.subject_id)
         self.validate_memory_access(metadata, context)
+        require_access(metadata.access_policy.get("skill_access_refs", []), skill_authorizer)
         levels = list(DataClassification)
         classification = DataClassification(
             metadata.access_policy.get("data_classification", "restricted")
@@ -283,6 +293,7 @@ class ArtifactService:
         if sha256(payload).hexdigest() != metadata.content_hash:
             raise ValueError("artifact content hash mismatch")
         self.validate_memory_access(metadata, context)
+        require_access(metadata.access_policy.get("skill_access_refs", []), skill_authorizer)
         return payload
 
     def memory_privacy_epoch(self, context: ExecutionContext) -> int:

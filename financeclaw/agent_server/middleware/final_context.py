@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 from collections.abc import Callable, Sequence
+from dataclasses import replace
 from hashlib import sha256
 from uuid import uuid4
 
@@ -20,6 +21,7 @@ from financeclaw.shared.llm.budget import (
     TokenCounter,
     request_payload,
 )
+from financeclaw.shared.skills.access import ACCESS_KEY, RESOURCE_KEY, merge_access
 from financeclaw.shared.turns.types import ExecutionConflict
 
 MEMORY_REFS_KEY = "financeclaw_memory_refs"
@@ -50,6 +52,7 @@ class RequestRecorder:
         subtype="answer",
         model_settings=None,
         state=None,
+        skill_access_refs=(),
     ):
         """完整输入超过硬容量时停止调用；正常请求只保存来源和 hash。"""
         model_name = str(
@@ -108,6 +111,34 @@ class RequestRecorder:
                 "summary_version"
             ),
             compaction_reason=(state or {}).get("context_compaction_reason"),
+            skill_catalog_hash=next(
+                (
+                    m.additional_kwargs["skill_catalog_hash"]
+                    for m in messages
+                    if "skill_catalog_hash" in m.additional_kwargs
+                ),
+                None,
+            ),
+            skill_catalog_omitted=max(
+                (m.additional_kwargs.get("skill_catalog_omitted", 0) for m in messages), default=0
+            ),
+            skill_refs=tuple(
+                {
+                    "ref": m.additional_kwargs["skill_ref"],
+                    "resource_hash": m.additional_kwargs["resource_hash"],
+                    "tokens": self.counter.message(m),
+                }
+                for m in messages
+                if m.additional_kwargs.get("financeclaw_content_kind") == "skill_instructions"
+            ),
+            skill_resource_refs=tuple(
+                r for m in messages for r in m.additional_kwargs.get(RESOURCE_KEY, [])
+            ),
+            skill_access_refs=tuple(
+                merge_access(
+                    skill_access_refs, *(m.additional_kwargs.get(ACCESS_KEY, []) for m in messages)
+                )
+            ),
             message_ids=tuple(message.id for message in messages if message.id),
             summary_sources=tuple(summaries),
             memory_ids=tuple(references),
@@ -152,10 +183,11 @@ class RequestRecorder:
 class FinalContextMiddleware(AgentMiddleware):
     """放在重试、fallback 和输入转换内部，每个真实尝试记录一次。"""
 
-    def __init__(self, recorder: RequestRecorder, *, privacy_epoch_reader=None):
+    def __init__(self, recorder: RequestRecorder, *, privacy_epoch_reader=None, skill_service=None):
         """保存容量策略及可选的业务 Manifest 仓储。"""
         self.recorder = recorder
         self.privacy_epoch_reader = privacy_epoch_reader
+        self.skill_service = skill_service
 
     def _record(self, request):
         """记录完成全部输入变换后的实际模型请求。"""
@@ -169,6 +201,7 @@ class FinalContextMiddleware(AgentMiddleware):
                     raise ValueError(
                         "privacy epoch changed before actual model request; prepare again"
                     )
+        refs = self._access(request)
         return self.recorder.record(
             trusted_context(request.runtime),
             request.model,
@@ -177,18 +210,55 @@ class FinalContextMiddleware(AgentMiddleware):
             output_schema=request.response_format,
             model_settings=request.model_settings,
             state=request.state,
+            skill_access_refs=refs,
         )
+
+    def _access(self, request):
+        """真实尝试前重读授权，返回本次输出必须继承的来源。"""
+        if self.skill_service is None:
+            from financeclaw.shared.skills.access import require_access
+
+            refs = merge_access(
+                *(m.additional_kwargs.get(ACCESS_KEY, []) for m in request.messages)
+            )
+            require_access(refs)
+            return refs
+        return self.skill_service.validate_request(request.runtime, request.state, request.messages)
+
+    @staticmethod
+    def _inherit(response, refs):
+        """输出元数据由本次受验证输入签发，供应商不能自行声明访问来源。"""
+        results = []
+        for message in response.result:
+            metadata = {
+                k: v
+                for k, v in message.additional_kwargs.items()
+                if k
+                not in {
+                    ACCESS_KEY,
+                    RESOURCE_KEY,
+                    "skill_ref",
+                    "resource_hash",
+                    "financeclaw_content_kind",
+                }
+            }
+            if refs:
+                metadata[ACCESS_KEY] = refs
+            results.append(message.model_copy(update={"additional_kwargs": metadata}))
+        return replace(response, result=results)
 
     def wrap_model_call(self, request, handler: Callable):
         """检查并记录同步请求。"""
         manifest = self._record(request)
-        response = handler(request)
+        refs = self._access(request)
+        response = self._inherit(handler(request), refs)
         self.recorder.observe(manifest, response)
         return response
 
     async def awrap_model_call(self, request, handler: Callable):
         """检查并记录异步请求，数据库 I/O 不占用事件循环。"""
         manifest = await asyncio.to_thread(self._record, request)
-        response = await handler(request)
+        refs = await asyncio.to_thread(self._access, request)
+        response = self._inherit(await handler(request), refs)
         await asyncio.to_thread(self.recorder.observe, manifest, response)
         return response

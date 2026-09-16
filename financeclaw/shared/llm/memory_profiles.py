@@ -29,6 +29,11 @@ def memory_model_profiles(settings) -> tuple[ModelProfile, ModelProfile]:
                     **selected.model_dump(),
                     "profile_id": f"memory-{purpose}-{selected.profile_id}-{provider_identity}",
                     "max_tokens": min(selected.max_tokens, output_cap),
+                    # 结构化记忆的有限输出额度用于 JSON，不能被 Qwen 思考耗尽。
+                    # 仅派生后台档案，保留聊天模型的原有配置。
+                    "enable_thinking": (
+                        False if selected.model.startswith("openai:qwen") else None
+                    ),
                     "fallback_profiles": (),
                     "supports_tool_calling": False,
                     "allowed_data_classes": selected.allowed_data_classes

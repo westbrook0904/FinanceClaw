@@ -73,6 +73,12 @@ class ToolBatchMiddleware(AgentMiddleware):
                         )
         if len(calls) <= 1:
             return None
+        for call in calls:
+            try:
+                if self.catalog.resolve(call["name"]).governance.exclusive_batch:
+                    return "this tool requires an exclusive batch; no calls were executed"
+            except LookupError:
+                pass
         latest_user = next(
             (m for m in reversed(state["messages"]) if isinstance(m, HumanMessage)), None
         )

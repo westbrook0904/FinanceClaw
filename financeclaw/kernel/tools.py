@@ -146,6 +146,7 @@ class ToolGovernance(BaseModel):
     sensitivity: Sensitivity
     retry_profile: RetryProfile
     audit_level: AuditLevel = AuditLevel.FULL
+    exclusive_batch: bool = False
     tenant_allowlist: frozenset[str] | None = None
     allowed_data_classes: frozenset[DataClassification] = Field(
         default_factory=lambda: frozenset(DataClassification)

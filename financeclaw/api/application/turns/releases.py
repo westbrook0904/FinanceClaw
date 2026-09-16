@@ -5,13 +5,14 @@ from financeclaw.shared.turns.types import ExecutionConflict
 
 
 class TurnReleases:
-    """Resolve exact root releases; conversations pin their root release."""
+    """校验任务固定发布；空闲渠道会话可为后续任务换发布，旧任务快照不可替换。"""
 
     def __init__(self, catalogs):
         """Retain static catalogs only; never construct an AgentFactory in API."""
         self.agents = catalogs.agent_profiles
         self.tools = catalogs.tool_catalog
         self.workflows = catalogs.workflow_catalog
+        self.skills = catalogs.skills
 
     def verify(self, snapshot):
         """Unavailable or altered pinned releases cannot resume using latest code."""

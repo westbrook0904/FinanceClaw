@@ -40,6 +40,7 @@ class ModelProfile(BaseModel):
         temperature: 采样温度 [0, 2]，金融场景默认 0 以保证确定性。
         timeout_seconds: 单次调用超时（秒），取值范围 (0, 600]。
         max_tokens: 单次生成的最大 token 数，下限 64。
+        enable_thinking: Qwen 思考开关；为空时沿用服务端默认，计入冻结档案。
         context_window_tokens: 冻结的输入与输出总窗口，不从模型名推断。
         max_input_tokens: Provider独立输入cap；为空表示由总窗口和输出预留限制。
         token_estimator: 配置的估算器版本，实际离线降级另在Manifest记录。
@@ -60,6 +61,7 @@ class ModelProfile(BaseModel):
     temperature: float = Field(default=0, ge=0, le=2)
     timeout_seconds: float = Field(default=60, gt=0, le=600)
     max_tokens: int = Field(default=4096, ge=64)
+    enable_thinking: bool | None = None
     context_window_tokens: int = Field(default=131_072, ge=1_024)
     max_input_tokens: int | None = Field(default=None, ge=256)
     token_estimator: str = Field(
@@ -81,6 +83,8 @@ class ModelProfile(BaseModel):
     @model_validator(mode="after")
     def validate_capacity(self) -> "ModelProfile":
         """拒绝输出预留已经占满冻结总窗口的模型档案。"""
+        if self.enable_thinking is not None and not self.model.startswith("openai:qwen"):
+            raise ValueError("enable_thinking is only supported for Qwen model profiles")
         if self.context_window_tokens - self.max_tokens < 256:
             raise ValueError("model output reserve leaves fewer than 256 input tokens")
         return self

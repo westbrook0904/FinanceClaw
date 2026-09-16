@@ -123,7 +123,7 @@ def root_graph(
     model=None,
 ):
     """Register one business root, then execute its frozen candidate release."""
-    profile = stack.agent_profiles.resolve("finance_agent", "1.6.0")
+    profile = stack.agent_profiles.resolve("finance_agent", "1.8.0")
     context = ExecutionContext(
         tenant_id="synthetic-tenant",
         subject_id="synthetic-owner",
@@ -517,7 +517,7 @@ async def test_composite_mixed_batch_is_rejected_before_any_worker_runs(stack):
     calls = [portfolio(), call("market_snapshot", 3, symbol="AAPL")]
     _, kwargs = root_graph(stack, calls)
     graph = stack.agent_factory.build(
-        stack.agent_profiles.resolve("finance_agent", "1.6.0"), model=BatchModel(calls=calls)
+        stack.agent_profiles.resolve("finance_agent", "1.8.0"), model=BatchModel(calls=calls)
     )
     result = await graph.ainvoke(
         {"messages": [HumanMessage(content="mixed batch", id="root-input")]}, **kwargs
@@ -658,11 +658,11 @@ def test_catalog_contains_only_current_root_and_worker_releases(stack):
     """All runtime and static contracts agree; unpublished historical releases are absent."""
     releases = build_release_catalogs(stack.settings, enable_persistence=True)
     assert set(releases.agent_profiles) == {
-        ("finance_agent", "1.6.0"),
+        ("finance_agent", "1.8.0"),
         ("market_research_agent", "1.3.0"),
         ("ziwei_doushu_agent", "2.2.0"),
     }
-    assert stack.default_agent_profile.version == "1.6.0"
+    assert stack.default_agent_profile.version == "1.8.0"
     assert set(stack.agent_profiles) == set(releases.agent_profiles)
     assert all(
         not ref.tool_id.startswith("delegate_") for ref in stack.default_agent_profile.allowed_tools

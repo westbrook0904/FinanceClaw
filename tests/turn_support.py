@@ -36,7 +36,7 @@ def seed_execution(execution, context, snapshot, *, message="test input"):
                 tenant_id=context.tenant_id,
                 subject_id=context.subject_id,
                 agent_id="finance_agent",
-                agent_profile_version="1.6.0",
+                agent_profile_version="1.8.0",
                 agent_thread_id=str(uuid4()),
             )
             session.add(conversation)

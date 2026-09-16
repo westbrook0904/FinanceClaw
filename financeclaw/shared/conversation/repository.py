@@ -32,6 +32,7 @@ from financeclaw.shared.conversation.tables import (
     ModelContextManifestRow,
 )
 from financeclaw.shared.turns.tables import ConversationTurnRow, InteractionRow
+from financeclaw.shared.turns.types import TERMINAL_STATUSES
 
 
 class ConversationNotFound(LookupError):
@@ -62,6 +63,42 @@ class IdempotencyConflict(RuntimeError):
     """
 
     pass
+
+
+def _advance_channel_release(session, conversation, *, agent_id, agent_profile_version):
+    """空闲单聊向前更新发布并换新原生线程；旧任务快照、消息和通知目标保持有效。"""
+    if conversation.agent_id != agent_id:
+        raise ConversationConflict("channel conversation belongs to another Agent")
+    if conversation.status != ConversationStatus.ACTIVE.value:
+        return
+
+    def newer():
+        """滚动部署中的旧进程不得把已更新会话降回旧版本。"""
+        return tuple(map(int, agent_profile_version.split("."))) > tuple(
+            map(int, conversation.agent_profile_version.split("."))
+        )
+
+    if not newer():
+        return
+    # 与 Turn admission 共用会话写锁，等待并发受理后重新读取版本及活动任务。
+    session.execute(
+        update(ConversationRow)
+        .where(ConversationRow.conversation_id == conversation.conversation_id)
+        .values(updated_at=ConversationRow.updated_at)
+    )
+    session.refresh(conversation)
+    if not newer() or session.scalar(
+        select(ConversationTurnRow.turn_id)
+        .where(
+            ConversationTurnRow.conversation_id == conversation.conversation_id,
+            ConversationTurnRow.status.not_in(TERMINAL_STATUSES),
+        )
+        .limit(1)
+    ):
+        return
+    conversation.agent_profile_version = agent_profile_version
+    conversation.agent_thread_id = str(uuid4())
+    conversation.updated_at = datetime.now(UTC)
 
 
 class ConversationRepository(Protocol):
@@ -240,6 +277,7 @@ def _message(row: ConversationMessageRow) -> ConversationMessage:
         content=row.content,
         content_hash=row.content_hash,
         visible=row.visible,
+        skill_access_refs=row.skill_access_refs,
         created_at=row.created_at,
     )
 
@@ -399,6 +437,7 @@ class SqlAlchemyConversationRepository:
 
         唯一约束负责跨线程竞态收敛；竞态失败方回滚孤立 Conversation 后重读
         胜出绑定。若同一个 chat 后续映射到不同用户身份则拒绝，避免身份串用。
+        空闲会话可向前更新发布并换新原生线程；活动任务不更新，旧进程不能降级。
 
         Args:
             channel: Channel 类型，一期传 ``feishu``。
@@ -409,7 +448,7 @@ class SqlAlchemyConversationRepository:
             tenant_id: 映射后的 FinanceClaw 租户 ID。
             subject_id: 映射后的 FinanceClaw 主体 ID。
             agent_id: 新会话绑定的顶层 Agent ID。
-            agent_profile_version: 新会话固定的 Agent Profile 版本。
+            agent_profile_version: 新会话或空闲会话下一轮使用的 Agent Profile 版本。
 
         Returns:
             ``(binding, conversation, created)``；既有绑定时 created 为 False。
@@ -445,6 +484,12 @@ class SqlAlchemyConversationRepository:
                             raise ConversationConflict(
                                 "channel chat is already bound to another verified identity"
                             )
+                        _advance_channel_release(
+                            session,
+                            conversation,
+                            agent_id=agent_id,
+                            agent_profile_version=agent_profile_version,
+                        )
                         existing.updated_at = datetime.now(UTC)
                         session.flush()
                         return _channel_binding(existing), _conversation(conversation), False
@@ -580,7 +625,16 @@ class SqlAlchemyConversationRepository:
                 )
             )
             now = datetime.now(UTC)
+            from financeclaw.shared.skills.access import merge_access
+
+            sources = session.scalars(
+                select(ModelContextManifestRow.skill_access_refs).where(
+                    ModelContextManifestRow.turn_id == turn.turn_id
+                )
+            )
+            skill_refs = merge_access(*sources)
             row = ConversationMessageRow(
+                skill_access_refs=skill_refs,
                 message_id=f"message-{uuid4().hex}",
                 conversation_id=turn.conversation_id,
                 turn_id=turn.turn_id,

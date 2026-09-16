@@ -323,15 +323,37 @@ preview_records = 3
 结果规则只影响目录和预览，原始字段仍可读取。配置路径与回包不符时返回通用目录，
 不把展示问题变成参数澄清。规则变化进入发布指纹，需要 API/Worker 一起重新部署。
 
-`read_artifact` 2.0.1 要求从已有结果复制配对的 ID、SHA-256，并明确指定 `mode`：
+`read_artifact` 3.0.0 要求从已有结果复制配对的 ID、SHA-256，并明确指定 `mode`：
 
 | 模式 | 用法 |
 |---|---|
 | `inspect` | 查看业务根或 `path` 处的结构和数组长度 |
-| `json` | 用 JSON Pointer 定位 `path`；`fields` 选择相对对象字段；数组用 `start/limit` 分页 |
+| `json` | 用 JSON Pointer 定位 `path`；`fields` 的每一项也是 JSON Pointer，相对于选中的对象或每条数组记录；数组用 `start/limit` 分页 |
 | `text` | 对文本业务视图用 `offset/max_chars` 分页 |
 
-路径相对于实际业务数据，不需要定位 MCP 包装。记录默认请求 20 条，最多 200 条，
+`path` 相对于实际业务数据，不需要定位 MCP 或归档包装。空字符串 `""` 表示业务根；
+非空路径必须以 `/` 开头，逐层用 `/` 分隔，不支持 `$`、点号路径或通配符。
+`"/"` 表示名称为空的字段，不代表根。字段名本身包含 `/` 或 `~` 时分别写为 `~1` 或 `~0`。
+
+下面两例展示读取参数；调用时还需从已有结果原样复制配对的 `artifact_id`、`content_hash`。
+
+例一：业务根本身就是酒店详情对象，读取该对象的名称和价格：
+
+```json
+{"mode": "json", "path": "", "fields": ["/name", "/price"]}
+```
+
+例二：业务根包含 `hotelInformationList` 数组，读取前 10 家酒店的名称和价格：
+
+```json
+{"mode": "json", "path": "/hotelInformationList", "fields": ["/name", "/price"], "start": 0, "limit": 10}
+```
+
+第二例的 `fields` 相对于每条酒店记录，不重复 `/hotelInformationList`。
+`["name", "price"]` 会触发 `invalid JSON pointer`；合法路径选中的字段不存在时则记录为
+`missing_fields`，不属于语法错误。不确定结构时先用 `mode="inspect", path=""` 查看目录。
+
+记录默认请求 20 条，最多 200 条，
 实际回执仍受 16 KiB 上限约束；跟随 `next_start` 或 `next_offset`，不能按请求数量自行跳页。
 单个 JSON 对象按 `path/fields` 读取，忽略 `start/limit`，携带 `limit=1` 不会再触发数组分页错误。
 单条数据装不下时返回 `needs_narrower_selection`，应减少字段或定位更深路径。

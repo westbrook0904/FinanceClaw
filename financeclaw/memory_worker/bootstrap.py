@@ -9,6 +9,7 @@ from financeclaw.memory_worker.consolidation import CONSOLIDATION_DESTINATION, C
 from financeclaw.memory_worker.extraction import EXTRACTION_DESTINATION, ExtractionHandler
 from financeclaw.memory_worker.model import OfflineMemoryModel, StructuredMemoryModel
 from financeclaw.memory_worker.runner import MemoryJobRunner
+from financeclaw.shared.conversation.tables import ConversationMessageRow
 from financeclaw.shared.infrastructure.database import ApplicationDatabase
 from financeclaw.shared.infrastructure.security.egress import EgressPolicy
 from financeclaw.shared.llm.factory import ModelFactory, configured_connections
@@ -123,6 +124,7 @@ def require_schema(database):
     """Reject absent or stale memory/Outbox schema before declaring the consumer healthy."""
     schema = inspect(database.engine)
     for table in (
+        ConversationMessageRow,
         MemoryOwnerRow,
         MemorySourceRow,
         MemoryExtractionRow,

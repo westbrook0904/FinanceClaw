@@ -22,6 +22,7 @@ def working_message(value: dict | None) -> HumanMessage | None:
         ),
         additional_kwargs={
             "lc_source": "summarization",
+            "financeclaw_skill_access": list(summary.skill_access_refs),
             "summary_source": {
                 "version": summary.summary_version,
                 "through_message_id": summary.source_boundary,
@@ -41,12 +42,13 @@ def history_messages(turn) -> list[BaseMessage]:
                     content=item.content,
                     id=item.message_id,
                     additional_kwargs={
+                        "financeclaw_skill_access": list(item.skill_access_refs),
                         "financeclaw_source": {
                             "conversation_id": item.conversation_id,
                             "turn_id": item.turn_id,
                             "sequence": item.sequence,
                             "source": "journal_bootstrap",
-                        }
+                        },
                     },
                 )
             )
@@ -80,17 +82,37 @@ def history_messages(turn) -> list[BaseMessage]:
     return result
 
 
-def projected_messages(state, *, system_prompt="", memory_projection=True) -> list[BaseMessage]:
+def projected_messages(
+    state, *, system_prompt="", memory_projection=True, skill_projection=None
+) -> list[BaseMessage]:
     """准备与最终模型投影一致的系统、记忆、工作摘要和原生消息。"""
     system = SystemMessage(content=system_prompt) if system_prompt else None
     if memory_projection and "memory_recall" in state:
         system = memory_system_message(system, state["memory_recall"])
+    skill_messages = []
+    if skill_projection is not None:
+        directory, skill_messages, metadata = skill_projection(state)
+        system = SystemMessage(
+            content=(system.content if system else "") + directory,
+            additional_kwargs={**(system.additional_kwargs if system else {}), **metadata},
+        )
     result = [system] if system is not None else []
     working = working_message(state.get("working_context"))
     if working is not None:
         result.append(working)
     result.extend(state.get("messages", []))
-    return result
+    return insert_skill_messages(
+        result, skill_messages, user_message_id=state.get("skill_state", {}).get("user_message_id")
+    )
+
+
+def insert_skill_messages(messages, bodies, *, user_message_id=None) -> list[BaseMessage]:
+    """历史摘要和完整旧轮次之后、本轮冻结输入之前插入技能，不拆开本轮工具批次。"""
+    projected = list(messages)
+    if bodies:
+        start = current_turn_start(projected, user_message_id)
+        projected[start:start] = bodies
+    return projected
 
 
 def memory_system_message(existing, snapshot) -> SystemMessage:

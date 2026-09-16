@@ -134,6 +134,12 @@ def create_default_app(settings=None, *, resources=None, client=None):
                         and await turns.events.healthy()
                         and await run_sync(turns.store.responsibility_healthy)
                     )
+                    if valid:
+                        await run_sync(turns.store.require_schema)
+                    if valid and settings.feishu_enabled:
+                        from financeclaw.shared.notifications.facts import require_schema
+
+                        await run_sync(require_schema, shared.database.session_factory)
                     if client is None and valid:
                         await turns.lifecycle.native.client.threads.search(limit=1)
         except Exception:

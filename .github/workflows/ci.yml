@@ -34,6 +34,9 @@ jobs:
       - run: uv run --no-sync ruff check financeclaw tests scripts deploy experiments/stage10 experiments/taibu
       - run: uv run --no-sync ruff format --check financeclaw tests scripts deploy experiments/stage10 experiments/taibu
       - run: uv run --no-sync python scripts/check_secret_leaks.py
+      - run: uv run --no-sync python scripts/skill_manifest.py --check
+      - run: uv build --wheel --out-dir build/skill-wheel
+      - run: uv run --no-sync python scripts/check_skill_wheel.py build/skill-wheel/financeclaw-0.1.0-py3-none-any.whl
       - name: Test with offline tokenizer fallback
         env:
           TIKTOKEN_CACHE_DIR: ""

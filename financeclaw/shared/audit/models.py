@@ -39,6 +39,9 @@ class AuditEventType(StrEnum):
 
     """
 
+    SKILL_LOAD_PREPARED = "skill.load_prepared"
+    SKILL_LOAD_REJECTED = "skill.load_rejected"
+    SKILL_RESOURCE_READ = "skill.resource_read"
     TOOL_ALLOWED = "tool.allowed"
     TOOL_DENIED = "tool.denied"
     TOOL_APPROVAL_REQUESTED = "tool.approval_requested"

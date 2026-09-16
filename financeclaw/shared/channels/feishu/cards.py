@@ -290,6 +290,13 @@ def render_card(event_id, payload):
     ended = status in {"completed", "failed", "cancelled", "cancelling"}
     active = status in {"accepted", "running", "queued", "resuming", "cancelling"}
     elements = []
+    if payload.get("skill_name"):
+        elements.append(
+            {
+                "tag": "div",
+                "text": plain(f"已受理 · {payload['skill_name']}\n任务编号：{payload['turn_id']}"),
+            }
+        )
     if active:
         elements.append(
             {
@@ -319,6 +326,21 @@ def render_card(event_id, payload):
                 "content": "\n".join(
                     f"{labels[item['status']]} `{item['tool']}` · `{item['agent']}`"
                     for item in stream["tools"][-TOOL_PROGRESS_LIMIT:]
+                ),
+            }
+        )
+    if stream.get("skills") and status in {"queued", "running", "resuming"}:
+        skill_labels = {
+            "preparing": "正在准备技能",
+            "prepared": "技能准备就绪",
+            "failed": "技能准备失败",
+        }
+        elements.append(
+            {
+                "tag": "markdown",
+                "content": "\n".join(
+                    f"{skill_labels[item['status']]} `{item['skill']}`"
+                    for item in stream["skills"][-8:]
                 ),
             }
         )

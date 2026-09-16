@@ -76,6 +76,9 @@ class HistoryIndexer:
                 or not source.visible
             ):
                 raise ValueError("history source does not match the completed Turn")
+            # 后台索引无当前技能 scope；仅索引真实用户等不受该约束的来源。
+            if source.skill_access_refs:
+                continue
             for start in range(0, len(source.content), self.chunk_chars):
                 end = min(len(source.content), start + self.chunk_chars)
                 key = f"{source.message_id}:{start}"

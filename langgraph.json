@@ -11,7 +11,7 @@
   "store": {
     "index": {
       "embed": "./financeclaw/agent_server/memory/embeddings.py:embeddings",
-      "dims": 1536,
+      "dims": 1024,
       "fields": [
         "content"
       ]

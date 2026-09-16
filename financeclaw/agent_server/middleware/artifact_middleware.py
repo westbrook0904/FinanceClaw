@@ -39,7 +39,13 @@ class ToolResultArtifactMiddleware(AgentMiddleware):
         if isinstance(response, Command) and isinstance(response.update, dict):
             update = dict(response.update)
             if "messages" in update:
-                update["messages"] = [self._project(request, item) for item in update["messages"]]
+                update["messages"] = [
+                    self._project(request, item)
+                    if isinstance(item, ToolMessage)
+                    and item.tool_call_id == request.tool_call["id"]
+                    else item
+                    for item in update["messages"]
+                ]
             return Command(
                 graph=response.graph, update=update, resume=response.resume, goto=response.goto
             )

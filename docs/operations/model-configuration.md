@@ -70,6 +70,16 @@ DeepSeek 保持现有非思考模式，本次未加入 `reasoning_content`。
 记忆提取与整理分别沿用来源许可的 2000 / 4000 输出上限：实际输出上限为模型声明与任务上限的较小值。
 因此默认模型输出较大也不会扩大记忆任务授权；更小的输出上限可直接在模型别名中声明。
 
+Qwen 聊天别名可声明 `enable_thinking = true/false`，省略时保留供应商默认值。
+记忆提取和整理派生的 Qwen 档案固定使用 `enable_thinking = false`，防止思考占满
+2000 / 4000 token 后尚未生成 JSON。该开关进入记忆任务冻结指纹；不会改变聊天别名，
+也不会放宽来源许可或恢复已耗尽的尝试次数。非 Qwen 模型不能声明这一专用参数。
+
+SDK 因输出截断抛出 `LengthFinishReasonError` 时，也记录实际输入、输出与思考用量。
+Outbox 的 `processing_metadata.failure_history` 保留最近八次异常类型，日志打印事件编号和
+异常类型；不记录模型正文。`ModelBudgetExhausted` 表示持久化调用次数已耗尽，排查时应同时看
+`failure_history`、`model_usage` 和 `model_budget`，不能仅据最后一条错误认定输入超长。
+
 `fallbacks` 可跨供应商，按声明顺序展开、去重，循环引用会报错。
 是否使用降级遵守各执行路径的既有策略：根/市场 Agent 可用，Ziwei、摘要和记忆任务不新增降级行为。
 

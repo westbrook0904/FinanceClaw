@@ -1,0 +1,4 @@
+interface:
+  display_name: 行情简报
+policy:
+  allow_implicit_invocation: true

@@ -1,7 +1,7 @@
 """通知订阅消费与发送租约；网络调用始终在事务外，回执由 epoch 保护。"""
 
 import json
-from datetime import timedelta
+from datetime import datetime, timedelta
 from uuid import NAMESPACE_URL, uuid5
 
 from sqlalchemy import exists, func, or_, select, update
@@ -10,6 +10,7 @@ from sqlalchemy.orm import aliased
 from financeclaw.integrations.notifications.rendering import answer_cards
 from financeclaw.shared.channels.feishu.cards import render_card
 from financeclaw.shared.channels.feishu.memory_cards import render_memory_card
+from financeclaw.shared.channels.feishu.skill_cards import render_skill_form
 from financeclaw.shared.notifications.facts import require_schema, target_valid
 from financeclaw.shared.notifications.tables import (
     NotificationDeliveryRow as Delivery,
@@ -28,6 +29,8 @@ from financeclaw.shared.notifications.tables import (
 )
 from financeclaw.shared.turns.tables import ConversationTurnRow, InteractionRow
 from financeclaw.shared.turns.types import digest
+
+BOUND_CARD_KINDS = ("card", "skill_form")
 
 
 def aware(value):
@@ -61,11 +64,11 @@ class NotificationRepository:
             )
             if event is None:
                 return False
-            if event.kind == "card" and session.scalar(
+            if event.kind in BOUND_CARD_KINDS and session.scalar(
                 select(Event.event_id)
                 .where(
                     Event.target_id == event.target_id,
-                    Event.kind == "card",
+                    Event.kind.in_(BOUND_CARD_KINDS),
                     Event.revision > event.revision,
                 )
                 .limit(1)
@@ -74,6 +77,10 @@ class NotificationRepository:
                 return True
             if event.kind == "card":
                 parts = [json.dumps(render_card(event.event_id, event.payload), ensure_ascii=False)]
+            elif event.kind == "skill_form":
+                parts = [
+                    json.dumps(render_skill_form(event.event_id, event.payload), ensure_ascii=False)
+                ]
             elif event.kind == "memory_candidates":
                 parts = [
                     json.dumps(
@@ -129,8 +136,8 @@ class NotificationRepository:
                         select(prior_event.event_id)
                         .outerjoin(prior_delivery, prior_delivery.event_id == prior_event.event_id)
                         .where(
-                            Event.kind == "card",
-                            prior_event.kind == "card",
+                            Event.kind.in_(BOUND_CARD_KINDS),
+                            prior_event.kind.in_(BOUND_CARD_KINDS),
                             prior_event.target_id == Event.target_id,
                             prior_event.revision < Event.revision,
                             or_(
@@ -151,7 +158,7 @@ class NotificationRepository:
             row.owner, row.epoch = owner, row.epoch + 1
             row.lease_until = utcnow() + timedelta(seconds=lease_seconds)
             target = session.get(Target, session.get(Event, row.event_id).target_id)
-            if session.get(Event, row.event_id).kind == "card":
+            if session.get(Event, row.event_id).kind in BOUND_CARD_KINDS:
                 if row.card_id is None and target.card_message_id:
                     row.card_id = target.card_id
                 if row.first_attempt_at is None:
@@ -195,7 +202,13 @@ class NotificationRepository:
         if (
             target.app_id != self.app_id
             or target.address["open_id"] not in self.allowed_open_ids
-            or not target_valid(session, target, require_active=event.kind != "card")
+            or not target_valid(session, target, require_active=event.kind not in BOUND_CARD_KINDS)
+        ):
+            return False
+        if event.kind == "skill_form" and (
+            target.turn_id is not None
+            or not target.active
+            or aware(datetime.fromisoformat(event.payload["expires_at"])) <= utcnow()
         ):
             return False
         if event.kind == "card":
@@ -203,7 +216,7 @@ class NotificationRepository:
                 return False
             if row.first_attempt_at is None:
                 root = session.get(ConversationTurnRow, target.turn_id)
-                if event.payload.get("revision", event.revision) < root.revision:
+                if root is None or event.payload.get("revision", event.revision) < root.revision:
                     return False
                 # 新 token 只更新展示版本，不能使正在检查目标的片段永远失效。
                 # 积压片段在 materialize 合并；停止与交互仍由业务 revision 拦截。
@@ -343,7 +356,7 @@ class NotificationRepository:
             target = session.get(Target, session.get(Event, row.event_id).target_id)
             if row.card_id is not None and row.card_id != card_id:
                 raise StaleSender("delivery card instance was already bound")
-            if session.get(Event, row.event_id).kind == "card":
+            if session.get(Event, row.event_id).kind in BOUND_CARD_KINDS:
                 if target.card_message_id and target.card_id != card_id:
                     raise StaleSender("card instance was already bound")
                 target.card_id = card_id
@@ -364,7 +377,7 @@ class NotificationRepository:
             row = self._locked(session, claim)
             if receipt.status == "sent" and receipt.message_id:
                 row.message_id, row.uncertain = receipt.message_id, False
-                if session.get(Event, row.event_id).kind == "card":
+                if session.get(Event, row.event_id).kind in BOUND_CARD_KINDS:
                     event = session.get(Event, row.event_id)
                     target = session.get(Target, event.target_id)
                     if target.card_message_id and target.card_message_id != receipt.message_id:

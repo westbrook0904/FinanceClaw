@@ -83,7 +83,7 @@ class AgentServerComponents:
     def default_agent_profile(self) -> AgentProfile:
         """返回本次装配已注册的最新顶层档案，仅用于创建新会话。
 
-        当前产品装配仅注册 1.6.0 根发布。
+        当前产品装配仅注册 1.8.0 根发布。
         候选功能开关决定当前发布的工具配置；已创建会话使用它保存的固定版本，
         不应在每轮调用时重新选择默认档案。
 
@@ -200,7 +200,15 @@ def build_components(
             projection_bytes=settings.ziwei_projection_bytes,
         )
     chart_tools = ziwei_tools(ziwei_service)
-    tool_catalog = ToolCatalog((*base_tool_catalog.values(), *chart_tools))
+    from financeclaw.agent_server.tools.skills import skill_tools
+
+    tool_catalog = ToolCatalog(
+        (
+            *base_tool_catalog.values(),
+            *chart_tools,
+            *(skill_tools(None) if settings.skills_enabled else ()),
+        )
+    )
     # 12. 构建 Agent 工厂：绑定模型、工具、策略、审计与各类服务。
     agent_factory = AgentFactory(
         model_factory=model_factory,
@@ -217,6 +225,7 @@ def build_components(
         memory_recall_tokens=settings.memory_recall_tokens,
         memory_recall_limit=settings.memory_recall_limit,
         resource_concurrency=resource_concurrency,
+        skill_catalog=releases.skills,
     )
     from financeclaw.agent_server.tools.subgraph_assembly import assemble_subgraph_tools
 

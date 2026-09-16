@@ -59,7 +59,7 @@ class MessageRole(StrEnum):
 
 
 class Conversation(FrozenRecord):
-    """一次持久化对话的聚合根记录，固定绑定租户、主体与 Agent 线程。
+    """一次持久化对话的聚合根记录，固定归属并记录后续任务所用发布和线程。
 
     使用场景：API 创建会话时写入；后续所有 turn、消息、摘要与 Manifest 都通过
     conversation_id 关联到该记录，agent_thread_id 唯一，支撑跨重启继续。
@@ -69,8 +69,8 @@ class Conversation(FrozenRecord):
         tenant_id: 租户标识，用于多租户隔离与归属校验。
         subject_id: 主体（用户或服务账号）标识，与 tenant_id 共同构成归属键。
         agent_id: 绑定的 Agent 标识，会话内所有模型调用共享同一 Agent。
-        agent_profile_version: 创建会话时的 Agent Profile 版本，用于审计与兼容。
-        agent_thread_id: LangGraph Agent 线程 ID（UUID 字符串），全局唯一。
+        agent_profile_version: 后续任务使用的版本；空闲单聊可向前更新，旧 Turn 快照不变。
+        agent_thread_id: 当前 LangGraph 线程 UUID；空闲单聊更新发布时换新，不复用旧 checkpoint。
         status: 会话状态，默认 ACTIVE，取值见 ConversationStatus。
         created_at: 会话创建时间（UTC）。
         updated_at: 会话最近一次更新时间（UTC），通常随新消息追加而刷新。
@@ -161,6 +161,7 @@ class ConversationMessage(FrozenRecord):
     role: MessageRole
     content: str
     content_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    skill_access_refs: tuple[dict[str, Any], ...] = Field(default=(), max_length=64)
     visible: bool = True
     created_at: datetime
 
@@ -241,6 +242,11 @@ class ModelContextManifest(FrozenRecord):
     privacy_epoch: int | None = Field(default=None, ge=0)
     working_summary_version: int | None = Field(default=None, ge=0)
     compaction_reason: str | None = None
+    skill_catalog_hash: str | None = None
+    skill_catalog_omitted: int = Field(default=0, ge=0)
+    skill_refs: tuple[dict[str, Any], ...] = Field(default=(), max_length=32)
+    skill_resource_refs: tuple[dict[str, Any], ...] = Field(default=(), max_length=64)
+    skill_access_refs: tuple[dict[str, Any], ...] = Field(default=(), max_length=64)
     summary_sources: tuple[dict[str, Any], ...] = ()
     memory_ids: tuple[str, ...] = ()
     memory_refs: tuple[ManifestMemoryReference, ...] = ()

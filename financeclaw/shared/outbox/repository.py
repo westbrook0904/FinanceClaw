@@ -199,13 +199,15 @@ class SqlAlchemyOutboxRepository:
             row = self.require_claim_in_session(session, event_id, claim_epoch)
             metadata = deepcopy(row.processing_metadata or {})
             samples = list(metadata.get("model_usage", []))
-            samples.append(
-                {
-                    key: int(usage[key])
-                    for key in ("input_tokens", "output_tokens", "total_tokens")
-                    if isinstance(usage.get(key), int) and usage[key] >= 0
-                }
-            )
+            sample = {
+                key: int(usage[key])
+                for key in ("input_tokens", "output_tokens", "total_tokens")
+                if isinstance(usage.get(key), int) and usage[key] >= 0
+            }
+            reasoning = (usage.get("output_token_details") or {}).get("reasoning")
+            if isinstance(reasoning, int) and reasoning >= 0:
+                sample["reasoning_tokens"] = reasoning
+            samples.append(sample)
             metadata["model_usage"] = samples[-8:]
             row.processing_metadata = metadata
 
@@ -286,6 +288,12 @@ class SqlAlchemyOutboxRepository:
         metadata = deepcopy(row.processing_metadata or {})
         metadata["failure_count"] = metadata.get("failure_count", 0) + 1
         metadata["last_failure_class"] = error[:128]
+        # 仅保存异常类名，不把供应商正文、SQL 参数或用户内容写入诊断历史。
+        failure_class = error.split(":", 1)[0].strip()
+        if failure_class.isidentifier() and len(failure_class) <= 128:
+            history = list(metadata.get("failure_history", []))
+            history.append({"attempt": row.attempts + 1, "error_type": failure_class})
+            metadata["failure_history"] = history[-8:]
         row.processing_metadata = metadata
         row.attempts += 1
         row.last_error = error[:1_000]

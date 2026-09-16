@@ -34,7 +34,10 @@ from financeclaw.agent_server.middleware.final_context import (
     FinalContextMiddleware,
     RequestRecorder,
 )
-from financeclaw.agent_server.middleware.finish_middleware import FinishMiddleware
+from financeclaw.agent_server.middleware.finish_middleware import (
+    FINISH_INSTRUCTION,
+    FinishMiddleware,
+)
 from financeclaw.agent_server.middleware.memory_middleware import MemoryRecallMiddleware
 from financeclaw.agent_server.middleware.middleware import (
     ContextTraceMiddleware,
@@ -101,6 +104,7 @@ class AgentFactory:
         memory_recall_tokens: int = 768,
         memory_recall_limit: int = 5,
         resource_concurrency: int = 8,
+        skill_catalog=None,
     ) -> None:
         """保存全部装配依赖，供后续按档案构建 Agent 时使用。
 
@@ -119,6 +123,7 @@ class AgentFactory:
             memory_recall_tokens: 记忆召回 token 预算。
             memory_recall_limit: 记忆召回条数上限。
             resource_concurrency: 同一 Factory 所构建 Agent 的共享工具 I/O 并发上限。
+            skill_catalog: 与当前发布绑定的不可变技能目录。
 
         """
         if resource_concurrency < 1:
@@ -137,6 +142,7 @@ class AgentFactory:
         self.memory_recall_tokens = memory_recall_tokens
         self.memory_recall_limit = memory_recall_limit
         self.resource_gate = BoundedSemaphore(resource_concurrency)
+        self.skill_catalog = skill_catalog
 
     def context_planner(self, profile: AgentProfile) -> ContextBudgetPlanner:
         """根图、子图和最终检查共用发布时冻结的主模型及降级容量。"""
@@ -184,9 +190,43 @@ class AgentFactory:
         # 1. 依据档案解析受治理工具，并得到允许键集合（tool_id@version）。
         if model_retry_limit is not None and not 0 <= model_retry_limit <= self.model_max_retries:
             raise ValueError("domain model retry limit cannot exceed the Factory limit")
+        from financeclaw.shared.releases.skills import SKILL_TOOLS, builtin_skills
+
+        skills = None
+        planner = self.context_planner(profile)
         resolved_tools = tuple(
-            self.tool_catalog.resolve(ref.tool_id, ref.version) for ref in profile.allowed_tools
+            self.tool_catalog.resolve(ref.tool_id, ref.version)
+            for ref in profile.allowed_tools
+            if ref.tool_id not in SKILL_TOOLS
         )
+        if profile.allowed_skills:
+            from financeclaw.agent_server.skills.service import SkillService
+            from financeclaw.agent_server.tools.skills import skill_tools
+
+            skills = SkillService(
+                profile,
+                self.skill_catalog or builtin_skills(),
+                planner,
+                repository=self.conversation_repository,
+                audit=self.audit,
+                inline_bytes=self.artifact_service.inline_bytes if self.artifact_service else 8192,
+            )
+            bound = {ref.tool_id: ref.version for ref in profile.allowed_tools}
+            added = skill_tools(skills)
+            if any(bound.get(item.tool.name) != item.governance.version for item in added):
+                raise ValueError("skill tools must be pinned in the Agent profile")
+            resolved_tools += added
+            from financeclaw.agent_server.tools.governance import ManagedTool
+            from financeclaw.agent_server.tools.history import HistoryTool
+
+            adjusted = []
+            for managed in resolved_tools:
+                if isinstance(managed.tool, HistoryTool):
+                    tool = managed.tool.model_copy()
+                    tool._skills = skills
+                    managed = ManagedTool(tool, managed.governance)
+                adjusted.append(managed)
+            resolved_tools = tuple(adjusted)
         from financeclaw.agent_server.tools.interaction import question_tools
 
         # 问题工具由 Profile 声明生成，其 Schema／权限随 Profile 一起冻结发布。
@@ -205,9 +245,11 @@ class AgentFactory:
         planner = self.context_planner(profile)
         context_options = {
             "planner": planner,
-            "system_prompt": profile.system_prompt_template,
+            "system_prompt": profile.system_prompt_template
+            + (FINISH_INSTRUCTION if profile.finish_on_budget else ""),
             "tools": tuple(managed.tool for managed in resolved_tools),
             "output_schema": profile.output_schema if use_profile_response_format else None,
+            "skill_projection": skills.projection if skills else None,
         }
         # 3. 收集按瞬时失败重试策略配置的只读工具名，供后续挂载重试中间件。
         read_retry_tools = [
@@ -253,6 +295,16 @@ class AgentFactory:
             ToolProgressMiddleware(profile.agent_id, (item.tool.name for item in resolved_tools)),
             *additional_middleware,
         ]
+        if skills:
+            from financeclaw.agent_server.middleware.skills import (
+                SkillBoundaryMiddleware,
+                SkillInitializationMiddleware,
+                SkillProjectionMiddleware,
+            )
+
+            middleware.extend(
+                [SkillBoundaryMiddleware(skills), SkillInitializationMiddleware(skills)]
+            )
         if profile.worker_manifest:
             middleware.append(
                 WorkerClarificationMiddleware(
@@ -350,9 +402,25 @@ class AgentFactory:
                         if self.memory_service is not None
                         else None
                     ),
+                    skill_validator=skills.validate_request if skills else None,
                     **context_options,
                 )
             )
+        if skills:
+            from financeclaw.agent_server.context.preparation import CandidatePreparation
+
+            stages = [
+                m
+                for m in middleware
+                if isinstance(
+                    m,
+                    (MemoryRecallMiddleware, ToolContextEditingMiddleware, NativeContextMiddleware),
+                )
+            ]
+            skills.preparer = CandidatePreparation(
+                stages, **context_options, validator=skills.validate_request
+            )
+            middleware.append(SkillProjectionMiddleware(skills))
         # 7. 挂载追踪与输入输出调试中间件。
         middleware.extend(
             [
@@ -443,6 +511,7 @@ class AgentFactory:
                 privacy_epoch_reader=(
                     self.memory_service.privacy_epoch if self.memory_service is not None else None
                 ),
+                skill_service=skills,
             )
         )
         # 11. 解析 Checkpointer（缺省用内存实现），交给 create_agent 装配。

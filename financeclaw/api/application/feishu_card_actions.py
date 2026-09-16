@@ -10,6 +10,7 @@ from sqlalchemy import text
 from financeclaw.api.application.turns.controls import apply_control
 from financeclaw.kernel.authorization import AuthorizationEvidence
 from financeclaw.shared.channels.feishu.cards import render_card, response_from_card, toast
+from financeclaw.shared.channels.feishu.skill_cards import SkillFormError
 from financeclaw.shared.infrastructure.asyncio import run_sync
 from financeclaw.shared.memory.models import MemoryNotFound
 from financeclaw.shared.notifications.facts import target_valid
@@ -51,6 +52,8 @@ class FeishuCardActions:
             if self.runs.lifecycle:
                 self.runs.lifecycle.wake()
             return result
+        except SkillFormError as exc:
+            return toast(str(exc), "error")
         except (
             ValueError,
             KeyError,
@@ -94,8 +97,25 @@ class FeishuCardActions:
                 session.execute(text("SET LOCAL lock_timeout = '750ms'"))
                 session.execute(text("SET LOCAL statement_timeout = '1200ms'"))
             view = session.get(NotificationEventRow, value["view"])
-            if view is None or view.kind not in {"card", "memory_candidates"}:
+            if view is None or view.kind not in {"card", "memory_candidates", "skill_form"}:
                 raise ValueError("unknown view")
+            if view.kind == "skill_form":
+                from financeclaw.api.application.skill_task_forms import accept_skill_form
+
+                result = accept_skill_form(
+                    self,
+                    session,
+                    view,
+                    tenant=tenant,
+                    operator=operator,
+                    context=context,
+                    value=value,
+                    form=form,
+                    event_key=event_key,
+                )
+                if time.monotonic() - started > 1.8:
+                    raise TimeoutError("callback transaction exceeded budget")
+                return result
             if view.kind == "memory_candidates":
                 from financeclaw.api.application.memory_card_actions import accept_memory_card
 

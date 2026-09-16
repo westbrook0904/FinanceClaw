@@ -60,7 +60,11 @@ class ConfiguredEmbeddings(Embeddings):
     def _validate(self, vectors):
         """拒绝与部署 Store 维度配置不一致的模型输出。"""
         if any(len(vector) != self.settings.embedding_dimensions for vector in vectors):
-            raise ValueError("embedding output dimension does not match the Store index")
+            actual = sorted({len(vector) for vector in vectors})
+            raise ValueError(
+                "embedding output dimension does not match the Store index: "
+                f"expected={self.settings.embedding_dimensions}, actual={actual}"
+            )
         return vectors
 
     def embed_documents(self, texts):

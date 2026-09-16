@@ -1,10 +1,10 @@
 # 飞书任务卡与通知交付
 
-飞书连接和通知发送在 integrations 角色运行。API 只持久化消息/卡片决定与通知意图；Worker 只执行图。每个 Turn 固定一张任务卡和原始回复目标。
+飞书连接和通知发送在 integrations 角色运行。API 只持久化消息/卡片决定与通知意图；Worker 只执行图。每个 Turn 固定一张任务卡和原始回复目标。`/skills` 可先创建没有 Turn 的技能表单，提交后将同一张卡绑定到新任务。
 
 ## 启动
 
-使用统一 `compose.yml`。空应用库为 14 张表，原有开发库不会自动删除或升级。配置飞书 APP_ID、APP_SECRET、open_id allowlist 和 scopes；开启机器人、WebSocket 的 `im.message.receive_v1`/`card.action.trigger` 及 CardKit 权限。生产使用 strict 模式。
+使用统一 `compose.yml`。空应用库为 18 张表，原有开发库不会自动删除或升级。`notification_targets.turn_id` 允许表单草稿暂时无任务关联；readiness 会拒绝该字段仍为非空的旧 schema。配置飞书 APP_ID、APP_SECRET、open_id allowlist 和 scopes；开启机器人、WebSocket 的 `im.message.receive_v1`/`card.action.trigger` 及 CardKit 权限。生产使用 strict 模式。
 
 `python -m financeclaw.integrations` 同时监督渠道、通知和历史消费者，默认只有一个实例建立 WebSocket。API 扩容不会增加连接数量。integrations 健康检查分别报告渠道、通知和历史任务；心跳不代替消息发送回执。
 
@@ -12,12 +12,16 @@
 
 | 表 | 责任 |
 |---|---|
-| notification_targets | 每个 Turn 固定原消息订阅与会话绑定，保存 CardKit ID、卡片消息 ID、确认序号和期望视图 |
+| notification_targets | 固定原消息订阅与会话绑定，保存 CardKit ID、卡片消息 ID、确认序号和期望视图；技能表单提交前无 Turn，提交后绑定一个 Turn |
 | notification_events | 业务状态事务冻结卡片视图；最终正文从同事务 Journal 冻结 |
 | notification_deliveries | 每次卡片操作或回答卡片分片的固定内容、摘要、UUID、租约与渠道回执 |
 | notification_senders | 发送者应用身份及心跳 |
 
 卡片先创建实例，再 reply 原消息发布引用，后续以同一 CardKit ID 全量更新。未尝试的过时视图合并跳过；已经尝试且未知的视图保留原内容和操作键，后续卡片更新不得越过它。卡片回调的重复点击回执复用 `audit_records`；决定保存在 interactions，新恢复命令保存在 turn_commands。
+
+技能表单冻结当前可用技能的版本、策略和展示名称，有效期 30 分钟。选择控件不会启动任务；点击“开始执行”才校验原单聊、操作者、消息回执、当前发布与权限，在同库事务内提交新 Turn、首个命令、原卡片关联及幂等回执。失败整笔回滚，重复点击复用原任务；表单投递结果未知时仍遵守现有 `uncertain` 规则。受理后原卡显示“已受理 · 技能名称”和任务编号，再更新执行进度。操作示例见 [Skills 运行手册](skills.md)。
+
+发布版本升级后，空闲单聊在下一条消息到达时更新会话版本并换用新的原生线程。更新与 Turn 受理共用会话锁；有任意未完成任务时保持原绑定，旧进程不能降级。会话 ID、渠道绑定和旧任务通知目标不变，已完成但尚未投递的回答仍可交付。旧版本不可用时打开 `/skills` 会给出停止旧任务或稍后重试的明确提示，不再显示笼统的“处理失败”。
 
 只有统一 API 业务事务提交后才确认受理。处理中显示加载动图和状态文案；默认折叠的“任务选项”仅包含“停止本轮”。动画复用飞书官方插件的加载图标，由客户端播放，不以重复发送消息模拟进度。等待回答时移除动画，突出问题和表单。停止请求先关闭后续派发和待答交互，在同一张卡片显示“正在停止本轮”；远端确认结束后更新为“本轮已停止”，移除动画和操作按钮。撤权保留显式 `/revoke TURN_ID` 命令；确需重新授权时卡片仍提供“授权并继续”。
 
@@ -54,6 +58,6 @@
 
 SSE 只有最新 `turn.snapshot` 和心跳；不存在进度事件历史表。客户端断开不影响通知、执行或最终 Journal。通知细节与原生运行信息不进入公开快照。
 
-回归测试位于 `tests/stage8/test_notifications.py`、`tests/stage8/test_notification_sdk.py`、`tests/stage8_hotfix/test_feishu_cards.py`、`tests/stage8_hotfix/test_feishu_presentation.py` 和 Stage 10 测试目录。它们覆盖发送不确定性、分片顺序、目标归属、表单约束和卡片重放。2026-09-12 使用真实 CardKit 接口创建并更新未发布的合成草稿，加载、澄清、审批、Markdown 四种视图均返回 code=0；未向聊天发送消息，客户端动画和点击仍需飞书侧验收。
+回归测试位于 `tests/stage8/test_notifications.py`、`tests/stage8/test_notification_sdk.py`、`tests/stage8_hotfix/test_feishu_cards.py`、`tests/stage8_hotfix/test_feishu_presentation.py`、`tests/skills/test_feishu_forms.py` 和 Stage 10 测试目录。它们覆盖发送不确定性、分片顺序、目标归属、表单约束和卡片重放。技能表单另覆盖打开不创建任务、提交原子性、并发双击、过期、撤权和内部 HTTP 回调。2026-09-12 使用真实 CardKit 接口创建并更新未发布的合成草稿，加载、澄清、审批、Markdown 四种视图均返回 code=0；该记录不包含本次新增的技能表单，技能表单和客户端点击尚需飞书侧验收。
 
 协议依据：[输入框](https://open.feishu.cn/document/feishu-cards/card-json-v2-components/interactive-components/input)、[按钮](https://open.feishu.cn/document/feishu-cards/card-json-v2-components/interactive-components/button)、[Markdown](https://open.feishu.cn/document/feishu-cards/card-json-v2-components/content-components/rich-text)、[飞书官方加载图标](https://github.com/larksuite/openclaw-lark/blob/main/src/card/builder.ts)。

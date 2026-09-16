@@ -17,7 +17,11 @@ def is_user_message(message: Any) -> bool:
     """排除原生摘要等合成 HumanMessage，保留真实用户来源。"""
     role = message_value(message, "type", message_value(message, "role"))
     metadata = message_value(message, "additional_kwargs", {}) or {}
-    return role in {"human", "user"} and metadata.get("lc_source") != "summarization"
+    return (
+        role in {"human", "user"}
+        and metadata.get("lc_source") != "summarization"
+        and metadata.get("financeclaw_content_kind") != "skill_instructions"
+    )
 
 
 def current_turn_start(messages: Sequence[Any], user_message_id: str | None) -> int:

@@ -14,6 +14,7 @@ from financeclaw.shared.artifacts.views import (
     encode,
     reference_view,
 )
+from financeclaw.shared.skills.access import ACCESS_KEY, RESOURCE_KEY
 
 SOURCE_KEY = "financeclaw_source"
 
@@ -50,6 +51,7 @@ class ToolResultArchive:
         ).hexdigest()
         metadata = self.service.persist(
             payload,
+            skill_access_refs=tuple(message.additional_kwargs.get(ACCESS_KEY, [])),
             context=owner,
             source_type="tool_result",
             source_id=message.tool_call_id,
@@ -83,6 +85,9 @@ class ToolResultArchive:
                     {"historical_tool_result": True, **reference, "read_with": "read_artifact"},
                 ),
                 "artifact": reference,
-                "additional_kwargs": {**message.additional_kwargs, "artifact_ref": reference},
+                "additional_kwargs": {
+                    **{k: v for k, v in message.additional_kwargs.items() if k != RESOURCE_KEY},
+                    "artifact_ref": reference,
+                },
             }
         )

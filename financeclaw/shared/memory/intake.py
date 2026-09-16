@@ -280,19 +280,20 @@ class MemoryIntake:
         final = session.scalars(final_query).one_or_none()
         if final is None:
             raise MemoryConflict("completed turn requires a final Journal message")
-        assistant, _ = self._register(
-            session,
-            actor,
-            "assistant_message",
-            final.message_id,
-            1,
-            final.content,
-            turn.conversation_id,
-            turn_id,
-            allow_derivation=True,
-        )
         source_refs = [source_snapshot(source).evidence_ref() for source in sources]
-        source_refs.append(assistant.evidence_ref())
+        if not final.skill_access_refs:
+            assistant, _ = self._register(
+                session,
+                actor,
+                "assistant_message",
+                final.message_id,
+                1,
+                final.content,
+                turn.conversation_id,
+                turn_id,
+                allow_derivation=True,
+            )
+            source_refs.append(assistant.evidence_ref())
         payload = {
             "sources": [ref.model_dump(mode="json") for ref in source_refs],
             "turn_id": turn_id,

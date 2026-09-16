@@ -15,11 +15,13 @@ def utcnow() -> datetime:
 
 
 class NotificationTargetRow(Base):
-    """一个根任务只有一个原消息订阅，审批回复不能重新绑定最终目标。"""
+    """表单可先绑定原单聊消息，提交后原子绑定唯一任务并沿用原卡。"""
 
     __tablename__ = "notification_targets"
     target_id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    turn_id: Mapped[str] = mapped_column(ForeignKey("conversation_turns.turn_id"), unique=True)
+    turn_id: Mapped[str | None] = mapped_column(
+        ForeignKey("conversation_turns.turn_id"), unique=True
+    )
     binding_id: Mapped[str] = mapped_column(ForeignKey("channel_conversation_bindings.binding_id"))
     tenant_id: Mapped[str] = mapped_column(String(128))
     subject_id: Mapped[str] = mapped_column(String(128))

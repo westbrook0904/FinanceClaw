@@ -33,6 +33,8 @@ API 默认监听 `127.0.0.1:8000`。原生 API 必须配置 `N_JOBS_PER_WORKER=0
 
 通用 MCP 服务和 Agent 工具绑定在 [config/mcp.toml](config/mcp.toml) 声明。已提供 RollingGo 酒店/机票查询配置，模板默认关闭；配置凭据并启用后，部署命令会自动准备所需定义。授权与接入步骤见 [MCP 接入手册](docs/operations/mcp.md)。
 
+内置 `market-brief` 行情简报和 `cocktail-from-what-i-have` 现有材料调酒技能。飞书单聊发送 `/skills` 打开表单，选择技能、填写任务描述后点击“开始执行”；选择仅对本次任务生效。飞书和 API 也可使用 `/skill 技能ID 任务正文` 直接提交，或由模型按需加载；权限和工具审批继续沿用当前任务。飞书与 curl 示例见 [Skills 运行手册](docs/operations/skills.md)，验证范围见 [实现与验证](.redesign/stages/skills-实现与验证.md)。
+
 ## 产品接口
 
 先 `POST /v1/conversations`，再向 `POST /v1/conversations/{id}/turns` 提交 `{"message":"..."}` 和 `Idempotency-Key`，返回 202 与 `turn_id`。API 不接受用户指定的 thread、checkpoint、native run 或 callback。

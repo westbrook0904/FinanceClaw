@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_valid
 from financeclaw.kernel.context import DataClassification
 from financeclaw.kernel.interactions import InteractionPoint
 from financeclaw.kernel.models import ModelProfileRef
+from financeclaw.kernel.skills import SkillBudget, SkillRef
 
 
 class ToolRef(BaseModel):
@@ -59,6 +60,8 @@ class AgentProfile(BaseModel):
     model_profile: ModelProfileRef
     system_prompt_template: str
     allowed_tools: tuple[ToolRef, ...]
+    allowed_skills: tuple[SkillRef, ...] = Field(default=(), max_length=32)
+    skill_budget: SkillBudget = Field(default_factory=SkillBudget)
     middleware_profile: str = "governed-v1"
     context_policy: str = "native-thread-v1"
     memory_policy: str = "none"
@@ -98,6 +101,9 @@ class AgentProfile(BaseModel):
     def validate_bindings(self) -> "AgentProfile":
         """同名工具只能绑定一次；领域运行禁止根历史和长期记忆策略。"""
         names = [ref.tool_id for ref in self.allowed_tools]
+        skill_names = [ref.skill_id for ref in self.allowed_skills]
+        if len(skill_names) != len(set(skill_names)):
+            raise ValueError("AgentProfile cannot bind multiple versions of the same skill")
         points = [point.point_id for point in self.interaction_points]
         if len(points) != len(set(points)):
             raise ValueError("Agent interaction point IDs must be unique")

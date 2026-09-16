@@ -33,6 +33,7 @@ class MemoryRecallMiddleware(AgentMiddleware):
         system_prompt="",
         tools=(),
         output_schema=None,
+        skill_projection=None,
     ):
         """Configure finite profile and task budgets without requiring a live Store."""
         self.service, self.max_tokens, self.max_memories = service, max_tokens, max_memories
@@ -40,6 +41,7 @@ class MemoryRecallMiddleware(AgentMiddleware):
         self.counter = counter or (planner.counter if planner else TokenCounter())
         self.planner, self.system_prompt = planner, system_prompt
         self.tools, self.output_schema = tools, output_schema
+        self.skill_projection = skill_projection
 
     @staticmethod
     def _enabled(context):
@@ -229,7 +231,11 @@ class MemoryRecallMiddleware(AgentMiddleware):
                 },
             }
             tokens = self.planner.estimate(
-                projected_messages(prepared, system_prompt=self.system_prompt),
+                projected_messages(
+                    prepared,
+                    system_prompt=self.system_prompt,
+                    skill_projection=self.skill_projection,
+                ),
                 tools=self.tools,
                 output_schema=self.output_schema,
             )

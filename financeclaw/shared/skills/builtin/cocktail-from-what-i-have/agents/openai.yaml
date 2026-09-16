@@ -1,0 +1,5 @@
+interface:
+  display_name: "现有材料调酒"
+  short_description: "根据已有酒、饮料和器具给出配方、替代方案、多人份及无酒精版本。"
+policy:
+  allow_implicit_invocation: true

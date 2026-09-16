@@ -30,12 +30,14 @@ class WorkingContext(WorkingContextDraft):
     source_boundary: str = Field(min_length=1, max_length=128)
     privacy_epoch: int = Field(default=0, ge=0)
     input_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    skill_access_refs: tuple[dict[str, Any], ...] = Field(default=(), max_length=64)
 
 
 class ConversationState(AgentState):
     """每个 thread 的有界上下文投影；不另建 Journal 或摘要表。"""
 
     context_bootstrapped: NotRequired[bool]
+    skill_state: NotRequired[dict[str, Any]]
     finishing: NotRequired[bool]
     finish_turn_id: NotRequired[str | None]
     memory_recall: NotRequired[dict[str, Any]]

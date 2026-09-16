@@ -59,6 +59,7 @@ class ModelDeclaration(BaseModel):
     context_window_tokens: int = Field(ge=1024)
     max_input_tokens: int | None = None
     max_tokens: int = 4096
+    enable_thinking: bool | None = None
     temperature: float = 0
     timeout_seconds: float = 300
     token_estimator: str = "cl100k_base-v1"

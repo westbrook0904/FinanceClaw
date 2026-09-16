@@ -280,6 +280,7 @@ def upgrade():
         sa.Column("role", sa.String(length=32), nullable=False),
         sa.Column("content", sa.Text(), nullable=False),
         sa.Column("content_hash", sa.String(length=64), nullable=False),
+        sa.Column("skill_access_refs", sa.JSON(), nullable=False),
         sa.Column("visible", sa.Boolean(), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.ForeignKeyConstraint(
@@ -333,6 +334,11 @@ def upgrade():
         sa.Column("compaction_reason", sa.String(length=64), nullable=True),
         sa.Column("observed_input_tokens", sa.Integer(), nullable=True),
         sa.Column("observed_output_tokens", sa.Integer(), nullable=True),
+        sa.Column("skill_catalog_hash", sa.String(length=64), nullable=True),
+        sa.Column("skill_catalog_omitted", sa.Integer(), nullable=False),
+        sa.Column("skill_refs", sa.JSON(), nullable=False),
+        sa.Column("skill_resource_refs", sa.JSON(), nullable=False),
+        sa.Column("skill_access_refs", sa.JSON(), nullable=False),
         sa.Column("summary_sources", sa.JSON(), nullable=False),
         sa.Column("memory_ids", sa.JSON(), nullable=False),
         sa.Column("memory_refs", sa.JSON(), nullable=False),
@@ -361,7 +367,7 @@ def upgrade():
     op.create_table(
         "notification_targets",
         sa.Column("target_id", sa.String(length=64), nullable=False),
-        sa.Column("turn_id", sa.String(length=128), nullable=False),
+        sa.Column("turn_id", sa.String(length=128), nullable=True),
         sa.Column("binding_id", sa.String(length=128), nullable=False),
         sa.Column("tenant_id", sa.String(length=128), nullable=False),
         sa.Column("subject_id", sa.String(length=128), nullable=False),

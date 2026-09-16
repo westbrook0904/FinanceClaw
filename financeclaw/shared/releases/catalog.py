@@ -4,10 +4,12 @@ from dataclasses import dataclass
 
 from financeclaw.kernel.agents import AgentProfile, AgentProfileCatalog, ToolRef
 from financeclaw.kernel.models import ModelProfileCatalog
+from financeclaw.kernel.skills import SkillBudget
 from financeclaw.kernel.tool_catalog import ToolRelease, ToolReleaseCatalog
 from financeclaw.kernel.workflows.catalog import WorkflowCatalog
 from financeclaw.shared.artifacts.views import READ_BYTES, REFERENCE_BYTES, VIEW_VERSION
 from financeclaw.shared.infrastructure.settings import FinanceClawSettings
+from financeclaw.shared.releases.skills import builtin_skills, skill_tool_governance
 from financeclaw.shared.releases.taibu import taibu_governance, taibu_release
 from financeclaw.shared.releases.tools import (
     history_tool_governance,
@@ -18,6 +20,7 @@ from financeclaw.shared.releases.tools import (
 )
 from financeclaw.shared.releases.workflows import portfolio_review_release
 from financeclaw.shared.releases.ziwei import ziwei_profile
+from financeclaw.shared.skills.catalog import SkillCatalog
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,6 +31,7 @@ class ReleaseCatalogs:
     agent_profiles: AgentProfileCatalog
     tool_catalog: ToolReleaseCatalog
     workflow_catalog: WorkflowCatalog
+    skills: SkillCatalog
 
 
 def build_release_catalogs(
@@ -38,6 +42,7 @@ def build_release_catalogs(
 ) -> ReleaseCatalogs:
     """根据相同配置固定发布指纹；可注入测试或定制工具的声明目录。"""
     mcp = settings.mcp_release
+    skills = builtin_skills() if settings.skills_enabled else SkillCatalog()
     known_agents = {"finance_agent", "ziwei_doushu_agent", "market_research_agent"}
     if set(mcp.configuration.agents) - known_agents:
         raise ValueError("unknown MCP Agent binding")
@@ -52,6 +57,17 @@ def build_release_catalogs(
                 *(item.governance for item in mcp.entries.values()),
                 *(memory_tool_governance() if enable_persistence else ()),
                 *(history_tool_governance() if enable_persistence else ()),
+            )
+        )
+    if settings.skills_enabled:
+        base_tool_catalog = ToolReleaseCatalog(
+            (
+                *base_tool_catalog.values(),
+                *(
+                    ToolRelease(item)
+                    for item in skill_tool_governance()
+                    if item.tool_id not in {key[0] for key in base_tool_catalog}
+                ),
             )
         )
     workflow_catalog = WorkflowCatalog(
@@ -247,11 +263,14 @@ def build_release_catalogs(
     )
     root = AgentProfile(
         agent_id="finance_agent",
-        version="1.6.0",
+        version="1.8.0",
+        allowed_skills=tuple(release.ref for release, _ in skills.entries.values()),
+        skill_budget=SkillBudget(body_tokens=4096),
         finish_on_budget=True,
         assistant_id="finance_agent",
         deployment_revision="context-memory/2+clarification-fields/1+context-refs/1+root-orchestration/2"
-        "+artifact-views/2+budget-finish/1" + ("+taibu-mcp/1" if settings.taibu_enabled else ""),
+        "+artifact-views/3+budget-finish/1+skills/1"
+        + ("+taibu-mcp/1" if settings.taibu_enabled else ""),
         worker_manifest=manifest,
         interaction_points=(ROOT_CLARIFICATION,),
         data_classification=DataClassification.CONFIDENTIAL
@@ -271,6 +290,7 @@ def build_release_catalogs(
             settings.offline_model,
             manifest,
             settings.context_budget,
+            [release.model_dump(mode="json") for release, _ in skills.entries.values()],
             (VIEW_VERSION, REFERENCE_BYTES, READ_BYTES),
             settings.embedding_model,
             settings.embedding_base_url,
@@ -293,6 +313,8 @@ def build_release_catalogs(
         ),
         system_prompt_template=(
             "You are FinanceClaw's top-level governed financial Agent. Use a ReAct loop. "
+            "Use available Skills for supported everyday tasks as well as financial tasks, "
+            "and answer in the user's language. "
             "Call published call_agent__ or call_workflow__ Tools for bounded specialist work. "
             "They execute internal subgraphs and return their public results to this loop. "
             "You own task orchestration and the final user response. After each Worker result, "
@@ -370,6 +392,7 @@ def build_release_catalogs(
             )
         ),
     )
+    skills.validate_profile(root)
     return ReleaseCatalogs(
         model_profiles,
         AgentProfileCatalog((root, *workers)),
@@ -380,4 +403,5 @@ def build_release_catalogs(
             )
         ),
         workflow_catalog,
+        skills,
     )

@@ -7,6 +7,7 @@ from time import monotonic
 from pydantic import ValidationError
 from sqlalchemy import select
 
+from financeclaw.kernel.skills import SkillPreparation
 from financeclaw.kernel.tool_progress import TOOL_PROGRESS_LIMIT, ToolProgress
 from financeclaw.shared.infrastructure.asyncio import run_sync
 from financeclaw.shared.notifications.facts import target_valid
@@ -25,6 +26,7 @@ def consume(state, part):
     mode = part.event.split("|", 1)[0]
     if mode == "custom":
         consume_tool_progress(state, part.data)
+        consume_skill_preparation(state, part.data)
         return
     if mode != "messages" or not isinstance(part.data, (list, tuple)) or len(part.data) != 2:
         return
@@ -84,9 +86,31 @@ def consume_tool_progress(state, data):
         state.update(text="", blocked=True, truncated=False)
 
 
+def consume_skill_preparation(state, data):
+    """显式准备按事件身份覆盖，有界状态不冒充真实工具调用或业务完成。"""
+    if not isinstance(data, dict) or data.get("type") != "skill.preparation":
+        return
+    try:
+        event = SkillPreparation.model_validate(data).model_dump()
+    except ValidationError:
+        return
+    events = [dict(item) for item in state.get("skills", [])]
+    existing = next((item for item in events if item["event_id"] == event["event_id"]), None)
+    if existing is None:
+        events.append(event)
+    else:
+        existing.update(event)
+    state["skills"] = events[-8:]
+
+
 def presentation(state):
     """卡片可见内容变化才创建通知事件；原生游标变化仍持久化以支持重连。"""
-    return state.get("text", ""), state.get("truncated", False), state.get("tools", [])
+    return (
+        state.get("text", ""),
+        state.get("truncated", False),
+        state.get("tools", []),
+        state.get("skills", []),
+    )
 
 
 class TurnAnswerStream:

@@ -4,6 +4,7 @@ import asyncio
 import json
 
 from langchain_core.messages import HumanMessage, SystemMessage
+from openai import LengthFinishReasonError
 from sqlalchemy import select
 
 from financeclaw.kernel.models import ModelProfile
@@ -105,8 +106,30 @@ class StructuredMemoryModel:
             output_tokens=self.profile.max_tokens,
             snapshot_id=snapshot_id,
         )
-        async with asyncio.timeout(self.timeout_seconds):
-            result = await self.structured.ainvoke(messages)
+        try:
+            async with asyncio.timeout(self.timeout_seconds):
+                result = await self.structured.ainvoke(messages)
+        except LengthFinishReasonError as exc:
+            # SDK 在构造 LangChain raw 消息前就可能因截断抛错，仍须登记已消耗额度。
+            usage = exc.completion.usage
+            if usage is not None:
+                await asyncio.to_thread(
+                    self.outbox.record_model_usage,
+                    event.event_id,
+                    claim_epoch=event.claim_epoch,
+                    usage={
+                        "input_tokens": usage.prompt_tokens,
+                        "output_tokens": usage.completion_tokens,
+                        "total_tokens": usage.total_tokens,
+                        "output_token_details": {
+                            "reasoning": getattr(
+                                usage.completion_tokens_details, "reasoning_tokens", 0
+                            )
+                            or 0
+                        },
+                    },
+                )
+            raise
         raw = result.get("raw")
         usage = getattr(raw, "usage_metadata", None) or {}
         await asyncio.to_thread(

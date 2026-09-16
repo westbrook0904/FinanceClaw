@@ -14,21 +14,21 @@ from tests.support import build_components
 
 
 def test_default_disabled_root_and_explicit_root_allowlist():
-    """开关两侧都使用根 1.6.0，只有启用后才允许紫微子图。"""
+    """开关两侧都使用根 1.8.0，只有启用后才允许紫微子图。"""
     base = build_components(
         FinanceClawSettings(
             _env_file=None, environment="test", offline_model=True, debug_full_io=False
         )
     )
-    assert base.default_agent_profile.version == "1.6.0"
+    assert base.default_agent_profile.version == "1.8.0"
     assert not any("ziwei" in ref.tool_id for ref in base.default_agent_profile.allowed_tools)
     active = components()
-    assert active.default_agent_profile.version == "1.6.0"
+    assert active.default_agent_profile.version == "1.8.0"
     for stack in (base, active):
         with pytest.raises(LookupError):
             stack.agent_profiles.resolve("finance_agent", "1.2.0")
         assert [key for key in stack.agent_profiles if key[0] == "finance_agent"] == [
-            ("finance_agent", "1.6.0")
+            ("finance_agent", "1.8.0")
         ]
     names = {ref.tool_id for ref in active.default_agent_profile.allowed_tools}
     assert {name for name in names if "ziwei" in name} == {"call_agent__ziwei_doushu_agent"}

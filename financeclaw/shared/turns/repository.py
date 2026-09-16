@@ -26,11 +26,23 @@ class TurnRepository:
 
     def require_schema(self) -> None:
         """Fail readiness on an uninitialized or incompatible application database."""
+        from financeclaw.shared.conversation.tables import (
+            ConversationMessageRow,
+            ConversationRow,
+            ModelContextManifestRow,
+        )
         from financeclaw.shared.turns.tables import InteractionRow, TurnCommandRow
 
         with self.sessions() as session:
             schema = inspect(session.get_bind())
-            for table in (ConversationTurnRow, TurnCommandRow, InteractionRow):
+            for table in (
+                ConversationRow,
+                ConversationMessageRow,
+                ModelContextManifestRow,
+                ConversationTurnRow,
+                TurnCommandRow,
+                InteractionRow,
+            ):
                 if not schema.has_table(table.__tablename__) or not set(
                     table.__table__.columns.keys()
                 ).issubset(column["name"] for column in schema.get_columns(table.__tablename__)):

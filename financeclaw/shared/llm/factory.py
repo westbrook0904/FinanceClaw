@@ -106,6 +106,8 @@ class ModelFactory:
         # 接入前显式使用非思考模式，避免工具往返及澄清恢复时被 Provider 拒绝。
         if profile.model.startswith("openai:deepseek-"):
             kwargs["extra_body"] = {"thinking": {"type": "disabled"}}
+        if profile.enable_thinking is not None:
+            kwargs["extra_body"] = {"enable_thinking": profile.enable_thinking}
         # 3. 初始化模型并校验类型，防止配置错误静默流入上层。
         model = init_chat_model(profile.model, **kwargs)
         if not isinstance(model, BaseChatModel):

@@ -12,12 +12,14 @@ from financeclaw.kernel.authorization import AuthorizationEvidence
 from financeclaw.kernel.interactions import InteractionResponse
 from financeclaw.kernel.notifications import NotificationAddress
 from financeclaw.kernel.responses import ConversationTurnRequest
+from financeclaw.kernel.skills import SkillError
 from financeclaw.shared.channels.feishu.contracts import FeishuInboundMessage, FeishuReplyGateway
 from financeclaw.shared.channels.feishu.interactions import (
     accepts_text_reply,
     format_interactions,
     parse_response,
 )
+from financeclaw.shared.channels.feishu.skill_cards import SkillFormError
 from financeclaw.shared.conversation.repository import ConversationConflict, ConversationNotFound
 from financeclaw.shared.infrastructure.asyncio import run_sync
 from financeclaw.shared.turns.types import (
@@ -146,6 +148,14 @@ class FeishuChannelService:
                         await self._send_plain(gateway, message, self.EMPTY_TEXT, suffix="empty")
                         return "empty"
                     return await self._process_text(message, normalized, gateway)
+                except SkillError as exc:
+                    await self._send_plain(gateway, message, exc.message, suffix="skill-rejected")
+                    return "skill_rejected"
+                except SkillFormError as exc:
+                    await self._send_plain(
+                        gateway, message, str(exc), suffix="skill-form-unavailable"
+                    )
+                    return "skill_form_unavailable"
                 except (InteractionConflict, InteractionNotFound) as exc:
                     await self._send_plain(
                         gateway,
@@ -261,6 +271,30 @@ class FeishuChannelService:
             tenant_id=tenant_id,
             subject_id=subject_id,
         )
+        if normalized.split(maxsplit=1)[0] == "/skills":
+            if normalized != "/skills":
+                await self._send_plain(
+                    gateway,
+                    message,
+                    "请单独发送 /skills 打开技能表单。",
+                    suffix="skills-syntax",
+                )
+                return "skill_form_invalid"
+            from financeclaw.api.application.skill_task_forms import create_skill_form
+
+            created = await run_sync(
+                create_skill_form,
+                self.conversation_service.turns,
+                message,
+                conversation.conversation_id,
+                app_id=self.app_id,
+                scopes=self.scopes,
+            )
+            if not created:
+                await self._send_plain(
+                    gateway, message, "当前没有可用技能。", suffix="skills-unavailable"
+                )
+            return "skill_form" if created else "skill_form_empty"
         parsed = parse_response(normalized)
         channel_state = {}
         command = normalized.split(maxsplit=1)[0]

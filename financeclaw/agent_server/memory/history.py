@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from financeclaw.shared.artifacts.views import business_view, read_view
 from financeclaw.shared.memory.namespace import owner_namespace
 from financeclaw.shared.memory.observability import store_operation
+from financeclaw.shared.skills.access import ACCESS_KEY, merge_access, require_access
 
 
 class HistoryService:
@@ -20,7 +21,9 @@ class HistoryService:
         """在派生历史内容读取前固定隐私版本，完成后再次核对。"""
         return self.artifacts.memory_privacy_epoch(context)
 
-    def result_provenance(self, context, result, *, tool_name, initial_epoch):
+    def result_provenance(
+        self, context, result, *, tool_name, initial_epoch, skill_authorizer=None
+    ):
         """历史派生文本保留版本；业务原始工件仍按其原始访问策略处理。"""
         if self.privacy_epoch(context) != initial_epoch:
             raise PermissionError("privacy changed while reading historical context")
@@ -29,15 +32,21 @@ class HistoryService:
                 result["artifact_id"], context.tenant_id, context.subject_id
             )
             self.artifacts.validate_memory_access(metadata, context)
+            refs = require_access(
+                metadata.access_policy.get("skill_access_refs", []), skill_authorizer
+            )
+            provenance = {ACCESS_KEY: refs} if refs else {}
             epoch = metadata.access_policy.get("memory_privacy_epoch")
             if epoch is None:
-                return {}
+                return provenance
             return {
+                **provenance,
                 "memory_derived": True,
                 "memory_privacy_epoch": epoch,
                 "financeclaw_memory_refs": metadata.access_policy.get("memory_refs", []),
             }
-        return {"memory_derived": True, "memory_privacy_epoch": initial_epoch}
+        refs = require_access(result.pop("_skill_access_refs", []), skill_authorizer)
+        return {"memory_derived": True, "memory_privacy_epoch": initial_epoch, ACCESS_KEY: refs}
 
     @staticmethod
     def namespace(context, conversation_id=None):
@@ -56,7 +65,15 @@ class HistoryService:
         return identity
 
     def search(
-        self, context, store, query, *, conversation_id=None, across_conversations=False, limit=6
+        self,
+        context,
+        store,
+        query,
+        *,
+        conversation_id=None,
+        across_conversations=False,
+        limit=6,
+        skill_authorizer=None,
     ):
         """原生语义搜索只定位来源；已删除或已变化的原文不返回。"""
         if not 1 <= limit <= 20 or not query or len(query) > 512:
@@ -67,7 +84,7 @@ class HistoryService:
         namespace = self.namespace(context, None if across_conversations else current)
         with store_operation("explicit_history_search", query_chars=len(query)):
             items = store.search(namespace, query=query, limit=min(60, limit * 3))
-        matches = []
+        matches, refs = [], []
         for item in items:
             value = item.value
             try:
@@ -87,6 +104,11 @@ class HistoryService:
                 or source.turn_id != value["turn_id"]
             ):
                 continue
+            try:
+                source_refs = require_access(source.skill_access_refs, skill_authorizer)
+            except ValueError:
+                continue
+            refs = merge_access(refs, source_refs)
             start, end = value["start"], value["end"]
             if (
                 not isinstance(start, int)
@@ -108,10 +130,18 @@ class HistoryService:
             )
             if len(matches) == limit:
                 break
-        return {"matches": matches}
+        return {"matches": matches, **({"_skill_access_refs": refs} if refs else {})}
 
     def read(
-        self, context, turn_id, *, conversation_id=None, offset=0, max_chars=4000, artifact_offset=0
+        self,
+        context,
+        turn_id,
+        *,
+        conversation_id=None,
+        offset=0,
+        max_chars=4000,
+        artifact_offset=0,
+        skill_authorizer=None,
     ):
         """按 Turn 回读一页原问答及当前工件目录。"""
         identity = self._conversation(context, conversation_id)
@@ -120,6 +150,9 @@ class HistoryService:
         messages = self.conversations.messages_for_turn(identity, turn_id)
         if not messages:
             raise LookupError("Turn was not found")
+        refs = require_access(
+            merge_access(*(m.skill_access_refs for m in messages)), skill_authorizer
+        )
         text = "\n\n".join(f"{item.role.value}: {item.content}" for item in messages)
         artifacts = self.artifacts.repository.list_turn(
             identity,
@@ -130,6 +163,7 @@ class HistoryService:
             offset=artifact_offset,
         )
         return {
+            **({"_skill_access_refs": refs} if refs else {}),
             "turn_id": turn_id,
             "historical": True,
             "content": text[offset : offset + max_chars],
@@ -173,6 +207,7 @@ class HistoryService:
         limit=20,
         offset=0,
         max_chars=4000,
+        skill_authorizer=None,
     ):
         """回读已经归档的字节快照；外部链接不会被自动再次抓取。"""
         if offset < 0 or not 1 <= max_chars <= 8000:
@@ -182,7 +217,7 @@ class HistoryService:
         )
         if content_hash != metadata.content_hash:
             raise ValueError("artifact reference hash mismatch")
-        raw = self.artifacts.read(artifact_id, context=context)
+        raw = self.artifacts.read(artifact_id, context=context, skill_authorizer=skill_authorizer)
         try:
             text = raw.decode("utf-8")
         except UnicodeDecodeError as exc:

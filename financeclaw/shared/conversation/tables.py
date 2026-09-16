@@ -31,7 +31,7 @@ from financeclaw.shared.infrastructure.orm import Base, utcnow
 
 
 class ConversationRow(Base):
-    """会话表：持久化 Conversation 领域记录，一个会话固定绑定一个 Agent 线程。
+    """会话表：保存 Conversation 归属以及后续任务使用的 Agent 发布与线程。
 
     使用场景：作为 Conversation Journal 的根表；agent_thread_id 全局唯一，
     支撑 LangGraph 线程映射与跨 Agent Server 重启继续。
@@ -41,8 +41,8 @@ class ConversationRow(Base):
         tenant_id: 租户标识（String(128)），非空，与 subject_id 组成归属索引。
         subject_id: 主体标识（String(128)），非空。
         agent_id: Agent 标识（String(128)），非空。
-        agent_profile_version: 创建会话时的 Agent Profile 版本（String(32)），非空。
-        agent_thread_id: Agent 线程 UUID（String(128)），非空，全局唯一约束。
+        agent_profile_version: 后续任务使用的 Agent Profile 版本；空闲渠道会话可向前更新。
+        agent_thread_id: 当前 Agent 线程 UUID，非空且唯一；换发布时更新，旧 Turn 保留原线程。
         status: 会话状态字符串，非空，默认 "active"。
         created_at: 创建时间（带时区），非空，默认当前 UTC 时间。
         updated_at: 更新时间（带时区），非空，默认当前 UTC 时间且随更新刷新。
@@ -185,6 +185,9 @@ class ConversationMessageRow(Base):
     role: Mapped[str] = mapped_column(String(32), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    skill_access_refs: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSON, nullable=False, default=list
+    )
     visible: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utcnow
@@ -221,6 +224,15 @@ class ModelContextManifestRow(Base):
     privacy_epoch: Mapped[int | None] = mapped_column(Integer)
     working_summary_version: Mapped[int | None] = mapped_column(Integer)
     compaction_reason: Mapped[str | None] = mapped_column(String(64))
+    skill_catalog_hash: Mapped[str | None] = mapped_column(String(64))
+    skill_catalog_omitted: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    skill_refs: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False, default=list)
+    skill_resource_refs: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSON, nullable=False, default=list
+    )
+    skill_access_refs: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSON, nullable=False, default=list
+    )
     summary_sources: Mapped[list[dict[str, Any]]] = mapped_column(
         JSON, nullable=False, default=list
     )

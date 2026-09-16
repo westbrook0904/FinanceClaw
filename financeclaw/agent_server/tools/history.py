@@ -9,6 +9,7 @@ from pydantic import Field, PrivateAttr
 from financeclaw.agent_server.context.turns import trusted_context
 from financeclaw.agent_server.tools.governance import ManagedTool
 from financeclaw.agent_server.tools.memory import MemoryToolInput
+from financeclaw.kernel.skills import SkillError
 from financeclaw.shared.artifacts.views import READ_KEY, REFERENCE_BYTES, encode
 from financeclaw.shared.releases.tools import history_tool_governance
 
@@ -43,12 +44,26 @@ class ReadArtifactInput(MemoryToolInput):
     )
     mode: Literal["inspect", "json", "text"]
     path: str = Field(
-        default="", max_length=1024, description="JSON Pointer relative to business root"
+        default="",
+        max_length=1024,
+        description=(
+            "JSON Pointer from the business-data root, not the archive wrapper. "
+            "Use an empty string for the root: path='' reads a hotel-detail object itself. "
+            "Example: path='/hotelInformationList' selects the hotel array inside a result. "
+            "Every non-empty path must start with '/'; '$', dot notation and wildcards are "
+            "not supported. '/' selects an empty-name key, not the root. "
+            "Within a key, escape '/' as '~1' and '~' as '~0'."
+        ),
     )
     fields: list[Annotated[str, Field(max_length=1024)]] = Field(
         default_factory=list,
         max_length=24,
-        description="Relative JSON Pointers selecting object fields in each record",
+        description=(
+            "JSON Pointer field paths within the selected object or each selected array record. "
+            "Every entry must start with '/': use ['/name', '/price'], not ['name', 'price']. "
+            "Do not repeat path here: with path='/hotelInformationList', use fields=['/name']. "
+            "An empty list selects all fields; missing fields are reported in missing_fields."
+        ),
     )
     start: int = Field(default=0, ge=0, description="Array record offset; ignored for objects")
     limit: int = Field(
@@ -62,6 +77,7 @@ class HistoryTool(BaseTool):
     """薄适配器，检索和归属规则由 HistoryService 统一实现。"""
 
     _service: Any = PrivateAttr()
+    _skills: Any = PrivateAttr(default=None)
     handle_tool_error: bool = True
 
     def __init__(self, service, **kwargs):
@@ -72,16 +88,32 @@ class HistoryTool(BaseTool):
     def _run(self, *, runtime, **arguments):
         """用可信身份执行明确的历史检索或分页回读。"""
         context = trusted_context(runtime)
+        authorizer = self._skills.authorizer(runtime, runtime.state) if self._skills else None
         try:
             epoch = self._service.privacy_epoch(context)
             if self.name == "search_history":
-                result = self._service.search(context, runtime.store, **arguments)
+                result = self._service.search(
+                    context, runtime.store, skill_authorizer=authorizer, **arguments
+                )
             elif self.name == "read_history":
-                result = self._service.read(context, **arguments)
+                result = self._service.read(context, skill_authorizer=authorizer, **arguments)
             else:
-                result = self._service.read_artifact(context, **arguments)
+                result = self._service.read_artifact(
+                    context, skill_authorizer=authorizer, **arguments
+                )
             provenance = self._service.result_provenance(
-                context, result, tool_name=self.name, initial_epoch=epoch
+                context,
+                result,
+                tool_name=self.name,
+                initial_epoch=epoch,
+                skill_authorizer=authorizer,
+            )
+        except SkillError as exc:
+            return ToolMessage(
+                content=encode(exc.payload()),
+                status="error",
+                name=self.name,
+                tool_call_id=runtime.tool_call_id,
             )
         except (ValueError, LookupError, PermissionError) as exc:
             raise ToolException(str(exc)) from exc
@@ -129,6 +161,9 @@ def history_tools(service) -> tuple[ManagedTool, ...]:
             "Use mode=inspect for field/array paths; mode=json with path, fields, start and limit "
             "for complete records (follow next_start); mode=text for character pages. "
             "JSON paths are relative to business data, not the archive wrapper. "
+            "path='' selects the root; path='/hotelInformationList' selects a hotel array. "
+            "Every fields entry is also a JSON Pointer: fields=['/name', '/price'], "
+            "never bare field names. "
             "Select useful fields to read many records efficiently. "
             "For a single object, use path and fields; start/limit apply only to arrays. "
             "Copy a real ID and its matching hash from a prior result; never invent references "
@@ -144,7 +179,7 @@ def history_tools(service) -> tuple[ManagedTool, ...]:
                 name=name,
                 description=description,
                 args_schema=schema,
-                metadata={"artifact_reader": name == "read_artifact"},
+                metadata={"artifact_reader": name == "read_artifact", "skill_provenance": True},
             ),
             governance,
         )

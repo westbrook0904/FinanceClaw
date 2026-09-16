@@ -19,6 +19,13 @@ from financeclaw.shared.turns.types import (
 
 def install_error_handlers(app):
     """Map business conflicts and ownership failures to bounded HTTP errors."""
+    from financeclaw.kernel.skills import SkillError
+
+    async def skill_error(request, exc):
+        """确定的技能选择错误返回有界业务码，不触发渠道重试。"""
+        return JSONResponse(status_code=422, content=exc.payload())
+
+    app.add_exception_handler(SkillError, skill_error)
     mapping = {
         ConversationNotFound: (404, "CONVERSATION_NOT_FOUND"),
         TurnNotFound: (404, "TURN_NOT_FOUND"),

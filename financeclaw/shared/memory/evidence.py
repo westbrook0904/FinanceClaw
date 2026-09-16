@@ -122,7 +122,7 @@ class EvidenceReader:
             for row in rows:
                 source = messages[row.message_id]
                 role = "user" if source.source_kind == "user_message" else "assistant"
-                if row.role == role and row.turn_id == source.turn_id:
+                if row.role == role and row.turn_id == source.turn_id and not row.skill_access_refs:
                     bodies[source.source_id] = row.content
         interactions = {
             source.object_id: source

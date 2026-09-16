@@ -38,14 +38,19 @@ class ToolProgressMiddleware(AgentMiddleware):
         request.runtime.stream_writer(event.model_dump())
 
     @staticmethod
-    def _status(result):
+    def _status(result, call_id=None):
         """识别普通和 Command 返回的错误回执，不解析或复制工具业务正文。"""
         messages = [result]
         if isinstance(result, Command) and isinstance(result.update, dict):
             messages = result.update.get("messages", [])
         return (
             "failed"
-            if any(isinstance(item, ToolMessage) and item.status == "error" for item in messages)
+            if any(
+                isinstance(item, ToolMessage)
+                and item.status == "error"
+                and (call_id is None or item.tool_call_id == call_id)
+                for item in messages
+            )
             else "completed"
         )
 
@@ -60,7 +65,7 @@ class ToolProgressMiddleware(AgentMiddleware):
         except Exception:
             self._emit(request, "failed")
             raise
-        self._emit(request, self._status(result))
+        self._emit(request, self._status(result, request.tool_call["id"]))
         return result
 
     async def awrap_tool_call(self, request, handler):
@@ -77,5 +82,5 @@ class ToolProgressMiddleware(AgentMiddleware):
         except Exception:
             self._emit(request, "failed")
             raise
-        self._emit(request, self._status(result))
+        self._emit(request, self._status(result, request.tool_call["id"]))
         return result

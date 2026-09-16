@@ -19,7 +19,15 @@ class ToolContextEditingMiddleware(AgentMiddleware):
     state_schema = ConversationState
 
     def __init__(
-        self, service, budget, *, planner=None, system_prompt="", tools=(), output_schema=None
+        self,
+        service,
+        budget,
+        *,
+        planner=None,
+        system_prompt="",
+        tools=(),
+        output_schema=None,
+        skill_projection=None,
     ):
         """与摘要及最终检查共享完整请求预算与固定 Schema。"""
         self.archive = ToolResultArchive(service)
@@ -29,6 +37,7 @@ class ToolContextEditingMiddleware(AgentMiddleware):
         self.system_prompt = system_prompt
         self.tools = tools
         self.output_schema = output_schema
+        self.skill_projection = skill_projection
 
     def before_model(self, state, runtime):
         """只投影已完整返回的批次；未完成/需保护结果保持原始消息。"""
@@ -41,7 +50,9 @@ class ToolContextEditingMiddleware(AgentMiddleware):
         if batches is None:
             return None
         tokens = self.planner.estimate(
-            projected_messages(state, system_prompt=self.system_prompt),
+            projected_messages(
+                state, system_prompt=self.system_prompt, skill_projection=self.skill_projection
+            ),
             tools=self.tools,
             output_schema=self.output_schema,
         )

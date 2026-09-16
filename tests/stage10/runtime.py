@@ -193,7 +193,7 @@ async def admit(runtime, *, conversation_id=None, key=None, message="hello"):
 
     if conversation_id is None:
         conversation_id = runtime.turns.journal.create_conversation(
-            **OWNER, agent_id="finance_agent", agent_profile_version="1.6.0"
+            **OWNER, agent_id="finance_agent", agent_profile_version="1.8.0"
         ).conversation_id
     return await runtime.turns.start_turn(
         conversation_id,

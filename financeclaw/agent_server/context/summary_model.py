@@ -17,6 +17,7 @@ class MeteredSummaryModel(BaseChatModel):
     execution: Any = Field(default=None, exclude=True)
     privacy_epoch_reader: Any = Field(default=None, exclude=True)
     expected_privacy_epoch: int | None = None
+    skill_guard: Any = Field(default=None, exclude=True)
     max_attempts: int = 3
     _attempts: int = PrivateAttr(default=0)
 
@@ -32,6 +33,14 @@ class MeteredSummaryModel(BaseChatModel):
 
     def _prepare(self, messages):
         """每次实际尝试先校验并消耗根预算，再记录输入 Manifest。"""
+        if self.skill_guard is not None:
+            self.skill_guard()
+        else:
+            from financeclaw.shared.skills.access import ACCESS_KEY, merge_access, require_access
+
+            require_access(
+                merge_access(*(m.additional_kwargs.get(ACCESS_KEY, []) for m in messages))
+            )
         if self._attempts >= self.max_attempts:
             raise ValueError("summary attempt budget exhausted")
         self._attempts += 1
@@ -48,6 +57,8 @@ class MeteredSummaryModel(BaseChatModel):
             self.privacy_epoch_reader(context) != self.expected_privacy_epoch
         ):
             raise ValueError("privacy epoch changed before summary transmission")
+        if self.skill_guard is not None:
+            self.skill_guard()
         return manifest
 
     def _generate(self, messages, stop=None, run_manager=None, **kwargs):

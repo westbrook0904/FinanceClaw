@@ -59,10 +59,10 @@ def test_application_input_cap_does_not_duplicate_the_output_reserve(tmp_path):
 def test_history_window_participates_in_shared_release_fingerprint(tmp_path):
     """调整上下文策略会改变发布指纹，防止两端配置不一致后静默恢复。"""
     settings = config(tmp_path)
-    first = build_release_catalogs(settings).agent_profiles.resolve("finance_agent", "1.6.0")
-    same = build_release_catalogs(config(tmp_path)).agent_profiles.resolve("finance_agent", "1.6.0")
+    first = build_release_catalogs(settings).agent_profiles.resolve("finance_agent", "1.8.0")
+    same = build_release_catalogs(config(tmp_path)).agent_profiles.resolve("finance_agent", "1.8.0")
     changed = build_release_catalogs(
         config(tmp_path, context_recent_turns=2)
-    ).agent_profiles.resolve("finance_agent", "1.6.0")
+    ).agent_profiles.resolve("finance_agent", "1.8.0")
     assert first.configuration_fingerprint == same.configuration_fingerprint
     assert first.configuration_fingerprint != changed.configuration_fingerprint
