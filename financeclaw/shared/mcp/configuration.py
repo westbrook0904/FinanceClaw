@@ -3,6 +3,7 @@
 import json
 import re
 import tomllib
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
@@ -25,6 +26,7 @@ from financeclaw.kernel.mcp import (
 )
 from financeclaw.kernel.tools import ToolGovernance
 from financeclaw.shared.infrastructure.security.egress import EgressPolicy
+from financeclaw.shared.mcp.contracts import INPUT_CONTRACT_VERSION
 from financeclaw.shared.releases.fingerprint import configuration_fingerprint
 
 
@@ -126,6 +128,7 @@ class MCPEntry:
     def release(self) -> dict[str, Any]:
         """把契约、治理和非密钥连接纳入使用该工具的 Agent 发布指纹。"""
         return {
+            "runtime_contract": INPUT_CONTRACT_VERSION,
             "server": self.server_name,
             "endpoint": self.endpoint,
             "auth": self.server.auth.model_dump(),
@@ -136,14 +139,17 @@ class MCPEntry:
             "protocol_version": self.manifest.protocol_version,
             "tool": self.definition.model_dump(by_alias=True, exclude_none=True),
             "governance": self.governance,
+            "result_view": self.server.result_views.get(self.definition.name),
         }
 
 
 class MCPRelease:
     """启动时固定的通用 MCP 目录，各 Agent 仅获得显式绑定的工具。"""
 
-    def __init__(self, path: str, *, env_file=None):
-        """从本地文件装配启用服务，解析端点但不读取认证或访问远端。"""
+    def __init__(
+        self, path: str, *, env_file=None, manifests: Mapping[str, MCPManifest] | None = None
+    ):
+        """离线装配；部署可传入待写入定义，先完成整批检查再保存文件。"""
         self.configuration = MCPConfiguration.from_file(path)
         entries = {}
         names = set()
@@ -153,7 +159,10 @@ class MCPRelease:
             url = endpoint(server, env_file=env_file)
             limits = self.configuration.limits(server)
             source = Path(path).resolve().parent / server.contracts
-            raw = source.read_bytes()
+            candidate = (manifests or {}).get(alias)
+            raw = (
+                manifest_json(candidate).encode() if candidate is not None else source.read_bytes()
+            )
             if len(raw) > limits.catalog_max_bytes:
                 raise ValueError(f"MCP manifest exceeds configured size: {alias}")
             manifest = MCPManifest.model_validate_json(raw)

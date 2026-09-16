@@ -8,14 +8,19 @@ WORKDIR /app/financeclaw
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 UV_LINK_MODE=copy \
     TIKTOKEN_CACHE_DIR=/app/financeclaw/.cache/tiktoken
 COPY pyproject.toml uv.lock README.md ./
-RUN uv export --frozen --no-dev --extra ziwei --no-emit-project -o /tmp/requirements.txt \
-    && uv pip install --system --no-cache -r /tmp/requirements.txt
+RUN uv export --frozen --no-dev --extra ziwei --no-emit-project -o /tmp/requirements.txt > /dev/null
+ARG UV_HTTP_TIMEOUT=120
+ARG UV_HTTP_CONNECT_TIMEOUT=30
+ARG UV_CONCURRENT_DOWNLOADS=4
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv pip install --system --require-hashes -r /tmp/requirements.txt
 COPY financeclaw ./financeclaw
 COPY config/*.toml ./config/
 COPY config/mcp ./config/mcp
 COPY langgraph.json alembic.ini ./
 COPY deploy ./deploy
-RUN uv pip install --system --no-deps --no-cache . \
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv pip install --system --no-deps . \
     && python deploy/configure_image.py \
     && python -c 'import importlib.metadata as m; assert m.version("langgraph-api") == "0.14.0"; assert m.version("langgraph-sdk") == "0.4.4"; assert m.version("langgraph") == "1.2.11"' \
     && python -c 'import tiktoken; tiktoken.get_encoding("cl100k_base")'

@@ -1,0 +1,60 @@
+{
+  "date": "2026-09-16",
+  "scope": "MCP 大结果业务视图、结构化读取、原文件引用复用和根预算收尾",
+  "status": "implemented_offline_verified",
+  "regression": {
+    "command": ".venv/bin/python -m pytest -q tests/mcp_integration tests/stage9 tests/stage11 tests/stage6fix tests/architecture tests/stage8_hotfix tests/stage10/test_turns.py tests/stage1 tests/stage2 tests/stage5 tests/stage7 tests/taibu --disable-warnings --maxfail=5",
+    "passed": 702,
+    "skipped": 8,
+    "failed": 0,
+    "skip_reason": "未配置 FINANCECLAW_TEST_POSTGRES_URL：6 项 PostgreSQL 并发测试、2 项数据库角色测试跳过",
+    "warning": "酒店回放使用 record_property 记录指标，与 pytest 默认 JUnit xunit2 格式存在兼容提示，不影响用例结果"
+  },
+  "final_boundary_regression": {
+    "command": ".venv/bin/python -m pytest -q tests/stage9/test_artifact_views.py tests/mcp_integration/test_hotel_result_views.py tests/stage9/test_context.py tests/stage11/test_context_budget.py tests/stage11/test_context_evidence.py --disable-warnings --maxfail=1",
+    "passed": 29,
+    "skipped": 0,
+    "failed": 0,
+    "scope": "扩展回归后补充嵌套目录绝对业务路径、实际引用序列化字节和空数组元数据上限，再验证归档、上下文和酒店链路"
+  },
+  "synthetic_hotel_replay": {
+    "test": "tests/mcp_integration/test_hotel_result_views.py",
+    "replaced": ["MCPTransport.call 远端返回", "模型调用选择"],
+    "real_application_components": ["根 create_agent 图", "MCP 工具适配器", "Artifact 存储", "read_artifact", "SQL 累计预算"],
+    "hotel_candidates": 10,
+    "rate_plan_counts": [35, 100, 123],
+    "selected_field_records_read": 258,
+    "business_calls": 4,
+    "artifact_read_calls": 5,
+    "tool_calls": 9,
+    "model_calls": 6,
+    "artifact_count": 4,
+    "max_tool_reply_bytes": 16356,
+    "tool_limit": 12,
+    "root_model_limit": 8,
+    "reply_limit_bytes": 16384,
+    "limitation": "使用按已观察规模构造的合成回包；没有取回真实保存回包，也不能推断真实模型会采用相同调用顺序或正确给出酒店推荐"
+  },
+  "budget_checks": [
+    "同步和异步原生图：已用 11 次再提出 2 次时整批拒绝，两个调用 ID 均有 ToolMessage",
+    "最后一次根模型请求实际撤下业务工具，最终 Manifest 与请求一致",
+    "普通模型尝试与子调用不能占用 SQL 最后一次根回答额度",
+    "跨 Turn 不沿用上一轮 finishing 状态",
+    "预算异常与取消、权限异常分开处理，不把取消转成普通收尾"
+  ],
+  "static_checks": {
+    "ruff": "passed",
+    "changed_python_format": "passed",
+    "compileall_financeclaw": "passed",
+    "git_diff_check": "passed"
+  },
+  "not_performed": [
+    "真实保存回包回放",
+    "真实 MCP 酒店业务查询",
+    "真实模型验证",
+    "飞书端到端验收",
+    "Docker 部署或重启",
+    "数据库清理",
+    "Git commit 或 push"
+  ]
+}

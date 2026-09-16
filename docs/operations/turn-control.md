@@ -7,9 +7,7 @@
 `compose.yml` 在新项目卷中创建 `financeclaw_app` 和 `financeclaw_native` 两个数据库。只有业务空库执行 `alembic upgrade head`，原生库由 AgentServer 初始化。不要把旧开发库指向新初始迁移，不要用启动脚本自动删除已有库。
 
 ```bash
-docker compose build
-docker compose up -d
-docker compose ps
+uv run --frozen python scripts/deploy.py
 docker compose logs --tail=100 api worker integrations
 ```
 

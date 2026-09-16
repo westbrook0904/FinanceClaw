@@ -157,7 +157,7 @@ def history_tool_governance() -> tuple[ToolGovernance, ...]:
     return tuple(
         ToolGovernance(
             tool_id=name,
-            version="1.0.0",
+            version="2.0.1" if name == "read_artifact" else "1.0.0",
             side_effect=SideEffect.READ,
             idempotency=Idempotency.IDEMPOTENT,
             risk_level=RiskLevel.LOW,

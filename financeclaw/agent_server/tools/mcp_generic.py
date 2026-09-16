@@ -14,6 +14,7 @@ from financeclaw.agent_server.tools.mcp_errors import MCPError
 from financeclaw.agent_server.tools.mcp_transport import MCPTransport
 from financeclaw.agent_server.tools.policy import ToolDecisionType, ToolPolicy
 from financeclaw.kernel.context import ExecutionContext
+from financeclaw.shared.artifacts.views import mcp_view
 from financeclaw.shared.mcp.configuration import MCPEntry, MCPRelease
 from financeclaw.shared.releases.fingerprint import configuration_fingerprint
 
@@ -82,10 +83,8 @@ def managed_mcp_tool(entry: MCPEntry, *, env_file=None, transport=None) -> Manag
                     error=True,
                     artifact=artifact,
                 )
-        texts = [block.text for block in result.content if block.type == "text"]
-        payload = {**source, "result": "\n".join(texts) if texts else result.structuredContent}
-        if not texts and result.structuredContent is None:
-            payload["result"] = "工具未返回文本或 JSON；原始内容见工件。"
+        _, data, _, _ = mcp_view(artifact)
+        payload = {**source, "result": data}
         return receipt(
             json.dumps(payload, ensure_ascii=False), error=result.isError, artifact=artifact
         )
@@ -101,7 +100,15 @@ def managed_mcp_tool(entry: MCPEntry, *, env_file=None, transport=None) -> Manag
             args_schema=entry.definition.input_schema,
             func=invoke_sync,
             coroutine=invoke,
-            metadata={"mcp_server": entry.server_name, "mcp_tool": entry.definition.name},
+            metadata={
+                "mcp_server": entry.server_name,
+                "mcp_tool": entry.definition.name,
+                "result_view": (
+                    entry.server.result_views[entry.definition.name].model_dump()
+                    if entry.definition.name in entry.server.result_views
+                    else {}
+                ),
+            },
         ),
         entry.governance,
     )

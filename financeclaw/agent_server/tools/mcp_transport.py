@@ -12,8 +12,8 @@ from financeclaw.shared.mcp.configuration import (
     MCPEntry,
     endpoint,
     environment_value,
-    validate_definition,
 )
+from financeclaw.shared.mcp.contracts import input_structure
 from financeclaw.shared.releases.fingerprint import configuration_fingerprint
 
 
@@ -136,7 +136,7 @@ class MCPTransport:
             raise mapped_error(error) from None
 
     async def call(self, entry: MCPEntry, arguments: dict) -> types.CallToolResult:
-        """同 session 核对固定定义并调用；取消或超时会关闭本次连接。"""
+        """同 session 核对工具输入结构并调用；说明性文案变化不阻断执行。"""
         try:
             url = endpoint(self.server, env_file=self.env_file)
             if url != entry.endpoint:
@@ -150,15 +150,21 @@ class MCPTransport:
                         self.server.pin_server_version
                         and current.server_info.get("version") != expected_info.get("version")
                     ):
-                        raise MCPError("MCP_CONTRACT_CHANGED: MCP 服务身份变化，请重新导入。")
+                        raise MCPError(
+                            "MCP_CONTRACT_CHANGED: MCP 服务身份变化，需要维护者更新发布。"
+                            "当前任务不要重试此工具，修改查询参数不能修复。"
+                        )
                     tool = next(
                         (item for item in current.tools if item.name == entry.definition.name), None
                     )
-                    if tool is None or configuration_fingerprint(tool) != configuration_fingerprint(
-                        entry.definition
-                    ):
-                        raise MCPError("MCP_CONTRACT_CHANGED: 工具定义变化，请重新导入。")
-                    validate_definition(tool)
+                    if tool is None or configuration_fingerprint(
+                        input_structure(tool.input_schema)
+                    ) != configuration_fingerprint(input_structure(entry.definition.input_schema)):
+                        raise MCPError(
+                            "MCP_CONTRACT_CHANGED: 工具已移除或输入参数结构变化，"
+                            "需要维护者更新定义并重新部署。当前任务不要重试此工具，"
+                            "修改查询参数不能修复。"
+                        )
                     result = await session.send_request(
                         types.ClientRequest(
                             types.CallToolRequest(

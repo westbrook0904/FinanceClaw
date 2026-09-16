@@ -1,4 +1,4 @@
-"""测试使用固定模型声明和合成凭据，不依赖开发者的 TOML 或本地 .env。"""
+"""测试使用固定模型、MCP 声明和合成凭据，不依赖开发者的 TOML 或本地 .env。"""
 
 from pathlib import Path
 
@@ -12,6 +12,9 @@ def isolated_model_configuration(monkeypatch):
     """用真实配置入口注入测试目录；单个测试仍可显式指定其他 TOML。"""
     monkeypatch.setenv(
         "FINANCECLAW_MODEL_CONFIG_PATH", str(Path(__file__).parent / "fixtures/models.toml")
+    )
+    monkeypatch.setenv(
+        "FINANCECLAW_MCP_CONFIG_PATH", str(Path(__file__).parent / "fixtures/mcp.toml")
     )
     monkeypatch.setenv("FINANCECLAW_TEST_MODEL_API_KEY", "synthetic-test-model-key")
     monkeypatch.setitem(FinanceClawSettings.model_config, "env_file", None)

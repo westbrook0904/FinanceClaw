@@ -64,6 +64,7 @@ class AgentProfile(BaseModel):
     memory_policy: str = "none"
     max_model_calls: int = Field(default=8, ge=1, le=64)
     max_tool_calls: int = Field(default=12, ge=1, le=128)
+    finish_on_budget: bool = False
     # 单次模型输出的工具批次上限；整批准入通过后才进入 HITL 和 ToolNode。
     max_tool_batch: int = Field(default=8, ge=1, le=32)
     # 根执行持久预算，覆盖所有 Worker、恢复及真实重试；区别于单 Agent 限额。

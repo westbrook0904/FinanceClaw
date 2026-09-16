@@ -69,6 +69,27 @@ class MCPReadPolicy(MCPDeclaration):
         return self
 
 
+class MCPResultView(MCPDeclaration):
+    """可选的业务结果目录与预览策略，不改变原始回包或可读字段。"""
+
+    delivery: Literal["auto", "reference"] = "auto"
+    collection_path: str | None = Field(default=None, max_length=1024)
+    preview_fields: tuple[str, ...] = Field(default=(), max_length=24)
+    preview_records: int = Field(default=3, ge=0, le=3)
+
+    @model_validator(mode="after")
+    def validate_paths(self):
+        """仅检查路径的协议写法，不推测业务数据是否存在。"""
+        for path in (*self.preview_fields, self.collection_path):
+            if path is not None and (
+                len(path) > 1024
+                or (path and not path.startswith("/"))
+                or re.search(r"~(?![01])", path)
+            ):
+                raise ValueError("result view paths must be JSON pointers")
+        return self
+
+
 class MCPServer(MCPDeclaration):
     """一个 HTTP 服务的连接及允许清单；禁用时不装载契约或读取凭据。"""
 
@@ -83,6 +104,7 @@ class MCPServer(MCPDeclaration):
     policy: MCPReadPolicy
     tool_policies: dict[str, MCPReadPolicy] = Field(default_factory=dict)
     aliases: dict[str, str] = Field(default_factory=dict)
+    result_views: dict[str, MCPResultView] = Field(default_factory=dict)
     timeout_seconds: float | None = Field(default=None, gt=0, le=300)
     result_max_bytes: int | None = Field(default=None, ge=4096, le=16_777_216)
     catalog_max_bytes: int | None = Field(default=None, ge=4096, le=16_777_216)
@@ -98,7 +120,9 @@ class MCPServer(MCPDeclaration):
             raise ValueError("MCP allowed_tools must be nonempty and unique")
         if any(not name.strip() for name in self.allowed_tools):
             raise ValueError("empty MCP tool name")
-        if (self.tool_policies.keys() | self.aliases.keys()) - set(self.allowed_tools):
+        if (self.tool_policies.keys() | self.aliases.keys() | self.result_views.keys()) - set(
+            self.allowed_tools
+        ):
             raise ValueError("MCP tool overrides must reference allowed_tools")
         if any(item.egress != self.policy.egress for item in self.tool_policies.values()):
             raise ValueError("tools sharing a connection must have the same egress")

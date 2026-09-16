@@ -36,6 +36,8 @@ class ConversationState(AgentState):
     """每个 thread 的有界上下文投影；不另建 Journal 或摘要表。"""
 
     context_bootstrapped: NotRequired[bool]
+    finishing: NotRequired[bool]
+    finish_turn_id: NotRequired[str | None]
     memory_recall: NotRequired[dict[str, Any]]
     memory_invalidated: NotRequired[bool]
     memory_forget_requested: NotRequired[bool]

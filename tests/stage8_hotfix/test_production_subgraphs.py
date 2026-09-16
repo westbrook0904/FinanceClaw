@@ -366,7 +366,8 @@ class ClarifyingRootModel(SerialModel):
 async def test_market_worker_clarification_interrupts_root_before_next_model(stack):
     """基础安装同样验证通用 Worker 澄清门控，不仅对紫微工具名生效。"""
     calls = [call("call_agent__market_research_agent", 1, task="研究行情")]
-    graph, kwargs = root_graph(stack, calls, limits={"model": 2})
+    # 根一次、Worker 一次，再保留根收尾的一次；澄清仍应在实际调用两次后中断。
+    graph, kwargs = root_graph(stack, calls, limits={"model": 3})
     tool = stack.tool_catalog.resolve("call_agent__market_research_agent", "1.3.0").tool
     tool.graph = stack.agent_factory.build(
         tool.release,

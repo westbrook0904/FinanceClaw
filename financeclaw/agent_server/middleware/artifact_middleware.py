@@ -13,16 +13,26 @@ from financeclaw.agent_server.context.artifacts import SOURCE_KEY, ToolResultArc
 from financeclaw.agent_server.context.turns import trusted_context
 from financeclaw.kernel.turns import message_source
 from financeclaw.shared.artifacts.service import ArtifactService
+from financeclaw.shared.artifacts.views import READ_BYTES, READ_KEY, VIEW_KEY, encode
 
 
 class ToolResultArtifactMiddleware(AgentMiddleware):
     """不要求外部工具标注；平台声明的结构化控制回执保留完整正文。"""
 
-    def __init__(self, service: ArtifactService, *, protected_tools: frozenset[str] = frozenset()):
+    def __init__(
+        self,
+        service: ArtifactService,
+        *,
+        protected_tools: frozenset[str] = frozenset(),
+        mcp_views=None,
+        reader_tools: frozenset[str] = frozenset(),
+    ):
         """配置统一归档阈值和平台声明的结构保护工具。"""
         self.service = service
         self.archive = ToolResultArchive(service)
         self.protected_tools = protected_tools
+        self.mcp_views = mcp_views or {}
+        self.reader_tools = reader_tools
 
     def _project(self, request: Any, response: Any) -> Any:
         """保留 Command 更新结构，对其中每条工具结果应用归档规则。"""
@@ -38,8 +48,17 @@ class ToolResultArtifactMiddleware(AgentMiddleware):
         context = trusted_context(request.runtime)
         metadata = {**response.additional_kwargs, SOURCE_KEY: message_source(context)}
         # Only platform-owned control tools can grant full-structure protection.
-        protected = request.tool_call.get("name") in self.protected_tools
-        metadata.pop("artifact_ref", None)
+        name = request.tool_call.get("name")
+        protected = name in self.protected_tools
+        if name in self.reader_tools and response.status == "success":
+            if len(str(response.content).encode()) > READ_BYTES:
+                raise ValueError("artifact read response exceeds its byte budget")
+            # 仅发布目录内的平台读取器可保留原文件引用；内容已有独立字节边界。
+            return response.model_copy(update={"additional_kwargs": metadata})
+        for key in ("artifact_ref", READ_KEY, VIEW_KEY):
+            metadata.pop(key, None)
+        if name in self.mcp_views:
+            metadata[VIEW_KEY] = {"mcp": True, "rule": self.mcp_views[name]}
         metadata["preserve_structure"] = protected
         message = response.model_copy(update={"additional_kwargs": metadata})
         payload = json.dumps(
@@ -53,7 +72,10 @@ class ToolResultArtifactMiddleware(AgentMiddleware):
                     "protected structured result exceeds inline budget; narrow the task"
                 )
             return message
-        if len(payload.encode()) <= self.service.inline_bytes:
+        force_reference = self.mcp_views.get(name, {}).get("delivery") == "reference"
+        if len(encode(message.content).encode()) <= self.service.inline_bytes and not (
+            force_reference and response.status == "success"
+        ):
             return message
         return self.archive.project(message, context)
 

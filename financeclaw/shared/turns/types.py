@@ -26,6 +26,10 @@ class ExecutionConflict(RuntimeError):
     """A command, grant or execution fact does not match the accepted Turn."""
 
 
+class ExecutionBudgetExceeded(ExecutionConflict):
+    """额度用尽的明确类型；停止、撤销和身份冲突不得被转为普通收尾。"""
+
+
 class StaleTurnLease(ExecutionConflict):
     """Only the current database lease may commit background observations."""
 

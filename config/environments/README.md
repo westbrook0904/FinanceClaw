@@ -17,4 +17,4 @@ Ziwei 仍为开发/测试候选，需要显式约定、HMAC 密钥和隐私设�
 
 Taibu MCP 默认关闭。叠加 `compose.taibu.yml` 可启用内网黄历、八字服务；API 与 Worker 同步获得配置，身份仍需单独授予 `taibu:read`。出生资料要求关闭完整 I/O 调试并隐藏追踪输入输出，具体启动、验收和回退命令见 [Taibu 运行说明](../../docs/operations/taibu-mcp.md)。
 
-通用 MCP 使用 `config/mcp.toml` 与导入的 `config/mcp/*.json`，可通过 `FINANCECLAW_MCP_CONFIG_PATH` 改路径。RollingGo 默认关闭，执行端配置 `FINANCECLAW_ROLLINGGO_API_KEY` 后导入定义再启用，并给调用身份追加 `travel:read`。启用 Ziwei/八字时还须明确配置允许的任务数据级别，见 [MCP 接入手册](../../docs/operations/mcp.md)。
+通用 MCP 使用 `config/mcp.toml` 与固定的 `config/mcp/*.json`。RollingGo 模板默认关闭，配置 `FINANCECLAW_ROLLINGGO_API_KEY` 并启用后，执行 `uv run --frozen python scripts/deploy.py` 会自动补齐缺失定义、检查并部署；更新已有定义时加 `--refresh-mcp`。部署入口支持 `--env-file` 和重复 `-f`；`FINANCECLAW_MCP_CONFIG_PATH` 可选择镜像内的其他 `config/*.toml`。调用身份需追加 `travel:read`，启用 Ziwei/八字时还须明确允许的任务数据级别，见 [MCP 接入手册](../../docs/operations/mcp.md)。

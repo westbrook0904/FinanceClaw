@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+from copy import deepcopy
 from types import SimpleNamespace
 from typing import ClassVar
 
@@ -9,14 +10,17 @@ import pytest
 from langchain.tools import ToolRuntime
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
+from pydantic import SecretStr
 
 from financeclaw.agent_server.agents.offline import OfflineFinanceModel
 from financeclaw.agent_server.bootstrap import build_components
 from financeclaw.agent_server.tools.mcp_generic import managed_mcp_tool
 from financeclaw.agent_server.tools.mcp_transport import MCPTransport
 from financeclaw.agent_server.tools.policy import TransientToolError
+from financeclaw.kernel.context import DataClassification
 from financeclaw.kernel.mcp import MCPAuth
 from financeclaw.shared.mcp.configuration import MCPRelease
+from financeclaw.shared.mcp.contracts import input_structure
 from financeclaw.shared.turns.snapshots import agent_snapshot
 from scripts.mcp_catalog import run
 from tests.turn_support import seed_execution
@@ -82,6 +86,87 @@ async def test_structured_only_result_is_model_visible(settings, context, protoc
     protocol.structured_only = True
     result = await invoke(settings, context)
     assert json.loads(result.content)["result"]["hotel_id"] == "hotel-1"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("change", ["tool_metadata", "parameter_description", "output_schema"])
+async def test_documentation_changes_do_not_block_business_call(
+    settings, context, protocol, change
+):
+    """复现 RollingGo 字段文案更新：参数结构相同就真正发出 tools/call。"""
+    if change == "tool_metadata":
+        protocol.tools[0].update(description="Updated guidance", title="New title")
+        protocol.tools[0]["annotations"] = {"title": "Display name"}
+    elif change == "parameter_description":
+        protocol.tools[0]["inputSchema"]["properties"]["query"].update(
+            description="Use destination followed by city", title="Destination", examples=["x"]
+        )
+    else:
+        protocol.tools[0]["outputSchema"] = {"type": "object"}
+    result = await invoke(settings, context)
+    assert result.status == "success"
+    assert sum(body.get("method") == "tools/call" for _, body in protocol.requests) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("change", ["type", "enum", "minLength", "property_name"])
+async def test_parameter_structure_changes_still_block_before_call(
+    settings, context, protocol, change
+):
+    """实际入参约束变化仍阻断，且说明改查询参数重试不能修复发布差异。"""
+    schema = protocol.tools[0]["inputSchema"]
+    if change == "property_name":
+        schema["properties"]["destination"] = schema["properties"].pop("query")
+    else:
+        schema["properties"]["query"][change] = {
+            "type": "integer",
+            "enum": ["Shanghai"],
+            "minLength": 2,
+        }[change]
+    result = await invoke(settings, context)
+    assert result.status == "error" and "MCP_CONTRACT_CHANGED" in result.content
+    assert "不要重试" in result.content
+    assert not any(body.get("method") == "tools/call" for _, body in protocol.requests)
+
+
+def test_annotation_removal_preserves_parameter_names_and_literal_values():
+    """同名业务字段及常量不可被当成 Schema 文案剔除，嵌套说明可以更新。"""
+    schema = {
+        "type": "object",
+        "properties": {
+            "description": {"type": "string", "description": "old"},
+            "settings": {"const": {"description": "business value", "default": 1}},
+            "kind": {"enum": [{"title": "literal value"}]},
+            "rows": {"type": "array", "items": {"$ref": "#/$defs/row"}},
+        },
+        "$defs": {"row": {"type": "object", "properties": {"title": {"type": "string"}}}},
+        "required": ["description", "kind"],
+    }
+    documented = deepcopy(schema)
+    documented["properties"]["description"]["description"] = "new"
+    documented["$defs"]["row"]["properties"]["title"]["examples"] = ["sample"]
+    documented["required"].reverse()
+    assert input_structure(schema) == input_structure(documented)
+    for key in ("description", "settings", "kind"):
+        changed = deepcopy(schema)
+        if key == "description":
+            changed["properties"][key]["type"] = "number"
+        elif key == "settings":
+            changed["properties"][key]["const"]["description"] = "other value"
+        else:
+            changed["properties"][key]["enum"][0]["title"] = "other value"
+        assert input_structure(schema) != input_structure(changed)
+    assert schema["properties"]["description"]["description"] == "old"
+
+
+def test_structure_comparison_retains_tuple_order_but_not_set_order():
+    """枚举与联合类型的排序不影响参数，按位置定义的元组顺序仍影响输入。"""
+    schema = {"type": ["string", "null"], "enum": ["a", "b", None]}
+    reordered = {"type": ["null", "string"], "enum": [None, "b", "a"]}
+    assert input_structure(schema) == input_structure(reordered)
+    first = {"prefixItems": [{"type": "string"}, {"type": "number"}]}
+    second = {"prefixItems": list(reversed(first["prefixItems"]))}
+    assert input_structure(first) != input_structure(second)
 
 
 @pytest.mark.asyncio
@@ -197,8 +282,24 @@ class OrderedModel(OfflineFinanceModel):
 
 
 @pytest.mark.asyncio
-async def test_real_root_loop_injects_runtime_and_controls_completion(settings, context, protocol):
+@pytest.mark.parametrize("ziwei_enabled", [False, True])
+async def test_real_root_loop_injects_runtime_and_controls_completion(
+    settings, context, protocol, config_path, ziwei_enabled
+):
     """新工具首轮即出现，原生注入身份，工具结果后根继续调度再最终回答。"""
+    if ziwei_enabled:
+        settings.ziwei_enabled = True
+        settings.ziwei_hmac_key = SecretStr("synthetic-ziwei-test-key-00000000")
+        config_path.write_text(
+            config_path.read_text().replace(
+                'allowed_data_classes = ["public", "internal"]',
+                'allowed_data_classes = ["public", "internal", "confidential"]',
+                1,
+            )
+        )
+        context = context.model_copy(
+            update={"data_classification": DataClassification.CONFIDENTIAL}
+        )
     components = build_components(settings, enable_persistence=True)
     try:
         context = seed_root(components, context, "mcp-root")
@@ -214,6 +315,8 @@ async def test_real_root_loop_injects_runtime_and_controls_completion(settings, 
         assert len(OrderedModel.calls) == 3
         visible = OrderedModel.calls[0][0]
         assert {"mcp__hotel__search", "mcp__hotel__detail"}.issubset(visible)
+        if ziwei_enabled:
+            assert components.default_agent_profile.data_classification == "confidential"
         assert "mcp__other__search" not in visible and "search_tools" not in visible
         assert result["messages"][-1].content == "完成两次实际工具查询后的根回答"
         receipts = [item for item in result["messages"] if isinstance(item, ToolMessage)]
@@ -249,7 +352,63 @@ async def test_large_raw_result_uses_existing_archive(settings, context, protoco
         stored = json.loads(
             components.artifact_service.read(message.artifact["artifact_id"], context=context)
         )
-        assert stored["artifact"]["response"]["structuredContent"]["details"] == "数据" * 40000
+        assert (
+            stored["raw"]["artifact"]["response"]["structuredContent"]["details"] == "数据" * 40000
+        )
+        assert "content" not in stored["raw"]
+    finally:
+        components.database.close()
+
+
+def test_root_final_model_allowance_is_reserved_in_sql(settings, context):
+    """普通尝试不能占用预留额度，取消和硬上限仍然阻止最终请求。"""
+    from financeclaw.shared.turns.types import ExecutionConflict
+    from tests.turn_support import cancel_execution
+
+    components = build_components(settings, enable_persistence=True)
+    try:
+        context = seed_root(components, context, "reserve-final")
+        execution = components.conversation_repository.execution
+        limit = execution.get(context.turn_id)["release_snapshot"]["limits"]["model"]
+        for _ in range(limit - 1):
+            execution.consume(context.turn_id, "model")
+        with pytest.raises(ExecutionConflict, match="budget"):
+            execution.consume(context.turn_id, "model")
+        execution.consume(context.turn_id, "model", final_answer=True)
+        assert execution.get(context.turn_id)["model_calls"] == limit
+        with pytest.raises(ExecutionConflict, match="budget"):
+            execution.consume(context.turn_id, "model", final_answer=True)
+        cancel_execution(execution, context.turn_id)
+        with pytest.raises(ExecutionConflict):
+            execution.consume(context.turn_id, "model", final_answer=True)
+    finally:
+        components.database.close()
+
+
+@pytest.mark.asyncio
+async def test_persistent_root_finishes_at_tree_budget_and_records_empty_tools(settings, context):
+    """真实 SQL 配额先于本地配额耗尽时，最后一次仍可回答且 Manifest 如实记录。"""
+    from tests.stage6fix.test_finish_budget import BudgetModel
+
+    components = build_components(settings, enable_persistence=True)
+    try:
+        profile = components.default_agent_profile.model_copy(update={"max_tree_model_calls": 3})
+        snapshot = agent_snapshot(profile, context, thread_id="tree-budget", input_hash="test")
+        snapshot["user_message_id"] = "budget-input"
+        context = seed_execution(components.conversation_repository.execution, context, snapshot)
+        BudgetModel.observed = []
+        graph = components.agent_factory.build(profile, model=BudgetModel(batches=(1,)))
+        result = await graph.ainvoke(
+            {"messages": [HumanMessage(id="budget-input", content="比较已有结果")]},
+            config={"configurable": {"thread_id": "tree-budget"}},
+            context=context,
+        )
+        assert len(BudgetModel.observed) == 3 and not BudgetModel.observed[-1]
+        assert "已有查询结果" in result["messages"][-1].content
+        execution = components.conversation_repository.execution
+        assert execution.get(context.turn_id)["model_calls"] == 3
+        manifests = components.conversation_repository.list_manifests(context.conversation_id)
+        assert len(manifests) == 3 and not manifests[-1].exposed_tools
     finally:
         components.database.close()
 

@@ -1,10 +1,10 @@
 # 通用 MCP 接入与 RollingGo 查询
 
-通用 HTTP MCP 已接入现有工具目录。新增同类服务通常只需填写 TOML、导入工具定义、绑定 Agent，
+通用 HTTP MCP 已接入现有工具目录。新增同类服务通常只需填写 TOML、配置凭据、绑定 Agent 并部署，
 无需为每个工具编写参数类或客户端。模型使用普通工具调用，工具结果返回后仍由根 Agent 决定下一步。
 
-目前提供 RollingGo 酒店三个、机票两个查询工具的配置。仓库默认关闭这两个服务，
-尚未包含真实账户导出的工具定义。启用前需要有效 API Key；未认证访问两个官方端点均返回 HTTP 401。
+目前提供 RollingGo 酒店三个、机票两个查询工具的配置。配置模板默认关闭这两个服务，
+部署命令为已启用且缺少定义的服务自动导入。首次接入和刷新时需要有效 API Key。
 已通过真实 MCP SDK 与本地 HTTP 协议替身验证通用链路，真实查询、模型选择和飞书端到端效果仍待账户联调。
 
 ## 1. 启用 RollingGo
@@ -28,9 +28,26 @@ API Key 不写入 TOML、导入文件或命令行参数。执行环境变量优�
 实际参数以当前账户返回的 `tools/list` 为准。两个服务默认引用同一个 Key；若账户分别分配凭据，
 修改各自 `auth.token_env` 为对应环境变量名即可。
 
-### 导入并启用
+### 启用并部署
 
-先保持 `enabled = false`，查看账户可见清单，再导入允许的工具：
+在 TOML 中确认 `allowed_tools` 和 Agent 绑定，将已开通的服务设为 `enabled = true`。
+配置好下文的调用权限和数据级别后，直接执行：
+
+```bash
+uv run --frozen python scripts/deploy.py
+```
+
+命令先补齐已启用服务缺失的定义，检查完整目录，再构建和启动 Docker。
+已有定义默认离线复用，关闭的服务不连接、不要求契约或 Key。未开通机票时只启用酒店即可。
+两个服务均启用时检查应显示 `5 个已启用工具`，只启用酒店为 `3`，全部禁用为 `0`。
+
+工具定义需要更新时执行 `scripts/deploy.py --refresh-mcp`。
+若改动了端点或增加 `allowed_tools`，已有文件检查可能失败，此时也需要显式刷新。
+希望先审阅生成文件时，执行 `scripts/deploy.py --prepare-only --refresh-mcp`，审阅后正常部署。
+
+### 可选：查看清单或单独维护
+
+不确定远端工具名称时，可以先保持服务关闭，用以下诊断命令查看；它们不再是部署前的必做步骤：
 
 ```bash
 .venv/bin/python scripts/mcp_catalog.py discover --server rollinggo_hotel
@@ -43,13 +60,12 @@ API Key 不写入 TOML、导入文件或命令行参数。执行环境变量优�
 完整分页成功后才原子替换文件，任何一页失败都会保留旧文件。
 生成的 `config/mcp/rollinggo_hotel.json` 和 `config/mcp/rollinggo_flight.json` 应随代码发布并审阅差异。
 
-审阅完成后，把对应服务的 `enabled` 改为 `true`，再检查：
+只检查当前本地定义：
 
 ```bash
 .venv/bin/python scripts/mcp_catalog.py check
 ```
 
-两个服务均启用时应显示 `5 个已启用工具`。全部禁用时显示 `0`，这是正常结果。
 `check` 离线验证已启用契约、端点、Schema、命名和 MCP 绑定，不测试凭据有效性。
 关闭服务时保留其 Agent 绑定即可，装配会忽略这些绑定；不需要删除配置。
 未开通机票时可只启用酒店。
@@ -69,31 +85,74 @@ API Key 不写入 TOML、导入文件或命令行参数。执行环境变量优�
 `FINANCECLAW_API_SCOPES` 中追加该权限，保留原来的权限和用于回读大结果的 `artifacts:read`。
 生产 OIDC 身份应由身份提供方授予 `travel:read`；环境变量不会覆盖 JWT 的授权。
 
-默认 MCP 策略只允许 `public/internal`。当前根 Agent 在启用紫微、或启用 Taibu 八字时，
-整轮任务会使用 `confidential`，此时旅行工具会被现有权限规则过滤，即使用户只问酒店也一样。
-这是现有的整轮数据分级机制，本次没有新增按参数降级或自动放行。
+当前根 Agent 在启用紫微、或启用 Taibu 八字时，整轮任务会使用 `confidential`。
+如果 MCP 策略只允许 `public/internal`，工具虽已装配，也会在模型请求前被过滤。
+当前酒店配置已明确允许 `public/internal/confidential`，让此部署的根任务可以使用酒店查询；
+机票仍关闭并保留 `public/internal`。新服务需要按其部署策略单独配置，不自动继承酒店的范围。
 
-若部署策略允许该级别的任务调用 RollingGo，在两个服务的 `policy` 中明确配置：
+若部署策略允许该级别的任务调用对应服务，在该服务的 `policy` 中明确配置：
 
 ```toml
 allowed_data_classes = ["public", "internal", "confidential"]
 ```
 
 这表示允许 `confidential` 任务向该服务发送查询参数；提示词要求仅传本次出行条件，
-它不构成字段级的数据隔离。若不允许该出域范围，保持默认策略，在没有启用上述领域能力的部署中测试旅行查询。
+它不构成字段级的数据隔离。若不允许该出域范围，使用更窄的策略，在没有启用上述领域能力的部署中测试旅行查询。
 
 ### 发布到 Docker
 
 配置在进程启动时固定，修改 TOML 或导入文件后需要统一重新装配。
-Dockerfile 已包含 `config/*.toml` 和 `config/mcp/`。导入命令在本地执行后再构建镜像：
+部署入口为 [scripts/deploy.py](../../scripts/deploy.py)，需要本机安装 uv 和 Docker Compose。
+已有项目环境时也可以使用 `.venv/bin/python scripts/deploy.py`。
 
 ```bash
-docker compose build api
-docker compose up -d --no-build
-docker compose ps -a
+# 自动补齐缺失定义，检查、构建、启动，并显示容器状态
+uv run --frozen python scripts/deploy.py
+
+# 更新所有已启用 MCP 的定义后部署
+uv run --frozen python scripts/deploy.py --refresh-mcp
+
+# 只准备文件，供审阅；不构建、不启动容器
+uv run --frozen python scripts/deploy.py --prepare-only --refresh-mcp
+
+# 指定环境文件，并沿用 Taibu 的 Compose 组合
+uv run --frozen python scripts/deploy.py --env-file .env \
+  -f compose.yml -f compose.taibu.yml
 ```
 
-若原部署叠加了 Taibu 等 Compose 文件，继续使用原来的 `-f` 参数组合。
+默认读取 `.env`，也支持 `FINANCECLAW_ENV_FILE`，命令行 `--env-file` 优先。
+同一文件同时用于 Compose 变量替换和应用容器的 `env_file`；`.env.memory` 仍按原 Compose 单独加载。
+入口在内存中读取 Compose 解析后的配置，用实际 Worker 环境执行导入，不输出展开后的密钥。
+`FINANCECLAW_MCP_CONFIG_PATH` 必须指向镜像包含的 `config/*.toml`，
+已启用服务的 `contracts` 必须落在 `config/mcp/` 下。API 与 Worker 使用同一配置和端点。
+
+准备阶段只执行 `initialize` 和 `tools/list`，不调用业务工具。
+待导入服务全部获取成功并通过完整目录检查后才逐文件原子保存；远端或契约检查失败不会覆盖旧定义。
+准备失败不构建镜像，构建失败不执行启动。已生成的文件会留在本地，便于审阅和提交。
+服务启动沿用 `docker compose up -d --no-build`，最后显示 `ps -a`；返回不代表所有健康检查已经通过。
+普通 `docker compose restart` 或 `up -d --no-build` 不触发发现，继续使用镜像中的固定定义。
+
+若构建时报 `Failed to download` / `operation timed out`，这是构建环境下载 Python 包失败，
+需查看该错误前的包名和下载地址。Dockerfile 使用 120 秒读取超时、30 秒连接超时、4 路下载，
+并通过 BuildKit 缓存复用已下载的依赖；锁定版本与文件哈希仍会校验。
+超时后可以重新执行部署命令；缓存不会进入运行镜像。
+这些设置使用 [uv 的原生网络配置](https://docs.astral.sh/uv/reference/environment/#uv_http_timeout)
+和 [Docker 构建缓存](https://docs.astral.sh/uv/guides/integration/docker/#caching)。
+如果持续无法访问 `pypi.org` 或 `files.pythonhosted.org`，需要修复 Docker 的网络或代理，
+仅在宿主机设置代理不代表 Docker 构建已经使用该代理。
+
+Docker Desktop 可通过 `host.docker.internal` 访问宿主机代理，例如本机 HTTP 代理端口为 7890 时：
+
+```bash
+.venv/bin/python scripts/deploy.py --build-proxy http://host.docker.internal:7890
+```
+
+也可在终端设置 `FINANCECLAW_BUILD_PROXY`，之后执行普通部署命令。
+该配置只向镜像构建传递 Docker 的预定义代理参数，不修改 MCP 导入或应用容器的代理配置；
+Dockerfile 不声明这些代理 ARG，避免将代理值记录到镜像历史。
+地址必须能从 Docker 内访问，容器中的 `127.0.0.1` 指向容器自身。
+参见 [Docker 构建代理说明](https://docs.docker.com/build/building/variables/#proxy-arguments)。
+
 API 与图 Worker 必须使用相同配置和契约。API 装载目录不连接 MCP，也不需要 MCP Key；
 实际执行时由图 Worker 获取凭据。现有 Compose 共享 `.env` 的注入方式可直接使用，无需新增 RollingGo 容器。
 独立 `memory_worker` 不使用这些工具，无需给 `.env.memory` 添加 RollingGo Key。
@@ -126,8 +185,9 @@ egress = "external"
 allowed_data_classes = ["public", "internal"]
 ```
 
-然后执行 `discover --server catalog` 和 `import --server catalog`，
-在**已有**的 `[agents.finance_agent].mcp_tools` 数组中追加 `"catalog.lookup"`，启用并运行 `check`。
+在**已有**的 `[agents.finance_agent].mcp_tools` 数组中追加 `"catalog.lookup"`，
+配置密钥、启用服务，然后执行 `uv run --frozen python scripts/deploy.py` 即可自动导入并部署。
+不确定工具名时先用 `discover --server catalog` 查看清单。
 只给子 Agent 使用时，把引用放进 `[agents.market_research_agent]` 或 `[agents.ziwei_doushu_agent]`，
 不要加到根的绑定。它仍须满足该子 Agent 原有的任务、授权和输出协议。
 未知 Agent、未知工具或重复绑定会报错，不会回退到“所有 Agent 都可见”。
@@ -142,7 +202,7 @@ allowed_data_classes = ["public", "internal"]
 | `aliases = { lookup = "mcp__catalog__lookup" }` | 自定义模型侧名称，适用于远端名字过长或不符合工具命名规则 |
 | `policy.tenant_allowlist = ["tenant-a"]` | 进一步限制可调用租户 |
 | `[servers.catalog.tool_policies.lookup]` | 完整覆盖该工具的读取策略，仍需明确 `side_effect/required_scopes/allowed_data_classes` |
-| `pin_server_version = true` | 额外固定远端软件版本，默认只固定服务名和所选工具完整定义 |
+| `pin_server_version = true` | 额外固定远端软件版本，默认核对服务名、所选工具存在及输入参数结构 |
 
 `[defaults]` 提供连接参数默认值，每个服务可同名覆盖：
 
@@ -162,13 +222,24 @@ OAuth、stdio、订单写入、长期会话、MCP sampling/elicitation 尚未接
 
 每次工具调用使用同一个 SDK session 完成初始化、完整 `tools/list`、固定定义核对和 `tools/call`。
 当前没有核验缓存，因此每次查询都会付出初始化与目录请求的耗时；不缓存业务答案。
-服务身份或所选工具定义变化时返回 `MCP_CONTRACT_CHANGED`，需重新导入、审阅并发布。
+服务身份、所选工具存在性或输入参数结构变化时返回 `MCP_CONTRACT_CHANGED`，需重新导入、审阅并发布。
+运行时结构比较保留字段、类型、必填项、枚举、嵌套结构和取值约束；忽略 Schema 中的描述、标题、示例及默认值等注释。
+工具展示元数据或远端输出 Schema 的变化不会单独阻断调用；实际回包仍按已发布的输出契约处理。
+完整定义仍保存在导入文件和发布指纹中，运行期间不自动替换模型看到的工具说明。
+这类发布差异不能通过修改业务参数修复，错误回执会要求本轮停止重试该工具。
+可用 `scripts/deploy.py --prepare-only --refresh-mcp` 更新文件，审阅后执行正常部署。
 后来新增的远端工具不会自动进入 Agent。
 
 模型侧名称默认为 `mcp__服务别名__远端工具名`，首轮即可使用已绑定且有权限的完整 Schema。
 未引入 `ProviderToolSearch`、`search_tools` 或工具选择中间件。工具参数占用现有上下文预算。
 支持既有 `/tool` 指令，例如导入酒店工具后使用 `/tool mcp__rollinggo_hotel__searchHotels`，
 参数不足时由根使用既有澄清工具询问，不跨轮缓存或自动补值。
+
+根 Agent 的对外回答只描述业务能力、结果和必要限制，不列举内部工具标识、参数 Schema、
+MCP 配置或诊断细节。用户问“有哪些工具”时也按业务能力回答。
+工具协议仍携带完整名称与 Schema，原生执行进度继续独立展示。
+历史消息中“没有实时查询能力”的旧结论不能覆盖当前模型请求实际可见的工具。
+这些是根系统提示的行为约束，不是对任意模型输出的确定性文本过滤器。
 
 返回的 `content`、`structuredContent`、扩展数据和实际查询参数会一并保存在工具 artifact 中。
 模型先看文本；只有结构化结果时直接看 JSON。达到既有归档阈值的大结果保存为工件引用，
@@ -197,11 +268,31 @@ OAuth、stdio、订单写入、长期会话、MCP sampling/elicitation 尚未接
 API 无 SDK 启动、真实 SDK 分页/认证/错误、根和子 Agent 的工具循环、`/tool`、调用配对、
 单层重试、原生进度、取消清理及大结果归档。HTTP 为本地协议替身，模型为确定性测试模型。
 
+2026-09-15 可见性与回答规则修复：MCP、架构、根子图与飞书流式回归共 **114 passed**。
+补充验证启用紫微且根任务为 `confidential` 时，明确允许该级别的酒店工具仍可完成原生调用循环。
+普通回归使用独立 MCP 配置，避免本地启用的服务污染固定测试目录。
+经用户授权，当前百炼模型通过了“要求列工具清单”“历史消息曾称查询不可用”“当前没有查询工具”
+三个合成场景：正文未出现内部工具标识，且在历史结论过时的场景选择了当前酒店查询工具。
+该探测未执行真实酒店查询或发送飞书消息，不等同于飞书端到端验收。
+修复已重建并部署到 Docker；API 与 Worker 的发布指纹一致，按当前飞书权限和根任务级别
+核对均有 3 个酒店工具可见。应用各角色健康检查通过，飞书集成已重新连接。
+
+部署入口新增 16 项用例，覆盖首次自动导入、离线复用、显式刷新、关闭服务跳过、
+批量获取失败时保留原文件、Compose 实际凭据与文件组合、镜像配置一致性及各阶段失败后停止。
+与 MCP、Stage 11 部署和架构用例合并运行 **78 passed**：
+
+```bash
+.venv/bin/python -m pytest -q tests/mcp_integration tests/stage11/test_deployment.py tests/architecture
+```
+
+2026-09-15 本地执行 `scripts/deploy.py --prepare-only` 通过，酒店 3 个工具离线装配成功，
+机票保持禁用。本次未构建或重启 Docker，未执行真实 MCP 业务查询；实际部署验收仍需运行完整命令。
+
 ```bash
 .venv/bin/python -m pytest -q tests/mcp_integration
 ```
 
-2026-09-15：上述新增用例 **47 passed**。包含既有架构、Taibu、Agent 与飞书修复用例的
+首次 MCP 实现验证（2026-09-15）：当时新增用例 **47 passed**。包含既有架构、Taibu、Agent 与飞书修复用例的
 回归 **393 passed**；全仓 Ruff、编译和密钥扫描通过。回归命令为：
 
 ```bash
@@ -213,3 +304,41 @@ TIKTOKEN_CACHE_DIR= .venv/bin/python -m pytest -q tests/mcp_integration tests/ar
 不把查询结果或预订链接表述为已锁房、下单或出票。
 
 总体边界与后续 OAuth/订单工作见[实施方案](../../.redesign/stages/MCP-工具主动发现与配置化接入实施方案.md)。
+
+## 大结果文件与按需读取
+
+酒店搜索和详情通过 `config/mcp.toml` 的 `result_views` 配置使用文件引用。完整回包
+保存在现有 Artifact 中；模型收到业务格式、字段/数组目录、记录数量及最多三条预览。
+预览和目录的回执上限为 4 KiB，预览不代表全部结果或价格排序。普通 MCP 可省略该配置，
+继续按业务正文阈值自动决定是否内联。
+
+```toml
+[servers.rollinggo_hotel.result_views.searchHotels]
+delivery = "reference"
+collection_path = "/hotelInformationList"
+preview_fields = ["/hotelId", "/name", "/price"]
+preview_records = 3
+```
+
+结果规则只影响目录和预览，原始字段仍可读取。配置路径与回包不符时返回通用目录，
+不把展示问题变成参数澄清。规则变化进入发布指纹，需要 API/Worker 一起重新部署。
+
+`read_artifact` 2.0.1 要求从已有结果复制配对的 ID、SHA-256，并明确指定 `mode`：
+
+| 模式 | 用法 |
+|---|---|
+| `inspect` | 查看业务根或 `path` 处的结构和数组长度 |
+| `json` | 用 JSON Pointer 定位 `path`；`fields` 选择相对对象字段；数组用 `start/limit` 分页 |
+| `text` | 对文本业务视图用 `offset/max_chars` 分页 |
+
+路径相对于实际业务数据，不需要定位 MCP 包装。记录默认请求 20 条，最多 200 条，
+实际回执仍受 16 KiB 上限约束；跟随 `next_start` 或 `next_offset`，不能按请求数量自行跳页。
+单个 JSON 对象按 `path/fields` 读取，忽略 `start/limit`，携带 `limit=1` 不会再触发数组分页错误。
+单条数据装不下时返回 `needs_narrower_selection`，应减少字段或定位更深路径。
+读取页面被上下文清理时复用原文件引用，不再产生一层页面文件。
+
+根默认保留一次模型调用用于预算收尾。8 次根模型、12 次根工具限制保持不变；共享
+SQL 模型预算中的最后一次也留给根最终回答，普通子调用和重试不可占用。超额工具批次
+补齐未执行回执后交回根；取消、撤销授权和服务故障仍服从原终止规则。
+
+完整设计和当前验收状态见[大结果实施方案](../../.redesign/stages/MCP-大结果归档与结构化读取实施方案.md)。

@@ -7,6 +7,13 @@ from langchain_core.messages import ToolMessage
 
 from financeclaw.kernel.context import ExecutionContext
 from financeclaw.shared.artifacts.service import ArtifactService
+from financeclaw.shared.artifacts.views import (
+    VIEW_KEY,
+    archive_payload,
+    business_view,
+    encode,
+    reference_view,
+)
 
 SOURCE_KEY = "financeclaw_source"
 
@@ -30,12 +37,14 @@ class ToolResultArchive:
                 "turn_id": source.get("turn_id", context.turn_id),
             }
         )
-        payload = {
-            "content": message.content,
-            "artifact": message.artifact,
-            "name": message.name,
-            "status": message.status,
-        }
+        options = message.additional_kwargs.get(VIEW_KEY, {})
+        payload = archive_payload(
+            message.content,
+            message.artifact,
+            name=message.name,
+            status=message.status,
+            mcp=options.get("mcp", False),
+        )
         content_hash = sha256(
             json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str).encode()
         ).hexdigest()
@@ -56,21 +65,22 @@ class ToolResultArchive:
                 else {}
             ),
         )
-        return {
+        base = {
             "artifact_id": metadata.artifact_id,
             "content_hash": metadata.content_hash,
             "size_bytes": metadata.size_bytes,
             "source_turn_id": owner.turn_id,
         }
+        kind, data = business_view(payload)
+        return reference_view(base, kind, data, options.get("rule"))
 
     def project(self, message: ToolMessage, context: ExecutionContext) -> ToolMessage:
         """生成可回读的短消息，不重跑原工具。"""
         reference = self.save(message, context)
         return message.model_copy(
             update={
-                "content": json.dumps(
+                "content": encode(
                     {"historical_tool_result": True, **reference, "read_with": "read_artifact"},
-                    ensure_ascii=False,
                 ),
                 "artifact": reference,
                 "additional_kwargs": {**message.additional_kwargs, "artifact_ref": reference},

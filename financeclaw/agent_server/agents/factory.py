@@ -34,6 +34,7 @@ from financeclaw.agent_server.middleware.final_context import (
     FinalContextMiddleware,
     RequestRecorder,
 )
+from financeclaw.agent_server.middleware.finish_middleware import FinishMiddleware
 from financeclaw.agent_server.middleware.memory_middleware import MemoryRecallMiddleware
 from financeclaw.agent_server.middleware.middleware import (
     ContextTraceMiddleware,
@@ -292,6 +293,16 @@ class AgentFactory:
             middleware.append(
                 ToolResultArtifactMiddleware(
                     self.artifact_service,
+                    mcp_views={
+                        managed.tool.name: (managed.tool.metadata or {}).get("result_view", {})
+                        for managed in resolved_tools
+                        if (managed.tool.metadata or {}).get("mcp_server")
+                    },
+                    reader_tools=frozenset(
+                        managed.tool.name
+                        for managed in resolved_tools
+                        if (managed.tool.metadata or {}).get("artifact_reader")
+                    ),
                     protected_tools=frozenset(
                         managed.tool.name
                         for managed in resolved_tools
@@ -377,33 +388,42 @@ class AgentFactory:
                 )
             )
         # 10. 挂载模型与工具的运行内调用限额中间件。
-        middleware.extend(
-            [
-                ModelCallLimitMiddleware(
-                    run_limit=profile.max_model_calls,
-                    exit_behavior="error",
-                    thread_limit=profile.max_model_calls
-                    if profile.context_policy == "worker-task-only-v1"
-                    else None,
-                ),
-                ToolCallLimitMiddleware(
-                    run_limit=profile.max_tool_calls,
-                    exit_behavior="error",
-                    thread_limit=profile.max_tool_calls
-                    if profile.context_policy == "worker-task-only-v1"
-                    else None,
-                ),
-            ]
+        model_limit = ModelCallLimitMiddleware(
+            run_limit=profile.max_model_calls,
+            exit_behavior="error",
+            thread_limit=profile.max_model_calls
+            if profile.context_policy == "worker-task-only-v1"
+            else None,
         )
-        middleware.append(
-            ToolBatchMiddleware(
-                pinned_catalog,
-                self.tool_policy,
-                max_batch=profile.max_tool_batch,
-                execution=getattr(self.conversation_repository, "execution", None),
-                worker_manifest=profile.worker_manifest,
+        tool_limit = ToolCallLimitMiddleware(
+            run_limit=profile.max_tool_calls,
+            exit_behavior="continue" if profile.finish_on_budget else "error",
+            thread_limit=profile.max_tool_calls
+            if profile.context_policy == "worker-task-only-v1"
+            else None,
+        )
+        batch = ToolBatchMiddleware(
+            pinned_catalog,
+            self.tool_policy,
+            max_batch=profile.max_tool_batch,
+            execution=getattr(self.conversation_repository, "execution", None),
+            worker_manifest=profile.worker_manifest,
+        )
+        if profile.finish_on_budget:
+            # after_model 逆序：模型计数→批次治理→工具计数→整批预算收尾→HITL。
+            # 即使批次被治理拒绝，也不能绕过模型次数限制。
+            middleware.extend(
+                [
+                    FinishMiddleware(
+                        profile, getattr(self.conversation_repository, "execution", None)
+                    ),
+                    tool_limit,
+                    batch,
+                    model_limit,
+                ]
             )
-        )
+        else:
+            middleware.extend([model_limit, tool_limit, batch])
         middleware.append(
             ExecutionBudgetMiddleware(
                 getattr(self.conversation_repository, "execution", None),

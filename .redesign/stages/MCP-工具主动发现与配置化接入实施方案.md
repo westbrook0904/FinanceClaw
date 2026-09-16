@@ -2,7 +2,9 @@
 
 **状态：通用链路已实现，RollingGo 已配置，待真实账户与飞书联调。更新日期：2026-09-15，版本：v1.3。**
 
-可执行命令、权限配置及排错见 [MCP 接入手册](../../docs/operations/mcp.md)。当前实现了配置装载、导入、显式绑定、原生工具循环和结果归档；已通过本地协议替身测试。尚无 RollingGo Key，两个端点的未认证探测均返回 HTTP 401，因此没有生成近似 Schema 或启用服务。
+可执行命令、权限配置及排错见 [MCP 接入手册](../../docs/operations/mcp.md)。当前实现了配置装载、导入、显式绑定、原生工具循环、结果归档和部署时自动准备；已通过本地协议替身测试。首次实现验收时两个端点的未认证探测均返回 HTTP 401，没有生成近似 Schema；后续账户接入与部署验证记录见运行手册。
+
+2026-09-16 补充：[大结果归档、结构化读取与预算收尾实施方案及交付记录](MCP-大结果归档与结构化读取实施方案.md)。代码、离线验证和本地 Docker 部署已完成，真实模型与飞书业务验收待进行；通用连接、导入和根 Agent 编排继续沿用本文。
 
 本期先完成通用 MCP 的配置、工具导入和调用，并用 RollingGo 的酒店、机票查询验证实际接入。根 Agent 直接使用配置中已授权的工具。
 
@@ -193,19 +195,23 @@ mcp_tools = [
 
 地址可直接放在 TOML，也可改为 `url_env` 引用环境变量，二选一。`contracts` 相对于 TOML 所在目录。API Key 从 RollingGo 合作方入口申请；示例共用一个 Key 引用，实际需分别验证酒店、机票权限。若服务分配不同 Key，修改各自的 `token_env` 即可。未开通机票时关闭该服务，绑定可以保留，不影响酒店接入。
 
-当前根在启用紫微或 Taibu 八字时，整轮数据级别为 `confidential`，会被示例里的 `public/internal` 策略过滤。允许这类任务调用旅行服务时，需在部署策略中明确追加 `confidential`；本次不自动放宽，也不引入按字段降级。详见接入手册的任务数据级别说明。
+当前根在启用紫微或 Taibu 八字时，整轮数据级别为 `confidential`，会被示例里的 `public/internal` 策略过滤。当前酒店部署已明确允许该级别，机票仍关闭并保留更窄的策略；其他服务按各自部署要求配置，不自动继承。详见接入手册的任务数据级别说明。
 
 ### 4.3 接入步骤
 
 1. **申请凭据并填写配置。** 先确定要开放的服务和工具，密钥只进入部署环境。
-2. **查看远端清单。** 执行 `discover`，确认当前 Key 实际可见的工具。
-3. **导入工具定义。** 执行 `import`，生成两个本地契约文件；审阅工具和参数变更，再启用服务。
-4. **配置访问权限并发布。** 执行离线检查，更新 API/Worker 的配置和部署文件。
+2. **确认工具和绑定。** 已知工具名直接填写；不确定时用 `discover` 查看当前 Key 可见的工具。
+3. **启用服务并配置访问权限。** 仅开启已开通的服务，确定调用身份和任务数据级别。
+4. **一条命令发布。** `scripts/deploy.py` 自动补齐缺失定义、检查、构建并启动；需先审阅时加 `--prepare-only`。
 5. **用自然语言验收。** 在飞书发起酒店查询，确认根能直接调用工具、继续查询详情并给出答案。
 
 已实现命令：
 
 ```bash
+uv run --frozen python scripts/deploy.py
+uv run --frozen python scripts/deploy.py --prepare-only --refresh-mcp
+
+# 以下保留为单独维护和排错命令，无需每次部署手动执行
 uv run python scripts/mcp_catalog.py discover --server rollinggo_hotel
 uv run python scripts/mcp_catalog.py import --server rollinggo_hotel
 uv run python scripts/mcp_catalog.py discover --server rollinggo_flight
@@ -214,6 +220,8 @@ uv run python scripts/mcp_catalog.py check
 ```
 
 这里的 `discover` 是开发者在接入阶段查看远端 `tools/list` 的命令，保留它便于确定接入范围；它不是给根 Agent 使用的搜索工具。`discover/import` 不调用酒店或机票业务；`check` 不联网。导入失败时保留原文件，不生成半份清单。发布后不自动开放远端后来新增的工具。
+
+部署入口默认复用并离线检查已有定义，仅自动导入已启用服务缺少的文件。显式 `--refresh-mcp` 更新全部已启用服务；整批远端获取和目录检查成功后才写文件。准备失败不会构建，构建失败不会启动。API/Worker 普通启动与重启仍从镜像读取固定定义，不做启动时联网发现。入口复用现有 MCP SDK 与检查规则，无新增运行时注册层。参数与环境文件规则见 [部署说明](../../docs/operations/mcp.md#发布到-docker)。
 
 部署需要同时处理三个已有边界：让飞书身份和测试 API 身份获得 `travel:read`，保留原有权限；用服务配置生成现有出站访问策略，放行 `mcp.rollinggo.cn`；让 API/Worker 加载相同配置和契约。实际连接由 Worker 持有凭据，API 装载目录不依赖远端在线。RollingGo 使用远程服务，无需增加本地 RollingGo 容器。
 

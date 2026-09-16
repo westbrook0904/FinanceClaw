@@ -1,0 +1,43 @@
+{
+  "date": "2026-09-16",
+  "scope": "工具文案漂移误拦截与对象读取分页误拒绝",
+  "runtime_contract": "input-structure/1",
+  "read_artifact_version": "2.0.1",
+  "changes": [
+    "MCP 运行时仅比较输入参数结构，保留约束、忽略说明性注释；完整导入定义继续用于发布记录",
+    "JSON 对象读取忽略数组的 start/limit，数组分页及字节上限保持原行为",
+    "结构漂移错误说明需要更新发布，修改查询参数重试无效",
+    "读取工具说明要求使用已有结果中的配对 ID/hash，禁止占位符探测"
+  ],
+  "tests": {
+    "command": ".venv/bin/python -m pytest -q tests/mcp_integration tests/stage9/test_artifact_views.py tests/stage11/test_context_evidence.py tests/stage11/test_context_budget.py tests/stage6fix/test_finish_budget.py tests/architecture --disable-warnings --maxfail=3",
+    "passed": 111,
+    "failed": 0,
+    "static_checks": ["Ruff", "changed Python format", "compileall financeclaw", "git diff --check"]
+  },
+  "live_read_only_probe": {
+    "source_turn_id": "5d83f20f-b68f-45ff-90f1-d546ac4d0b06",
+    "query": "使用原先失败的 call_e00afd8b839040998d3484b7 参数，经 MCPTransport 调用一次 searchHotels",
+    "hotel_query_success": true,
+    "hotels_returned": 6,
+    "original_frozen_definition_used": true,
+    "artifact_reads": {
+      "original_failed_calls": ["call_5574c0b14190442d9734cac0", "call_16ed4f4341b44148aadd8d87"],
+      "original_limit": 1,
+      "success_count": 2,
+      "returned_fields": ["name", "checkIn", "checkOut", "starRating"]
+    },
+    "model_called": false,
+    "feishu_message_sent": false,
+    "business_data_written": false,
+    "limitation": "验证实际 MCP 调用和原文件读取，未重新运行真实模型决策或飞书端到端流程"
+  },
+  "deployment": {
+    "command": ".venv/bin/python scripts/deploy.py",
+    "status": "deployed",
+    "healthy_services": ["api", "worker", "integrations", "memory_worker", "postgres", "redis"],
+    "migration_exit_code": 0,
+    "feishu_channel_healthy": true,
+    "api_worker_fingerprint": "ac653a1c70e59bfa3382ef9500b224058a5308ef88c4e1719bf5beb24f961d94"
+  }
+}

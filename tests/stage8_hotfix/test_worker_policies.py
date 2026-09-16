@@ -59,11 +59,11 @@ class FabricatingRootModel(OfflineFinanceModel):
 
 @pytest.mark.asyncio
 async def test_root_clarifies_before_model_can_invent_missing_arguments(stack):
-    """根模型只有一次派发额度，澄清必须直接中断且没有第二次模型调用。"""
+    """澄清必须直接中断且没有第二次根模型调用，另留一次根收尾额度。"""
     FabricatingRootModel.rounds = 0
     calls = [call("call_agent__ziwei_doushu_agent", 1, task="请排盘", arguments={})]
     graph, kwargs = root_graph(
-        stack, calls, model=FabricatingRootModel(calls=calls), limits={"model": 2}
+        stack, calls, model=FabricatingRootModel(calls=calls), limits={"model": 3}
     )
     result = await graph.ainvoke(
         {"messages": [HumanMessage(content="请排盘", id="root-input")]}, **kwargs
@@ -266,10 +266,13 @@ async def test_parallel_workers_cannot_overdraw_root_tool_budget(stack):
         for index in (1, 2)
     ]
     graph, kwargs = root_graph(stack, calls, model=BatchModel(calls=calls), limits={"tool": 2})
-    with pytest.raises(ExecutionConflict, match="budget"):
-        await graph.ainvoke(
-            {"messages": [HumanMessage(content="同时排盘", id="root-input")]}, **kwargs
-        )
+    result = await graph.ainvoke(
+        {"messages": [HumanMessage(content="同时排盘", id="root-input")]}, **kwargs
+    )
+    receipts = [m for m in result["messages"] if isinstance(m, ToolMessage)]
+    assert {m.tool_call_id for m in receipts} == {"call-1", "call-2"}
+    assert any(m.status == "error" for m in receipts)
+    assert result["finishing"]
     assert stack.conversation_repository.execution.get("root")["tool_calls"] == 2
 
 

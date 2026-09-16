@@ -8,7 +8,12 @@ from sqlalchemy.orm import Session, sessionmaker
 from financeclaw.kernel.context import ExecutionContext
 from financeclaw.shared.turns.authorization import check_authorization, intersect_scopes
 from financeclaw.shared.turns.tables import ConversationTurnRow, InteractionRow, TurnCommandRow
-from financeclaw.shared.turns.types import TERMINAL_STATUSES, ExecutionConflict, export
+from financeclaw.shared.turns.types import (
+    TERMINAL_STATUSES,
+    ExecutionBudgetExceeded,
+    ExecutionConflict,
+    export,
+)
 
 
 def snapshot_context(snapshot: Mapping, scopes=None, *, command_id=None) -> ExecutionContext:
@@ -80,11 +85,13 @@ class TurnExecutionRepository:
                 and (invocation_id is None or invocation.get("invocation_id") == invocation_id)
             )
 
-    def consume(self, turn_id: str, kind: str, *, session: Session | None = None) -> None:
+    def consume(
+        self, turn_id: str, kind: str, *, session: Session | None = None, final_answer: bool = False
+    ) -> None:
         """Reserve one real attempt atomically; retries and resumes never reset counts."""
         if session is None:
             with self.sessions.begin() as transaction:
-                self.consume(turn_id, kind, session=transaction)
+                self.consume(turn_id, kind, session=transaction, final_answer=final_answer)
             return
         turn = session.scalar(
             select(ConversationTurnRow)
@@ -100,6 +107,12 @@ class TurnExecutionRepository:
             "command": ConversationTurnRow.command_calls,
         }[kind]
         limit = turn.release_snapshot["limits"][kind]
+        if (
+            kind == "model"
+            and not final_answer
+            and turn.release_snapshot.get("profile", {}).get("finish_on_budget", False)
+        ):
+            limit -= 1
         changed = session.execute(
             update(ConversationTurnRow)
             .where(
@@ -112,7 +125,9 @@ class TurnExecutionRepository:
             execution_options={"synchronize_session": False},
         )
         if changed.rowcount != 1:
-            raise ExecutionConflict(f"Turn {kind} budget exhausted or cancellation requested")
+            if turn.cancel_requested_at is not None or turn.status in TERMINAL_STATUSES:
+                raise ExecutionConflict("Turn cancellation requested or already terminal")
+            raise ExecutionBudgetExceeded(f"Turn {kind} budget exhausted")
         session.expire(turn, [column.key])
 
     def deny_side_effects(self, turn_id: str) -> None:

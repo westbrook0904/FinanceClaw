@@ -110,7 +110,12 @@ def test_budget_counts_real_attempts_atomically(service, admit):
             return False
 
     with ThreadPoolExecutor(max_workers=8) as pool:
-        assert sum(pool.map(consume, range(16))) == 3
+        assert sum(pool.map(consume, range(16))) == 2
+    # 并发普通调用不能消费根预留的一次回答额度，最终请求也不能突破总上限。
+    service.execution.consume(accepted.turn_id, "model", final_answer=True)
+    assert service.execution.get(accepted.turn_id)["model_calls"] == 3
+    with pytest.raises(ExecutionConflict, match="budget"):
+        service.execution.consume(accepted.turn_id, "model", final_answer=True)
     with service.sessions.begin() as session:
         row = session.get(ConversationTurnRow, accepted.turn_id)
         row.grant_revoked = True

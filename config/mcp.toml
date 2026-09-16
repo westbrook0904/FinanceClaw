@@ -1,4 +1,4 @@
-# 通用 MCP 接入。先配置密钥、运行 scripts/mcp_catalog.py import，再启用服务。
+# 通用 MCP 接入。配置密钥并启用服务后，scripts/deploy.py 自动补齐缺失契约。
 # enabled=false 不读取契约或认证；绑定保留，启用后自动装配到对应 Agent。
 # 运行身份还需 travel:read；紫微/八字启用时根任务为 confidential，须明确部署策略。
 # 具体导入、授权与数据级别配置见 docs/operations/mcp.md。
@@ -6,7 +6,7 @@
 timeout_seconds = 30
 
 [servers.rollinggo_hotel]
-enabled = false
+enabled = true
 transport = "streamable_http"
 url = "https://mcp.rollinggo.cn/mcp"
 allowed_hosts = ["mcp.rollinggo.cn"]
@@ -21,7 +21,20 @@ token_env = "FINANCECLAW_ROLLINGGO_API_KEY"
 side_effect = "read"
 required_scopes = ["travel:read"]
 egress = "external"
-allowed_data_classes = ["public", "internal"]
+# 当前根启用紫微后统一使用 confidential；此处允许它提交酒店查询参数。
+allowed_data_classes = ["public", "internal", "confidential"]
+
+[servers.rollinggo_hotel.result_views.searchHotels]
+delivery = "reference"
+collection_path = "/hotelInformationList"
+preview_fields = ["/hotelId", "/name", "/address", "/starRating", "/price"]
+preview_records = 3
+
+[servers.rollinggo_hotel.result_views.getHotelDetail]
+delivery = "reference"
+collection_path = "/roomRatePlans"
+preview_fields = ["/roomName", "/averagePrice", "/currency"]
+preview_records = 3
 
 [servers.rollinggo_flight]
 enabled = false

@@ -16,9 +16,12 @@ FinanceClaw 基于 LangChain、LangGraph AgentServer 与 LangSmith，提供金�
 cp config/environments/unified.env.example .env
 cp config/environments/memory.env.example .env.memory
 # 填写数据库密码、产品令牌、集成令牌和官方 AgentServer 所需凭据。
-docker compose build
-docker compose up -d
+uv run --frozen python scripts/deploy.py
 ```
+
+部署命令会为已启用 MCP 自动补齐缺失的工具定义，复用并检查已有定义，然后构建镜像、启动服务并显示容器状态。
+需要更新远端工具定义时加 `--refresh-mcp`；只准备文件供审阅时加 `--prepare-only`。
+普通容器重启仍使用镜像中的固定定义。命令选项见 [MCP 接入手册](docs/operations/mcp.md#发布到-docker)。
 
 API 默认监听 `127.0.0.1:8000`。原生 API 必须配置 `N_JOBS_PER_WORKER=0`；Worker 必须配置正数并发并通过官方 `/storage/queue_entrypoint.sh` 启动。镜像入口会验证这些条件。
 
@@ -28,7 +31,7 @@ API 默认监听 `127.0.0.1:8000`。原生 API 必须配置 `N_JOBS_PER_WORKER=0
 
 模型供应商、默认别名及 Agent / 摘要 / 记忆任务覆盖统一在 [config/models.toml](config/models.toml) 声明；未覆盖的用途使用默认模型。配置方式见[模型配置](docs/operations/model-configuration.md)。
 
-通用 MCP 服务和 Agent 工具绑定在 [config/mcp.toml](config/mcp.toml) 声明。已提供 RollingGo 酒店/机票查询配置，默认关闭；凭据、工具定义导入和启用步骤见 [MCP 接入手册](docs/operations/mcp.md)。
+通用 MCP 服务和 Agent 工具绑定在 [config/mcp.toml](config/mcp.toml) 声明。已提供 RollingGo 酒店/机票查询配置，模板默认关闭；配置凭据并启用后，部署命令会自动准备所需定义。授权与接入步骤见 [MCP 接入手册](docs/operations/mcp.md)。
 
 ## 产品接口
 

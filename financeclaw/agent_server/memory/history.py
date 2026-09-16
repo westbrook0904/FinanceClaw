@@ -1,7 +1,9 @@
 """历史搜索索引与精确回读；Journal/Artifact 保持原文权威。"""
 
+import json
 from datetime import UTC, datetime
 
+from financeclaw.shared.artifacts.views import business_view, read_view
 from financeclaw.shared.memory.namespace import owner_namespace
 from financeclaw.shared.memory.observability import store_operation
 
@@ -158,7 +160,20 @@ class HistoryService:
             return "protected" if self.artifacts.repository.is_protected(metadata) else "expired"
         return "available"
 
-    def read_artifact(self, context, artifact_id, content_hash, *, offset=0, max_chars=4000):
+    def read_artifact(
+        self,
+        context,
+        artifact_id,
+        content_hash,
+        *,
+        mode="inspect",
+        path="",
+        fields=(),
+        start=0,
+        limit=20,
+        offset=0,
+        max_chars=4000,
+    ):
         """回读已经归档的字节快照；外部链接不会被自动再次抓取。"""
         if offset < 0 or not 1 <= max_chars <= 8000:
             raise ValueError("invalid artifact page")
@@ -172,11 +187,27 @@ class HistoryService:
             text = raw.decode("utf-8")
         except UnicodeDecodeError as exc:
             raise ValueError("artifact is binary; text projection is unavailable") from exc
-        return {
+        try:
+            payload = json.loads(text)
+        except (ValueError, RecursionError):
+            payload = text
+        kind, data = business_view(payload)
+        base = {
             "artifact_id": artifact_id,
             "content_hash": content_hash,
             "historical": True,
-            "content": text[offset : offset + max_chars],
-            "next_offset": offset + max_chars if offset + max_chars < len(text) else None,
             "source_turn_id": metadata.source_turn_id,
+            "size_bytes": metadata.size_bytes,
         }
+        return read_view(
+            kind,
+            data,
+            base,
+            mode=mode,
+            path=path,
+            fields=fields,
+            start=start,
+            limit=limit,
+            offset=offset,
+            max_chars=max_chars,
+        )

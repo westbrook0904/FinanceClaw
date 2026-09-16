@@ -69,7 +69,9 @@ asyncio.run(inspect())
     assert result.returncode == 0, result.stderr
 
 
-@pytest.mark.parametrize("field", ["schema", "endpoint", "credential_ref", "binding", "policy"])
+@pytest.mark.parametrize(
+    "field", ["schema", "endpoint", "credential_ref", "binding", "policy", "view"]
+)
 def test_mcp_changes_freeze_affected_agent_release(settings, config_path, field):
     """参数、端点、凭据身份和策略变化影响使用者，不改变紫微模型发布。"""
     before = build_release_catalogs(settings)
@@ -85,6 +87,8 @@ def test_mcp_changes_freeze_affected_agent_release(settings, config_path, field)
         text = text.replace("TEST_MCP_KEY", "TEST_MCP_OTHER_KEY")
     elif field == "binding":
         text = text.replace('"hotel.search", "hotel.detail"', '"other.search"')
+    elif field == "view":
+        text += '\n[servers.hotel.result_views.search]\ndelivery = "reference"\n'
     else:
         text = text.replace('["travel:read"]', '["travel:read", "travel:extra"]')
     config_path.write_text(text)

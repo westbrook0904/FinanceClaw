@@ -1,7 +1,6 @@
 """受控历史与工件回读；所有工具共用身份和分页边界。"""
 
-import json
-from typing import Any
+from typing import Annotated, Any, Literal
 
 from langchain_core.messages import ToolMessage
 from langchain_core.tools import BaseTool, ToolException
@@ -10,6 +9,7 @@ from pydantic import Field, PrivateAttr
 from financeclaw.agent_server.context.turns import trusted_context
 from financeclaw.agent_server.tools.governance import ManagedTool
 from financeclaw.agent_server.tools.memory import MemoryToolInput
+from financeclaw.shared.artifacts.views import READ_KEY, REFERENCE_BYTES, encode
 from financeclaw.shared.releases.tools import history_tool_governance
 
 
@@ -35,8 +35,25 @@ class ReadHistoryInput(MemoryToolInput):
 class ReadArtifactInput(MemoryToolInput):
     """工件引用必须包含内容 hash，不接收任意路径或 URL。"""
 
-    artifact_id: str
-    content_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    artifact_id: str = Field(
+        description="Copy the artifact_id from an existing tool/history result"
+    )
+    content_hash: str = Field(
+        pattern=r"^[0-9a-f]{64}$", description="Copy the content_hash paired with that artifact_id"
+    )
+    mode: Literal["inspect", "json", "text"]
+    path: str = Field(
+        default="", max_length=1024, description="JSON Pointer relative to business root"
+    )
+    fields: list[Annotated[str, Field(max_length=1024)]] = Field(
+        default_factory=list,
+        max_length=24,
+        description="Relative JSON Pointers selecting object fields in each record",
+    )
+    start: int = Field(default=0, ge=0, description="Array record offset; ignored for objects")
+    limit: int = Field(
+        default=20, ge=1, le=200, description="Maximum array records; ignored for objects"
+    )
     offset: int = Field(default=0, ge=0)
     max_chars: int = Field(default=4000, ge=1, le=8000)
 
@@ -68,10 +85,24 @@ class HistoryTool(BaseTool):
             )
         except (ValueError, LookupError, PermissionError) as exc:
             raise ToolException(str(exc)) from exc
+        if self.name == "read_artifact":
+            reference = {
+                key: result[key]
+                for key in ("artifact_id", "content_hash", "source_turn_id", "size_bytes", "format")
+            }
+            reference["read_with"] = "read_artifact"
+            query = {
+                key: value
+                for key, value in arguments.items()
+                if key not in {"artifact_id", "content_hash"}
+            }
+            if len(encode({**reference, "last_read": query}).encode()) < REFERENCE_BYTES - 64:
+                reference["last_read"] = query
+            provenance.update(artifact_ref=reference, **{READ_KEY: query})
         return ToolMessage(
             name=self.name,
             tool_call_id=runtime.tool_call_id,
-            content=json.dumps(result, ensure_ascii=False),
+            content=encode(result),
             additional_kwargs=provenance,
         )
 
@@ -94,13 +125,28 @@ def history_tools(service) -> tuple[ManagedTool, ...]:
         (
             "read_artifact",
             ReadArtifactInput,
-            "Read a page of an archived tool result using its ID and hash. "
-            "This reads the saved snapshot without rerunning the tool.",
+            "Read a saved result by ID and hash without rerunning its source tool. "
+            "Use mode=inspect for field/array paths; mode=json with path, fields, start and limit "
+            "for complete records (follow next_start); mode=text for character pages. "
+            "JSON paths are relative to business data, not the archive wrapper. "
+            "Select useful fields to read many records efficiently. "
+            "For a single object, use path and fields; start/limit apply only to arrays. "
+            "Copy a real ID and its matching hash from a prior result; never invent references "
+            "or use placeholders to probe this tool. If no reference exists, query the source "
+            "tool or search/read history first. "
+            "A preview/page is not all results.",
         ),
     )
     return tuple(
         ManagedTool(
-            HistoryTool(service, name=name, description=description, args_schema=schema), governance
+            HistoryTool(
+                service,
+                name=name,
+                description=description,
+                args_schema=schema,
+                metadata={"artifact_reader": name == "read_artifact"},
+            ),
+            governance,
         )
         for (name, schema, description), governance in zip(
             definitions, history_tool_governance(), strict=True
