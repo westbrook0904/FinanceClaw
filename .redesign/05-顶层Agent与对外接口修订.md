@@ -1,5 +1,7 @@
 # Stage 11 产品 API
 
+> 适用范围：重构阶段的设计汇总，保留当时决议；当前实现与操作请阅读[当前接口与操作示例](../docs/operations/turn-control.md)，其他历史记录见[档案索引](README.md)。
+
 唯一启动路径是创建 Conversation，再提交带 Idempotency-Key 的 message-only Turn。公开根图为 `finance_agent`；领域 Agent 和 Workflow 都是内部 Tool/subgraph，不创建独立业务任务。
 
 当前接口与示例见 [README](../README.md#产品接口)，完整语义见 [Turn 运行手册](../docs/operations/turn-control.md)。所有 Turn 查询、取消和授权路径都嵌套在 Conversation 下，必须同时验证两者的归属关系。

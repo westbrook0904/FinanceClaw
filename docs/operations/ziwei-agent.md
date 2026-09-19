@@ -1,22 +1,24 @@
-# 紫微 Agent：开发验证手册
+# 紫微 Subagent：启用、演示与排错
 
-当前是默认关闭的候选功能，只能在 development/test 使用合成资料验证；不是正式排盘服务。
-领域边界见 [紫微设计](../../.redesign/stages/Stage-7-Ziwei-Domain-Agent-设计说明.md)。
+紫微能力由根 Agent 委派给 `ziwei_doushu_agent`：子 Agent 用五个固定工具取得确定性盘面，
+再根据证据生成解读，最后把结果交回根 Agent。出生时间、历法和星曜事实由代码与排盘引擎处理。
 
-## 安装与验证
+当前代码默认关闭此能力，只允许在 development/test 环境启用；规则口径仍是待独立核验的候选版本。
+演示和验证使用合成资料。先完成[本地完整链路](local-full-stack.md)和[模型配置](model-configuration.md)，
+再按本页启用。Taibu 黄历/八字是另一组工具，见 [Taibu MCP](taibu-mcp.md)。
+
+## 1. 安装并启用
+
+所有命令在仓库根目录执行：
 
 ```bash
 uv sync --frozen --extra dev --extra ziwei
-uv run --frozen --extra dev --extra ziwei pytest tests/stage7 -q
+.venv/bin/python -m pytest -q tests/stage7 tests/stage8_hotfix/test_ziwei_five_tools.py
 ```
 
-`ziwei` extra 固定 x-iztro 0.4.0 和 tzdata 2026.3。没有安装此 extra 时普通金融链路仍可启动，
-引擎集成测试会跳过；必须确认 Stage 7 测试实际执行后再记录排盘验证通过。
-若使用项目内 conda 环境，按根 README 设置 `UV_PROJECT_ENVIRONMENT`，不要混用两个解释器。
-
-## 显式候选配置
-
-仅在隔离的开发验证环境设置以下项，BFF 与 Agent Server 两边一致：
+`ziwei` extra 固定 `x-iztro==0.4.0`、`tzdata==2026.3`。当前 Dockerfile 已包含该 extra；
+本地未安装时部分引擎测试会跳过，不能把跳过当作排盘验证通过。以下配置应由统一 API 和图 Worker
+使用同一份环境与应用镜像；BFF 是统一 API 内的产品层，无需额外部署一个 BFF 服务。
 
 ```dotenv
 FINANCECLAW_ENVIRONMENT=development
@@ -27,153 +29,42 @@ FINANCECLAW_ZIWEI_PROJECTION_BYTES=14000
 FINANCECLAW_DEBUG_FULL_IO=false
 FINANCECLAW_LANGSMITH_HIDE_INPUTS=true
 FINANCECLAW_LANGSMITH_HIDE_OUTPUTS=true
+FINANCECLAW_OFFLINE_MODEL=false
 ```
 
-另从 Secret Manager／未跟踪的本地秘密配置注入 `FINANCECLAW_ZIWEI_HMAC_KEY`，至少 32 字节；
-不要复制测试 fixture 密钥，不要把密钥写入仓库。BFF 和 Agent Server 需使用同一把密钥和版本。
-密钥轮换必须增加 key version，并保留旧配置供旧运行完成或先排空；不能在相同版本下静默换 key。
+另在未跟踪的本地环境文件或部署秘密配置中设置 `FINANCECLAW_ZIWEI_HMAC_KEY`，至少 32 字节。
+API 和图 Worker 使用同一把密钥和版本；轮换时增加 key version，并先完成或取消旧运行，
+不能在同一版本下静默换 key。缺少规则声明、依赖或密钥，以及在 staging/production 启用，都会阻止启动。
 
-候选配置未明确、依赖不匹配、未显式放行的原文调试或环境为 staging/production 时启动会被拒绝。
-设置隐藏 trace 不等于模型提供方不接收模型输入；真实资料接入仍需单独确认模型数据处理与用户告知。
+调用身份还需 `ziwei:read`，回读完整盘面需 `artifacts:read`。开发 API 在
+`FINANCECLAW_API_SCOPES` 中追加，飞书身份在 `FINANCECLAW_FEISHU_SCOPES` 中追加，并保留已有权限。
+开关只发布能力，不会自动授予用户权限。启用后根任务数据级别为 `confidential`，
+外部 MCP 工具是否可用还取决于其数据策略，见 [MCP 手册](mcp.md)。
 
-开发/测试联调需要查看完整输入输出时，可在 BFF 与 Agent Server 两份环境文件中显式配置：
+处理在途任务后，使用统一部署入口：
 
-```dotenv
-FINANCECLAW_ZIWEI_ALLOW_FULL_IO=true
-FINANCECLAW_DEBUG_FULL_IO=true
-FINANCECLAW_LANGSMITH_HIDE_INPUTS=false
-FINANCECLAW_LANGSMITH_HIDE_OUTPUTS=false
-LANGSMITH_HIDE_INPUTS=false
-LANGSMITH_HIDE_OUTPUTS=false
+```bash
+.venv/bin/python scripts/deploy.py
+docker compose ps -a
+curl --fail-with-body -sS http://127.0.0.1:8000/v1/health/ready
 ```
 
-`ZIWEI_ALLOW_FULL_IO` 默认 false，只放行这项启动校验，不自动修改日志、隐藏或追踪开关。
-完整 I/O 可能包含出生资料；启用 LangSmith tracing 时完整输入输出会发送到 LangSmith。
-该开关仅允许 development/test；规则、密钥、权限和其他校验仍然有效。
-配置变更后重启两侧服务；Docker Agent Server 需重新构建以包含支持该开关的代码。
+部署入口还会准备已启用的通用 MCP 定义，具体凭据要求见 MCP 手册。API 就绪仅证明运行前提满足，
+还需执行下方合成演示来验证路由、工具、解读和渠道结果。
 
-本轮没有修改当前运行环境。基础启动方式见[根 README](../../README.md#运行)，
-请使用隔离开发环境，不要直接开启真实出生资料测试。
+## 2. 最小演示
 
-## 入口、权限与发布
+在已经接通的飞书单聊发送以下合成请求，或把同一文本作为普通 Turn 的 `message` 提交：
 
-产品入口仍是创建 Conversation 和提交 message-only Turn；不增加直连排盘 REST API。
-可信登录身份需明确获得 `ziwei:read`；读取 Artifact 另外需要 `artifacts:read`。
-按既有机制配置开发 BFF scopes 或飞书白名单身份 scopes，保留原有合法权限，不使用 `*` 兜底。
-本轮没有自动扩大任一用户的权限。
-
-新建会话绑定 `finance_agent@1.6.0`。候选启用后，根可以使用
-`call_agent__ziwei_doushu_agent` Tool 调用 `ziwei_doushu_agent@2.2.0` 内部子图。
-`langgraph.json` 只注册顶层根，子图继承本次执行的权限、预算与 checkpoint；
-完整文本解读通过 Tool 结果交回根 Agent，根 Agent 的最终回复再由 BFF 写入 Journal。
-紫微 Agent 自己在 ReAct 循环内根据盘面完成专业解读，最后一条正文直接成为 `answer_text`。
-`finalize` 仅封装该正文、`charts_used` 等已有结果，不再发起独立模型请求。
-一次排盘调用的常规解读路径只需两次子模型请求：选择工具、读取结果后解答。
-根 Agent 负责中心化任务编排；收到 `answer_text` 等公开结果后，根据完整用户请求和已有结果，
-自行决定继续调用工具或 Worker，还是组织最终回复。回复保留各对象对应的解读、盘面依据与限制。
-子工具返回后仍进入根模型的下一轮判断，澄清和最终输出沿用现有通道。
-业务库使用当前 `0001_initial`，候选能力不新增独立运行表。
-
-子图入口接受自然语言 `task`、可选原始 `arguments` 提示、本次根任务固定的原问题 `user_context`，
-以及 `clarifications` 中历次澄清的问题、真实回答和对应子任务。当前任务原问题由 BFF 的消息 ID
-定位，原生恢复不会改成最后一条简短回答，也不会混入其他任务的澄清。
-`time_context` 提供固定的 `request_clock` 和查询时区；它来自可信运行上下文，模型不能覆盖。
-另可提供经归属、内容版本和权限校验的 `context_refs`。其他历史消息和制品通过显式引用提供，
-不自动复制整段根历史。父 Agent 无需提前抽取或冻结完整出生参数。
-`context_refs` 只接受工具实际返回的 `message:id@sha256` 或 `artifact:id@sha256`，
-其中摘要必须完整。本轮原问题与澄清回答已自动传递，不应填成 `user_clarification:回答`。
-引用格式误填会返回工具错误回执，供根模型修正参数；子图尚未启动，也不会自动删除引用后重试。
-子模型从五个独立排盘工具中选择，每个工具固定自己的层级，不再接受 `level` 或通用 `target`。
-五个入口共用出生资料、主题与输出模式，各自仅暴露对应的日期参数；运行时参数由框架注入。
-本命没有查询日期，不会因模型漏填或多填流运目标而触发冻结对象赋值错误。
-图中不增加参数提取模型或领域预检节点。参数校验和规范化在同一次 Tool 调用内完成。
-
-| 工具 | 用途 | 常用查询参数（出生资料之外） |
-| --- | --- | --- |
-| `ziwei_natal_chart` | 本命 | 无日期参数 |
-| `ziwei_decadal_chart` | 大限 | `on_date` 定位所在大限；当前大限用 `day_offset: 0` |
-| `ziwei_yearly_chart` | 流年 | `year` 查询公历整年；今年用 `year_offset: 0` |
-| `ziwei_monthly_chart` | 流月 | `year`、`month` 查询公历整月；本月用 `month_offset: 0` |
-| `ziwei_daily_chart` | 流日 | `on_date` 指定某日；今天用 `day_offset: 0` |
-
-流运工具均可用 `on_date` 查询某日对应盘面，或用 `date_range.start/end` 查询连续区间。
-具体日期、年月、相对偏移量、日期区间每次只选一种，冲突会按参数格式错误处理。
-未提供目标不会默认今天／今年；本命拒绝日期字段，流年拒绝月份字段等无关参数。
-计算核心仍共用不可变的内部 `ZiweiAnalysisRequest`，不原地修改请求或改变排盘规则。
-
-从旧版升级时，先排空或取消在途任务，再同步部署 BFF 与 Agent Server（容器需重建镜像）。
-子 Agent 版本、工具白名单和配置指纹已更新；旧 `2.1.0` 检查点不能直接按新接口恢复，
-失败或取消的旧查询需重新发起。旧 `ziwei_chart` 不再注册；Artifact 的同名来源分类保留兼容。
-
-```mermaid
-flowchart LR
-    R[根 Agent：任务与上下文] --> W[紫微 Agent：取证与专业解答]
-    W --> T[五个独立排盘入口：校验与计算]
-    T -->|成功| W
-    W -->|最终正文| F[finalize：代码封装结果]
-    F --> R
-    R -->|其他工具| O[工具执行]
-    O --> R
-    R -->|任务完成| D[根 Agent：组织最终回复]
-    T -->|缺资料| E[子图 END]
-    E --> Q[根图汇合当前批次]
-    Q --> I[统一澄清 Tool：原生 interrupt]
-    I --> A[BFF 验证真实回答并 resume]
-    A --> R
+```text
+/agent ziwei_doushu_agent 请只看一个合成样例的 2026 年 9 月 6 日日盘：女性，公历 2000 年 8 月 16 日，上海当地民用钟表时间 03:30。不要生成命理解读。
 ```
 
-Tool 一次返回当前能确定的全部缺失／无效资料，包括出生日期、时间歧义、地点时区和查询目标。
-子图返回 `needs_clarification`、`missing_fields`、结构化 `issues` 和问题，
-根图先等待当前并发批次的所有回执，保留成功结果，再直接派发一个 `request_user__clarification`，
-由这个工具触发原生 `interrupt`。汇总与派发不消耗额外模型轮次，不能让主模型自行补造参数重试。
-同一对象的多个排盘工具按 `issues.field` 合并展示，每个字段只列一次，并保留其不同校验原因。
-例如本命缺出生时辰、流年缺出生时辰和年份时，只问一次时辰和一次年份。
-根图对同一对象的多个紫微 Worker 使用相同合并规则；不同对象、不同类型的 Worker 分别展示。
-缺少完整结构化说明时保留原问题。各工具回执以及 `clarification_requests` 中的调用 ID、
-缺项与原问题仍完整保留，用户回答后可继续各自未完成的任务。
-根 Agent 自己发现缺资料时，也调用同一澄清工具。BFF 将任务和 Turn 标记为 `interrupted`，
-登记 `pending_interactions`，问题不会被误记为已经完成的最终答案。
-用户回答后，由 BFF 按原始 interrupt ID 和 checkpoint 恢复同一根任务；后续子 Agent 接收原问题
-及完整问题／回答记录，仅继续未完成工作。成功 Worker 的结果保留在根 checkpoint 中供复用。
+预期流程是根委派 → 紫微子 Agent 调用 `ziwei_daily_chart` → 返回盘面依据与引用 → 根组织回复。
+请求专业解读时去掉“不要生成命理解读”；缺少历法、时辰或查询目标时应先询问资料。
+真实模型仍可能误读自然语言，需要核对最终采用的参数与原请求。
 
-输入型澄清沿用现有交互接口，回答形如 `{"revision":1,"kind":"input","answer":{"text":"公历"}}`。
-实际 revision 取待回答交互，普通新 Turn 不能代替 resume。飞书单聊只有一个待回答的
-`{"text": "..."}` 资料交互时，用户可直接回复“公历”“当地钟表时间”等文字，渠道层根据
-当前单聊的持久交互记录绑定 ID 和 revision，再走相同的校验与 resume 流程，不创建新 Turn。
-提示只展示问题与直接回复说明；原请求及旧回答重推不会被用于后续问题，重启 BFF 后仍可恢复。
-过期问题会说明原因并给出取消当前任务的命令。其他结构化输入、多问题、选择和审批仍需明确
-指定交互；兼容 `/answer <交互ID> <版本> {"text":"公历"}`，审批仍用 approve/reject 契约。
-自然语言 `/agent` 的澄清回复可以继续原 Agent，显式 JSON 参数约束和审批权限检查仍然生效。
-缺失用户事实时，在下一次模型调用之前结束 evidence，外层直接进入 `END`，跳过 `finalize`。
-纯参数格式错误允许基于已有上下文修复一次；连续错误返回 `unsupported`，避免 ReAct 耗尽预算。
-权限、取消和持久预算异常仍按原有机制失败。
-
-同批次可并发调用多个紫微 Worker，例如分别查询本命盘与流年盘。并发资格从固定发布中的
-只读叶子工具、无审批、无交互中断、无嵌套子图和无记忆写入约束推导，不是功能开关。
-各调用使用独立的 Tool call ID、子图 state 与 checkpoint，仍共享根运行预算和资源并发上限。
-同一子图内也可并发查询一个对象的不同层级或主题；每次 Tool 调用绑定自己的完整请求与投影，
-避免共享“当前参数”导致覆盖，同一完整命盘的不同主题投影均可保留。
-同一命盘的 Artifact 并发首次写入时复用相同元数据，本地文件以原子替换避免读取到半写内容。
-含写操作、审批或交互中断的 Worker／Workflow 继续独占批次。
-自然语言 `/agent ziwei_doushu_agent` 可拆成多个独立查询；显式 JSON 参数指令每批只允许一次调用，
-真实澄清回答后可继续同一 Agent，仍须保持用户指定的 JSON 参数，通过上下文获得补充资料。
-
-## 可选依赖与 CI
-
-启用紫微的运行环境需通过 `uv sync --extra ziwei` 安装 `x-iztro` 和 `tzdata`，
-并在 Agent Server 镜像中包含这些依赖。缺少依赖时，启动错误会提示安装方式。
-
-CI 分别验证基础安装和 `--extra ziwei` 安装；普通子图测试不依赖排盘引擎，
-紫微集成测试只在 extra 已安装时运行。紫微任务额外检查引擎依赖，并将可选依赖纳入安全审计。
-
-## 请求示例
-
-合成测试消息：
-
-> /agent ziwei_doushu_agent 请只看一个合成样例的 2026 年 9 月 6 日日盘：女性，
-> 公历 2000 年 8 月 16 日，上海当地民用钟表时间 03:30。不要生成命理解读。
-
-子 Agent 依据上下文填写的 `ziwei_daily_chart` 参数示例（不是父入口必填项或新增 HTTP 请求体）：
+模型填写的工具参数示例（它不是新增 REST API 的请求体）：
 
 ```json
 {
@@ -193,57 +84,107 @@ CI 分别验证基础安装和 `--extra ziwei` 安装；普通子图测试不依
 }
 ```
 
-查本命改用 `ziwei_natal_chart` 并移除 `on_date`。查公历整年使用 `ziwei_yearly_chart` 的
-`{"year":2026}`，查今年使用 `{"year_offset":0}`；查某月使用 `ziwei_monthly_chart` 的
-`{"year":2026,"month":9}`，查本月使用 `{"month_offset":0}`。相对时间取可信 Turn 时钟和查询时区，
-不是 Worker 执行日期；恢复前后保持同一时间基准，不需要另外调用时间工具。
-明年为 `year_offset=1`，下月为 `month_offset=1`，明天为 `day_offset=1`。
-`date_range` 的 `end` 不含当天；原有最多 366 天、逐日最多 31 天、最多 32 段的限制保持不变。
+`OfflineFinanceModel` 和 `OfflineZiweiModel` 只验证确定性协议与图执行，不能用于验收任意自然语言路由、
+首次填参准确率或解读质量。真实演示需使用已配置的供应商模型。
 
-农历出生需 `calendar=lunar` 和明确 `is_leap_month`。只知道时辰时使用 `time.kind=shichen`，
-例如 `shichen=yin`；“子时”仍需区分 `zi_early/zi_late`。不要补造 12:00 或猜测性别。
+## 3. 五个工具如何选择
 
-默认 `OfflineFinanceModel` 不是通用自然语言解析器，不能用它来验收上述任意消息的自动路由。
-`tests/stage8_hotfix/test_production_subgraphs.py` 使用明确的根模型替身，运行真实根图和紫微子图；
-`OfflineZiweiModel` 只用于闭环测试，生成带实际引用的测试文本，不代表真实解读质量。
-回归测试覆盖真实图中的原问题与授权引用传递、完整 function call、聚合校验与并发澄清，
-以及仅回复一个字段、连续补充、重建根图后的原生恢复、BFF 交互登记与最终 Journal 写入。
-`tests/stage8_hotfix/test_ziwei_five_tools.py` 另覆盖五个入口的真实执行、固定层级与证据绑定、
-无关字段和冲突日期拒绝、冻结请求不被修改、缺失目标不猜值，以及按固定时钟跨年解析相对时间。
-紫微模型输入检查按 token 统计完整 Schema、任务和证据，采用配置中的输入预算减预留输出额度，超限仍拒绝，
-不会截断出生资料、澄清回答或盘面来绕过预算。
-真实模型的自然语言理解与首次填参准确率仍需单独联调；Schema 和提示词不能保证它不误读原文。
-当前文本解读不使用 JSON mode。
+| 工具 | 查询内容 | 出生资料之外的常用参数 |
+| --- | --- | --- |
+| `ziwei_natal_chart` | 本命 | 无查询日期 |
+| `ziwei_decadal_chart` | 指定日期所在大限 | `on_date`；当前大限用 `day_offset: 0` |
+| `ziwei_yearly_chart` | 流年 | 公历整年用 `year`；今年用 `year_offset: 0` |
+| `ziwei_monthly_chart` | 流月 | 公历整月用 `year` + `month`；本月用 `month_offset: 0` |
+| `ziwei_daily_chart` | 流日 | `on_date`；今天用 `day_offset: 0` |
 
-## 当前限制与故障判断
+每次流运查询只选一种日期表达：具体日期、年月、相对偏移或 `date_range.start/end`。
+`end` 不含当天，单次最多 366 天、逐日最多 31 天、最多 32 段。每个工具返回目标层级及上层依据，
+无需按五种盘逐个调用。大限工具按日期定位，不支持按“第 N 大限”索取完整十年日历。
 
-- 当前 `openai:deepseek-*` 模型统一显式发送 `thinking.type=disabled`，包括根模型与紫微子模型。
-  通用 ChatOpenAI 尚未完整回传 DeepSeek 的 `reasoning_content`；暂时关闭思考模式，避免工具往返／
-  澄清恢复触发 HTTP 400。其他模型配置不变。部署此变更需重启 Agent Server；容器部署需重建镜像。
-  该变更不会自动重试已经失败的任务，也不会补回旧检查点中已丢失的推理字段。
-- 仅民用时间；真太阳时明确返回 unsupported。
-- 地名可离线识别北京、上海、广州、深圳、成都、香港、台北；其他地点要补 IANA 时区。
-- 出生时间范围跨时辰、夏令时缺口／重复、资料缺失时先澄清，不生成猜测盘。
-- 查询区间目前只有公历日／年月／日期范围，农历目标区间未实现。
-- 工具一次返回目标层级及上层依据，不必按五种盘顺序调用。
-- 大限工具用于日期定位，不支持按第 N 大限索取完整十年日历区间。
-- 单次最多 366 天、逐日最多 31 天、分段最多 32；仍可能因事实体积超限而拒绝。
-- `ZIWEI_CONTEXT_BUDGET_EXCEEDED` 应缩小时间或主题，不通过提高摘要截断阈值隐藏问题。
-- 子图返回结构化 outcome；needs_clarification 由根图汇总并原生中断，回答后恢复同一任务。
-- 规则仍待独立核验；解释只作传统文化参考，不能作为医疗、投资或其他重大决定依据。
+相对日期以本次 Turn 固定的 `request_clock` 和查询时区为准，重试、恢复不会变成执行当天。
+未填目标不会默认今天或今年；冲突日期和无关字段会被拒绝。本命不接受查询日期，流年不接受月份。
 
-## 隐私与回滚
+农历出生需明确 `is_leap_month`；只知道时辰可填 `time.kind=shichen`，例如 `shichen=yin`。
+子时需区分 `zi_early/zi_late`。当前只支持民用时间；真太阳时返回 `unsupported`。
+北京、上海、广州、深圳、成都、香港、台北可离线解析，其他地点需提供 IANA 时区。
+跨时辰范围、夏令时缺口或重复时间必须澄清，不补造中午 12:00 或猜测性别。
 
-出生资料不进入新增长期档案或紫微 Memory；但原始会话、子图 checkpoint 和完整事实 Artifact
-仍会按项目现有策略保存。本实现不是零留存，也没有自动删除或改变 TTL。
-本地排盘不调用外部命理服务／地理编码，但根和子模型可能接收相关资料。
+## 4. 运行与恢复机制
 
-根和 Worker按 confidential 分类处理；默认不开完整 I/O，trace 配置在 Agent Server 装配前生效。
-不要通过共享 Tool 实例保存“当前用户命盘”，也不要把 Artifact ID 当成跨用户读取授权。
+当前根发布为 `finance_agent@1.8.0`，紫微子发布为 `ziwei_doushu_agent@2.2.0`。
+`langgraph.json` 只注册顶层根，紫微作为内部子图运行，继承授权、预算与原生 checkpoint。
+完成结果以工具回执交回根；根仍可继续其他工作，只有根完成后产品层才把最终回复写入 Journal。
 
-停止候选需先排空运行，随后两侧关闭 `FINANCECLAW_ZIWEI_ENABLED`。
-关闭后普通金融请求继续使用根 1.6.0，紫微 Tool不再可见。开关变化会改变发布配置指纹，
-不能用新配置恢复旧的在途任务；须先排空任务并同步重启 BFF 与 Agent Server。
+```mermaid
+flowchart LR
+    R[根 Agent] --> S[紫微子 Agent]
+    S --> T[固定排盘工具]
+    T -->|盘面证据| S
+    S -->|专业正文与引用| F[代码封装结果]
+    F --> R
+    T -->|缺少用户资料| Q[根汇总同批澄清]
+    Q --> I[原生 interrupt]
+    I --> A[产品 API 校验回答并 resume]
+    A --> R
+```
 
-本次澄清修复同样更新了根与紫微的 deployment revision，BFF 与 Agent Server 必须使用相同版本
-并同步重启。升级前遗留的旧版本待回答任务不能直接恢复，应结束旧任务后重新发起测试。
+子图接收 `task`、可选 `arguments`、本轮原始问题 `user_context`、已有 `clarifications` 和可信时间上下文。
+根无需提前冻结完整出生参数。历史资料通过经过归属、版本和权限校验的 `context_refs` 提供，
+仅接受工具实际返回的完整 `message:id@sha256` 或 `artifact:id@sha256`；不自动复制整段根历史。
+
+资料缺失时工具聚合当前能确定的问题，子图返回 `needs_clarification`，不继续生成解读。
+根等待当前并发批次的所有回执，保留成功结果，按对象/字段合并问题，再直接派发
+`request_user__clarification` 触发原生中断；这一合并不额外调用模型。仅参数格式问题可基于已有信息修复一次，
+重复错误返回 `unsupported`。
+
+产品层登记 `pending_interactions`，用户应回答该交互以恢复原 Turn，不能用普通新 Turn 代替。
+HTTP 回答使用交互返回的 revision，例如 `{"revision":1,"kind":"input","answer":{"text":"公历"}}`；
+具体路由与状态见 [Turn 手册](turn-control.md)。飞书单聊只有一个待回答的文字资料交互时可直接回复，
+也可使用 `/answer <交互ID> <版本> {"text":"公历"}`。审批、选择或多问题仍按各自交互契约处理。
+
+紫微 `finalize` 只封装已有正文和 `charts_used`，不再请求模型，也不使用 JSON mode。
+常规单次排盘解读可由子模型两次请求完成：选工具、读证据后回答；多工具、澄清或修复可能增加请求。
+并发调用各自保留 Tool call ID、state、请求和证据，共享根运行预算和并发上限，不共享“当前命盘”。
+
+## 5. 故障定位与数据边界
+
+| 现象 | 处理方式 |
+| --- | --- |
+| 启动即拒绝启用 | 检查 development/test、候选规则、HMAC、extra 及完整 I/O 开关 |
+| 看不到紫微入口 | 检查 `ZIWEI_ENABLED`、当前发布和调用身份的 `ziwei:read` |
+| 反复询问出生资料 | 核对历法、时辰、时间口径、地点时区与性别是否真实明确；用原交互回答 |
+| 日期未填或有冲突 | 明确指定目标，只保留一种日期表达；系统不会默认今天 |
+| `ZIWEI_CONTEXT_BUDGET_EXCEEDED` | 缩小时间范围、主题或引用；不截断出生资料和证据来伪造成功 |
+| 旧任务恢复时报发布冲突 | 检查 API/Worker 镜像和配置一致性；旧发布无法恢复时结束旧任务并新建 |
+| 模型或工具往返 HTTP 400 | 检查[模型参数](model-configuration.md)及供应商兼容性，避免从旧检查点推断新版已生效 |
+
+出生资料可能存在于原始消息、checkpoint 和完整 Artifact 中；系统不是零留存，也不因关闭开关自动删除数据。
+本地排盘不调用外部命理或地理编码服务，但根模型和子模型仍可能接收相关资料。
+隐藏 LangSmith 输入输出不等于模型供应商不接收输入。保留与删除操作见[数据主体请求](data-subject-requests.md)。
+
+仅在 development/test 调试合成资料时，可显式设置 `FINANCECLAW_ZIWEI_ALLOW_FULL_IO=true` 以放行完整 I/O
+的启动校验；该设置不会自动开启日志或 tracing。若另行关闭输入/输出隐藏，完整出生资料可能进入追踪系统。
+Taibu 八字仍有自己的完整 I/O 限制，不受此紫微开关豁免。
+
+关闭功能前先完成或取消当前发布的在途任务，再将 API/Worker 同步设为 `FINANCECLAW_ZIWEI_ENABLED=false`
+并重新部署。开关影响发布指纹，旧 checkpoint 不会自动切换配置；根版本仍为 1.8.0，紫微入口被移除。
+
+## 6. 验证与源码入口
+
+除前面的领域/五工具测试外，图与澄清恢复回归可运行：
+
+```bash
+.venv/bin/python -m pytest -q tests/stage8_hotfix/test_production_subgraphs.py
+```
+
+这些测试覆盖确定性模型、图执行、参数校验、证据绑定和恢复协议。真实模型理解、独立排盘规则核验、
+持久运行时的进程重启以及实际飞书卡片，需在对应环境单独验收。解释仅供传统文化参考。
+历史设计见 [Stage 7 紫微设计](../../.redesign/stages/Stage-7-Ziwei-Domain-Agent-设计说明.md)。
+
+| 入口 | 负责什么 |
+| --- | --- |
+| [领域模块导读](../../financeclaw/agent_server/domains/ziwei/README.md) | 从数据契约到确定性计算的阅读顺序 |
+| [ziwei_agent.py](../../financeclaw/agent_server/graphs/ziwei_agent.py) | 子模型工具循环、失败收束、正文封装 |
+| [tools/ziwei.py](../../financeclaw/agent_server/tools/ziwei.py) | 五个工具的输入、可信上下文与证据绑定 |
+| [releases/ziwei.py](../../financeclaw/shared/releases/ziwei.py) | 子 Agent 版本、工具白名单、提示词与输出协议 |
+| [settings.py](../../financeclaw/shared/infrastructure/settings.py) | 开关、环境和敏感数据配置校验 |

@@ -1,13 +1,31 @@
-# Disaster recovery and restore evidence
+# 灾难恢复与演练
 
-Target objectives must be approved per deployment. Initial engineering targets
-are application/Agent PostgreSQL RPO 15 minutes and RTO 60 minutes, Artifact
-Store RPO 15 minutes and RTO 120 minutes, and Redis RPO 0 because it is not the
-system of record.
+本手册描述需要保存和核对的数据，以及恢复演练的完成条件。目标值需要每个部署环境自行确认；这里的工程目标不是已达到的服务承诺。
 
-A quarterly exercise must restore both PostgreSQL databases and a versioned
-Artifact Store snapshot into an isolated account, run Alembic consistency
-checks, verify a pre-existing conversation and interrupted workflow, verify an
-artifact hash, and drain a copied outbox without duplicate external effects.
-Record backup identifiers, timestamps, measured RPO/RTO, hashes, approver and
-follow-up actions. A successful backup job without a restore is not evidence.
+| 数据系统 | 工程目标 RPO | 工程目标 RTO | 恢复关注点 |
+|---|---:|---:|---|
+| 应用 PostgreSQL | 15 分钟 | 60 分钟 | 会话、Turn、交互、Journal、记忆事实、Audit 与 outbox |
+| 原生 AgentServer PostgreSQL | 15 分钟 | 60 分钟 | 原生 thread/run/checkpoint 与 Store 投影 |
+| Artifact Store | 15 分钟 | 120 分钟 | 工具原始结果、上下文归档、对象版本与 hash |
+| Redis | 由部署确认 | 由部署确认 | 队列和运行时依赖；其状态不能代替 PostgreSQL 事实 |
+
+RPO 表示可接受的数据回退时长，RTO 表示恢复服务所需时长。Redis 不是业务事实源，但不能据此直接承诺“丢失 Redis 即零影响”；应在固定 AgentServer 版本下演练队列恢复，并核对尚未完成的运行。
+
+## 备份范围
+
+应用库、原生库和 Artifact 必须能恢复到可对账的时间点。另行保存镜像摘要、应用 schema 版本、模型/工具/Skill 发布配置和加密密钥的恢复方式。备份不等于凭据明文导出：密钥按部署使用的 Secret Manager / KMS 机制保管。
+
+SQL 记忆事实是权威来源，Store 可以重建；原生 checkpoint 和工具 Artifact 则不能仅靠聊天摘要恢复。对象存储启用版本控制时，需要记录所恢复的对象版本及其保留策略。
+
+## 隔离演练步骤
+
+1. 选择备份时间点，记录应用库、原生库和对象快照标识；在隔离项目或账户恢复。先禁用真实渠道发送与外部写工具，避免演练重发历史效果。
+2. 使用与备份相匹配的镜像、schema 和发布配置，核对两个数据库连接归属与迁移版本。不要将新初始迁移直接覆盖到旧库。
+3. 校验一条既有会话的 Journal、一个已完成 Turn、一个等待人工回答的原生 checkpoint，以及至少一个 Artifact 的正文 hash。
+4. 启动各角色并核对健康状态；让业务按原 command 身份核对 native run。未知提交、通知 `uncertain` 和未完成索引保持待对账，不能直接当成从未执行。
+5. 在隔离下游验证 outbox 消费、记忆索引重建和删除屏障；确认重复消费不产生重复外部效果，也不会重新暴露已遗忘内容。
+6. 记录恢复前后数据时间、实际 RPO / RTO、检查结果、异常与后续动作。通过后再执行本环境的恢复切换流程。
+
+定期演练建议至少每季度一次，也应在持久化拓扑、备份方式或原生运行时版本发生重要变化后重做。只有备份任务成功，没有恢复和内容核验，不能视为恢复证据。
+
+相关操作见 [Turn 恢复](turn-control.md)、[记忆与索引](memory-outbox.md)和[数据请求](data-subject-requests.md)。

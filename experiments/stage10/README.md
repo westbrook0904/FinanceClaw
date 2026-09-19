@@ -1,10 +1,21 @@
-# Stage 10 持久运行验证
+# Stage 10 持久运行实验与历史复现
+
+本目录记录统一 API / Worker 架构在 Stage 10 的持久运行实验。当前产品已增加独立 `memory_worker`，首次运行请使用[根 Compose 部署说明](../../docs/operations/local-full-stack.md)。本目录没有覆盖当前四角色和完整记忆流水线，也不是替代根 Compose 的部署方案。
+
+以下步骤描述本目录固定实验配置的运行顺序，历史“已验证”结论仅对应[当时报告](../../.redesign/stages/stage-10-实现与验证.md)。当前源码重跑前须核对 fixture、发布配置与数据库 schema；本次文档更新没有重跑持久服务。
 
 探针只操作 `financeclaw-stage10-probe` 项目内的 PostgreSQL/Redis，使用合成用户与离线模型。它不连接现有本机业务数据库，不发送真实飞书消息。结果写入 `.redesign/evidence/stage10/`，实施结论见 [验证报告](../../.redesign/stages/stage-10-实现与验证.md)。
 
+## 本实验与当前代码的差异
+
+- 实验镜像名固定为 `financeclaw:stage10`，不代表当前源码版本；记录结果时须另外保存提交与镜像摘要。
+- `product-api` / `product-worker` 使用 `fixture_entrypoint.sh` 和合成行情，产品配置挂载当前仓库目录，改变源码会改变实验输入。
+- 实验未定义 memory_worker。当前默认自动记忆配置和已启用的酒店 MCP 不能直接视作实验已覆盖；重跑前明确禁用无关外部 MCP或提供隔离配置，不让测试意外访问真实业务服务。
+- 历史固定发布/版本断言可能需要与当前实现重新核对；不要为得到“通过”结果直接修改已有成功报告。
+
 ## 前提与空库初始化
 
-构建根目录的 `Dockerfile` 为 `financeclaw:stage10`。当前探针的 `env_file` 指向本机私有 `.env.agent-server.local`，其中需要官方持久 AgentServer 所需的 LangSmith key 或 license；可将该路径替换成自己的私有凭据文件。该文件不是提交内容。产品用户和集成令牌均为 Compose 中的合成值，不能用于部署。
+在符合上述实验条件的源码快照中，构建根目录的 `Dockerfile` 为 `financeclaw:stage10`。当前探针的 `env_file` 指向本机私有 `.env.agent-server.local`，其中需要官方持久 AgentServer 所需的 LangSmith key 或 license；可将该路径替换成自己的私有凭据文件。该文件不是提交内容。产品用户和集成令牌均为 Compose 中的合成值，不能用于部署。
 
 ```bash
 docker build -t financeclaw:stage10 .
@@ -19,9 +30,9 @@ docker compose -f experiments/stage10/compose.probe.yml run --rm \
 
 ## 产品受理与持久恢复
 
-普通受理已经用统一镜像的正式角色入口验证。这里为嵌套审批额外使用 `fixture_entrypoint.sh`，仅把图工厂换成 `product_fixture.py`：替换演示行情的固定旧日期，产生带当前时间的合成行情。API、Turn 服务、审批、预算、真实图及原生 checkpoint 均使用镜像中的产品实现，未绕过发布校验。
+Stage 10 历史验证中，普通受理使用统一镜像的正式角色入口。这里为嵌套审批额外使用 `fixture_entrypoint.sh`，仅把图工厂换成 `product_fixture.py`：替换演示行情的固定旧日期，产生带当前时间的合成行情。API、Turn 服务、审批、预算、真实图及原生 checkpoint 均使用镜像中的产品实现，未绕过发布校验。
 
-当前 Compose 将 `FINANCECLAW_TURN_JOIN_SLOTS` 设为 1，以便重现观察槽满；测正常容量时改为 128，并重新创建 API 容器。
+本实验 Compose 将 `FINANCECLAW_TURN_JOIN_SLOTS` 设为 1，以便重现观察槽满；测正常容量时改为 128，并重新创建 API 容器。
 
 ```bash
 # 此时不要启动 generic api/worker，也不要启动 product-api-2。
@@ -69,6 +80,10 @@ docker compose -f experiments/stage10/compose.probe.yml exec -T product-api \
 性能脚本记录所有样本，不会把超出建议预算的结果伪装为通过；其完成条件只保证任务正确完成并收到 SSE。原生终态时间取隔离 `probe.public.run.updated_at`，这是探针的只读测量，应用代码不读取原生数据库表。批量快照 SQL 数量由 `tests/stage10/test_events.py` 在 SQLAlchemy 边界实测。
 
 `contract_app.py` / `contract_probe.py` 是 S10-0 独立框架契约探针，使用 `financeclaw-langgraph-api:latest` 镜像别名及 generic `api/worker` 服务。必须与产品运行分开启动，避免两个 Worker 消费同一队列中的不同图定义。框架结果已保存在 `native-contract.json`；产品探针不依赖其假图。
+
+## 结果如何判断
+
+分别保存命令退出码、源码/依赖/镜像版本和生成报告。通过框架契约、持久运行或合成性能探针，都不等于真实 Provider 回答质量、真实飞书客户端操作或生产容量验收。当前自动化测试入口见[测试说明](../../tests/README.md)，当前发布条件见[发布检查表](../../docs/operations/release-checklist.md)。
 
 ## 清理
 

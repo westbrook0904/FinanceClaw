@@ -1,14 +1,39 @@
-# Stage-5 release checklist
+# 发布检查表
 
-- [ ] Agent Server deployment/licensing, residency and support boundary approved.
-- [ ] OIDC issuer/audience/JWKS and asymmetric algorithm allowlist verified.
-- [ ] BFF is the only public route; Agent Server service identity tested.
-- [ ] PostgreSQL migrations and forward-only rollback procedure rehearsed.
-- [ ] S3 versioning, encryption, retention and owner-scoped keys verified.
-- [ ] OTel backend, dashboards, SLO alerts and outbox backlog alerts verified.
-- [ ] Versioned LangSmith offline dataset passes; online sampling is non-blocking.
-- [ ] Cross-tenant, prompt injection, tool authorization and secret-leak tests pass.
-- [ ] Load/capacity and provider/network fault injection meet approved SLOs.
-- [ ] Backup restore evidence meets approved RPO/RTO.
-- [ ] SBOM and dependency vulnerability scan have no unaccepted high-risk finding.
-- [ ] Security/threat-model review closes every high-risk item.
+本表用于记录一次具体发布的证据；空白项表示尚未验证。项目中的历史测试数量或实验成功记录不能自动填为本次通过。架构、操作与回退顺序见[生产运行手册](production-runbook.md)。
+
+发布记录至少包含：源码提交、镜像摘要、发布环境、操作者、配置/契约版本、应用迁移版本、执行时间、证据位置和未通过项的处置结论。
+
+## 配置与部署
+
+- [ ] 官方 AgentServer 部署凭据、支持边界和数据处理区域已确认。
+- [ ] API、Worker、integrations 使用同一镜像；API 原生执行槽为 0，Worker 执行槽为正。
+- [ ] memory_worker 使用独立环境与 `financeclaw_memory` 身份，API 冻结的记忆模型档案与其一致。
+- [ ] 模型 TOML、MCP 固定定义、Skill manifest 与实际打包文件一致；已启用服务的凭据齐全。
+- [ ] OIDC issuer / audience / JWKS 和算法已验证；生产未配置开发 Token、离线模型或完整 I/O 调试。
+- [ ] Ingress 只公开需要的产品路由；跨租户访问、原生资源直连和服务身份越权均被拒绝。
+- [ ] S3 访问、加密、版本保留、owner 归属与出站主机允许列表已验证。
+- [ ] 应用 schema 与代码匹配，记忆角色权限已配置；原生库由 AgentServer 管理。
+- [ ] `/v1/health/live`、`/v1/health/ready` 与其他三个角色的健康检查通过。
+
+## 行为与安全验证
+
+- [ ] 本次代码的相关自动化测试、静态检查、secret scan 和依赖风险检查通过，保留命令及结果。
+- [ ] 同键重试、重复回答、取消竞争、未知提交对账与进程重启恢复经过本次部署验证。
+- [ ] 工具权限、审批、数据分级和 Artifact 越权用例通过；Skill 内容不会扩展权限。
+- [ ] 上下文容量、工具回执配对和超限错误符合预期；空 tokenizer 缓存行为已覆盖。
+- [ ] 记忆来源许可、候选确认、遗忘屏障、索引删除和受控重放已验证。
+- [ ] 若启用真实模型，真实供应商的结构化输出、工具调用和数据区域符合配置；与离线测试分开记录。
+- [ ] 若启用外部 MCP，固定契约、真实只读请求与 Artifact 回读通过；与模型端到端质量分开记录。
+- [ ] 若启用飞书，真实租户内验证卡片发布、按钮/表单回调、停止、长回答和技能表单；草稿创建不等于客户端验收。
+- [ ] 紫微候选仅在 development/test 使用，规则独立核验状态与其他领域能力的验收范围清楚标注。
+
+## 运行与恢复
+
+- [ ] OTel / 日志告警可用，覆盖队列积压、死信、通知 uncertain、记忆预算和隐私清理待办。
+- [ ] 负载与依赖故障演练满足本环境已约定的 SLO，记录样本和失败项。
+- [ ] 备份恢复演练达到已约定的 RPO / RTO，核对 Artifact hash 与旧会话恢复。
+- [ ] 已确定在途任务处理方式；回退镜像与 schema/发布指纹兼容性经过核对。
+- [ ] 外部副作用去重、通知原始操作键和未完成 outbox 能在恢复后继续对账。
+
+建议按“静态检查 → 自动化测试 → 隔离集成 → 真实外部服务 → 真实用户链路”分别记录结果。某一层通过不代表后续层已通过。

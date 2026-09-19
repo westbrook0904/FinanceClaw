@@ -1,13 +1,17 @@
-# Skills 运行与发布
+# Skills：使用、发布与排错
 
-当前根发布为 `finance_agent@1.8.0`，默认启用以下固定内置技能。技能提供执行方法，不扩大工具、交易、记忆或审批权限。
+Skill 是随项目发布的方法说明包：模型先看目录，选择后加载正文，需要时再读取包内参考资料。
+它帮助模型按约定步骤完成任务，不增加工具、交易、记忆或审批权限，也不执行包内脚本。
+
+当前根发布为 `finance_agent@1.8.0`，`FINANCECLAW_SKILLS_ENABLED` 默认 true，包含以下固定内置技能。
+首次接入先完成[本地完整链路](local-full-stack.md)和[模型配置](model-configuration.md)。
 
 | 技能 | 用途 | 业务依赖 |
 | --- | --- | --- |
 | `market-brief@1.0.0` | 整理行情简报，保留来源和日期 | `market_snapshot@1.0.0`、`market:read`；当前工具仍返回演示行情 |
 | `cocktail-from-what-i-have@1.0.0` | 按已有酒、饮料及器具提供配方、替代方案、多人份和无酒精版本 | 无外部 API、MCP、脚本或行情权限要求 |
 
-## 使用
+## 1. 先运行一个调酒任务
 
 ### 飞书：先选技能，再提交任务
 
@@ -21,7 +25,8 @@
 
 选择只对本次任务生效。重复点击或重复回调复用同一任务编号，不能把已提交表单改成另一个任务；新任务重新发送 `/skills`。未提交表单有效期为 30 分钟，过期或技能发布变化时提示重新打开。上一条任务仍在处理中时可以打开表单，但提交会提示先完成或停止原任务；等待回答时发送 `/skills` 也不会被当作原问题的答案。
 
-表单复用现有 `card.action.trigger` 和 CardKit 投递。控件采用飞书 JSON 2.0 的[表单容器](https://open.feishu.cn/document/feishu-cards/card-json-v2-components/containers/form-container)与[多行输入框](https://open.feishu.cn/document/feishu-cards/card-json-v2-components/interactive-components/input)。目前列表没有“财报分析”技能，需要先完成该技能的发布和授权后才会出现。
+表单复用现有 `card.action.trigger` 和 CardKit 投递，无需为 Skills 新增事件订阅。
+列表只展示已发布且当前可用的技能；目录中没有的能力需要先完成包发布与授权。
 
 ### 飞书：直接命令
 
@@ -64,7 +69,7 @@ curl --fail-with-body -sS \
   "$FC_BASE_URL/v1/conversations/$FC_CONVERSATION_ID/turns/$FC_TURN_ID" \
   -H "Authorization: Bearer $FC_API_TOKEN" | jq
 
-# 等待完成后读取最终正文，也可查询该会话的 /messages 永久记录。
+# 等待完成后读取最终正文，也可查询该会话的 /messages 持久化记录。
 curl --fail-with-body -sS \
   "$FC_BASE_URL/v1/conversations/$FC_CONVERSATION_ID/turns/$FC_TURN_ID" \
   -H "Authorization: Bearer $FC_API_TOKEN" | jq -r '.output.messages[]?.content'
@@ -72,7 +77,7 @@ curl --fail-with-body -sS \
 
 在状态 URL 后加 `/events`，以 `curl -N` 读取 SSE `turn.snapshot`；遇到 `waiting` 时按 `pending_interactions` 返回的交互要求回答，流程见 [Turn 运行手册](turn-control.md)。请求体只包含 `message`，客户端不能指定 package hash、原生 thread 或 checkpoint。
 
-### 生效条件
+## 2. 部署与已有开发库
 
 配置 `FINANCECLAW_SKILLS_ENABLED=true`、`FINANCECLAW_OFFLINE_MODEL=false`，并按 [模型配置](model-configuration.md) 填写供应商和密钥。飞书还需要 `FINANCECLAW_FEISHU_ENABLED=true`、应用凭据、用户白名单及现有事件/CardKit 配置，见 [本地完整链路](local-full-stack.md)。Skills 不需要额外飞书事件订阅。
 
@@ -104,8 +109,7 @@ docker compose exec -T postgres psql -U financeclaw -d financeclaw_app \
 初始迁移。API/Worker 启动及 API 就绪检查会核对消息和清单字段，记忆 Worker 也检查消息表；
 缺列或旧表单非空约束不能视为就绪。部署脚本不会自动清库或执行该补齐脚本。
 
-2026-09-16 本机已执行全部字段补齐，并通过真实已送达表单的提交、重复点击、清单和回答来源写入
-回滚验证；未调用模型或发送测试消息。
+## 3. 一次任务怎样加载技能
 
 显式选择在受理事务中写入 `requested_skills`，在首个回答模型请求前完成候选准备。普通任务可由模型通过 `load_skill` 主动选择；`$AAPL`、`$100`、`$market-brief` 均为普通文字。只有真实新 Turn 开头的 `/skill` 是控制语法，引用、代码块和 Worker 的任务描述不能形成根显式选择。
 
@@ -122,13 +126,23 @@ docker compose exec -T postgres psql -U financeclaw -d financeclaw_app \
 
 `FINANCECLAW_SKILLS_ENABLED=false` 关闭该部署的技能发布及两个工具。API 与 Worker 必须使用同一配置和镜像；关闭或修改发布后不能继续使用旧版本 checkpoint。确定性 `OfflineFinanceModel` 用于协议测试，不能代替真实模型的自动技能选择验收。
 
-## 发布包
+## 4. 新增或更新内置包
 
-源码入口是 `financeclaw/shared/skills/builtin/<skill-id>/SKILL.md`，固定版本/hash 清单为同目录的 `index.json`。发布策略在 `shared/releases/skills.py`，根绑定在 `shared/releases/catalog.py`。主文 frontmatter 必须包含 `name` 和 `description`。
+包目录为 `financeclaw/shared/skills/builtin/<skill-id>/`，入口为 `SKILL.md`，
+固定版本/hash 清单为 [builtin/index.json](../../financeclaw/shared/skills/builtin/index.json)。
+主文 frontmatter 必须包含 `name` 和 `description`。
+
+新增包的顺序是：准备正文与资源 → 在 `shared/releases/skills.py` 声明平台策略 →
+生成并审阅清单 → 检查 wheel 包含全部文件 → 与 API/Worker 同版部署。
+更新已有正文或资源时先更新清单中的发布版本，再重新生成 hash；仅修改文件但保留旧 hash 会导致启动拒绝。
+运行时不会从 GitHub 拉取文件，也不会自动安装未知目录。
 
 可选 `agents/openai.yaml` 支持 `policy.allow_implicit_invocation`。设为 false 会关闭模型自动选择，但保留用户通过表单或命令显式选择。首期不支持非空包依赖自动映射；业务 ToolRef、scopes、租户白名单和飞书展示名称 `display_name` 由平台 `SkillRelease` 声明，缺少固定依赖会阻止装配。展示名称参与发布策略指纹，表单不会接受客户端传入的技能版本或权限。
 
-调酒技能保留 [上游 SKILL.md](https://github.com/mohitagw15856/pm-claude-skills/blob/5a0326ce34b44c015fc26b5c28f6118092c806e4/skills/cocktail-from-what-i-have/SKILL.md) 原文，固定提交 `5a0326ce34b44c015fc26b5c28f6118092c806e4`；同目录的 `SOURCE.json` 记录来源、Git blob 和本地版本，`LICENSE` 保留上游 MIT 许可。原文与许可证均经过 Git blob 字节校验；附加中文展示信息及自动选择策略，不在运行时访问 GitHub。上游正文约 812 个 cl100k tokens，UTF-8 保守估计为 3086；单正文上限调整只用于完整装配，不扩大模型完整输入窗口或激活投影总额。
+调酒技能的上游提交与许可记录在包内
+[SOURCE.json](../../financeclaw/shared/skills/builtin/cocktail-from-what-i-have/SOURCE.json)和
+[LICENSE](../../financeclaw/shared/skills/builtin/cocktail-from-what-i-have/LICENSE)。正文属于固定发布内容，
+维护时保留来源和许可，并同步核验版本/hash。
 
 `builtin_skill_release` 对每个内置包分别声明平台策略。只有清单和已审阅声明同时存在才可装配，未知技能目录不能默认获得行情依赖或发布资格。
 
@@ -143,7 +157,7 @@ uv build --wheel --out-dir build/skill-wheel
 
 新增资源类型或目录时一并检查 `pyproject.toml` 的 package-data。wheel 校验会在独立解包目录解析清单，防止 editable 安装掩盖缺失文件。CI 执行清单、wheel 和常规代码检查。
 
-## 来源、容量与错误
+## 5. 来源、容量与故障定位
 
 资源页、模型输出和 WorkingContext 保留平台生成的 `skill_access_refs`。工件 `access_policy` 持久保存同一依赖；通用 `read_artifact@3.0.0` 也要求当前 scope 激活相同固定包并逐项通过授权，缺少受信任校验器时拒绝读取。相邻资源范围合并，未读取的缺口和不同来源身份保留。
 
@@ -153,9 +167,22 @@ uv build --wheel --out-dir build/skill-wheel
 
 Manifest 区分本次主文 `skill_refs`、真正进入请求的资源范围 `skill_resource_refs` 与派生访问约束 `skill_access_refs`；摘要输入也保留实际资源来源。审计事件 `skill.load_prepared`、`skill.load_rejected`、`skill.resource_read` 不表示原生 checkpoint 已提交。
 
-公开错误采用 `code + message`，API 受理错误为 HTTP 422。固定错误码：`SKILL_DIRECTIVE_INVALID`、`SKILL_UNAVAILABLE`、`SKILL_EXPLICIT_REQUIRED`、`SKILL_DEPENDENCY_UNAVAILABLE`、`SKILL_ACTIVATION_LIMIT`、`SKILL_CONTEXT_BUDGET_EXCEEDED`、`SKILL_RESOURCE_INVALID`、`SKILL_RELEASE_MISMATCH`。飞书对确定的选择错误返回可修正提示，不走暂态处理失败路径。
+公开错误采用 `code + message`，API 受理错误为 HTTP 422。飞书对确定的选择错误返回可修正提示。
 
-## 验证与评测
+| 现象或错误码 | 处理方式 |
+| --- | --- |
+| `/skills` 没有目标技能 | 检查功能开关、会话发布、包清单、权限和依赖；新目录不会自动出现在菜单 |
+| `SKILL_DIRECTIVE_INVALID` | 使用新 Turn 开头的 `/skill <技能 ID> <任务>`，不要放在引用或代码块中 |
+| `SKILL_UNAVAILABLE` / `SKILL_DEPENDENCY_UNAVAILABLE` | 检查固定包、所需 ToolRef、scopes 与租户策略 |
+| `SKILL_EXPLICIT_REQUIRED` | 包禁止隐式选择，改用表单或 `/skill` 明确指定 |
+| `SKILL_ACTIVATION_LIMIT` | 当前 scope 的激活数量已满；精简同轮技能需求 |
+| `SKILL_CONTEXT_BUDGET_EXCEEDED` | 完整正文无法装入当前预算；缩小任务上下文，正文不会被截断为成功 |
+| `SKILL_RESOURCE_INVALID` | 只读取已激活包内的声明资源，使用工具返回的分页 cursor |
+| `SKILL_RELEASE_MISMATCH` | 核对镜像、版本/hash 与 API/Worker 配置；过期表单重新打开，旧 checkpoint 不跨发布恢复 |
+| 表单提交提示忙碌 | 先完成或停止原任务；打开新表单本身不会创建第二个有效任务 |
+| 健康检查提示缺列 | 确认数据库是当前初始结构，或符合第 2 节补齐脚本的前置条件；部署不自动修复旧库 |
+
+## 6. 验证与评测
 
 ```bash
 .venv/bin/python -m pytest tests/skills -q
@@ -171,6 +198,17 @@ TIKTOKEN_CACHE_DIR='' .venv/bin/python -m pytest tests/skills -q
 
 该命令执行最多 90 个合成任务，只开放演示行情和计算业务工具，记录真实尝试、供应商 usage（缺失保留空值）、耗时、工具、激活和待人工审阅的回答。它不经过生产受理、Worker 委派或飞书渠道；质量、成本及渠道验收需分别报告，不能将问题集和离线响应当成真实质量结果。
 
-应用库仍为 18 张表，扩展现有消息/Manifest 字段、工件策略和通知目标的可空任务关联；唯一初始迁移 `0001_initial` 面向空库。此次没有操作已有本地数据或部署服务。
+历史实现与验收见 [Skills 实现与验证](../../.redesign/stages/skills-实现与验证.md)，其中的测试数量、
+数据库操作和部署状态属于当时记录。本页更新不表示重新执行了真实模型评测或飞书端到端验收。
 
-实际验证结果及未验证范围见 [Skills 实现与验证](../../.redesign/stages/skills-实现与验证.md)。
+## 7. 源码入口
+
+| 入口 | 负责什么 |
+| --- | --- |
+| [builtin/](../../financeclaw/shared/skills/builtin) | 固定技能包、清单、资源与来源许可 |
+| [releases/skills.py](../../financeclaw/shared/releases/skills.py) | 每个技能的展示名、工具依赖与 scopes |
+| [packages.py](../../financeclaw/shared/skills/packages.py) | 包文件、路径、YAML 和 hash 校验 |
+| [directives.py](../../financeclaw/shared/skills/directives.py) | `/skill` 显式选择语法 |
+| [skills/service.py](../../financeclaw/agent_server/skills/service.py) | 激活准备、资源读取与请求来源 |
+| [middleware/skills.py](../../financeclaw/agent_server/middleware/skills.py) | 模型请求中的目录、正文、授权和容量边界 |
+| [skill_task_forms.py](../../financeclaw/api/application/skill_task_forms.py) | 飞书表单创建、提交、幂等受理与冻结选择 |

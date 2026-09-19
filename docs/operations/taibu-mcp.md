@@ -1,8 +1,12 @@
 # Taibu MCP 接入与运行
 
-更新日期：2026-09-12。已实现首期 `taibu_almanac`、`taibu_bazi`，默认关闭；配置、工具实例、发布指纹、权限、重试预算、原文归档及有界结果均已接入 FinanceClaw。现有紫微五工具继续使用原有实现。
+Taibu 为根 Agent 提供黄历 `taibu_almanac` 和八字 `taibu_bazi` 两个受治理工具，
+包含输入校验、权限、发布指纹、重试预算、原文归档和有界结果。现有紫微五个工具继续使用本地引擎，
+不被 Taibu 替换。
 
-本次完成代码与隔离联调，没有切换现有 API/Worker，也没有发送飞书消息。真实模型、飞书和持久原生运行时的联合验收仍是正式开放前的发布门槛。
+代码默认关闭 Taibu；显式使用 [compose.taibu.yml](../../compose.taibu.yml) 时，overlay 会为统一 API 和图
+Worker 启用它。首次部署先阅读[本地完整链路](local-full-stack.md)。Taibu 有独立的领域协议和固定契约，
+不通过 [config/mcp.toml](../../config/mcp.toml) 的通用 MCP 清单启用。
 
 ## 1. 版本与运行边界
 
@@ -11,7 +15,7 @@
 | 上游源码 | `e8f636972a6fdb14f2a532ee223101f889ab4820` |
 | MCP HTTP 服务 | `taibu-mcp-online`，`3.1.1` |
 | 计算包 | `taibu-core 3.5.0`，依赖沿用上游 lockfile |
-| Python SDK | 沿用项目锁定依赖；实测 LangChain `1.3.18`、adapter `0.3.2`、MCP SDK `1.29.1` |
+| Python SDK | 随项目 [uv.lock](../../uv.lock) 固定，使用与 API/Worker 相同的依赖环境 |
 | 传输 | Streamable HTTP，每次尝试新建并关闭 session |
 | 开放工具 | 仅黄历、八字；模型不能指定远端 URL 或任意远端工具名 |
 | 真实出生参数 | 仅允许部署配置明确声明的内部端点 |
@@ -20,11 +24,13 @@
 
 镜像使用固定 Node 22 Alpine digest 和 pnpm `10.11.0`。构建时仅去掉上游 lockfile 的根 Web 应用 importer，保留两个 MCP 包及其依赖版本；两次安装都使用 `--frozen-lockfile`，运行依赖安装还使用 `--offline`。最终镜像不包含根 Web 应用依赖，并保留两个包的 LICENSE。
 
-本机验收平台为 `linux/amd64`，镜像标签为 `financeclaw-taibu:e8f6369`。具体本地 image ID 记录在[镜像证据](../../.redesign/evidence/taibu-mcp/image-validation.json)；image ID 不是可供远端拉取的仓库 manifest digest。正式推送镜像后，应将真实 `repository@sha256:...` 配置到 `TAIBU_IMAGE`。
+Compose 的默认镜像标签为 `financeclaw-taibu:e8f6369`。历史[镜像证据](../../.redesign/evidence/taibu-mcp/image-validation.json)
+记录了 `linux/amd64` 的本地 image ID，它不是远端仓库 manifest digest。发布到镜像仓库后，
+可通过 `TAIBU_IMAGE` 固定实际的 `repository@sha256:...`。
 
 ## 2. 配置与权限
 
-所有环境示例已经补充以下配置；实际 `.env` 未被修改。
+以下是代码默认值；只有明确启用后才装配工具。使用 Compose overlay 时，它会覆盖其中的开关、端点和权限策略相关配置。
 
 ```dotenv
 FINANCECLAW_TAIBU_ENABLED=false
@@ -71,11 +77,13 @@ docker compose -f compose.yml -f compose.taibu.yml ps taibu-mcp
 预期 taibu 容器显示 healthy。服务只 `expose: 3001`，不发布宿主机端口；Worker 等待其健康。上游 `MCP_ALLOWED_HOSTS` 精确匹配完整 HTTP Host，因此必须是 **`taibu-mcp:3001`**；本地 `FINANCECLAW_TAIBU_ALLOWED_HOSTS` 则只填写主机名 `taibu-mcp`，两者格式不同。
 
 ```bash
-docker compose -f compose.yml -f compose.taibu.yml up -d --build api worker integrations
-docker compose -f compose.yml -f compose.taibu.yml ps
+.venv/bin/python scripts/deploy.py -f compose.yml -f compose.taibu.yml
+docker compose -f compose.yml -f compose.taibu.yml ps -a
+curl --fail-with-body -sS http://127.0.0.1:8000/v1/health/ready
 ```
 
-预期 API、Worker、integrations 健康。真实模型验证需使用已经配置的 provider，并关闭 `FINANCECLAW_OFFLINE_MODEL`。通过现有产品入口用合成资料核对：
+完整部署还包含独立记忆 Worker 与基础设施，预期所有长驻角色通过健康检查，迁移任务以 0 退出。
+部署入口同时处理已启用的通用 MCP，因此也需满足其配置条件。真实模型验证需使用已经配置的 provider，并关闭 `FINANCECLAW_OFFLINE_MODEL`。通过现有产品入口用合成资料核对：
 
 1. “查询 2026-09-12 的黄历”：只调用 `taibu_almanac`，日期与请求一致。
 2. “按公历 1990-01-15 09:00、中国标准时间、标准时间排八字，性别男”：调用 `taibu_bazi`，返回四柱及来源。
@@ -83,7 +91,9 @@ docker compose -f compose.yml -f compose.taibu.yml ps
 4. 追问上次结果：按原 `artifact_ref` 回读；不重新计算后冒充历史结果。
 5. taibu 停机：最多三次实际尝试，每次计入原 Turn 预算，最终明确工具失败；其他工作可以继续。
 
-改动影响 `deployment_revision` 与配置指纹，API/Worker 必须同步。工具清单、端点、时间/大小预算、缓存周期以及本地和远端 Schema 都参与冻结。API 只读本地声明，不在启动时连接 MCP。每次 MCP 尝试核验服务名称/版本，工具 Schema 成功验证最多缓存 300 秒；变化会拒绝调用并要求重新验收。
+改动影响 `deployment_revision` 与配置指纹，API/Worker 必须同步。工具清单、端点、时间/大小预算、缓存周期以及本地和远端 Schema 都参与冻结。API 只读本地声明，不在启动时连接 MCP。每次 MCP 尝试核验服务名称/版本，工具 Schema 成功验证
+最多缓存 300 秒；变化会拒绝调用并要求重新验收。这与通用 MCP 每次检查输入结构的规则不同，
+不要直接用通用 MCP 的刷新命令更新 Taibu 固定契约。
 
 ## 4. 可复现的独立联调
 
@@ -146,25 +156,59 @@ docker stop financeclaw-taibu-probe
 
 SDK 适配的一处实现细化：使用 `session.send_request(CallToolRequest, CallToolResult)`，而非 SDK 的高层 `call_tool()`。后者会按即时发现的输出 Schema 提前验证；当前实现通过 SDK 的公开请求接口保留原始结果，随后按本地冻结 Schema 和业务不变式校验。
 
-## 6. 验证状态
+## 6. 排错与验证边界
 
-本次证据汇总见[验收记录](../../.redesign/evidence/taibu-mcp/implementation-validation.json)。自动化覆盖真实 AgentFactory、原生内存 checkpoint 的澄清恢复、工具预算、SDK HTTP 模拟传输、固定发布、权限及 Artifact 归属；外部计算在自动化中使用固定 fixture。
+| 现象 | 先检查什么 |
+| --- | --- |
+| 启动拒绝八字 | `egress=internal`、关闭完整 I/O、隐藏 tracing、足够的 Artifact 内联预算 |
+| 工具不可见或无权调用 | 功能开关、`allowed_tools`、身份 `taibu:read`、租户清单和数据级别 |
+| 连接 403 | 上游 `MCP_ALLOWED_HOSTS=taibu-mcp:3001` 带端口，本地 allowlist 填 `taibu-mcp` |
+| Worker 等待依赖 | 先看 `taibu-mcp` 的状态与日志，确认健康后再看应用日志 |
+| 契约或版本不符 | 核对固定上游提交、本地契约与 API/Worker 镜像；停止重试业务参数 |
+| 已收到数据却判定失败 | 查工件中的原文与安全错误码，核对四柱完整性、日期、太阳时口径及投影预算 |
 
-真实 MCP 验证单列保存：[自建服务](../../.redesign/evidence/taibu-mcp/self-hosted-probe.json)、[MCP 容器重启后](../../.redesign/evidence/taibu-mcp/after-restart-probe.json)、[公共黄历](../../.redesign/evidence/taibu-mcp/public-almanac-probe.json)、[Compose 配置](../../.redesign/evidence/taibu-mcp/compose-validation.json)。所有出生样例均为明确的合成资料。报告里的临时 Artifact 引用不指向产品存储，其完整快照直接保存在报告中。
+```bash
+docker compose -f compose.yml -f compose.taibu.yml ps -a
+docker compose -f compose.yml -f compose.taibu.yml logs --tail 200 taibu-mcp worker
+.venv/bin/python -m pytest -q tests/taibu
+```
 
-稳定 FinanceClaw 基线 `7dab6d4` 加本次 taibu 改动的隔离完整回归：**486 通过、4 跳过**，使用空 `TIKTOKEN_CACHE_DIR`。其中 taibu 专项 **66 项通过**。工作区同时进行 Stage 11 重构，全量回归状态应以验收记录为准；不能将隔离结果当作所有并行改动已验收。
+自动化覆盖真实 AgentFactory、内存 checkpoint 的澄清恢复、工具预算、SDK HTTP 模拟传输、
+固定发布、权限和 Artifact 归属；外部计算在自动化中使用固定 fixture。
+第 4 节的探针会实际调用给定 MCP，但不调用真实聊天模型、不经过产品受理或飞书。
 
-真实模型、飞书答案去重、持久原生运行时的进程重启恢复及实际生产切换尚未联合验证。当前开关默认关闭，不把单次 MCP 联通或内存图测试当作这些发布门槛已通过。
+2026-09-12 的[实现验收](../../.redesign/evidence/taibu-mcp/implementation-validation.json)、
+[自建探针](../../.redesign/evidence/taibu-mcp/self-hosted-probe.json)、
+[容器重启后探针](../../.redesign/evidence/taibu-mcp/after-restart-probe.json)、
+[公共黄历探针](../../.redesign/evidence/taibu-mcp/public-almanac-probe.json)与
+[Compose 配置记录](../../.redesign/evidence/taibu-mcp/compose-validation.json)是历史证据。
+其中出生资料均为合成样例，临时 Artifact 引用仅对应报告里的快照，不指向产品存储。
+旧测试数量与容器健康不能证明当前环境可用。
+
+真实模型选择与填参、飞书答案去重、持久原生运行时进程重启恢复，仍需在目标部署中单独验收；
+单次 MCP 联通或内存图测试不能覆盖这些结论。
 
 ## 7. 回退
 
 先完成或取消本次发布下的在途 Turn，再恢复不含 taibu 的统一配置和应用版本。关闭开关会改变发布指纹，不能用它热切换已有 pending 交互。
 
-`compose.taibu.yml` 会覆盖 `.env` 中的 `TAIBU_ENABLED=false`，所以回退时必须移除 overlay：
+`compose.taibu.yml` 会覆盖 `.env` 中的 `FINANCECLAW_TAIBU_ENABLED=false`，所以回退时必须移除 overlay：
 
 ```bash
 docker compose -f compose.yml up -d --force-recreate api worker
 docker compose -f compose.yml -f compose.taibu.yml stop taibu-mcp
 ```
 
-若 `.env` 曾手动启用，也需将 `FINANCECLAW_TAIBU_ENABLED=false` 恢复。旧工件按既有归属、权限和保留策略继续回读；回退不删除历史数据。本次 taibu 接入没有新增业务表，也不要求业务数据库迁移。
+若 `.env` 曾手动启用，也需将 `FINANCECLAW_TAIBU_ENABLED=false` 恢复。旧工件按既有归属、权限和保留策略继续回读；回退不删除历史数据。Taibu 自身没有新增业务表；同时升级其他功能时，数据库仍需满足完整应用的 schema 要求。
+
+## 8. 源码入口
+
+| 入口 | 负责什么 |
+| --- | --- |
+| [compose.taibu.yml](../../compose.taibu.yml)、[Dockerfile](../../deploy/taibu/Dockerfile) | 固定上游源码、构建依赖、内部网络和 Host 配置 |
+| [kernel/taibu.py](../../financeclaw/kernel/taibu.py) | 黄历/八字输入、时间口径与版本化结果契约 |
+| [tools/taibu.py](../../financeclaw/agent_server/tools/taibu.py) | 工具参数规范化、结果校验、原文工件与有界投影 |
+| [mcp_client.py](../../financeclaw/agent_server/tools/mcp_client.py) | Taibu 专用 SDK 调用与服务/契约核对 |
+| [releases/taibu.py](../../financeclaw/shared/releases/taibu.py) | 固定工具、权限、端点与发布指纹 |
+| [taibu_failure.py](../../financeclaw/agent_server/middleware/taibu_failure.py) | 重试耗尽后的安全失败回执 |
+| [历史实施方案](../../.redesign/stages/taibu-mcp-接入实施方案.md) | 初期范围、设计取舍和验收计划 |

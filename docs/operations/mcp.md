@@ -3,11 +3,21 @@
 通用 HTTP MCP 已接入现有工具目录。新增同类服务通常只需填写 TOML、配置凭据、绑定 Agent 并部署，
 无需为每个工具编写参数类或客户端。模型使用普通工具调用，工具结果返回后仍由根 Agent 决定下一步。
 
-目前提供 RollingGo 酒店三个、机票两个查询工具的配置。配置模板默认关闭这两个服务，
-部署命令为已启用且缺少定义的服务自动导入。首次接入和刷新时需要有效 API Key。
-已通过真实 MCP SDK 与本地 HTTP 协议替身验证通用链路，真实查询、模型选择和飞书端到端效果仍待账户联调。
+本文用于接入酒店/机票查询、发布固定工具定义和排查运行错误。先完成
+[本地完整链路](local-full-stack.md)；Taibu 的领域校验与专用协议见 [Taibu MCP](taibu-mcp.md)。
 
-## 1. 启用 RollingGo
+当前仓库配置以 [config/mcp.toml](../../config/mcp.toml) 为准：
+
+| 服务 | 仓库状态 | 固定定义 | 根 Agent 的开放能力 |
+| --- | --- | --- | --- |
+| `rollinggo_hotel` | **已启用** | 已提交 `config/mcp/rollinggo_hotel.json` | 酒店搜索、详情、标签，共 3 个工具 |
+| `rollinggo_flight` | **关闭** | 尚未提交定义；启用后导入 | 机场与机票查询，共 2 个工具 |
+
+启用状态不等于账户可用：酒店实际执行仍需有效 Key、`travel:read` 和匹配的数据策略。
+不使用旅行查询的部署可把对应服务设为 `enabled = false`，保留绑定即可。关闭的服务不读契约、不连接，
+也不要求凭据。本文描述仓库行为，不声明当前容器或远端服务已经完成验收。
+
+## 1. 配好酒店查询并部署
 
 所有命令在仓库根执行，使用已安装项目依赖的 `.venv`。也可以把 `.venv/bin/python` 换成 `uv run python`。
 
@@ -24,13 +34,13 @@ API Key 不写入 TOML、导入文件或命令行参数。执行环境变量优�
 | `rollinggo_hotel` | `https://mcp.rollinggo.cn/mcp` | `searchHotels`、`getHotelDetail`、`getHotelSearchTags` |
 | `rollinggo_flight` | `https://mcp.rollinggo.cn/mcp/flight` | `searchAirports`、`searchFlights` |
 
-端点及工具名单依据 [RollingGo 官方连接说明](https://github.com/RollingGo-AI/rollinggo-hotel-mcp)。
-实际参数以当前账户返回的 `tools/list` 为准。两个服务默认引用同一个 Key；若账户分别分配凭据，
+表中端点和名单来自仓库配置；实际参数在导入时取自当前账户返回的 `tools/list`，发布后使用冻结定义。
+两个服务默认引用同一个 Key；若账户分别分配凭据，
 修改各自 `auth.token_env` 为对应环境变量名即可。
 
 ### 启用并部署
 
-在 TOML 中确认 `allowed_tools` 和 Agent 绑定，将已开通的服务设为 `enabled = true`。
+在 TOML 中确认 `allowed_tools` 和 Agent 绑定；酒店已启用，机票仅在账户开通后改为 `enabled = true`。
 配置好下文的调用权限和数据级别后，直接执行：
 
 ```bash
@@ -43,7 +53,17 @@ uv run --frozen python scripts/deploy.py
 
 工具定义需要更新时执行 `scripts/deploy.py --refresh-mcp`。
 若改动了端点或增加 `allowed_tools`，已有文件检查可能失败，此时也需要显式刷新。
+刷新只更新定义，不执行酒店或机票业务查询；生成差异仍需审阅。
 希望先审阅生成文件时，执行 `scripts/deploy.py --prepare-only --refresh-mcp`，审阅后正常部署。
+
+完成权限配置并部署后，可在飞书单聊或普通 Turn 的 `message` 中提交：
+
+```text
+请推荐北京的酒店，明天入住、住一晚，2 位成人，每晚预算 500 至 800 元，优先交通方便。请比较价格、位置和退改条件，并注明信息缺失的地方。
+```
+
+预期根 Agent 查询酒店、按实际返回标识取得详情，必要时读取结果工件，再组织比较。
+缺少必需条件时先澄清；只返回一般旅行建议，不能作为实时酒店查询已执行的证据。
 
 ### 可选：查看清单或单独维护
 
@@ -161,7 +181,7 @@ API 与图 Worker 必须使用相同配置和契约。API 装载目录不连接 
 修改契约、端点、凭据引用或治理策略会改变相关 Agent 的发布指纹；旧任务不会静默切换定义继续执行。
 这次改造不需要新增表、迁移或清空数据库。
 
-## 2. 新增另一个 MCP
+## 2. 新增另一个只读 MCP
 
 先在 TOML 中添加服务，例如下面的结构。地址、工具名和描述文件应换成真实值：
 
@@ -218,7 +238,7 @@ allowed_data_classes = ["public", "internal"]
 OAuth、stdio、订单写入、长期会话、MCP sampling/elicitation 尚未接入。
 远端的 `readOnlyHint` 等注解不会自动授予执行权限，开放范围由本地读取策略决定。
 
-## 3. 运行行为与排错
+## 3. 运行时会发生什么
 
 每次工具调用使用同一个 SDK session 完成初始化、完整 `tools/list`、固定定义核对和 `tools/call`。
 当前没有核验缓存，因此每次查询都会付出初始化与目录请求的耗时；不缓存业务答案。
@@ -246,6 +266,8 @@ MCP 配置或诊断细节。用户问“有哪些工具”时也按业务能力�
 由 `read_artifact` 回读，不为读取旧结果重跑远端查询。没有文本的图片/资源信息仍被保留，链接不会自动抓取。
 超过 `result_max_bytes` 的响应明确失败；它不属于“已成功归档”的结果。
 
+## 4. 故障定位
+
 | 现象/错误 | 含义与处理 |
 |---|---|
 | 模型看不到旅行工具 | 检查 `enabled`、Agent 绑定、身份 `travel:read` 和整轮数据级别 |
@@ -262,50 +284,7 @@ MCP 配置或诊断细节。用户问“有哪些工具”时也按业务能力�
 工具开始/完成/失败走原生 `tool.progress`；单个工具完成不代表根任务完成。
 飞书仍由已有整轮状态与根输出驱动，真实卡片验收需在部署后进行。
 
-## 4. 验证范围
-
-自动化测试位于 [tests/mcp_integration](../../tests/mcp_integration)，覆盖配置与冻结发布、
-API 无 SDK 启动、真实 SDK 分页/认证/错误、根和子 Agent 的工具循环、`/tool`、调用配对、
-单层重试、原生进度、取消清理及大结果归档。HTTP 为本地协议替身，模型为确定性测试模型。
-
-2026-09-15 可见性与回答规则修复：MCP、架构、根子图与飞书流式回归共 **114 passed**。
-补充验证启用紫微且根任务为 `confidential` 时，明确允许该级别的酒店工具仍可完成原生调用循环。
-普通回归使用独立 MCP 配置，避免本地启用的服务污染固定测试目录。
-经用户授权，当前百炼模型通过了“要求列工具清单”“历史消息曾称查询不可用”“当前没有查询工具”
-三个合成场景：正文未出现内部工具标识，且在历史结论过时的场景选择了当前酒店查询工具。
-该探测未执行真实酒店查询或发送飞书消息，不等同于飞书端到端验收。
-修复已重建并部署到 Docker；API 与 Worker 的发布指纹一致，按当前飞书权限和根任务级别
-核对均有 3 个酒店工具可见。应用各角色健康检查通过，飞书集成已重新连接。
-
-部署入口新增 16 项用例，覆盖首次自动导入、离线复用、显式刷新、关闭服务跳过、
-批量获取失败时保留原文件、Compose 实际凭据与文件组合、镜像配置一致性及各阶段失败后停止。
-与 MCP、Stage 11 部署和架构用例合并运行 **78 passed**：
-
-```bash
-.venv/bin/python -m pytest -q tests/mcp_integration tests/stage11/test_deployment.py tests/architecture
-```
-
-2026-09-15 本地执行 `scripts/deploy.py --prepare-only` 通过，酒店 3 个工具离线装配成功，
-机票保持禁用。本次未构建或重启 Docker，未执行真实 MCP 业务查询；实际部署验收仍需运行完整命令。
-
-```bash
-.venv/bin/python -m pytest -q tests/mcp_integration
-```
-
-首次 MCP 实现验证（2026-09-15）：当时新增用例 **47 passed**。包含既有架构、Taibu、Agent 与飞书修复用例的
-回归 **393 passed**；全仓 Ruff、编译和密钥扫描通过。回归命令为：
-
-```bash
-TIKTOKEN_CACHE_DIR= .venv/bin/python -m pytest -q tests/mcp_integration tests/architecture tests/taibu tests/stage1 tests/stage6fix tests/stage8_hotfix
-```
-
-真实账户验收顺序：酒店标签 → 酒店搜索 → 依据返回标识查详情；机场查询 → 依据返回代码查航班；
-最后在飞书测试酒店与机票组合、缺参澄清、停止和流式回答。核对实际币种、价格口径、税费及退改规则，
-不把查询结果或预订链接表述为已锁房、下单或出票。
-
-总体边界与后续 OAuth/订单工作见[实施方案](../../.redesign/stages/MCP-工具主动发现与配置化接入实施方案.md)。
-
-## 大结果文件与按需读取
+## 5. 大结果文件与按需读取
 
 酒店搜索和详情通过 `config/mcp.toml` 的 `result_views` 配置使用文件引用。完整回包
 保存在现有 Artifact 中；模型收到业务格式、字段/数组目录、记录数量及最多三条预览。
@@ -364,3 +343,36 @@ SQL 模型预算中的最后一次也留给根最终回答，普通子调用和�
 补齐未执行回执后交回根；取消、撤销授权和服务故障仍服从原终止规则。
 
 完整设计和当前验收状态见[大结果实施方案](../../.redesign/stages/MCP-大结果归档与结构化读取实施方案.md)。
+
+## 6. 验证范围与源码入口
+
+在仓库根目录运行离线契约检查和自动化回归：
+
+```bash
+.venv/bin/python scripts/mcp_catalog.py check
+.venv/bin/python -m pytest -q tests/mcp_integration tests/stage11/test_deployment.py tests/architecture
+```
+
+`check` 成功说明已启用的本地定义和 Agent 绑定可装配。自动化覆盖固定发布、真实 SDK 的分页/认证/错误、
+原生工具循环、取消、进度、重试和 Artifact；HTTP 使用本地协议替身，模型使用确定性替身，
+不代表真实账户查询、模型选择或飞书展示已通过。
+
+真实账户验收从酒店标签 → 酒店搜索 → 使用返回标识查详情开始；启用机票后再验机场 → 航班。
+最后验证飞书缺参澄清、停止、工具进度和最终回复。价格、币种、税费、退改规则应按本次结果核对；
+查询或预订链接不代表锁房、下单或出票。
+
+历史[契约与 Artifact 修复记录](../../.redesign/evidence/mcp-views/contract-read-hotfix.json)
+保存了 2026-09-16 的真实只读 MCP 与文件回读探测，明确未执行真实模型决策和飞书消息发送。
+该记录及旧部署状态不是当前环境健康证明。设计演进另见
+[配置化接入方案](../../.redesign/stages/MCP-工具主动发现与配置化接入实施方案.md)和
+[大结果方案](../../.redesign/stages/MCP-大结果归档与结构化读取实施方案.md)。
+
+| 入口 | 负责什么 |
+| --- | --- |
+| [config/mcp.toml](../../config/mcp.toml) | 服务开关、认证变量名、工具/Agent 绑定、数据策略、结果视图 |
+| [mcp_catalog.py](../../scripts/mcp_catalog.py) | 发现、导入、离线检查与部署前准备 |
+| [deploy.py](../../scripts/deploy.py) | 读取 Compose 的实际 Worker 配置后准备、构建、启动 |
+| [configuration.py](../../financeclaw/shared/mcp/configuration.py) | 声明校验和固定 MCP 发布 |
+| [contracts.py](../../financeclaw/shared/mcp/contracts.py) | 忽略说明文字，只比较调用相关的输入结构 |
+| [mcp_transport.py](../../financeclaw/agent_server/tools/mcp_transport.py) | SDK session、服务/契约核对与真实调用 |
+| [mcp_generic.py](../../financeclaw/agent_server/tools/mcp_generic.py) | 受治理工具包装、结果投影及失败回执 |

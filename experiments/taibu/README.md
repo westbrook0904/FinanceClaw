@@ -1,5 +1,36 @@
-# Taibu 真实联调
+# Taibu 真实 HTTP 与 Artifact 探针
 
-运行 `python -m experiments.taibu.probe --url <endpoint>/mcp --output <report.json>`。仅使用代码内固定合成样例，验证真实 HTTP、SDK、两项工具及原始结果归档回读；不会调用模型或发送渠道消息。公共服务须加 `--public`，只验证黄历。
+这个探针调用真实 MCP 服务，并通过项目的工具包装和 ArtifactService 核对响应；模型与渠道不参与。所有参数都是 [`probe.py`](probe.py) 中固定的合成样例，CLI 不接收真实出生资料。
 
-构建、Host 端口配置、启动命令和验证边界见 [运行说明](../../docs/operations/taibu-mcp.md)。自动化回归为 `.venv/bin/pytest -q tests/taibu`，无需外部服务。真实联调不在普通 CI 中运行。
+## 前提与运行
+
+先在仓库根目录安装项目依赖，并按 [Taibu 运行说明](../../docs/operations/taibu-mcp.md)准备可访问的服务。内网自托管示例中，宿主机入口默认为端口 3001：
+
+```bash
+.venv/bin/python -m experiments.taibu.probe \
+  --url http://127.0.0.1:3001/mcp \
+  --output /tmp/financeclaw-taibu-probe.json
+```
+
+`--url` 使用调用进程实际可访问的地址。容器内的 `taibu-mcp:3001` 与宿主机的 `127.0.0.1:3001` 不是同一个网络入口。上游 Host allowlist 需要匹配请求头中的主机和端口，具体配置见运行说明。
+
+公共服务显式追加 `--public` 并使用真实 HTTPS endpoint；该模式只验证黄历，避免向公共服务发送八字样例。它仍是真实外部请求，不属于离线测试。
+
+## 场景与报告
+
+| 模式 | 场景 |
+|---|---|
+| 内网 | 黄历、标准时八字、真太阳时、农历、合法闰月、非法闰月的远端错误 |
+| `--public` | 黄历 |
+
+成功报告包含 `passed`、时间、服务版本、依赖版本、各场景耗时、投影字节数和合成响应快照。探针在临时 SQLite / Artifact 目录中执行，结束后删除临时存储；合成的归档响应写入报告供回看，因此报告本身仍须按测试材料保存。
+
+检查进程退出码和报告内容，不能用旧报告替代当次结果。该探针能证明真实 HTTP、SDK、工具响应校验与原始结果归档回读；不能证明领域规则已独立核验、真实模型路由/解读正确或飞书用户链路已完成。
+
+## 不访问服务的回归
+
+```bash
+.venv/bin/python -m pytest -q tests/taibu
+```
+
+自动化回归无需外部服务；真实探针需显式运行，不在普通 CI 中自动执行。Taibu 黄历/八字与紫微本地五工具是独立能力，探针成功不会替代紫微的规则或模型验收。

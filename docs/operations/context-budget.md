@@ -1,10 +1,21 @@
-# Stage 11 上下文与异步记忆运维
+# 上下文、长期记忆与数据保留运维
 
 短期执行内容由原生 state/checkpoint 和唯一的 `WorkingContext` 管理；业务 Journal 保留原始问答。长期记忆及画像以应用 PostgreSQL 为事实源，Store 只用于检索 ID，返回正文前必须回读 SQL 的当前可见版本。详细契约见 [Stage 11 方案](../../.redesign/stages/stage-11-异步记忆与上下文治理实施方案.md)。
 
 失败或停止后，新执行线程按近期轮次与 token 预算补入会话历史：成功问答保留原文，失败和停止轮次保留原始用户问题、已确认的输入/选择回答及明确的执行状态。失败任务不会被当成已完成，也不会因下一句是普通追问而丢失；“重试”无需专门的关键词路由。恢复不复制未完成的工具调用链、异常堆栈或旧审批授权，也不把失败状态自动登记为长期画像。该规则在新线程初始化时生效，已初始化的旧 checkpoint 不会因部署被重写。
 
 工具批次包含 `invalid_tool_calls` 时整批拒绝，按有效与无效调用的全部 ID 补齐错误 ToolMessage，之后才让模型修正参数；紫微取证只允许一次格式修复。无法唯一对应的调用 ID 受控停止。最终模型入口也检查完整配对，避免将缺回执的历史请求发给 Provider。协议要求参见 [LangChain 工具回执文档](https://docs.langchain.com/oss/python/langchain/errors/INVALID_TOOL_RESULTS)。
+
+## 先确定要处理哪一层
+
+| 现象 / 需求 | 负责组件 | 本文入口 |
+|---|---|---|
+| 单次模型请求超限、历史压缩失败 | 原生 Worker 的上下文中间件 | “上下文容量与压缩” |
+| 已明确偏好没有记住、候选未生成 | API 来源登记与 memory_worker | “进程与配置”“用户写入、确认与遗忘” |
+| 记忆存在但搜索不到、遗忘后清理待办 | integrations 的 Store 索引消费者 | “Store 与后台索引”，以及 [Outbox 排查](memory-outbox.md) |
+| 清理旧工件或 checkpoint | 显式维护入口 | “数据保留” |
+
+本文 CLI 从仓库根目录运行。本机命令需要预先注入正确的环境和数据库连接；容器部署优先使用专用入口，避免误连默认开发库。所有预览、重放、重建的范围均应明确到当前部署或 owner。
 
 ## 进程与配置
 
@@ -20,7 +31,7 @@
 | `MEMORY_EXTRACTION_CONCURRENCY` | 2 | 每进程提取并发 |
 | `MEMORY_CONSOLIDATION_CONCURRENCY` | 1 | 每进程整合并发；同 owner 仍由 SQL 串行化 |
 | `MEMORY_WORKER_LEASE_SECONDS` / `MEMORY_WORKER_RENEW_SECONDS` | 120 / 20 | 任务租约和续租间隔 |
-| `MEMORY_MODEL_ALLOWED_DATA_CLASSES` | 全部已知分级 | 后台模型可处理的来源最高分类 |
+| `MEMORY_MODEL_ALLOWED_DATA_CLASSES` | 全部已知分级 | 后台模型允许处理的来源分类集合 |
 | `MEMORY_MODEL_ALLOWED_REGIONS` | `["global"]` | 后台模型允许处理的区域 |
 | `PROCESSING_REGION` | global | 受理时写入执行快照和来源许可的处理区域 |
 | `MEMORY_RECALL_TOKENS` / `MEMORY_RECALL_LIMIT` | 4096 / 6 | 任务检索与目录的有限注入预算 |
@@ -58,7 +69,7 @@ docker compose exec memory_worker python deploy/memory_worker_entrypoint.py oper
 
 ## 用户写入、确认与遗忘
 
-`POST/PATCH/DELETE /v1/memories`、`PATCH /v1/memory/settings` 和候选决定均要求 `Idempotency-Key`。编辑、删除、决定使用唯一的 `expected_revision`；相同 key 不同内容返回冲突。owner 和权限来自认证身份。
+`POST /v1/memories`、`PATCH/DELETE /v1/memories/{memory_id}`、`PATCH /v1/memory/settings` 和候选决定均要求 `Idempotency-Key`。编辑、删除、决定使用唯一的 `expected_revision`；相同 key 不同内容返回冲突。owner 和权限来自认证身份。
 
 明确长期偏好在原始输入受理事务中解析；普通问答在最终 Journal 同事务入队后由后台提取、跨会话整合。模型产物只能引用服务端登记的原文，助手答案不能作为用户画像依据。重要字段产生 `proposed` 候选，通过 `/v1/memory/candidates/{id}/decision` 确认。飞书候选卡使用独立消息和回执，不占用或覆盖任务卡，也不创建 resume 命令。
 
@@ -80,14 +91,16 @@ TOML 中模型别名的 `context_window_tokens`、`max_input_tokens` 和 `max_to
 
 历史索引、记忆索引、删除各有独立消费循环。内容不写入 Outbox；事件只带 owner、ID、revision 和版本，由消费者回读当前 SQL 事实，HTTP 前后都核验。乱序删除只针对旧版本 key。
 
-真实 embedding 仍由原生 Agent Server 配置 `EMBEDDING_MODEL`、`EMBEDDING_BASE_URL`、`EMBEDDING_API_KEY`、`EMBEDDING_DIMENSIONS`；维度必须与 `langgraph*.json` 一致，供应商主机须位于出站允许列表。离线模型使用确定性假向量，不能证明中文检索质量。
+真实 embedding 仍由原生 Agent Server 配置 `EMBEDDING_MODEL`、`EMBEDDING_BASE_URL`、`EMBEDDING_API_KEY`、`EMBEDDING_DIMENSIONS`；维度必须与 `langgraph.json` 的 `store.index.dims` 一致，供应商主机须位于出站允许列表。离线模型使用确定性假向量，不能证明中文检索质量。
 
-已完成问答历史重建保留现有显式命令：
+已完成问答历史重建保留现有显式命令。默认只预览；核对数量与 owner 后，追加 `--apply` 才会重新入队，这可能使原文再次进入已配置的 embedding 服务：
 
 ```bash
 .venv/bin/python -m financeclaw.integrations.maintenance history \
   --tenant-id TENANT --subject-id SUBJECT --conversation-id CONVERSATION
 ```
+
+`history` 使用 `--offset` / `--limit` 分页，与记忆索引的 `--after` 不是同一个游标。普通重启不会自动重建全部历史。
 
 ## 数据保留
 
@@ -95,12 +108,14 @@ TOML 中模型别名的 `context_window_tokens`、`max_input_tokens` 和 `max_to
 
 ```bash
 # 默认仅预览；显式 --apply 才删除已到期且无活动引用的对象内容。
-python -m financeclaw.integrations.maintenance artifacts
-python -m financeclaw.integrations.maintenance artifacts --apply
+.venv/bin/python -m financeclaw.integrations.maintenance artifacts
+.venv/bin/python -m financeclaw.integrations.maintenance artifacts --apply
 
 # 只允许已归档且业务与原生运行均无待办的会话。
-python -m financeclaw.integrations.maintenance checkpoints \
-  --tenant-id TENANT --subject-id SUBJECT --conversation-id CONVERSATION
+# 预先注入带 maintenance:checkpoints scope 的 FINANCECLAW_MAINTENANCE_TOKEN。
+# FINANCECLAW_INTERNAL_API_URL 指向当前部署的统一 API。
+.venv/bin/python -m financeclaw.integrations.maintenance checkpoints \
+  --conversation-id CONVERSATION
 ```
 
-checkpoint 回收通过原生 API，默认策略 `keep_latest`。已验证的 dev 内存运行时不支持该策略（422），但支持整线程 `delete`：确需删除归档会话的所有 checkpoint 时显式追加 `--strategy delete --apply`，不会自动从保留最新状态降级为整线程删除。不启用全局 thread TTL，不声称消息摘要等于物理回收。运行时不支持该 API 时明确失败，保留原数据；能力探针结果见 [Stage 9 验收记录](../../.redesign/stages/stage-9-实现与验证.md)。完整数据主体请求按[数据请求流程](data-subject-requests.md)处理，单条记忆遗忘不会删除 Journal、旧 checkpoint 或供应商 trace。
+checkpoint CLI 经产品 `POST /v1/conversations/{id}/checkpoints/prune` 校验权限与归属，再使用进程内原生 API；owner 来自维护 Token，不能用 `--tenant-id` / `--subject-id` 切换。默认策略 `keep_latest`。Stage 9 历史探针中的 dev 内存运行时不支持该策略（422），但支持整线程 `delete`：确需删除归档会话的所有 checkpoint 时显式追加 `--strategy delete --apply`，不会自动从保留最新状态降级为整线程删除。不启用全局 thread TTL，不声称消息摘要等于物理回收。运行时不支持该 API 时明确失败，保留原数据；能力探针结果见 [Stage 9 验收记录](../../.redesign/stages/stage-9-实现与验证.md)。完整数据主体请求按[数据请求流程](data-subject-requests.md)处理，单条记忆遗忘不会删除 Journal、旧 checkpoint 或供应商 trace。

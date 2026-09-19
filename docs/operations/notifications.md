@@ -4,9 +4,32 @@
 
 ## 启动
 
-使用统一 `compose.yml`。空应用库为 18 张表，原有开发库不会自动删除或升级。`notification_targets.turn_id` 允许表单草稿暂时无任务关联；readiness 会拒绝该字段仍为非空的旧 schema。配置飞书 APP_ID、APP_SECRET、open_id allowlist 和 scopes；开启机器人、WebSocket 的 `im.message.receive_v1`/`card.action.trigger` 及 CardKit 权限。生产使用 strict 模式。
+使用统一 [`compose.yml`](../../compose.yml)，先完成[本地启动](local-full-stack.md)。以当前迁移与运行时 schema 检查为准，不以表的数量判断版本；原有开发库不会自动删除或补齐全部新字段。`notification_targets.turn_id` 允许表单草稿暂时无任务关联；readiness 会拒绝该字段仍为非空的旧 schema。配置飞书 APP_ID、APP_SECRET、open_id allowlist 和 scopes；开启机器人、WebSocket 的 `im.message.receive_v1`/`card.action.trigger` 及 CardKit 权限。生产使用 strict 模式。
 
 `python -m financeclaw.integrations` 同时监督渠道、通知和历史消费者，默认只有一个实例建立 WebSocket。API 扩容不会增加连接数量。integrations 健康检查分别报告渠道、通知和历史任务；心跳不代替消息发送回执。
+
+## 最小配置与检查
+
+以下变量使用 `FINANCECLAW_` 前缀，并由部署注入，密钥不要写入卡片或日志。
+
+| 变量 | 配置要求 |
+|---|---|
+| `FEISHU_ENABLED` | 默认 `false`；需要渠道时显式开启 |
+| `FEISHU_APP_ID` / `FEISHU_APP_SECRET` | 与已配置事件和 CardKit 权限的机器人应用一致 |
+| `FEISHU_ALLOWED_OPEN_IDS` | 非空 JSON 数组，只允许明确的用户 |
+| `FEISHU_SCOPES` | JSON 数组；按工具补齐权限，禁止 `*` 与 `internal:invoke` |
+| `FEISHU_SECURITY_MODE` | 开发默认 `audit`，生产必须 `strict` |
+| `INTERNAL_API_URL` / `INTEGRATION_SERVICE_TOKEN` | integrations 调用统一 API；URL 主机须在 `INTERNAL_SERVICE_HOSTS` |
+
+API 的飞书开关决定内部渠道路由是否装配，integrations 的开关决定连接与发送器是否启动，因此相关发布配置需要保持一致。只启动 API / Worker 不会建立飞书连接。
+
+```bash
+docker compose ps -a
+docker compose logs --tail=100 api integrations
+docker compose exec integrations python -m financeclaw.integrations.health
+```
+
+健康命令退出码 0 表示消费者与心跳正常，不等于某条消息已发出。读取 Turn 快照和投递回执才能确定具体任务的交付状态。
 
 ## 事务与投递
 
@@ -54,10 +77,23 @@
 
 取消只表示已收到停止意图，原生停止未确认前显示“正在停止”。不确定的发送不能静默当作未发送。已回答或过期卡片即使仍显示旧按钮，API 也会拒绝冲突决定。
 
+## 按症状快速定位
+
+| 用户看到的现象 | 应核对的事实 |
+|---|---|
+| 发消息后没有任务卡 | 白名单、事件订阅、integrations 连接、API 受理回执及首次卡片投递 |
+| 卡片一直显示处理中 | Turn 是否 `waiting` / 终态，以及对应通知是否 `uncertain` / `dead_letter` |
+| 重复点击提示冲突 | 当前 interaction revision、决定内容、操作者和已有幂等回执 |
+| 点停止后仍有加载状态 | 是否已确认原生停止；`cancelling` 只表示停止意图已记录 |
+| 最终回答只收到部分 | 前一片是否已确认成功；后续片段不会越过未知投递 |
+| `/skills` 表单不可提交 | 表单是否过期、权限/发布版本是否变化、是否存在旧的未完成 Turn |
+
+修复后先用合成任务验证新的卡片，不通过重跑原 start/resume 修复发送问题。历史 `uncertain` 仍按原操作键与冻结内容核对。
+
 ## SSE 与验证
 
 SSE 只有最新 `turn.snapshot` 和心跳；不存在进度事件历史表。客户端断开不影响通知、执行或最终 Journal。通知细节与原生运行信息不进入公开快照。
 
-回归测试位于 `tests/stage8/test_notifications.py`、`tests/stage8/test_notification_sdk.py`、`tests/stage8_hotfix/test_feishu_cards.py`、`tests/stage8_hotfix/test_feishu_presentation.py`、`tests/skills/test_feishu_forms.py` 和 Stage 10 测试目录。它们覆盖发送不确定性、分片顺序、目标归属、表单约束和卡片重放。技能表单另覆盖打开不创建任务、提交原子性、并发双击、过期、撤权和内部 HTTP 回调。2026-09-12 使用真实 CardKit 接口创建并更新未发布的合成草稿，加载、澄清、审批、Markdown 四种视图均返回 code=0；该记录不包含本次新增的技能表单，技能表单和客户端点击尚需飞书侧验收。
+回归测试位于 `tests/stage8/test_notifications.py`、`tests/stage8/test_notification_sdk.py`、`tests/stage8_hotfix/test_feishu_cards.py`、`tests/stage8_hotfix/test_feishu_presentation.py`、`tests/skills/test_feishu_forms.py` 和 Stage 10 测试目录。它们覆盖发送不确定性、分片顺序、目标归属、表单约束和卡片重放。技能表单另覆盖打开不创建任务、提交原子性、并发双击、过期、撤权和内部 HTTP 回调。2026-09-12 使用真实 CardKit 接口创建并更新未发布的合成草稿，加载、澄清、审批、Markdown 四种视图均返回 code=0；该历史记录不包含后来新增的技能表单，技能表单和客户端点击尚需飞书侧验收。
 
 协议依据：[输入框](https://open.feishu.cn/document/feishu-cards/card-json-v2-components/interactive-components/input)、[按钮](https://open.feishu.cn/document/feishu-cards/card-json-v2-components/interactive-components/button)、[Markdown](https://open.feishu.cn/document/feishu-cards/card-json-v2-components/content-components/rich-text)、[飞书官方加载图标](https://github.com/larksuite/openclaw-lark/blob/main/src/card/builder.ts)。

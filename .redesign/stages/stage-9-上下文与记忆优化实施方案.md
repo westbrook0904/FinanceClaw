@@ -1,8 +1,10 @@
 **Stage 9：上下文与记忆机制优化实施方案**
 
+> 历史方案：本文保留 Stage 9 的设计范围，当前记忆事实源与异步流程已在后续阶段调整。实际操作见[上下文与记忆手册](../../docs/operations/context-budget.md)，演进见[档案索引](../README.md)。
+
 状态：实施设计稿 v0.3，2026-09-11。用户已确认近期上下文采用原生 state；明确表达的低风险偏好自动保存，高影响信息仍确认，模型推断不得直接成为有效画像。画像直接使用 Store，不新增版本指针表或多会话修改协调协议。本次确认：事件记忆按用户 Turn 初始召回并复用，历史按需搜索；Stage 9 不实现自动后台候选提取；工具结果由平台提供统一归档与回读规则，外部 MCP/Skill 声明不是接入前提。本文是待实施契约，不代表功能已落地。
 
-依据：[记忆与上下文架构评估](/Users/hebinghui/PycharmProjects/FinanceClaw/docs/architecture/memory-assessment-2026-09-10.md)、[Stage 8 Hotfix](/Users/hebinghui/PycharmProjects/FinanceClaw/.redesign/stages/stage-8-hotfix-实施方案.md)。当前可验证基线是 LangChain 1.3.18、LangGraph 1.2.11、Agent Server 0.13.3；实施时固定通过探针的版本，不以在线 latest 文档代替已安装接口契约。
+依据：[记忆与上下文架构评估](../../docs/architecture/memory-assessment-2026-09-10.md)、[Stage 8 Hotfix](stage-8-hotfix-实施方案.md)。当前可验证基线是 LangChain 1.3.18、LangGraph 1.2.11、Agent Server 0.13.3；实施时固定通过探针的版本，不以在线 latest 文档代替已安装接口契约。
 
 项目尚未发布：允许直接替换旧策略、工具接口和未发布 schema，不维护旧新两套生产链路。数据库初始化、Store 索引和开发数据重建分别提供明确命令；编写方案及修改初始迁移不等于自动删除本机数据。
 
@@ -123,7 +125,7 @@ Agent Server 已管理 checkpoint 和 Store，不额外构造一个业务 Postgr
 
 模型调用中组合 ContextEditingMiddleware 和 ClearToolUsesEdit：优先清理较旧结果，保留近期结果。动态 excludes 由平台业务保护规则及可信接入配置生成，不依赖外部作者标注。原生的工具名排除不足以表达逐条 preserve_structure 和 artifact 引用时，实现小型 ContextEdit 适配；归档 I/O 在应用清理之前完成，不复制整个 middleware。
 
-当前澄清/审批回执、尚未处理的 Worker needs_clarification 结果和 preserve_structure 正文禁止被清理。默认不清空工具输入参数。Artifact 引用不能随着工具正文清理丢失；清理结果为可回读的简短说明。[原生上下文编辑组件](/Users/hebinghui/PycharmProjects/FinanceClaw/.venv/lib/python3.13/site-packages/langchain/agents/middleware/context_editing.py:60)
+当前澄清/审批回执、尚未处理的 Worker needs_clarification 结果和 preserve_structure 正文禁止被清理。默认不清空工具输入参数。Artifact 引用不能随着工具正文清理丢失；清理结果为可回读的简短说明。原生上下文编辑组件的当时环境位置：`.venv/lib/python3.13/site-packages/langchain/agents/middleware/context_editing.py:60`。
 
 从模型上下文移除正文与删除归档是两件事。归档期限跟随平台会话/工件保留配置，不默认永久保存；到期或被明确删除后回读返回准确状态，不能悄悄重跑工具并冒充历史结果。生命周期与业务引用保护见第八节。
 

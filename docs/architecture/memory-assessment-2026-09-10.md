@@ -1,4 +1,12 @@
-**FinanceClaw 记忆与上下文架构评估 · 2026-09-10**
+# FinanceClaw 记忆与上下文架构评估 · 2026-09-10
+
+> **历史评估，适用范围为 2026-09-10 的仓库与依赖快照。** 下文保留当时的判断、复现与建议；“当前”“未配置”“未接入”均指评估当日，不是当前版本的状态。Stage 9 和 Stage 11 已继续演进上下文与记忆架构，请勿将本文当作现行运行手册。
+>
+> 当前入口：[文档导航](../README.md)、[代码结构](package-layout.md)、[上下文预算](../operations/context-budget.md)、[异步记忆运维](../operations/memory-outbox.md)。演进过程见 [Stage 9 实现与验证](../../.redesign/stages/stage-9-实现与验证.md)、[Stage 11 实现与验证](../../.redesign/stages/stage-11-实现与验证.md)和[历史档案索引](../../.redesign/README.md)。
+>
+> 正文中的依赖版本、源码位置和行号是当时取证记录，部分文件已删除或移动。原本的本机绝对链接已转为仓库相对路径文本，`.venv/` 位置表示当时虚拟环境；这些引用不能作为当前 checkout 的跳转入口。本次仅整理导航、适用范围和历史引用格式，未重新执行历史实验，也未改写当时结论。
+
+---
 
 评估结论：核心执行状态持久化、原生子图恢复、跨会话 Store 已经使用 LangGraph；主要可以简化的是模型输入的历史组装和摘要策略。当前更值得优先处理的问题是摘要未接入生产流程、语义索引未配置、稳定画像与相关记忆混用同一个召回名额，以及上下文裁剪与当前 Turn 消息锚点的兼容性。不能通过删除 Journal 或直接挂上 SummarizationMiddleware 完成替换。
 
@@ -39,11 +47,11 @@ flowchart TD
 
 关键证据：
 
-- 正常后续 Turn 复用 conversation 的 agent_thread_id，只提交本轮用户消息；失败/取消会切换新 thread，避免继续旧的待执行工作。[BFF 入场路径](/Users/hebinghui/PycharmProjects/FinanceClaw/financeclaw/bff/application/runs/service.py:132)
-- 部署图构造时传 checkpointer=None，由 Agent Server 管理持久化；工厂的 InMemorySaver 是独立调用的默认值，不能据此判断部署状态只存内存。[部署入口](/Users/hebinghui/PycharmProjects/FinanceClaw/financeclaw/agent_server/graphs/bff_graphs.py:19)
-- 当前根使用 stage2-journal-v1：从 state 提取最后一条用户消息起的后缀，历史重新从 Journal 选择。[构建器](/Users/hebinghui/PycharmProjects/FinanceClaw/financeclaw/agent_server/context/builder.py:265)
-- 最后调用 request.override(messages=messages)，不删除或压缩 checkpoint 中的旧消息。[请求投影](/Users/hebinghui/PycharmProjects/FinanceClaw/financeclaw/agent_server/middleware/context_middleware.py:233)
-- 长期记忆确实通过 BaseStore 的 namespace、get、search、batch/PutOp、put 读写，并使用 content 字段索引标记。[长期记忆服务](/Users/hebinghui/PycharmProjects/FinanceClaw/financeclaw/agent_server/memory/service.py:183)
+- 正常后续 Turn 复用 conversation 的 agent_thread_id，只提交本轮用户消息；失败/取消会切换新 thread，避免继续旧的待执行工作。BFF 入场路径（历史源码位置：`financeclaw/bff/application/runs/service.py:132`）
+- 部署图构造时传 checkpointer=None，由 Agent Server 管理持久化；工厂的 InMemorySaver 是独立调用的默认值，不能据此判断部署状态只存内存。部署入口（历史源码位置：`financeclaw/agent_server/graphs/bff_graphs.py:19`）
+- 当前根使用 stage2-journal-v1：从 state 提取最后一条用户消息起的后缀，历史重新从 Journal 选择。构建器（历史源码位置：`financeclaw/agent_server/context/builder.py:265`）
+- 最后调用 request.override(messages=messages)，不删除或压缩 checkpoint 中的旧消息。请求投影（历史源码位置：`financeclaw/agent_server/middleware/context_middleware.py:233`）
+- 长期记忆确实通过 BaseStore 的 namespace、get、search、batch/PutOp、put 读写，并使用 content 字段索引标记。长期记忆服务（历史源码位置：`financeclaw/agent_server/memory/service.py:183`）
 
 因此，当前属于“框架维持运行历史，业务 Journal 决定跨 Turn 的模型历史”。这是一种可以成立的架构选择，但维护了两份不同用途的历史表示，并且每次模型调用都会发生转换。
 
@@ -64,13 +72,13 @@ flowchart TD
 | TTL、旧 checkpoint 回收 | 仓库未见相关配置 | 复用 Agent Server 生命周期能力，按业务保留需求配置 |
 | 当前任务对 Worker 的上下文投影 | 已实现 | 保留隔离原则，不向 Worker 默认复制所有历史或画像 |
 
-原生子图继承 checkpointer 是框架支持的用法；本项目以 runtime.config 调用内部子图，并只传任务、澄清和显式引用，符合此分工。[内部子图调用](/Users/hebinghui/PycharmProjects/FinanceClaw/financeclaw/agent_server/tools/subgraphs.py:94)、[官方子图记忆说明](https://docs.langchain.com/oss/python/langgraph/add-memory#use-in-subgraphs)
+原生子图继承 checkpointer 是框架支持的用法；本项目以 runtime.config 调用内部子图，并只传任务、澄清和显式引用，符合此分工。内部子图调用（历史源码位置：`financeclaw/agent_server/tools/subgraphs.py:94`）、[官方子图记忆说明](https://docs.langchain.com/oss/python/langgraph/add-memory#use-in-subgraphs)
 
 **4. 需要优先处理的发现**
 
 **P1：稳定画像没有独立的读取与保留规则。**
 
-LongTermMemoryService.search 先取最多 50 条 ACTIVE 候选，再计算相关性，最后按 limit 截取。默认 MemoryRecallMiddleware 只有 2 条、768 token。constraint/goal 只豁免“零相关过滤”，并没有更高的选取优先级；因此注释中的“约束无条件进入上下文”并不成立。[搜索及排序](/Users/hebinghui/PycharmProjects/FinanceClaw/financeclaw/agent_server/memory/service.py:405)、[默认设置](/Users/hebinghui/PycharmProjects/FinanceClaw/financeclaw/shared/infrastructure/settings.py:271)
+LongTermMemoryService.search 先取最多 50 条 ACTIVE 候选，再计算相关性，最后按 limit 截取。默认 MemoryRecallMiddleware 只有 2 条、768 token。constraint/goal 只豁免“零相关过滤”，并没有更高的选取优先级；因此注释中的“约束无条件进入上下文”并不成立。搜索及排序（历史源码位置：`financeclaw/agent_server/memory/service.py:405`）、默认设置（历史源码位置：`financeclaw/shared/infrastructure/settings.py:271`）
 
 已离线复现：
 
@@ -81,9 +89,9 @@ LongTermMemoryService.search 先取最多 50 条 ACTIVE 候选，再计算相关
 
 **P1：摘要服务没有接到当前生产完成流程，并且现有“摘要”会丢失尾部决定。**
 
-build_resources 构造 SummaryService，但全仓调用搜索显示 build_missing_segments/build_hierarchy 的调用仅在摘要单测中；当前 ResultService 在完成时追加助手消息、更新运行事实，没有触发摘要，也未发现消费完成事件生成摘要的生产任务。[摘要装配](/Users/hebinghui/PycharmProjects/FinanceClaw/financeclaw/shared/infrastructure/resources.py:64)、[完成路径](/Users/hebinghui/PycharmProjects/FinanceClaw/financeclaw/bff/application/runs/results.py:131)
+build_resources 构造 SummaryService，但全仓调用搜索显示 build_missing_segments/build_hierarchy 的调用仅在摘要单测中；当前 ResultService 在完成时追加助手消息、更新运行事实，没有触发摘要，也未发现消费完成事件生成摘要的生产任务。摘要装配（历史源码位置：`financeclaw/shared/infrastructure/resources.py:64`）、完成路径（历史源码位置：`financeclaw/bff/application/runs/results.py:131`）
 
-默认 DeterministicSummarizer 将 role/content 拼接后截到 2000 字符，层级摘要截到 3000 字符。它没有语义提炼，decisions/open_items 也没有被默认生成器填充。已用“长背景 + 末尾最终决定”复现决定完全消失。[摘要器](/Users/hebinghui/PycharmProjects/FinanceClaw/financeclaw/shared/conversation/summaries.py:35)
+默认 DeterministicSummarizer 将 role/content 拼接后截到 2000 字符，层级摘要截到 3000 字符。它没有语义提炼，decisions/open_items 也没有被默认生成器填充。已用“长背景 + 末尾最终决定”复现决定完全消失。摘要器（历史源码位置：`financeclaw/shared/conversation/summaries.py:35`）
 
 建议区分两种用途：
 
@@ -94,15 +102,15 @@ build_resources 构造 SummaryService，但全仓调用搜索显示 build_missin
 
 **P1：当前超预算策略可能先清空用户输入。**
 
-_fit_runtime_suffix 从前往后遍历，HumanMessage 和 ToolMessage 都可截断。后缀首条是本轮用户输入，因此大工具结果造成超限时，用户正文会先被裁剪。已用 2048 token 预算、短用户约束及 5000 字符工具结果复现用户正文变为空；这说明分支行为存在，不代表线上默认 800000 token 配置必然触发。[裁剪实现](/Users/hebinghui/PycharmProjects/FinanceClaw/financeclaw/agent_server/context/builder.py:456)
+_fit_runtime_suffix 从前往后遍历，HumanMessage 和 ToolMessage 都可截断。后缀首条是本轮用户输入，因此大工具结果造成超限时，用户正文会先被裁剪。已用 2048 token 预算、短用户约束及 5000 字符工具结果复现用户正文变为空；这说明分支行为存在，不代表线上默认 800000 token 配置必然触发。裁剪实现（历史源码位置：`financeclaw/agent_server/context/builder.py:456`）
 
-建议保留当前用户输入、澄清绑定及关键结构，优先外置/清理较旧工具正文，再摘要可压缩历史。LangChain ContextEditingMiddleware/ClearToolUsesEdit 提供工具清理、保留最近结果和 exclude_tools，适合作为基础组件。但默认组件不会自动理解 preserve_structure、业务 Artifact 引用或当前任务约束，且它只修改本次请求，不会解决 checkpoint 体积。[本地原生实现](/Users/hebinghui/PycharmProjects/FinanceClaw/.venv/lib/python3.13/site-packages/langchain/agents/middleware/context_editing.py:60)
+建议保留当前用户输入、澄清绑定及关键结构，优先外置/清理较旧工具正文，再摘要可压缩历史。LangChain ContextEditingMiddleware/ClearToolUsesEdit 提供工具清理、保留最近结果和 exclude_tools，适合作为基础组件。但默认组件不会自动理解 preserve_structure、业务 Artifact 引用或当前任务约束，且它只修改本次请求，不会解决 checkpoint 体积。本地原生实现（当时虚拟环境：`.venv/lib/python3.13/site-packages/langchain/agents/middleware/context_editing.py:60`）
 
 **迁移阻断项：不能直接用原生摘要替换现有构建器。**
 
-当前安装的 SummarizationMiddleware 使用 RemoveMessage(REMOVE_ALL_MESSAGES) + 新摘要消息 + 保留尾部来更新 state。在长工具循环中，保留若干尾部消息可能移除当前用户消息。[原生实现](/Users/hebinghui/PycharmProjects/FinanceClaw/.venv/lib/python3.13/site-packages/langchain/agents/middleware/summarization.py:398)
+当前安装的 SummarizationMiddleware 使用 RemoveMessage(REMOVE_ALL_MESSAGES) + 新摘要消息 + 保留尾部来更新 state。在长工具循环中，保留若干尾部消息可能移除当前用户消息。原生实现（当时虚拟环境：`.venv/lib/python3.13/site-packages/langchain/agents/middleware/summarization.py:398`）
 
-BFF current_messages 和 Worker task_context 必须找到 snapshot.user_message_id。离线使用真实原生摘要中间件、假摘要模型，触发摘要并保留最后两条消息后，当前锚点消失；BFF 报 native state has no unique current Turn input。[BFF 校验](/Users/hebinghui/PycharmProjects/FinanceClaw/financeclaw/bff/application/runs/backend.py:27)、[Worker 输入构建](/Users/hebinghui/PycharmProjects/FinanceClaw/financeclaw/agent_server/tools/task_context.py:51)
+BFF current_messages 和 Worker task_context 必须找到 snapshot.user_message_id。离线使用真实原生摘要中间件、假摘要模型，触发摘要并保留最后两条消息后，当前锚点消失；BFF 报 native state has no unique current Turn input。BFF 校验（历史源码位置：`financeclaw/bff/application/runs/backend.py:27`）、Worker 输入构建（历史源码位置：`financeclaw/agent_server/tools/task_context.py:51`）
 
 另一个冲突是：若原生摘要只压缩旧 Turn、保留当前用户消息，那么 _current_runtime_suffix 会排除位于当前用户消息之前的摘要，再从 Journal 装配旧历史，导致新摘要并未成为模型历史来源。
 
@@ -110,11 +118,11 @@ BFF current_messages 和 Worker task_context 必须找到 snapshot.user_message_
 
 **P2：语义索引没有配置，候选召回与本地排序也存在扩展限制。**
 
-langgraph.json 和 langgraph.local.json 都没有 store.index。服务的 PutOp(index=["content"]) 仅指定待索引字段，不能代替 embedding 模型和维度配置；传入 query 也不能凭空产生向量相似度。Agent Server 原生支持 store.index 的 embed/dims/fields 配置，应先启用并验证该能力。[生产配置](/Users/hebinghui/PycharmProjects/FinanceClaw/langgraph.json:1)、[本地配置](/Users/hebinghui/PycharmProjects/FinanceClaw/langgraph.local.json:1)、[官方语义索引配置](https://docs.langchain.com/langsmith/semantic-search)
+langgraph.json 和 langgraph.local.json 都没有 store.index。服务的 PutOp(index=["content"]) 仅指定待索引字段，不能代替 embedding 模型和维度配置；传入 query 也不能凭空产生向量相似度。Agent Server 原生支持 store.index 的 embed/dims/fields 配置，应先启用并验证该能力。生产配置（历史源码位置：`langgraph.json:1`）、本地配置（历史源码位置：`langgraph.local.json:1`）、[官方语义索引配置](https://docs.langchain.com/langsmith/semantic-search)
 
 启用时还要验证已有记忆的回填，而不是只测新写入；未配置 embedding 的现有单测不能证明语义召回有效。50 条候选上限之外的记录不会被后续词法重排找回。稳定画像不应从这 50 条相关候选中碰运气获取。当前 max(semantic, lexical) 也混合了不同分数尺度，应在启用向量后用具体评测确认排序策略。
 
-历史 Journal 的相关性匹配还另外实现了一套 tokenizer：连续中文整段作为一个词，与长期记忆的中文二元组算法不同。已复现“低波动资产适合我吗”与“我偏好低波动资产”的历史相关性得分为 0。这个结果影响最近窗口之外的历史补充，并不代表最近原文窗口也看不到该消息。[历史评分](/Users/hebinghui/PycharmProjects/FinanceClaw/financeclaw/agent_server/context/builder.py:607)
+历史 Journal 的相关性匹配还另外实现了一套 tokenizer：连续中文整段作为一个词，与长期记忆的中文二元组算法不同。已复现“低波动资产适合我吗”与“我偏好低波动资产”的历史相关性得分为 0。这个结果影响最近窗口之外的历史补充，并不代表最近原文窗口也看不到该消息。历史评分（历史源码位置：`financeclaw/agent_server/context/builder.py:607`）
 
 建议优先统一检索接口和评测；有历史检索需求时，可把带 message/turn/source 引用的历史检索文档投影进 Store 的独立 namespace，Journal 保留原文。Store 不会自动为业务 SQL Journal 建索引。
 
@@ -122,7 +130,7 @@ langgraph.json 和 langgraph.local.json 都没有 store.index。服务的 PutOp(
 
 框架保留完整 state 历史，而模型仅使用当前 Turn 的原生后缀；之前的工具结果仍在 checkpoint，却从该路径的模型上下文里排除。离线验证中 state 有 9 条消息，模型选择 5 条，保留当前两次工具结果，排除上一 Turn 的工具结果。历史最终回答可能间接带着结果信息，但不等于原始明细。
 
-同时每次 build 会全量读 Journal 与摘要，ConversationContextMiddleware 为构造 Manifest 又全量读一次 Journal。召回记忆时还有独立 Store 查询。长会话/单 Turn 多次模型调用会重复付出这些开销；这是源码可确认的读取次数，尚未测量线上耗时。[首次读取](/Users/hebinghui/PycharmProjects/FinanceClaw/financeclaw/agent_server/context/builder.py:265)、[Manifest 二次读取](/Users/hebinghui/PycharmProjects/FinanceClaw/financeclaw/agent_server/middleware/context_middleware.py:168)
+同时每次 build 会全量读 Journal 与摘要，ConversationContextMiddleware 为构造 Manifest 又全量读一次 Journal。召回记忆时还有独立 Store 查询。长会话/单 Turn 多次模型调用会重复付出这些开销；这是源码可确认的读取次数，尚未测量线上耗时。首次读取（历史源码位置：`financeclaw/agent_server/context/builder.py:265`）、Manifest 二次读取（历史源码位置：`financeclaw/agent_server/middleware/context_middleware.py:168`）
 
 建议短期先让一次选择结果携带完整 Manifest 所需元数据，消除第二次全量查询，并增加有界查询。若缓存同一 Turn 的历史选择，应以 Journal 版本、查询和剩余预算为依据；工具循环或记忆写入后要正确失效。
 
@@ -132,7 +140,7 @@ langgraph.json 和 langgraph.local.json 都没有 store.index。服务的 PutOp(
 
 **P2：摘要与原文没有按覆盖范围去重。**
 
-构建器分别选择最近消息、摘要和旧消息，再拼接；没有排除摘要已经覆盖的原文，也没有阻止父子层级摘要同时入选。离线放入一条摘要及其两条源消息，三者都进入同一次请求。生产自动摘要目前未接通，所以这是有摘要数据或将来接通后的确定性行为。[独立选取和拼接](/Users/hebinghui/PycharmProjects/FinanceClaw/financeclaw/agent_server/context/builder.py:337)
+构建器分别选择最近消息、摘要和旧消息，再拼接；没有排除摘要已经覆盖的原文，也没有阻止父子层级摘要同时入选。离线放入一条摘要及其两条源消息，三者都进入同一次请求。生产自动摘要目前未接通，所以这是有摘要数据或将来接通后的确定性行为。独立选取和拼接（历史源码位置：`financeclaw/agent_server/context/builder.py:337`）
 
 建议用来源 Turn/消息范围做显式覆盖关系与去重。近期窗口也应明确是按消息条数还是完整 Turn 选择；当前配置按消息条数，预算裁剪和相关旧消息补充可能拆开问答。只拼接更大的窗口不等于改善了检索质量。
 
@@ -142,7 +150,7 @@ langgraph.json 和 langgraph.local.json 都没有 store.index。服务的 PutOp(
 
 必须按当前部署版本确认具体策略支持，并保留仍被 BFF interrupt/resume、对账引用的 checkpoint；不能对所有 thread 盲目设置整线程删除。长期偏好也不宜套用统一短 TTL。valid_until 是业务有效期，而 TTL 是存储生命周期，二者不应互相冒充。
 
-forget(mode="delete") 当前把记录状态改成 DELETED，正文仍保存在 Store；离线验证 store.get 仍能取到原文。若产品定义的是“停止召回”，这是逻辑删除；如果承诺“删除内容”，则需要原生 Store.delete 以及相关 Journal/checkpoint/Artifact/日志的数据清理流程。[遗忘实现](/Users/hebinghui/PycharmProjects/FinanceClaw/financeclaw/agent_server/memory/service.py:539)、[现有数据请求说明](/Users/hebinghui/PycharmProjects/FinanceClaw/docs/operations/data-subject-requests.md:1)
+forget(mode="delete") 当前把记录状态改成 DELETED，正文仍保存在 Store；离线验证 store.get 仍能取到原文。若产品定义的是“停止召回”，这是逻辑删除；如果承诺“删除内容”，则需要原生 Store.delete 以及相关 Journal/checkpoint/Artifact/日志的数据清理流程。遗忘实现（历史源码位置：`financeclaw/agent_server/memory/service.py:539`）、现有数据请求说明（历史源码位置：`docs/operations/data-subject-requests.md:1`）
 
 **5. 应当保留的业务层**
 
@@ -178,7 +186,7 @@ forget(mode="delete") 当前把记录状态改成 DELETED，正文仍保存在 S
 2. **再收敛框架与自建策略。** 启用并评测原生语义索引，完成已有数据回填；减少重复 Journal 查询；保护当前 Turn 后，试用原生上下文编辑/摘要组件。分开验证工作摘要与历史索引摘要，避免同时保留两套覆盖相同历史的压缩流程。
 3. **最后做生命周期与历史回读。** 确定 checkpoint 保留及工作消息压缩；定义逻辑遗忘和物理删除；让重要工具结果带 Turn/来源引用，并提供受控回读。新 thread 的历史初始化、跨 Turn 追问以及当前 Worker 输入范围应一起验收。
 
-现有 context_refs 能按明确的 message/artifact ID 和内容 hash 给 Worker 回读，但当前根的默认工具集合没有通用的历史工具结果搜索/读取工具。因此“上次明细重新排序”的能力不能仅靠保留 Artifact 表来保证。[引用解析](/Users/hebinghui/PycharmProjects/FinanceClaw/financeclaw/shared/context/references.py:18)、[默认本地工具](/Users/hebinghui/PycharmProjects/FinanceClaw/financeclaw/agent_server/tools/local.py:242)
+现有 context_refs 能按明确的 message/artifact ID 和内容 hash 给 Worker 回读，但当前根的默认工具集合没有通用的历史工具结果搜索/读取工具。因此“上次明细重新排序”的能力不能仅靠保留 Artifact 表来保证。引用解析（历史源码位置：`financeclaw/shared/context/references.py:18`）、默认本地工具（历史源码位置：`financeclaw/agent_server/tools/local.py:242`）
 
 若产品明确坚持“跨 Turn 只给用户/助手对话文本，不给旧工具结果”，则保留 Journal 驱动的上下文策略也合理；这时优先简化摘要、统一检索和增加按需工具结果回读，而不是为了使用框架功能而强行改成全量原生历史。
 

@@ -1,5 +1,7 @@
 # Stage 10：统一 API 与运行模型收敛实施方案
 
+> 历史方案：本文保留 Stage 10 的收敛设计与当时改造前代码位置；已删除的源码以历史路径列出。当前调用链见[请求链路](../../docs/architecture/request-lifecycle.md)，操作见[Turn 手册](../../docs/operations/turn-control.md)。
+
 状态：实施基线 v1.1，2026-09-11。代码按本设计落地；实测范围、性能数据与局限见 [实现与验证](stage-10-实现与验证.md)。
 
 项目尚未上线：直接替换未发布的接口、包结构和初始 schema；不设计兼容层、双写切换、历史数据迁移、灰度或旧版本回退链路。实施时使用新空开发库，不能由启动程序自动删除已有本机数据库。
@@ -33,8 +35,8 @@
 
 代码依据：
 
-- [BFF 受理](../../financeclaw/bff/application/runs/service.py)、[后台循环](../../financeclaw/bff/application/runs/lifecycle.py)、[原生适配](../../financeclaw/bff/application/runs/backend.py)。
-- [共享客户端](../../financeclaw/shared/backends/langgraph.py)、[运行表](../../financeclaw/shared/execution_ledger/run_tables.py)、[执行账本](../../financeclaw/shared/execution_ledger/tables.py)、[会话表](../../financeclaw/shared/conversation/tables.py)。
+- BFF 受理（当时位置：`financeclaw/bff/application/runs/service.py`）、后台循环（当时位置：`financeclaw/bff/application/runs/lifecycle.py`）、原生适配（当时位置：`financeclaw/bff/application/runs/backend.py`）。
+- 共享客户端（当时位置：`financeclaw/shared/backends/langgraph.py`）、运行表（当时位置：`financeclaw/shared/execution_ledger/run_tables.py`）、执行账本（当时位置：`financeclaw/shared/execution_ledger/tables.py`）、[会话表](../../financeclaw/shared/conversation/tables.py)。
 
 以上相对路径在实施后随包结构同步更新；基线证据应在 S10-0 报告记录 Git commit，不能依赖永远保留旧实现。
 

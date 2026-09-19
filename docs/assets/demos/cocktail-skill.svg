@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="420" viewBox="0 0 1200 420" role="img" aria-labelledby="title description">
+  <title id="title">调酒 Skill演示图片占位</title>
+  <desc id="description">预留给真实演示截图或 GIF。选择技能 / 输入材料 / 生成配方。</desc>
+  <rect x="1" y="1" width="1198" height="418" rx="20" fill="#FAFBFD" stroke="#DCE3ED" stroke-width="2"/>
+  <rect x="25" y="25" width="1150" height="370" rx="12" fill="none" stroke="#DCE3ED" stroke-dasharray="7 7"/>
+  <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif">
+    <rect x="53" y="49" width="44" height="30" rx="8" fill="#FFF7ED"/>
+    <text x="75" y="69" fill="#B46A24" font-size="14" font-weight="700" text-anchor="middle">03</text>
+    <text x="111" y="70" fill="#64748B" font-size="13" font-weight="600" letter-spacing="2">SKILL</text>
+    <text x="1147" y="70" fill="#64748B" font-size="13" text-anchor="end" letter-spacing="1">FINANCECLAW</text>
+    <rect x="574" y="112" width="52" height="44" rx="9" fill="#FFF7ED"/>
+    <g fill="none" stroke="#B46A24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="585" y="122" width="30" height="23" rx="3"/>
+      <path d="m586 141 8-8 6 6 5-5 9 9"/>
+      <circle cx="606" cy="129" r="2"/>
+    </g>
+    <text x="600" y="214" fill="#172B4D" font-size="32" font-weight="600" text-anchor="middle">调酒 Skill</text>
+    <text x="600" y="254" fill="#64748B" font-size="17" text-anchor="middle">选择技能 / 输入材料 / 生成配方</text>
+    <rect x="486" y="294" width="228" height="36" rx="18" fill="#FFF7ED"/>
+    <text x="600" y="318" fill="#B46A24" font-size="14" text-anchor="middle">演示截图 / GIF 预留位置</text>
+  </g>
+</svg>

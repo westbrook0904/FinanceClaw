@@ -1,12 +1,12 @@
-# 原生子图与 BFF 验证
+# 原生子图与中断恢复契约实验
 
 真实 LangChain `create_agent`、ToolNode、LangGraph 子图、checkpoint 和 interrupt/resume
 探针。模型只做确定性合成决策，叶子工具只记录合成标记，不调用真实 LLM、金融服务或渠道。
-HF-0 图探针独立于应用装配。当前产品验证以 Stage 10 为准。
+HF-0 图探针独立于应用装配，主要回答“嵌套子图能否沿原顶层 thread 正确中断、恢复并保留工具回执”。它不覆盖当前四角色部署、异步记忆或真实模型质量。当前运行入口见[本地部署](../../docs/operations/local-full-stack.md)，当前回归入口见[测试说明](../../tests/README.md)。
 
 ## 运行
 
-在仓库根目录使用 Python 3.13 和已安装的开发依赖；本次验证的版本在
+在仓库根目录使用 Python 3.13 和已安装的开发依赖；该阶段历史验证的版本在
 [`requirements.txt`](requirements.txt)。需要重建隔离环境时再使用这些实验固定版本，
 不要在运行中的生产环境覆盖依赖。
 
@@ -50,4 +50,8 @@ HTTP 模式只注册 `hf0_orchestrator_v1`，每个场景一个顶层 thread，
 
 ## 当前运行模型
 
-旧 BFF HTTP 与 Webhook 探针已随 Stage 10 删除。保留本目录的原生子图契约实验；当前统一 API/Worker 的持久化验收见 [Stage 10](../stage10/README.md)。
+旧 BFF HTTP 与 Webhook 探针已随 Stage 10 删除。保留本目录的原生子图契约实验；历史统一 API/Worker 持久化实验见 [Stage 10](../stage10/README.md)；当前产品为 API、Worker、integrations、memory_worker 四个角色，运行与故障处理见 [Turn 手册](../../docs/operations/turn-control.md)。
+
+## 怎样解释报告
+
+先检查进程退出码，再检查报告的场景断言和版本信息。`--local-only` 的 `hf0_complete=false` 是范围标记，不能把它改成完整 HTTP 验证通过。当前依赖下的新结果应另存文件并记录源码版本；历史 `requirements.txt` 与旧报告不代表当前版本已经重新验证。
