@@ -1,0 +1,156 @@
+{
+  "format_version": "financeclaw-python-contracts/1",
+  "source_commit": "8332e2e20a5b7ccaef5d82959001b3fa4120774d",
+  "evidence_level": "Static extraction from source and test expectations; Python HTTP tests were not run and Java product routes are not implemented in M0.",
+  "source_files": [
+    "financeclaw/api/http/routers.py",
+    "financeclaw/kernel/responses.py",
+    "financeclaw/kernel/interactions.py",
+    "tests/stage10/test_http.py"
+  ],
+  "common": {
+    "identity": "tenant and subject come from authenticated principal, never request body",
+    "unknown_request_fields": "forbid",
+    "idempotency_key": {
+      "header": "Idempotency-Key",
+      "min_length": 1,
+      "max_length": 256,
+      "required_for": [
+        "turn creation",
+        "interaction response",
+        "cancel",
+        "authorization controls"
+      ]
+    }
+  },
+  "turn_request_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "message"
+    ],
+    "properties": {
+      "message": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 32000
+      }
+    }
+  },
+  "http_samples": [
+    {
+      "method": "POST",
+      "path": "/v1/conversations",
+      "body": {},
+      "expected_status": 201
+    },
+    {
+      "method": "POST",
+      "path": "/v1/conversations/{owned_conversation}/turns",
+      "headers": {
+        "Idempotency-Key": "m0-sample-1"
+      },
+      "body": {
+        "message": "hi"
+      },
+      "expected_status": 202,
+      "accepted_fields": [
+        "conversation_id",
+        "turn_id",
+        "status",
+        "revision",
+        "idempotent_replay"
+      ],
+      "forbidden_fields": [
+        "run_id",
+        "native_run_id",
+        "thread_id",
+        "command_id"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/conversations/{owned_conversation}/turns",
+      "headers": {},
+      "body": {
+        "message": "hi"
+      },
+      "expected_status": 422
+    },
+    {
+      "method": "POST",
+      "path": "/v1/conversations/{owned_conversation}/turns",
+      "headers": {
+        "Idempotency-Key": "m0-sample-1"
+      },
+      "body": {
+        "message": "hi",
+        "thread_id": "untrusted"
+      },
+      "expected_status": 422
+    },
+    {
+      "method": "GET",
+      "path": "/v1/conversations/{foreign_conversation}/turns/{turn}",
+      "principal": "foreign owner",
+      "expected_status": 404
+    },
+    {
+      "method": "GET",
+      "path": "/v1/conversations/{owned_conversation}/messages?after=0&limit=1",
+      "expected_status": 200
+    }
+  ],
+  "journal_pagination": {
+    "after": {
+      "default": 0,
+      "minimum": 0
+    },
+    "limit": {
+      "default": 100,
+      "minimum": 1,
+      "maximum": 500
+    },
+    "read_side_effects": "Must not create or advance an execution"
+  },
+  "interaction_shapes": {
+    "revision_minimum": 1,
+    "kind": [
+      "approval",
+      "input",
+      "choice"
+    ],
+    "reason_max_length": 2000,
+    "approval": {
+      "requires": [
+        "decision",
+        "action_hash"
+      ],
+      "decision": [
+        "approve",
+        "reject"
+      ],
+      "action_hash_pattern": "^[0-9a-f]{64}$",
+      "answer_must_be_null": true
+    },
+    "input_or_choice": {
+      "requires": [
+        "answer"
+      ],
+      "decision_and_action_hash_must_be_null": true,
+      "serialized_answer_max_utf8_bytes": 16384
+    },
+    "schema_valid_sample": {
+      "revision": 1,
+      "kind": "approval",
+      "decision": "approve",
+      "action_hash": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    "schema_invalid_sample": {
+      "revision": 1,
+      "kind": "approval",
+      "answer": "yes"
+    },
+    "business_validation": "Schema validity is insufficient: verify owner, revision, expiry, permissions, original action and execution binding in M1/M2."
+  }
+}

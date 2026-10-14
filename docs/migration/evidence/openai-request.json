@@ -1,0 +1,64 @@
+{
+  "model" : "m0-model",
+  "messages" : [ {
+    "role" : "system",
+    "content" : "Use bounded evidence"
+  }, {
+    "role" : "user",
+    "content" : "查询上海酒店",
+    "name" : "user"
+  }, {
+    "role" : "assistant",
+    "content" : "",
+    "name" : "assistant",
+    "tool_calls" : [ {
+      "id" : "hotel-call",
+      "type" : "function",
+      "function" : {
+        "name" : "search_hotels",
+        "arguments" : "{\"city\":\"上海\"}"
+      }
+    } ]
+  }, {
+    "role" : "tool",
+    "content" : "{\"count\":2}",
+    "tool_call_id" : "hotel-call"
+  } ],
+  "stream" : false,
+  "temperature" : 0.0,
+  "max_tokens" : 128,
+  "tools" : [ {
+    "type" : "function",
+    "function" : {
+      "name" : "search_hotels",
+      "description" : "酒店查询",
+      "parameters" : {
+        "additionalProperties" : false,
+        "type" : "object",
+        "properties" : {
+          "city" : {
+            "type" : "string"
+          }
+        },
+        "required" : [ "city" ]
+      }
+    }
+  } ],
+  "response_format" : {
+    "type" : "json_schema",
+    "json_schema" : {
+      "name" : "answer",
+      "schema" : {
+        "properties" : {
+          "answer" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object",
+        "required" : [ "answer" ],
+        "additionalProperties" : false
+      },
+      "strict" : true
+    }
+  }
+}

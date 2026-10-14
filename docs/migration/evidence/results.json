@@ -1,0 +1,181 @@
+{
+  "collected_at_utc": "2026-10-14T15:45:18.668934+00:00",
+  "toolchain": {
+    "jdk": {
+      "distribution": "Temurin",
+      "version": "21.0.12+8",
+      "assets": {
+        "linux-aarch64": {
+          "url": "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.12%2B8/OpenJDK21U-jdk_aarch64_linux_hotspot_21.0.12_8.tar.gz",
+          "sha256": "eba38e871b02d407897bfe017ea35352dfc1420ef6d2112425b0c67325ca509d"
+        },
+        "darwin-arm64": {
+          "url": "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.12%2B8/OpenJDK21U-jdk_aarch64_mac_hotspot_21.0.12_8.tar.gz",
+          "sha256": "021d629349ebc12a409faa517b837ec80ceee8f58a5ac85c788ecad07ca6881c"
+        },
+        "linux-x86_64": {
+          "url": "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.12%2B8/OpenJDK21U-jdk_x64_linux_hotspot_21.0.12_8.tar.gz",
+          "sha256": "e4446ff06a276155697597cc0f1b15da004ff083f4964a35271ecee567177370"
+        },
+        "darwin-x86_64": {
+          "url": "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.12%2B8/OpenJDK21U-jdk_x64_mac_hotspot_21.0.12_8.tar.gz",
+          "sha256": "6b85c260eea574a995eacd0b3ee23c8042aa93b23a08e6478edafca0a0333d7f"
+        }
+      }
+    },
+    "maven": "3.9.11",
+    "spring_boot": "3.5.16",
+    "agentscope": "2.0.3",
+    "mybatis_starter": "3.0.5"
+  },
+  "environment": {
+    "spring_boot": "3.5.16",
+    "jdk": "21.0.12+8-LTS",
+    "postgres_image": "postgres:16.10-alpine",
+    "vendor": "Eclipse Adoptium",
+    "postgres_version": "PostgreSQL 16.10 on x86_64-pc-linux-musl, compiled by gcc (Alpine 14.2.0) 14.2.0, 64-bit"
+  },
+  "total_tests": 28,
+  "suites": [
+    {
+      "kind": "unit",
+      "suite": "com.financeclaw.m0.AgentFactoryTest",
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 0.008,
+      "cases": [
+        "rejectsLegacyToolsAndPoliciesThatBypassThePermissionEngine"
+      ]
+    },
+    {
+      "kind": "unit",
+      "suite": "com.financeclaw.m0.ExecutionScopeTest",
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 0.017,
+      "cases": [
+        "lengthFramingAvoidsAmbiguousIdentityConcatenation",
+        "missingIdentityCannotFallBackToSdkAnonymousSlot"
+      ]
+    },
+    {
+      "kind": "unit",
+      "suite": "com.financeclaw.m0.ModelPayloadTest",
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 0.685,
+      "cases": [
+        "realOpenAiAdapterSendsBoundedMessagesToolsAndResponseSchemaWithoutLocalMetadata",
+        "fallbackBudgetIncludesSchemaAndPreservesOutputReserve"
+      ]
+    },
+    {
+      "kind": "unit",
+      "suite": "com.financeclaw.m0.SdkMiddlewareTest",
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 1.139,
+      "cases": [
+        "releasedHooksWrapRealReasoningAndToolLoop"
+      ]
+    },
+    {
+      "kind": "postgres-integration",
+      "suite": "com.financeclaw.m0.ApplicationIT",
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 10.821,
+      "cases": [
+        "bootStartsAgainstMigratedPostgresAndExposesReadiness"
+      ]
+    },
+    {
+      "kind": "postgres-integration",
+      "suite": "com.financeclaw.m0.RecoveryIT",
+      "tests": 13,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 43.912,
+      "cases": [
+        "deniedApprovalDoesNotExecuteToolAfterRestart",
+        "crashAfterToolReceiptBeforeAgentSaveDoesNotRepeatEffect",
+        "hardCrashAfterSavePreservesFinalState",
+        "crashAfterIntentBlocksAutomaticReplayEvenWhenNoEffectIsObserved",
+        "approvalSurvivesJvmExitAndExecutesExactlyOneEffect",
+        "clarificationRejectsWrongSchemaAndCall",
+        "approvalRejectsWrongCallChangedArgumentsStaleVersionAndWrongOwner",
+        "crashAfterExternalEffectBlocksUntilVerifiedReconciliationThenReusesResult",
+        "ordinaryModelFailurePersistsInputAndToolFailurePersistsErrorResult",
+        "hardCrashBeforeEffectHasNoSavedStateOrExternalEffect(String)[1]",
+        "hardCrashBeforeEffectHasNoSavedStateOrExternalEffect(String)[2]",
+        "anotherJvmCannotExecuteAnAlreadyOwnedScope",
+        "clarificationSurvivesJvmExitAndBindsAnswerToQuestion"
+      ]
+    },
+    {
+      "kind": "postgres-integration",
+      "suite": "com.financeclaw.m0.StateAndIsolationIT",
+      "tests": 8,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 1.792,
+      "cases": [
+        "cooperativeInterruptPersistsSafeStateAndAnotherScopeContinues",
+        "tenantsExecuteConcurrentlyWithIndependentToolkitsPermissionsAndRuntimeContexts",
+        "storeRoundTripsAndRejectsStaleCreateUpdateAndPostDeleteWrites",
+        "guardedSameSessionIsRejectedBeforeASecondModelOrToolStarts",
+        "twoIndependentSdkInstancesCannotOverwriteTheSameSnapshot",
+        "corruptSavedStateFailsClosedRatherThanStartingANewConversation",
+        "stateOwnerAgentReleaseAndConversationAreAllIsolated",
+        "effectIdempotencyRejectsChangedPayloadAndReusesVerifiedResult"
+      ]
+    }
+  ],
+  "source_sha256": {
+    ".github/workflows/ci.yml": "2927278ffbe8ef2a3b1d75ed08084920232ba1be4f40fb3c3c87552e4e4adddb",
+    ".mvn/settings.xml": "d82e7f664628c0f83ae17aa66b8ee0b5a95772e3468f20b5502dc0fe835249f5",
+    ".mvn/wrapper/maven-wrapper.properties": "bb0b8f16b2661c3676ed5a6a15f5b11d864460c4e77cfb50c583f54708f944e7",
+    "mvnw": "cae96cef89ebea3531221f4ae17c23cf8edf67d00eae8306d4186ae1bbed4d02",
+    "pom.xml": "bc61444cdd21a5705fab188579bc800c4aa4388b84fe34ba6efbfe5ad196e472",
+    "scripts/bootstrap-jdk.py": "4f631dbf28698179897f17af1a3ddc06c22e199ec3d1e9ef312554a2506467e1",
+    "scripts/collect-m0-evidence.py": "29421f946180c49e719bfac1ad9446de24ca2d56a1bd96a90c4d59d3602177ed",
+    "scripts/mvn.sh": "2aa3bc87de3553f650707eb34f379373a9eb16dcc5b400327bc15822a1ebf313",
+    "src/main/java/com/financeclaw/agent/BudgetedTransport.java": "4987740a2fca9a54b5f1514053e4356c6b3bbead9978ea49caff4d25a0a2b920",
+    "src/main/java/com/financeclaw/agent/GuardedAgentRunner.java": "ee04129acf2015d55912add891978956fda5cbd21283d3a853c6812afc977870",
+    "src/main/java/com/financeclaw/agent/IsolatedAgentFactory.java": "3cb054e6aca525fd49717ca4230c4791a1f2045d392eab16de799f9ea2206a61",
+    "src/main/java/com/financeclaw/agent/ResumeInputs.java": "370d2650e5c3e1ecbc40dfd4d091d9d2dfc3973cdd9ebc7aac16d9f8f92950ce",
+    "src/main/java/com/financeclaw/bootstrap/FinanceClawApplication.java": "038a2a78a806240a6cea4d1b6f3ff24e7ea9675214da98fa7565452c832903c8",
+    "src/main/java/com/financeclaw/domain/ExecutionScope.java": "69928bbe89c0e7d04f11d411158ef6dacdd68773a9e39883d4e7a31da685bd10",
+    "src/main/java/com/financeclaw/infrastructure/state/EffectLedger.java": "970731f116c2a09f46a2ff2c2789ecd35461416bff0e0be1376397509d9b6d29",
+    "src/main/java/com/financeclaw/infrastructure/state/ExecutionGate.java": "2ae0f168bde9ee955b7d8b417f3d9d487de740c3a862b19ae9051fda110447b0",
+    "src/main/java/com/financeclaw/infrastructure/state/MyBatisAgentStateStore.java": "7bc511072f6be09583b61599d6946aa64b97407e15830ed8947b927d7b7f8052",
+    "src/main/java/com/financeclaw/infrastructure/state/RuntimeMapper.java": "18c1ec90be5383a4d9c432ca829fe3b784126a5f3df097bc8d737cd6c754f9ba",
+    "src/main/resources/application.yml": "212ab644dd679284b72e16e293d836cf859a8459efde3ee37c084d89375f058a",
+    "src/main/resources/db/migration/V1__m0_agent_state.sql": "5b3d7bd3889e65b5114e705d24711d41de04e8698533390a781166d90547fc7e",
+    "src/test/java/com/financeclaw/m0/AgentFactoryTest.java": "a5b1f7f904ef07ccc246ba2f26af0780b2d1c3b585ed365c55d2332b8049c6ec",
+    "src/test/java/com/financeclaw/m0/ApplicationIT.java": "02285258dd76ff8484d9252adbb9d494535d13f0e0793f34f243df3ad49d7ce8",
+    "src/test/java/com/financeclaw/m0/ExecutionScopeTest.java": "f784bcd7d09188d51b4a4887f9e631a1fd3736502a0354471b044e3075d51f47",
+    "src/test/java/com/financeclaw/m0/ForkedProbe.java": "788192d90baf0d3fc2b8ae1a06a5b2703637954eaa6a5cf1976bb2bad216b586",
+    "src/test/java/com/financeclaw/m0/ModelPayloadTest.java": "153c75e6291558844ac5f43c5d32f8eecafa7861bab31f6b7cd6b57fea5d15cc",
+    "src/test/java/com/financeclaw/m0/PostgresSupport.java": "5c37af73dc043d6e6b33d19b9e08ed8c68f9ea3d368a07c4cfe9fc3f03fcc2da",
+    "src/test/java/com/financeclaw/m0/ProbeFixtures.java": "4291a095b229eca9bbab8d28ef6d7fa438c587aa0497901ad9ce6dc607314ffa",
+    "src/test/java/com/financeclaw/m0/ProbeMapper.java": "818a2807f6991ff7378b4314c8b1accdad028726d72d96d46594b5ee853b30a1",
+    "src/test/java/com/financeclaw/m0/RecoveryIT.java": "4d13afbf851fe6cae68c535bd807d0b6ec4acc186303a28120076e7290969542",
+    "src/test/java/com/financeclaw/m0/SdkMiddlewareTest.java": "59ca55c8e66f682d56f8cfcec6cc3fc37e3cbca4e7e02e11273e6165ca9205d7",
+    "src/test/java/com/financeclaw/m0/StateAndIsolationIT.java": "0bf80ed49fe3358833c8b167e2c67cc4c3ed81bfcf425b3ef7f1888773c273d1",
+    "toolchains.lock.json": "d56a5b332213638d6a71ded65cbc1a1557e19a7747caba52f1063afdce051bbe"
+  },
+  "validation_scope": "Local real PostgreSQL and independent JVMs; deterministic model and loopback HTTP provider; no real model/MCP/Feishu or CI execution"
+}

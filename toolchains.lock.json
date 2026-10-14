@@ -1,0 +1,28 @@
+{
+  "jdk": {
+    "distribution": "Temurin",
+    "version": "21.0.12+8",
+    "assets": {
+      "linux-aarch64": {
+        "url": "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.12%2B8/OpenJDK21U-jdk_aarch64_linux_hotspot_21.0.12_8.tar.gz",
+        "sha256": "eba38e871b02d407897bfe017ea35352dfc1420ef6d2112425b0c67325ca509d"
+      },
+      "darwin-arm64": {
+        "url": "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.12%2B8/OpenJDK21U-jdk_aarch64_mac_hotspot_21.0.12_8.tar.gz",
+        "sha256": "021d629349ebc12a409faa517b837ec80ceee8f58a5ac85c788ecad07ca6881c"
+      },
+      "linux-x86_64": {
+        "url": "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.12%2B8/OpenJDK21U-jdk_x64_linux_hotspot_21.0.12_8.tar.gz",
+        "sha256": "e4446ff06a276155697597cc0f1b15da004ff083f4964a35271ecee567177370"
+      },
+      "darwin-x86_64": {
+        "url": "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.12%2B8/OpenJDK21U-jdk_x64_mac_hotspot_21.0.12_8.tar.gz",
+        "sha256": "6b85c260eea574a995eacd0b3ee23c8042aa93b23a08e6478edafca0a0333d7f"
+      }
+    }
+  },
+  "maven": "3.9.11",
+  "spring_boot": "3.5.16",
+  "agentscope": "2.0.3",
+  "mybatis_starter": "3.0.5"
+}

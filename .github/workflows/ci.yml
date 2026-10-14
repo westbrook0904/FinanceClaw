@@ -1,0 +1,26 @@
+name: Java M0
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21.0.12+8'
+      - name: Verify fixed toolchain, unit contracts and PostgreSQL experiments
+        run: scripts/mvn.sh -B -ntp verify spotless:check
+      - name: Collect verified results and source fingerprints
+        run: python3 scripts/collect-m0-evidence.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: m0-evidence
+          path: |
+            target/surefire-reports/
+            target/failsafe-reports/
+            target/m0/

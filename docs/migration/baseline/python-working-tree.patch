@@ -1,0 +1,372 @@
+diff --git a/financeclaw/shared/llm/budget.py b/financeclaw/shared/llm/budget.py
+index 8843334..0e1a83a 100644
+--- a/financeclaw/shared/llm/budget.py
++++ b/financeclaw/shared/llm/budget.py
+@@ -11,6 +11,7 @@ from typing import Any
+ import tiktoken
+ from langchain_core.messages import BaseMessage
+ from langchain_core.utils.function_calling import convert_to_openai_tool
++from langchain_openai.chat_models.base import _convert_message_to_dict
+ from pydantic import BaseModel, ConfigDict, Field, model_validator
+ 
+ from financeclaw.kernel.models import ModelProfile
+@@ -115,7 +116,7 @@ class TokenCounter:
+         return _estimated_tokens(value)
+ 
+     def message(self, message: BaseMessage) -> int:
+-        """统计一条 LangChain 消息序列化后的 token 数。
++        """统计一条消息的模型可见载荷，不计本地工件与审计元数据。
+ 
+         Args:
+             message: 待统计的消息对象。
+@@ -124,7 +125,7 @@ class TokenCounter:
+             int: 消息 JSON 序列化结果的 token 数，另加 4 个 token 的消息边界开销。
+ 
+         """
+-        payload = json.dumps(message.model_dump(mode="json"), ensure_ascii=False, sort_keys=True)
++        payload = json.dumps(message_payload(message), ensure_ascii=False, sort_keys=True)
+         return 4 + self.text(payload)
+ 
+     def truncate(self, value: str, max_tokens: int) -> str:
+@@ -200,17 +201,20 @@ def response_schema(value: Any) -> Any:
+     return getattr(spec, "json_schema", str(schema))
+ 
+ 
++def message_payload(message: BaseMessage) -> dict:
++    """复用固定 OpenAI adapter 的发送投影；不修改 checkpoint 中的原始消息。
++
++    langchain-openai==1.6.0 的 Chat Completions 转换保留 content blocks、
++    tool/function calls 和可发送的 additional_kwargs，排除 artifact、provenance
++    与响应元数据。依赖升级时由发送载荷契约测试核对这一私有适配入口。
++    """
++    return _convert_message_to_dict(message)
++
++
+ def request_payload(messages, *, tools=(), output_schema=None, model_settings=None) -> dict:
+     """计算完整模型输入的规范载荷，不把本地模型名当作额外用户上下文。"""
+-    serialized = []
+-    for message in messages:
+-        value = message.model_dump(mode="json")
+-        # Omission diagnostics feed the local Manifest, never the provider prompt.
+-        # Counting them would let removing optional memory itself cause overflow.
+-        value.get("additional_kwargs", {}).pop("financeclaw_memory_omissions", None)
+-        serialized.append(value)
+     return {
+-        "messages": serialized,
++        "messages": [message_payload(message) for message in messages],
+         "tools": [convert_to_openai_tool(tool) for tool in tools],
+         "response_format": response_schema(output_schema),
+         "settings": model_settings or {},
+diff --git a/tests/mcp_integration/test_execution.py b/tests/mcp_integration/test_execution.py
+index 8fa2c45..dc5cf4e 100644
+--- a/tests/mcp_integration/test_execution.py
++++ b/tests/mcp_integration/test_execution.py
+@@ -288,6 +288,8 @@ async def test_real_root_loop_injects_runtime_and_controls_completion(
+ ):
+     """新工具首轮即出现，原生注入身份，工具结果后根继续调度再最终回答。"""
+     if ziwei_enabled:
++        pytest.importorskip("x_iztro")
++        pytest.importorskip("tzdata")
+         settings.ziwei_enabled = True
+         settings.ziwei_hmac_key = SecretStr("synthetic-ziwei-test-key-00000000")
+         config_path.write_text(
+diff --git a/tests/mcp_integration/test_hotel_result_views.py b/tests/mcp_integration/test_hotel_result_views.py
+index 846c2ce..c13972d 100644
+--- a/tests/mcp_integration/test_hotel_result_views.py
++++ b/tests/mcp_integration/test_hotel_result_views.py
+@@ -10,6 +10,7 @@ from mcp.types import CallToolResult
+ 
+ from financeclaw.agent_server.agents.offline import OfflineFinanceModel
+ from financeclaw.agent_server.bootstrap import build_components
++from financeclaw.agent_server.context.state import WorkingContextDraft
+ from financeclaw.agent_server.tools.mcp_transport import MCPTransport
+ from financeclaw.shared.artifacts.views import READ_BYTES, REFERENCE_BYTES, encode
+ from tests.mcp_integration.test_execution import seed_root
+@@ -24,7 +25,31 @@ class HotelReaderModel(OfflineFinanceModel):
+         """读取实际回执的引用和游标，不在测试模型中猜文件 ID 或下一页。"""
+         receipts = [m for m in messages if isinstance(m, ToolMessage)]
+         type(self).observed.append(len(receipts))
+-        by_id = {m.tool_call_id: json.loads(m.content) for m in receipts}
++        if messages[0].content.startswith("Return one JSON working-context object"):
++            # Factory 也用此替身生成摘要；只保留摘录里已经观察到的进度。
++            source = json.loads(messages[-1].content)
++            progress = self._progress(
++                source["completed_excerpts"], source["previous_working_context"]
++            )
++            answer = AIMessage(
++                content=WorkingContextDraft(
++                    goal=source["current_user_input"],
++                    completed_steps=tuple(encode({key: value}) for key, value in progress.items()),
++                ).model_dump_json()
++            )
++            return ChatResult(generations=[ChatGeneration(message=answer)])
++        by_id = self._progress([m.model_dump() for m in messages])
++        for receipt in receipts:
++            value = json.loads(receipt.content)
++            key = receipt.tool_call_id
++            if key == "read-search":
++                if "records" in value:
++                    by_id[key] = {"records": value["records"][:3]}
++            elif key.startswith("page-"):
++                if "records" in value:
++                    by_id[key] = {k: value[k] for k in ("returned_records", "next_start")}
++            else:
++                by_id[key] = {k: value[k] for k in ("artifact_id", "content_hash")}
+         calls = []
+         if "search" not in by_id:
+             calls = [("search", "mcp__hotel__search", {"query": "合成测试城市"})]
+@@ -71,7 +96,8 @@ class HotelReaderModel(OfflineFinanceModel):
+                         )
+         if calls:
+             answer = AIMessage(
+-                content="",
++                # 进度通过模型可见消息/checkpoint 延续，不依赖已被归档的历史分页。
++                content=encode(by_id),
+                 tool_calls=[
+                     {
+                         "id": key,
+@@ -87,6 +113,22 @@ class HotelReaderModel(OfflineFinanceModel):
+             answer = AIMessage(content=f"已读取三家酒店，共 {count} 条房价方案。")
+         return ChatResult(generations=[ChatGeneration(message=answer)])
+ 
++    @staticmethod
++    def _progress(messages, previous=None):
++        """从可见的工作摘要及最近助手记录恢复进度，不读取本地模型状态。"""
++        progress = {}
++        for item in (previous or {}).get("completed_steps", ()):
++            progress.update(json.loads(item))
++        for message in messages:
++            content = message["content"]
++            if message["type"] == "human" and content.startswith("Historical working context;"):
++                summary = json.loads(content.split("\n", 1)[1])
++                for item in summary["completed_steps"]:
++                    progress.update(json.loads(item))
++            elif message["type"] == "ai" and content.startswith("{"):
++                progress.update(json.loads(content))
++        return progress
++
+     @staticmethod
+     def _read_args(ref, path, fields, start):
+         """使用实际回执绑定来源，字段相对于业务数据根。"""
+@@ -106,6 +148,7 @@ async def test_large_hotel_results_complete_within_existing_budget(
+     settings, context, config_path, monkeypatch, record_property
+ ):
+     """10 家候选、35/100/123 条房价方案在原 8/12 限额内完成结构化回读。"""
++    monkeypatch.setenv("TIKTOKEN_CACHE_DIR", "")
+     config_path.write_text(
+         config_path.read_text()
+         + """
+@@ -165,16 +208,32 @@ preview_fields = ["/roomName", "/averagePrice", "/currency"]
+         graph = components.agent_factory.build(
+             components.default_agent_profile, model=HotelReaderModel()
+         )
+-        result = await graph.ainvoke(
++        # 摘要会合法移除旧消息；从真实 state 更新收集原始回执以校验全程契约。
++        observed_receipts = {}
++        async for result in graph.astream(
+             {"messages": [HumanMessage(content="比较三家酒店", id="mcp-input")]},
+             config={"configurable": {"thread_id": "hotel-views"}},
+             context=context,
+-        )
++            stream_mode="values",
++        ):
++            for message in result["messages"]:
++                if isinstance(message, ToolMessage):
++                    observed_receipts.setdefault(message.tool_call_id, message)
+         assert "258 条房价方案" in result["messages"][-1].content
+         assert len(business_calls) == 4
+         assert len(HotelReaderModel.observed) <= 8
+-        receipts = [m for m in result["messages"] if isinstance(m, ToolMessage)]
++        receipts = list(observed_receipts.values())
++        assert result["summary_calls"] > 0
++        assert result.get("context_compaction_error") is None
+         assert len(receipts) <= 12 and all(m.status == "success" for m in receipts)
++        assert (
++            sum(
++                len(json.loads(m.content)["records"])
++                for m in receipts
++                if m.tool_call_id.startswith("page-")
++            )
++            == 258
++        )
+         for receipt in receipts:
+             cap = READ_BYTES if receipt.name == "read_artifact" else REFERENCE_BYTES
+             assert len(receipt.content.encode()) <= cap
+diff --git a/tests/stage11/test_context_budget.py b/tests/stage11/test_context_budget.py
+index 147ea4b..597669d 100644
+--- a/tests/stage11/test_context_budget.py
++++ b/tests/stage11/test_context_budget.py
+@@ -1,10 +1,20 @@
+ """Stage 11 完整输入容量、输出预留和冻结降级链的回归测试。"""
+ 
++import json
++from copy import deepcopy
++
+ import pytest
+-from langchain_core.messages import HumanMessage, SystemMessage
++from langchain_core.messages import (
++    AIMessage,
++    FunctionMessage,
++    HumanMessage,
++    SystemMessage,
++    ToolMessage,
++)
++from langchain_openai import ChatOpenAI
+ 
+ from financeclaw.kernel.models import ModelProfile
+-from financeclaw.shared.llm.budget import ContextBudgetPlanner
++from financeclaw.shared.llm.budget import ContextBudgetPlanner, TokenCounter, request_payload
+ from financeclaw.shared.releases.fingerprint import configuration_fingerprint
+ 
+ 
+@@ -64,3 +74,129 @@ def test_local_memory_omission_diagnostics_cannot_consume_model_input_capacity()
+     )
+     assert planner.estimate([plain]) == planner.estimate([observed])
+     assert observed.additional_kwargs["financeclaw_memory_omissions"]
++
++
++def test_local_artifact_and_provenance_do_not_change_visible_cost(monkeypatch):
++    """巨型本地数据不影响两种计量入口，也不被序列化投影修改或丢弃。"""
++    monkeypatch.setenv("TIKTOKEN_CACHE_DIR", "")
++    counter = TokenCounter()
++    planner = ContextBudgetPlanner(profile(context_window_tokens=5000, max_tokens=1000), 6000)
++    plain = ToolMessage(content="相同可见结果", tool_call_id="lookup-1")
++    observed = plain.model_copy(
++        update={
++            "artifact": {"raw": "原始工件" * 100_000},
++            "additional_kwargs": {
++                "artifact_ref": {"artifact_id": "local-ref", "preview": "引用" * 10_000},
++                "financeclaw_source": {"source": "来源" * 10_000},
++                "financeclaw_memory_omissions": [{"reason": "budget"}] * 1000,
++            },
++            "response_metadata": {"trace": "本地诊断" * 10_000},
++        }
++    )
++    before = observed.model_dump()
++    assert counter.estimator_id == planner.estimator_id == "utf8-bytes-v1"
++    assert counter.message(observed) == counter.message(plain)
++    assert planner.check([observed]) == planner.check([plain])
++    assert request_payload([observed]) == request_payload([plain])
++    assert observed.model_dump() == before
++
++
++def test_message_projection_matches_pinned_openai_request_without_mutation():
++    """与真实 adapter 的发送载荷对照，覆盖内容块、有效/无效/旧式调用和 kwargs。"""
++    messages = [
++        SystemMessage(content="policy", additional_kwargs={"__openai_role__": "developer"}),
++        HumanMessage(
++            content=[
++                {"type": "text", "text": "图片问题"},
++                {"type": "image_url", "image_url": {"url": "data:image/png;base64,AAAA"}},
++            ],
++            additional_kwargs={"name": "reader", "financeclaw_source": {"sequence": 1}},
++        ),
++        AIMessage(
++            content="",
++            tool_calls=[{"id": "valid", "name": "lookup", "args": {"city": "上海"}}],
++            invalid_tool_calls=[{"id": "invalid", "name": "lookup", "args": "{broken"}],
++        ),
++        ToolMessage(content=[{"type": "text", "text": "result"}], tool_call_id="valid"),
++        AIMessage(
++            content="",
++            additional_kwargs={
++                "tool_calls": [
++                    {
++                        "id": "raw",
++                        "type": "function",
++                        "function": {"name": "lookup", "arguments": "{broken"},
++                        "local": "omit",
++                    }
++                ]
++            },
++        ),
++        AIMessage(
++            content="", additional_kwargs={"function_call": {"name": "old", "arguments": "{}"}}
++        ),
++        FunctionMessage(content="legacy result", name="old"),
++        AIMessage(content="", additional_kwargs={"audio": {"id": "audio-1", "data": "local"}}),
++    ]
++    before = deepcopy(messages)
++    model = ChatOpenAI(model="gpt-4o", api_key="synthetic-test-key", use_responses_api=False)
++    expected = model._get_request_payload(messages)["messages"]
++    projected = request_payload(messages)["messages"]
++    assert projected == expected
++    assert projected[2]["tool_calls"][0]["function"]["arguments"]
++    assert projected[4]["tool_calls"][0]["function"]["arguments"] == "{broken"
++    assert projected[5]["function_call"]["name"] == "old"
++    assert projected[7]["audio"] == {"id": "audio-1"}
++    assert messages == before
++    counter = TokenCounter("utf8-bytes-v1")
++    for message, payload in zip(messages, projected, strict=True):
++        assert counter.message(message) == 4 + len(
++            json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
++        )
++
++
++@pytest.mark.parametrize(
++    "message",
++    [
++        HumanMessage(content="可见用户输入" * 1000),
++        SystemMessage(content="系统策略" * 1000),
++        ToolMessage(content="可见工具结果" * 1000, tool_call_id="lookup"),
++        AIMessage(
++            content="",
++            tool_calls=[{"id": "lookup", "name": "lookup", "args": {"query": "参数" * 1000}}],
++        ),
++        HumanMessage(content=[{"type": "text", "text": "内容块" * 1000}]),
++        AIMessage(
++            content="",
++            additional_kwargs={"function_call": {"name": "old", "arguments": "参数" * 1000}},
++        ),
++    ],
++)
++def test_visible_message_fields_still_consume_hard_budget(message):
++    """正文、系统、工具参数及内容块都不能因移除本地元数据而逃过硬预算。"""
++    planner = ContextBudgetPlanner(
++        profile(context_window_tokens=5000, max_tokens=1000, token_estimator="utf8-bytes-v1"),
++        6000,
++    )
++    assert planner.counter.message(message) > planner.input_limit
++    with pytest.raises(ValueError, match="input budget"):
++        planner.check([message])
++
++
++def test_request_schemas_and_settings_still_consume_budget():
++    """工具定义、输出 schema 与模型设置留在整请求计量中。"""
++    planner = ContextBudgetPlanner(
++        profile(context_window_tokens=5000, max_tokens=1000, token_estimator="utf8-bytes-v1"),
++        6000,
++    )
++    schema = {
++        "type": "object",
++        "properties": {"query": {"type": "string", "description": "字段" * 1000}},
++    }
++    tool = {"type": "function", "function": {"name": "lookup", "parameters": schema}}
++    for options in (
++        {"tools": [tool]},
++        {"output_schema": schema},
++        {"model_settings": {"extra_body": {"instruction": "设置" * 1000}}},
++    ):
++        with pytest.raises(ValueError, match="input budget"):
++            planner.check([HumanMessage(content="small")], **options)
+diff --git a/tests/stage7/test_dependencies.py b/tests/stage7/test_dependencies.py
+index ea9b8a0..6395d5a 100644
+--- a/tests/stage7/test_dependencies.py
++++ b/tests/stage7/test_dependencies.py
+@@ -22,3 +22,16 @@ def test_missing_engine_dependency_explains_required_extra(monkeypatch, missing)
+         XIztroEngine()
+     assert missing in str(error.value)
+     assert "Agent Server image" in str(error.value)
++
++
++@pytest.mark.parametrize("wrong", ["x-iztro", "tzdata"])
++def test_installed_wrong_engine_version_is_rejected(monkeypatch, wrong):
++    """Importable optional packages still fail the pinned runtime version contract."""
++
++    def version(package):
++        """Return an installed but unsupported version for either optional dependency."""
++        return "0.0.0" if package == wrong else {"x-iztro": "0.4.0", "tzdata": "2026.3"}[package]
++
++    monkeypatch.setattr(metadata, "version", version)
++    with pytest.raises(RuntimeError, match=f"requires {wrong}=="):
++        XIztroEngine()

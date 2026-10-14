@@ -1,0 +1,34 @@
+spring:
+  application:
+    name: financeclaw-java
+  datasource:
+    url: ${FINANCECLAW_DATABASE_URL:jdbc:postgresql://localhost:5432/financeclaw_java}
+    username: ${FINANCECLAW_DATABASE_USER:financeclaw}
+    password: ${FINANCECLAW_DATABASE_PASSWORD:}
+    hikari:
+      maximum-pool-size: 8
+      connection-timeout: 5000
+  flyway:
+    enabled: true
+mybatis:
+  configuration:
+    cache-enabled: false
+    local-cache-scope: STATEMENT
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: never
+      probes:
+        enabled: true
+      group:
+        readiness:
+          include: readinessState,db
+server:
+  shutdown: graceful
+logging:
+  level:
+    io.agentscope: WARN

@@ -1,0 +1,24 @@
+{
+  "source_commit": "8332e2e20a5b7ccaef5d82959001b3fa4120774d",
+  "captured_date": "2026-10-14",
+  "patch_sha256": "a44147e70f8f8b187851343db7b31c33ac639f790a9bab3fedf11d06ac683ce2",
+  "files": {
+    "pyproject.toml": "c0fa73742e82b429b657bfdef429cbbde88b676a08434e436651949209d42800",
+    "uv.lock": "ee42fe8cbe94434ebb6ea4b633048a14dd39b22ba4d9e60d3c2bf3b75b95f4cd",
+    "langgraph.json": "b8451a42571acca662ea968724d8b43b1a59ea9d8dc780a3184144c4757aadfe",
+    "compose.yml": "ad2d85f8ae2cee493aadbd38d3e0edad9f99d780d86be5bad6401843d086da07",
+    "config/models.toml": "2c2ddc744931cb58c3bd55a5fc231387d56928cb206a6c6f0abd7578868c3d14",
+    "config/mcp.toml": "28da612776008916b1caeb5d1ad1b585b0bd5486c8120912af2ae4782d0ed225",
+    "tests/stage10/test_turns.py": "9c03c5a7cc9af29fe7481d15c2847140b574b1cc58a0808f9a8219054287e197",
+    "tests/stage6fixc/test_native_interactions.py": "0ef189570fe732c06d4a2c973f2051d6587d65ba35cee3bbd13b8713c776f5e5",
+    "financeclaw/shared/llm/budget.py": "bf4b87200d1002ee5bf5f1c8d3ca872b7f7abcf019f7a03b7670ac2557b6815a",
+    "tests/mcp_integration/test_execution.py": "4817ac786fd8a6855cd0d9ad63bdabf8ff2b054224b51851704209df724b3905",
+    "tests/mcp_integration/test_hotel_result_views.py": "be7547f444fabe5e5ac3b22835337a195405b44a3c7d95cb6eac5893da56149a",
+    "tests/stage11/test_context_budget.py": "b1b175e512b044246cc408ca3e675c61c62faa38525c38c429b8f5b5b71a90aa",
+    "tests/stage7/test_dependencies.py": "15770b41cb16852df2cdf5f149fe3a5dba5ec55f31e5ffabb5169bfbc2d0a3ad",
+    "financeclaw/api/http/routers.py": "8cf0bf3969dc19b547ed29bfb3ad04faf05894064db5ecd2a2718353a42312e9",
+    "financeclaw/kernel/responses.py": "e1195aa386546d56272fd84b3a84cc11acdb5426210267be0842b9057aec5711",
+    "financeclaw/kernel/interactions.py": "5eb3406b38554ae138f1f2ae65f09bd6a9ab9eb21f31a95e60fa749b040aeb29",
+    "tests/stage10/test_http.py": "23901538fc1946f4e0f863cd0e7b584ad0b65811d58c60bda23db5d5daf8acaf"
+  }
+}
