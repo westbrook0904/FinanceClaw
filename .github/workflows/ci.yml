@@ -1,4 +1,4 @@
-name: Java M0 through M4
+name: Java M0 through M5
 on: [push, pull_request]
 permissions:
   contents: read
@@ -12,9 +12,17 @@ jobs:
         with:
           distribution: temurin
           java-version: '21.0.12+8'
-      - name: Verify fixed toolchain, unit contracts and PostgreSQL experiments
-        run: scripts/mvn.sh -B -ntp verify spotless:check
-      - name: Collect verified results and source fingerprints
+      - name: Static checks and fixed toolchain
+        run: |
+          python3 scripts/check-delivery.py
+          scripts/mvn.sh -B -ntp validate spotless:check
+      - name: Unit and native HTTP contract tests (no database or real credentials)
+        run: scripts/mvn.sh -B -ntp test
+      - name: Package for independent JVM experiments
+        run: scripts/mvn.sh -B -ntp package -DskipTests
+      - name: Real PostgreSQL and recovery integration tests
+        run: scripts/mvn.sh -B -ntp failsafe:integration-test failsafe:verify
+      - name: Collect verified test results and source fingerprints
         run: python3 scripts/collect-evidence.py
       - uses: actions/upload-artifact@v4
         if: always()
@@ -23,8 +31,29 @@ jobs:
           path: |
             target/surefire-reports/
             target/failsafe-reports/
-            target/m0/
-            target/m1/
-            target/m2/
-            target/m3/
-            target/m4/
+            target/m*/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: application-jar
+          path: target/financeclaw-java-0.1.0-SNAPSHOT.jar
+  delivery:
+    needs: verify
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: application-jar
+          path: target/
+      - name: Create local-only test credentials
+        run: python3 scripts/init-local.py
+      - name: Four roles, failure recovery, offline baseline and backup restore
+        run: python3 scripts/validate-compose.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: compose-evidence
+          path: |
+            target/m5/compose-results.json
+            target/m5/compose-validation.log

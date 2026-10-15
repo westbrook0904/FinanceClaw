@@ -76,6 +76,7 @@ public class ReleaseCatalog {
   private final Map<String, Release> releases = new ConcurrentHashMap<>();
   private volatile String current;
   private final String apiKey;
+  private java.util.function.Function<String, String> credentials = System::getenv;
 
   public ReleaseCatalog() {
     this("offline", "", "", false);
@@ -100,6 +101,7 @@ public class ReleaseCatalog {
 
   @org.springframework.beans.factory.annotation.Autowired
   public ReleaseCatalog(org.springframework.core.env.Environment env) {
+    this.credentials = env::getProperty;
     this.apiKey = env.getProperty("financeclaw.model.api-key", "");
     ModelProfile primary = profile(env, "financeclaw.model", "offline");
     String fallback = env.getProperty("financeclaw.fallback.name", "");
@@ -133,6 +135,10 @@ public class ReleaseCatalog {
 
   public String apiKey() {
     return apiKey;
+  }
+
+  public String credential(String ref) {
+    return com.financeclaw.tools.BusinessCatalog.credential(ref, credentials);
   }
 
   public synchronized void publish(Release release) {

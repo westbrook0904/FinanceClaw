@@ -1,4 +1,4 @@
-# M0–M4 框架能力复用审查
+# M0–M5 框架能力复用审查
 
 日期：2026-10-15。按项目固定的 AgentScope Java **2.0.3** 源码和运行测试审查，不以在线最新版文档替代当前依赖。JDK 21.0.12+8、Spring Boot 3.5.16、MyBatis Starter 3.0.5 保持不变。
 
@@ -57,3 +57,7 @@
 - 飞书使用 `FeishuChannelProperties`、`FeishuCrypto`、`FeishuInboundMapper`、`FeishuAccessTokenProvider`、`FeishuOutboundClient`。没有自建 HTTP 发送器、token 缓存、加解密算法或 CardKit。
 - SDK 示例 Controller 的内存去重与直接 Gateway 执行不替代 SQL 任务事务。应用回调保留身份绑定、强制签名/租户检查和持久受理，执行复用已有 TaskService / GovernanceService。
 - SDK 文本发送返回 void，业务错误码只日志记录；不返回可核验的 message_id/幂等 UUID。正常结束仅标记 `submitted_unverified`，异常标记 `unknown`，不自动重发。卡片、表单和可靠回执查询等待框架支持。完整配置与验证边界见 [M4 记录](m4-validation.md)。
+
+## M5 的交付能力复用
+
+部署使用 Spring Boot profiles 区分消费者，Flyway 执行一次性迁移，Actuator 提供健康检查，configtree 读取挂载 secret；MCP 凭据引用经 Spring Environment 解析后交给原生客户端。只补充角色约束、现有 SQL 事实的受认证统计，以及使用 Docker Compose / pg_dump / pg_restore 的验收脚本。没有另建部署调度器、密钥库、MCP 协议或飞书发送器。配置和证据边界见 [M5 交付记录](m5-validation.md)。

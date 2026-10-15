@@ -1,0 +1,10 @@
+{
+  "scope": "Local offline model, 12 independent conversations, 4 concurrent clients; not production capacity",
+  "requests": 12,
+  "concurrency": 4,
+  "success_ratio": 1.0,
+  "p95_turn_seconds": 15,
+  "recovery_seconds": 45,
+  "startup_seconds": 180,
+  "remaining_outbox": 0
+}

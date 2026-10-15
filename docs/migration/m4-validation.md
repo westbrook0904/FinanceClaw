@@ -115,7 +115,7 @@ python3 scripts/collect-evidence.py
 
 结果汇总：`target/m4/results.json`；归档见 [M4 机器证据](evidence/m4-results.json)。`target/m4/environment.json` 保存实际 PostgreSQL/pgvector 版本；`target/m4/process.json` 保存独立受限 Worker 的进程证据。
 
-2026-10-15 最终完整回归 **139 项通过**：35 项单元测试、104 项集成测试，0 失败、0 错误、0 跳过；`spotless:check` 通过。M4 新增 28 项（记忆原生适配 3、记忆治理/数据库 14、飞书 11），M0–M3 的 111 项继续通过。证据记录 109 个构建、源码、配置及脚本文件的 SHA-256；基线提交为 `abfb808`，本阶段改动尚未提交。
+2026-10-15 最终完整回归 **139 项通过**：35 项单元测试、104 项集成测试，0 失败、0 错误、0 跳过；`spotless:check` 通过。M4 新增 28 项（记忆原生适配 3、记忆治理/数据库 14、飞书 11），M0–M3 的 111 项继续通过。证据记录 109 个构建、源码、配置及脚本文件的 SHA-256；基线提交为 `abfb808`，该记录采集后已提交为 `1508802`。
 
 M4 实际数据库为 PostgreSQL 16.12 + pgvector 0.8.1（镜像 `pgvector/pgvector:0.8.1-pg16`），独立 Memory Worker 使用 `financeclaw_memory` 角色启动并生成一条索引投影。M0–M3 延用其原有 PostgreSQL 测试镜像。
 

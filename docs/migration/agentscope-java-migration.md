@@ -1,6 +1,6 @@
 # FinanceClaw：Python → AgentScope Java 迁移方案
 
-> 日期：2026-10-15。状态：M0–M4 已实现本地能力范围；M4 飞书按原生 SDK 支持的文本能力落地，卡片和可靠回执不自建。M5–M6 仍为实施方案。真实模型供应商、真实 MCP、飞书及生产恢复尚未验收。
+> 日期：2026-10-15。状态：M0–M4 已实现本地能力范围；M4 飞书按原生 SDK 支持的文本能力落地，卡片和可靠回执不自建。M5 已实现本地部署与恢复工程；真实环境交付验收及 M6 仍未完成。真实模型供应商、真实 MCP、飞书及生产恢复尚未验收。
 >
 > 项目入口：[README](../../README.md)。配套文档：[验收清单](acceptance-checklist.md)、[M0 验证与版本决策](m0-validation.md)、[M1 使用与验证](m1-validation.md)、[M2 使用与验证](m2-validation.md)、[框架复用审查](framework-reuse-review.md)。
 
@@ -372,7 +372,7 @@ OpenTelemetry 关联 `conversation_id / turn_id / command_id / attempt_id / tool
 
 M1 可先用确定性离线模型验证任务系统；M3 的只读场景可以作为可用里程碑。**完整迁移完成**至少要求 M5 对启用能力全部通过；只做聊天 Demo 或保留未验收的记忆/审批链路不能算完成。
 
-M0 已完成上述工程与技术实验，结果、接口差异及剩余约束记录于 [M0 验证记录](m0-validation.md)。M1 已建立业务身份、Turn/Command/attempt、Worker、SSE、取消和完成事务，详见 [M1 记录](m1-validation.md)。M2 已实现固定发布、授权、交互、Artifact、完整请求预算和模拟 MCP，详见 [M2 记录](m2-validation.md)。SDK 快照仍须与完成回执核对；M3 已接入酒店/Taibu、Skill、市场研究子 Agent 和固定 Workflow，详见 [M3 记录](m3-validation.md)。紫微保持关闭，真实模型与远端业务仍待 M5 验收；M4 已实现记忆治理与原生飞书文本接入，见 [M4 记录](m4-validation.md)；下一阶段为 M5 数据与交付。
+M0 已完成上述工程与技术实验，结果、接口差异及剩余约束记录于 [M0 验证记录](m0-validation.md)。M1 已建立业务身份、Turn/Command/attempt、Worker、SSE、取消和完成事务，详见 [M1 记录](m1-validation.md)。M2 已实现固定发布、授权、交互、Artifact、完整请求预算和模拟 MCP，详见 [M2 记录](m2-validation.md)。SDK 快照仍须与完成回执核对；M3 已接入酒店/Taibu、Skill、市场研究子 Agent 和固定 Workflow，详见 [M3 记录](m3-validation.md)。紫微保持关闭，真实模型与远端业务仍待 M5 验收；M4 已实现记忆治理与原生飞书文本接入，见 [M4 记录](m4-validation.md)；M5 已增加四角色 Compose、独立迁移、secret 配置、分层 CI、故障及备份恢复实验，见 [M5 记录](m5-validation.md)；真实服务、历史切换与生产验收仍待完成。
 
 ## 8. 风险与待决事项
 

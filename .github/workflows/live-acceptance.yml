@@ -1,0 +1,39 @@
+name: Optional live model or MCP acceptance
+on:
+  workflow_dispatch:
+    inputs:
+      kind:
+        description: Test kind (a fresh conversation, read-only scopes)
+        required: true
+        type: choice
+        options: [model, mcp]
+      prompt:
+        description: Non-sensitive read-only test prompt
+        required: true
+        type: string
+      expected_tool:
+        description: Expected tool (search_catalog for model; native MCP tool for mcp)
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  live:
+    environment: live-acceptance
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      FINANCECLAW_LIVE_ACCEPTANCE: 'true'
+      FINANCECLAW_LIVE_BASE_URL: ${{ vars.FINANCECLAW_LIVE_BASE_URL }}
+      FINANCECLAW_LIVE_API_TOKEN: ${{ secrets.FINANCECLAW_LIVE_API_TOKEN }}
+      TEST_KIND: ${{ inputs.kind }}
+      TEST_PROMPT: ${{ inputs.prompt }}
+      TEST_TOOL: ${{ inputs.expected_tool }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Explicit live acceptance (no Feishu messages sent by this workflow)
+        run: python3 scripts/validate-live.py --kind "$TEST_KIND" --prompt "$TEST_PROMPT" --expected-tool "$TEST_TOOL"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: live-acceptance-evidence
+          path: target/m5/live-*.json

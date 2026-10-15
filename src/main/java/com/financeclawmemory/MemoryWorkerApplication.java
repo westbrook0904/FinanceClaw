@@ -25,19 +25,40 @@ public class MemoryWorkerApplication {
                 "url",
                 "FINANCECLAW_MEMORY_DATABASE_URL",
                 "username",
-                "FINANCECLAW_MEMORY_DATABASE_USER",
-                "password",
-                "FINANCECLAW_MEMORY_DATABASE_PASSWORD")
+                "FINANCECLAW_MEMORY_DATABASE_USER")
             .entrySet()) {
       var value = System.getenv(pair.getValue());
       if (value == null || value.isBlank())
         throw new IllegalStateException("Required: " + pair.getValue());
       arguments.add("--spring.datasource." + pair.getKey() + "=" + value);
     }
+    // Compose uses Spring configtree secrets; retain the existing environment-based local launcher.
+    String password = System.getenv("FINANCECLAW_MEMORY_DATABASE_PASSWORD");
+    if (password != null && !password.isBlank())
+      arguments.add("--spring.datasource.password=" + password);
     arguments.add("--spring.flyway.enabled=false");
-    arguments.add("--management.endpoint.health.group.readiness.include=db");
-    arguments.add("--spring.main.web-application-type=none");
+    arguments.add(
+        "--management.endpoint.health.group.readiness.include=readinessState,db,memoryStore");
+    arguments.add(
+        "--spring.main.web-application-type="
+            + ("true".equals(System.getenv("FINANCECLAW_MEMORY_HTTP_ENABLED"))
+                ? "servlet"
+                : "none"));
     SpringApplication.run(MemoryWorkerApplication.class, arguments.toArray(String[]::new));
+  }
+
+  @Bean
+  org.springframework.boot.actuate.health.HealthIndicator memoryStoreHealthIndicator(
+      MemoryMapper db) {
+    return () -> {
+      try {
+        return db.restrictedWorker()
+            ? org.springframework.boot.actuate.health.Health.up().build()
+            : org.springframework.boot.actuate.health.Health.down().build();
+      } catch (RuntimeException e) {
+        return org.springframework.boot.actuate.health.Health.down().build();
+      }
+    };
   }
 
   @Bean

@@ -36,20 +36,24 @@ if (summary.attrib.get("result") not in {"0", "null"}
 paths = sorted(set([root / "pom.xml", root / "toolchains.lock.json", root / "mvnw",
                 *root.glob(".mvn/**/*properties"), *root.glob(".mvn/**/*.xml"), *root.glob("src/**/*.java"),
                 *[p for d in ("src/main/resources", "src/test/resources") for p in (root / d).rglob("*") if p.is_file()],
-                *root.glob("scripts/*.py"), *root.glob("scripts/*.sh"), *root.glob("ops/*.sql"), *root.glob(".github/workflows/*.yml")]))
-# This collector is executed after the tests; it is fingerprinted but is not a Java test input.
+                *root.glob("scripts/*.py"), *root.glob("scripts/*.sh"), *root.glob("ops/*.sql"), *root.glob("ops/*.sh"), *root.glob("ops/*.json"), *root.glob(".github/workflows/*.yml"), root / "compose.yml", root / "Dockerfile", root / ".dockerignore", root / ".env.example"]))
+# Delivery scripts have their own Compose evidence. Fingerprint them, but only Java build inputs
+# participate in the Java report freshness check; editing a deployment script does not rerun Java.
+test_inputs = [p for p in paths if p.relative_to(root).parts[0] in {"src", ".mvn"}
+               or p.name in {"pom.xml", "toolchains.lock.json", "mvnw", "mvn.sh"}]
 if any(p.stat().st_mtime > min(r.stat().st_mtime for r in report_paths)
-       for p in paths if p != Path(__file__).resolve()):
+       for p in test_inputs):
     raise SystemExit("Sources changed after tests started; run verify again before collecting evidence")
 manifest = {str(p.relative_to(root)): hashlib.sha256(p.read_bytes()).hexdigest() for p in paths}
-evidence = {"base_commit": "abfb808ad172560467cc79b9647d3519c0d890dd", "milestone": "M4", "collected_at_utc": datetime.now(timezone.utc).isoformat(),
+evidence = {"base_commit": "1508802d115a109d9f02a75b035cbb9199472ef0", "milestone": "M5", "collected_at_utc": datetime.now(timezone.utc).isoformat(),
+            "application_jar_sha256": hashlib.sha256((root / "target/financeclaw-java-0.1.0-SNAPSHOT.jar").read_bytes()).hexdigest(),
             "toolchain": json.loads((root / "toolchains.lock.json").read_text()),
             "environment": json.loads((root / "target/m0/environment.json").read_text()),
             "memory_environment": json.loads((root / "target/m4/environment.json").read_text()),
             "memory_worker_process": json.loads((root / "target/m4/process.json").read_text()),
             "total_tests": sum(s["tests"] for s in suites), "suites": suites, "source_sha256": manifest,
             "validation_scope": "Local real PostgreSQL, pgvector 0.8.1 and independent JVMs including restricted memory worker; deterministic/loopback native model, embedding, MCP and Feishu adapters; no real provider/MCP/Feishu tenant or CI execution"}
-destination = root / "target/m4/results.json"
+destination = root / "target/m5/results.json"
 destination.parent.mkdir(parents=True, exist_ok=True)
 destination.write_text(json.dumps(evidence, ensure_ascii=False, indent=2) + "\n")
 print(f"{evidence['total_tests']} tests passed; evidence: {destination}")

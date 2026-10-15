@@ -1,0 +1,7 @@
+**
+!target/
+target/**
+!target/financeclaw-java-0.1.0-SNAPSHOT.jar
+!ops/
+ops/**
+!ops/container-entrypoint.sh

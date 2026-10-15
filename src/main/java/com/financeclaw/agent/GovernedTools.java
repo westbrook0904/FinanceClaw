@@ -119,7 +119,7 @@ public final class GovernedTools implements AutoCloseable {
         String scope = service.service().equals("taibu") ? "taibu:read" : "travel:read";
         if (!scopes.contains(scope)) continue;
         tasks.checkDispatch(claim);
-        mcp.register(toolkit, service, claim.turn().tenant());
+        mcp.register(toolkit, service, claim.turn().tenant(), tasks.releases()::credential);
         for (String name : service.tools()) {
           var nativeTool = toolkit.getTool(name);
           // Keep the native name/schema/call implementation. This adapter only enforces product

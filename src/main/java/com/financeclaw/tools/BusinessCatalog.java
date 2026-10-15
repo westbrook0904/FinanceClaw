@@ -115,9 +115,13 @@ public final class BusinessCatalog {
   }
 
   public static String credential(String ref) {
+    return credential(ref, System::getenv);
+  }
+
+  public static String credential(String ref, java.util.function.Function<String, String> lookup) {
     if (ref.isBlank()) return "";
     if (!ref.matches("[A-Z][A-Z0-9_]{0,100}")) throw new Blocked("invalid_credential_reference");
-    String value = System.getenv(ref);
+    String value = lookup.apply(ref);
     if (value == null || value.isBlank()) throw new Blocked("mcp_credentials_unavailable");
     return value;
   }

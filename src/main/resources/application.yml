@@ -1,4 +1,6 @@
 spring:
+  config:
+    import: optional:configtree:/run/secrets/
   jackson:
     property-naming-strategy: SNAKE_CASE
     deserialization:

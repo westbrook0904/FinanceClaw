@@ -1,0 +1,10 @@
+spring:
+  flyway:
+    enabled: false
+financeclaw:
+  deployment:
+    role: worker
+  worker:
+    enabled: true
+  integrations:
+    enabled: false
