@@ -1,4 +1,4 @@
-name: Java M0 through M5
+name: Java M0 through M6a
 on: [push, pull_request]
 permissions:
   contents: read

@@ -1,0 +1,43 @@
+{
+  "purpose": "Synthetic compatibility baseline, not an independent algorithm certification",
+  "source_commit": "8332e2e20a5b7ccaef5d82959001b3fa4120774d",
+  "source_sha256": {
+    "financeclaw/kernel/ziwei.py": "d82ff9b780e6c668dc1f4025a98b155b2e404273ab6c3728892154e0805b5d67",
+    "financeclaw/kernel/ziwei_tools.py": "9b3bac39722607644a9b88a4b2de9a4f36555f0484e2480f7f0ca43896cd3ac3",
+    "financeclaw/kernel/context.py": "1c2bdb51e8d1210459604bc9a1ec4d20d5f6c024cfa76d0d428f99a03a4f0f67",
+    "financeclaw/agent_server/domains/ziwei/normalization.py": "903d47c6077c59a4545202eec68cf74b93195e0b996be0383dd1d61b51dc3d50",
+    "financeclaw/agent_server/domains/ziwei/validation.py": "9d89ff50a52d45deed083db4b6bf1c4b0e2a60f4ea5559485e9e7ae1aed22399",
+    "financeclaw/agent_server/domains/ziwei/errors.py": "fa44900efe29479f613d1c8938d66958bb74eb4968d19d02c794c0f32004175c",
+    "financeclaw/agent_server/domains/ziwei/tool_inputs.py": "50112f98c54f1bb4e9a557fbd38a6705c25154489abcdca48286d193fa2a54c0",
+    "financeclaw/agent_server/domains/ziwei/adapters/x_iztro.py": "ac485caff130be7d4a3fcde41ede3eae6fa5b11cb32b96dcb677d441e7497893"
+  },
+  "packages": {
+    "x-iztro": "0.4.0",
+    "tzdata": "2026.3",
+    "pydantic": "2.13.5"
+  },
+  "convention": {
+    "convention_id": "x-iztro-civil-candidate",
+    "version": "1.0.0",
+    "engine": "x-iztro@0.4.0",
+    "tzdata": "2026.3",
+    "time_basis": "civil",
+    "year_divide": "normal",
+    "horoscope_divide": "normal",
+    "age_divide": "normal",
+    "day_divide": "forward",
+    "algorithm": "default",
+    "fix_leap": true,
+    "target_basis": "local-calendar-label"
+  },
+  "fixture_sha256": {
+    "dates.json": "98a746b720472fcb227233ed1a22edb34af27c94f47372da8b5b6a5be0d678c9",
+    "schemas.json": "443165d9d3526fd7f525ca7eb6796132e78766208870b6cc52786b0304d34150",
+    "charts.json": "21d2c9ae181c031bf52e8b64095151bf36518dde3b79ae620e81e0490467795c"
+  },
+  "cases": {
+    "targets": 121,
+    "civil_times": 26,
+    "charts": 9
+  }
+}

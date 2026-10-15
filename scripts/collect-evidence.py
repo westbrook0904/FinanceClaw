@@ -45,15 +45,16 @@ if any(p.stat().st_mtime > min(r.stat().st_mtime for r in report_paths)
        for p in test_inputs):
     raise SystemExit("Sources changed after tests started; run verify again before collecting evidence")
 manifest = {str(p.relative_to(root)): hashlib.sha256(p.read_bytes()).hexdigest() for p in paths}
-evidence = {"base_commit": "1508802d115a109d9f02a75b035cbb9199472ef0", "milestone": "M5", "collected_at_utc": datetime.now(timezone.utc).isoformat(),
+evidence = {"base_commit": "b9ff13d5a8c199ddd680ecbc6e8a8d39e8b9c27a", "milestone": "M6a", "collected_at_utc": datetime.now(timezone.utc).isoformat(),
             "application_jar_sha256": hashlib.sha256((root / "target/financeclaw-java-0.1.0-SNAPSHOT.jar").read_bytes()).hexdigest(),
             "toolchain": json.loads((root / "toolchains.lock.json").read_text()),
             "environment": json.loads((root / "target/m0/environment.json").read_text()),
             "memory_environment": json.loads((root / "target/m4/environment.json").read_text()),
             "memory_worker_process": json.loads((root / "target/m4/process.json").read_text()),
+            "ziwei_dates_environment": json.loads((root / "target/m6/dates-environment.json").read_text()),
             "total_tests": sum(s["tests"] for s in suites), "suites": suites, "source_sha256": manifest,
-            "validation_scope": "Local real PostgreSQL, pgvector 0.8.1 and independent JVMs including restricted memory worker; deterministic/loopback native model, embedding, MCP and Feishu adapters; no real provider/MCP/Feishu tenant or CI execution"}
-destination = root / "target/m5/results.json"
+            "validation_scope": "Local real PostgreSQL, pgvector 0.8.1 and independent JVMs; native loopback model/MCP/Feishu adapters; M6a date contracts against frozen Python fixtures. No Java Ziwei chart engine, real provider/MCP/Feishu tenant or remote CI execution"}
+destination = root / "target/m6/results.json"
 destination.parent.mkdir(parents=True, exist_ok=True)
 destination.write_text(json.dumps(evidence, ensure_ascii=False, indent=2) + "\n")
 print(f"{evidence['total_tests']} tests passed; evidence: {destination}")

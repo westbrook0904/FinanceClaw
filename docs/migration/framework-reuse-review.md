@@ -61,3 +61,7 @@
 ## M5 的交付能力复用
 
 部署使用 Spring Boot profiles 区分消费者，Flyway 执行一次性迁移，Actuator 提供健康检查，configtree 读取挂载 secret；MCP 凭据引用经 Spring Environment 解析后交给原生客户端。只补充角色约束、现有 SQL 事实的受认证统计，以及使用 Docker Compose / pg_dump / pg_restore 的验收脚本。没有另建部署调度器、密钥库、MCP 协议或飞书发送器。配置和证据边界见 [M5 交付记录](m5-validation.md)。
+
+## M6a 的日期与基准复用
+
+日期、区间、时区和 DST 处理使用 JDK `java.time` / `ZoneRules`，不自建日历库。旧 Python 仅用于显式离线生成回归样本，Java 构建读取冻结资源；未新增 Python 运行桥接、MCP 协议客户端或工具框架。紫微算法尚未选定和启用，后续工具继续接入 AgentScope 原生 Toolkit。版本差异与边界见 [M6 记录](m6-validation.md)。

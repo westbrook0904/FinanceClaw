@@ -119,7 +119,7 @@ python3 scripts/validate-compose.py
 
 Compose 实验始终生成随机项目名和全新数据卷，强制关闭真实模型/MCP/飞书配置，使用独立的合成行情；结束后只删除自己创建的容器和卷。不要把该清理行为套用到业务部署。
 
-[CI](../../.github/workflows/ci.yml)分开执行静态检查、单元/原生 HTTP 契约、真实 PostgreSQL/独立 JVM 集成和 Compose 交付实验。证据分别上传；Compose 上传不包含数据库 dump 或 secret。源文件指纹和测试列表保存在 `target/m5/results.json`，容器故障/恢复与性能结果保存在 `target/m5/compose-results.json`。
+[CI](../../.github/workflows/ci.yml)分开执行静态检查、单元/原生 HTTP 契约、真实 PostgreSQL/独立 JVM 集成和 Compose 交付实验。证据分别上传；Compose 上传不包含数据库 dump 或 secret。M5 归档中的源文件指纹和测试列表原生成于 `target/m5/results.json`（当前 M6a 收集器生成 `target/m6/results.json`），容器故障/恢复与性能结果保存在 `target/m5/compose-results.json`。
 
 2026-10-15 本地最终结果：**144 项 Java 测试通过**（39 单元、105 集成，0 失败/错误/跳过），格式及静态交付检查通过；**9 项容器场景全部通过**。
 
@@ -132,7 +132,7 @@ Compose 实验始终生成随机项目名和全新数据卷，强制关闭真实
 | 记忆与恢复 | 受限 Worker 处理明确偏好，遗忘提升 epoch；恢复库仍保持遗忘状态 |
 | 完整备份与新库恢复 | **33 张表**行数/hash 一致；四角色连接恢复库后可查询旧结果、继续受理新任务，无重复发布 |
 
-归档：[Java 测试与 131 个源码/配置文件指纹](evidence/m5-results.json)、[Compose 恢复与性能证据](evidence/m5-compose-results.json)。两份证据的 jar SHA-256 相同；容器证据另核对部署输入文件的指纹。临时容器及卷已清理。M5 改动当前尚未提交，基线仍为 `1508802`；这些结果不代表远程 CI 或真实供应商验收。
+归档：[Java 测试与 131 个源码/配置文件指纹](evidence/m5-results.json)、[Compose 恢复与性能证据](evidence/m5-compose-results.json)。两份证据的 jar SHA-256 相同；容器证据另核对部署输入文件的指纹。临时容器及卷已清理。M5 已提交为本地 commit `b9ff13d`，未推送；测试证据中的实现基线为其父提交 `1508802`；这些结果不代表远程 CI 或真实供应商验收。
 
 ## 真实环境验收入口与剩余范围
 

@@ -1,0 +1,58 @@
+{
+  "scope": "Baseline regeneration and comparator self-tests only; no Java chart engine",
+  "collected_at_utc": "2026-10-15T03:54:28.356559+00:00",
+  "regeneration_byte_identical": true,
+  "checks": {
+    "self_check": {
+      "exit_code": 0,
+      "report": {
+        "scope": "Synthetic raw chart compatibility only; does not certify a Java engine or product enablement",
+        "engine_ref": "comparator-test-only",
+        "reference_sha256": "21d2c9ae181c031bf52e8b64095151bf36518dde3b79ae620e81e0490467795c",
+        "candidate_sha256": "53c5b92d235c518129ccbf4320c458fa787afd10b2b07aaaa0d0bac966d874a5",
+        "cases": 9,
+        "matched": 9,
+        "mismatches": {},
+        "success": true
+      }
+    },
+    "mutation": {
+      "exit_code": 1,
+      "report": {
+        "scope": "Synthetic raw chart compatibility only; does not certify a Java engine or product enablement",
+        "engine_ref": "comparator-test-only",
+        "reference_sha256": "21d2c9ae181c031bf52e8b64095151bf36518dde3b79ae620e81e0490467795c",
+        "candidate_sha256": "bcc548280fca861f052460560439c3bd2b148093d899b1e8f7a85b0e74389700",
+        "cases": 9,
+        "matched": 8,
+        "mismatches": {
+          "solar-female": [
+            "solar-female/natal/fiveElementsClass"
+          ]
+        },
+        "success": false
+      }
+    },
+    "duplicate": {
+      "exit_code": 1,
+      "report": {
+        "success": false,
+        "error": "ValueError",
+        "reason": "Invalid input or baseline; verify schema, case IDs and digest"
+      }
+    },
+    "missing": {
+      "exit_code": 1,
+      "report": {
+        "success": false,
+        "error": "ValueError",
+        "reason": "Invalid input or baseline; verify schema, case IDs and digest"
+      }
+    }
+  },
+  "source_sha256": {
+    "scripts/export-ziwei-baseline.py": "3509d9f217a4a8941e611bcd4fc9025e3631777e0c5ebed452301f6471d35ba8",
+    "scripts/compare-ziwei-charts.py": "b08cc70d33241a6d9543d738c1d1db0f1e2b3bfcf12df5f8ed8de4dd95c522e3",
+    "src/test/resources/ziwei/reference/manifest.json": "8dcf2f17f481101d6627e63a5e9c83ddded8719b1b01bf8b4a12d4d53c3face1"
+  }
+}
