@@ -6,6 +6,8 @@ FinanceClaw 从 Python / LangChain / LangGraph 迁移到 **Java / AgentScope Jav
 
 最新开发补充 **[M5b 受理暂停与排空检查](docs/migration/m5b-admission.md)**：暂停当前认证主体的新任务，保留已有任务的审批、取消和恢复；检查任务、通知、记忆及隐私积压，受理状态跨重启和备份恢复保留。M6d 已本地提交为 `72e0655`，未推送。
 
+M5b 已本地提交 `07a9bfb`。后续 **[M5c 排空阻塞项定位](docs/migration/m5c-backlog.md)** 增加按主体隔离的分页明细，可定位任务、通知、未投影绑定和记忆作业，查询不产生业务写入。
+
 ## 固定工具链
 
 | 组件 | 版本 |
@@ -36,7 +38,7 @@ python3 scripts/test-live-acceptance.py
 python3 scripts/collect-evidence.py
 ```
 
-成功时 Maven 输出 `BUILD SUCCESS`，可执行包位于 `target/financeclaw-java-0.1.0-SNAPSHOT.jar`，证据汇总位于 `target/m5b/results.json`。`scripts/mvn.sh test` 仅执行不依赖 PostgreSQL 的单元/HTTP 契约测试，不能代替包含 PostgreSQL 和业务 API 的完整验证。
+成功时 Maven 输出 `BUILD SUCCESS`，可执行包位于 `target/financeclaw-java-0.1.0-SNAPSHOT.jar`，证据汇总位于 `target/m5c/results.json`。`scripts/mvn.sh test` 仅执行不依赖 PostgreSQL 的单元/HTTP 契约测试，不能代替包含 PostgreSQL 和业务 API 的完整验证。
 
 ## 容器部署
 
@@ -70,6 +72,7 @@ scripts/mvn.sh spring-boot:run
 | --- | --- |
 | [M5 部署与恢复](docs/migration/m5-validation.md) | 四角色 Compose、secret 配置、CI、故障/备份实验与真实验收入口 |
 | [M5b 暂停与排空](docs/migration/m5b-admission.md) | 按认证主体暂停/恢复受理、并发边界、任务/渠道/记忆积压及恢复演练 |
+| [M5c 阻塞项定位](docs/migration/m5c-backlog.md) | 只读分页、原任务/通知定位、记忆作业和查询权限边界 |
 | [M6 紫微迁移](docs/migration/m6-validation.md) | M6a 日期契约、[M6b 历法](docs/migration/m6b-calendar.md)与[完整排盘比对](docs/migration/m6b-charts.md)；[M6c 领域接入](docs/migration/m6c-domain.md)、[M6d 恢复与部署](docs/migration/m6d-recovery.md)，真实模型验收待完成 |
 | [M4 记忆与原生飞书](docs/migration/m4-validation.md) | 记忆 API、独立 Worker、pgvector、原生飞书配置及 SDK 能力边界 |
 | [M3 业务与验证](docs/migration/m3-validation.md) | 酒店/Taibu 配置、调酒 Skill、市场研究、固定 Workflow 及模拟验收 |

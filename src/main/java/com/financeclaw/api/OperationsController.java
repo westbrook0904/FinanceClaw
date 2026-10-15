@@ -46,6 +46,15 @@ public class OperationsController {
     return operations.drain(TaskController.owner(request));
   }
 
+  @GetMapping("/v1/operations/drain/items")
+  public BacklogPage<?> backlog(
+      HttpServletRequest request,
+      @RequestParam(defaultValue = "turns") String kind,
+      @RequestParam(defaultValue = "") String after,
+      @RequestParam(defaultValue = "50") int limit) {
+    return operations.backlog(TaskController.owner(request), kind, after, limit);
+  }
+
   @GetMapping("/v1/operations")
   public Map<String, Object> view(HttpServletRequest request) {
     var owner = TaskController.owner(request);

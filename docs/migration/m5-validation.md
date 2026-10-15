@@ -114,6 +114,7 @@ docker compose exec -T postgres pg_restore -U postgres -d financeclaw_restore_ch
 ```bash
 python3 scripts/check-delivery.py
 scripts/mvn.sh -B -ntp clean verify spotless:check
+python3 scripts/test-live-acceptance.py
 python3 scripts/collect-evidence.py
 python3 scripts/init-local.py
 python3 scripts/validate-compose.py
@@ -121,7 +122,7 @@ python3 scripts/validate-compose.py
 
 Compose 实验始终生成随机项目名和全新数据卷，强制关闭真实模型/MCP/飞书配置，使用独立的合成行情；结束后只删除自己创建的容器和卷。不要把该清理行为套用到业务部署。
 
-[CI](../../.github/workflows/ci.yml)分开执行静态检查、单元/原生 HTTP 契约、真实 PostgreSQL/独立 JVM 集成和 Compose 交付实验。证据分别上传；Compose 上传不包含数据库 dump 或 secret。M5 归档中的源文件指纹和测试列表原生成于 `target/m5/results.json`（当前 M6a 收集器生成 `target/m6/results.json`），容器故障/恢复与性能结果保存在 `target/m5/compose-results.json`。
+[CI](../../.github/workflows/ci.yml)分开执行静态检查、单元/原生 HTTP 契约、真实 PostgreSQL/独立 JVM 集成和 Compose 交付实验。证据分别上传；Compose 上传不包含数据库 dump 或 secret。M5 归档中的源文件指纹和测试列表原生成于 `target/m5/results.json`（当前收集器生成 `target/m5c/results.json`），历史容器故障/恢复与性能结果保存在 `target/m5/compose-results.json`。
 
 2026-10-15 本地最终结果：**144 项 Java 测试通过**（39 单元、105 集成，0 失败/错误/跳过），格式及静态交付检查通过；**9 项容器场景全部通过**。
 

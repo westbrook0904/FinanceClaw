@@ -62,4 +62,33 @@ public class OperationsService {
         Collections.unmodifiableMap(counts),
         state.paused() && counts.values().stream().allMatch(n -> n == 0));
   }
+
+  public BacklogPage<?> backlog(Owner owner, String kind, String after, int limit) {
+    if (limit < 1 || limit > 100 || after == null || !after.matches("[A-Za-z0-9_-]{0,128}"))
+      throw new Problem(422, "invalid_pagination");
+    return switch (kind) {
+      case "turns" -> page(operations.turnBacklog(owner, after, limit + 1), limit);
+      case "notifications" -> page(operations.notificationBacklog(owner, after, limit + 1), limit);
+      case "notification_bindings" ->
+          page(operations.bindingBacklog(owner, after, limit + 1), limit);
+      case "memory_jobs" -> {
+        long cursor;
+        try {
+          if (!after.isEmpty() && !after.matches("0|[1-9][0-9]*"))
+            throw new NumberFormatException();
+          cursor = after.isEmpty() ? 0 : Long.parseLong(after);
+        } catch (NumberFormatException e) {
+          throw new Problem(422, "invalid_pagination");
+        }
+        yield page(operations.memoryBacklog(owner, cursor, limit + 1), limit);
+      }
+      default -> throw new Problem(422, "invalid_backlog_kind");
+    };
+  }
+
+  private <T extends BacklogItem> BacklogPage<T> page(List<T> rows, int limit) {
+    boolean more = rows.size() > limit;
+    var items = List.copyOf(rows.subList(0, Math.min(rows.size(), limit)));
+    return new BacklogPage<>("current_owner", items, more ? items.getLast().id() : null);
+  }
 }

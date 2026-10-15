@@ -1,12 +1,75 @@
 package com.financeclaw.infrastructure.task;
 
+import com.financeclaw.domain.Operations.*;
 import com.financeclaw.domain.Task.Owner;
+import java.util.List;
 import java.util.Map;
 import org.apache.ibatis.annotations.*;
 
 /** Read-only, owner-scoped operating facts; no messages, tool arguments or credentials. */
 @Mapper
 public interface OperationsMapper {
+  // Match the existing native-channel projection queue, without exposing its payload or binding
+  // identity.
+  String UNPROJECTED =
+      """
+      NOT b.muted AND t.status IN ('waiting','blocked','completed','failed','cancelled')
+      AND NOT EXISTS(SELECT 1 FROM channel.notices n
+        WHERE n.turn_id=t.id AND n.revision=t.revision AND n.status<>'suppressed')
+      """;
+
+  @Select(
+      """
+      WITH facts AS (
+        SELECT t.id,t.conversation_id,t.status,t.revision,t.reason,c.status AS command_status,
+          (SELECT count(*) FROM business.interactions i WHERE i.turn_id=t.id AND i.status='pending') AS pending_interactions,
+          (SELECT count(*) FROM business.tool_calls e WHERE e.turn_id=t.id AND e.status='pending') AS uncertain_effects,
+          (SELECT count(*) FROM business.outbox o WHERE o.turn_id=t.id AND NOT o.delivered) AS pending_outbox
+        FROM business.turns t LEFT JOIN business.commands c ON c.turn_id=t.id
+        WHERE t.tenant=#{owner.tenant} AND t.subject=#{owner.subject} AND t.id>#{after}
+      )
+      SELECT * FROM facts WHERE status NOT IN ('completed','failed','cancelled') OR command_status<>'done'
+        OR pending_interactions>0 OR uncertain_effects>0 OR pending_outbox>0
+      ORDER BY id LIMIT #{limit}
+      """)
+  List<TurnBacklog> turnBacklog(
+      @Param("owner") Owner owner, @Param("after") String after, @Param("limit") int limit);
+
+  @Select(
+      """
+      SELECT n.id,t.conversation_id,n.turn_id,n.status,n.revision
+      FROM channel.notices n JOIN channel.bindings b ON b.id=n.binding_id
+      JOIN business.turns t ON t.id=n.turn_id
+      WHERE b.tenant=#{owner.tenant} AND b.subject=#{owner.subject}
+        AND t.tenant=#{owner.tenant} AND t.subject=#{owner.subject}
+        AND n.status IN ('pending','sending','unknown','submitted_unverified') AND n.id>#{after}
+      ORDER BY n.id LIMIT #{limit}
+      """)
+  List<NotificationBacklog> notificationBacklog(
+      @Param("owner") Owner owner, @Param("after") String after, @Param("limit") int limit);
+
+  @Select(
+      """
+      SELECT b.id,t.conversation_id,t.id AS turn_id,t.status,t.revision
+      FROM channel.bindings b JOIN business.turns t ON t.id=b.active_turn
+      WHERE b.tenant=#{owner.tenant} AND b.subject=#{owner.subject}
+        AND t.tenant=#{owner.tenant} AND t.subject=#{owner.subject} AND b.id>#{after} AND
+      """
+          + UNPROJECTED
+          + " ORDER BY b.id LIMIT #{limit}")
+  List<BindingBacklog> bindingBacklog(
+      @Param("owner") Owner owner, @Param("after") String after, @Param("limit") int limit);
+
+  @Select(
+      """
+      SELECT id::text,kind,status,epoch,revision,attempts,error_code FROM memory.jobs
+      WHERE tenant=#{owner.tenant} AND subject=#{owner.subject}
+        AND status NOT IN ('done','obsolete','forgotten') AND id>#{after}
+      ORDER BY memory.jobs.id LIMIT #{limit}
+      """)
+  List<MemoryBacklog> memoryBacklog(
+      @Param("owner") Owner owner, @Param("after") long after, @Param("limit") int limit);
+
   @Select(
       """
     WITH owned AS MATERIALIZED (
@@ -25,14 +88,17 @@ public interface OperationsMapper {
       (SELECT count(*) FROM business.tool_calls WHERE turn_id IN (SELECT id FROM owned) AND status='pending') AS uncertain_effects,
       (SELECT count(*) FROM business.outbox WHERE turn_id IN (SELECT id FROM owned) AND NOT delivered) AS pending_outbox,
       (SELECT count(*) FROM channel.notices n JOIN channel.bindings b ON b.id=n.binding_id
+        JOIN owned t ON t.id=n.turn_id
         WHERE b.tenant=#{tenant} AND b.subject=#{subject} AND n.status IN ('pending','sending')) AS pending_notifications,
       (SELECT count(*) FROM channel.notices n JOIN channel.bindings b ON b.id=n.binding_id
+        JOIN owned t ON t.id=n.turn_id
         WHERE b.tenant=#{tenant} AND b.subject=#{subject} AND n.status IN ('unknown','submitted_unverified')) AS unverified_notifications,
       (SELECT count(*) FROM channel.bindings b JOIN owned t ON t.id=b.active_turn
-        WHERE b.tenant=#{tenant} AND b.subject=#{subject} AND NOT b.muted
-          AND t.status IN ('waiting','blocked','completed','failed','cancelled')
-          AND NOT EXISTS(SELECT 1 FROM channel.notices n
-            WHERE n.turn_id=t.id AND n.revision=t.revision AND n.status<>'suppressed')) AS unprojected_notifications,
+        WHERE b.tenant=#{tenant} AND b.subject=#{subject} AND
+    """
+          + UNPROJECTED
+          + """
+      ) AS unprojected_notifications,
       (SELECT count(*) FROM memory.jobs WHERE tenant=#{tenant} AND subject=#{subject}
         AND status NOT IN ('done','obsolete','forgotten')) AS pending_memory_jobs,
       (SELECT count(*) FROM memory.owners WHERE tenant=#{tenant} AND subject=#{subject} AND purge_pending) AS pending_forget

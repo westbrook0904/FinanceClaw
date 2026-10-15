@@ -104,6 +104,6 @@ Java 汇总位于 `target/m5b/results.json`，容器记录位于 `target/m5b/dep
 
 同一份 JAR 的 Compose 实验 **14 项检查通过**，包括原部署检查及新增暂停/排空/恢复链路。35 张表的行数和内容 hash 在备份还原后全部一致，受理控制回执也完整保留。12 次离线合成请求全部成功，P95 为 **1.37 秒**；不代表真实模型性能或生产容量。部署输入和 JAR 指纹均与本地 Java 证据匹配，见 [Compose 证据](evidence/m5b-compose-results.json)。随机测试项目和卷已清理；现有部署未切换。
 
-Compose 沿用已有合成数据的忘记实验，再验证隐私清理完成后的排空状态；它没有把“忘记”作为生产排空流程。真实模型、远程 CI、真实飞书租户和线上渠道切换不在本轮范围。M5b 新改动尚未提交，下一步的真实环境验收仍需要已授权的测试配置；本轮没有解除任何真实环境门禁。
+Compose 沿用已有合成数据的忘记实验，再验证隐私清理完成后的排空状态；它没有把“忘记”作为生产排空流程。M5b 已本地提交 `07a9bfb`，未推送。后续 [M5c](m5c-backlog.md) 增加阻塞项的只读分页定位。真实模型、远程 CI、真实飞书租户和线上渠道切换仍待验收，没有解除真实环境门禁。
 
 代码入口：[OperationsService](../../src/main/java/com/financeclaw/application/OperationsService.java)、[OperationsController](../../src/main/java/com/financeclaw/api/OperationsController.java)、[OperationsMapper](../../src/main/java/com/financeclaw/infrastructure/task/OperationsMapper.java)、[V6 迁移](../../src/main/resources/db/migration/V6__admission_control.sql)、[AdmissionIT](../../src/test/java/com/financeclaw/m5/AdmissionIT.java)、[FeishuIT](../../src/test/java/com/financeclaw/m4/FeishuIT.java)。
