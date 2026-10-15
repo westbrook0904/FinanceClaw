@@ -1,4 +1,4 @@
-name: Java M0 through M6 calendar
+name: Java M0 through M6b charts
 on: [push, pull_request]
 permissions:
   contents: read

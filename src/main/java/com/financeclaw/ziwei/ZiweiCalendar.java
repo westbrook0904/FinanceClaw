@@ -1,6 +1,7 @@
 package com.financeclaw.ziwei;
 
 import com.nlf.calendar.Lunar;
+import com.nlf.calendar.LunarMonth;
 import com.nlf.calendar.Solar;
 import java.time.DateTimeException;
 import java.time.LocalDate;
@@ -85,6 +86,17 @@ public final class ZiweiCalendar {
       // Third-party errors may contain submitted dates; expose a stable redacted error instead.
       throw invalid();
     }
+  }
+
+  /** Month length for a validated solar date, including the frozen month-boundary corrections. */
+  static int monthDays(LocalDate solar) {
+    var date = lunarDate(solar);
+    for (var legacy : LEGACY_MONTHS) {
+      if (legacy.year() == date.year()
+          && legacy.month() == date.month()
+          && legacy.leap() == date.leap()) return legacy.days();
+    }
+    return LunarMonth.fromYm(date.year(), date.leap() ? -date.month() : date.month()).getDayCount();
   }
 
   private static void checkRange(LocalDate solar) {

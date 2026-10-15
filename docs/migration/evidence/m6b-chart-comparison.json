@@ -1,0 +1,10 @@
+{
+  "scope": "Synthetic raw chart compatibility only; does not certify a Java engine or product enablement",
+  "engine_ref": "financeclaw-java/x-iztro-fixed-0.4.0/1",
+  "reference_sha256": "21d2c9ae181c031bf52e8b64095151bf36518dde3b79ae620e81e0490467795c",
+  "candidate_sha256": "1fe122a47700e50e7e4ee69a6e7b5f7fe74c4e0ebc157e2b6dea1bc5697292f9",
+  "cases": 9,
+  "matched": 9,
+  "mismatches": {},
+  "success": true
+}

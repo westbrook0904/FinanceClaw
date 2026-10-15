@@ -64,8 +64,12 @@
 
 ## M6a 的日期与基准复用
 
-日期、区间、时区和 DST 处理使用 JDK `java.time` / `ZoneRules`，不自建日历库。旧 Python 仅用于显式离线生成回归样本，Java 构建读取冻结资源；未新增 Python 运行桥接、MCP 协议客户端或工具框架。紫微算法尚未选定和启用，后续工具继续接入 AgentScope 原生 Toolkit。版本差异与边界见 [M6 记录](m6-validation.md)。
+日期、区间、时区和 DST 处理使用 JDK `java.time` / `ZoneRules`，不自建日历库。旧 Python 仅用于显式离线生成回归样本，Java 构建读取冻结资源；未新增 Python 运行桥接、MCP 协议客户端或工具框架。该阶段紫微算法尚未选定和启用，后续工具继续接入 AgentScope 原生 Toolkit。版本差异与边界见 [M6 记录](m6-validation.md)。
 
 ## M6b 的历法复用
 
-公历/农历转换复用固定的 `cn.6tail:lunar:1.7.7`，不实现新的通用历法库。逐日对照发现两处旧算法月界差异，只在薄适配层保存明确的兼容规则；原库 jar 与原始测试期望不修改。许可证随包保留，详细证据见 [M6b 历法记录](m6b-calendar.md)。本命与流运算法尚未完成，未引入第二套 Agent、MCP 或 Skill 实现。
+公历/农历转换复用固定的 `cn.6tail:lunar:1.7.7`，不实现新的通用历法库。逐日对照发现两处旧算法月界差异，只在薄适配层保存明确的兼容规则；原库 jar 与原始测试期望不修改。许可证随包保留，详细证据见 [M6b 历法记录](m6b-calendar.md)。历法阶段未包含本命与流运算法，未引入第二套 Agent、MCP 或 Skill 实现。
+
+## M6b 的固定排盘算法
+
+固定业务算法从已锁定的 MIT x-iztro 0.4.0 源码移植，星曜常量直接提取并记录来源，不新增算法运行桥接。历法继续复用 lunar-java，日期/时区使用 JDK，JSON 使用项目现有 Jackson；AgentScope 不提供紫微算法。原生 Toolkit 的接入留在 M6c，详见 [排盘记录](m6b-charts.md)。

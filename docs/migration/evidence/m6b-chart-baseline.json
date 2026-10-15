@@ -1,0 +1,23 @@
+{
+  "reference": "x-iztro@0.4.0",
+  "cases": 2515,
+  "groups": {
+    "cycle-sex-time": 1560,
+    "calendar-boundaries": 492,
+    "lunar-input": 182,
+    "age-periods": 280,
+    "pre-birth": 1
+  },
+  "coverage_counts": {
+    "year_pillars": 60,
+    "element_classes": 5,
+    "times": 13,
+    "sexes": 2,
+    "target_year_pillars": 60
+  },
+  "independent_exports_identical": true,
+  "gzip_sha256": "d4fff13ce9e71253b0bfffc893a5285dbbe5cffb75d69ef4747263e04ecfa19e",
+  "manifest_sha256": "70ccb601845db0bda661bc6c8a2ac5dad3a277b7003ef355ad2cf97aed44e233",
+  "source": "scripts/export-ziwei-charts.py",
+  "scope": "Two actual legacy-engine exports before the clean build; full fixed-rule synthetic charts, no real birth data"
+}

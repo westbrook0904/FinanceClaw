@@ -1,0 +1,10 @@
+{
+  "matched_charts_per_process" : 9,
+  "environment_cleared" : true,
+  "path_empty" : true,
+  "fixtures_packaged" : false,
+  "licenses_verified" : 3,
+  "scope" : "Application jar and test-only launcher in a temporary working directory; no Python process or fixture classpath",
+  "application_jar_sha256" : "0f0953c1ad698492e97c7a7c91797f2cb0512aa8f8d0e1d45997023be106de4f",
+  "process_timezones" : [ "UTC", "Pacific/Auckland" ]
+}

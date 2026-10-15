@@ -67,7 +67,7 @@ public final class ZiweiDates {
     }
   }
 
-  private static final List<String> SHICHEN =
+  static final List<String> SHICHEN =
       List.of(
           "zi_early",
           "chou",

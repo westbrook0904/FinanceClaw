@@ -1,6 +1,6 @@
 # M6b 第一部分：Java 历法与旧规则兼容
 
-日期：2026-10-15。基线为 M6a 本地提交 `89216ca`，未推送。本次完成 M6b 的历法选择、适配和逐日验证；**星曜安置、本命盘、五类流运的 Java 算法尚未完成**，运行中的紫微能力仍保持关闭。
+日期：2026-10-15。基线为 M6a 本地提交 `89216ca`，未推送。历法阶段已提交为 `a2b67b1`，完成历法选择、适配和逐日验证。**本文保留该阶段的证据边界**；随后排盘算法的实现见 [M6b 排盘](m6b-charts.md)，运行中的紫微能力仍保持关闭。
 
 ## 已实现
 
@@ -41,7 +41,7 @@
 
 [原始 MIT 声明](../../src/main/resources/META-INF/licenses/lunar-1.7.7.txt)已随应用资源打包，见 [第三方声明](../../THIRD_PARTY_NOTICES.md)。构建测试核对实际加载的 jar 摘要和许可证资源，依赖版本、JDK 21.0.12+8、Spring Boot 3.5.16、AgentScope 2.0.3 均保持固定。
 
-另外核查了 [`xuan-deduct` 的固定源码](https://github.com/H1d3rOne/xuan-deduct/tree/30725e09f0149492010a7cc832d1f57c5e2360f8)：其年龄计算读取 `LocalDate.now()`，没有等价的固定目标日期五类流运入口。本次未引入该项目、其 Spring/JPA/MySQL 依赖或算法源码。[x-iztro 固定版本](https://github.com/x-haose/x-iztro/tree/cd14dfd8cf18dcc1ab248ba3c20c86903f5bc07f)仍作为兼容基准，Rust 核心尚未移植到 Java。
+另外核查了 [`xuan-deduct` 的固定源码](https://github.com/H1d3rOne/xuan-deduct/tree/30725e09f0149492010a7cc832d1f57c5e2360f8)：其年龄计算读取 `LocalDate.now()`，没有等价的固定目标日期五类流运入口。本次未引入该项目、其 Spring/JPA/MySQL 依赖或算法源码。[x-iztro 固定版本](https://github.com/x-haose/x-iztro/tree/cd14dfd8cf18dcc1ab248ba3c20c86903f5bc07f)在历法阶段仅作为兼容基准；随后固定排盘规则的 Java 移植见 [排盘记录](m6b-charts.md)。
 
 ## 时区验证范围
 
@@ -86,6 +86,6 @@ java --class-path .cache/m2/cn/6tail/lunar/1.7.7/lunar-1.7.7.jar \
 
 完整回归 **530 项通过**（425 单元/契约、105 PostgreSQL 集成），0 失败、0 错误、0 跳过，格式检查通过。新增历法验证为 236 项 JUnit 测试，内部对比 72,684 天正向转换与 72,635 天合法出生年份反向转换。机器记录见 [M6b 历法回归](evidence/m6b-results.json)，[打包核对](evidence/m6b-packaging.json)确认依赖/许可证摘要一致，Java jar 不包含测试基准与 Python 脚本。验证包含全部支持日期的正向转换、合法出生年份的反向转换、24 个出生日期正反例、9 个时区、不同年份并发转换、缺失闰月标记、制品/许可证摘要，以及原始库差异审计。
 
-仍待实现：固定规则的星曜、本命盘和五类流运，完整盘面与旧基准逐字段一致；随后再完成出生资料治理、Artifact/投影预算、原生 AgentScope 工具接入和启用验收。当前不能把历法一致称为 M6b 全部完成或紫微可用。M5 的真实服务与生产验收继续单独待办。
+本阶段之后已推进固定规则的星曜、本命盘和流运，见 [排盘记录](m6b-charts.md)；出生资料治理、Artifact/投影预算、原生 AgentScope 工具接入和启用验收仍待后续阶段。当前不能把历法一致称为 M6b 全部完成或紫微可用。M5 的真实服务与生产验收继续单独待办。
 
-本次新增改动尚未提交，未运行真实供应商、远端 MCP/飞书或远程 CI，也未重跑 M5 Compose 交付实验。
+历法改动已本地提交为 `a2b67b1`，未运行真实供应商、远端 MCP/飞书或远程 CI，也未重跑 M5 Compose 交付实验。
