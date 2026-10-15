@@ -18,6 +18,7 @@ public class RuntimeHealth implements HealthIndicator {
     try {
       db.stateReady();
       db.artifactsReady();
+      db.admissionReady();
       db.expired();
       return Health.up().build();
     } catch (RuntimeException e) {

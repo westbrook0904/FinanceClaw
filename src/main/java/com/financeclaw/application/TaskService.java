@@ -87,6 +87,10 @@ public class TaskService {
             // Return the original admission snapshot even if execution has already advanced.
             return new Accepted(conversation, old.id(), "queued", 1, true);
           }
+          // Keep this shared row lock until admission commits. A pause waits for admitted writes,
+          // while independent conversations can still submit concurrently. Replays stay available.
+          db.ensureAdmission(owner);
+          if (db.admissionPaused(owner)) throw new Problem(503, "admission_paused");
           if (db.active(conversation)) throw new Problem(409, "conversation_busy");
           Turn t =
               new Turn(

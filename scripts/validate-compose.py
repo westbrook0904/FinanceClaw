@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Isolated delivery/failure/backup experiment, optionally with the M6d Ziwei development policy."""
+"""Isolated delivery/failure/backup experiment with optional Ziwei and admission checks."""
 import concurrent.futures
 import argparse
 import hashlib
@@ -18,11 +18,12 @@ from datetime import datetime, timezone
 ROOT = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser()
 parser.add_argument('--ziwei', action='store_true', help='Also boot the shared Ziwei development policy and secret configuration')
+parser.add_argument('--admission', action='store_true', help='Verify durable admission pause, drain and resume across deployment recovery')
 ARGS = parser.parse_args()
-OUT = ROOT / ('target/m6/deployment' if ARGS.ziwei else 'target/m5')
+OUT = ROOT / ('target/m5b/deployment' if ARGS.admission else 'target/m6/deployment' if ARGS.ziwei else 'target/m5')
 OUT.mkdir(parents=True, exist_ok=True)
 THRESHOLDS = json.loads((ROOT / 'ops/m5-thresholds.json').read_text())
-PROJECT = ('financeclaw-m6d-' if ARGS.ziwei else 'financeclaw-m5-') + uuid.uuid4().hex[:10]
+PROJECT = ('financeclaw-m5b-' if ARGS.admission else 'financeclaw-m6d-' if ARGS.ziwei else 'financeclaw-m5-') + uuid.uuid4().hex[:10]
 TEMP = ROOT / '.cache' / PROJECT
 TEMP.mkdir(parents=True)
 ENV = os.environ.copy()
@@ -53,6 +54,7 @@ BASE = ['docker', 'compose', '--project-directory', str(ROOT), '--env-file', str
 LOG = (OUT / 'compose-validation.log').open('w')
 RESULT = {'scope': 'isolated real containers; offline model and synthetic market only',
           'ziwei_development_policy': ARGS.ziwei,
+          'admission_control': ARGS.admission,
           'project': PROJECT, 'thresholds': THRESHOLDS, 'checks': {},
           'started_at': datetime.now(timezone.utc).isoformat()}
 INPUTS = ('Dockerfile', '.dockerignore', 'compose.yml', 'ops/postgres-init.sql',
@@ -101,8 +103,8 @@ def request(path, body=None, key=None, method=None, auth=True):
         return 0, None
 
 
-def api(path, body=None, key=None):
-    status, result = request(path, body, key)
+def api(path, body=None, key=None, method=None):
+    status, result = request(path, body, key, method)
     assert status in (200, 201, 202), (path, status)
     return result
 
@@ -142,6 +144,18 @@ def fingerprints(database):
             for table in tables}
 
 
+def admission(paused, key):
+    state = api('/v1/operations/admission')
+    return api('/v1/operations/admission', {'paused': paused, 'revision': state['revision']}, key, 'PUT')
+
+
+def rejected_submission(database='financeclaw_java'):
+    before = sql('SELECT count(*) FROM business.turns', database)
+    conversation = api('/v1/conversations', {})['conversation_id']
+    assert request(f'/v1/conversations/{conversation}/turns', {'message': 'paused submission'}, 'paused')[0] == 503
+    assert sql('SELECT count(*) FROM business.turns', database) == before
+
+
 try:
     print('Starting isolated deployment validation:', PROJECT, flush=True)
     compose('config', '--quiet')
@@ -163,7 +177,7 @@ try:
     URL = 'http://' + compose('port', 'api', '8080').decode().strip()
     wait(lambda: request('/actuator/health/readiness', auth=False)[0] == 200)
     assert request('/v1/operations', auth=False)[0] == 401
-    assert sql('SELECT count(*) FROM public.flyway_schema_history WHERE success') == '5'
+    assert sql('SELECT count(*) FROM public.flyway_schema_history WHERE success') == '6'
     mark('empty_database_and_four_healthy_roles', {'startup_seconds': time.monotonic()-started})
     assert sql("SELECT has_schema_privilege('financeclaw_memory','business','USAGE')") == 'f'
     assert sql("SELECT has_schema_privilege('financeclaw_app','business','CREATE')") == 'f'
@@ -191,14 +205,29 @@ try:
     compose('stop', 'worker')
     c, receipt, path = turn('durable admission across API restart')
     assert api(path)['status'] == 'queued'
+    if ARGS.admission:
+        pause = admission(True, 'pause-before-restart')
+        report = api('/v1/operations/drain')
+        assert report['scope'] == 'current_owner' and not report['drained']
+        assert report['counts']['queued'] == 1 and report['counts']['active_commands'] == 1
     compose('restart', 'api')
     URL = 'http://' + compose('port', 'api', '8080').decode().strip()
     wait(lambda: request('/actuator/health/readiness', auth=False)[0] == 200)
     replay = api(f'/v1/conversations/{c}/turns', {'message': 'durable admission across API restart'}, 'admit-once')
     assert replay['turn_id'] == receipt['turn_id']
+    if ARGS.admission:
+        assert api('/v1/operations/admission') == {'paused': True, 'revision': pause['revision']}
+        rejected_submission()
     compose('up', '-d', '--no-deps', '--wait', 'worker')
     terminal(path)
     mark('graceful_worker_stop_and_api_restart_keep_admission')
+    if ARGS.admission:
+        report = api('/v1/operations/drain')
+        assert report['counts']['queued'] == 0 and report['counts']['active_commands'] == 0
+        # Ordinary offline turns have no configured extractor; expose the backlog, do not hide it.
+        assert report['counts']['pending_memory_jobs'] > 0 and not report['drained']
+        admission(False, 'resume-after-restart')
+        mark('durable_pause_rejects_new_turns_preserves_replay_and_drains_existing_work', report)
 
     workflow = '/workflow portfolio_review ' + json.dumps({'portfolio_name': 'M5 synthetic',
         'positions': [{'symbol': 'AAPL', 'quantity': '1', 'cost_basis': '90'}]})
@@ -206,6 +235,11 @@ try:
     terminal(wp, 'waiting')
     question = api(wp + '/interactions')[0]
     assert question['kind'] == 'approval'
+    if ARGS.admission:
+        admission(True, 'pause-before-approval')
+        report = api('/v1/operations/drain')
+        assert not report['drained'] and report['counts']['waiting'] == 1
+        assert report['counts']['pending_interactions'] == 1
     compose('kill', '-s', 'SIGKILL', 'worker')
     compose('up', '-d', '--no-deps', '--wait', 'worker')
     answer = {'kind': 'approval', 'revision': question['revision'], 'decision': 'approve',
@@ -216,6 +250,10 @@ try:
     assert sql("SELECT count(*) FROM business.capability_steps WHERE step='publish_report'") == '1'
     assert sql("SELECT count(*) FROM business.artifacts WHERE required_scope='workflow:run'") == '1'
     mark('sigkill_and_persisted_approval_execute_once')
+    if ARGS.admission:
+        assert api('/v1/operations/admission')['paused']
+        admission(False, 'resume-after-approval')
+        mark('paused_admission_allows_persisted_approval_after_worker_sigkill')
 
     compose('stop', 'postgres')
     assert request('/actuator/health/readiness', auth=False)[0] == 503
@@ -240,6 +278,11 @@ try:
     mark('restricted_memory_worker_and_forgetting')
     wait(lambda: api('/v1/operations')['outbox']['pending'] == 0)
     RESULT['operations'] = api('/v1/operations')
+    if ARGS.admission:
+        pause = admission(True, 'pause-before-backup')
+        report = wait(lambda: (value if (value := api('/v1/operations/drain'))['drained'] else None))
+        assert report['scope'] == 'current_owner' and all(value == 0 for value in report['counts'].values())
+        mark('owner_drain_requires_pause_and_all_task_channel_memory_counts_zero', report)
 
     compose('stop', 'api', 'worker', 'integrations', 'memory-worker')
     original = fingerprints('financeclaw_java')
@@ -264,6 +307,14 @@ try:
     URL = 'http://' + compose('port', 'api', '8080').decode().strip()
     assert api(wp)['status'] == 'completed'
     assert api('/v1/memory/privacy')['epoch'] == epoch + 1
+    if ARGS.admission:
+        assert api('/v1/operations/admission') == {'paused': True, 'revision': pause['revision']}
+        assert api('/v1/operations/drain')['drained']
+        rejected_submission(restored)
+        admission(False, 'resume-after-restore')
+        assert not api('/v1/operations/drain')['drained']
+        assert sql('SELECT count(*) FROM business.admission_changes', restored) == '6'
+        mark('restored_pause_and_audit_require_explicit_resume')
     terminal(turn('new Java task after restored backup')[2])
     assert sql("SELECT count(*) FROM business.capability_steps WHERE step='publish_report'", restored) == '1'
     assert sql("SELECT count(*) FROM business.artifacts WHERE required_scope='workflow:run'", restored) == '1'

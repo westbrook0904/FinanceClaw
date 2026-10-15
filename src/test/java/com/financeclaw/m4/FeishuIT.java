@@ -58,6 +58,7 @@ class FeishuIT {
   @Autowired FeishuMapper db;
   @Autowired FeishuDelivery delivery;
   @Autowired TaskService tasks;
+  @Autowired OperationsService operations;
   @Autowired GovernanceService governance;
   @Autowired RuntimeMapper states;
   @Autowired TaskAgentRuntime runtime;
@@ -72,6 +73,7 @@ class FeishuIT {
   void reset() {
     sql = new JdbcTemplate(source);
     sql.execute("TRUNCATE business.conversations CASCADE");
+    sql.execute("TRUNCATE business.admission CASCADE");
     sql.execute("TRUNCATE memory.jobs,memory.owners,memory.operations,memory.audit CASCADE");
     REMOTE.reset();
     conversation = tasks.createConversation(owner);
@@ -212,6 +214,32 @@ class FeishuIT {
         .hasMessage("event_conflict");
     assertThatThrownBy(() -> service.receive(message("bind-again", "om_2", "/bind invalid")))
         .hasMessage("invalid_binding_code");
+  }
+
+  @Test
+  void pauseAllowsNativeRepliesAndReplaysButDoesNotAcknowledgeUnadmittedNewMessages()
+      throws Exception {
+    bind();
+    var original = message("first", "om_first", "city");
+    service.receive(original);
+    run(true);
+    operations.change(owner, "pause", true, 0);
+    service.receive(original); // Original event receipt remains available while paused.
+    send("上海"); // Native input interaction resumes the original Turn.
+    run(true);
+    assertThat(tasks.get(owner, conversation, binding().activeTurn()).status())
+        .isEqualTo("completed");
+    var next = message("new", "om_new", "hello");
+    assertThatThrownBy(() -> service.receive(next)).hasMessage("admission_paused");
+    assertThat(db.inbox("new")).isNull();
+    assertThat(sql.queryForObject("SELECT count(*) FROM business.turns", Integer.class))
+        .isEqualTo(1);
+    operations.change(owner, "resume", false, 1);
+    service.receive(next);
+    service.receive(next);
+    assertThat(sql.queryForObject("SELECT count(*) FROM business.turns", Integer.class))
+        .isEqualTo(2);
+    assertThat(db.inbox("new")).isNotNull();
   }
 
   @Test

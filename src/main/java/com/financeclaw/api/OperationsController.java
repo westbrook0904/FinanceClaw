@@ -1,5 +1,9 @@
 package com.financeclaw.api;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.financeclaw.application.OperationsService;
+import com.financeclaw.domain.Operations.*;
+import com.financeclaw.domain.Task.Problem;
 import com.financeclaw.infrastructure.task.OperationsMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Map;
@@ -8,9 +12,38 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 public class OperationsController {
   private final OperationsMapper db;
+  private final OperationsService operations;
 
-  public OperationsController(OperationsMapper db) {
+  public OperationsController(OperationsMapper db, OperationsService operations) {
     this.db = db;
+    this.operations = operations;
+  }
+
+  @GetMapping("/v1/operations/admission")
+  public Admission admission(HttpServletRequest request) {
+    return operations.admission(TaskController.owner(request));
+  }
+
+  @PutMapping("/v1/operations/admission")
+  public Receipt change(
+      HttpServletRequest request,
+      @RequestHeader(value = "Idempotency-Key", required = false) String key,
+      @RequestBody JsonNode body) {
+    if (!body.isObject()
+        || body.size() != 2
+        || !body.path("paused").isBoolean()
+        || !body.path("revision").isIntegralNumber()
+        || !body.path("revision").canConvertToLong()) throw new Problem(422, "invalid_body");
+    return operations.change(
+        TaskController.owner(request),
+        key,
+        body.get("paused").booleanValue(),
+        body.get("revision").longValue());
+  }
+
+  @GetMapping("/v1/operations/drain")
+  public Drain drain(HttpServletRequest request) {
+    return operations.drain(TaskController.owner(request));
   }
 
   @GetMapping("/v1/operations")

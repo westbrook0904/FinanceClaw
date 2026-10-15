@@ -9,6 +9,39 @@ import org.apache.ibatis.annotations.*;
 public interface OperationsMapper {
   @Select(
       """
+    WITH owned AS MATERIALIZED (
+      SELECT id,status,revision FROM business.turns WHERE tenant=#{tenant} AND subject=#{subject}
+    )
+    SELECT
+      COALESCE((SELECT paused FROM business.admission WHERE tenant=#{tenant} AND subject=#{subject}),false) AS paused,
+      COALESCE((SELECT revision FROM business.admission WHERE tenant=#{tenant} AND subject=#{subject}),0) AS revision,
+      count(*) FILTER(WHERE status IN ('queued','resuming')) AS queued,
+      count(*) FILTER(WHERE status='running') AS running,
+      count(*) FILTER(WHERE status='waiting') AS waiting,
+      count(*) FILTER(WHERE status='cancelling') AS cancelling,
+      count(*) FILTER(WHERE status='blocked') AS blocked,
+      (SELECT count(*) FROM business.commands WHERE turn_id IN (SELECT id FROM owned) AND status<>'done') AS active_commands,
+      (SELECT count(*) FROM business.interactions WHERE turn_id IN (SELECT id FROM owned) AND status='pending') AS pending_interactions,
+      (SELECT count(*) FROM business.tool_calls WHERE turn_id IN (SELECT id FROM owned) AND status='pending') AS uncertain_effects,
+      (SELECT count(*) FROM business.outbox WHERE turn_id IN (SELECT id FROM owned) AND NOT delivered) AS pending_outbox,
+      (SELECT count(*) FROM channel.notices n JOIN channel.bindings b ON b.id=n.binding_id
+        WHERE b.tenant=#{tenant} AND b.subject=#{subject} AND n.status IN ('pending','sending')) AS pending_notifications,
+      (SELECT count(*) FROM channel.notices n JOIN channel.bindings b ON b.id=n.binding_id
+        WHERE b.tenant=#{tenant} AND b.subject=#{subject} AND n.status IN ('unknown','submitted_unverified')) AS unverified_notifications,
+      (SELECT count(*) FROM channel.bindings b JOIN owned t ON t.id=b.active_turn
+        WHERE b.tenant=#{tenant} AND b.subject=#{subject} AND NOT b.muted
+          AND t.status IN ('waiting','blocked','completed','failed','cancelled')
+          AND NOT EXISTS(SELECT 1 FROM channel.notices n
+            WHERE n.turn_id=t.id AND n.revision=t.revision AND n.status<>'suppressed')) AS unprojected_notifications,
+      (SELECT count(*) FROM memory.jobs WHERE tenant=#{tenant} AND subject=#{subject}
+        AND status NOT IN ('done','obsolete','forgotten')) AS pending_memory_jobs,
+      (SELECT count(*) FROM memory.owners WHERE tenant=#{tenant} AND subject=#{subject} AND purge_pending) AS pending_forget
+    FROM owned
+    """)
+  Map<String, Object> drain(Owner owner);
+
+  @Select(
+      """
     SELECT count(*) AS turns,
       count(*) FILTER(WHERE status='completed') AS completed,
       count(*) FILTER(WHERE status='failed') AS failed,

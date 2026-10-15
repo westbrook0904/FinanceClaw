@@ -1,4 +1,4 @@
-name: Java M0 through M6d recovery
+name: Java migration and admission recovery
 on: [push, pull_request]
 permissions:
   contents: read
@@ -49,8 +49,8 @@ jobs:
           path: target/
       - name: Create local-only test credentials
         run: python3 scripts/init-local.py
-      - name: Four roles, failure recovery, offline baseline and backup restore
-        run: python3 scripts/validate-compose.py --ziwei
+      - name: Four roles, admission drain, failure recovery and backup restore
+        run: python3 scripts/validate-compose.py --ziwei --admission
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -60,3 +60,5 @@ jobs:
             target/m5/compose-validation.log
             target/m6/deployment/compose-results.json
             target/m6/deployment/compose-validation.log
+            target/m5b/deployment/compose-results.json
+            target/m5b/deployment/compose-validation.log

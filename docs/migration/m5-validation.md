@@ -4,6 +4,8 @@
 
 ## 部署结构
 
+后续的 [M5b 暂停与排空](m5b-admission.md) 补充新任务受理控制及恢复演练。本文件的 144 项 Java、9 项 Compose 和 33 张表数据是 M5 提交时的历史证据，最新代码与验证范围以 M5b 记录为准。
+
 同一 Java jar / 镜像启动四个运行角色，使用 Spring Boot profiles、Flyway、Actuator 和 Spring configtree。Agent、Skill、MCP、embedding 和飞书协议继续复用 AgentScope，没有新执行引擎或渠道协议客户端。
 
 | 服务 | 入口 / 工作 | 数据库身份与 HTTP |

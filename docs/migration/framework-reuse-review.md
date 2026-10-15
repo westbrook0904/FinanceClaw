@@ -62,6 +62,8 @@
 
 部署使用 Spring Boot profiles 区分消费者，Flyway 执行一次性迁移，Actuator 提供健康检查，configtree 读取挂载 secret；MCP 凭据引用经 Spring Environment 解析后交给原生客户端。只补充角色约束、现有 SQL 事实的受认证统计，以及使用 Docker Compose / pg_dump / pg_restore 的验收脚本。没有另建部署调度器、密钥库、MCP 协议或飞书发送器。配置和证据边界见 [M5 交付记录](m5-validation.md)。
 
+[M5b](m5b-admission.md) 在已有 `TaskService.submit` 增加持久化受理检查，用 Spring 事务、MyBatis 和 PostgreSQL 行锁协调暂停与提交；排空报告直接查询既有任务、通知、记忆事实。它控制业务 API 和飞书的新任务入口，不替代 AgentScope 原生执行、状态恢复或审批，也没有新增后台排空调度器。已有任务沿用原 Worker，只有新 Turn 受理被暂停。
+
 ## M6a 的日期与基准复用
 
 日期、区间、时区和 DST 处理使用 JDK `java.time` / `ZoneRules`，不自建日历库。旧 Python 仅用于显式离线生成回归样本，Java 构建读取冻结资源；未新增 Python 运行桥接、MCP 协议客户端或工具框架。该阶段紫微算法尚未选定和启用，后续工具继续接入 AgentScope 原生 Toolkit。版本差异与边界见 [M6 记录](m6-validation.md)。

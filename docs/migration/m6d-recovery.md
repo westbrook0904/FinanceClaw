@@ -2,6 +2,8 @@
 
 日期：2026-10-15。基线为本地提交 `ef4057b`（M6c，未推送）。本阶段复用已有 AgentScope ReActAgent、Toolkit、AgentState、Interaction、Worker、MyBatis 回执和 Artifact。没有新增恢复框架或紫微专用执行协议。**本地验证和真实模型验证分开记录；真实模型尚未配置，普通启用门禁继续保留。**
 
+M6d 已提交为本地 commit `72e0655`，未推送。本页保留该阶段的历史验证结果；后续补充的 Java 受理暂停与部署恢复检查见 [M5b](m5b-admission.md)。
+
 ## 独立进程中的恢复边界
 
 验收启动实际 Spring Boot JAR，仅将脚本模型和故障驱动放入额外测试 launcher。宿主进程环境清空、PATH 为空、工作目录隔离，测试资料为合成数据；恢复进程没有上一进程的内存或会话对象。故障用 `Runtime.halt(73)` 制造，不执行优雅关闭。

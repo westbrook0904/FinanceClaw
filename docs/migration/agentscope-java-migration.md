@@ -1,6 +1,6 @@
 # FinanceClaw：Python → AgentScope Java 迁移方案
 
-> 日期：2026-10-15。状态：M0–M4 已实现本地能力范围；M4 飞书按原生 SDK 支持的文本能力落地，卡片和可靠回执不自建。M5 已实现本地部署与恢复工程；真实环境交付验收仍待完成；M6c 已本地提交，M6d 本地恢复与部署验收已实现；真实模型启用验收待完成，默认关闭。真实模型供应商、真实 MCP、飞书及生产恢复尚未验收。
+> 日期：2026-10-15。状态：M0–M4 已实现本地能力范围；M4 飞书按原生 SDK 支持的文本能力落地，卡片和可靠回执不自建。M5 已实现本地部署与恢复工程；真实环境交付验收仍待完成；M6c 已本地提交，M6d 本地恢复与部署验收已提交 `72e0655`；真实模型启用验收待完成，默认关闭。真实模型供应商、真实 MCP、飞书及生产恢复尚未验收。
 >
 > 项目入口：[README](../../README.md)。配套文档：[验收清单](acceptance-checklist.md)、[M0 验证与版本决策](m0-validation.md)、[M1 使用与验证](m1-validation.md)、[M2 使用与验证](m2-validation.md)、[框架复用审查](framework-reuse-review.md)。
 
@@ -345,6 +345,8 @@ OpenTelemetry 关联 `conversation_id / turn_id / command_id / attempt_id / tool
 
 当前默认使用新环境、新会话完成 Java 验收，不要求在线双写或直接恢复 Python 的活动任务。API、Worker、Integrations、Memory Worker 可由同一 Java 镜像按角色启动；角色拥有独立连接池、健康检查和权限。
 
+[M5b](m5b-admission.md) 已补充 Java 当前认证主体的持久化暂停/恢复受理和排空报告，已有任务保留审批、取消及恢复入口。该报告仅为单个主体的时点观测，不冻结全部写入，不能替代下述全局消费者停止、唯一写入者和线上切换专项验收。
+
 如后续需要替换正在使用的 Python 环境，执行：
 
 1. 备份应用库、原生库和 Artifact，记录一致性时点；在隔离环境演练恢复。
@@ -372,7 +374,7 @@ OpenTelemetry 关联 `conversation_id / turn_id / command_id / attempt_id / tool
 
 M1 可先用确定性离线模型验证任务系统；M3 的只读场景可以作为可用里程碑。**完整迁移完成**至少要求 M5 对启用能力全部通过；只做聊天 Demo 或保留未验收的记忆/审批链路不能算完成。
 
-M0 已完成上述工程与技术实验，结果、接口差异及剩余约束记录于 [M0 验证记录](m0-validation.md)。M1 已建立业务身份、Turn/Command/attempt、Worker、SSE、取消和完成事务，详见 [M1 记录](m1-validation.md)。M2 已实现固定发布、授权、交互、Artifact、完整请求预算和模拟 MCP，详见 [M2 记录](m2-validation.md)。SDK 快照仍须与完成回执核对；M3 已接入酒店/Taibu、Skill、市场研究子 Agent 和固定 Workflow，详见 [M3 记录](m3-validation.md)。紫微保持关闭，真实模型与远端业务仍待 M5 验收；M4 已实现记忆治理与原生飞书文本接入，见 [M4 记录](m4-validation.md)；M5 已增加四角色 Compose、独立迁移、secret 配置、分层 CI、故障及备份恢复实验，见 [M5 记录](m5-validation.md)；真实服务、历史切换与生产验收仍待完成。M6a 已迁移五入口的日期处理并冻结旧算法样本，见 [M6 记录](m6-validation.md)；M6b 已实现固定 Java 历法及旧规则兼容，见 [历法验证](m6b-calendar.md)，并完成本命和流运的 [完整盘面比对](m6b-charts.md)。[M6c 领域治理和原生工具接入](m6c-domain.md)已本地提交 `ef4057b`；[M6d 恢复与部署验收](m6d-recovery.md)已实现，真实模型尚未配置，紫微普通启用门禁继续保留。
+M0 已完成上述工程与技术实验，结果、接口差异及剩余约束记录于 [M0 验证记录](m0-validation.md)。M1 已建立业务身份、Turn/Command/attempt、Worker、SSE、取消和完成事务，详见 [M1 记录](m1-validation.md)。M2 已实现固定发布、授权、交互、Artifact、完整请求预算和模拟 MCP，详见 [M2 记录](m2-validation.md)。SDK 快照仍须与完成回执核对；M3 已接入酒店/Taibu、Skill、市场研究子 Agent 和固定 Workflow，详见 [M3 记录](m3-validation.md)。紫微保持关闭，真实模型与远端业务仍待 M5 验收；M4 已实现记忆治理与原生飞书文本接入，见 [M4 记录](m4-validation.md)；M5 已增加四角色 Compose、独立迁移、secret 配置、分层 CI、故障及备份恢复实验，见 [M5 记录](m5-validation.md)；真实服务、历史切换与生产验收仍待完成。M6a 已迁移五入口的日期处理并冻结旧算法样本，见 [M6 记录](m6-validation.md)；M6b 已实现固定 Java 历法及旧规则兼容，见 [历法验证](m6b-calendar.md)，并完成本命和流运的 [完整盘面比对](m6b-charts.md)。[M6c 领域治理和原生工具接入](m6c-domain.md)已本地提交 `ef4057b`；[M6d 恢复与部署验收](m6d-recovery.md)已本地提交 `72e0655`，真实模型尚未配置，紫微普通启用门禁继续保留。
 
 ## 8. 风险与待决事项
 

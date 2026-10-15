@@ -7,6 +7,47 @@ import org.apache.ibatis.annotations.*;
 @Mapper
 public interface TaskMapper {
   @Insert(
+      "INSERT INTO business.admission(tenant,subject) VALUES(#{tenant},#{subject}) ON CONFLICT DO NOTHING")
+  void ensureAdmission(Owner owner);
+
+  @Select(
+      "SELECT paused FROM business.admission WHERE tenant=#{tenant} AND subject=#{subject} FOR SHARE")
+  boolean admissionPaused(Owner owner);
+
+  @Select(
+      "SELECT paused,revision FROM business.admission WHERE tenant=#{tenant} AND subject=#{subject}")
+  com.financeclaw.domain.Operations.Admission admission(Owner owner);
+
+  @Select(
+      "SELECT paused,revision FROM business.admission WHERE tenant=#{tenant} AND subject=#{subject} FOR UPDATE")
+  com.financeclaw.domain.Operations.Admission lockAdmission(Owner owner);
+
+  @Select(
+      "SELECT request_hash,paused,revision FROM business.admission_changes WHERE tenant=#{owner.tenant} AND subject=#{owner.subject} AND idempotency_key=#{key}")
+  com.financeclaw.domain.Operations.Change admissionReplay(
+      @Param("owner") Owner owner, @Param("key") String key);
+
+  @Update(
+      "UPDATE business.admission SET paused=#{paused},revision=revision+1 WHERE tenant=#{owner.tenant} AND subject=#{owner.subject} AND revision=#{revision}")
+  int changeAdmission(
+      @Param("owner") Owner owner,
+      @Param("paused") boolean paused,
+      @Param("revision") long revision);
+
+  @Insert(
+      "INSERT INTO business.admission_changes(tenant,subject,idempotency_key,request_hash,paused,revision) VALUES(#{owner.tenant},#{owner.subject},#{key},#{hash},#{paused},#{revision})")
+  void recordAdmission(
+      @Param("owner") Owner owner,
+      @Param("key") String key,
+      @Param("hash") String hash,
+      @Param("paused") boolean paused,
+      @Param("revision") long revision);
+
+  @Select(
+      "SELECT EXISTS(SELECT 1 FROM business.admission LIMIT 1) OR NOT EXISTS(SELECT 1 FROM business.admission LIMIT 1)")
+  boolean admissionReady();
+
+  @Insert(
       "INSERT INTO business.conversations(id,tenant,subject) VALUES(#{id},#{owner.tenant},#{owner.subject})")
   int createConversation(@Param("id") String id, @Param("owner") Owner owner);
 
