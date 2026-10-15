@@ -1,0 +1,34 @@
+[
+  {
+    "mode": "after-claim",
+    "exit": 73
+  },
+  {
+    "mode": "after-save",
+    "exit": 73
+  },
+  {
+    "mode": "after-seal",
+    "exit": 73
+  },
+  {
+    "mode": "normal",
+    "exit": 0
+  },
+  {
+    "mode": "recover",
+    "exit": 0
+  },
+  {
+    "mode": "recover",
+    "exit": 0
+  },
+  {
+    "mode": "recover",
+    "exit": 0
+  },
+  {
+    "mode": "recover",
+    "exit": 0
+  }
+]

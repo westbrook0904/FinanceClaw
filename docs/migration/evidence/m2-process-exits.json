@@ -1,0 +1,25 @@
+{
+  "scope": "Four fresh JVMs: approval and clarification suspend/resume against real PostgreSQL",
+  "processes": [
+    {
+      "file": "target/m2/process-3b1fb3d8-ba5a-4572-9715-185c4bb73381.log.exit.json",
+      "exit": 0,
+      "scenario": "report-resume"
+    },
+    {
+      "file": "target/m2/process-60a2184e-5ac9-4af6-9cfd-ccc8340586ab.log.exit.json",
+      "exit": 0,
+      "scenario": "report-suspend"
+    },
+    {
+      "file": "target/m2/process-e1d6f4f9-9c58-4dcf-b658-4cb33ea2e41f.log.exit.json",
+      "exit": 0,
+      "scenario": "city-suspend"
+    },
+    {
+      "file": "target/m2/process-e987205f-d987-431a-bca2-a3259523877e.log.exit.json",
+      "exit": 0,
+      "scenario": "city-resume"
+    }
+  ]
+}

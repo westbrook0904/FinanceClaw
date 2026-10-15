@@ -9,7 +9,7 @@ import java.util.Optional;
 import java.util.Set;
 
 /** Scope-bound AgentScope adapter; MyBatis owns SQL mapping and connection management. */
-public final class MyBatisAgentStateStore implements AgentStateStore {
+public class MyBatisAgentStateStore implements AgentStateStore {
   private final RuntimeMapper mapper;
   private final ExecutionScope scope;
 

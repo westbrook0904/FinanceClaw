@@ -15,16 +15,16 @@ import java.util.Map;
 public final class ResumeInputs {
   private ResumeInputs() {}
 
+  private static final JsonMapper JSON =
+      JsonMapper.builder().enable(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS).build();
+
   public static String actionHash(ToolUseBlock tool) {
     return ExecutionScope.hash(List.of(tool.getId(), tool.getName(), canonical(tool.getInput())));
   }
 
   public static String canonical(Object input) {
     try {
-      return JsonMapper.builder()
-          .enable(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS)
-          .build()
-          .writeValueAsString(input);
+      return JSON.writeValueAsString(input);
     } catch (JsonProcessingException e) {
       throw new IllegalArgumentException("Invalid action payload", e);
     }
@@ -70,9 +70,10 @@ public final class ResumeInputs {
         .role(MsgRole.TOOL)
         .content(
             ToolResultBlock.of(
-                tool.getId(),
-                tool.getName(),
-                TextBlock.builder().text(canonical(Map.of("city", city))).build()))
+                    tool.getId(),
+                    tool.getName(),
+                    TextBlock.builder().text(canonical(Map.of("city", city))).build())
+                .withState(ToolResultState.SUCCESS))
         .build();
   }
 

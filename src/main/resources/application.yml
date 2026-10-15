@@ -1,4 +1,12 @@
 spring:
+  jackson:
+    property-naming-strategy: SNAKE_CASE
+    deserialization:
+      fail-on-unknown-properties: true
+  task:
+    scheduling:
+      pool:
+        size: 2
   application:
     name: financeclaw-java
   datasource:
@@ -8,12 +16,18 @@ spring:
     hikari:
       maximum-pool-size: 8
       connection-timeout: 5000
+      data-source-properties:
+        socketTimeout: 10
+        connectTimeout: 5
+        options: "-c statement_timeout=5000 -c lock_timeout=3000"
   flyway:
     enabled: true
 mybatis:
   configuration:
     cache-enabled: false
     local-cache-scope: STATEMENT
+    map-underscore-to-camel-case: true
+    default-statement-timeout: 5
 management:
   endpoints:
     web:
@@ -26,9 +40,50 @@ management:
         enabled: true
       group:
         readiness:
-          include: readinessState,db
+          include: readinessState,db,runtimeStore
 server:
   shutdown: graceful
+  tomcat:
+    threads:
+      max: 32
+    max-http-form-post-size: 64KB
 logging:
   level:
-    io.agentscope: WARN
+    io.agentscope: OFF
+    io.modelcontextprotocol: OFF
+
+financeclaw:
+  model:
+    name: ${FINANCECLAW_MODEL:offline}
+    base-url: ${FINANCECLAW_MODEL_BASE_URL:}
+    api-key: ${FINANCECLAW_MODEL_API_KEY:}
+    thinking: ${FINANCECLAW_MODEL_THINKING:false}
+    input-limit: ${FINANCECLAW_MODEL_INPUT_LIMIT:65536}
+    context-window: ${FINANCECLAW_MODEL_CONTEXT_WINDOW:131072}
+    output-reserve: ${FINANCECLAW_MODEL_OUTPUT_RESERVE:2048}
+    safety-margin: ${FINANCECLAW_MODEL_SAFETY_MARGIN:512}
+  fallback:
+    name: ${FINANCECLAW_FALLBACK_MODEL:}
+    base-url: ${FINANCECLAW_FALLBACK_BASE_URL:}
+    input-limit: ${FINANCECLAW_FALLBACK_INPUT_LIMIT:32768}
+    context-window: ${FINANCECLAW_FALLBACK_CONTEXT_WINDOW:65536}
+    output-reserve: ${FINANCECLAW_FALLBACK_OUTPUT_RESERVE:2048}
+    safety-margin: ${FINANCECLAW_FALLBACK_SAFETY_MARGIN:512}
+    thinking: ${FINANCECLAW_FALLBACK_THINKING:false}
+  auth:
+    token: ${FINANCECLAW_API_TOKEN:}
+    tenant: ${FINANCECLAW_TENANT:local}
+    subject: ${FINANCECLAW_SUBJECT:developer}
+  worker:
+    enabled: ${FINANCECLAW_WORKER_ENABLED:true}
+    parallelism: 4
+    poll-ms: 250
+    lease-ms: 15000
+    heartbeat-ms: 2000
+    model-timeout-ms: 30000
+  integrations:
+    enabled: ${FINANCECLAW_INTEGRATIONS_ENABLED:true}
+  sse:
+    max-connections: 32
+    timeout-ms: 30000
+    poll-ms: 250

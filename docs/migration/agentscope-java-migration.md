@@ -1,8 +1,8 @@
 # FinanceClaw：Python → AgentScope Java 迁移方案
 
-> 日期：2026-10-14。状态：M0 已完成本地编译与框架适配验证，M1–M6 仍为实施方案。真实模型、MCP、飞书及生产恢复尚未验收。
+> 日期：2026-10-15。状态：M0–M2 已实现并进行本地验证，M3–M6 仍为实施方案。真实模型供应商、真实 MCP、飞书及生产恢复尚未验收。
 >
-> 项目入口：[README](../../README.md)。配套文档：[验收清单](acceptance-checklist.md)、[M0 验证与版本决策](m0-validation.md)。
+> 项目入口：[README](../../README.md)。配套文档：[验收清单](acceptance-checklist.md)、[M0 验证与版本决策](m0-validation.md)、[M1 使用与验证](m1-validation.md)、[M2 使用与验证](m2-validation.md)、[框架复用审查](framework-reuse-review.md)。
 
 ## 1. 范围与结论
 
@@ -22,7 +22,7 @@
 | 数据持久化 | PostgreSQL 为业务事实源；运行态单独命名空间；pgvector 为可重建检索投影 | 保持任务、审计、记忆事实与 SDK 状态分工 |
 | 迁移策略 | 先在新环境建立 Java 功能闭环；历史数据导入为独立交付项 | M0 已建立工程骨架，尚无在线切换或历史保留需求证据 |
 
-M0 已以 28 项测试验证固定版本的编译、模型载荷、审批/澄清重启恢复、状态 CAS 和并发隔离，决定继续使用 `2.0.3` 并保留自有适配层。SDK 不提供业务任务的完整持久执行语义；后续阶段必须实现 Command/attempt、fencing、授权与完成事务，不能把 M0 实验视为整体迁移完成。
+M0 已以 28 项测试验证固定版本的编译、模型载荷、审批/澄清重启恢复、状态 CAS 和并发隔离，决定继续使用 `2.0.3` 并保留自有适配层。SDK 不提供业务任务的完整持久执行语义；M1 已补齐 Command/attempt、fencing 和完成事务，完整授权仍需在 M2 实现，不能把 M0 实验视为整体迁移完成。
 
 ## 2. 核对基线与证据
 
@@ -119,7 +119,7 @@ HTTP / 飞书
 | 层 | 建议 | M0 必须确认 |
 | --- | --- | --- |
 | Java / 构建 | Temurin `21.0.12+8`、Maven `3.9.11` / Wrapper `3.3.4` | 已编译运行；Enforcer 验证 vendor、补丁与 build；分发包 SHA-256 固定 |
-| API 与容器 | Spring Boot `3.5.16`、Spring MVC；业务 Bean Validation 在 M1 引入 | Boot 启动、Flyway 与数据库就绪检查已通过；直接依赖 SDK |
+| API 与容器 | Spring Boot `3.5.16`、Spring MVC；M1 用显式 DTO/正文校验，不额外引入 Bean Validation | Boot 启动、Flyway 与数据库就绪检查已通过；直接依赖 SDK |
 | Agent 执行 | `io.agentscope:agentscope-core:2.0.3` | 核心、模型和存储扩展统一版本；禁止使用动态版本 |
 | 模型 | 按现有供应商选用 `agentscope-extensions-model-openai` 或 `agentscope-extensions-model-dashscope` | Qwen / DeepSeek 等的 base URL、工具调用、thinking、JSON 输出及 usage 字段 |
 | 数据库 | PostgreSQL 16 / pgvector、MyBatis + Spring 事务、Flyway | JSONB、唯一约束、事务隔离、租约与 CAS；向量维度独立锁定 |
@@ -161,7 +161,7 @@ Spring MVC 处理短请求及 SSE；阻塞数据库/S3 操作与 AgentScope Reac
 FinanceClaw-java/
 ├── README.md
 ├── docs/migration/
-├── pom.xml                         # 以下均为后续实施规划，当前尚不存在
+├── pom.xml                         # M0 已建立；下方目录包含后续规划
 ├── mvnw / .mvn/
 ├── src/main/java/.../financeclaw/
 │   ├── domain/                     # Turn、Interaction、授权、发布、记忆领域
@@ -181,7 +181,7 @@ FinanceClaw-java/
 └── deploy/                         # Dockerfile、Compose、初始化与运维
 ```
 
-`domain` 不依赖 Spring、AgentScope 或飞书 SDK；`application` 依赖端口接口；`agent` 与 `infrastructure` 实现这些端口。SDK 的消息、事件、状态对象在适配层内转换，不能直接成为公开 HTTP DTO 或长期业务数据格式。
+`domain` 不依赖 Spring、AgentScope 或飞书 SDK；M1 的 `application` 直接使用 MyBatis Mapper 管理短事务，避免仅为转发增加 Repository；外部能力在需要时引入端口。SDK 的消息、事件、状态对象在适配层内转换，不能直接成为公开 HTTP DTO 或长期业务数据格式。
 
 ## 5. 运行架构与关键语义
 
@@ -369,7 +369,7 @@ OpenTelemetry 关联 `conversation_id / turn_id / command_id / attempt_id / tool
 
 M1 可先用确定性离线模型验证任务系统；M3 的只读场景可以作为可用里程碑。**完整迁移完成**至少要求 M5 对启用能力全部通过；只做聊天 Demo 或保留未验收的记忆/审批链路不能算完成。
 
-M0 已完成上述工程与技术实验，结果、接口差异及剩余约束记录于 [M0 验证记录](m0-validation.md)。下一阶段按 M1 建立业务身份、Turn/Command/attempt、Worker 和完成事务；M0 的同步实验入口不能直接充当线上任务服务。
+M0 已完成上述工程与技术实验，结果、接口差异及剩余约束记录于 [M0 验证记录](m0-validation.md)。M1 已建立业务身份、Turn/Command/attempt、Worker、SSE、取消和完成事务，详见 [M1 记录](m1-validation.md)。M2 已实现固定发布、授权、交互、Artifact、完整请求预算和模拟 MCP，详见 [M2 记录](m2-validation.md)。SDK 快照仍须与完成回执核对；下一阶段实施 M3 的酒店、Skill、子 Agent 与 Workflow 场景。
 
 ## 8. 风险与待决事项
 

@@ -9,7 +9,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import reactor.core.publisher.Flux;
 
-/** M0 text/JSON fallback: check the actual adapter payload, including all tool/output schemas. */
+/** Check the actual adapter payload, including tool/output schemas; unpriced media fails closed. */
 public final class BudgetedTransport implements HttpTransport {
   private final HttpTransport delegate;
   private final int capacity;
@@ -35,6 +35,7 @@ public final class BudgetedTransport implements HttpTransport {
       JsonNode request = new ObjectMapper().readTree(body);
       if (!request.isObject() || !request.path("messages").isArray())
         throw new IllegalArgumentException("Unsupported model request shape");
+      rejectUnpricedMedia(request.path("messages"));
       int output =
           request.path("max_completion_tokens").asInt(request.path("max_tokens").asInt(-1));
       if (output < 1 || output > outputReserve)
@@ -48,6 +49,18 @@ public final class BudgetedTransport implements HttpTransport {
       throw new IllegalArgumentException(
           "Model input exceeds UTF-8 fallback budget: " + estimatedTokens + " > " + capacity);
     return estimatedTokens;
+  }
+
+  private static void rejectUnpricedMedia(JsonNode node) {
+    if (node.isObject()) {
+      String type = node.path("type").asText();
+      if (type.equals("image_url")
+          || type.equals("input_audio")
+          || type.equals("video_url")
+          || type.equals("file"))
+        throw new IllegalArgumentException("Multimodal input requires an explicit modality budget");
+    }
+    if (node.isContainerNode()) node.forEach(BudgetedTransport::rejectUnpricedMedia);
   }
 
   @Override

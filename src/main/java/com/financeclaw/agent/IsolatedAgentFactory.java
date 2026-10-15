@@ -3,6 +3,7 @@ package com.financeclaw.agent;
 import com.financeclaw.domain.ExecutionScope;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.middleware.FinalAnswerFilterMiddleware;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.permission.PermissionContextState;
 import io.agentscope.core.permission.PermissionMode;
@@ -17,6 +18,15 @@ public final class IsolatedAgentFactory {
 
   public static ReActAgent create(
       Model model, Toolkit toolkit, AgentStateStore store, PermissionContextState permissions) {
+    return create(model, null, toolkit, store, permissions);
+  }
+
+  public static ReActAgent create(
+      Model model,
+      Model fallback,
+      Toolkit toolkit,
+      AgentStateStore store,
+      PermissionContextState permissions) {
     if (permissions == null
         || permissions.isTrivial()
         || permissions.getMode() == PermissionMode.BYPASS) {
@@ -28,19 +38,24 @@ public final class IsolatedAgentFactory {
             "Tool must extend ToolBase for permission evaluation: " + name);
       }
     }
-    return ReActAgent.builder()
-        .name("finance_agent")
-        .sysPrompt("Use only the tools authorized for this task.")
-        .model(model)
-        .toolkit(toolkit)
-        .stateStore(store)
-        .permissionContext(permissions)
-        .conflictPolicy(ConflictPolicy.FAIL)
-        .enablePendingToolRecovery(false)
-        // In 2.0.3 this maps to ExecutionConfig.maxAttempts; one disables retry.
-        .maxRetries(1)
-        .maxIters(6)
-        .build();
+    var builder =
+        ReActAgent.builder()
+            .name("finance_agent")
+            .sysPrompt("Use only the tools authorized for this task.")
+            .model(model)
+            .toolkit(toolkit)
+            .stateStore(store)
+            .permissionContext(permissions)
+            .conflictPolicy(ConflictPolicy.FAIL)
+            .enablePendingToolRecovery(false)
+            // In 2.0.3 this maps to ExecutionConfig.maxAttempts; one disables retry.
+            .maxRetries(1)
+            .toolExecutionConfig(
+                io.agentscope.core.model.ExecutionConfig.builder().maxAttempts(1).build())
+            .maxIters(6)
+            .middleware(new FinalAnswerFilterMiddleware());
+    if (fallback != null) builder.fallbackModel(fallback);
+    return builder.build();
   }
 
   public static RuntimeContext context(ExecutionScope scope) {

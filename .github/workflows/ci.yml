@@ -1,4 +1,4 @@
-name: Java M0
+name: Java M0 through M2
 on: [push, pull_request]
 permissions:
   contents: read
@@ -15,12 +15,14 @@ jobs:
       - name: Verify fixed toolchain, unit contracts and PostgreSQL experiments
         run: scripts/mvn.sh -B -ntp verify spotless:check
       - name: Collect verified results and source fingerprints
-        run: python3 scripts/collect-m0-evidence.py
+        run: python3 scripts/collect-evidence.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: m0-evidence
+          name: lifecycle-evidence
           path: |
             target/surefire-reports/
             target/failsafe-reports/
             target/m0/
+            target/m1/
+            target/m2/
