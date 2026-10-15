@@ -1,4 +1,4 @@
-name: Optional live model or MCP acceptance
+name: Optional live model, MCP or Ziwei acceptance
 on:
   workflow_dispatch:
     inputs:
@@ -6,15 +6,19 @@ on:
         description: Test kind (a fresh conversation, read-only scopes)
         required: true
         type: choice
-        options: [model, mcp]
+        options: [model, mcp, ziwei]
       prompt:
         description: Non-sensitive read-only test prompt
-        required: true
+        required: false
         type: string
       expected_tool:
-        description: Expected tool (search_catalog for model; native MCP tool for mcp)
+        description: Expected read-only tool (Ziwei uses a fixed synthetic prompt)
         required: true
         type: string
+      clarify:
+        description: Ziwei only - require missing birth sex clarification
+        type: boolean
+        default: false
 permissions:
   contents: read
 jobs:
@@ -29,11 +33,19 @@ jobs:
       TEST_KIND: ${{ inputs.kind }}
       TEST_PROMPT: ${{ inputs.prompt }}
       TEST_TOOL: ${{ inputs.expected_tool }}
+      TEST_CLARIFY: ${{ inputs.clarify }}
     steps:
       - uses: actions/checkout@v4
       - name: Explicit live acceptance (no Feishu messages sent by this workflow)
-        run: python3 scripts/validate-live.py --kind "$TEST_KIND" --prompt "$TEST_PROMPT" --expected-tool "$TEST_TOOL"
+        run: |
+          args=(--kind "$TEST_KIND" --expected-tool "$TEST_TOOL")
+          if [ "$TEST_KIND" != ziwei ]; then args+=(--prompt "$TEST_PROMPT"); fi
+          if [ "$TEST_CLARIFY" = true ]; then args+=(--clarify); fi
+          python3 scripts/validate-live.py "${args[@]}"
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: live-acceptance-evidence
-          path: target/m5/live-*.json
+          path: |
+            target/m5/live-*.json
+            target/m6/live-*.json

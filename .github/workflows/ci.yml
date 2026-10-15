@@ -1,4 +1,4 @@
-name: Java M0 through M6c domain
+name: Java M0 through M6d recovery
 on: [push, pull_request]
 permissions:
   contents: read
@@ -15,6 +15,7 @@ jobs:
       - name: Static checks and fixed toolchain
         run: |
           python3 scripts/check-delivery.py
+          python3 scripts/test-live-acceptance.py
           scripts/mvn.sh -B -ntp validate spotless:check
       - name: Unit and native HTTP contract tests (no database or real credentials)
         run: scripts/mvn.sh -B -ntp test
@@ -49,7 +50,7 @@ jobs:
       - name: Create local-only test credentials
         run: python3 scripts/init-local.py
       - name: Four roles, failure recovery, offline baseline and backup restore
-        run: python3 scripts/validate-compose.py
+        run: python3 scripts/validate-compose.py --ziwei
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -57,3 +58,5 @@ jobs:
           path: |
             target/m5/compose-results.json
             target/m5/compose-validation.log
+            target/m6/deployment/compose-results.json
+            target/m6/deployment/compose-validation.log

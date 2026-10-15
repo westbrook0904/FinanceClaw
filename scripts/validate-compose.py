@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""Isolated M5 delivery/failure/backup experiment. Never connects to an existing Compose project."""
+"""Isolated delivery/failure/backup experiment, optionally with the M6d Ziwei development policy."""
 import concurrent.futures
+import argparse
 import hashlib
 import http.client
 import json
@@ -15,20 +16,28 @@ import uuid
 from datetime import datetime, timezone
 
 ROOT = Path(__file__).resolve().parents[1]
-OUT = ROOT / 'target/m5'
+parser = argparse.ArgumentParser()
+parser.add_argument('--ziwei', action='store_true', help='Also boot the shared Ziwei development policy and secret configuration')
+ARGS = parser.parse_args()
+OUT = ROOT / ('target/m6/deployment' if ARGS.ziwei else 'target/m5')
 OUT.mkdir(parents=True, exist_ok=True)
 THRESHOLDS = json.loads((ROOT / 'ops/m5-thresholds.json').read_text())
-PROJECT = 'financeclaw-m5-' + uuid.uuid4().hex[:10]
+PROJECT = ('financeclaw-m6d-' if ARGS.ziwei else 'financeclaw-m5-') + uuid.uuid4().hex[:10]
 TEMP = ROOT / '.cache' / PROJECT
 TEMP.mkdir(parents=True)
 ENV = os.environ.copy()
 # This experiment cannot inherit a configured live provider, tenant or Feishu channel.
 ENV.update({k: '' for k in ENV if k.startswith('FINANCECLAW_')})
 ENV.update(FINANCECLAW_HTTP_PORT='0', FINANCECLAW_MODEL='offline',
+           FINANCECLAW_ZIWEI_ENABLED='false', FINANCECLAW_ZIWEI_DEVELOPMENT='false',
            FINANCECLAW_HOTEL_ENABLED='false', FINANCECLAW_TAIBU_ENABLED='false',
            FINANCECLAW_FEISHU_ENABLED='false', FINANCECLAW_MEMORY_ENABLED='true',
            FINANCECLAW_TENANT='local', FINANCECLAW_SUBJECT='developer',
            FINANCECLAW_EMBEDDING_REVISION='m5-no-embedding-v1')
+if ARGS.ziwei:
+    ENV.update(FINANCECLAW_ZIWEI_ENABLED='true', FINANCECLAW_ZIWEI_DEVELOPMENT='true',
+               FINANCECLAW_ZIWEI_KEY_VERSION='m6d-deployment-v1',
+               FINANCECLAW_ZIWEI_QUERY_TIMEZONE='Asia/Shanghai')
 # --env-file avoids silently loading real endpoints from the operator's .env.
 (TEMP / 'empty.env').write_text('')
 market = {'AAPL': {'price': '100', 'currency': 'USD', 'provider': 'm5-fixture',
@@ -43,6 +52,7 @@ BASE = ['docker', 'compose', '--project-directory', str(ROOT), '--env-file', str
         '-p', PROJECT, '-f', str(ROOT / 'compose.yml'), '-f', str(TEMP / 'override.json')]
 LOG = (OUT / 'compose-validation.log').open('w')
 RESULT = {'scope': 'isolated real containers; offline model and synthetic market only',
+          'ziwei_development_policy': ARGS.ziwei,
           'project': PROJECT, 'thresholds': THRESHOLDS, 'checks': {},
           'started_at': datetime.now(timezone.utc).isoformat()}
 INPUTS = ('Dockerfile', '.dockerignore', 'compose.yml', 'ops/postgres-init.sql',
@@ -60,7 +70,7 @@ def command(args, *, data=None, timeout=240):
     LOG.write(result.stderr.decode(errors='replace'))
     LOG.flush()
     if result.returncode:
-        raise RuntimeError(f'Command failed (exit {result.returncode}); see target/m5/compose-validation.log')
+        raise RuntimeError(f'Command failed (exit {result.returncode}); see {OUT}/compose-validation.log')
     return result.stdout
 
 
@@ -133,8 +143,20 @@ def fingerprints(database):
 
 
 try:
-    print('Starting isolated M5 validation:', PROJECT, flush=True)
+    print('Starting isolated deployment validation:', PROJECT, flush=True)
     compose('config', '--quiet')
+    if ARGS.ziwei:
+        config = json.loads(compose('config', '--format', 'json'))
+        for role in ('api', 'worker', 'integrations'):
+            service = config['services'][role]
+            assert service['environment']['FINANCECLAW_ZIWEI_ENABLED'] == 'true'
+            assert service['environment']['FINANCECLAW_ZIWEI_DEVELOPMENT'] == 'true'
+            assert service['environment']['FINANCECLAW_ZIWEI_KEY_REF'] == 'ZIWEI_HMAC_KEY'
+            assert any(s['source'] == 'ziwei_key' and s['target'] == 'ZIWEI_HMAC_KEY'
+                       for s in service['secrets'])
+        for role in ('migrate', 'memory-worker'):
+            assert not any(s['source'] == 'ziwei_key' for s in config['services'][role]['secrets'])
+        mark('shared_ziwei_policy_and_role_scoped_secret_mounts')
     compose('build', 'api')
     started = time.monotonic()
     compose('up', '-d', '--wait', '--wait-timeout', str(THRESHOLDS['startup_seconds']))
@@ -253,7 +275,7 @@ try:
     RESULT['success'] = True
     RESULT['finished_at'] = datetime.now(timezone.utc).isoformat()
     (OUT / 'compose-results.json').write_text(json.dumps(RESULT, ensure_ascii=False, indent=2)+'\n')
-    print('M5 Compose validation passed; target/m5/compose-results.json', flush=True)
+    print('Compose validation passed;', OUT / 'compose-results.json', flush=True)
 finally:
     # Only this script's random, freshly-created project is ever removed, including on failure.
     try:

@@ -30,6 +30,8 @@ class ZiweiPackagedIT {
                               || n.contains("ziwei/reference/")
                               || n.contains("ziwei/calendar/")
                               || n.contains("ziwei/charts/")
+                              || n.contains("ziwei/domain/")
+                              || n.contains("ZiweiRuntimeProbe")
                               || n.contains("ZiweiPackagedProbe"))
                   .toList())
           .isEmpty();

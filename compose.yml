@@ -25,6 +25,11 @@ x-release: &release
   FINANCECLAW_MODEL: ${FINANCECLAW_MODEL:-offline}
   FINANCECLAW_MODEL_BASE_URL: ${FINANCECLAW_MODEL_BASE_URL:-}
   FINANCECLAW_MODEL_THINKING: ${FINANCECLAW_MODEL_THINKING:-false}
+  FINANCECLAW_ZIWEI_ENABLED: ${FINANCECLAW_ZIWEI_ENABLED:-false}
+  FINANCECLAW_ZIWEI_DEVELOPMENT: ${FINANCECLAW_ZIWEI_DEVELOPMENT:-false}
+  FINANCECLAW_ZIWEI_KEY_REF: ZIWEI_HMAC_KEY
+  FINANCECLAW_ZIWEI_KEY_VERSION: ${FINANCECLAW_ZIWEI_KEY_VERSION:-}
+  FINANCECLAW_ZIWEI_QUERY_TIMEZONE: ${FINANCECLAW_ZIWEI_QUERY_TIMEZONE:-Asia/Shanghai}
   FINANCECLAW_HOTEL_ENABLED: ${FINANCECLAW_HOTEL_ENABLED:-false}
   FINANCECLAW_HOTEL_URL: ${FINANCECLAW_HOTEL_URL:-https://mcp.rollinggo.cn/mcp}
   FINANCECLAW_HOTEL_ALLOWED_HOSTS: ${FINANCECLAW_HOTEL_ALLOWED_HOSTS:-mcp.rollinggo.cn}
@@ -89,6 +94,8 @@ services:
     environment:
       <<: [*release, *feishu]
     secrets:
+      - source: ziwei_key
+        target: ZIWEI_HMAC_KEY
       - source: db_app_password
         target: spring.datasource.password
       - source: api_token
@@ -108,6 +115,8 @@ services:
     environment:
       <<: *release
     secrets:
+      - source: ziwei_key
+        target: ZIWEI_HMAC_KEY
       - source: db_app_password
         target: spring.datasource.password
       - source: model_key
@@ -123,6 +132,8 @@ services:
     environment:
       <<: [*release, *feishu]
     secrets:
+      - source: ziwei_key
+        target: ZIWEI_HMAC_KEY
       - source: db_app_password
         target: spring.datasource.password
       - source: feishu_secret
@@ -169,6 +180,8 @@ secrets:
     file: .secrets/api-token
   model_key:
     file: .secrets/model-key
+  ziwei_key:
+    file: .secrets/ziwei-key
   memory_model_key:
     file: .secrets/memory-model-key
   embedding_key:
