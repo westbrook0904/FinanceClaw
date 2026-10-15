@@ -1,6 +1,6 @@
 # M1：任务生命周期与本地验证
 
-日期：2026-10-15。**本页为 M1 历史阶段记录；当前框架事件流、发布、授权和工具行为见 [M2](m2-validation.md)。** M0 基线提交为 `05b2b488d23ce2312a6d94524c9d43208f75efdd`；M1 基于该提交继续实施，当前源码以[测试指纹](evidence/m1-results.json)为准。M0 的[原始报告](evidence/results.json)保持冻结，不代表 M1 新增源码的验证结果。
+日期：2026-10-15。**本页为 M1 历史阶段记录；框架事件流、发布与授权见 [M2](m2-validation.md)，当前业务及最新回归见 [M3](m3-validation.md)。** M0 基线提交为 `05b2b488d23ce2312a6d94524c9d43208f75efdd`；M1 基于该提交继续实施，当前源码以[测试指纹](evidence/m1-results.json)为准。M0 的[原始报告](evidence/results.json)保持冻结，不代表 M1 新增源码的验证结果。
 
 ## 1. 实现范围
 

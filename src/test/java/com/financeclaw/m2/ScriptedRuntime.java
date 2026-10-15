@@ -30,7 +30,7 @@ final class ScriptedRuntime extends TaskAgentRuntime {
             switch (claim.turn().message()) {
               case "city" -> "request_city";
               case "catalog" -> "search_catalog";
-              case "mcp" -> "mcp_lookup";
+              case "mcp" -> "hotels";
               default -> "create_report";
             };
         long resolvedCount =

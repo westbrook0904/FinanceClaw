@@ -9,6 +9,7 @@ import com.financeclaw.domain.Governance.*;
 import com.financeclaw.domain.Task.*;
 import com.financeclaw.infrastructure.governance.GovernanceMapper;
 import com.financeclaw.infrastructure.state.RuntimeMapper;
+import com.financeclaw.tools.BusinessCatalog;
 import com.financeclaw.worker.TaskWorker;
 import java.nio.file.*;
 import java.util.*;
@@ -66,16 +67,7 @@ class GovernanceIT {
     sql.execute("TRUNCATE business.conversations CASCADE");
     releases.publish(
         new ReleaseCatalog.Release(
-            "m2-v1",
-            "finance_agent",
-            ReleaseCatalog.SCOPES,
-            ReleaseCatalog.OFFLINE,
-            null,
-            12,
-            16,
-            "",
-            "",
-            ""));
+            "m2-v1", "finance_agent", ReleaseCatalog.SCOPES, ReleaseCatalog.OFFLINE, null, 12, 16));
   }
 
   Accepted submit(String message) {
@@ -263,7 +255,7 @@ class GovernanceIT {
     String pinned = turn(t).releaseHash();
     releases.publish(
         new ReleaseCatalog.Release(
-            "m2-new", "finance_agent", List.of(), ReleaseCatalog.OFFLINE, null, 3, 3, "", "", ""));
+            "m2-new", "finance_agent", List.of(), ReleaseCatalog.OFFLINE, null, 3, 3));
     run(claim());
     var i = question(t);
     assertThat(i.releaseHash()).isEqualTo(pinned);
@@ -324,16 +316,7 @@ class GovernanceIT {
   void serverIdentityIsFixedAndExecutionBudgetSharedAcrossAttempts() throws Exception {
     releases.publish(
         new ReleaseCatalog.Release(
-            "limited",
-            "finance_agent",
-            ReleaseCatalog.SCOPES,
-            ReleaseCatalog.OFFLINE,
-            null,
-            1,
-            2,
-            "",
-            "",
-            ""));
+            "limited", "finance_agent", ReleaseCatalog.SCOPES, ReleaseCatalog.OFFLINE, null, 1, 2));
     var t = submit("report");
     var c = claim();
     var identity = tasks.identity(c);
@@ -378,9 +361,19 @@ class GovernanceIT {
               null,
               12,
               16,
-              server.url(),
-              "hotels",
-              ResumeInputs.canonical(GovernedTools.CITY)));
+              new BusinessCatalog.Features(
+                  List.of(
+                      new BusinessCatalog.Remote(
+                          "hotel",
+                          server.url(),
+                          List.of(java.net.URI.create(server.url()).getAuthority()),
+                          "",
+                          false,
+                          List.of("local"),
+                          List.of("hotels"),
+                          2000)),
+                  BusinessCatalog.skillHash(),
+                  "{}")));
       var t = submit("mcp");
       run(claim());
       assertThat(turn(t).status()).isEqualTo("completed");
@@ -391,7 +384,7 @@ class GovernanceIT {
       assertThat(governance.read(owner, id, 100, 1).data())
           .isEqualTo(Map.of("hotels", List.of(Map.of("city", "上海", "name", "fixture"))));
       assertThat(ResumeInputs.canonical(tasks.events(owner, t.conversationId(), t.turnId(), 0)))
-          .doesNotContain("PRIVATE_MCP_RAW_RESULT", "hotels");
+          .doesNotContain("PRIVATE_MCP_RAW_RESULT", "上海", "fixture");
       server.drift = true;
       var changed = submit("mcp");
       run(claim());

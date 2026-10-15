@@ -27,6 +27,16 @@ public final class IsolatedAgentFactory {
       Toolkit toolkit,
       AgentStateStore store,
       PermissionContextState permissions) {
+    return create(model, fallback, toolkit, store, permissions, builder -> {});
+  }
+
+  public static ReActAgent create(
+      Model model,
+      Model fallback,
+      Toolkit toolkit,
+      AgentStateStore store,
+      PermissionContextState permissions,
+      java.util.function.Consumer<ReActAgent.Builder> configure) {
     if (permissions == null
         || permissions.isTrivial()
         || permissions.getMode() == PermissionMode.BYPASS) {
@@ -55,6 +65,7 @@ public final class IsolatedAgentFactory {
             .maxIters(6)
             .middleware(new FinalAnswerFilterMiddleware());
     if (fallback != null) builder.fallbackModel(fallback);
+    configure.accept(builder);
     return builder.build();
   }
 

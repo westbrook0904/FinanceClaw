@@ -83,6 +83,27 @@ financeclaw:
     model-timeout-ms: 30000
   integrations:
     enabled: ${FINANCECLAW_INTEGRATIONS_ENABLED:true}
+  business:
+    # Operators explicitly enable integrations; disabled services do not resolve credentials or open connections.
+    hotel:
+      enabled: ${FINANCECLAW_HOTEL_ENABLED:false}
+      url: ${FINANCECLAW_HOTEL_URL:https://mcp.rollinggo.cn/mcp}
+      allowed-hosts: ${FINANCECLAW_HOTEL_ALLOWED_HOSTS:mcp.rollinggo.cn}
+      credential-ref: ${FINANCECLAW_HOTEL_CREDENTIAL_REF:ROLLINGGO_TOKEN}
+      external: true
+      tenants: ${FINANCECLAW_HOTEL_TENANTS:local}
+      timeout-ms: 5000
+    taibu:
+      enabled: ${FINANCECLAW_TAIBU_ENABLED:false}
+      url: ${FINANCECLAW_TAIBU_URL:}
+      allowed-hosts: ${FINANCECLAW_TAIBU_ALLOWED_HOSTS:}
+      credential-ref: ${FINANCECLAW_TAIBU_CREDENTIAL_REF:}
+      external: ${FINANCECLAW_TAIBU_EXTERNAL:false}
+      tenants: ${FINANCECLAW_TAIBU_TENANTS:local}
+      timeout-ms: 5000
+    market-file: ${FINANCECLAW_MARKET_FILE:}
+    ziwei:
+      enabled: ${FINANCECLAW_ZIWEI_ENABLED:false}
   sse:
     max-connections: 32
     timeout-ms: 30000

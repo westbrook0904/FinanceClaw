@@ -92,13 +92,19 @@ public class TaskAgentRuntime {
                 ? null
                 : ModelFactory.create(release.fallback(), tasks.releases().apiKey())) {
       Model delegate = release.primary().name().equals("offline") ? model(claim) : provider;
-      Model primary = guarded(claim, delegate, stop);
-      Model fallback = release.fallback() == null ? null : guarded(claim, backup, stop);
+      tools.business(release.primary().name().equals("offline") ? null : provider, states);
+      boolean workflow =
+          claim.turn().message().startsWith(com.financeclaw.tools.PortfolioReview.COMMAND);
+      if (workflow)
+        delegate = new com.financeclaw.tools.PortfolioReview(tasks, governance, claim).driver();
+      Model primary = guarded(claim, delegate, stop, !workflow);
+      Model fallback =
+          release.fallback() == null || workflow ? null : guarded(claim, backup, stop, true);
       try (var agent =
           IsolatedAgentFactory.create(
-              primary, fallback, tools.toolkit, store, tools.permissions())) {
+              primary, fallback, tools.toolkit, store, tools.permissions(), tools::configure)) {
         active.put(claim.command().attemptId(), new Active(agent, stop));
-        List<Msg> inputs = inputs(claim, store, tools.permissions());
+        List<Msg> inputs = inputs(claim, store, tools);
         agent
             .streamEvents(
                 inputs,
@@ -113,10 +119,10 @@ public class TaskAgentRuntime {
                       && !text.getDelta().isEmpty())
                     tasks.progress(claim, "text_delta", text.getDelta(), null);
                   else if (event instanceof ToolCallStartEvent tool
-                      && tools.toolkit.getToolNames().contains(tool.getToolCallName()))
+                      && agent.getToolkit().getToolNames().contains(tool.getToolCallName()))
                     tasks.progress(claim, "tool_started", null, tool.getToolCallName());
                   else if (event instanceof ToolResultEndEvent tool
-                      && tools.toolkit.getToolNames().contains(tool.getToolCallName()))
+                      && agent.getToolkit().getToolNames().contains(tool.getToolCallName()))
                     tasks.progress(
                         claim,
                         tool.getState() == ToolResultState.SUCCESS
@@ -145,7 +151,7 @@ public class TaskAgentRuntime {
     }
   }
 
-  private Model guarded(Claim claim, Model delegate, Sinks.Empty<Void> stop) {
+  private Model guarded(Claim claim, Model delegate, Sinks.Empty<Void> stop, boolean countModel) {
     return new Model() {
       @Override
       public String getModelName() {
@@ -157,7 +163,7 @@ public class TaskAgentRuntime {
           List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
         return Flux.defer(
                 () -> {
-                  tasks.consume(claim, true);
+                  if (countModel) tasks.consume(claim, true);
                   return delegate.stream(messages, tools, options);
                 })
             .takeUntilOther(stop.asMono());
@@ -165,8 +171,7 @@ public class TaskAgentRuntime {
     };
   }
 
-  private List<Msg> inputs(
-      Claim claim, MyBatisAgentStateStore store, PermissionContextState permissions) {
+  private List<Msg> inputs(Claim claim, MyBatisAgentStateStore store, GovernedTools tools) {
     if (claim.command().resumeId() == null) {
       var profile = tasks.releases().require(claim.turn().releaseHash()).primary();
       int budget =
@@ -203,72 +208,65 @@ public class TaskAgentRuntime {
               .build());
       return history;
     }
-    return tasks.fenced(
-        claim,
-        () -> {
-          tasks.checkPolicy(claim);
-          var anchor = tasks.governance().interaction(claim.command().resumeId());
-          if (anchor == null || !anchor.status().equals("answered") || !anchor.live())
+    tasks.checkDispatch(claim);
+    {
+      var anchor = tasks.governance().interaction(claim.command().resumeId());
+      if (anchor == null || !anchor.status().equals("answered") || !anchor.live())
+        throw new Blocked("stale_interaction");
+      var source =
+          new Claim(
+                  new Command(
+                      anchor.commandId(),
+                      anchor.turnId(),
+                      "done",
+                      anchor.attemptId(),
+                      0,
+                      false,
+                      null),
+                  claim.turn())
+              .scope();
+      var original = new MyBatisAgentStateStore(states, source);
+      var saved =
+          original.getVersioned(
+              source.userId(), source.sessionId(), "agent_state", AgentState.class);
+      if (!saved.isPresent() || saved.version() != anchor.stateVersion())
+        throw new Blocked("checkpoint_mismatch");
+      List<Msg> replies = new ArrayList<>();
+      for (var i : tasks.governance().interactions(claim.turn().id()))
+        if (i.attemptId().equals(anchor.attemptId())) {
+          if (!i.status().equals("answered")
+              || !i.live()
+              || i.grantRevision() != anchor.grantRevision())
             throw new Blocked("stale_interaction");
-          var source =
-              new Claim(
-                      new Command(
-                          anchor.commandId(),
-                          anchor.turnId(),
-                          "done",
-                          anchor.attemptId(),
-                          0,
-                          false,
-                          null),
-                      claim.turn())
-                  .scope();
-          var original = new MyBatisAgentStateStore(states, source);
-          var saved =
-              original.getVersioned(
-                  source.userId(), source.sessionId(), "agent_state", AgentState.class);
-          if (!saved.isPresent() || saved.version() != anchor.stateVersion())
-            throw new Blocked("checkpoint_mismatch");
-          List<Msg> replies = new ArrayList<>();
-          for (var i : tasks.governance().interactions(claim.turn().id()))
-            if (i.attemptId().equals(anchor.attemptId())) {
-              if (!i.status().equals("answered")
-                  || !i.live()
-                  || i.grantRevision() != anchor.grantRevision())
-                throw new Blocked("stale_interaction");
-              var answer = GovernanceService.object(i.response());
-              replies.add(
-                  i.kind().equals("approval")
-                      ? ResumeInputs.approval(
-                          original,
-                          source,
-                          i.stateVersion(),
-                          i.callId(),
-                          i.actionHash(),
-                          "approve".equals(answer.get("decision")))
-                      : ResumeInputs.clarification(
-                          original,
-                          source,
-                          i.stateVersion(),
-                          i.callId(),
-                          i.actionHash(),
-                          (String) ((Map<?, ?>) answer.get("answer")).get("city")));
-            }
-          var state = saved.value();
-          var copied =
-              AgentState.builder()
-                  .userId(claim.scope().userId())
-                  .sessionId(claim.scope().sessionId())
-                  .context(state.getContext())
-                  .summary(state.getSummary())
-                  .permissionContext(permissions)
-                  .toolContext(state.getToolContext())
-                  .tasksContext(state.getTasksContext())
-                  .planModeContext(state.getPlanModeContext())
-                  .build();
-          store.saveIfVersion(
-              claim.scope().userId(), claim.scope().sessionId(), "agent_state", copied, 0);
-          return replies;
-        });
+          var answer = GovernanceService.object(i.response());
+          replies.add(
+              i.kind().equals("approval")
+                  ? ResumeInputs.approval(
+                      original,
+                      source,
+                      i.stateVersion(),
+                      i.callId(),
+                      i.actionHash(),
+                      "approve".equals(answer.get("decision")))
+                  : tools.resumeInput(original, source, i, answer.get("answer")));
+        }
+      var state = saved.value();
+      var copied =
+          AgentState.builder()
+              .userId(claim.scope().userId())
+              .sessionId(claim.scope().sessionId())
+              .context(state.getContext())
+              .summary(state.getSummary())
+              .permissionContext(tools.permissions())
+              .toolContext(state.getToolContext())
+              .tasksContext(state.getTasksContext())
+              .planModeContext(state.getPlanModeContext())
+              .build();
+      store.saveIfVersion(
+          claim.scope().userId(), claim.scope().sessionId(), "agent_state", copied, 0);
+      tasks.checkDispatch(claim);
+      return replies;
+    }
   }
 
   public void interrupt(Claim claim) {

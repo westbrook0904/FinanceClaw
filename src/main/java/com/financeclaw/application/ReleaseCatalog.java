@@ -31,9 +31,26 @@ public class ReleaseCatalog {
       ModelProfile fallback,
       int maxModelCalls,
       int maxToolCalls,
-      String mcpUrl,
-      String mcpTool,
-      String mcpSchema) {
+      com.financeclaw.tools.BusinessCatalog.Features business) {
+    public Release(
+        String version,
+        String agent,
+        List<String> scopes,
+        ModelProfile primary,
+        ModelProfile fallback,
+        int maxModelCalls,
+        int maxToolCalls) {
+      this(
+          version,
+          agent,
+          scopes,
+          primary,
+          fallback,
+          maxModelCalls,
+          maxToolCalls,
+          com.financeclaw.tools.BusinessCatalog.defaults());
+    }
+
     public Release {
       scopes = List.copyOf(scopes);
     }
@@ -44,7 +61,16 @@ public class ReleaseCatalog {
   }
 
   public static final List<String> SCOPES =
-      List.of("catalog:read", "report:write", "artifact:read");
+      List.of(
+          "catalog:read",
+          "report:write",
+          "artifact:read",
+          "travel:read",
+          "taibu:read",
+          "skill:use",
+          "market:read",
+          "research:run",
+          "workflow:run");
   public static final ModelProfile OFFLINE =
       new ModelProfile("offline", "", 65536, 131072, 2048, 512, false);
   private final Map<String, Release> releases = new ConcurrentHashMap<>();
@@ -63,16 +89,13 @@ public class ReleaseCatalog {
     this.apiKey = apiKey;
     publish(
         new Release(
-            "m2-v1",
+            "m3-v1",
             "finance_agent",
             SCOPES,
             new ModelProfile(model, url, 65536, 131072, 2048, 512, thinking),
             null,
             12,
-            16,
-            "",
-            "",
-            ""));
+            32));
   }
 
   @org.springframework.beans.factory.annotation.Autowired
@@ -82,16 +105,14 @@ public class ReleaseCatalog {
     String fallback = env.getProperty("financeclaw.fallback.name", "");
     publish(
         new Release(
-            "m2-v1",
+            "m3-v1",
             "finance_agent",
             SCOPES,
             primary,
             fallback.isBlank() ? null : profile(env, "financeclaw.fallback", fallback),
             12,
-            16,
-            "",
-            "",
-            ""));
+            32,
+            com.financeclaw.tools.BusinessCatalog.load(env)));
   }
 
   private static ModelProfile profile(

@@ -55,7 +55,15 @@ final class MockMcp implements AutoCloseable {
                   calls.incrementAndGet();
                   yield Map.of(
                       "content",
-                      List.of(Map.of("type", "text", "text", "PRIVATE_MCP_RAW_RESULT")),
+                      List.of(
+                          Map.of(
+                              "type",
+                              "text",
+                              "text",
+                              json.writeValueAsString(
+                                  Map.of(
+                                      "hotels",
+                                      List.of(Map.of("city", "上海", "name", "fixture")))))),
                       "structuredContent",
                       Map.of("hotels", List.of(Map.of("city", "上海", "name", "fixture"))),
                       "isError",

@@ -6,6 +6,28 @@ import org.apache.ibatis.annotations.*;
 
 @Mapper
 public interface GovernanceMapper {
+  record Step(String inputHash, String result) {}
+
+  @Update("UPDATE business.artifacts SET required_scope=#{scope} WHERE id=#{id}")
+  int setArtifactScope(@Param("id") String id, @Param("scope") String scope);
+
+  @Select("SELECT required_scope FROM business.artifacts WHERE id=#{id}")
+  String artifactScope(String id);
+
+  @Select(
+      "SELECT input_hash,result FROM business.capability_steps WHERE turn_id=#{turn} AND namespace=#{namespace} AND step=#{step}")
+  Step step(
+      @Param("turn") String turn, @Param("namespace") String namespace, @Param("step") String step);
+
+  @Insert(
+      "INSERT INTO business.capability_steps(turn_id,namespace,step,input_hash,result) VALUES(#{turn},#{namespace},#{step},#{hash},#{result})")
+  int saveStep(
+      @Param("turn") String turn,
+      @Param("namespace") String namespace,
+      @Param("step") String step,
+      @Param("hash") String hash,
+      @Param("result") String result);
+
   @Insert(
       "INSERT INTO business.grants(conversation_id,scopes) VALUES(#{id},CAST(#{scopes} AS jsonb)) ON CONFLICT DO NOTHING")
   int ensureGrant(@Param("id") String id, @Param("scopes") String scopes);

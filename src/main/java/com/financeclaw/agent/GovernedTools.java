@@ -3,16 +3,14 @@ package com.financeclaw.agent;
 import com.financeclaw.application.*;
 import com.financeclaw.domain.Governance.*;
 import com.financeclaw.domain.Task.*;
+import com.financeclaw.tools.*;
 import io.agentscope.core.message.*;
 import io.agentscope.core.permission.*;
 import io.agentscope.core.tool.*;
-import io.agentscope.core.tool.mcp.*;
-import java.time.Duration;
 import java.util.*;
 import java.util.function.Function;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
-import reactor.util.retry.Retry;
 
 /** A ToolBase boundary, shared by local tools and SDK MCP transport. No model-supplied identity. */
 public final class GovernedTools implements AutoCloseable {
@@ -23,13 +21,15 @@ public final class GovernedTools implements AutoCloseable {
   public static final Map<String, Object> EMPTY =
       Map.of("type", "object", "properties", Map.of(), "additionalProperties", false);
   public static final Set<String> NAMES =
-      Set.of("request_city", "create_report", "search_catalog", "read_artifact", "mcp_lookup");
+      Set.of("request_city", "create_report", "search_catalog", "read_artifact");
   private final TaskService tasks;
   private final GovernanceService governance;
   private final Claim claim;
   private final ReleaseCatalog.Release release;
   private final List<String> scopes;
-  private McpClientWrapper mcp;
+  private final McpTools mcp = new McpTools();
+  private io.agentscope.core.skill.repository.ClasspathSkillRepository skills;
+  private MarketResearch research;
   public final Toolkit toolkit = new Toolkit();
 
   public GovernedTools(TaskService tasks, GovernanceService governance, Claim claim) {
@@ -90,6 +90,8 @@ public final class GovernedTools implements AutoCloseable {
             "object",
             "properties",
             Map.of(
+                "path",
+                Map.of("type", "string", "maxLength", 256),
                 "artifact_id",
                 Map.of("type", "string"),
                 "start",
@@ -110,13 +112,170 @@ public final class GovernedTools implements AutoCloseable {
                                 new Owner(claim.turn().tenant(), claim.turn().subject()),
                                 (String) p.getInput().get("artifact_id"),
                                 ((Number) p.getInput().getOrDefault("start", 0)).intValue(),
-                                ((Number) p.getInput().getOrDefault("limit", 20)).intValue())))));
-    if (!release.mcpUrl().isBlank())
+                                ((Number) p.getInput().getOrDefault("limit", 20)).intValue(),
+                                (String) p.getInput().getOrDefault("path", ""))))));
+    try {
+      for (var service : release.business().remotes()) {
+        String scope = service.service().equals("taibu") ? "taibu:read" : "travel:read";
+        if (!scopes.contains(scope)) continue;
+        tasks.checkDispatch(claim);
+        mcp.register(toolkit, service, claim.turn().tenant());
+        for (String name : service.tools()) {
+          var nativeTool = toolkit.getTool(name);
+          // Keep the native name/schema/call implementation. This adapter only enforces product
+          // policy and archives results before they enter model context.
+          register(
+              name,
+              nativeTool.getParameters(),
+              scope,
+              p -> {
+                if (service.service().equals("taibu")) TaibuInputs.validate(name, p.getInput());
+                return nativeTool
+                    .callAsync(p)
+                    .map(
+                        result -> {
+                          if (result.getState() == ToolResultState.ERROR)
+                            throw new Blocked("mcp_service_error");
+                          String text =
+                              result.getOutput().stream()
+                                  .filter(TextBlock.class::isInstance)
+                                  .map(TextBlock.class::cast)
+                                  .map(TextBlock::getText)
+                                  .collect(java.util.stream.Collectors.joining("\n"));
+                          Object data;
+                          try {
+                            data = GovernanceService.parse(text);
+                          } catch (Blocked e) {
+                            throw new Blocked("mcp_invalid_result");
+                          }
+                          if (data instanceof Map<?, ?> map
+                              && (Boolean.FALSE.equals(map.get("success"))
+                                  || map.containsKey("error")))
+                            throw new Blocked("mcp_service_error");
+                          if (service.service().equals("taibu"))
+                            TaibuInputs.validateResult(name, data, p.getInput());
+                          return archived(data, scope);
+                        });
+              },
+              nativeTool);
+        }
+      }
+      if (scopes.contains("skill:use")) {
+        if (!release.business().skillHash().equals(BusinessCatalog.skillHash()))
+          throw new Blocked("skill_release_changed");
+        skills =
+            new io.agentscope.core.skill.repository.ClasspathSkillRepository(
+                BusinessCatalog.SKILLS);
+      }
+    } catch (java.io.IOException | RuntimeException e) {
+      close();
+      throw e instanceof Blocked blocked ? blocked : new Blocked("capability_unavailable");
+    }
+  }
+
+  public void configure(io.agentscope.core.ReActAgent.Builder builder) {
+    if (skills == null) return;
+    builder.skillRepository(skills).skillCodeExecutionEnabled(false);
+    // The SDK's skill access tool is an AgentTool in 2.0.3; enforce business grants through
+    // native middleware without replacing its loader, tools, prompt or activation state.
+    builder.middleware(
+        new io.agentscope.core.middleware.MiddlewareBase() {
+          @Override
+          public reactor.core.publisher.Flux<io.agentscope.core.event.AgentEvent> onActing(
+              io.agentscope.core.agent.Agent agent,
+              io.agentscope.core.agent.RuntimeContext context,
+              io.agentscope.core.middleware.ActingInput input,
+              java.util.function.Function<
+                      io.agentscope.core.middleware.ActingInput,
+                      reactor.core.publisher.Flux<io.agentscope.core.event.AgentEvent>>
+                  next) {
+            return reactor.core.publisher.Flux.defer(
+                () -> {
+                  for (var call : input.toolCalls()) {
+                    if (call.getName().equals("load_skill_through_path")) {
+                      tasks.checkDispatch(claim);
+                      if (!GovernanceService.scopes(
+                              tasks.governance().policy(claim.turn().id()).scopes())
+                          .contains("skill:use")) throw new Blocked("tool_denied");
+                      tasks.consume(claim, false);
+                    }
+                  }
+                  return next.apply(input);
+                });
+          }
+        });
+  }
+
+  public void business(
+      io.agentscope.core.model.Model model,
+      com.financeclaw.infrastructure.state.RuntimeMapper states) {
+    research = new MarketResearch(tasks, claim, states, model);
+    register(
+        "market_snapshot",
+        MarketData.SCHEMA,
+        "market:read",
+        p ->
+            Mono.fromCallable(
+                () ->
+                    ToolResultBlock.text(
+                        ResumeInputs.canonical(
+                            new MarketData(tasks, claim)
+                                .read((String) p.getInput().get("symbol"))))));
+    register("market_research", MarketResearch.SCHEMA, "research:run", research::run);
+    var workflow = new PortfolioReview(tasks, governance, claim);
+    register(
+        "portfolio_review",
+        PortfolioReview.SCHEMA,
+        "workflow:run",
+        p ->
+            Mono.fromCallable(
+                () ->
+                    ToolResultBlock.text(ResumeInputs.canonical(workflow.prepare(p.getInput())))));
+    if (scopes.contains("workflow:run"))
       register(
-          "mcp_lookup",
-          GovernanceService.object(release.mcpSchema()),
-          "catalog:read",
-          this::mcpRead);
+          "publish_portfolio_report",
+          PortfolioReview.PUBLISH,
+          "report:write",
+          p ->
+              Mono.fromCallable(
+                  () ->
+                      ToolResultBlock.text(
+                          ResumeInputs.canonical(
+                              workflow.publish((String) p.getInput().get("draft_hash"))))));
+  }
+
+  public Msg resumeInput(
+      io.agentscope.core.state.AgentStateStore store,
+      com.financeclaw.domain.ExecutionScope scope,
+      Interaction i,
+      Object answer) {
+    if (i.tool().equals("request_city"))
+      return ResumeInputs.clarification(
+          store,
+          scope,
+          i.stateVersion(),
+          i.callId(),
+          i.actionHash(),
+          (String) ((Map<?, ?>) answer).get("city"));
+    if (!i.tool().equals("market_research")) throw new Blocked("unsupported_interaction");
+    var call = ResumeInputs.pending(store, scope, i.stateVersion(), i.callId());
+    if (!ResumeInputs.actionHash(call).equals(i.actionHash()))
+      throw new Blocked("checkpoint_mismatch");
+    var input = new TreeMap<>(call.getInput());
+    ((Map<?, ?>) answer).forEach((k, v) -> input.put((String) k, v));
+    if (MarketResearch.missing(input)) throw new Blocked("research_scope_missing");
+    tasks.consume(claim, false);
+    var result =
+        research
+            .run(ToolCallParam.builder().toolUseBlock(call).input(input).build())
+            .block(java.time.Duration.ofSeconds(20));
+    return Msg.builder()
+        .name("tool")
+        .role(MsgRole.TOOL)
+        .content(
+            ToolResultBlock.of(call.getId(), call.getName(), result.getOutput())
+                .withState(ToolResultState.SUCCESS))
+        .build();
   }
 
   /**
@@ -146,9 +305,12 @@ public final class GovernedTools implements AutoCloseable {
           new PermissionRule(
               name,
               null,
-              name.equals("create_report") ? PermissionBehavior.ASK : PermissionBehavior.ALLOW,
+              Set.of("create_report", "publish_portfolio_report").contains(name)
+                  ? PermissionBehavior.ASK
+                  : PermissionBehavior.ALLOW,
               "release-policy");
-      if (name.equals("create_report")) builder.addAskRule(name, rule);
+      if (Set.of("create_report", "publish_portfolio_report").contains(name))
+        builder.addAskRule(name, rule);
       else builder.addAllowRule(name, rule);
     }
     return builder.build();
@@ -159,10 +321,22 @@ public final class GovernedTools implements AutoCloseable {
       Map<String, Object> schema,
       String scope,
       Function<ToolCallParam, Mono<ToolResultBlock>> action) {
+    register(name, schema, scope, action, null);
+  }
+
+  private void register(
+      String name,
+      Map<String, Object> schema,
+      String scope,
+      Function<ToolCallParam, Mono<ToolResultBlock>> action,
+      AgentTool nativeTool) {
     if (scope != null && (!scopes.contains(scope) || !release.scopes().contains(scope))) return;
     toolkit.registerAgentTool(
         new ToolBase(
-            ToolBase.builder().name(name).description("Governed " + name).inputSchema(schema)) {
+            ToolBase.builder()
+                .name(name)
+                .description(nativeTool == null ? "Governed " + name : nativeTool.getDescription())
+                .inputSchema(schema)) {
           @Override
           public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
             return Mono.defer(
@@ -187,88 +361,14 @@ public final class GovernedTools implements AutoCloseable {
   }
 
   private ToolResultBlock archived(Object result) {
-    var a = governance.archive(claim, result);
+    return archived(result, "artifact:read");
+  }
+
+  private ToolResultBlock archived(Object result, String scope) {
+    var a = governance.archive(claim, result, scope);
     return ToolResultBlock.text(
         ResumeInputs.canonical(
             Map.of("artifact_id", a.id(), "hash", a.hash(), "bytes", a.bytes())));
-  }
-
-  private synchronized McpClientWrapper client() {
-    if (mcp == null) {
-      // Endpoint and contract are release configuration, never tool arguments. No writes exposed.
-      mcp =
-          McpClientBuilder.create("release-mcp")
-              .streamableHttpTransport(release.mcpUrl())
-              .timeout(Duration.ofSeconds(5))
-              .initializationTimeout(Duration.ofSeconds(5))
-              .buildSync();
-      mcp.initialize().block(Duration.ofSeconds(6));
-    }
-    return mcp;
-  }
-
-  /** SDK JsonSchema records contain absent optional fields as null; they are not constraints. */
-  static String schemaJson(Object value) {
-    var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
-    com.fasterxml.jackson.databind.JsonNode node = mapper.valueToTree(value);
-    removeNulls(node);
-    return ResumeInputs.canonical(mapper.convertValue(node, Object.class));
-  }
-
-  private static void removeNulls(com.fasterxml.jackson.databind.JsonNode node) {
-    // Only optional fields of the root MCP JsonSchema record. Nested enum/const data is opaque.
-    if (node.isObject())
-      for (String field :
-          List.of(
-              "type",
-              "properties",
-              "required",
-              "additionalProperties",
-              "defs",
-              "$defs",
-              "definitions"))
-        if (node.has(field) && node.get(field).isNull())
-          ((com.fasterxml.jackson.databind.node.ObjectNode) node).remove(field);
-  }
-
-  private Mono<ToolResultBlock> mcpRead(ToolCallParam param) {
-    return Mono.defer(
-            () -> {
-              tasks.checkDispatch(claim);
-              var client = client();
-              return client
-                  .listTools()
-                  .flatMap(
-                      tools -> {
-                        var remote =
-                            tools.stream()
-                                .filter(t -> t.name().equals(release.mcpTool()))
-                                .findFirst()
-                                .orElseThrow(() -> new Blocked("mcp_contract_changed"));
-                        if (!schemaJson(remote.inputSchema())
-                            .equals(
-                                ResumeInputs.canonical(
-                                    GovernanceService.object(release.mcpSchema()))))
-                          throw new Blocked("mcp_contract_changed");
-                        return client.callTool(release.mcpTool(), param.getInput());
-                      })
-                  .map(
-                      result -> {
-                        if (Boolean.TRUE.equals(result.isError()))
-                          throw new Blocked("mcp_service_error");
-                        return archived(
-                            result.structuredContent() != null
-                                ? result.structuredContent()
-                                : result.content());
-                      });
-            })
-        .retryWhen(
-            Retry.backoff(1, Duration.ofMillis(100))
-                .filter(
-                    e ->
-                        e instanceof java.util.concurrent.TimeoutException
-                            || e instanceof java.io.IOException)
-                .onRetryExhaustedThrow((spec, signal) -> signal.failure()));
   }
 
   public List<Pending> pending(io.agentscope.core.state.AgentState state) {
@@ -284,7 +384,8 @@ public final class GovernedTools implements AutoCloseable {
     for (var message : state.getContext())
       for (var call : message.getContentBlocks(ToolUseBlock.class))
         if (!resolved.contains(call.getId())) {
-          if (call.getState() == ToolCallState.ASKING && call.getName().equals("create_report"))
+          if (call.getState() == ToolCallState.ASKING
+              && Set.of("create_report", "publish_portfolio_report").contains(call.getName()))
             result.add(
                 new Pending(
                     "approval",
@@ -292,7 +393,9 @@ public final class GovernedTools implements AutoCloseable {
                     call.getName(),
                     ResumeInputs.actionHash(call),
                     "{}",
-                    "是否创建报告：" + Objects.toString(call.getInput().get("title"), "")));
+                    call.getName().equals("publish_portfolio_report")
+                        ? "是否发布投资组合复盘报告？"
+                        : "是否创建报告：" + Objects.toString(call.getInput().get("title"), "")));
           else if (call.getName().equals("request_city"))
             result.add(
                 new Pending(
@@ -302,6 +405,15 @@ public final class GovernedTools implements AutoCloseable {
                     ResumeInputs.actionHash(call),
                     ResumeInputs.canonical(CITY),
                     "请输入城市"));
+          else if (call.getName().equals("market_research"))
+            result.add(
+                new Pending(
+                    "input",
+                    call.getId(),
+                    call.getName(),
+                    ResumeInputs.actionHash(call),
+                    ResumeInputs.canonical(MarketResearch.ANSWER),
+                    "请提供研究证券代码和分析期间"));
           else throw new Blocked("unsupported_interaction");
         }
     return result;
@@ -309,6 +421,7 @@ public final class GovernedTools implements AutoCloseable {
 
   @Override
   public void close() {
-    if (mcp != null) mcp.close();
+    mcp.close();
+    if (skills != null) skills.close();
   }
 }

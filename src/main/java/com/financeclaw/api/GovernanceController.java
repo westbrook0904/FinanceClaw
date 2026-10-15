@@ -112,7 +112,8 @@ public class GovernanceController {
       HttpServletRequest request,
       @PathVariable String artifact,
       @RequestParam(defaultValue = "0") int start,
-      @RequestParam(defaultValue = "20") int limit) {
-    return service.read(TaskController.owner(request), artifact, start, limit);
+      @RequestParam(defaultValue = "20") int limit,
+      @RequestParam(defaultValue = "") String path) {
+    return service.read(TaskController.owner(request), artifact, start, limit, path);
   }
 }

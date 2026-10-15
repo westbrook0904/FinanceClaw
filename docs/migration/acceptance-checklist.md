@@ -1,6 +1,6 @@
 # AgentScope Java 迁移验收清单
 
-日期：2026-10-15。配套[迁移方案](agentscope-java-migration.md)。**M0–M2 已完成本地验证，M3–M6 尚未实现/验收**；结果与边界见 [M0 验证记录](m0-validation.md)、[M1 使用与验证](m1-validation.md)、[M2 使用与验证](m2-validation.md)。
+日期：2026-10-15。配套[迁移方案](agentscope-java-migration.md)。**M0–M3 已完成本地验证，M4–M6 尚未实现/验收**；结果与边界见 [M0 验证记录](m0-validation.md)、[M1 使用与验证](m1-validation.md)、[M2 使用与验证](m2-validation.md)、[M3 业务与验证](m3-validation.md)。
 
 ## 1. 如何记录证据
 
@@ -26,7 +26,7 @@
 | `tests/stage6fixc/test_native_interactions.py`、`tests/stage8_hotfix/test_root_clarification.py` | M2 审批与根层澄清 |
 | `tests/stage11/test_context_budget.py`、`tests/stage8_hotfix/test_context_capacity.py` | M2 完整请求预算与离线估算 |
 | `tests/mcp_integration/test_execution.py`、`test_hotel_result_views.py` | M2/M3 MCP 契约、归档与回读 |
-| `tests/skills/test_governance.py`、`test_prompt_order.py`、`test_runtime.py` | M3 Skill 权限、投影顺序与运行行为 |
+| `tests/skills/test_governance.py`、`test_prompt_order.py`、`test_runtime.py` | M3 原生 Skill 加载、权限与 checkpoint 恢复 |
 | `tests/stage4/test_portfolio_review_graph.py`、`tests/stage8_hotfix/test_native_subgraphs.py` | M3 Workflow 和子 Agent |
 | `tests/stage7/test_calculation.py`、`tests/stage8_hotfix/test_ziwei_five_tools.py` | M3/M6 紫微算法与五工具协议 |
 | `tests/stage11/test_domain_retention.py`、`test_index_projection.py`、`test_worker_role_postgres.py` | M4 遗忘、索引竞争与受限数据库身份 |
@@ -75,7 +75,7 @@
 - [x] 发布在受理后更新，正在运行/恢复的 Turn 仍使用固定发布；版本不可用时明确阻断。
 - [x] 审批校验 action hash、工具参数、问题 revision、有效期、状态版本和当前 Turn。
 - [x] 重复正确回答幂等；错误类型、旧卡片、已取消任务、已撤销授权和其他用户回答均被拒绝。
-- [x] 建立本地工具/MCP 共用治理入口；收窄工具集合不能扩权，子调用共用根 Turn 次数预算已测。实际子 Agent/Workflow 场景在 M3 接入与验收。
+- [x] 建立本地工具/MCP 共用治理入口；收窄工具集合不能扩权，子调用共用根 Turn 次数预算已测。实际子 Agent/Workflow 场景已在 M3 接入并通过本地模拟验收。
 - [x] 模型/工具重试按故障分类；只读瞬时失败可有界重试，写操作有幂等/核对策略。
 - [x] 超长酒店结果、中文、tool calls、response schema 和大量工具定义进入完整请求预算测试；未定价多模态块在发送前明确拒绝。
 - [x] tokenizer 缺失时的保守估算单独通过，Java 不依赖 Python tiktoken 缓存。
@@ -90,21 +90,22 @@ M2 本地证据见 [验证记录](m2-validation.md)及[框架复用审查](frame
 
 | 场景 | 必测输入 / 故障 | 通过标准 |
 | --- | --- | --- |
-| 酒店 MCP | 查询、详情、标签；大数组；超时；契约变化 | 权限/host/预算正确；引用可授权回读；输入结构漂移拒绝执行 |
-| MCP 注释变化 | 仅 title/description/example/default 变化 | 不产生错误的契约漂移阻断 |
-| MCP 业务字段 | 参数名为 description；enum/const 内有同名字段 | 规范化不破坏业务数据 |
-| 禁用 MCP | 未提供密钥或契约文件 | 不初始化该服务，不影响其他启用能力 |
-| Taibu | 固定 almanac / bazi 输入及服务错误 | 业务 schema、错误分类、数据级别与 host 校验一致 |
-| 调酒 Skill | `/skill` 显式选择、按需资源、重复激活 | 方法正确加载；身份/版本/hash 验证；不污染用户事实 |
-| Skill 失败 | 超限、撤销、资源越界、并行依赖工具 | 激活状态不部分提交；无越权读取；独占加载规则有效 |
+| 酒店 MCP | 原生工具发现/Schema/调用、查询/详情/标签、大数组、超时 | 只读白名单；权限/host/预算；Artifact 可授权回读 |
+| MCP Schema | 新 attempt 采用服务端新增必填项 | 原生参数校验拒绝缺失字段；没有自建漂移比较器 |
+| 禁用 MCP | 未提供密钥、无可用地址 | 不初始化该服务，不影响其他启用能力 |
+| Taibu | 原生 `almanac` / `bazi` 与 camelCase 参数；服务错误、日期/分钟缺失 | 明确输入、结果关键字段校验；敏感数据禁止外网 |
+| 调酒 Skill | SDK repository、目录、正文和附属资源按需加载 | 使用 `load_skill_through_path`；工具结果进入 AgentState |
+| Skill 恢复与隔离 | 审批恢复、撤销、资源越界、同批工具、无权限任务 | checkpoint 复用；路径校验与 scope 生效；不维护另一个激活状态机 |
 | 市场研究子 Agent | 正常研究、缺资料、失败、超预算 | 父子状态隔离；根层澄清；共享预算；来源与时间可解释 |
 | 投资组合 Workflow | 中途审批、重复恢复、步骤失败 | 固定步骤可恢复；每步效果有账本；不跳过审批 |
 | 紫微可选能力 | 五类排盘、历法、时区、日期范围、资料缺失 | 与冻结算法基准一致；不猜用户资料；不把未验收能力标为生产可用 |
 
-- [ ] 所有启用场景都有模拟集成；酒店/调酒/子 Agent 展示可由文档复现。
-- [ ] 子任务与根任务即使生成同名 call ID，进度和账本也不会合并错位。
-- [ ] Skill 正文不在持久对话、Journal、记忆来源中出现；恢复时会重新授权，撤销后 Artifact 也不能绕过。
-- [ ] 固定文本资产的许可证和 SOURCE 信息随迁移保留。
+- [x] 所有启用场景都有模拟集成；酒店/调酒/子 Agent 展示可由文档复现。
+- [x] 子任务与根任务即使生成同名 call ID，进度和账本也不会合并错位。
+- [x] Skill 采用原生 ToolResult/AgentState 保存与恢复；SSE 不转发工具正文。撤销授权阻断恢复，无权限任务不挂载仓库。M4 必须排除工具文本作为用户记忆事实。
+- [x] 固定文本资产的许可证和 SOURCE 信息随迁移保留。
+
+验证边界：M3 使用本地模拟 MCP、冻结行情、确定性模型与真实 PostgreSQL；市场研究另使用原生子 ReActAgent。紫微五类排盘未迁移，保持关闭，启用时明确失败。真实远端服务及真实模型的业务质量仍待 M5。见 [M3 记录](m3-validation.md)。
 
 ## 6. M4：记忆和飞书
 
@@ -146,4 +147,4 @@ M2 本地证据见 [验证记录](m2-validation.md)及[框架复用审查](frame
 | 紫微算法 | 写明是否仍依赖 Python 计算服务；全 Java 替换需额外算法对比证据 |
 | 尚未启用的能力 | 列明排除范围与原因，不能悄悄从验收清单移除 |
 
-本次交付完成 M0–M2 的本地实现与验证：完整回归 **83 项通过**（M0 28、M1 23、M2 32），0 失败、0 错误、0 跳过。真实 PostgreSQL、独立 JVM、HTTP/SSE、原生模型适配器与模拟 MCP 有运行证据；真实模型供应商、真实 MCP、飞书和 M3–M6 不包含在通过范围内。
+本次交付完成 M0–M3 的本地实现与验证：原生 Skill/MCP 改造后完整回归 **111 项通过**（M0 28、M1 23、M2 32、M3 28），0 失败、0 错误、0 跳过。见 [M3 记录](m3-validation.md)及机器证据。真实 PostgreSQL、独立 JVM、HTTP/SSE、原生 Agent/模型适配器与模拟 MCP 有运行证据；真实模型供应商、真实 MCP、飞书、紫微算法及 M4–M6 不包含在通过范围内。

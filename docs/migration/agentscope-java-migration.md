@@ -1,6 +1,6 @@
 # FinanceClaw：Python → AgentScope Java 迁移方案
 
-> 日期：2026-10-15。状态：M0–M2 已实现并进行本地验证，M3–M6 仍为实施方案。真实模型供应商、真实 MCP、飞书及生产恢复尚未验收。
+> 日期：2026-10-15。状态：M0–M3 已实现并进行本地验证，M4–M6 仍为实施方案。真实模型供应商、真实 MCP、飞书及生产恢复尚未验收。
 >
 > 项目入口：[README](../../README.md)。配套文档：[验收清单](acceptance-checklist.md)、[M0 验证与版本决策](m0-validation.md)、[M1 使用与验证](m1-validation.md)、[M2 使用与验证](m2-validation.md)、[框架复用审查](framework-reuse-review.md)。
 
@@ -103,8 +103,8 @@ HTTP / 飞书
 | 上下文与最终检查 | `agent_server/context/`、`agent_server/middleware/final_context.py`、`shared/llm/budget.py` | `ContextPlanner` + `onReasoning` / `onModelCall` | 重新实现并做发送载荷契约测试 |
 | 长期记忆 | `shared/memory/`、`agent_server/memory/`、`memory_worker/` | SQL 记忆领域 + Java 后台任务 + pgvector 投影 | 保留治理，替换 LangGraph Store |
 | Artifact / 结构化回读 | `shared/artifacts/`、`agent_server/middleware/artifact_middleware.py` | `ArtifactService` + S3 适配 + 受限读取工具 | 复用格式语义与权限规则 |
-| MCP | `shared/mcp/`、`agent_server/tools/mcp*.py`、`config/mcp.toml` | SDK MCP 客户端 + 固定契约包装器 | 协议复用，治理重写 |
-| 受治理 Skills | `shared/skills/`、`agent_server/skills/`、`agent_server/middleware/skills.py` | 不可变技能包 + `SkillService` + 临时请求投影 | 保留正文资源和授权约束 |
+| MCP | `shared/mcp/`、`agent_server/tools/mcp*.py`、`config/mcp.toml` | SDK MCP 客户端 + Toolkit 原生注册 | 原生发现/Schema/调用，保留业务授权和归档 |
+| 受治理 Skills | `shared/skills/`、`agent_server/skills/`、`agent_server/middleware/skills.py` | `ClasspathSkillRepository` + `skillRepository` | 原生渐进加载与 AgentState，保留授权和许可证 |
 | 领域子 Agent | `agent_server/graphs/ziwei_agent.py`、`agent_server/tools/subgraphs.py`、`shared/releases/subgraphs.py` | 受控工具调用子 `ReActAgent` | 迁移父子关联、预算与澄清协议 |
 | 投资组合 Workflow | `agent_server/graphs/workflows/portfolio_review_v1.py`、`kernel/workflows/` | 显式 Java 工作流状态机 | 持久化每步状态；模型只负责适合推理的步骤 |
 | 飞书 | `integrations/feishu/`、`integrations/notifications/`、`shared/channels/feishu/` | Java 飞书客户端 + 独立渠道适配器 | 重建事件去重、卡片与回调 |
@@ -264,13 +264,13 @@ SDK 审批输入形态可参考[固定版本 PermissionHITLExample](https://gith
 
 **治理顺序。** 工具可见性 → 固定发布与输入契约 → 权限/数据级别/外连策略 → 审批 → 预算/执行账本 → 外部调用 → 结果归档 → 脱敏进度。用调用顺序测试证明实际包装顺序，不能只依赖 Middleware 注册顺序。`onActing` 覆盖不了运行框架之外的调用，因此所有外部入口都必须经过同一个受治理工具执行端口。
 
-**MCP。** 使用 SDK 连接能力，保留 `input-structure/1`：字段、类型、必填项、枚举、嵌套结构和约束变化时拒绝执行；仅描述、标题、示例、默认值变化时不误阻断。规范化只处理 schema 位置，不能删除恰好叫 `description` 的业务字段或 enum/const 数据。部署时固定契约，执行前核验；修复后重部署并用原始输入回放。
+**MCP。** 统一使用 `McpClientBuilder` 和 Toolkit 的 MCP 注册 API。工具名、参数 Schema、执行和内容转换由框架提供；应用仅保留 host/tenant/凭据、只读工具白名单、授权/预算及结果归档。按 2026-10-15 的原生框架优先决策，删除 `input-structure/1`、本地 Schema 注册表和手动 list/call。新 attempt 采用服务端实时公布的 Schema，不声明逐调用冻结契约漂移保护。具体内容兼容边界见 [M3](m3-validation.md)。
 
-当前配置启用了 `rollinggo_hotel`，`rollinggo_flight` 关闭。迁移先覆盖酒店的 `searchHotels / getHotelDetail / getHotelSearchTags`、Bearer 凭据引用、`travel:read` 和 host allowlist。Taibu MCP 独立迁移并测试。禁用服务不能读取其密钥或要求缺失契约文件存在。
+Python 原配置启用了 `rollinggo_hotel`，`rollinggo_flight` 关闭；Java 默认关闭远端接入。迁移先覆盖酒店的 `searchHotels / getHotelDetail / getHotelSearchTags`、Bearer 凭据引用、`travel:read` 和 host allowlist。Taibu MCP 独立迁移并测试。禁用服务不能读取其密钥或要求缺失契约文件存在。
 
 **Artifact。** 保留归属、发布/权限复核、结果 hash 和结构化分页。列表按集合路径分页，JSON 对象回读不能套用列表的 `start/limit` 切片。租户校验、技能撤销后的资源访问、大小限制和路径边界必须在读取时再验证。
 
-**Skills。** 优先复用现有文本、资源和许可证；迁移 `/skill`、固定 `SkillRef`、版本/hash 校验和渐进加载。目录、正文、资源分别计量。Skill 只提供方法，不提供事实或权限；正文仅进入本次请求投影，不写入用户 Journal、持久对话消息或记忆证据。只持久化可再校验的引用，恢复时重新检查授权。激活失败不提交状态；`load_skill` 与依赖它的业务工具不能在同一并行批次执行。首期关闭自动学习、在线安装、任意脚本执行和动态扩权。
+**Skills。** 复用文本、资源和许可证，使用 `ClasspathSkillRepository` 与 `ReActAgent.Builder.skillRepository`。目录提示、渐进加载和 `load_skill_through_path` 全由框架提供，正文/资源随原生 ToolResult 进入 AgentState。移除自建 SkillRef 读写逻辑、临时请求投影、激活状态机和独占批次限制；旧数据库表保留停用，不执行数据删除。应用仅校验发布资产、`skill:use` 和根预算；恢复遵循原生 checkpoint 并复查授权。Skill 不提供额外权限，其工具结果不能作为长期记忆的用户事实。首期关闭代码执行、自动学习和在线安装。
 
 **子 Agent。** 使用固定子 Agent 目录，以工具形式调用。父任务传入有界请求、授权证据引用、收窄后的权限和共享预算；子 Agent 使用独立状态命名空间。根任务持有业务 Turn，子 Agent 不拥有飞书会话、不直接通知用户。第一阶段先支持同步子任务及根层澄清，持久后台多 Agent 协作需另外验收。
 
@@ -369,7 +369,7 @@ OpenTelemetry 关联 `conversation_id / turn_id / command_id / attempt_id / tool
 
 M1 可先用确定性离线模型验证任务系统；M3 的只读场景可以作为可用里程碑。**完整迁移完成**至少要求 M5 对启用能力全部通过；只做聊天 Demo 或保留未验收的记忆/审批链路不能算完成。
 
-M0 已完成上述工程与技术实验，结果、接口差异及剩余约束记录于 [M0 验证记录](m0-validation.md)。M1 已建立业务身份、Turn/Command/attempt、Worker、SSE、取消和完成事务，详见 [M1 记录](m1-validation.md)。M2 已实现固定发布、授权、交互、Artifact、完整请求预算和模拟 MCP，详见 [M2 记录](m2-validation.md)。SDK 快照仍须与完成回执核对；下一阶段实施 M3 的酒店、Skill、子 Agent 与 Workflow 场景。
+M0 已完成上述工程与技术实验，结果、接口差异及剩余约束记录于 [M0 验证记录](m0-validation.md)。M1 已建立业务身份、Turn/Command/attempt、Worker、SSE、取消和完成事务，详见 [M1 记录](m1-validation.md)。M2 已实现固定发布、授权、交互、Artifact、完整请求预算和模拟 MCP，详见 [M2 记录](m2-validation.md)。SDK 快照仍须与完成回执核对；M3 已接入酒店/Taibu、Skill、市场研究子 Agent 和固定 Workflow，详见 [M3 记录](m3-validation.md)。紫微保持关闭，真实模型与远端业务仍待 M5 验收；下一阶段为 M4 记忆与飞书。
 
 ## 8. 风险与待决事项
 

@@ -1,0 +1,40 @@
+{
+  "source_commit": "8332e2e20a5b7ccaef5d82959001b3fa4120774d",
+  "assets": [
+    {
+      "source": "config/mcp/rollinggo_hotel.json",
+      "target": "src/test/resources/contracts/hotel.json",
+      "sha256": "b88834f902c1ef6bc7be41f035c56eafe97ea86031c26de3a987616d1202cae1"
+    },
+    {
+      "source": "financeclaw/shared/releases/taibu_contracts.json",
+      "target": "src/test/resources/contracts/taibu.json",
+      "sha256": "602fa7740e4150d0f16f3a4ef854f9a95abe725cd2dd07ce06f382e85f21e608"
+    },
+    {
+      "source": "tests/taibu/samples.json",
+      "target": "src/test/resources/m3/taibu-samples.json",
+      "sha256": "9ee26702392614a77633c8f5831d1ef57e6a5bf489627328eba61f62d5e1338f"
+    },
+    {
+      "source": "financeclaw/shared/skills/builtin/cocktail-from-what-i-have/SKILL.md",
+      "target": "src/main/resources/skills/cocktail-from-what-i-have/SKILL.md",
+      "sha256": "9e3b5fcdcf9fa06be759f11e7139afe056ee9e9209cb7d3f2bf9c759da2ee4c6"
+    },
+    {
+      "source": "financeclaw/shared/skills/builtin/cocktail-from-what-i-have/SOURCE.json",
+      "target": "src/main/resources/skills/cocktail-from-what-i-have/SOURCE.json",
+      "sha256": "1db4c22bf94ac30494416bb44c8a5a17a127d50c0cbc5b9e9863be23d69d25f2"
+    },
+    {
+      "source": "financeclaw/shared/skills/builtin/cocktail-from-what-i-have/LICENSE",
+      "target": "src/main/resources/skills/cocktail-from-what-i-have/LICENSE",
+      "sha256": "18a87eaf5c6017a3ffc7a3c4927627d530cc1541406cb3e705576a1b8c47c6bd"
+    },
+    {
+      "source": "financeclaw/shared/skills/builtin/cocktail-from-what-i-have/agents/openai.yaml",
+      "target": "src/main/resources/skills/cocktail-from-what-i-have/agents/openai.yaml",
+      "sha256": "1a09df787de5cb495ae9e39faae75c4235e428f34c75a44c2feeb8a8ad1dcaaf"
+    }
+  ]
+}

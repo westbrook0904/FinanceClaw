@@ -17,6 +17,18 @@ public final class ForkedGovernance {
         new LifecycleDatabase(
             new DriverManagerDataSource(
                 p.getProperty("url"), p.getProperty("user"), p.getProperty("password")));
+    database
+        .service
+        .releases()
+        .publish(
+            new com.financeclaw.application.ReleaseCatalog.Release(
+                "m2-v1",
+                "finance_agent",
+                com.financeclaw.application.ReleaseCatalog.SCOPES,
+                com.financeclaw.application.ReleaseCatalog.OFFLINE,
+                null,
+                12,
+                16));
     var c = database.service.claim("fresh-jvm", 60000);
     try (var worker =
         new TaskWorker(

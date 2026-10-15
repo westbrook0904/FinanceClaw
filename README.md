@@ -2,7 +2,7 @@
 
 FinanceClaw 从 Python / LangChain / LangGraph 迁移到 **Java / AgentScope Java** 的目标项目。
 
-当前已实现 **M0–M2**：任务生命周期、框架原生事件与 SSE、固定发布与可撤销授权、审批/澄清恢复、工具结果归档和完整模型请求预算。默认离线运行；OpenAI 适配器和 MCP 使用本地模拟服务验证。真实酒店业务、子 Agent/Workflow、飞书和长期记忆继续按后续里程碑实施。
+当前已实现 **M0–M3**：任务生命周期、原生事件与 SSE、授权与审批恢复、结果归档、请求预算，以及通过 AgentScope 原生 Toolkit / SkillRepository 接入的酒店/Taibu MCP、调酒 Skill、市场研究子 Agent 和固定投资组合 Workflow。默认离线运行；远端服务、模型质量、飞书和长期记忆仍按后续里程碑验收。
 
 ## 固定工具链
 
@@ -33,7 +33,7 @@ scripts/mvn.sh -B -ntp verify spotless:check
 python3 scripts/collect-evidence.py
 ```
 
-成功时 Maven 输出 `BUILD SUCCESS`，可执行包位于 `target/financeclaw-java-0.1.0-SNAPSHOT.jar`，证据汇总位于 `target/m2/results.json`。`scripts/mvn.sh test` 仅执行不依赖 PostgreSQL 的单元/HTTP 契约测试，不能代替包含 PostgreSQL 和业务 API 的完整验证。
+成功时 Maven 输出 `BUILD SUCCESS`，可执行包位于 `target/financeclaw-java-0.1.0-SNAPSHOT.jar`，证据汇总位于 `target/m3/results.json`。`scripts/mvn.sh test` 仅执行不依赖 PostgreSQL 的单元/HTTP 契约测试，不能代替包含 PostgreSQL 和业务 API 的完整验证。
 
 ## 启动与试用
 
@@ -54,6 +54,7 @@ scripts/mvn.sh spring-boot:run
 
 | 入口 | 内容 |
 | --- | --- |
+| [M3 业务与验证](docs/migration/m3-validation.md) | 酒店/Taibu 配置、调酒 Skill、市场研究、固定 Workflow 及模拟验收 |
 | [M2 使用与验证](docs/migration/m2-validation.md) | 授权与交互 API、Artifact、模型配置、测试和限制 |
 | [框架复用审查](docs/migration/framework-reuse-review.md) | 原生能力的复用方式及保留业务适配的原因 |
 | [M1 使用与验证](docs/migration/m1-validation.md) | API 示例、恢复边界、配置及验收证据 |

@@ -1,6 +1,6 @@
 # M2：工具治理、交互恢复与请求预算
 
-日期：2026-10-15。M2 在 M1 的任务生命周期上接入框架原生事件、审批、澄清、模型与 MCP。实现以[源码指纹与测试结果](evidence/m2-results.json)为准；[M0](m0-validation.md)和 [M1](m1-validation.md)报告作为历史阶段证据保留。框架能力取舍见[复用审查](framework-reuse-review.md)。
+日期：2026-10-15。**本页的测试结果为 M2 冻结证据；当前业务增量和完整回归见 [M3](m3-validation.md)。** M2 在 M1 的任务生命周期上接入框架原生事件、审批、澄清、模型与 MCP。实现以[源码指纹与测试结果](evidence/m2-results.json)为准；[M0](m0-validation.md)和 [M1](m1-validation.md)报告作为历史阶段证据保留。框架能力取舍见[复用审查](framework-reuse-review.md)。
 
 ## 1. 实现与约束
 
@@ -97,4 +97,4 @@ scripts/mvn.sh -B -ntp verify -Dit.test=GovernanceIT
 | 事件脱敏 | 中间轮次文本被过滤；工具事件不含参数、原始结果、异常或 thinking |
 | M0/M1 回归 | CAS、删除墓碑、同主体跨租户隔离、租约、完成回执、取消、HTTP/SSE 重连继续通过 |
 
-这是本地自动化和模拟集成证据。真实供应商模型质量、真实酒店 MCP、外部写操作核对、飞书、对象存储、生产身份系统、CI 远端执行与 M3–M6 尚未验收。M2 的 MCP 契约采用固定 schema 比较，仅消除 SDK 根 JsonSchema 的缺省 null 字段；M3 再实现完整的输入结构语义归一化，覆盖仅描述变化及嵌套业务字段等场景。
+这是本地自动化和模拟集成证据。真实供应商模型质量、真实酒店 MCP、外部写操作核对、飞书、对象存储、生产身份系统、CI 远端执行与 M3–M6 尚未验收。M2 的 MCP 契约采用固定 schema 比较，仅消除 SDK 根 JsonSchema 的缺省 null 字段；后续 M3 已按原生框架优先决策移除本地契约比较，改为 Toolkit 原生工具发现与参数校验，详见 [M3 当前说明](m3-validation.md)。

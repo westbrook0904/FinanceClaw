@@ -221,6 +221,23 @@ public class GovernanceService {
   }
 
   public Page read(Owner owner, String id, int start, int limit) {
+    return read(owner, id, start, limit, "");
+  }
+
+  public Artifact archive(Claim claim, Object payload, String requiredScope) {
+    return tasks.fenced(
+        claim,
+        () -> {
+          tasks.checkPolicy(claim);
+          if (!scopes(db.policy(claim.turn().id()).scopes()).contains(requiredScope))
+            throw new Blocked("artifact_scope_denied");
+          var artifact = archive(claim, payload);
+          db.setArtifactScope(artifact.id(), requiredScope);
+          return artifact;
+        });
+  }
+
+  public Page read(Owner owner, String id, int start, int limit, String path) {
     return tx.execute(
         s -> {
           var a = db.artifact(id);
@@ -230,6 +247,8 @@ public class GovernanceService {
           var grant = db.lockGrant(a.conversationId());
           if (grant == null || !scopes(grant.scopes()).contains("artifact:read"))
             throw new Problem(403, "artifact_denied");
+          if (!scopes(grant.scopes()).contains(db.artifactScope(id)))
+            throw new Problem(403, "artifact_scope_denied");
           try {
             tasks.releases().require(a.releaseHash());
           } catch (Blocked e) {
@@ -237,6 +256,17 @@ public class GovernanceService {
           }
           if (!a.hash().equals(digest(a.payload()))) throw new Problem(409, "artifact_corrupt");
           Object data = parse(a.payload());
+          if (path == null || path.length() > 256 || (!path.isEmpty() && !path.startsWith("/")))
+            throw new Problem(422, "invalid_artifact_path");
+          if (!path.isEmpty()) {
+            try {
+              var selected = JSON.valueToTree(data).at(path);
+              if (selected.isMissingNode()) throw new Problem(422, "artifact_path_missing");
+              data = JSON.convertValue(selected, Object.class);
+            } catch (IllegalArgumentException e) {
+              throw new Problem(422, "invalid_artifact_path");
+            }
+          }
           if (data instanceof List<?> values) {
             if (start < 0 || limit < 1 || limit > 100) throw new Problem(422, "invalid_pagination");
             int offset = Math.min(start, values.size()),
@@ -251,7 +281,8 @@ public class GovernanceService {
             return new Page(
                 id, a.hash(), values.size(), offset, end - offset, values.subList(offset, end));
           }
-          if (a.bytes() > 16384) throw new Problem(422, "artifact_object_too_large");
+          if (ResumeInputs.canonical(data).getBytes(StandardCharsets.UTF_8).length > 16384)
+            throw new Problem(422, "artifact_object_too_large");
           return new Page(id, a.hash(), 1, 0, 1, data);
         });
   }

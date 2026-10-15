@@ -1,0 +1,393 @@
+{
+  "base_commit": "3981eb995eb8a040686e51d744dc2ad9869bb841",
+  "milestone": "M3",
+  "collected_at_utc": "2026-10-15T01:50:23.004249+00:00",
+  "toolchain": {
+    "jdk": {
+      "distribution": "Temurin",
+      "version": "21.0.12+8",
+      "assets": {
+        "linux-aarch64": {
+          "url": "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.12%2B8/OpenJDK21U-jdk_aarch64_linux_hotspot_21.0.12_8.tar.gz",
+          "sha256": "eba38e871b02d407897bfe017ea35352dfc1420ef6d2112425b0c67325ca509d"
+        },
+        "darwin-arm64": {
+          "url": "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.12%2B8/OpenJDK21U-jdk_aarch64_mac_hotspot_21.0.12_8.tar.gz",
+          "sha256": "021d629349ebc12a409faa517b837ec80ceee8f58a5ac85c788ecad07ca6881c"
+        },
+        "linux-x86_64": {
+          "url": "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.12%2B8/OpenJDK21U-jdk_x64_linux_hotspot_21.0.12_8.tar.gz",
+          "sha256": "e4446ff06a276155697597cc0f1b15da004ff083f4964a35271ecee567177370"
+        },
+        "darwin-x86_64": {
+          "url": "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.12%2B8/OpenJDK21U-jdk_x64_mac_hotspot_21.0.12_8.tar.gz",
+          "sha256": "6b85c260eea574a995eacd0b3ee23c8042aa93b23a08e6478edafca0a0333d7f"
+        }
+      }
+    },
+    "maven": "3.9.11",
+    "spring_boot": "3.5.16",
+    "agentscope": "2.0.3",
+    "mybatis_starter": "3.0.5"
+  },
+  "environment": {
+    "postgres_image": "postgres:16.10-alpine",
+    "vendor": "Eclipse Adoptium",
+    "postgres_version": "PostgreSQL 16.10 on x86_64-pc-linux-musl, compiled by gcc (Alpine 14.2.0) 14.2.0, 64-bit",
+    "spring_boot": "3.5.16",
+    "jdk": "21.0.12+8-LTS"
+  },
+  "total_tests": 111,
+  "suites": [
+    {
+      "kind": "unit",
+      "suite": "com.financeclaw.m0.AgentFactoryTest",
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 0.006,
+      "cases": [
+        "rejectsLegacyToolsAndPoliciesThatBypassThePermissionEngine"
+      ]
+    },
+    {
+      "kind": "unit",
+      "suite": "com.financeclaw.m0.ExecutionScopeTest",
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 0.008,
+      "cases": [
+        "lengthFramingAvoidsAmbiguousIdentityConcatenation",
+        "missingIdentityCannotFallBackToSdkAnonymousSlot"
+      ]
+    },
+    {
+      "kind": "unit",
+      "suite": "com.financeclaw.m0.ModelPayloadTest",
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 0.446,
+      "cases": [
+        "realOpenAiAdapterSendsBoundedMessagesToolsAndResponseSchemaWithoutLocalMetadata",
+        "fallbackBudgetIncludesSchemaAndPreservesOutputReserve"
+      ]
+    },
+    {
+      "kind": "unit",
+      "suite": "com.financeclaw.m0.SdkMiddlewareTest",
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 0.726,
+      "cases": [
+        "releasedHooksWrapRealReasoningAndToolLoop"
+      ]
+    },
+    {
+      "kind": "unit",
+      "suite": "com.financeclaw.m1.OutcomeTest",
+      "tests": 6,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 0.308,
+      "cases": [
+        "toolStateTakesPrecedenceOverFinalLookingText(ToolCallState, ToolResultState, String)[1]",
+        "toolStateTakesPrecedenceOverFinalLookingText(ToolCallState, ToolResultState, String)[2]",
+        "toolStateTakesPrecedenceOverFinalLookingText(ToolCallState, ToolResultState, String)[3]",
+        "toolStateTakesPrecedenceOverFinalLookingText(ToolCallState, ToolResultState, String)[4]",
+        "toolStateTakesPrecedenceOverFinalLookingText(ToolCallState, ToolResultState, String)[5]",
+        "toolStateTakesPrecedenceOverFinalLookingText(ToolCallState, ToolResultState, String)[6]"
+      ]
+    },
+    {
+      "kind": "unit",
+      "suite": "com.financeclaw.m2.ModelPolicyTest",
+      "tests": 12,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 0.118,
+      "cases": [
+        "nativeAdapterPreservesThinkingAndChecksUsage",
+        "byteFallbackCountsNonAsciiAndAllSchemasWithoutTokenizerCache",
+        "emptyProviderBodyCannotCompleteTurn",
+        "nativeFallbackUsesItsOwnSmallerBudgetBeforeDispatch",
+        "completeRequestBudgetRejectsOversizeAndUnpricedMediaBeforeNetwork(String)[1]",
+        "completeRequestBudgetRejectsOversizeAndUnpricedMediaBeforeNetwork(String)[2]",
+        "completeRequestBudgetRejectsOversizeAndUnpricedMediaBeforeNetwork(String)[3]",
+        "completeRequestBudgetRejectsOversizeAndUnpricedMediaBeforeNetwork(String)[4]",
+        "completeRequestBudgetRejectsOversizeAndUnpricedMediaBeforeNetwork(String)[5]",
+        "completeRequestBudgetRejectsOversizeAndUnpricedMediaBeforeNetwork(String)[6]",
+        "completeRequestBudgetRejectsOversizeAndUnpricedMediaBeforeNetwork(String)[7]",
+        "nativeFinalAnswerFilterRemovesIntermediateTextAndKeepsFinalDeltas"
+      ]
+    },
+    {
+      "kind": "unit",
+      "suite": "com.financeclaw.m3.BusinessContractsTest",
+      "tests": 8,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 0.181,
+      "cases": [
+        "disabledServicesDoNotResolveEndpointsOrSecrets",
+        "processBootstrapAndSpringDefaultsProduceTheSameRelease",
+        "exposureMatchesPythonHalfEvenAndThresholdRules",
+        "nativeClasspathRepositoryLoadsProvenanceLicenseAndInstructions",
+        "baziRequiresExplicitBirthMinuteAndCalendarWithNativeNames",
+        "portfolioPreservesDecimalPrecisionAndRejectsDuplicateSymbols",
+        "almanacRequiresExplicitValidDateUsingNativeMcpArguments",
+        "endpointsCannotEscapeAllowlistOrDowngradeExternalTls"
+      ]
+    },
+    {
+      "kind": "integration",
+      "suite": "com.financeclaw.m0.ApplicationIT",
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 3.003,
+      "cases": [
+        "bootStartsAgainstMigratedPostgresAndExposesReadiness"
+      ]
+    },
+    {
+      "kind": "integration",
+      "suite": "com.financeclaw.m0.RecoveryIT",
+      "tests": 13,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 37.467,
+      "cases": [
+        "deniedApprovalDoesNotExecuteToolAfterRestart",
+        "crashAfterToolReceiptBeforeAgentSaveDoesNotRepeatEffect",
+        "hardCrashAfterSavePreservesFinalState",
+        "crashAfterIntentBlocksAutomaticReplayEvenWhenNoEffectIsObserved",
+        "approvalSurvivesJvmExitAndExecutesExactlyOneEffect",
+        "clarificationRejectsWrongSchemaAndCall",
+        "approvalRejectsWrongCallChangedArgumentsStaleVersionAndWrongOwner",
+        "crashAfterExternalEffectBlocksUntilVerifiedReconciliationThenReusesResult",
+        "ordinaryModelFailurePersistsInputAndToolFailurePersistsErrorResult",
+        "hardCrashBeforeEffectHasNoSavedStateOrExternalEffect(String)[1]",
+        "hardCrashBeforeEffectHasNoSavedStateOrExternalEffect(String)[2]",
+        "anotherJvmCannotExecuteAnAlreadyOwnedScope",
+        "clarificationSurvivesJvmExitAndBindsAnswerToQuestion"
+      ]
+    },
+    {
+      "kind": "integration",
+      "suite": "com.financeclaw.m0.StateAndIsolationIT",
+      "tests": 8,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 1.501,
+      "cases": [
+        "cooperativeInterruptPersistsSafeStateAndAnotherScopeContinues",
+        "tenantsExecuteConcurrentlyWithIndependentToolkitsPermissionsAndRuntimeContexts",
+        "storeRoundTripsAndRejectsStaleCreateUpdateAndPostDeleteWrites",
+        "guardedSameSessionIsRejectedBeforeASecondModelOrToolStarts",
+        "twoIndependentSdkInstancesCannotOverwriteTheSameSnapshot",
+        "corruptSavedStateFailsClosedRatherThanStartingANewConversation",
+        "stateOwnerAgentReleaseAndConversationAreAllIsolated",
+        "effectIdempotencyRejectsChangedPayloadAndReusesVerifiedResult"
+      ]
+    },
+    {
+      "kind": "integration",
+      "suite": "com.financeclaw.m1.TaskLifecycleIT",
+      "tests": 17,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 27.411,
+      "cases": [
+        "workerPollIsAsynchronousAndBoundedAndHeartbeatsCancellation",
+        "runningCancellationInterruptsOnlyItsSdkAndWaitsForAcknowledgement",
+        "T09_cancelAndCompletionRaceHasOneTerminalAndOneOutbox",
+        "unsealedSdkSaveIsConservativelyBlockedWithoutReplay",
+        "T04_queuedCommandSurvivesNewJvm",
+        "completionTransactionFailurePreservesReceiptForRecovery",
+        "T03_sameConversationSerializesAdmissionDifferentConversationsExecuteInParallel",
+        "T11_twoIndependentServiceInstancesClaimAndProjectExactlyOnce",
+        "httpContractsOwnerIsolationAndT06_sseReconnectDoNotExecuteAgain",
+        "failedExecutionCanStartNewTurnAndCancellationReplayIsStable",
+        "T05_claimedCrashBlocksAndFencesLateSnapshotAndCompletion",
+        "T10_T12_terminalFencesOldEventsAndNextTurnStartsCleanButRetainsJournal",
+        "modelTimeoutFailsAndReleasesTheConversation",
+        "T08_sealedSnapshotSurvivesCrashAndCompletesWithoutModelReplay",
+        "T07_pendingToolEvenWithAssistantTextCannotComplete",
+        "T01_T02_replaysOriginalAdmissionAndRejectsChangedBodyUnderRace",
+        "cancelBeforeDispatchAcknowledgesWithoutStartingModel"
+      ]
+    },
+    {
+      "kind": "integration",
+      "suite": "com.financeclaw.m2.GovernanceIT",
+      "tests": 20,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 20.498,
+      "cases": [
+        "nativeMcpTransportArchivesResultAndRejectsContractDrift",
+        "concurrentDuplicateRepliesEnqueueOnlyOneResume",
+        "allApprovalsInBatchMustArriveBeforeOneResumeIsQueued",
+        "historyContainsOnlyCompletedSameReleaseAndGrantTurns",
+        "deniedApprovalDoesNotExecuteWrite",
+        "httpResponseContractRejectsUnknownFieldsAndAcceptsPinnedApproval",
+        "toolProgressNeverContainsArgumentsResultsOrIntermediateReasoning",
+        "releaseChangeKeepsOriginalTurnAndUnavailableReleaseBlocks",
+        "serverIdentityIsFixedAndExecutionBudgetSharedAcrossAttempts",
+        "approvalAndClarificationSurviveIndependentJvmExit",
+        "artifactsAreBoundedOwnedRevocableAndObjectsAreNotListSliced",
+        "grantUpdatesAreOwnedVersionedAndIdempotent",
+        "httpRejectsInjectedIdentityAndDoesNotExposeInternalInteractionState",
+        "delegatedToolsCanOnlyNarrowScopesAndConsumeTheRootBudget",
+        "unknownWriteOutcomeBlocksCancellationAndReplay",
+        "replyValidatesOwnershipTypeRevisionHashAndSchema",
+        "changedCheckpointCannotBeApproved",
+        "revocationBeforeReplyAndAfterReplyBlocksExecution",
+        "approvalResumesInNewAttemptAndEffectOccursOnce",
+        "expiredAndCancelledQuestionsCannotResume"
+      ]
+    },
+    {
+      "kind": "integration",
+      "suite": "com.financeclaw.m3.BusinessIT",
+      "tests": 18,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 14.177,
+      "cases": [
+        "researchHasIndependentChildStateNarrowedToolsAndSharedRootBudget",
+        "parallelResearchWithTheSameCallIdsCannotShareStateOrEvidence",
+        "deterministicWorkflowPausesBeforePublicationAndDuplicateAnswersPublishOnce",
+        "revokedSkillScopeRemovesNativeRepositoryAndToolsFromNewTurn",
+        "nativeSkillLoadingCanShareAToolBatchAndRejectsTraversal",
+        "skillToolResultsSurviveApprovalAndFreshAttemptResumeWithoutReloading",
+        "researchFailureAndBudgetExhaustionCannotBecomeSuccess",
+        "discoveryUsesNativeSchemasAndTimeoutsCannotPublishSuccess",
+        "bearerCredentialIsResolvedAtTransportBoundaryAndNeverFrozenInRelease",
+        "taibuConfidentialEgressAndTenantMismatchAreRejectedBeforeNetwork",
+        "workflowRecoversInASeparateJvmUsingPersistedSteps",
+        "structuredContentOnlyCannotBecomeSuccessfulBusinessEvidence",
+        "hotelQueryDetailsTagsUseNativeTransportAndLargeResultsHaveBoundedAuthorizedReads",
+        "taibuUsesNativeInputsAndClassifiesServiceErrors",
+        "staleSnapshotsAndDeniedApprovalCannotPublish",
+        "skillRevocationAfterAnswerBlocksResume",
+        "researchClarifiesAtRootThenResumesWithOriginalTask",
+        "nativeSkillsLoadProgressivelyAndPersistToolResultsInAgentState"
+      ]
+    },
+    {
+      "kind": "integration",
+      "suite": "com.financeclaw.m3.NativeSkillsIT",
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "seconds": 1.271,
+      "cases": [
+        "packagedBootJarLoadsSkillsThroughNativeRepository",
+        "nativeLoadedSkillBodyIsIncludedInFinalProviderBudgetBeforeNetwork"
+      ]
+    }
+  ],
+  "source_sha256": {
+    ".github/workflows/ci.yml": "44626c531c0bdec32f185dec7511bffc376bc949cf282506943c9398e6371925",
+    ".mvn/settings.xml": "d82e7f664628c0f83ae17aa66b8ee0b5a95772e3468f20b5502dc0fe835249f5",
+    ".mvn/wrapper/maven-wrapper.properties": "bb0b8f16b2661c3676ed5a6a15f5b11d864460c4e77cfb50c583f54708f944e7",
+    "mvnw": "cae96cef89ebea3531221f4ae17c23cf8edf67d00eae8306d4186ae1bbed4d02",
+    "pom.xml": "c6e4621ddab110c862411d224ce5b5c830469fc86f473ee60943d7d3246c58ad",
+    "scripts/bootstrap-jdk.py": "4f631dbf28698179897f17af1a3ddc06c22e199ec3d1e9ef312554a2506467e1",
+    "scripts/collect-evidence.py": "04159fe1d54b05862043aedc56929b1171efd677c2236fd689ec26f72bbe163b",
+    "scripts/collect-m0-evidence.py": "29421f946180c49e719bfac1ad9446de24ca2d56a1bd96a90c4d59d3602177ed",
+    "scripts/mvn.sh": "2aa3bc87de3553f650707eb34f379373a9eb16dcc5b400327bc15822a1ebf313",
+    "src/main/java/com/financeclaw/agent/BudgetedTransport.java": "8a7c70697601fcb48769d333424e497aa264aa8f620575915297131be04b45e2",
+    "src/main/java/com/financeclaw/agent/GovernedTools.java": "f0205c13d8ca49a9c6673f55e6158a24374a9419ff6ee3548c52fc0c1e144d7d",
+    "src/main/java/com/financeclaw/agent/GuardedAgentRunner.java": "ee04129acf2015d55912add891978956fda5cbd21283d3a853c6812afc977870",
+    "src/main/java/com/financeclaw/agent/IsolatedAgentFactory.java": "febbf97254c22f3e87e4e420ef82777fc95e8ff46b69c80c0702bda058bfbd69",
+    "src/main/java/com/financeclaw/agent/ModelFactory.java": "1ec485dc7349241769471cc75ea27fcc3928364872242e03fadd30721535c8ff",
+    "src/main/java/com/financeclaw/agent/ResumeInputs.java": "ea240204d87bba189c8f247b7ed71d2e1243347ab9e9a30b4ffedae4f28844d9",
+    "src/main/java/com/financeclaw/agent/TaskAgentRuntime.java": "cf1670fcfea991acce8e86cd002400be91f6ec6d45a728b157d007165de28e68",
+    "src/main/java/com/financeclaw/api/ApiErrors.java": "f16b8c96885e0315f5e068d8fb700e951b5d695d0f0ed45b4957c04734042a2a",
+    "src/main/java/com/financeclaw/api/BearerIdentity.java": "01eaf67e8ecac1aeb0c745622e7d3f0591cf4a8e398a2f343bac4524d667d21a",
+    "src/main/java/com/financeclaw/api/GovernanceController.java": "e2ab459396dd79adda4d77f0f17a53c6fc1cf31a4b6b7ec5a44c420f0864f349",
+    "src/main/java/com/financeclaw/api/TaskController.java": "060d7bfa29a6a74ed26e56e5756cf09f5ba277f993feb57bfec8d951941df966",
+    "src/main/java/com/financeclaw/api/TaskEvents.java": "66693278784936b25be5a13bb0deadc5002dfff2da79428f68609ade7d12b40f",
+    "src/main/java/com/financeclaw/application/GovernanceService.java": "a4f2742508015536cdf725e9cfc3e8194afcfc8b4bb1625a8c7f7782ad94ab09",
+    "src/main/java/com/financeclaw/application/ReleaseCatalog.java": "e746427a447c1c6508f54dbf59fe01d85f2b5ec47d731bbc90a6822e641ffb6a",
+    "src/main/java/com/financeclaw/application/TaskService.java": "90d12b056430327be53337e8bce160825b40ab691b7ed747c760a318db38c420",
+    "src/main/java/com/financeclaw/bootstrap/FinanceClawApplication.java": "ee4fb036e15c3ee9bb845dde008cbac7bc964def93f5be928c91c10574817295",
+    "src/main/java/com/financeclaw/bootstrap/RuntimeHealth.java": "9c0a297dc85955085ca44736a52e7f364890cb4e532f86ddc583ab2447e9dc7f",
+    "src/main/java/com/financeclaw/domain/ExecutionScope.java": "69928bbe89c0e7d04f11d411158ef6dacdd68773a9e39883d4e7a31da685bd10",
+    "src/main/java/com/financeclaw/domain/Governance.java": "1df3612c20ac759d5e86d085b4ee341003f245a6466aec2f93d03c5c57ab8f4b",
+    "src/main/java/com/financeclaw/domain/Task.java": "0619a422efcdfc0ac91e7e04629b352bc209cfdeff0b9c2d878487b48e784d13",
+    "src/main/java/com/financeclaw/infrastructure/governance/GovernanceMapper.java": "a92dac57750157038d5f0ff6916fc6b93b76985b3380ef13a8272a7ad56885ea",
+    "src/main/java/com/financeclaw/infrastructure/state/EffectLedger.java": "970731f116c2a09f46a2ff2c2789ecd35461416bff0e0be1376397509d9b6d29",
+    "src/main/java/com/financeclaw/infrastructure/state/ExecutionGate.java": "2ae0f168bde9ee955b7d8b417f3d9d487de740c3a862b19ae9051fda110447b0",
+    "src/main/java/com/financeclaw/infrastructure/state/MyBatisAgentStateStore.java": "c491637aa3df4339f9532d02104699f9e56dd62376b33d3ac5d199144bd8d06a",
+    "src/main/java/com/financeclaw/infrastructure/state/RuntimeMapper.java": "18c1ec90be5383a4d9c432ca829fe3b784126a5f3df097bc8d737cd6c754f9ba",
+    "src/main/java/com/financeclaw/infrastructure/task/TaskMapper.java": "370f01fec8c38483ee83fe2ab232ebf2718e13b2264bbec6a17ad99ea2cd44cb",
+    "src/main/java/com/financeclaw/tools/BusinessCatalog.java": "f3182cbae3ef70fbb02b94e1f8c0896b316486de20b157edf7d6bacb9c205163",
+    "src/main/java/com/financeclaw/tools/CapabilitySteps.java": "1ef8eab8dbe9798e0419f9c5cef48758ee8a312abe6ce4763701f229b64298fa",
+    "src/main/java/com/financeclaw/tools/MarketData.java": "31e98251f79633c3973fd9fea4f34df2ce90463f3b3945eaaa6948e317ae4c08",
+    "src/main/java/com/financeclaw/tools/MarketResearch.java": "e901ddf1be94e274c2820a0ca2b00dd384c86b1501720d797ff8d0fb645b80b7",
+    "src/main/java/com/financeclaw/tools/McpTools.java": "188d37306fb08cdc7a176e30b7846a6a947816deaa7db3e40fe70e3a241913d7",
+    "src/main/java/com/financeclaw/tools/PortfolioReview.java": "4c54839470804e58f101c5c88dcef9a7df852803e0591b3b0e18b01d7564d320",
+    "src/main/java/com/financeclaw/tools/TaibuInputs.java": "7178dba95602a1d12e7fd4896c254d0d490ae246ffc387e69ae95b330873e451",
+    "src/main/java/com/financeclaw/worker/TaskWorker.java": "d75173cd4a54b25eedfad977b90454326deafd51b75fe9d7fe9995466f200128",
+    "src/main/resources/application.yml": "66612564cd5a3680a4c8c15c6c671193309f86df28e3e338e61842129e62f242",
+    "src/main/resources/db/migration/V1__m0_agent_state.sql": "5b3d7bd3889e65b5114e705d24711d41de04e8698533390a781166d90547fc7e",
+    "src/main/resources/db/migration/V2__task_lifecycle.sql": "144d3eec16f54256a8843648a096274f7376b680ee3694a4eda3bcdfd5b7fb14",
+    "src/main/resources/db/migration/V3__governed_execution.sql": "b76c882bf0c767671eb7f2a4319d5f2c3c8b6cd72ddd1de8dec42580bc3bcaf5",
+    "src/main/resources/db/migration/V4__business_capabilities.sql": "d7e2dd0cd8cd435c950178d4e06bdd2c7a6e36c3db786257eef1d8a5ccb81e1a",
+    "src/main/resources/skills/cocktail-from-what-i-have/LICENSE": "18a87eaf5c6017a3ffc7a3c4927627d530cc1541406cb3e705576a1b8c47c6bd",
+    "src/main/resources/skills/cocktail-from-what-i-have/SKILL.md": "9e3b5fcdcf9fa06be759f11e7139afe056ee9e9209cb7d3f2bf9c759da2ee4c6",
+    "src/main/resources/skills/cocktail-from-what-i-have/SOURCE.json": "1db4c22bf94ac30494416bb44c8a5a17a127d50c0cbc5b9e9863be23d69d25f2",
+    "src/main/resources/skills/cocktail-from-what-i-have/agents/openai.yaml": "1a09df787de5cb495ae9e39faae75c4235e428f34c75a44c2feeb8a8ad1dcaaf",
+    "src/test/java/com/financeclaw/m0/AgentFactoryTest.java": "a5b1f7f904ef07ccc246ba2f26af0780b2d1c3b585ed365c55d2332b8049c6ec",
+    "src/test/java/com/financeclaw/m0/ApplicationIT.java": "02285258dd76ff8484d9252adbb9d494535d13f0e0793f34f243df3ad49d7ce8",
+    "src/test/java/com/financeclaw/m0/ExecutionScopeTest.java": "f784bcd7d09188d51b4a4887f9e631a1fd3736502a0354471b044e3075d51f47",
+    "src/test/java/com/financeclaw/m0/ForkedProbe.java": "788192d90baf0d3fc2b8ae1a06a5b2703637954eaa6a5cf1976bb2bad216b586",
+    "src/test/java/com/financeclaw/m0/ModelPayloadTest.java": "153c75e6291558844ac5f43c5d32f8eecafa7861bab31f6b7cd6b57fea5d15cc",
+    "src/test/java/com/financeclaw/m0/PostgresSupport.java": "5c37af73dc043d6e6b33d19b9e08ed8c68f9ea3d368a07c4cfe9fc3f03fcc2da",
+    "src/test/java/com/financeclaw/m0/ProbeFixtures.java": "4291a095b229eca9bbab8d28ef6d7fa438c587aa0497901ad9ce6dc607314ffa",
+    "src/test/java/com/financeclaw/m0/ProbeMapper.java": "818a2807f6991ff7378b4314c8b1accdad028726d72d96d46594b5ee853b30a1",
+    "src/test/java/com/financeclaw/m0/RecoveryIT.java": "4d13afbf851fe6cae68c535bd807d0b6ec4acc186303a28120076e7290969542",
+    "src/test/java/com/financeclaw/m0/SdkMiddlewareTest.java": "59ca55c8e66f682d56f8cfcec6cc3fc37e3cbca4e7e02e11273e6165ca9205d7",
+    "src/test/java/com/financeclaw/m0/StateAndIsolationIT.java": "0bf80ed49fe3358833c8b167e2c67cc4c3ed81bfcf425b3ef7f1888773c273d1",
+    "src/test/java/com/financeclaw/m1/ForkedTask.java": "5462a31a82217c93d3ffb314adf758754b6321bb4333ef22c989f56d447cac21",
+    "src/test/java/com/financeclaw/m1/LifecycleDatabase.java": "77d5f309535abaa31ef72a95ad852e4eb2954bb89e7fe42882634e7ec9b68ccf",
+    "src/test/java/com/financeclaw/m1/LifecycleProbeMapper.java": "d78ea9c965fa52a9887c75576fe7fdc3760de8b816e602badf0fca4c4b58e6c3",
+    "src/test/java/com/financeclaw/m1/OutcomeTest.java": "9b8dc707de2a474c43127687868d2273321e0d73d97e49b6edce1a21a3d2193a",
+    "src/test/java/com/financeclaw/m1/TaskLifecycleIT.java": "d27d1e803cfbaa7fe904ecbadc71270908918a1657c7122213207dbb386729e5",
+    "src/test/java/com/financeclaw/m2/ForkedGovernance.java": "3a6a34d59a886db9a8188a4c87a82e5667477d1cb5922b0eb464fbe2ae628fec",
+    "src/test/java/com/financeclaw/m2/GovernanceIT.java": "ed646848a0ff8613808cb7ef7c557f93243384407d0b36ed047980b2fcde09c3",
+    "src/test/java/com/financeclaw/m2/MockMcp.java": "054f6ce65105c7f5e44a68bfb13c0fc769cb585a9e80501aaf20c4e46b203b0c",
+    "src/test/java/com/financeclaw/m2/ModelPolicyTest.java": "00b179fddc74e17e9a90e7cdc31fbfda5e00c13bc62934e252c022962df1d2d4",
+    "src/test/java/com/financeclaw/m2/ScriptedRuntime.java": "e35134784f87d7c23d52f02bb8f8d3046b877b81be7aca19a94b2a3d936fc708",
+    "src/test/java/com/financeclaw/m3/BusinessContractsTest.java": "4cd736cb55a00c7c5f4f3b99416da1afadbbeb7565985468905fa61ee4a1f391",
+    "src/test/java/com/financeclaw/m3/BusinessIT.java": "f9d302993b9f8ba8f166298b242e75a2bd6a4f61a4b067bb0e34beb29aed2393",
+    "src/test/java/com/financeclaw/m3/ForkedBusiness.java": "21c5e20cf511df8aded0b316529efef2c1f9801a3c0502ac03e00459eddc25d5",
+    "src/test/java/com/financeclaw/m3/MockRemote.java": "f9c42b00ff037173951f1ca24fc87e1adf662572711c748098bae251ec2ad4b0",
+    "src/test/java/com/financeclaw/m3/NativeSkillsIT.java": "7e40415267c56d013a2123c63b1d91acee84524bf1bf3f1138ab4a5ce015cc82",
+    "src/test/resources/contracts/hotel.json": "b88834f902c1ef6bc7be41f035c56eafe97ea86031c26de3a987616d1202cae1",
+    "src/test/resources/contracts/taibu.json": "602fa7740e4150d0f16f3a4ef854f9a95abe725cd2dd07ce06f382e85f21e608",
+    "src/test/resources/m3/taibu-samples.json": "9ee26702392614a77633c8f5831d1ef57e6a5bf489627328eba61f62d5e1338f",
+    "toolchains.lock.json": "d56a5b332213638d6a71ded65cbc1a1557e19a7747caba52f1063afdce051bbe"
+  },
+  "validation_scope": "Local real PostgreSQL and independent JVMs; deterministic model, SDK loopback HTTP provider and mock MCP transport; no real model/MCP/Feishu or CI execution"
+}
