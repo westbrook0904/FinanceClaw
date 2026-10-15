@@ -70,7 +70,8 @@ public class ReleaseCatalog {
           "skill:use",
           "market:read",
           "research:run",
-          "workflow:run");
+          "workflow:run",
+          "ziwei:read");
   public static final ModelProfile OFFLINE =
       new ModelProfile("offline", "", 65536, 131072, 2048, 512, false);
   private final Map<String, Release> releases = new ConcurrentHashMap<>();
@@ -147,6 +148,7 @@ public class ReleaseCatalog {
         || release.maxModelCalls() < 1
         || release.maxToolCalls() < 1) throw new IllegalArgumentException("Invalid release policy");
     validate(release.primary());
+    if (release.business().ziwei() != null) release.business().ziwei().verifyRuntime();
     if (release.fallback() != null) validate(release.fallback());
     String hash = release.hash();
     releases.putIfAbsent(hash, release);

@@ -261,6 +261,10 @@ public class TaskService {
         governance.startedAt(claim.command().attemptId()));
   }
 
+  public void checkArtifactPrivacy(Turn turn) {
+    if (memory != null && !memory.sameEpoch(turn)) throw new Problem(409, "privacy_epoch_changed");
+  }
+
   public void consume(Claim claim, boolean model) {
     fenced(
         claim,

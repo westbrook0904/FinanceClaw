@@ -4,6 +4,7 @@ import com.financeclaw.application.*;
 import com.financeclaw.domain.Governance.*;
 import com.financeclaw.domain.Task.*;
 import com.financeclaw.tools.*;
+import com.financeclaw.ziwei.*;
 import io.agentscope.core.message.*;
 import io.agentscope.core.permission.*;
 import io.agentscope.core.tool.*;
@@ -30,6 +31,7 @@ public final class GovernedTools implements AutoCloseable {
   private final McpTools mcp = new McpTools();
   private io.agentscope.core.skill.repository.ClasspathSkillRepository skills;
   private MarketResearch research;
+  private ZiweiTools ziwei;
   public final Toolkit toolkit = new Toolkit();
 
   public GovernedTools(TaskService tasks, GovernanceService governance, Claim claim) {
@@ -210,6 +212,11 @@ public final class GovernedTools implements AutoCloseable {
       io.agentscope.core.model.Model model,
       com.financeclaw.infrastructure.state.RuntimeMapper states) {
     research = new MarketResearch(tasks, claim, states, model);
+    if (release.business().ziwei() != null && scopes.contains("ziwei:read")) {
+      ziwei = new ZiweiTools(tasks, governance, claim);
+      for (var level : ZiweiDates.Level.values())
+        register(level.toolName(), ZiweiInputs.schema(level.toolName()), "ziwei:read", ziwei::run);
+    }
     register(
         "market_snapshot",
         MarketData.SCHEMA,
@@ -257,10 +264,29 @@ public final class GovernedTools implements AutoCloseable {
           i.callId(),
           i.actionHash(),
           (String) ((Map<?, ?>) answer).get("city"));
-    if (!i.tool().equals("market_research")) throw new Blocked("unsupported_interaction");
+    if (!i.tool().equals("market_research") && !ZiweiInputs.supports(i.tool()))
+      throw new Blocked("unsupported_interaction");
     var call = ResumeInputs.pending(store, scope, i.stateVersion(), i.callId());
     if (!ResumeInputs.actionHash(call).equals(i.actionHash()))
       throw new Blocked("checkpoint_mismatch");
+    if (ZiweiInputs.supports(i.tool())) {
+      if (ziwei == null) throw new Blocked("ziwei_denied");
+      var corrected = ZiweiInputs.corrected(i.tool(), call.getInput(), answer);
+      if (!ZiweiInputs.inspect(i.tool(), corrected, ziwei.clock()).complete())
+        throw new Blocked("ziwei_input_incomplete");
+      tasks.consume(claim, false);
+      var result =
+          ziwei
+              .run(ToolCallParam.builder().toolUseBlock(call).input(corrected).build())
+              .block(java.time.Duration.ofSeconds(20));
+      return Msg.builder()
+          .name("tool")
+          .role(MsgRole.TOOL)
+          .content(
+              ToolResultBlock.of(call.getId(), call.getName(), result.getOutput())
+                  .withState(ToolResultState.SUCCESS))
+          .build();
+    }
     var input = new TreeMap<>(call.getInput());
     ((Map<?, ?>) answer).forEach((k, v) -> input.put((String) k, v));
     if (MarketResearch.missing(input)) throw new Blocked("research_scope_missing");
@@ -335,7 +361,12 @@ public final class GovernedTools implements AutoCloseable {
         new ToolBase(
             ToolBase.builder()
                 .name(name)
-                .description(nativeTool == null ? "Governed " + name : nativeTool.getDescription())
+                .description(
+                    nativeTool != null
+                        ? nativeTool.getDescription()
+                        : ZiweiInputs.supports(name)
+                            ? ZiweiInputs.description(name)
+                            : "Governed " + name)
                 .inputSchema(schema)) {
           @Override
           public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
@@ -414,6 +445,8 @@ public final class GovernedTools implements AutoCloseable {
                     ResumeInputs.actionHash(call),
                     ResumeInputs.canonical(MarketResearch.ANSWER),
                     "请提供研究证券代码和分析期间"));
+          else if (ziwei != null && ZiweiInputs.supports(call.getName()))
+            result.add(ziwei.pending(call));
           else throw new Blocked("unsupported_interaction");
         }
     return result;

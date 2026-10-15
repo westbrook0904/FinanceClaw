@@ -1,5 +1,7 @@
 # M6b：固定规则的 Java 排盘算法
 
+> 以下记录 M6b 的历史验收范围。此阶段已本地提交 `33d59b8`；当前原生工具与领域治理见 [M6c](m6c-domain.md)。
+
 日期：2026-10-15。历法部分已本地提交为 `a2b67b1`，未推送。本次在该提交上实现固定规则的完整本命与流运计算。**这是算法层的本地兼容验证，紫微工具仍未注册，`financeclaw.business.ziwei.enabled=true` 仍拒绝启动。** 出生资料治理、结果预算和原生 AgentScope 接入留在 M6c。
 
 ## 实现与来源
@@ -75,4 +77,4 @@ python3 scripts/import-ziwei-tables.py --source /path/to/pinned/x-iztro
 
 输出留在 `target/m6/`，先审查再更新源文件；提取的 Java 常量表需运行项目的 Spotless 格式化。任何源码/依赖摘要不匹配都会拒绝导出。
 
-下一步为 **M6c**：完整出生输入与澄清、固定发布规则、归属与隐私、区间事实分段、Artifact/投影预算，再接入 AgentScope 原生 Toolkit。之后由 M6d 验证重启与真实调用并决定启用。本次未调用真实供应商、MCP、飞书，也未重跑 M5 Compose 或远程 CI；新增算法改动尚未提交。
+下一步为 **M6c**：完整出生输入与澄清、固定发布规则、归属与隐私、区间事实分段、Artifact/投影预算，再接入 AgentScope 原生 Toolkit。之后由 M6d 验证重启与真实调用并决定启用。本次未调用真实供应商、MCP、飞书，也未重跑 M5 Compose 或远程 CI。此阶段随后本地提交为 `33d59b8`；当前领域接入状态见 [M6c](m6c-domain.md)。

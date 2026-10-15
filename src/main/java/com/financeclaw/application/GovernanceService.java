@@ -10,6 +10,7 @@ import com.financeclaw.infrastructure.governance.GovernanceMapper;
 import com.financeclaw.infrastructure.state.MyBatisAgentStateStore;
 import com.financeclaw.infrastructure.state.RuntimeMapper;
 import com.financeclaw.infrastructure.task.TaskMapper;
+import com.financeclaw.ziwei.*;
 import io.agentscope.core.tool.ToolValidator;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
@@ -182,6 +183,26 @@ public class GovernanceService {
               || ToolValidator.validateInput(
                       ResumeInputs.canonical(answer.answer()), object(i.schema()))
                   != null) throw new Problem(422, "invalid_answer");
+          if (i.kind().equals("input") && ZiweiInputs.supports(i.tool())) {
+            var policy = tasks.releases().require(t.releaseHash()).business().ziwei();
+            if (policy == null) throw new Problem(409, "ziwei_disabled");
+            var call =
+                ResumeInputs.pending(
+                    new MyBatisAgentStateStore(states, claim.scope()),
+                    claim.scope(),
+                    i.stateVersion(),
+                    i.callId());
+            try {
+              var input = ZiweiInputs.corrected(i.tool(), call.getInput(), answer.answer());
+              if (!ZiweiInputs.inspect(
+                      i.tool(),
+                      input,
+                      new ZiweiDates.QueryClock(db.requestClock(turn), policy.queryTimezone()))
+                  .complete()) throw new Problem(422, "ziwei_input_incomplete");
+            } catch (IllegalArgumentException e) {
+              throw new Problem(422, "invalid_answer");
+            }
+          }
           db.answer(id, hash, ResumeInputs.canonical(answer));
           boolean complete =
               db.interactions(turn).stream()
@@ -244,6 +265,9 @@ public class GovernanceService {
           if (a == null
               || !a.tenant().equals(owner.tenant())
               || !a.subject().equals(owner.subject())) throw new Problem(404, "not_found");
+          // Match execution's owner-before-grant lock order when privacy governance is enabled.
+          if ("ziwei:read".equals(db.artifactScope(id)))
+            tasks.checkArtifactPrivacy(turns.turn(a.turnId()));
           var grant = db.lockGrant(a.conversationId());
           if (grant == null || !scopes(grant.scopes()).contains("artifact:read"))
             throw new Problem(403, "artifact_denied");

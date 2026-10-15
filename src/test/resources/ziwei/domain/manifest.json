@@ -1,0 +1,21 @@
+{
+  "cases": 8,
+  "dependencies": {
+    "x-iztro": "0.4.0",
+    "tzdata": "2026.3",
+    "pydantic": "2.13.5"
+  },
+  "source_sha256": {
+    "financeclaw/kernel/ziwei.py": "d82ff9b780e6c668dc1f4025a98b155b2e404273ab6c3728892154e0805b5d67",
+    "financeclaw/kernel/ziwei_tools.py": "9b3bac39722607644a9b88a4b2de9a4f36555f0484e2480f7f0ca43896cd3ac3",
+    "financeclaw/kernel/context.py": "1c2bdb51e8d1210459604bc9a1ec4d20d5f6c024cfa76d0d428f99a03a4f0f67",
+    "financeclaw/agent_server/domains/ziwei/normalization.py": "903d47c6077c59a4545202eec68cf74b93195e0b996be0383dd1d61b51dc3d50",
+    "financeclaw/agent_server/domains/ziwei/validation.py": "9d89ff50a52d45deed083db4b6bf1c4b0e2a60f4ea5559485e9e7ae1aed22399",
+    "financeclaw/agent_server/domains/ziwei/errors.py": "fa44900efe29479f613d1c8938d66958bb74eb4968d19d02c794c0f32004175c",
+    "financeclaw/agent_server/domains/ziwei/tool_inputs.py": "50112f98c54f1bb4e9a557fbd38a6705c25154489abcdca48286d193fa2a54c0",
+    "financeclaw/agent_server/domains/ziwei/adapters/x_iztro.py": "ac485caff130be7d4a3fcde41ede3eae6fa5b11cb32b96dcb677d441e7497893",
+    "financeclaw/agent_server/domains/ziwei/service.py": "7a16da5f95c751121205030daccc28391b016a9f0c8951681ef883b43aa5d67d"
+  },
+  "fixture_sha256": "731b55d44873327884b74c6113cfff4f75caf22b032ad6d387585fcaae19d6ad",
+  "purpose": "Synthetic facts/segments/focus parity. Java convention and ownership intentionally differ."
+}

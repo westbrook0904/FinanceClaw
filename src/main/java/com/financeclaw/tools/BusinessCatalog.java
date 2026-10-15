@@ -39,7 +39,15 @@ public final class BusinessCatalog {
     }
   }
 
-  public record Features(List<Remote> remotes, String skillHash, String marketJson) {
+  public record Features(
+      List<Remote> remotes,
+      String skillHash,
+      String marketJson,
+      com.financeclaw.ziwei.ZiweiPolicy ziwei) {
+    public Features(List<Remote> remotes, String skillHash, String marketJson) {
+      this(remotes, skillHash, marketJson, null);
+    }
+
     public Features {
       remotes = List.copyOf(remotes);
     }
@@ -52,8 +60,21 @@ public final class BusinessCatalog {
   }
 
   public static Features load(Environment env) {
-    if (env.getProperty("financeclaw.business.ziwei.enabled", Boolean.class, false))
-      throw new IllegalArgumentException("Ziwei adapter is not available in this release");
+    com.financeclaw.ziwei.ZiweiPolicy ziwei = null;
+    if (env.getProperty("financeclaw.business.ziwei.enabled", Boolean.class, false)) {
+      if (!env.getProperty("financeclaw.business.ziwei.development", Boolean.class, false))
+        throw new IllegalArgumentException(
+            "Ziwei requires explicit development mode pending M6d acceptance");
+      ziwei =
+          com.financeclaw.ziwei.ZiweiPolicy.development(
+              env.getRequiredProperty("financeclaw.business.ziwei.key-ref"),
+              env.getRequiredProperty("financeclaw.business.ziwei.key-version"),
+              env.getRequiredProperty("financeclaw.business.ziwei.query-timezone"));
+      ziwei.verifyRuntime();
+      byte[] key =
+          com.financeclaw.ziwei.ZiweiPolicy.key(credential(ziwei.keyRef(), env::getProperty));
+      Arrays.fill(key, (byte) 0);
+    }
     List<Remote> remotes = new ArrayList<>();
     for (String name : List.of("hotel", "taibu")) {
       String key = "financeclaw.business." + name;
@@ -73,7 +94,7 @@ public final class BusinessCatalog {
               env.getProperty(key + ".timeout-ms", Integer.class, 5000)));
     }
     String market = env.getProperty("financeclaw.business.market-file", "");
-    return new Features(remotes, skillHash(), market.isBlank() ? "{}" : read(market));
+    return new Features(remotes, skillHash(), market.isBlank() ? "{}" : read(market), ziwei);
   }
 
   public static final String SKILLS = "skills";

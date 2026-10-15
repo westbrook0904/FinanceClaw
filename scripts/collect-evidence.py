@@ -45,7 +45,7 @@ if any(p.stat().st_mtime > min(r.stat().st_mtime for r in report_paths)
        for p in test_inputs):
     raise SystemExit("Sources changed after tests started; run verify again before collecting evidence")
 manifest = {str(p.relative_to(root)): hashlib.sha256(p.read_bytes()).hexdigest() for p in paths}
-evidence = {"base_commit": "a2b67b1fcb9908892a722d220fad9d469d6fc46d", "milestone": "M6b-charts", "collected_at_utc": datetime.now(timezone.utc).isoformat(),
+evidence = {"base_commit": "33d59b8c319082847763743a8ffb4dae992f9207", "milestone": "M6c-domain", "collected_at_utc": datetime.now(timezone.utc).isoformat(),
             "application_jar_sha256": hashlib.sha256((root / "target/financeclaw-java-0.1.0-SNAPSHOT.jar").read_bytes()).hexdigest(),
             "toolchain": json.loads((root / "toolchains.lock.json").read_text()),
             "environment": json.loads((root / "target/m0/environment.json").read_text()),
@@ -54,9 +54,10 @@ evidence = {"base_commit": "a2b67b1fcb9908892a722d220fad9d469d6fc46d", "mileston
             "ziwei_dates_environment": json.loads((root / "target/m6/dates-environment.json").read_text()),
             "ziwei_calendar_environment": json.loads((root / "target/m6/calendar-results.json").read_text()),
             "ziwei_chart_environment": json.loads((root / "target/m6/chart-results.json").read_text()),
+            "ziwei_domain_baseline": json.loads((root / "src/test/resources/ziwei/domain/manifest.json").read_text()),
             "ziwei_chart_packaging": json.loads((root / "target/m6/chart-packaging.json").read_text()),
             "total_tests": sum(s["tests"] for s in suites), "suites": suites, "source_sha256": manifest,
-            "validation_scope": "Local PostgreSQL, pgvector and independent JVMs; native loopback model/MCP/Feishu adapters; M6 date contracts, exhaustive 1901-2099 calendar compatibility, selected timezone offsets, 2524 complete fixed-rule Java chart comparisons and isolated packaged JVMs. No Ziwei product governance or tool enablement, real provider/MCP/Feishu tenant or remote CI execution"}
+            "validation_scope": "Local PostgreSQL, pgvector and independent JVMs; native loopback model/MCP/Feishu adapters; M6 date contracts, exhaustive 1901-2099 calendar compatibility, selected timezone offsets, 2524 complete fixed-rule Java chart comparisons and isolated packaged JVMs. M6c fixed-domain facts and focus parity, native Toolkit suspension/resume with fixed Turn clock/release, scoped artifacts, HMAC owner/key binding, budgets, revocation and privacy epochs. Development mode only; no M6d independent process Ziwei recovery, real model Ziwei selection, real provider/MCP/Feishu tenant or remote CI execution"}
 destination = root / "target/m6/results.json"
 destination.parent.mkdir(parents=True, exist_ok=True)
 destination.write_text(json.dumps(evidence, ensure_ascii=False, indent=2) + "\n")

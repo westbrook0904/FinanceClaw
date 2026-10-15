@@ -72,4 +72,4 @@
 
 ## M6b 的固定排盘算法
 
-固定业务算法从已锁定的 MIT x-iztro 0.4.0 源码移植，星曜常量直接提取并记录来源，不新增算法运行桥接。历法继续复用 lunar-java，日期/时区使用 JDK，JSON 使用项目现有 Jackson；AgentScope 不提供紫微算法。原生 Toolkit 的接入留在 M6c，详见 [排盘记录](m6b-charts.md)。
+固定业务算法从已锁定的 MIT x-iztro 0.4.0 源码移植，星曜常量直接提取并记录来源，不新增算法运行桥接。历法继续复用 lunar-java，日期/时区使用 JDK，JSON 使用项目现有 Jackson；AgentScope 不提供紫微算法。M6c 已通过现有 `GovernedTools` 注册原生 `ToolBase`：`ToolValidator` 校验结构、`ToolResultBlock.suspended` 暂停、原生 `AgentState` 与已有 Interaction 恢复。Artifact、scope、能力步骤回执继续复用现有业务服务，无新状态库或 Skill/MCP/飞书协议。详见 [领域接入](m6c-domain.md)。

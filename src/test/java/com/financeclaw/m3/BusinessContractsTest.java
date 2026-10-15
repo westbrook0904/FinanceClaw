@@ -19,7 +19,7 @@ class BusinessContractsTest {
                 BusinessCatalog.load(
                     new MockEnvironment()
                         .withProperty("financeclaw.business.ziwei.enabled", "true")))
-        .hasMessage("Ziwei adapter is not available in this release");
+        .hasMessage("Ziwei requires explicit development mode pending M6d acceptance");
   }
 
   @Test

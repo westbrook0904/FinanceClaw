@@ -1,4 +1,4 @@
-name: Java M0 through M6b charts
+name: Java M0 through M6c domain
 on: [push, pull_request]
 permissions:
   contents: read

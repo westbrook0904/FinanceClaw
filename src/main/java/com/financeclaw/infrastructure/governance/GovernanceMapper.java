@@ -146,4 +146,7 @@ public interface GovernanceMapper {
 
   @Select("SELECT clock_timestamp()::text")
   String now();
+
+  @Select("SELECT created_at FROM business.turns WHERE id=#{id}")
+  java.time.Instant requestClock(String id);
 }

@@ -106,6 +106,10 @@ financeclaw:
     market-file: ${FINANCECLAW_MARKET_FILE:}
     ziwei:
       enabled: ${FINANCECLAW_ZIWEI_ENABLED:false}
+      development: ${FINANCECLAW_ZIWEI_DEVELOPMENT:false}
+      key-ref: ${FINANCECLAW_ZIWEI_KEY_REF:ZIWEI_HMAC_KEY}
+      key-version: ${FINANCECLAW_ZIWEI_KEY_VERSION:}
+      query-timezone: ${FINANCECLAW_ZIWEI_QUERY_TIMEZONE:Asia/Shanghai}
   memory:
     enabled: ${FINANCECLAW_MEMORY_ENABLED:false}
     vector-search: ${FINANCECLAW_MEMORY_VECTOR_SEARCH:false}
