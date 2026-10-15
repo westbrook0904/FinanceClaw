@@ -1,0 +1,10 @@
+{
+  "scope": "Packaged calendar dependency and notice, test data and Python scripts excluded",
+  "jar_sha256": "a907e1b7cea34c6241e2b9c260d981cfd3cf3a0ef72e85b3c22b631be28f6d0c",
+  "lunar_entry": "BOOT-INF/lib/lunar-1.7.7.jar",
+  "license_entry": "META-INF/licenses/lunar-1.7.7.txt",
+  "lunar_sha256": "0c4c3a827333b3e2fd25b411e9067398f58aeb98b1e828e93ba25ba8b7051659",
+  "license_sha256": "d9210caf1844dcf410095cea464b79800aad30dbd49df092076b9f0ddc015404",
+  "test_fixtures_excluded": true,
+  "python_scripts_excluded": true
+}

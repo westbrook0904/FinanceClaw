@@ -1,0 +1,38 @@
+{
+  "calendar": {
+    "coordinate": "cn.6tail:lunar:1.7.7",
+    "license": "MIT",
+    "runtime_dependencies": [],
+    "maven_base_url": "https://repo.maven.apache.org/maven2/cn/6tail/lunar/1.7.7/",
+    "repository": "https://github.com/6tail/lunar-java",
+    "source_commit": "0194eb4574f33ab056fe7cac62a9d8bf24272478",
+    "published_java_source_files": 31,
+    "all_sources_match_commit": true,
+    "artifact_sha256": {
+      "lunar-1.7.7.jar": "0c4c3a827333b3e2fd25b411e9067398f58aeb98b1e828e93ba25ba8b7051659",
+      "lunar-1.7.7-sources.jar": "2780340704b52cb71cc8ef49c756424c9b02a4b50a3f7051e6f59651a0bea93a",
+      "lunar-1.7.7.pom": "1c086f62fc2712b6bc35a884f1a5bfaa28ce0bb6edb5158a01ee4d5aadf06b03"
+    },
+    "license_path": "src/main/resources/META-INF/licenses/lunar-1.7.7.txt",
+    "license_sha256": "d9210caf1844dcf410095cea464b79800aad30dbd49df092076b9f0ddc015404",
+    "compatibility_rules": "x-iztro-0.4.0-calendar-compat/1",
+    "native_difference_days": 60
+  },
+  "algorithm_reference": {
+    "repository": "https://github.com/x-haose/x-iztro",
+    "tag": "v0.4.0",
+    "commit": "cd14dfd8cf18dcc1ab248ba3c20c86903f5bc07f",
+    "license": "MIT",
+    "adopted": false
+  },
+  "rejected_direct_replacement": {
+    "repository": "https://github.com/H1d3rOne/xuan-deduct",
+    "commit": "30725e09f0149492010a7cc832d1f57c5e2360f8",
+    "reason": "No equivalent fixed-target five-level horoscope API; current age uses LocalDate.now; no compatibility claim",
+    "source_sha256": {
+      "pom.xml": "b388fc35958a1b92e4476c3c73f15167d998df410b421505f7889957a392a048",
+      "LICENSE": "449b8184433b34e6b40dbed7fec2a2af4796da7d60145ee6fa823d2bb4194d5a",
+      "src/main/java/xuan/core/ziwei/ZiWei.java": "2656b3901606bf38d3c50dc833afd671bce27f950a8be7efaab2ead9105519ed"
+    }
+  }
+}

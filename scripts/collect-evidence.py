@@ -33,27 +33,28 @@ if (summary.attrib.get("result") not in {"0", "null"}
         or any(summary.findtext(key) != "0" for key in ("errors", "failures", "skipped", "flakes"))
         or int(summary.findtext("completed", "0")) != sum(s["tests"] for s in suites if s["kind"] == "integration")):
     raise SystemExit("Failsafe did not report a successful run")
-paths = sorted(set([root / "pom.xml", root / "toolchains.lock.json", root / "mvnw",
+paths = sorted(set([root / "pom.xml", root / "toolchains.lock.json", root / "ziwei-dependencies.lock.json", root / "THIRD_PARTY_NOTICES.md", root / "mvnw",
                 *root.glob(".mvn/**/*properties"), *root.glob(".mvn/**/*.xml"), *root.glob("src/**/*.java"),
                 *[p for d in ("src/main/resources", "src/test/resources") for p in (root / d).rglob("*") if p.is_file()],
-                *root.glob("scripts/*.py"), *root.glob("scripts/*.sh"), *root.glob("ops/*.sql"), *root.glob("ops/*.sh"), *root.glob("ops/*.json"), *root.glob(".github/workflows/*.yml"), root / "compose.yml", root / "Dockerfile", root / ".dockerignore", root / ".env.example"]))
+                *root.glob("scripts/*.py"), *root.glob("scripts/*.sh"), *root.glob("scripts/*.java"), *root.glob("ops/*.sql"), *root.glob("ops/*.sh"), *root.glob("ops/*.json"), *root.glob(".github/workflows/*.yml"), root / "compose.yml", root / "Dockerfile", root / ".dockerignore", root / ".env.example"]))
 # Delivery scripts have their own Compose evidence. Fingerprint them, but only Java build inputs
 # participate in the Java report freshness check; editing a deployment script does not rerun Java.
 test_inputs = [p for p in paths if p.relative_to(root).parts[0] in {"src", ".mvn"}
-               or p.name in {"pom.xml", "toolchains.lock.json", "mvnw", "mvn.sh"}]
+               or p.name in {"pom.xml", "toolchains.lock.json", "ziwei-dependencies.lock.json", "mvnw", "mvn.sh"}]
 if any(p.stat().st_mtime > min(r.stat().st_mtime for r in report_paths)
        for p in test_inputs):
     raise SystemExit("Sources changed after tests started; run verify again before collecting evidence")
 manifest = {str(p.relative_to(root)): hashlib.sha256(p.read_bytes()).hexdigest() for p in paths}
-evidence = {"base_commit": "b9ff13d5a8c199ddd680ecbc6e8a8d39e8b9c27a", "milestone": "M6a", "collected_at_utc": datetime.now(timezone.utc).isoformat(),
+evidence = {"base_commit": "89216ca7c9ffbb22772818af38f274b6aec0f118", "milestone": "M6b-calendar", "collected_at_utc": datetime.now(timezone.utc).isoformat(),
             "application_jar_sha256": hashlib.sha256((root / "target/financeclaw-java-0.1.0-SNAPSHOT.jar").read_bytes()).hexdigest(),
             "toolchain": json.loads((root / "toolchains.lock.json").read_text()),
             "environment": json.loads((root / "target/m0/environment.json").read_text()),
             "memory_environment": json.loads((root / "target/m4/environment.json").read_text()),
             "memory_worker_process": json.loads((root / "target/m4/process.json").read_text()),
             "ziwei_dates_environment": json.loads((root / "target/m6/dates-environment.json").read_text()),
+            "ziwei_calendar_environment": json.loads((root / "target/m6/calendar-results.json").read_text()),
             "total_tests": sum(s["tests"] for s in suites), "suites": suites, "source_sha256": manifest,
-            "validation_scope": "Local real PostgreSQL, pgvector 0.8.1 and independent JVMs; native loopback model/MCP/Feishu adapters; M6a date contracts against frozen Python fixtures. No Java Ziwei chart engine, real provider/MCP/Feishu tenant or remote CI execution"}
+            "validation_scope": "Local PostgreSQL, pgvector and independent JVMs; native loopback model/MCP/Feishu adapters; M6 date contracts, exhaustive 1901-2099 calendar compatibility and selected timezone offsets. No Java Ziwei chart engine, real provider/MCP/Feishu tenant or remote CI execution"}
 destination = root / "target/m6/results.json"
 destination.parent.mkdir(parents=True, exist_ok=True)
 destination.write_text(json.dumps(evidence, ensure_ascii=False, indent=2) + "\n")

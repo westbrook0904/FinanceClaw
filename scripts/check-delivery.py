@@ -12,7 +12,7 @@ for script in (root / 'scripts').glob('*.py'):
 for folder in ('scripts', 'ops'):
     for script in (root / folder).glob('*.sh'):
         subprocess.run(['bash', '-n', str(script)], check=True)
-for file in [root / 'README.md', *(root / 'docs').rglob('*.md')]:
+for file in [*root.glob('*.md'), *(root / 'docs').rglob('*.md')]:
     for target in re.findall(r'\]\(([^\s)]+)(?:\s+"[^"]*")?\)', file.read_text()):
         target = target.strip('<>')
         if target.startswith(('https:', 'http:', '#', 'mailto:')):

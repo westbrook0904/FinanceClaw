@@ -1,6 +1,6 @@
 # M6：紫微迁移基准与日期契约
 
-日期：2026-10-15。实现基线为 M5 本地提交 `b9ff13d`。本次完成 **M6a：冻结旧算法基准、迁移日期处理、建立全量盘面比对入口**。M6 的 Java 排盘引擎、领域结果治理和 AgentScope 工具接入尚未完成；`financeclaw.business.ziwei.enabled=true` 仍明确拒绝启动。
+日期：2026-10-15。实现基线为 M5 本地提交 `b9ff13d`。M6a 已提交为 `89216ca`，完成冻结旧算法基准、日期处理和全量盘面比对入口。随后已推进 [M6b 历法适配与全日期验证](m6b-calendar.md)。M6 的 Java 排盘引擎、领域结果治理和 AgentScope 工具接入尚未完成；`financeclaw.business.ziwei.enabled=true` 仍明确拒绝启动。
 
 ## 当前可运行的部分
 
@@ -57,7 +57,7 @@ python3 scripts/compare-ziwei-charts.py \
 
 ## 算法与依赖核查
 
-截至本次核查，还没有选定、引入或验证可替换旧引擎的 Java 算法依赖：
+以下是 M6a 时的候选核查。后续 M6b 已引入固定 lunar-java 历法适配器，详见 [M6b 记录](m6b-calendar.md)；完整 Java 排盘引擎仍未选定和完成：
 
 | 候选来源 | 核查结果与采用条件 |
 | --- | --- |

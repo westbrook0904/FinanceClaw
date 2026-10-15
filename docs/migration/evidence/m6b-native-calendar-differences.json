@@ -1,0 +1,849 @@
+{
+  "calendar_engine" : "cn.6tail:lunar:1.7.7",
+  "unmodified_library_compatible" : false,
+  "compatibility_rules" : "x-iztro-0.4.0-calendar-compat/1",
+  "reference_engine" : "x-iztro@0.4.0",
+  "differences" : [ {
+    "solar_date" : "1925-05-22",
+    "reference" : {
+      "year" : 1925,
+      "month" : 4,
+      "day" : 30,
+      "leap" : false
+    },
+    "native_library" : {
+      "year" : 1925,
+      "month" : 4,
+      "day" : 1,
+      "leap" : true
+    }
+  }, {
+    "solar_date" : "1925-05-23",
+    "reference" : {
+      "year" : 1925,
+      "month" : 4,
+      "day" : 1,
+      "leap" : true
+    },
+    "native_library" : {
+      "year" : 1925,
+      "month" : 4,
+      "day" : 2,
+      "leap" : true
+    }
+  }, {
+    "solar_date" : "1925-05-24",
+    "reference" : {
+      "year" : 1925,
+      "month" : 4,
+      "day" : 2,
+      "leap" : true
+    },
+    "native_library" : {
+      "year" : 1925,
+      "month" : 4,
+      "day" : 3,
+      "leap" : true
+    }
+  }, {
+    "solar_date" : "1925-05-25",
+    "reference" : {
+      "year" : 1925,
+      "month" : 4,
+      "day" : 3,
+      "leap" : true
+    },
+    "native_library" : {
+      "year" : 1925,
+      "month" : 4,
+      "day" : 4,
+      "leap" : true
+    }
+  }, {
+    "solar_date" : "1925-05-26",
+    "reference" : {
+      "year" : 1925,
+      "month" : 4,
+      "day" : 4,
+      "leap" : true
+    },
+    "native_library" : {
+      "year" : 1925,
+      "month" : 4,
+      "day" : 5,
+      "leap" : true
+    }
+  }, {
+    "solar_date" : "1925-05-27",
+    "reference" : {
+      "year" : 1925,
+      "month" : 4,
+      "day" : 5,
+      "leap" : true
+    },
+    "native_library" : {
+      "year" : 1925,
+      "month" : 4,
+      "day" : 6,
+      "leap" : true
+    }
+  }, {
+    "solar_date" : "1925-05-28",
+    "reference" : {
+      "year" : 1925,
+      "month" : 4,
+      "day" : 6,
+      "leap" : true
+    },
+    "native_library" : {
+      "year" : 1925,
+      "month" : 4,
+      "day" : 7,
+      "leap" : true
+    }
+  }, {
+    "solar_date" : "1925-05-29",
+    "reference" : {
+      "year" : 1925,
+      "month" : 4,
+      "day" : 7,
+      "leap" : true
+    },
+    "native_library" : {
+      "year" : 1925,
+      "month" : 4,
+      "day" : 8,
+      "leap" : true
+    }
+  }, {
+    "solar_date" : "1925-05-30",
+    "reference" : {
+      "year" : 1925,
+      "month" : 4,
+      "day" : 8,
+      "leap" : true
+    },
+    "native_library" : {
+      "year" : 1925,
+      "month" : 4,
+      "day" : 9,
+      "leap" : true
+    }
+  }, {
+    "solar_date" : "1925-05-31",
+    "reference" : {
+      "year" : 1925,
+      "month" : 4,
+      "day" : 9,
+      "leap" : true
+    },
+    "native_library" : {
+      "year" : 1925,
+      "month" : 4,
+      "day" : 10,
+      "leap" : true
+    }
+  }, {
+    "solar_date" : "1925-06-01",
+    "reference" : {
+      "year" : 1925,
+      "month" : 4,
+      "day" : 10,
+      "leap" : true
+    },
+    "native_library" : {
+      "year" : 1925,
+      "month" : 4,
+      "day" : 11,
+      "leap" : true
+    }
+  }, {
+    "solar_date" : "1925-06-02",
+    "reference" : {
+      "year" : 1925,
+      "month" : 4,
+      "day" : 11,
+      "leap" : true
+    },
+    "native_library" : {
+      "year" : 1925,
+      "month" : 4,
+      "day" : 12,
+      "leap" : true
+    }
+  }, {
+    "solar_date" : "1925-06-03",
+    "reference" : {
+      "year" : 1925,
+      "month" : 4,
+      "day" : 12,
+      "leap" : true
+    },
+    "native_library" : {
+      "year" : 1925,
+      "month" : 4,
+      "day" : 13,
+      "leap" : true
+    }
+  }, {
+    "solar_date" : "1925-06-04",
+    "reference" : {
+      "year" : 1925,
+      "month" : 4,
+      "day" : 13,
+      "leap" : true
+    },
+    "native_library" : {
+      "year" : 1925,
+      "month" : 4,
+      "day" : 14,
+      "leap" : true
+    }
+  }, {
+    "solar_date" : "1925-06-05",
+    "reference" : {
+      "year" : 1925,
+      "month" : 4,
+      "day" : 14,
+      "leap" : true
+    },
+    "native_library" : {
+      "year" : 1925,
+      "month" : 4,
+      "day" : 15,
+      "leap" : true
+    }
+  }, {
+    "solar_date" : "1925-06-06",
+    "reference" : {
+      "year" : 1925,
+      "month" : 4,
+      "day" : 15,
+      "leap" : true
+    },
+    "native_library" : {
+      "year" : 1925,
+      "month" : 4,
+      "day" : 16,
+      "leap" : true
+    }
+  }, {
+    "solar_date" : "1925-06-07",
+    "reference" : {
+      "year" : 1925,
+      "month" : 4,
+      "day" : 16,
+      "leap" : true
+    },
+    "native_library" : {
+      "year" : 1925,
+      "month" : 4,
+      "day" : 17,
+      "leap" : true
+    }
+  }, {
+    "solar_date" : "1925-06-08",
+    "reference" : {
+      "year" : 1925,
+      "month" : 4,
+      "day" : 17,
+      "leap" : true
+    },
+    "native_library" : {
+      "year" : 1925,
+      "month" : 4,
+      "day" : 18,
+      "leap" : true
+    }
+  }, {
+    "solar_date" : "1925-06-09",
+    "reference" : {
+      "year" : 1925,
+      "month" : 4,
+      "day" : 18,
+      "leap" : true
+    },
+    "native_library" : {
+      "year" : 1925,
+      "month" : 4,
+      "day" : 19,
+      "leap" : true
+    }
+  }, {
+    "solar_date" : "1925-06-10",
+    "reference" : {
+      "year" : 1925,
+      "month" : 4,
+      "day" : 19,
+      "leap" : true
+    },
+    "native_library" : {
+      "year" : 1925,
+      "month" : 4,
+      "day" : 20,
+      "leap" : true
+    }
+  }, {
+    "solar_date" : "1925-06-11",
+    "reference" : {
+      "year" : 1925,
+      "month" : 4,
+      "day" : 20,
+      "leap" : true
+    },
+    "native_library" : {
+      "year" : 1925,
+      "month" : 4,
+      "day" : 21,
+      "leap" : true
+    }
+  }, {
+    "solar_date" : "1925-06-12",
+    "reference" : {
+      "year" : 1925,
+      "month" : 4,
+      "day" : 21,
+      "leap" : true
+    },
+    "native_library" : {
+      "year" : 1925,
+      "month" : 4,
+      "day" : 22,
+      "leap" : true
+    }
+  }, {
+    "solar_date" : "1925-06-13",
+    "reference" : {
+      "year" : 1925,
+      "month" : 4,
+      "day" : 22,
+      "leap" : true
+    },
+    "native_library" : {
+      "year" : 1925,
+      "month" : 4,
+      "day" : 23,
+      "leap" : true
+    }
+  }, {
+    "solar_date" : "1925-06-14",
+    "reference" : {
+      "year" : 1925,
+      "month" : 4,
+      "day" : 23,
+      "leap" : true
+    },
+    "native_library" : {
+      "year" : 1925,
+      "month" : 4,
+      "day" : 24,
+      "leap" : true
+    }
+  }, {
+    "solar_date" : "1925-06-15",
+    "reference" : {
+      "year" : 1925,
+      "month" : 4,
+      "day" : 24,
+      "leap" : true
+    },
+    "native_library" : {
+      "year" : 1925,
+      "month" : 4,
+      "day" : 25,
+      "leap" : true
+    }
+  }, {
+    "solar_date" : "1925-06-16",
+    "reference" : {
+      "year" : 1925,
+      "month" : 4,
+      "day" : 25,
+      "leap" : true
+    },
+    "native_library" : {
+      "year" : 1925,
+      "month" : 4,
+      "day" : 26,
+      "leap" : true
+    }
+  }, {
+    "solar_date" : "1925-06-17",
+    "reference" : {
+      "year" : 1925,
+      "month" : 4,
+      "day" : 26,
+      "leap" : true
+    },
+    "native_library" : {
+      "year" : 1925,
+      "month" : 4,
+      "day" : 27,
+      "leap" : true
+    }
+  }, {
+    "solar_date" : "1925-06-18",
+    "reference" : {
+      "year" : 1925,
+      "month" : 4,
+      "day" : 27,
+      "leap" : true
+    },
+    "native_library" : {
+      "year" : 1925,
+      "month" : 4,
+      "day" : 28,
+      "leap" : true
+    }
+  }, {
+    "solar_date" : "1925-06-19",
+    "reference" : {
+      "year" : 1925,
+      "month" : 4,
+      "day" : 28,
+      "leap" : true
+    },
+    "native_library" : {
+      "year" : 1925,
+      "month" : 4,
+      "day" : 29,
+      "leap" : true
+    }
+  }, {
+    "solar_date" : "1925-06-20",
+    "reference" : {
+      "year" : 1925,
+      "month" : 4,
+      "day" : 29,
+      "leap" : true
+    },
+    "native_library" : {
+      "year" : 1925,
+      "month" : 4,
+      "day" : 30,
+      "leap" : true
+    }
+  }, {
+    "solar_date" : "2057-09-28",
+    "reference" : {
+      "year" : 2057,
+      "month" : 9,
+      "day" : 1,
+      "leap" : false
+    },
+    "native_library" : {
+      "year" : 2057,
+      "month" : 8,
+      "day" : 30,
+      "leap" : false
+    }
+  }, {
+    "solar_date" : "2057-09-29",
+    "reference" : {
+      "year" : 2057,
+      "month" : 9,
+      "day" : 2,
+      "leap" : false
+    },
+    "native_library" : {
+      "year" : 2057,
+      "month" : 9,
+      "day" : 1,
+      "leap" : false
+    }
+  }, {
+    "solar_date" : "2057-09-30",
+    "reference" : {
+      "year" : 2057,
+      "month" : 9,
+      "day" : 3,
+      "leap" : false
+    },
+    "native_library" : {
+      "year" : 2057,
+      "month" : 9,
+      "day" : 2,
+      "leap" : false
+    }
+  }, {
+    "solar_date" : "2057-10-01",
+    "reference" : {
+      "year" : 2057,
+      "month" : 9,
+      "day" : 4,
+      "leap" : false
+    },
+    "native_library" : {
+      "year" : 2057,
+      "month" : 9,
+      "day" : 3,
+      "leap" : false
+    }
+  }, {
+    "solar_date" : "2057-10-02",
+    "reference" : {
+      "year" : 2057,
+      "month" : 9,
+      "day" : 5,
+      "leap" : false
+    },
+    "native_library" : {
+      "year" : 2057,
+      "month" : 9,
+      "day" : 4,
+      "leap" : false
+    }
+  }, {
+    "solar_date" : "2057-10-03",
+    "reference" : {
+      "year" : 2057,
+      "month" : 9,
+      "day" : 6,
+      "leap" : false
+    },
+    "native_library" : {
+      "year" : 2057,
+      "month" : 9,
+      "day" : 5,
+      "leap" : false
+    }
+  }, {
+    "solar_date" : "2057-10-04",
+    "reference" : {
+      "year" : 2057,
+      "month" : 9,
+      "day" : 7,
+      "leap" : false
+    },
+    "native_library" : {
+      "year" : 2057,
+      "month" : 9,
+      "day" : 6,
+      "leap" : false
+    }
+  }, {
+    "solar_date" : "2057-10-05",
+    "reference" : {
+      "year" : 2057,
+      "month" : 9,
+      "day" : 8,
+      "leap" : false
+    },
+    "native_library" : {
+      "year" : 2057,
+      "month" : 9,
+      "day" : 7,
+      "leap" : false
+    }
+  }, {
+    "solar_date" : "2057-10-06",
+    "reference" : {
+      "year" : 2057,
+      "month" : 9,
+      "day" : 9,
+      "leap" : false
+    },
+    "native_library" : {
+      "year" : 2057,
+      "month" : 9,
+      "day" : 8,
+      "leap" : false
+    }
+  }, {
+    "solar_date" : "2057-10-07",
+    "reference" : {
+      "year" : 2057,
+      "month" : 9,
+      "day" : 10,
+      "leap" : false
+    },
+    "native_library" : {
+      "year" : 2057,
+      "month" : 9,
+      "day" : 9,
+      "leap" : false
+    }
+  }, {
+    "solar_date" : "2057-10-08",
+    "reference" : {
+      "year" : 2057,
+      "month" : 9,
+      "day" : 11,
+      "leap" : false
+    },
+    "native_library" : {
+      "year" : 2057,
+      "month" : 9,
+      "day" : 10,
+      "leap" : false
+    }
+  }, {
+    "solar_date" : "2057-10-09",
+    "reference" : {
+      "year" : 2057,
+      "month" : 9,
+      "day" : 12,
+      "leap" : false
+    },
+    "native_library" : {
+      "year" : 2057,
+      "month" : 9,
+      "day" : 11,
+      "leap" : false
+    }
+  }, {
+    "solar_date" : "2057-10-10",
+    "reference" : {
+      "year" : 2057,
+      "month" : 9,
+      "day" : 13,
+      "leap" : false
+    },
+    "native_library" : {
+      "year" : 2057,
+      "month" : 9,
+      "day" : 12,
+      "leap" : false
+    }
+  }, {
+    "solar_date" : "2057-10-11",
+    "reference" : {
+      "year" : 2057,
+      "month" : 9,
+      "day" : 14,
+      "leap" : false
+    },
+    "native_library" : {
+      "year" : 2057,
+      "month" : 9,
+      "day" : 13,
+      "leap" : false
+    }
+  }, {
+    "solar_date" : "2057-10-12",
+    "reference" : {
+      "year" : 2057,
+      "month" : 9,
+      "day" : 15,
+      "leap" : false
+    },
+    "native_library" : {
+      "year" : 2057,
+      "month" : 9,
+      "day" : 14,
+      "leap" : false
+    }
+  }, {
+    "solar_date" : "2057-10-13",
+    "reference" : {
+      "year" : 2057,
+      "month" : 9,
+      "day" : 16,
+      "leap" : false
+    },
+    "native_library" : {
+      "year" : 2057,
+      "month" : 9,
+      "day" : 15,
+      "leap" : false
+    }
+  }, {
+    "solar_date" : "2057-10-14",
+    "reference" : {
+      "year" : 2057,
+      "month" : 9,
+      "day" : 17,
+      "leap" : false
+    },
+    "native_library" : {
+      "year" : 2057,
+      "month" : 9,
+      "day" : 16,
+      "leap" : false
+    }
+  }, {
+    "solar_date" : "2057-10-15",
+    "reference" : {
+      "year" : 2057,
+      "month" : 9,
+      "day" : 18,
+      "leap" : false
+    },
+    "native_library" : {
+      "year" : 2057,
+      "month" : 9,
+      "day" : 17,
+      "leap" : false
+    }
+  }, {
+    "solar_date" : "2057-10-16",
+    "reference" : {
+      "year" : 2057,
+      "month" : 9,
+      "day" : 19,
+      "leap" : false
+    },
+    "native_library" : {
+      "year" : 2057,
+      "month" : 9,
+      "day" : 18,
+      "leap" : false
+    }
+  }, {
+    "solar_date" : "2057-10-17",
+    "reference" : {
+      "year" : 2057,
+      "month" : 9,
+      "day" : 20,
+      "leap" : false
+    },
+    "native_library" : {
+      "year" : 2057,
+      "month" : 9,
+      "day" : 19,
+      "leap" : false
+    }
+  }, {
+    "solar_date" : "2057-10-18",
+    "reference" : {
+      "year" : 2057,
+      "month" : 9,
+      "day" : 21,
+      "leap" : false
+    },
+    "native_library" : {
+      "year" : 2057,
+      "month" : 9,
+      "day" : 20,
+      "leap" : false
+    }
+  }, {
+    "solar_date" : "2057-10-19",
+    "reference" : {
+      "year" : 2057,
+      "month" : 9,
+      "day" : 22,
+      "leap" : false
+    },
+    "native_library" : {
+      "year" : 2057,
+      "month" : 9,
+      "day" : 21,
+      "leap" : false
+    }
+  }, {
+    "solar_date" : "2057-10-20",
+    "reference" : {
+      "year" : 2057,
+      "month" : 9,
+      "day" : 23,
+      "leap" : false
+    },
+    "native_library" : {
+      "year" : 2057,
+      "month" : 9,
+      "day" : 22,
+      "leap" : false
+    }
+  }, {
+    "solar_date" : "2057-10-21",
+    "reference" : {
+      "year" : 2057,
+      "month" : 9,
+      "day" : 24,
+      "leap" : false
+    },
+    "native_library" : {
+      "year" : 2057,
+      "month" : 9,
+      "day" : 23,
+      "leap" : false
+    }
+  }, {
+    "solar_date" : "2057-10-22",
+    "reference" : {
+      "year" : 2057,
+      "month" : 9,
+      "day" : 25,
+      "leap" : false
+    },
+    "native_library" : {
+      "year" : 2057,
+      "month" : 9,
+      "day" : 24,
+      "leap" : false
+    }
+  }, {
+    "solar_date" : "2057-10-23",
+    "reference" : {
+      "year" : 2057,
+      "month" : 9,
+      "day" : 26,
+      "leap" : false
+    },
+    "native_library" : {
+      "year" : 2057,
+      "month" : 9,
+      "day" : 25,
+      "leap" : false
+    }
+  }, {
+    "solar_date" : "2057-10-24",
+    "reference" : {
+      "year" : 2057,
+      "month" : 9,
+      "day" : 27,
+      "leap" : false
+    },
+    "native_library" : {
+      "year" : 2057,
+      "month" : 9,
+      "day" : 26,
+      "leap" : false
+    }
+  }, {
+    "solar_date" : "2057-10-25",
+    "reference" : {
+      "year" : 2057,
+      "month" : 9,
+      "day" : 28,
+      "leap" : false
+    },
+    "native_library" : {
+      "year" : 2057,
+      "month" : 9,
+      "day" : 27,
+      "leap" : false
+    }
+  }, {
+    "solar_date" : "2057-10-26",
+    "reference" : {
+      "year" : 2057,
+      "month" : 9,
+      "day" : 29,
+      "leap" : false
+    },
+    "native_library" : {
+      "year" : 2057,
+      "month" : 9,
+      "day" : 28,
+      "leap" : false
+    }
+  }, {
+    "solar_date" : "2057-10-27",
+    "reference" : {
+      "year" : 2057,
+      "month" : 9,
+      "day" : 30,
+      "leap" : false
+    },
+    "native_library" : {
+      "year" : 2057,
+      "month" : 9,
+      "day" : 29,
+      "leap" : false
+    }
+  } ],
+  "compared_days" : 72684,
+  "difference_count" : 60
+}

@@ -2,7 +2,7 @@
 
 FinanceClaw 从 Python / LangChain / LangGraph 迁移到 **Java / AgentScope Java** 的目标项目。
 
-当前已实现 **M0–M4 的本地能力及 M5 部署基础**：任务生命周期、原生事件与 SSE、授权与审批恢复、结果归档、请求预算，以及通过 AgentScope 原生 Toolkit / SkillRepository 接入的酒店/Taibu MCP、调酒 Skill、市场研究子 Agent 和固定投资组合 Workflow。M4 增加受治理长期记忆、独立受限 Worker，以及 AgentScope 原生飞书文本接入。M6a 已冻结紫微回归基准并迁移日期契约，排盘引擎仍未接入。默认离线运行；真实供应商、飞书租户与生产交付仍待验收。SDK 暂不支持的卡片/表单和可靠投递回执没有自建实现。
+当前已实现 **M0–M4 的本地能力及 M5 部署基础**：任务生命周期、原生事件与 SSE、授权与审批恢复、结果归档、请求预算，以及通过 AgentScope 原生 Toolkit / SkillRepository 接入的酒店/Taibu MCP、调酒 Skill、市场研究子 Agent 和固定投资组合 Workflow。M4 增加受治理长期记忆、独立受限 Worker，以及 AgentScope 原生飞书文本接入。M6a 已冻结紫微回归基准并迁移日期契约；M6b 已接入固定 Java 历法及旧规则兼容层，完整排盘引擎仍未接入。默认离线运行；真实供应商、飞书租户与生产交付仍待验收。SDK 暂不支持的卡片/表单和可靠投递回执没有自建实现。
 
 ## 固定工具链
 
@@ -66,7 +66,7 @@ scripts/mvn.sh spring-boot:run
 | 入口 | 内容 |
 | --- | --- |
 | [M5 部署与恢复](docs/migration/m5-validation.md) | 四角色 Compose、secret 配置、CI、故障/备份实验与真实验收入口 |
-| [M6 紫微迁移](docs/migration/m6-validation.md) | 已完成 M6a 日期契约及回归基准；Java 算法替换尚未完成 |
+| [M6 紫微迁移](docs/migration/m6-validation.md) | M6a 日期契约与基准、[M6b 历法适配](docs/migration/m6b-calendar.md)；完整排盘算法尚未完成 |
 | [M4 记忆与原生飞书](docs/migration/m4-validation.md) | 记忆 API、独立 Worker、pgvector、原生飞书配置及 SDK 能力边界 |
 | [M3 业务与验证](docs/migration/m3-validation.md) | 酒店/Taibu 配置、调酒 Skill、市场研究、固定 Workflow 及模拟验收 |
 | [M2 使用与验证](docs/migration/m2-validation.md) | 授权与交互 API、Artifact、模型配置、测试和限制 |

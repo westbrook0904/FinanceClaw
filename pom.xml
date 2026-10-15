@@ -20,8 +20,12 @@
         <testcontainers.version>1.21.3</testcontainers.version>
         <maven-enforcer-plugin.version>3.6.2</maven-enforcer-plugin.version>
         <spotless.version>2.44.5</spotless.version>
+        <lunar.version>1.7.7</lunar.version>
     </properties>
     <dependencies>
+        <dependency>
+            <groupId>cn.6tail</groupId><artifactId>lunar</artifactId><version>${lunar.version}</version>
+        </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-web</artifactId>
         </dependency>

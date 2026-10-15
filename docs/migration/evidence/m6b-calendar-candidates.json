@@ -1,0 +1,34 @@
+{
+  "scope": "Unmodified Java calendar candidates compared to frozen x-iztro 0.4.0 lunar dates; not full chart equivalence",
+  "probe_sha256": "53c9b5456151790f46eabce3aa25348707d0dc41b0fab3f2ced8ad7875044cb4",
+  "candidates": [
+    {
+      "coordinate": "cn.6tail:lunar:1.7.4",
+      "artifact_sha256": "21045aa051093e440ac3a71b51549bfff5dc72e1b53588603541363dcd2396a5",
+      "days": 72684,
+      "differences": 30,
+      "difference_file_sha256": "3f09234e85a71fdb27ff83af7e8a73926a34e9a7b03ba679f8dd4c9b980445c7",
+      "first_difference": "1925-05-22\t1925\t4\t30\t0 => 1925-05-22\t1925\t4\t1\t1",
+      "last_difference": "1925-06-20\t1925\t4\t29\t1 => 1925-06-20\t1925\t4\t30\t1"
+    },
+    {
+      "coordinate": "cn.6tail:lunar:1.7.6",
+      "artifact_sha256": "ccc9c8e1baac4ca7b0e25473751e8f71ef439bec15552464ceda8bf782cab083",
+      "days": 72684,
+      "differences": 60,
+      "difference_file_sha256": "b6d0fa51bd1e510e0a6e7ea5171cf3a1bf54b9057e79e3e808bd7a05fc49de4e",
+      "first_difference": "1925-05-22\t1925\t4\t30\t0 => 1925-05-22\t1925\t4\t1\t1",
+      "last_difference": "2057-10-27\t2057\t9\t30\t0 => 2057-10-27\t2057\t9\t29\t0"
+    },
+    {
+      "coordinate": "cn.6tail:lunar:1.7.7",
+      "artifact_sha256": "0c4c3a827333b3e2fd25b411e9067398f58aeb98b1e828e93ba25ba8b7051659",
+      "days": 72684,
+      "differences": 60,
+      "difference_file_sha256": "b6d0fa51bd1e510e0a6e7ea5171cf3a1bf54b9057e79e3e808bd7a05fc49de4e",
+      "first_difference": "1925-05-22\t1925\t4\t30\t0 => 1925-05-22\t1925\t4\t1\t1",
+      "last_difference": "2057-10-27\t2057\t9\t30\t0 => 2057-10-27\t2057\t9\t29\t0"
+    }
+  ],
+  "probe_source": "scripts/CalendarProbe.java"
+}

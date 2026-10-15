@@ -52,7 +52,7 @@ public final class ZiweiDates {
     private final String code;
     private final String field;
 
-    private InputError(String code, String field) {
+    InputError(String code, String field) {
       super(code + ": " + field);
       this.code = code;
       this.field = field;
