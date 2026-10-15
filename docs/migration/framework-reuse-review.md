@@ -66,6 +66,8 @@
 
 [M5c](m5c-backlog.md) 用现有 MyBatis 查询业务积压并按 ID 分页，受理、排空统计与明细均沿用现有 Bearer 身份。查询只补充业务事实定位，后续操作继续使用原审批、取消、通知和记忆流程；没有增加 AgentScope 执行层或数据库表。
 
+[M5d](m5d-preflight.md) 只是已有运维 API 的只读调用和文件留档，使用 Python 标准库，与现有部署/验收脚本一致；没有增加 Java 运行依赖、AgentScope 包装协议或自动切换框架。
+
 ## M6a 的日期与基准复用
 
 日期、区间、时区和 DST 处理使用 JDK `java.time` / `ZoneRules`，不自建日历库。旧 Python 仅用于显式离线生成回归样本，Java 构建读取冻结资源；未新增 Python 运行桥接、MCP 协议客户端或工具框架。该阶段紫微算法尚未选定和启用，后续工具继续接入 AgentScope 原生 Toolkit。版本差异与边界见 [M6 记录](m6-validation.md)。

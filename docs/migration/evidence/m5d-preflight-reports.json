@@ -1,0 +1,482 @@
+{
+  "scope": "synthetic isolated deployment only",
+  "project": "financeclaw-m5d-498ea144cd",
+  "reports": {
+    "preflight_queued_and_memory_backlog": {
+      "schema_version": 1,
+      "scope": "current_owner",
+      "consistency": "separate_live_reads",
+      "assessment": "blocked",
+      "items": {
+        "turns": [
+          {
+            "id": "962e5f40-fff3-46cd-97c1-de91a2bf65b2",
+            "status": "queued",
+            "revision": 1,
+            "conversation_id": "ddf3da7e-8018-4546-8365-4b3e55e4e50a",
+            "command_status": "queued",
+            "reason": null,
+            "pending_interactions": 0,
+            "uncertain_effects": 0,
+            "pending_outbox": 0
+          }
+        ],
+        "notifications": [],
+        "notification_bindings": [],
+        "memory_jobs": [
+          {
+            "id": "1",
+            "status": "pending",
+            "revision": 1,
+            "kind": "extract",
+            "epoch": 1,
+            "attempts": 1,
+            "error_code": "extraction_failed"
+          },
+          {
+            "id": "2",
+            "status": "pending",
+            "revision": 1,
+            "kind": "extract",
+            "epoch": 1,
+            "attempts": 1,
+            "error_code": "extraction_failed"
+          },
+          {
+            "id": "3",
+            "status": "pending",
+            "revision": 1,
+            "kind": "extract",
+            "epoch": 1,
+            "attempts": 0,
+            "error_code": null
+          },
+          {
+            "id": "4",
+            "status": "pending",
+            "revision": 1,
+            "kind": "extract",
+            "epoch": 1,
+            "attempts": 0,
+            "error_code": null
+          },
+          {
+            "id": "5",
+            "status": "pending",
+            "revision": 1,
+            "kind": "extract",
+            "epoch": 1,
+            "attempts": 0,
+            "error_code": null
+          },
+          {
+            "id": "6",
+            "status": "pending",
+            "revision": 1,
+            "kind": "extract",
+            "epoch": 1,
+            "attempts": 0,
+            "error_code": null
+          },
+          {
+            "id": "7",
+            "status": "pending",
+            "revision": 1,
+            "kind": "extract",
+            "epoch": 1,
+            "attempts": 0,
+            "error_code": null
+          },
+          {
+            "id": "8",
+            "status": "pending",
+            "revision": 1,
+            "kind": "extract",
+            "epoch": 1,
+            "attempts": 0,
+            "error_code": null
+          },
+          {
+            "id": "9",
+            "status": "pending",
+            "revision": 1,
+            "kind": "extract",
+            "epoch": 1,
+            "attempts": 0,
+            "error_code": null
+          },
+          {
+            "id": "10",
+            "status": "pending",
+            "revision": 1,
+            "kind": "extract",
+            "epoch": 1,
+            "attempts": 0,
+            "error_code": null
+          },
+          {
+            "id": "11",
+            "status": "pending",
+            "revision": 1,
+            "kind": "extract",
+            "epoch": 1,
+            "attempts": 0,
+            "error_code": null
+          },
+          {
+            "id": "12",
+            "status": "pending",
+            "revision": 1,
+            "kind": "extract",
+            "epoch": 1,
+            "attempts": 0,
+            "error_code": null
+          }
+        ]
+      },
+      "errors": [],
+      "started_at": "2026-10-15T13:25:50.694485+00:00",
+      "before": {
+        "scope": "current_owner",
+        "admission": {
+          "paused": true,
+          "revision": 1
+        },
+        "counts": {
+          "queued": 1,
+          "running": 0,
+          "waiting": 0,
+          "cancelling": 0,
+          "blocked": 0,
+          "active_commands": 1,
+          "pending_interactions": 0,
+          "uncertain_effects": 0,
+          "pending_outbox": 0,
+          "pending_notifications": 0,
+          "unverified_notifications": 0,
+          "unprojected_notifications": 0,
+          "pending_memory_jobs": 12,
+          "pending_forget": 0
+        },
+        "drained": false
+      },
+      "after": {
+        "scope": "current_owner",
+        "admission": {
+          "paused": true,
+          "revision": 1
+        },
+        "counts": {
+          "queued": 1,
+          "running": 0,
+          "waiting": 0,
+          "cancelling": 0,
+          "blocked": 0,
+          "active_commands": 1,
+          "pending_interactions": 0,
+          "uncertain_effects": 0,
+          "pending_outbox": 0,
+          "pending_notifications": 0,
+          "unverified_notifications": 0,
+          "unprojected_notifications": 0,
+          "pending_memory_jobs": 12,
+          "pending_forget": 0
+        },
+        "drained": false
+      },
+      "observations_match": true,
+      "inventory_matches_counts": true,
+      "finished_at": "2026-10-15T13:25:50.908804+00:00",
+      "source_sha256": "eaf7ec576bb976fd626b6f998f2b4c2a4706c524585b02d665640633bcefa61c"
+    },
+    "preflight_truncated_inventory": {
+      "schema_version": 1,
+      "scope": "current_owner",
+      "consistency": "separate_live_reads",
+      "assessment": "incomplete",
+      "items": {
+        "turns": [
+          {
+            "id": "962e5f40-fff3-46cd-97c1-de91a2bf65b2",
+            "status": "queued",
+            "revision": 1,
+            "conversation_id": "ddf3da7e-8018-4546-8365-4b3e55e4e50a",
+            "command_status": "queued",
+            "reason": null,
+            "pending_interactions": 0,
+            "uncertain_effects": 0,
+            "pending_outbox": 0
+          }
+        ],
+        "notifications": [],
+        "notification_bindings": [],
+        "memory_jobs": [
+          {
+            "id": "1",
+            "status": "pending",
+            "revision": 1,
+            "kind": "extract",
+            "epoch": 1,
+            "attempts": 1,
+            "error_code": "extraction_failed"
+          }
+        ]
+      },
+      "errors": [
+        "page_limit_memory_jobs",
+        "inventory_count_mismatch"
+      ],
+      "started_at": "2026-10-15T13:25:51.144866+00:00",
+      "before": {
+        "scope": "current_owner",
+        "admission": {
+          "paused": true,
+          "revision": 1
+        },
+        "counts": {
+          "queued": 1,
+          "running": 0,
+          "waiting": 0,
+          "cancelling": 0,
+          "blocked": 0,
+          "active_commands": 1,
+          "pending_interactions": 0,
+          "uncertain_effects": 0,
+          "pending_outbox": 0,
+          "pending_notifications": 0,
+          "unverified_notifications": 0,
+          "unprojected_notifications": 0,
+          "pending_memory_jobs": 12,
+          "pending_forget": 0
+        },
+        "drained": false
+      },
+      "after": {
+        "scope": "current_owner",
+        "admission": {
+          "paused": true,
+          "revision": 1
+        },
+        "counts": {
+          "queued": 1,
+          "running": 0,
+          "waiting": 0,
+          "cancelling": 0,
+          "blocked": 0,
+          "active_commands": 1,
+          "pending_interactions": 0,
+          "uncertain_effects": 0,
+          "pending_outbox": 0,
+          "pending_notifications": 0,
+          "unverified_notifications": 0,
+          "unprojected_notifications": 0,
+          "pending_memory_jobs": 12,
+          "pending_forget": 0
+        },
+        "drained": false
+      },
+      "observations_match": true,
+      "inventory_matches_counts": false,
+      "finished_at": "2026-10-15T13:25:51.199703+00:00",
+      "source_sha256": "eaf7ec576bb976fd626b6f998f2b4c2a4706c524585b02d665640633bcefa61c"
+    },
+    "preflight_paused_and_drained": {
+      "schema_version": 1,
+      "scope": "current_owner",
+      "consistency": "separate_live_reads",
+      "assessment": "ready_for_review",
+      "items": {
+        "turns": [],
+        "notifications": [],
+        "notification_bindings": [],
+        "memory_jobs": []
+      },
+      "errors": [],
+      "started_at": "2026-10-15T13:27:30.950663+00:00",
+      "before": {
+        "scope": "current_owner",
+        "admission": {
+          "paused": true,
+          "revision": 5
+        },
+        "counts": {
+          "queued": 0,
+          "running": 0,
+          "waiting": 0,
+          "cancelling": 0,
+          "blocked": 0,
+          "active_commands": 0,
+          "pending_interactions": 0,
+          "uncertain_effects": 0,
+          "pending_outbox": 0,
+          "pending_notifications": 0,
+          "unverified_notifications": 0,
+          "unprojected_notifications": 0,
+          "pending_memory_jobs": 0,
+          "pending_forget": 0
+        },
+        "drained": true
+      },
+      "after": {
+        "scope": "current_owner",
+        "admission": {
+          "paused": true,
+          "revision": 5
+        },
+        "counts": {
+          "queued": 0,
+          "running": 0,
+          "waiting": 0,
+          "cancelling": 0,
+          "blocked": 0,
+          "active_commands": 0,
+          "pending_interactions": 0,
+          "uncertain_effects": 0,
+          "pending_outbox": 0,
+          "pending_notifications": 0,
+          "unverified_notifications": 0,
+          "unprojected_notifications": 0,
+          "pending_memory_jobs": 0,
+          "pending_forget": 0
+        },
+        "drained": true
+      },
+      "observations_match": true,
+      "inventory_matches_counts": true,
+      "finished_at": "2026-10-15T13:27:31.126265+00:00",
+      "source_sha256": "eaf7ec576bb976fd626b6f998f2b4c2a4706c524585b02d665640633bcefa61c"
+    },
+    "preflight_restored_pause": {
+      "schema_version": 1,
+      "scope": "current_owner",
+      "consistency": "separate_live_reads",
+      "assessment": "ready_for_review",
+      "items": {
+        "turns": [],
+        "notifications": [],
+        "notification_bindings": [],
+        "memory_jobs": []
+      },
+      "errors": [],
+      "started_at": "2026-10-15T13:28:33.841470+00:00",
+      "before": {
+        "scope": "current_owner",
+        "admission": {
+          "paused": true,
+          "revision": 5
+        },
+        "counts": {
+          "queued": 0,
+          "running": 0,
+          "waiting": 0,
+          "cancelling": 0,
+          "blocked": 0,
+          "active_commands": 0,
+          "pending_interactions": 0,
+          "uncertain_effects": 0,
+          "pending_outbox": 0,
+          "pending_notifications": 0,
+          "unverified_notifications": 0,
+          "unprojected_notifications": 0,
+          "pending_memory_jobs": 0,
+          "pending_forget": 0
+        },
+        "drained": true
+      },
+      "after": {
+        "scope": "current_owner",
+        "admission": {
+          "paused": true,
+          "revision": 5
+        },
+        "counts": {
+          "queued": 0,
+          "running": 0,
+          "waiting": 0,
+          "cancelling": 0,
+          "blocked": 0,
+          "active_commands": 0,
+          "pending_interactions": 0,
+          "uncertain_effects": 0,
+          "pending_outbox": 0,
+          "pending_notifications": 0,
+          "unverified_notifications": 0,
+          "unprojected_notifications": 0,
+          "pending_memory_jobs": 0,
+          "pending_forget": 0
+        },
+        "drained": true
+      },
+      "observations_match": true,
+      "inventory_matches_counts": true,
+      "finished_at": "2026-10-15T13:28:33.968693+00:00",
+      "source_sha256": "eaf7ec576bb976fd626b6f998f2b4c2a4706c524585b02d665640633bcefa61c"
+    },
+    "preflight_reopened_admission": {
+      "schema_version": 1,
+      "scope": "current_owner",
+      "consistency": "separate_live_reads",
+      "assessment": "blocked",
+      "items": {
+        "turns": [],
+        "notifications": [],
+        "notification_bindings": [],
+        "memory_jobs": []
+      },
+      "errors": [],
+      "started_at": "2026-10-15T13:28:35.104073+00:00",
+      "before": {
+        "scope": "current_owner",
+        "admission": {
+          "paused": false,
+          "revision": 6
+        },
+        "counts": {
+          "queued": 0,
+          "running": 0,
+          "waiting": 0,
+          "cancelling": 0,
+          "blocked": 0,
+          "active_commands": 0,
+          "pending_interactions": 0,
+          "uncertain_effects": 0,
+          "pending_outbox": 0,
+          "pending_notifications": 0,
+          "unverified_notifications": 0,
+          "unprojected_notifications": 0,
+          "pending_memory_jobs": 0,
+          "pending_forget": 0
+        },
+        "drained": false
+      },
+      "after": {
+        "scope": "current_owner",
+        "admission": {
+          "paused": false,
+          "revision": 6
+        },
+        "counts": {
+          "queued": 0,
+          "running": 0,
+          "waiting": 0,
+          "cancelling": 0,
+          "blocked": 0,
+          "active_commands": 0,
+          "pending_interactions": 0,
+          "uncertain_effects": 0,
+          "pending_outbox": 0,
+          "pending_notifications": 0,
+          "unverified_notifications": 0,
+          "unprojected_notifications": 0,
+          "pending_memory_jobs": 0,
+          "pending_forget": 0
+        },
+        "drained": false
+      },
+      "observations_match": true,
+      "inventory_matches_counts": true,
+      "finished_at": "2026-10-15T13:28:35.170101+00:00",
+      "source_sha256": "eaf7ec576bb976fd626b6f998f2b4c2a4706c524585b02d665640633bcefa61c"
+    }
+  }
+}

@@ -9,6 +9,7 @@ import math
 import os
 from pathlib import Path
 import subprocess
+import sys
 import time
 import urllib.error
 import urllib.request
@@ -19,11 +20,14 @@ ROOT = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser()
 parser.add_argument('--ziwei', action='store_true', help='Also boot the shared Ziwei development policy and secret configuration')
 parser.add_argument('--admission', action='store_true', help='Verify durable admission pause, drain and resume across deployment recovery')
+parser.add_argument('--preflight', action='store_true', help='Verify the read-only drain report CLI (requires --admission)')
 ARGS = parser.parse_args()
-OUT = ROOT / ('target/m5b/deployment' if ARGS.admission else 'target/m6/deployment' if ARGS.ziwei else 'target/m5')
+if ARGS.preflight and not ARGS.admission:
+    parser.error('--preflight requires --admission')
+OUT = ROOT / ('target/m5d/deployment' if ARGS.preflight else 'target/m5b/deployment' if ARGS.admission else 'target/m6/deployment' if ARGS.ziwei else 'target/m5')
 OUT.mkdir(parents=True, exist_ok=True)
 THRESHOLDS = json.loads((ROOT / 'ops/m5-thresholds.json').read_text())
-PROJECT = ('financeclaw-m5b-' if ARGS.admission else 'financeclaw-m6d-' if ARGS.ziwei else 'financeclaw-m5-') + uuid.uuid4().hex[:10]
+PROJECT = ('financeclaw-m5d-' if ARGS.preflight else 'financeclaw-m5b-' if ARGS.admission else 'financeclaw-m6d-' if ARGS.ziwei else 'financeclaw-m5-') + uuid.uuid4().hex[:10]
 TEMP = ROOT / '.cache' / PROJECT
 TEMP.mkdir(parents=True)
 ENV = os.environ.copy()
@@ -55,10 +59,13 @@ LOG = (OUT / 'compose-validation.log').open('w')
 RESULT = {'scope': 'isolated real containers; offline model and synthetic market only',
           'ziwei_development_policy': ARGS.ziwei,
           'admission_control': ARGS.admission,
+          'read_only_preflight': ARGS.preflight,
           'project': PROJECT, 'thresholds': THRESHOLDS, 'checks': {},
           'started_at': datetime.now(timezone.utc).isoformat()}
 INPUTS = ('Dockerfile', '.dockerignore', 'compose.yml', 'ops/postgres-init.sql',
           'ops/container-entrypoint.sh', 'ops/m5-thresholds.json', 'scripts/validate-compose.py')
+if ARGS.preflight:
+    INPUTS += ('scripts/inspect-drain.py',)
 RESULT['source_sha256'] = {p: hashlib.sha256((ROOT / p).read_bytes()).hexdigest() for p in INPUTS}
 (OUT / 'compose-results.json').unlink(missing_ok=True)
 URL = ''
@@ -66,12 +73,12 @@ TOKEN = (ROOT / '.secrets/api-token').read_text()
 OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
 
-def command(args, *, data=None, timeout=240):
+def command(args, *, data=None, timeout=240, expected_exit=0):
     result = subprocess.run(args, cwd=ROOT, env=ENV, input=data, stdout=subprocess.PIPE,
                             stderr=subprocess.PIPE, timeout=timeout)
     LOG.write(result.stderr.decode(errors='replace'))
     LOG.flush()
-    if result.returncode:
+    if result.returncode != expected_exit:
         raise RuntimeError(f'Command failed (exit {result.returncode}); see {OUT}/compose-validation.log')
     return result.stdout
 
@@ -156,6 +163,24 @@ def rejected_submission(database='financeclaw_java'):
     assert sql('SELECT count(*) FROM business.turns', database) == before
 
 
+def preflight(name, expected, page_size=2, max_pages=20):
+    destination = OUT / 'preflight' / PROJECT / (name + '.json')
+    command([sys.executable, str(ROOT / 'scripts/inspect-drain.py'), '--base-url', URL,
+             '--token-file', str(ROOT / '.secrets/api-token'), '--output', str(destination),
+             '--page-size', str(page_size), '--max-pages', str(max_pages)],
+            expected_exit={'ready_for_review': 0, 'blocked': 2, 'incomplete': 3}[expected])
+    report = json.loads(destination.read_text())
+    assert report['assessment'] == expected and report['scope'] == 'current_owner'
+    assert report['source_sha256'] == RESULT['source_sha256']['scripts/inspect-drain.py']
+    assert TOKEN not in destination.read_text()
+    assert destination.stat().st_mode & 0o777 == 0o600
+    mark('preflight_' + name, {'assessment': expected, 'errors': report['errors'],
+         'observations_match': report.get('observations_match'),
+         'inventory_matches_counts': report.get('inventory_matches_counts'),
+         'items': {kind: len(rows) for kind, rows in report['items'].items()},
+         'report_sha256': hashlib.sha256(destination.read_bytes()).hexdigest()})
+
+
 try:
     print('Starting isolated deployment validation:', PROJECT, flush=True)
     compose('config', '--quiet')
@@ -210,6 +235,9 @@ try:
         report = api('/v1/operations/drain')
         assert report['scope'] == 'current_owner' and not report['drained']
         assert report['counts']['queued'] == 1 and report['counts']['active_commands'] == 1
+        if ARGS.preflight:
+            preflight('queued_and_memory_backlog', 'blocked')
+            preflight('truncated_inventory', 'incomplete', page_size=1, max_pages=1)
     compose('restart', 'api')
     URL = 'http://' + compose('port', 'api', '8080').decode().strip()
     wait(lambda: request('/actuator/health/readiness', auth=False)[0] == 200)
@@ -256,8 +284,17 @@ try:
         mark('paused_admission_allows_persisted_approval_after_worker_sigkill')
 
     compose('stop', 'postgres')
-    assert request('/actuator/health/readiness', auth=False)[0] == 503
-    assert request(wp)[0] == 503
+    # Existing pooled connections may be invalidated during the first probe. Require an actual
+    # HTTP 503 within the bounded fault window, never treat a timeout/disconnect as success.
+    down_statuses = []
+
+    def unavailable(path, auth=True):
+        status = request(path, auth=auth)[0]
+        down_statuses.append(status)
+        return status == 503
+
+    wait(lambda: unavailable('/actuator/health/readiness', auth=False), THRESHOLDS['recovery_seconds'])
+    wait(lambda: unavailable(wp), THRESHOLDS['recovery_seconds'])
     recovery = time.monotonic()
     compose('start', 'postgres')
     wait(lambda: request('/actuator/health/readiness', auth=False)[0] == 200)
@@ -266,7 +303,8 @@ try:
     terminal(after[2])
     elapsed = time.monotonic()-recovery
     assert elapsed < THRESHOLDS['recovery_seconds']
-    mark('database_outage_fails_readiness_then_recovers', {'recovery_seconds': elapsed})
+    mark('database_outage_fails_readiness_then_recovers', {'recovery_seconds': elapsed,
+                                                         'unavailable_http_statuses': down_statuses})
 
     mc, mr, mp = turn('/remember response_style=简洁')
     terminal(mp)
@@ -283,6 +321,8 @@ try:
         report = wait(lambda: (value if (value := api('/v1/operations/drain'))['drained'] else None))
         assert report['scope'] == 'current_owner' and all(value == 0 for value in report['counts'].values())
         mark('owner_drain_requires_pause_and_all_task_channel_memory_counts_zero', report)
+        if ARGS.preflight:
+            preflight('paused_and_drained', 'ready_for_review')
 
     compose('stop', 'api', 'worker', 'integrations', 'memory-worker')
     original = fingerprints('financeclaw_java')
@@ -310,11 +350,15 @@ try:
     if ARGS.admission:
         assert api('/v1/operations/admission') == {'paused': True, 'revision': pause['revision']}
         assert api('/v1/operations/drain')['drained']
+        if ARGS.preflight:
+            preflight('restored_pause', 'ready_for_review')
         rejected_submission(restored)
         admission(False, 'resume-after-restore')
         assert not api('/v1/operations/drain')['drained']
         assert sql('SELECT count(*) FROM business.admission_changes', restored) == '6'
         mark('restored_pause_and_audit_require_explicit_resume')
+        if ARGS.preflight:
+            preflight('reopened_admission', 'blocked')
     terminal(turn('new Java task after restored backup')[2])
     assert sql("SELECT count(*) FROM business.capability_steps WHERE step='publish_report'", restored) == '1'
     assert sql("SELECT count(*) FROM business.artifacts WHERE required_scope='workflow:run'", restored) == '1'

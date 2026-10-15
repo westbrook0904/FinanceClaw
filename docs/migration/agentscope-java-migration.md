@@ -349,6 +349,8 @@ OpenTelemetry 关联 `conversation_id / turn_id / command_id / attempt_id / tool
 
 [M5c](m5c-backlog.md) 补充上述计数对应的只读分页明细，用于定位原任务、通知和记忆作业；跨页是实时查询，仍需处理后重新读取排空状态。
 
+[M5d](m5d-preflight.md) 通过这些运维接口生成只读预检报告，记录前后观测和分页完整性。报告供人工复核，不替代全局停写、隐私历史核对或渠道切换授权。
+
 如后续需要替换正在使用的 Python 环境，执行：
 
 1. 备份应用库、原生库和 Artifact，记录一致性时点；在隔离环境演练恢复。

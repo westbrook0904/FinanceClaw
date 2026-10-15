@@ -12,10 +12,11 @@ jobs:
         with:
           distribution: temurin
           java-version: '21.0.12+8'
-      - name: Static checks and fixed toolchain
+      - name: Static checks, validator contracts and fixed toolchain
         run: |
           python3 scripts/check-delivery.py
           python3 scripts/test-live-acceptance.py
+          python3 scripts/test-inspect-drain.py
           scripts/mvn.sh -B -ntp validate spotless:check
       - name: Unit and native HTTP contract tests (no database or real credentials)
         run: scripts/mvn.sh -B -ntp test
@@ -50,7 +51,7 @@ jobs:
       - name: Create local-only test credentials
         run: python3 scripts/init-local.py
       - name: Four roles, admission drain, failure recovery and backup restore
-        run: python3 scripts/validate-compose.py --ziwei --admission
+        run: python3 scripts/validate-compose.py --ziwei --admission --preflight
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -62,3 +63,6 @@ jobs:
             target/m6/deployment/compose-validation.log
             target/m5b/deployment/compose-results.json
             target/m5b/deployment/compose-validation.log
+            target/m5d/deployment/compose-results.json
+            target/m5d/deployment/compose-validation.log
+            target/m5d/deployment/preflight/

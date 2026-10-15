@@ -2,6 +2,8 @@
 
 日期：2026-10-15。基线为 M5b 本地提交 `07a9bfb`，未推送。在 [M5b 排空计数](m5b-admission.md) 上增加只读分页明细，帮助从“还有积压”定位到具体 Turn、通知、绑定或记忆作业。执行、审批、取消仍走现有 AgentScope 和业务接口，不增加恢复调度器或自动确认机制。
 
+M5c 已本地提交 `3736aac`，未推送。后续 [M5d](m5d-preflight.md) 提供仅调用运维接口的只读预检和报告留档。
+
 ## 查询入口
 
 `GET /v1/operations/drain/items?kind=turns&limit=50`，沿用 Bearer 身份和当前 `(tenant, subject)` 范围。响应为：
