@@ -9,8 +9,8 @@ import io.agentscope.core.model.*;
 import java.util.*;
 import reactor.core.publisher.Flux;
 
-final class ScriptedRuntime extends TaskAgentRuntime {
-  ScriptedRuntime(
+public final class ScriptedRuntime extends TaskAgentRuntime {
+  public ScriptedRuntime(
       TaskService tasks,
       com.financeclaw.application.GovernanceService governance,
       RuntimeMapper states) {

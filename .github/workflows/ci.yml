@@ -1,4 +1,4 @@
-name: Java M0 through M3
+name: Java M0 through M4
 on: [push, pull_request]
 permissions:
   contents: read
@@ -27,3 +27,4 @@ jobs:
             target/m1/
             target/m2/
             target/m3/
+            target/m4/

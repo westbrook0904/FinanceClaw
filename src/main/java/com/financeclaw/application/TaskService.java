@@ -23,6 +23,16 @@ public class TaskService {
 
   private final GovernanceMapper governance;
   private final ReleaseCatalog releases;
+  private MemoryService memory;
+
+  @org.springframework.beans.factory.annotation.Autowired
+  public void memory(MemoryService memory) {
+    this.memory = memory;
+  }
+
+  public String memoryContext(Claim claim) {
+    return memory == null ? "" : memory.context(claim.turn());
+  }
 
   public TaskService(
       TaskMapper db,
@@ -93,6 +103,7 @@ public class TaskService {
                   null,
                   null);
           db.insertTurn(t);
+          if (memory != null) memory.admit(t);
           var grant = governance.lockGrant(conversation);
           if (grant == null) throw new Problem(409, "grant_unavailable");
           governance.insertPolicy(
@@ -213,6 +224,7 @@ public class TaskService {
   /** Called under the command fence. Holding the grant row serializes dispatch with revocation. */
   public Policy checkPolicy(Claim claim) {
     releases.require(claim.turn().releaseHash());
+    if (memory != null) memory.check(claim.turn());
     var p = governance.policy(claim.turn().id());
     var grant = governance.lockGrant(claim.turn().conversationId());
     if (p == null || grant == null || p.grantRevision() != grant.revision())
@@ -226,8 +238,11 @@ public class TaskService {
         claim,
         () -> {
           var p = checkPolicy(claim);
-          return db.history(
-              claim.turn().conversationId(), claim.turn().releaseHash(), p.grantRevision());
+          return db
+              .history(claim.turn().conversationId(), claim.turn().releaseHash(), p.grantRevision())
+              .stream()
+              .filter(t -> memory == null || memory.sameEpoch(t))
+              .toList();
         });
   }
 
@@ -439,6 +454,7 @@ public class TaskService {
     db.event(t.id());
     if (Set.of("completed", "failed", "cancelled").contains(status)) {
       if (status.equals("completed")) db.journal(t.conversationId(), t.id(), "assistant", result);
+      if (status.equals("completed") && memory != null) memory.completed(t.id());
       db.outbox(t.id());
     }
   }

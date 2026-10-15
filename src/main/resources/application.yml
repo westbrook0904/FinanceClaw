@@ -104,6 +104,27 @@ financeclaw:
     market-file: ${FINANCECLAW_MARKET_FILE:}
     ziwei:
       enabled: ${FINANCECLAW_ZIWEI_ENABLED:false}
+  memory:
+    enabled: ${FINANCECLAW_MEMORY_ENABLED:false}
+    vector-search: ${FINANCECLAW_MEMORY_VECTOR_SEARCH:false}
+    extractor:
+      model: ${FINANCECLAW_MEMORY_MODEL:}
+      base-url: ${FINANCECLAW_MEMORY_MODEL_BASE_URL:}
+      api-key: ${FINANCECLAW_MEMORY_MODEL_API_KEY:}
+    embedding:
+      model: ${FINANCECLAW_EMBEDDING_MODEL:}
+      revision: ${FINANCECLAW_EMBEDDING_REVISION:disabled}
+      base-url: ${FINANCECLAW_EMBEDDING_BASE_URL:}
+      api-key: ${FINANCECLAW_EMBEDDING_API_KEY:}
+      dimensions: 1024
+  feishu:
+    enabled: ${FINANCECLAW_FEISHU_ENABLED:false}
+    app-id: ${FINANCECLAW_FEISHU_APP_ID:}
+    app-secret: ${FINANCECLAW_FEISHU_APP_SECRET:}
+    verification-token: ${FINANCECLAW_FEISHU_VERIFICATION_TOKEN:}
+    encrypt-key: ${FINANCECLAW_FEISHU_ENCRYPT_KEY:}
+    tenant-key: ${FINANCECLAW_FEISHU_TENANT_KEY:}
+    base-url: ${FINANCECLAW_FEISHU_BASE_URL:https://open.feishu.cn}
   sse:
     max-connections: 32
     timeout-ms: 30000

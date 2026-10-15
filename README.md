@@ -2,7 +2,7 @@
 
 FinanceClaw 从 Python / LangChain / LangGraph 迁移到 **Java / AgentScope Java** 的目标项目。
 
-当前已实现 **M0–M3**：任务生命周期、原生事件与 SSE、授权与审批恢复、结果归档、请求预算，以及通过 AgentScope 原生 Toolkit / SkillRepository 接入的酒店/Taibu MCP、调酒 Skill、市场研究子 Agent 和固定投资组合 Workflow。默认离线运行；远端服务、模型质量、飞书和长期记忆仍按后续里程碑验收。
+当前已实现 **M0–M4 的本地能力范围**：任务生命周期、原生事件与 SSE、授权与审批恢复、结果归档、请求预算，以及通过 AgentScope 原生 Toolkit / SkillRepository 接入的酒店/Taibu MCP、调酒 Skill、市场研究子 Agent 和固定投资组合 Workflow。M4 增加受治理长期记忆、独立受限 Worker，以及 AgentScope 原生飞书文本接入。默认离线运行；真实供应商、飞书租户与生产交付仍待验收。SDK 暂不支持的卡片/表单和可靠投递回执没有自建实现。
 
 ## 固定工具链
 
@@ -10,7 +10,7 @@ FinanceClaw 从 Python / LangChain / LangGraph 迁移到 **Java / AgentScope Jav
 | --- | --- |
 | JDK | Eclipse Temurin **21.0.12+8** |
 | Spring Boot | **3.5.16** |
-| AgentScope Java core / OpenAI extension | **2.0.3** |
+| AgentScope Java core / OpenAI / RAG / Feishu / Harness | **2.0.3** |
 | MyBatis Spring Boot Starter | **3.0.5** |
 | Maven / Wrapper | **3.9.11 / 3.3.4** |
 
@@ -20,7 +20,7 @@ FinanceClaw 从 Python / LangChain / LangGraph 迁移到 **Java / AgentScope Jav
 
 ## 构建与验证
 
-需要 Python 3.12+（仅用于工具链安装及证据整理）、curl、网络，以及已运行的 Docker。默认测试不需要模型 API Key，仅访问本地模拟 MCP，不访问真实 MCP 或飞书。
+需要 Python 3.12+（仅用于工具链安装及证据整理）、curl、网络，以及已运行的 Docker。默认测试不需要模型 API Key，仅访问本地模拟模型、embedding、MCP 和飞书端点，不访问真实服务。
 
 ```bash
 # 首次安装；已安装到 .tools/jdk 时跳过
@@ -33,11 +33,11 @@ scripts/mvn.sh -B -ntp verify spotless:check
 python3 scripts/collect-evidence.py
 ```
 
-成功时 Maven 输出 `BUILD SUCCESS`，可执行包位于 `target/financeclaw-java-0.1.0-SNAPSHOT.jar`，证据汇总位于 `target/m3/results.json`。`scripts/mvn.sh test` 仅执行不依赖 PostgreSQL 的单元/HTTP 契约测试，不能代替包含 PostgreSQL 和业务 API 的完整验证。
+成功时 Maven 输出 `BUILD SUCCESS`，可执行包位于 `target/financeclaw-java-0.1.0-SNAPSHOT.jar`，证据汇总位于 `target/m4/results.json`。`scripts/mvn.sh test` 仅执行不依赖 PostgreSQL 的单元/HTTP 契约测试，不能代替包含 PostgreSQL 和业务 API 的完整验证。
 
 ## 启动与试用
 
-使用独立开发数据库，设置以下环境变量后启动；Flyway 会创建 `agent_runtime` 和 `business` schema：
+使用独立开发数据库，设置以下环境变量后启动；Flyway 会创建 `agent_runtime`、`business`、`memory` 和 `channel` schema：
 
 ```bash
 export FINANCECLAW_DATABASE_URL=jdbc:postgresql://localhost:5432/financeclaw_java
@@ -54,6 +54,7 @@ scripts/mvn.sh spring-boot:run
 
 | 入口 | 内容 |
 | --- | --- |
+| [M4 记忆与原生飞书](docs/migration/m4-validation.md) | 记忆 API、独立 Worker、pgvector、原生飞书配置及 SDK 能力边界 |
 | [M3 业务与验证](docs/migration/m3-validation.md) | 酒店/Taibu 配置、调酒 Skill、市场研究、固定 Workflow 及模拟验收 |
 | [M2 使用与验证](docs/migration/m2-validation.md) | 授权与交互 API、Artifact、模型配置、测试和限制 |
 | [框架复用审查](docs/migration/framework-reuse-review.md) | 原生能力的复用方式及保留业务适配的原因 |

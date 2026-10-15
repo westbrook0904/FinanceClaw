@@ -102,7 +102,25 @@ public class TaskAgentRuntime {
           release.fallback() == null || workflow ? null : guarded(claim, backup, stop, true);
       try (var agent =
           IsolatedAgentFactory.create(
-              primary, fallback, tools.toolkit, store, tools.permissions(), tools::configure)) {
+              primary,
+              fallback,
+              tools.toolkit,
+              store,
+              tools.permissions(),
+              builder -> {
+                tools.configure(builder);
+                builder.middleware(
+                    new io.agentscope.core.middleware.MiddlewareBase() {
+                      @Override
+                      public reactor.core.publisher.Mono<String> onSystemPrompt(
+                          io.agentscope.core.agent.Agent agent,
+                          io.agentscope.core.agent.RuntimeContext context,
+                          String prompt) {
+                        return reactor.core.publisher.Mono.fromSupplier(
+                            () -> prompt + tasks.memoryContext(claim));
+                      }
+                    });
+              })) {
         active.put(claim.command().attemptId(), new Active(agent, stop));
         List<Msg> inputs = inputs(claim, store, tools);
         agent

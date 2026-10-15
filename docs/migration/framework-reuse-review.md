@@ -1,4 +1,4 @@
-# M0–M3 框架能力复用审查
+# M0–M4 框架能力复用审查
 
 日期：2026-10-15。按项目固定的 AgentScope Java **2.0.3** 源码和运行测试审查，不以在线最新版文档替代当前依赖。JDK 21.0.12+8、Spring Boot 3.5.16、MyBatis Starter 3.0.5 保持不变。
 
@@ -50,3 +50,10 @@
 调用路径和验证范围见 [M3 业务与验证](m3-validation.md)。
 
 原生 MCP 2.0.3 的内容转换读取 `content`，不把 `structuredContent` 单独传入 ToolResult。因此酒店/Taibu 必须在文本 content 中提供 JSON 结果；只有 structuredContent 的服务目前会明确失败。没有为此实现第二套协议转换器。M3 的真实服务兼容性仍待联调。
+
+## M4 的原生能力与保留边界
+
+- 结构化提取使用 `ReActAgent.call(..., Extraction.class)` 和 `Msg.getStructuredData`，embedding 使用 `OpenAITextEmbedding`。固定版 `LongTermMemory` 标记为废弃，并要求跨会话存储由应用层集成；因此 SQL 来源、候选、隐私版本和事实治理保留在业务层。
+- 飞书使用 `FeishuChannelProperties`、`FeishuCrypto`、`FeishuInboundMapper`、`FeishuAccessTokenProvider`、`FeishuOutboundClient`。没有自建 HTTP 发送器、token 缓存、加解密算法或 CardKit。
+- SDK 示例 Controller 的内存去重与直接 Gateway 执行不替代 SQL 任务事务。应用回调保留身份绑定、强制签名/租户检查和持久受理，执行复用已有 TaskService / GovernanceService。
+- SDK 文本发送返回 void，业务错误码只日志记录；不返回可核验的 message_id/幂等 UUID。正常结束仅标记 `submitted_unverified`，异常标记 `unknown`，不自动重发。卡片、表单和可靠回执查询等待框架支持。完整配置与验证边界见 [M4 记录](m4-validation.md)。

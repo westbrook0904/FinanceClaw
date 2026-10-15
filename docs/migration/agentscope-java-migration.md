@@ -1,6 +1,6 @@
 # FinanceClaw：Python → AgentScope Java 迁移方案
 
-> 日期：2026-10-15。状态：M0–M3 已实现并进行本地验证，M4–M6 仍为实施方案。真实模型供应商、真实 MCP、飞书及生产恢复尚未验收。
+> 日期：2026-10-15。状态：M0–M4 已实现本地能力范围；M4 飞书按原生 SDK 支持的文本能力落地，卡片和可靠回执不自建。M5–M6 仍为实施方案。真实模型供应商、真实 MCP、飞书及生产恢复尚未验收。
 >
 > 项目入口：[README](../../README.md)。配套文档：[验收清单](acceptance-checklist.md)、[M0 验证与版本决策](m0-validation.md)、[M1 使用与验证](m1-validation.md)、[M2 使用与验证](m2-validation.md)、[框架复用审查](framework-reuse-review.md)。
 
@@ -22,7 +22,7 @@
 | 数据持久化 | PostgreSQL 为业务事实源；运行态单独命名空间；pgvector 为可重建检索投影 | 保持任务、审计、记忆事实与 SDK 状态分工 |
 | 迁移策略 | 先在新环境建立 Java 功能闭环；历史数据导入为独立交付项 | M0 已建立工程骨架，尚无在线切换或历史保留需求证据 |
 
-M0 已以 28 项测试验证固定版本的编译、模型载荷、审批/澄清重启恢复、状态 CAS 和并发隔离，决定继续使用 `2.0.3` 并保留自有适配层。SDK 不提供业务任务的完整持久执行语义；M1 已补齐 Command/attempt、fencing 和完成事务，完整授权仍需在 M2 实现，不能把 M0 实验视为整体迁移完成。
+M0 已以 28 项测试验证固定版本的编译、模型载荷、审批/澄清重启恢复、状态 CAS 和并发隔离，决定继续使用 `2.0.3` 并保留自有适配层。SDK 不提供业务任务的完整持久执行语义；M1 已补齐 Command/attempt、fencing 和完成事务，完整授权已在 M2 实现，不能把 M0 实验视为整体迁移完成。
 
 ## 2. 核对基线与证据
 
@@ -56,7 +56,7 @@ tests/stage7/test_dependencies.py
 | 持久任务接口 | 在线文档介绍 `AgentSession` / `SessionLog`，但本次检查的 `v2.0.3` 完整源码树中没有这两个对应类文件 | 不在 `2.0.3` 方案中调用 `session.submit/respond/resume` |
 | Middleware | 在线文档列出六个阶段；`v2.0.3` 的 `MiddlewareBase` 实际只有五个 hook，没有 `onAgentStateReady` | 按发布版五个 hook 设计，不复制在线新签名 |
 | 状态并发 | `AgentStateStore` 提供版本接口，但默认 `supportsVersioning()` 为 `false`，默认 CAS 方法会退化为普通写入 | 不能因为接口有 CAS 就认为具体后端已经防并发覆盖 |
-| 审批恢复 | 使用 `PERMISSION_ASKING`、`ToolUseBlock`、`ConfirmResult`；普通 `AgentTool` 绕过权限规则，须采用 `ToolBase` | M0 已验证持久化、独立 JVM 恢复及动作绑定；完整业务授权仍在 M1/M2 |
+| 审批恢复 | 使用 `PERMISSION_ASKING`、`ToolUseBlock`、`ConfirmResult`；普通 `AgentTool` 绕过权限规则，须采用 `ToolBase` | M0 已验证持久化、独立 JVM 恢复及动作绑定；M1/M2 已实现业务授权和交互校验 |
 
 版本差异来源：[发布记录](https://java.agentscope.io/v2/en/docs/others/release-notes)、[在线 Session 文档](https://java.agentscope.io/v2/en/docs/harness/session-log)、[固定版本源码树](https://github.com/agentscope-ai/agentscope-java/tree/v2.0.3)、[MiddlewareBase](https://github.com/agentscope-ai/agentscope-java/blob/v2.0.3/agentscope-core/src/main/java/io/agentscope/core/middleware/MiddlewareBase.java)、[AgentStateStore](https://github.com/agentscope-ai/agentscope-java/blob/v2.0.3/agentscope-core/src/main/java/io/agentscope/core/state/AgentStateStore.java)。
 
@@ -65,7 +65,8 @@ tests/stage7/test_dependencies.py
 - **已核对**：上述本地文件、调用链、配置和官方 tag 的接口存在性。
 - **设计约束**：下文的目标模块、业务状态机、数据库结构和迁移步骤。
 - **M0 已验证**：Java 依赖解析、实际适配器到本地 HTTP 的载荷、真实 PostgreSQL、独立 JVM 恢复及并发隔离，见 [M0 记录](m0-validation.md)。
-- **待验收**：业务任务生命周期、真实模型供应商、MCP 和飞书连接、生产故障与性能。
+- **M1–M4 已验证**：业务任务生命周期、授权/交互、原生 Skill/MCP、记忆和原生飞书文本的本地场景，见各阶段验证记录。
+- **待验收**：真实模型供应商、远端 MCP 和飞书租户、生产故障与性能；SDK 暂不支持的卡片和可靠回执仍未实现。
 
 已有 Python 测试文件可作为行为样本，不表示 Java 已满足对应能力。本文没有沿用历史测试通过数作为本次结果。
 
@@ -107,7 +108,7 @@ HTTP / 飞书
 | 受治理 Skills | `shared/skills/`、`agent_server/skills/`、`agent_server/middleware/skills.py` | `ClasspathSkillRepository` + `skillRepository` | 原生渐进加载与 AgentState，保留授权和许可证 |
 | 领域子 Agent | `agent_server/graphs/ziwei_agent.py`、`agent_server/tools/subgraphs.py`、`shared/releases/subgraphs.py` | 受控工具调用子 `ReActAgent` | 迁移父子关联、预算与澄清协议 |
 | 投资组合 Workflow | `agent_server/graphs/workflows/portfolio_review_v1.py`、`kernel/workflows/` | 显式 Java 工作流状态机 | 持久化每步状态；模型只负责适合推理的步骤 |
-| 飞书 | `integrations/feishu/`、`integrations/notifications/`、`shared/channels/feishu/` | Java 飞书客户端 + 独立渠道适配器 | 重建事件去重、卡片与回调 |
+| 飞书 | `integrations/feishu/`、`integrations/notifications/`、`shared/channels/feishu/` | AgentScope 原生飞书扩展 + 业务适配 | 原生协议收发；保留持久去重和身份绑定；卡片等待框架支持 |
 | 观测与评测 | `evaluation/`、`evals/`、`tests/` | OpenTelemetry + 契约样本 + JUnit / 集成测试 | 迁移场景，重新采集证据 |
 
 完整调用链可核对[源项目请求文档](https://github.com/westbrook0904/FinanceClaw/blob/8332e2e20a5b7ccaef5d82959001b3fa4120774d/docs/architecture/request-lifecycle.md)。
@@ -169,7 +170,7 @@ FinanceClaw-java/
 │   ├── agent/                      # AgentScope 工厂、运行适配、上下文、中间件
 │   ├── tools/                      # 本地工具、MCP、子 Agent、Workflow
 │   ├── infrastructure/             # MyBatis、运行态、S3、模型、配置
-│   ├── channels/feishu/            # 飞书事件、卡片与回调
+│   ├── channel/                    # 原生飞书扩展的业务适配
 │   ├── api/                        # HTTP、鉴权、DTO、SSE
 │   └── bootstrap/                  # api / worker / integrations / memory-worker
 ├── src/main/resources/
@@ -284,13 +285,15 @@ SQL 保留记忆事实、来源、候选、revision、隐私状态和审计；pg
 
 删除和遗忘覆盖原文、候选、索引、缓存及适用的派生状态；`privacy_epoch`、revision 和 `purge_pending` 类状态用于阻止迟到写入让已删除内容重新出现。导入、恢复备份和重建索引必须先应用遗忘标记。Memory Worker 保留独立凭据及数据库最小权限。
 
-当前配置向量维度是 1024；实施时验证供应商实际返回长度、模型档案、索引配置和数据库列一致。模型变化后重建投影，不把不同模型的向量混在同一索引。
+当前向量维度固定为 1024，M4 已验证实际返回长度、模型档案、索引配置和数据库列一致。模型变化后使用新 revision 重建投影；同一事实的不同模型向量分开存储，搜索显式筛选当前模型 revision，不跨模型比较。
 
 ### 5.7 飞书、SSE 和观测
 
+> M4 实施更新：按用户要求，飞书接入仅复用 AgentScope 2.0.3 的既有协议能力。以下 CardKit、卡片表单和可靠通知回执是目标能力，当前 SDK 不支持且未自建；实际范围见 [M4 记录](m4-validation.md)。
+
 产品 SSE 保持 `turn.snapshot` + 心跳 + revision 的状态投影语义；断开订阅不取消执行。AgentScope 原始事件由内部消费，不直接透传给浏览器或飞书。
 
-飞书保留事件去重、身份绑定、CardKit 更新、文本澄清、表单审批、静音和终态保护。进度只公开 **经过目录校验的工具名、状态和最终答案**；不暴露参数、原始结果、异常正文、模型推理或子 Agent 内部正文。一次逻辑工具重试合并为一条状态，用子任务命名空间防止 call ID 冲突。
+M4 飞书已保留持久事件去重、身份绑定、文本澄清/审批、静音和终态保护。CardKit 更新、表单审批及卡片进度为待框架支持的目标。可公开内容限定为 **经过目录校验的工具名、状态和最终答案**；不暴露参数、原始结果、异常正文、模型推理或子 Agent 内部正文。现有 SSE 将一次逻辑工具重试合并为一条状态，用子任务命名空间防止 call ID 冲突。
 
 OpenTelemetry 关联 `conversation_id / turn_id / command_id / attempt_id / tool_call_id / release_hash`，记录阶段耗时、调用次数、usage、队列积压与重试。默认不采集敏感输入输出，受限诊断记录与面向用户的事件分开。框架日志成功不代替业务事务完成证据。
 
@@ -363,13 +366,13 @@ OpenTelemetry 关联 `conversation_id / turn_id / command_id / attempt_id / tool
 | M1：最小产品闭环 | API、SQL/Flyway、身份、Conversation/Turn/Command、离线模型、Worker、SSE、取消、恢复器 | 提交→执行→Journal→终态可复现；API/Worker 重启与重复请求不重复业务效果 |
 | M2：工具和交互 | 固定发布、权限、预算、审批/澄清、Artifact、本地工具、模型适配器、模拟 MCP | 越权/旧审批被拒；大结果有界；真实发送载荷符合预算 |
 | M3：主业务能力 | 酒店 MCP、Taibu、受治理 Skill、市场研究子 Agent、投资组合 Workflow；紫微适配可单独启用 | 确定性回放通过；子任务不扩权；三个展示场景有可审查结果 |
-| M4：长期记忆与飞书 | 记忆 Worker、事实/投影、候选确认与遗忘、飞书卡片/表单/通知 | 删除后的迟到写入不复活；重复飞书事件、旧回调和重连测试通过 |
+| M4：长期记忆与飞书 | 记忆 Worker、事实/投影、候选确认与遗忘、原生飞书文本通知/交互 | 删除后的迟到写入不复活；重复飞书事件、旧审批和未知发送状态测试通过；卡片/可靠回执待框架支持 |
 | M5：交付与替换 | Java Compose、CI、真实模型/MCP/飞书验收、故障演练、运维文档；按需要交付数据导入 | 所有 P0 清单通过；保留范围、回退方案和未启用能力明确 |
 | M6：可选的全 Java 算法替换 | 替换紫微 Python 计算服务，必要时清理过渡服务 | 算法基准一致，许可证/部署检查完成，运行依赖清单不再需要 Python |
 
 M1 可先用确定性离线模型验证任务系统；M3 的只读场景可以作为可用里程碑。**完整迁移完成**至少要求 M5 对启用能力全部通过；只做聊天 Demo 或保留未验收的记忆/审批链路不能算完成。
 
-M0 已完成上述工程与技术实验，结果、接口差异及剩余约束记录于 [M0 验证记录](m0-validation.md)。M1 已建立业务身份、Turn/Command/attempt、Worker、SSE、取消和完成事务，详见 [M1 记录](m1-validation.md)。M2 已实现固定发布、授权、交互、Artifact、完整请求预算和模拟 MCP，详见 [M2 记录](m2-validation.md)。SDK 快照仍须与完成回执核对；M3 已接入酒店/Taibu、Skill、市场研究子 Agent 和固定 Workflow，详见 [M3 记录](m3-validation.md)。紫微保持关闭，真实模型与远端业务仍待 M5 验收；下一阶段为 M4 记忆与飞书。
+M0 已完成上述工程与技术实验，结果、接口差异及剩余约束记录于 [M0 验证记录](m0-validation.md)。M1 已建立业务身份、Turn/Command/attempt、Worker、SSE、取消和完成事务，详见 [M1 记录](m1-validation.md)。M2 已实现固定发布、授权、交互、Artifact、完整请求预算和模拟 MCP，详见 [M2 记录](m2-validation.md)。SDK 快照仍须与完成回执核对；M3 已接入酒店/Taibu、Skill、市场研究子 Agent 和固定 Workflow，详见 [M3 记录](m3-validation.md)。紫微保持关闭，真实模型与远端业务仍待 M5 验收；M4 已实现记忆治理与原生飞书文本接入，见 [M4 记录](m4-validation.md)；下一阶段为 M5 数据与交付。
 
 ## 8. 风险与待决事项
 
