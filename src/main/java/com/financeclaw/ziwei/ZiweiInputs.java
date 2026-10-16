@@ -1,21 +1,13 @@
 package com.financeclaw.ziwei;
 
-import com.financeclaw.domain.Task.Owner;
-import com.financeclaw.support.PayloadDigest;
+import static com.financeclaw.ziwei.ZiweiValues.map;
+
 import com.financeclaw.support.PayloadJson;
-import io.agentscope.core.tool.ToolValidator;
-import java.nio.charset.StandardCharsets;
 import java.time.*;
 import java.util.*;
-import javax.crypto.Mac;
-import javax.crypto.spec.SecretKeySpec;
 
-/** Aggregated birth clarification and deterministic normalization; no shared user state. */
+/** Birth/date semantics for schema-validated inputs; no resource loading or Agent SDK. */
 public final class ZiweiInputs {
-  private static final String RESOURCE =
-      com.financeclaw.tools.BusinessCatalog.read("classpath:ziwei/inputs.json");
-  private static final Map<String, Object> DOCUMENT =
-      ZiweiCalculation.immutable(PayloadJson.object(RESOURCE));
   private static final Map<String, List<String>> CITIES =
       Map.of(
           "北京",
@@ -70,20 +62,6 @@ public final class ZiweiInputs {
     public Normalized {
       warnings = List.copyOf(warnings);
     }
-
-    public String fingerprint(Owner owner, ZiweiPolicy policy, byte[] key) {
-      return hmac(
-          key,
-          List.of(
-              owner.tenant(),
-              owner.subject(),
-              birthJson,
-              birth.solarDate().toString(),
-              time.shichen(),
-              timezone,
-              policy.rules(),
-              policy.keyVersion()));
-    }
   }
 
   public record Review(Normalized value, List<Issue> issues) {
@@ -108,87 +86,9 @@ public final class ZiweiInputs {
     }
   }
 
-  public static String schemaHash() {
-    return PayloadDigest.sha256(RESOURCE);
-  }
-
-  public static boolean supports(String tool) {
-    return Arrays.stream(ZiweiDates.Level.values()).anyMatch(l -> l.toolName().equals(tool));
-  }
-
-  public static String description(String tool) {
-    return "固定紫微"
-        + ZiweiDates.Level.forTool(tool).name()
-        + "盘面。填写用户已知出生资料，未知留空并澄清，禁止猜测。"
-        + "流运须有明确日期/期间，偏移按服务端固定时间解析。chart_only 只展示事实；解读须引用 fact_id 和区间，"
-        + "不得推断省略的星曜或将传统文化结果作为事实预测。完整事实使用返回的 Artifact 引用读取。";
-  }
-
-  public static Map<String, Object> schema(String tool) {
-    ZiweiDates.Level.forTool(tool);
-    var properties = new TreeMap<>(map(DOCUMENT.get("common")));
-    properties.putAll(map(map(DOCUMENT.get("targets")).get(tool)));
-    return Map.of(
-        "type",
-        "object",
-        "$defs",
-        DOCUMENT.get("definitions"),
-        "properties",
-        Collections.unmodifiableMap(properties),
-        "additionalProperties",
-        false);
-  }
-
-  /** Only birth and date corrections are accepted; root identity/intent cannot be injected. */
-  public static Map<String, Object> answerSchema(String tool) {
-    var schema = new TreeMap<>(schema(tool));
-    var properties = new TreeMap<>(map(schema.get("properties")));
-    properties.keySet().removeAll(Set.of("question", "subject_label", "focus", "mode"));
-    schema.put("properties", Collections.unmodifiableMap(properties));
-    schema.put("minProperties", 1);
-    return Collections.unmodifiableMap(schema);
-  }
-
-  public static Map<String, Object> corrected(
-      String tool, Map<String, Object> input, Object answer) {
-    if (ToolValidator.validateInput(PayloadJson.canonical(answer), answerSchema(tool)) != null)
-      throw new IllegalArgumentException("Invalid Ziwei clarification");
-    Map<String, Object> patch = map(answer);
-    var merged = new TreeMap<>(input);
-    Set<String> targets = map(map(DOCUMENT.get("targets")).get(tool)).keySet();
-    // A new date selector replaces the old selector, not silently combines two forms.
-    if (patch.keySet().stream().anyMatch(targets::contains)) {
-      boolean sameForm =
-          (patch.containsKey("date_range") && input.containsKey("date_range"))
-              || ((patch.containsKey("year") || patch.containsKey("month"))
-                  && (input.containsKey("year") || input.containsKey("month")));
-      if (!sameForm) targets.forEach(merged::remove);
-    }
-    return merge(merged, patch);
-  }
-
-  private static Map<String, Object> merge(
-      Map<String, Object> original, Map<String, Object> patch) {
-    var result = new TreeMap<>(original);
-    // Changing precision replaces the time representation; keep same-kind partial corrections.
-    if (patch.containsKey("kind") && !Objects.equals(patch.get("kind"), original.get("kind")))
-      return ZiweiCalculation.immutable(patch);
-    patch.forEach(
-        (k, v) ->
-            result.put(
-                k,
-                v instanceof Map<?, ?> && original.get(k) instanceof Map<?, ?>
-                    ? merge(map(original.get(k)), map(v))
-                    : v));
-    return Collections.unmodifiableMap(result);
-  }
-
   public static Review inspect(
       String tool, Map<String, Object> input, ZiweiDates.QueryClock clock) {
     var issues = new ArrayList<Issue>();
-    if (input == null
-        || ToolValidator.validateInput(PayloadJson.canonical(input), schema(tool)) != null)
-      return new Review(null, List.of(new Issue("arguments", "ZIWEI_TOOL_INPUT_INVALID")));
     var birth = map(input.get("birth"));
     for (String key : List.of("calendar", "date", "place", "sex_for_chart"))
       if (birth.get(key) == null) missing(issues, "birth." + key);
@@ -291,21 +191,5 @@ public final class ZiweiInputs {
 
   private static void add(List<Issue> issues, ZiweiDates.InputError e) {
     issues.add(new Issue(e.field(), e.code()));
-  }
-
-  @SuppressWarnings("unchecked")
-  static Map<String, Object> map(Object value) {
-    return value instanceof Map<?, ?> ? (Map<String, Object>) value : Map.of();
-  }
-
-  public static String hmac(byte[] key, Object value) {
-    try {
-      var mac = Mac.getInstance("HmacSHA256");
-      mac.init(new SecretKeySpec(key, "HmacSHA256"));
-      return HexFormat.of()
-          .formatHex(mac.doFinal(PayloadJson.canonical(value).getBytes(StandardCharsets.UTF_8)));
-    } catch (java.security.GeneralSecurityException e) {
-      throw new IllegalStateException("HMAC unavailable");
-    }
   }
 }

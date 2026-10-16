@@ -2,9 +2,9 @@ package com.financeclaw.m3;
 
 import static org.assertj.core.api.Assertions.*;
 
-import com.financeclaw.application.ReleaseCatalog.ModelProfile;
+import com.financeclaw.domain.release.ModelProfile;
 import com.financeclaw.infrastructure.agentscope.execution.ModelFactory;
-import com.financeclaw.tools.BusinessCatalog;
+import com.financeclaw.infrastructure.agentscope.skills.PackagedSkills;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.message.*;
 import io.agentscope.core.model.*;
@@ -41,18 +41,17 @@ class NativeSkillsIT {
       fail("Packaged Skill probe timed out");
     }
     assertThat(process.exitValue()).withFailMessage(Files.readString(log)).isZero();
-    assertThat(Files.readString(log))
-        .contains("PACKAGED_SKILL_HASH=" + BusinessCatalog.skillHash());
+    assertThat(Files.readString(log)).contains("PACKAGED_SKILL_HASH=" + PackagedSkills.hash());
   }
 
   public static class Probe {
     public static void main(String[] args) throws Exception {
       // This process loads production classes/resources from the executable Boot jar.
-      try (var repo = new ClasspathSkillRepository(BusinessCatalog.SKILLS)) {
+      try (var repo = new ClasspathSkillRepository(PackagedSkills.SKILLS)) {
         var skill = repo.getSkill("cocktail-from-what-i-have");
         if (skill == null || !skill.getResources().get("LICENSE").contains("MIT"))
           throw new IllegalStateException("Packaged skill missing");
-        System.out.println("PACKAGED_SKILL_HASH=" + BusinessCatalog.skillHash());
+        System.out.println("PACKAGED_SKILL_HASH=" + PackagedSkills.hash());
       }
     }
   }
@@ -74,7 +73,7 @@ class NativeSkillsIT {
 
           public void close() {}
         };
-    try (var repo = new ClasspathSkillRepository(BusinessCatalog.SKILLS);
+    try (var repo = new ClasspathSkillRepository(PackagedSkills.SKILLS);
         var provider =
             ModelFactory.create(
                 new ModelProfile("budget-test", "http://127.0.0.1/v1", 1024, 4096, 128, 32, false),

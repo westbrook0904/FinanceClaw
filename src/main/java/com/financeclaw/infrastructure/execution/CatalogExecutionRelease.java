@@ -1,15 +1,15 @@
 package com.financeclaw.infrastructure.execution;
 
 import com.financeclaw.app.execution.port.ExecutionRelease;
-import com.financeclaw.application.ReleaseCatalog;
+import com.financeclaw.app.release.ReleaseService;
 import com.financeclaw.domain.ExecutionPolicy;
 import org.springframework.stereotype.Component;
 
 @Component
 public class CatalogExecutionRelease implements ExecutionRelease {
-  private final ReleaseCatalog catalog;
+  private final ReleaseService catalog;
 
-  public CatalogExecutionRelease(ReleaseCatalog catalog) {
+  public CatalogExecutionRelease(ReleaseService catalog) {
     this.catalog = catalog;
   }
 

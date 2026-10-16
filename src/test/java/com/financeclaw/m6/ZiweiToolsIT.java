@@ -2,12 +2,20 @@ package com.financeclaw.m6;
 
 import static org.assertj.core.api.Assertions.*;
 
+import com.financeclaw.app.memory.MemoryService;
+import com.financeclaw.app.release.ReleaseService;
+import com.financeclaw.app.ziwei.ZiweiService;
 import com.financeclaw.application.*;
 import com.financeclaw.bootstrap.FinanceClawApplication;
 import com.financeclaw.domain.Governance.*;
 import com.financeclaw.domain.Task.*;
+import com.financeclaw.domain.release.BusinessFeatures;
+import com.financeclaw.domain.release.ReleaseDefinition;
+import com.financeclaw.domain.release.ZiweiPolicy;
 import com.financeclaw.infrastructure.agentscope.execution.*;
+import com.financeclaw.infrastructure.agentscope.skills.PackagedSkills;
 import com.financeclaw.infrastructure.state.*;
+import com.financeclaw.infrastructure.ziwei.ZiweiSchemas;
 import com.financeclaw.support.PayloadJson;
 import com.financeclaw.tools.*;
 import com.financeclaw.ziwei.*;
@@ -59,7 +67,7 @@ class ZiweiToolsIT {
   @Autowired org.springframework.context.ApplicationContext taskContext;
   @Autowired GovernanceService governance;
   @Autowired MemoryService memory;
-  @Autowired ReleaseCatalog releases;
+  @Autowired ReleaseService releases;
   @Autowired RuntimeMapper states;
   @Autowired DataSource source;
   @Autowired org.springframework.core.env.ConfigurableEnvironment environment;
@@ -76,15 +84,15 @@ class ZiweiToolsIT {
 
   void publish(ZiweiPolicy policy) {
     releases.publish(
-        new ReleaseCatalog.Release(
+        new ReleaseDefinition(
             "m6c-tests",
             "finance_agent",
-            ReleaseCatalog.SCOPES,
-            ReleaseCatalog.OFFLINE,
+            ReleaseDefinition.SCOPES,
+            ReleaseDefinition.OFFLINE,
             null,
             12,
             32,
-            new BusinessCatalog.Features(List.of(), BusinessCatalog.skillHash(), "{}", policy)));
+            new BusinessFeatures(List.of(), PackagedSkills.hash(), "{}", policy)));
   }
 
   @Test
@@ -99,19 +107,133 @@ class ZiweiToolsIT {
     tasks.submit(alice, conversation, "limited", "read");
     var claim = claim();
     try (var tools = tools(claim)) {
-      assertThat(tools.toolkit.getToolNames()).noneMatch(ZiweiInputs::supports);
+      assertThat(tools.toolkit.getToolNames()).noneMatch(ZiweiSchemas::supports);
       assertThatThrownBy(
               () ->
-                  new ZiweiTools(tasks, governance, claim)
-                      .run(
-                          ToolCallParam.builder()
-                              .toolUseBlock(
-                                  com.financeclaw.infrastructure.agentscope.NativeToolCalls.call(
-                                      "direct", "ziwei_natal_chart", ZiweiDomainTest.input()))
-                              .input(ZiweiDomainTest.input())
-                              .build())
-                      .block())
+                  taskContext
+                      .getBean(ZiweiService.class)
+                      .run(claim, "ziwei_natal_chart", "direct", ZiweiDomainTest.input()))
           .hasMessage("ziwei_denied");
+    }
+  }
+
+  @Test
+  void archiveAndResultStepRollbackTogetherWhileKeyBindingSurvives() {
+    var accepted = submit(alice);
+    var claim = claim();
+    var db = taskContext.getBean(com.financeclaw.infrastructure.governance.GovernanceMapper.class);
+    var fault =
+        new ZiweiService(
+            taskContext.getBean(com.financeclaw.app.execution.ExecutionPolicyService.class),
+            taskContext.getBean(com.financeclaw.app.execution.CapabilityStepService.class),
+            taskContext.getBean(com.financeclaw.app.ziwei.ZiweiInputService.class),
+            taskContext.getBean(com.financeclaw.app.ziwei.port.ZiweiConfiguration.class),
+            (current, artifact) -> {
+              assertThat(
+                      org.springframework.transaction.support.TransactionSynchronizationManager
+                          .isActualTransactionActive())
+                  .isTrue();
+              governance.archive(current, artifact, "ziwei:read");
+              throw new IllegalStateException("after_ziwei_archive");
+            });
+    assertThatThrownBy(
+            () -> fault.run(claim, "ziwei_natal_chart", "atomic", ZiweiDomainTest.input()))
+        .hasMessage("after_ziwei_archive");
+    assertThat(
+            sql.queryForObject(
+                "SELECT count(*) FROM business.artifacts WHERE turn_id=?",
+                Integer.class,
+                accepted.turnId()))
+        .isZero();
+    assertThat(db.step(accepted.turnId(), "ziwei:atomic", "result")).isNull();
+    assertThat(db.step(accepted.turnId(), "ziwei:key", "binding")).isNotNull();
+    var service = taskContext.getBean(ZiweiService.class);
+    var first = service.run(claim, "ziwei_natal_chart", "atomic", ZiweiDomainTest.input());
+    assertThat(service.run(claim, "ziwei_natal_chart", "atomic", ZiweiDomainTest.input()))
+        .isEqualTo(first);
+    assertThat(
+            sql.queryForObject(
+                "SELECT count(*) FROM business.artifacts WHERE turn_id=?",
+                Integer.class,
+                accepted.turnId()))
+        .isEqualTo(1);
+  }
+
+  @Test
+  void frozenLegacyResultStepReplaysWithoutCalculationAndStillChecksAuthorization()
+      throws Exception {
+    Map<String, Object> baseline;
+    try (var in = getClass().getResourceAsStream("/architecture/ziwei-io-baseline.json")) {
+      baseline =
+          PayloadJson.object(
+              new String(
+                  Objects.requireNonNull(in).readAllBytes(),
+                  java.nio.charset.StandardCharsets.UTF_8));
+    }
+    var row = ZiweiValues.map(((List<?>) baseline.get("cases")).getFirst());
+    var input = ZiweiValues.map(row.get("input"));
+    var owner = new Owner("r5b-tenant", "r5b-owner");
+    var policy = ZiweiPolicy.development("ZIWEI_HMAC_KEY", "r5b-v1", "Asia/Shanghai");
+    publish(policy);
+    var accepted = submit(owner);
+    var claim = claim();
+    var key = "synthetic-r5b-key-only-01234567890123456789";
+    environment
+        .getPropertySources()
+        .addFirst(
+            new org.springframework.core.env.MapPropertySource(
+                "r5b-key", Map.of("ZIWEI_HMAC_KEY", key)));
+    try {
+      var db =
+          taskContext.getBean(com.financeclaw.infrastructure.governance.GovernanceMapper.class);
+      String binding =
+          com.financeclaw.app.ziwei.ZiweiIdentity.binding(
+              ZiweiPolicy.key(key), policy, accepted.turnId());
+      db.saveStep(
+          accepted.turnId(),
+          "ziwei:key",
+          "binding",
+          com.financeclaw.support.PayloadDigest.sha256(PayloadJson.canonical(binding)),
+          "{\"bound\":true}");
+      String stored = "{\"legacy_receipt\":true,\"status\":\"success\"}";
+      db.saveStep(
+          accepted.turnId(),
+          "ziwei:legacy",
+          "result",
+          (String) row.get("result_step_hash"),
+          stored);
+      var service =
+          new ZiweiService(
+              taskContext.getBean(com.financeclaw.app.execution.ExecutionPolicyService.class),
+              taskContext.getBean(com.financeclaw.app.execution.CapabilityStepService.class),
+              taskContext.getBean(com.financeclaw.app.ziwei.ZiweiInputService.class),
+              taskContext.getBean(com.financeclaw.app.ziwei.port.ZiweiConfiguration.class),
+              (current, artifact) -> {
+                throw new AssertionError("legacy receipt must not republish");
+              });
+      assertThat(service.run(claim, (String) row.get("tool"), "legacy", input).text())
+          .isEqualTo(stored);
+      var changed = new TreeMap<>(input);
+      changed.put("focus", "career");
+      assertThatThrownBy(() -> service.run(claim, (String) row.get("tool"), "legacy", changed))
+          .hasMessage("step_input_conflict");
+      var grant = governance.grant(owner, accepted.conversationId());
+      governance.changeGrant(
+          owner,
+          accepted.conversationId(),
+          "r5b-revoke",
+          grant.revision(),
+          List.of("artifact:read"));
+      assertThatThrownBy(() -> service.run(claim, (String) row.get("tool"), "legacy", input))
+          .hasMessage("authorization_changed");
+      assertThat(
+              sql.queryForObject(
+                  "SELECT count(*) FROM business.artifacts WHERE turn_id=?",
+                  Integer.class,
+                  accepted.turnId()))
+          .isZero();
+    } finally {
+      environment.getPropertySources().remove("r5b-key");
     }
   }
 

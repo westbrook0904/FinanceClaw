@@ -105,9 +105,9 @@ python3 scripts/check-delivery.py
 
 | 入口 | 职责 |
 | --- | --- |
-| [ZiweiInputs](../../src/main/java/com/financeclaw/ziwei/ZiweiInputs.java) / [Schema](../../src/main/resources/ziwei/inputs.json) | 校验、聚合澄清、时间地点规范化与 HMAC |
-| [ZiweiPolicy](../../src/main/java/com/financeclaw/ziwei/ZiweiPolicy.java) | 固定规则、Schema 摘要和预算配置 |
+| [ZiweiInputs](../../src/main/java/com/financeclaw/ziwei/ZiweiInputs.java) / [原生输入适配](../../src/main/java/com/financeclaw/infrastructure/agentscope/capability/AgentScopeZiweiInputs.java) | 出生/时间/地点语义，以及原生 Schema 校验和补充合并 |
+| [ZiweiPolicy](../../src/main/java/com/financeclaw/domain/release/ZiweiPolicy.java) | 固定规则、Schema 摘要和预算配置 |
 | [ZiweiCalculation](../../src/main/java/com/financeclaw/ziwei/ZiweiCalculation.java) | 事实、分段、主题投影和预算 |
-| [ZiweiTools](../../src/main/java/com/financeclaw/tools/ZiweiTools.java) | Claim 鉴权、固定时钟、原生暂停、事务回执与归档 |
+| [ZiweiService](../../src/main/java/com/financeclaw/app/ziwei/ZiweiService.java) / [原生工具适配](../../src/main/java/com/financeclaw/infrastructure/agentscope/capability/ZiweiToolContribution.java) | R5b 接替原 ZiweiTools：Claim 鉴权、固定时钟、暂停/恢复、事务回执与归档；最新边界与验证见 [R5b](../architecture/r5b-implementation.md) |
 | [GovernedTools](../../src/main/java/com/financeclaw/infrastructure/agentscope/execution/GovernedTools.java) | 原生 Toolkit 注册与恢复适配 |
 | [领域测试](../../src/test/java/com/financeclaw/m6/ZiweiDomainTest.java) / [集成测试](../../src/test/java/com/financeclaw/m6/ZiweiToolsIT.java) | 可复现的验收证据 |

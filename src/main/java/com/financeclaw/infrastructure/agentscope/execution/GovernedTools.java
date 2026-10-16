@@ -3,9 +3,11 @@ package com.financeclaw.infrastructure.agentscope.execution;
 import com.financeclaw.application.*;
 import com.financeclaw.domain.Governance.*;
 import com.financeclaw.domain.Task.*;
+import com.financeclaw.domain.release.ReleaseDefinition;
 import com.financeclaw.infrastructure.agentscope.AgentStateInspector;
 import com.financeclaw.infrastructure.agentscope.ResumeInputs;
 import com.financeclaw.infrastructure.agentscope.capability.*;
+import com.financeclaw.infrastructure.agentscope.skills.PackagedSkills;
 import com.financeclaw.support.PayloadJson;
 import com.financeclaw.support.ToolSchemas;
 import com.financeclaw.tools.*;
@@ -26,7 +28,7 @@ public final class GovernedTools implements AutoCloseable {
   private final TaskService tasks;
   private final GovernanceService governance;
   private final Claim claim;
-  private final ReleaseCatalog.Release release;
+  private final ReleaseDefinition release;
   private final List<String> scopes;
   private final McpToolContribution mcp;
   private io.agentscope.core.skill.repository.ClasspathSkillRepository skills;
@@ -51,11 +53,10 @@ public final class GovernedTools implements AutoCloseable {
     try {
       mcp.contribute(this::register);
       if (scopes.contains("skill:use")) {
-        if (!release.business().skillHash().equals(BusinessCatalog.skillHash()))
+        if (!release.business().skillHash().equals(PackagedSkills.hash()))
           throw new Blocked("skill_release_changed");
         skills =
-            new io.agentscope.core.skill.repository.ClasspathSkillRepository(
-                BusinessCatalog.SKILLS);
+            new io.agentscope.core.skill.repository.ClasspathSkillRepository(PackagedSkills.SKILLS);
       }
     } catch (java.io.IOException | RuntimeException e) {
       close();
@@ -97,7 +98,7 @@ public final class GovernedTools implements AutoCloseable {
 
   public void business(io.agentscope.core.model.Model model, BusinessCapabilities capabilities) {
     if (release.business().ziwei() != null && scopes.contains("ziwei:read"))
-      new ZiweiToolContribution(tasks, governance, claim).contribute(this::register);
+      capabilities.ziwei(claim, this::register);
     capabilities.contribute(claim, model, scopes.contains("workflow:run"), this::register);
   }
 

@@ -2,7 +2,10 @@ package com.financeclaw.m5;
 
 import static org.assertj.core.api.Assertions.*;
 
+import com.financeclaw.app.release.ReleaseService;
 import com.financeclaw.bootstrap.DeploymentAccess;
+import com.financeclaw.infrastructure.release.EnvironmentCredentials;
+import com.financeclaw.infrastructure.release.EnvironmentReleaseSource;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.env.MockEnvironment;
 import org.springframework.mock.web.*;
@@ -11,13 +14,14 @@ class DeploymentAccessTest {
   @Test
   void mcpCredentialsResolveFromSpringConfigWithoutEnteringReleaseSnapshots() {
     var env = new MockEnvironment().withProperty("ROLLINGGO_TOKEN", "m5-secret-fixture");
-    var release = new com.financeclaw.application.ReleaseCatalog(env);
-    assertThat(release.credential("ROLLINGGO_TOKEN")).isEqualTo("m5-secret-fixture");
+    var release = new ReleaseService(new EnvironmentReleaseSource(env));
+    var credentials = new EnvironmentCredentials(env);
+    assertThat(credentials.resolve("ROLLINGGO_TOKEN")).isEqualTo("m5-secret-fixture");
     assertThat(release.require(release.currentHash()).toString())
         .doesNotContain("m5-secret-fixture");
-    assertThatThrownBy(() -> release.credential("../unexpected"))
+    assertThatThrownBy(() -> credentials.resolve("../unexpected"))
         .isInstanceOf(RuntimeException.class);
-    assertThatThrownBy(() -> release.credential("MISSING_TOKEN"))
+    assertThatThrownBy(() -> credentials.resolve("MISSING_TOKEN"))
         .isInstanceOf(RuntimeException.class);
   }
 

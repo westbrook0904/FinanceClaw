@@ -1,6 +1,6 @@
 package com.financeclaw.api;
 
-import com.financeclaw.application.MemoryService;
+import com.financeclaw.app.memory.MemoryService;
 import com.financeclaw.domain.Memory.*;
 import com.financeclaw.domain.Task.Problem;
 import jakarta.servlet.http.HttpServletRequest;
@@ -11,9 +11,10 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/v1/memory")
 public class MemoryController {
   private final MemoryService service;
-  private final com.financeclaw.memory.MemorySearch search;
+  private final com.financeclaw.app.memory.MemorySearchService search;
 
-  public MemoryController(MemoryService service, com.financeclaw.memory.MemorySearch search) {
+  public MemoryController(
+      MemoryService service, com.financeclaw.app.memory.MemorySearchService search) {
     this.service = service;
     this.search = search;
   }

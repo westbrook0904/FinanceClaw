@@ -1,12 +1,15 @@
 package com.financeclaw.architecture;
 
-import com.financeclaw.application.ReleaseCatalog;
+import com.financeclaw.app.release.ReleaseIdentity;
 import com.financeclaw.domain.ExecutionScope;
+import com.financeclaw.domain.release.BusinessFeatures;
+import com.financeclaw.domain.release.ModelProfile;
+import com.financeclaw.domain.release.ReleaseDefinition;
+import com.financeclaw.domain.release.RemoteEndpoint;
+import com.financeclaw.domain.release.ZiweiPolicy;
 import com.financeclaw.infrastructure.agentscope.ResumeInputs;
 import com.financeclaw.support.PayloadDigest;
 import com.financeclaw.support.PayloadJson;
-import com.financeclaw.tools.BusinessCatalog;
-import com.financeclaw.ziwei.ZiweiPolicy;
 import io.agentscope.core.message.ToolUseBlock;
 import java.math.BigDecimal;
 import java.util.*;
@@ -35,12 +38,12 @@ public final class CompatibilitySamples {
                 .input(payload)
                 .build()));
     var primary =
-        new ReleaseCatalog.ModelProfile(
+        new ModelProfile(
             "qwen-fixture", "https://model.example/v1", 65536, 131072, 2048, 512, true);
     var features =
-        new BusinessCatalog.Features(
+        new BusinessFeatures(
             List.of(
-                new BusinessCatalog.Remote(
+                new RemoteEndpoint(
                     "hotel",
                     "https://hotel.example/mcp",
                     List.of("hotel.example"),
@@ -53,31 +56,32 @@ public final class CompatibilitySamples {
             "{\"z\":1,\"a\":2}",
             ZiweiPolicy.development("FIXTURE_ZIWEI_KEY", "fixture-v1", "Asia/Shanghai"));
     var release =
-        new ReleaseCatalog.Release(
+        new ReleaseDefinition(
             "compat-v1",
             "finance_agent",
             List.of("ziwei:read", "artifact:read"),
             primary,
-            ReleaseCatalog.OFFLINE,
+            ReleaseDefinition.OFFLINE,
             12,
             32,
             features);
     result.put("release_json", PayloadJson.canonical(release));
-    result.put("release_hash", release.hash());
+    result.put("release_hash", ReleaseIdentity.hash(release));
     var minimal =
-        new ReleaseCatalog.Release(
+        new ReleaseDefinition(
             "compat-minimal",
             "finance_agent",
             List.of(),
-            ReleaseCatalog.OFFLINE,
+            ReleaseDefinition.OFFLINE,
             null,
             1,
             1,
-            new BusinessCatalog.Features(List.of(), "fixed", "{}"));
+            new BusinessFeatures(List.of(), "fixed", "{}"));
     result.put("minimal_release_json", PayloadJson.canonical(minimal));
-    result.put("minimal_release_hash", minimal.hash());
+    result.put("minimal_release_hash", ReleaseIdentity.hash(minimal));
     var scope =
-        new ExecutionScope("tenant-中文", "subject", "conversation", "finance_agent", release.hash());
+        new ExecutionScope(
+            "tenant-中文", "subject", "conversation", "finance_agent", ReleaseIdentity.hash(release));
     result.put("namespace", scope.namespace());
     result.put("user_id", scope.userId());
     result.put("session_id", scope.sessionId());

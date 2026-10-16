@@ -1,12 +1,12 @@
 # AgentScope 复用与 COLA 架构整改方案
 
-审查日期：2026-10-15；实施更新：2026-10-16。**R0–R4 与 R5a 已完成，最新完整回归 764 项通过**。固定契约、M0 隔离、编码边界与 Operations 切片见 [R0–R2 实施记录](r0-r2-implementation.md)；回答用例、工具交互、统一 SDK 快照与实际回归见 [R3 实施记录](r3-implementation.md)。任务用例、原生执行端口与事务回滚验证见 [R4 实施记录](r4-implementation.md)。组合复盘与市场研究的领域/用例/SDK 分层见 [R5a 实施记录](r5a-implementation.md)，R5 的其余业务仍待推进。组件选择依据见 [Spring 事务与组件复审](spring-transactions-component-review.md)。
+审查日期：2026-10-15；实施更新：2026-10-16。**R0–R4 与 R5a–R5c 已完成，最新完整回归 824 项通过**。固定契约、M0 隔离、编码边界与 Operations 切片见 [R0–R2 实施记录](r0-r2-implementation.md)；回答用例、工具交互、统一 SDK 快照与实际回归见 [R3 实施记录](r3-implementation.md)。任务用例、原生执行端口与事务回滚验证见 [R4 实施记录](r4-implementation.md)。组合复盘与市场研究的分层见 [R5a 实施记录](r5a-implementation.md)，紫微输入/资源/用例边界见 [R5b 实施记录](r5b-implementation.md)，记忆领域规则、模型/存储端口与发布配置见 [R5c 实施记录](r5c-implementation.md)。本地检查点 `bb58ea2` 已保存 M5e 与 R0–R5a；R5b/R5c 尚未提交。下一阶段为 R6 角色装配。组件选择依据见 [Spring 事务与组件复审](spring-transactions-component-review.md)。
 
 ## 1. 结论与决策
 
 **存在局部重复和可收敛的适配代码，但没有证据支持把当前业务治理整体替换为 AgentScope Harness。建议采用 COLA 的分层和依赖倒置，先在单 Maven 工程内实施，再按实际需要拆模块。**
 
-整改前的主要成本来自职责和依赖交织：`application`、`agent`、`tools`、`ziwei` 形成循环依赖，增加工具需要修改多处业务分支。R0–R4 与 R5a 已将参与循环的具体类依赖从 93 条收敛到 22 条；剩余问题主要在发布配置、业务工具与紫微资源之间，后续继续按用例消除。
+整改前的主要成本来自职责和依赖交织：`application`、`agent`、`tools`、`ziwei` 形成循环依赖，增加工具需要修改多处业务分支。R0–R5b 已将参与循环的具体类依赖从 93 条降到 0 条，并删除循环白名单。R5c 已继续完成记忆与发布配置分层；角色装配和剩余旧 facade 调用者仍需收敛，包图无环不等于这些工作已经完成。
 
 本次建议分为四类：
 
@@ -23,7 +23,7 @@
 
 ## 2. 整改前审查基线、版本与证据强度
 
-本节及第 3–5 节描述 2026-10-15 整改前发现，不代表所有问题仍未解决。基线为本地提交 `993e7acded5340ace65d02c9aad3f272db5fac2f` 加当前工作区，其中包含尚未提交的 M5e 文档、脚本和演练证据。当前 [pom.xml](../../pom.xml) 固定 AgentScope Java **2.0.3**、Spring Boot **3.5.16**、MyBatis Starter **3.0.5**、JDK **21.0.12+8**。不把此前框架评估中的 2.0.4 API 当成本工程可用 API。
+本节及第 3–5 节描述 2026-10-15 整改前发现，不代表所有问题仍未解决。当前完成状态以文首和实施记录为准。基线为本地提交 `993e7acded5340ace65d02c9aad3f272db5fac2f` 加当前工作区，其中包含当时尚未提交的 M5e 文档、脚本和演练证据。当前 [pom.xml](../../pom.xml) 固定 AgentScope Java **2.0.3**、Spring Boot **3.5.16**、MyBatis Starter **3.0.5**、JDK **21.0.12+8**。不把此前框架评估中的 2.0.4 API 当成本工程可用 API。
 
 此次核查了生产 Java 源码、关键集成测试、现有迁移记录，以及 Maven Central 的 2.0.3 `core`、`harness`、`extensions-jdbc`、`extensions-agent-protocol` 源码包；同时核对缓存中的飞书源码与实际 embedding 调用。引用的 10 个官方源码文件已逐一确认：路径存在于 `v2.0.3`，Git blob 摘要与 Maven 源码包中的内容一致。源码包 SHA-256、生产源码指纹、工作区初始状态和依赖图记录在 [静态审查证据](evidence/agentscope-cola-audit.json)。
 
@@ -96,7 +96,7 @@ Harness 的 `WorkspaceMessageBus` 可以利用共享文件系统传输消息，�
 
 默认 [AgentProtocolTaskEventBus](https://github.com/agentscope-ai/agentscope-java/blob/v2.0.3/agentscope-extensions/agentscope-extensions-protocol/agentscope-extensions-agent-protocol/src/main/java/io/agentscope/extensions/agentprotocol/AgentProtocolTaskEventBus.java) 使用进程内 replay sink，并在 complete 后移除通道。业务 SQL 事件投影解决重启、跨实例和身份隔离，应保留。也可以为框架接口实现持久总线，但若当前产品没有协议接入需求，这会增加一层适配而不会减少业务实现。
 
-`CapabilitySteps` 的本地确定性步骤缓存、`GovernanceService.report` 的本地发布效果，以及 M0 `EffectLedger` 不是三个可无差别合并的“幂等工具”。前两者的事务和恢复语义不同；M0 则是实验代码。对于无法确认结果的外部写入，保持阻塞/核对语义，不能以框架 retry 或新的 command 自动重放。
+原 `CapabilitySteps`（R5b 已移除，调用方直接使用 CapabilityStepService）的本地确定性步骤缓存、`GovernanceService.report` 的本地发布效果，以及 M0 `EffectLedger` 不是三个可无差别合并的“幂等工具”。前两者的事务和恢复语义不同；M0 则是实验代码。对于无法确认结果的外部写入，保持阻塞/核对语义，不能以框架 retry 或新的 command 自动重放。
 
 ### 3.5 子 Agent、Workflow、记忆：保留什么，未来可复用什么
 
@@ -354,7 +354,7 @@ public AnswerDecision answer(ReplyContext context, Answer answer, Instant now) {
 事务 D：依据回执提交业务状态与后续意图
 ```
 
-这描述的是必须保留的核对边界，并不要求把已有 SQL 故意拆得更碎。B、C、D 之间的崩溃窗口正是现有恢复协议处理的对象；不要在类拆分时悄悄重新定义其含义。`CapabilitySteps` 的回调只容纳本地确定性工作，不能演变成在锁内运行任意网络工具的通用执行器。
+这描述的是必须保留的核对边界，并不要求把已有 SQL 故意拆得更碎。B、C、D 之间的崩溃窗口正是现有恢复协议处理的对象；不要在类拆分时悄悄重新定义其含义。`CapabilityStepService` 的回调只容纳本地确定性工作，不能演变成在锁内运行任意网络工具的通用执行器。
 
 ## 9. 分阶段整改清单
 
@@ -367,7 +367,7 @@ public AnswerDecision answer(ReplyContext context, Answer answer, Instant now) {
 | R2 运维纵向切片 | `OperationsController` → 查询/受理用例 → 窄 Gateway → 原 Mapper | 已拆查询/受理用例与两个窄 gateway；SQL 与返回契约保留 | Controller 无 Mapper；查询逻辑可独立验证；快照/分页/权限测试通过 |
 | R3 交互与工具边界 | `AnswerInteractionService`、`InteractionBinding`、统一快照解释器；五类 ToolContribution 与交互处理器 | 实现及实际回归见 [R3 记录](r3-implementation.md)；Spring 事务与原 SQL 保留 | 通用审批不再识别紫微；三处快照判定统一；Schema 入口实证不等价，保留最终参数校验 |
 | R4 任务与原生执行分层 | 已拆受理/查询/取消/租约/完成/恢复；原生 runtime 实现 `AgentExecutionPort`；删除 Mapper/目录 getter | 实现与验证见 [R4 记录](r4-implementation.md)；沿用 SQL 和锁顺序 | 新 app 无 SDK/Mapper；9 项新增集成覆盖回滚、过期写入、事务外执行和不重放恢复 |
-| R5 业务对象和记忆分层 | [R5a](r5a-implementation.md) 已拆 Portfolio 与研究；紫微 I/O、记忆和发布配置待后续切片 | 不与算法升级、数据格式迁移同时做 | R5a 已通过领域、子预算和发布幂等回归；剩余切片继续验证隐私竞争与算法基准 |
+| R5 业务对象和记忆分层 | [R5a](r5a-implementation.md) 已拆 Portfolio 与研究，[R5b](r5b-implementation.md) 已拆紫微 I/O，[R5c](r5c-implementation.md) 已拆记忆与发布配置 | 不与算法升级、数据格式迁移同时做 | 领域、子预算、发布幂等、紫微冻结样本与恢复回归通过；R5c 增加记忆事务回滚、旧回执重放、搜索遗忘竞态和发布字节兼容验证 |
 | R6 角色装配与可选模块化 | 先替换宽泛扫描为明确角色装配，再决定是否移动入口和拆 Maven | 需重验镜像、启动类、MapperScan、restricted role | memory/migrate 无业务 Controller/工具/TaskService；完整镜像和多进程恢复验收通过 |
 | R7 可选原生替换实验 | SubAgentTool、历史压缩分别实验；SDK 存储仅在提供外部事务模式后重评 | Spring 事务方案已确定，不阻塞 R1–R6 | 满足本节后的等价性矩阵且适配代码减少，才合入默认路径 |
 
@@ -403,11 +403,11 @@ public AnswerDecision answer(ReplyContext context, Answer answer, Instant now) {
 | 规则 | 阶段目标 |
 | --- | --- |
 | domain 不依赖框架、传输、持久化和外层包 | 新建/迁入的领域类立即满足 |
-| app 不依赖 infrastructure、AgentScope、具体 Mapper | 已对 Operations、Interaction、Task、Execution 的 `app..` 及 port 启用；剩余旧业务/记忆依赖留待 R5 |
+| app 不依赖 infrastructure、AgentScope、具体 Mapper | 全部新 app/port 均启用；仅 app.ziwei 可引用受独立门禁保护的既有计算库；旧记忆等依赖留待后续 |
 | adapter 不直接读写 Mapper | 已覆盖全部现有 api 包；Operations 例外已删除 |
-| 领域包之间及分层包之间没有循环 | 存量循环组逐步拆除；最终不留白名单 |
+| 领域包之间及分层包之间没有循环 | R5b 已清零并删除白名单，com.financeclaw 主业务包编译依赖图强制无环 |
 | 生产 runtime 不引用 M0 probe | 已全量启用，另核查最终 Boot jar |
-| 原生 SDK 类型仅出现在 infrastructure 和必要的 bootstrap 装配 | 根执行适配已于 R4 移入 infrastructure；业务工具/记忆模型中的 SDK 使用留待 R5；domain 已禁止 |
+| 原生 SDK 类型仅出现在 infrastructure 和必要的 bootstrap 装配 | 根执行及已迁移业务适配均位于 infrastructure；旧记忆模型中的 SDK 使用待后续处理；domain 已禁止 |
 | Memory/Migrate 角色没有加载业务 Bean 和宽泛 Mapper | R6 前先增加负向加载验证，再移动入口 |
 
 包重命名后的图看似无环并不代表通过：还要检查行内全限定名、方法签名、Spring 注入、异步回调和真实装配。当前审查中的 import 图只能作为起点。
@@ -454,4 +454,4 @@ python3 scripts/check-delivery.py
 - 已验证 ArchUnit 1.5.1 的构建/测试接入，并核查 COLA statemachine 5.0.0 源码；Bean Validation、状态机和 Modulith 尚未完成本项目业务接入，按对应切片实施。
 - 没有重新完成真实模型、远端 MCP、真实飞书、历史会话切换或生产验收。架构整改与 [迁移验收清单](../migration/acceptance-checklist.md) 是两条需要分别留证据的工作。
 
-这份文档是后续开发的整改依据。R0–R2、R3、R4 的实现与验证分别见三批实施记录，下一步进入 R5 业务对象和记忆分层；是否拆 Maven 模块、是否换用更多原生实现，依据前面各项验收结果决定。
+这份文档是后续开发的整改依据。R0–R5b 的实现与验证见各批实施记录，下一步继续 R5 的记忆和发布配置分层；是否拆 Maven 模块、是否换用更多原生实现，依据前面各项验收结果决定。

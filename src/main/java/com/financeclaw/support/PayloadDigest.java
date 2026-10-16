@@ -18,4 +18,14 @@ public final class PayloadDigest {
       throw new IllegalStateException(e);
     }
   }
+
+  public static String hmacSha256(byte[] key, String text) {
+    try {
+      var mac = javax.crypto.Mac.getInstance("HmacSHA256");
+      mac.init(new javax.crypto.spec.SecretKeySpec(key, "HmacSHA256"));
+      return HexFormat.of().formatHex(mac.doFinal(text.getBytes(StandardCharsets.UTF_8)));
+    } catch (java.security.GeneralSecurityException e) {
+      throw new IllegalStateException("HMAC unavailable", e);
+    }
+  }
 }

@@ -1,6 +1,8 @@
 package com.financeclaw.tools;
 
 import com.financeclaw.domain.Governance.Blocked;
+import com.financeclaw.domain.release.RemoteEndpoint;
+import com.financeclaw.infrastructure.release.EnvironmentCredentials;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.tool.mcp.*;
 import java.net.URI;
@@ -13,15 +15,12 @@ import java.util.function.Function;
 public final class McpTools implements AutoCloseable {
   private final List<McpClientWrapper> clients = new ArrayList<>();
 
-  public void register(Toolkit toolkit, BusinessCatalog.Remote remote, String tenant) {
-    register(toolkit, remote, tenant, BusinessCatalog::credential);
+  public void register(Toolkit toolkit, RemoteEndpoint remote, String tenant) {
+    register(toolkit, remote, tenant, EnvironmentCredentials::lookup);
   }
 
   public void register(
-      Toolkit toolkit,
-      BusinessCatalog.Remote remote,
-      String tenant,
-      Function<String, String> credentials) {
+      Toolkit toolkit, RemoteEndpoint remote, String tenant, Function<String, String> credentials) {
     if (!remote.tenants().isEmpty() && !remote.tenants().contains(tenant))
       throw new Blocked("mcp_tenant_denied");
     if (remote.service().equals("taibu") && remote.external())

@@ -1,7 +1,10 @@
 package com.financeclawmemory;
 
+import com.financeclaw.app.memory.*;
+import com.financeclaw.app.memory.port.MemoryRepository;
+import com.financeclaw.infrastructure.agentscope.memory.AgentScopeMemoryModels;
+import com.financeclaw.infrastructure.memory.*;
 import com.financeclaw.infrastructure.memory.MemoryMapper;
-import com.financeclaw.memory.*;
 import java.util.*;
 import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.boot.*;
@@ -15,7 +18,11 @@ import org.springframework.transaction.support.TransactionTemplate;
 @SpringBootConfiguration
 @EnableAutoConfiguration
 @MapperScan("com.financeclaw.infrastructure.memory")
-@Import(MemoryModels.class)
+@Import({
+  AgentScopeMemoryModels.class,
+  MyBatisMemoryRepository.class,
+  MyBatisEmbeddingProfiles.class
+})
 @EnableScheduling
 public class MemoryWorkerApplication {
   public static void main(String[] args) {
@@ -62,22 +69,26 @@ public class MemoryWorkerApplication {
   }
 
   @Bean
-  MemoryProcessor processor(
-      MemoryMapper db, TransactionTemplate tx, MemoryModels models, Environment env) {
+  MemoryProcessingService processor(
+      MemoryMapper db,
+      MemoryRepository repository,
+      TransactionTemplate tx,
+      AgentScopeMemoryModels models,
+      Environment env) {
     if (!db.restrictedWorker())
       throw new IllegalStateException("Memory worker requires a restricted database role");
     String revision = env.getProperty("financeclaw.memory.embedding.revision", "disabled");
     if (revision.equals("disabled") || revision.isBlank())
       throw new IllegalStateException("A pinned embedding revision is required");
-    return new MemoryProcessor(db, tx, models::extract, models::embedding, revision);
+    return new MemoryProcessingService(repository, tx, models, models, revision);
   }
 
   @Bean
-  Poller poller(MemoryProcessor processor) {
+  Poller poller(MemoryProcessingService processor) {
     return new Poller(processor);
   }
 
-  public record Poller(MemoryProcessor processor) {
+  public record Poller(MemoryProcessingService processor) {
     @Scheduled(fixedDelayString = "${financeclaw.memory.poll-ms:1000}")
     public void poll() {
       processor.poll();

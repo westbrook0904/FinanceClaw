@@ -1,61 +1,31 @@
-package com.financeclaw.memory;
+package com.financeclaw.app.memory;
 
+import com.financeclaw.app.memory.port.*;
 import com.financeclaw.domain.Memory.*;
 import com.financeclaw.domain.Task.Owner;
-import com.financeclaw.infrastructure.memory.MemoryMapper;
-import io.agentscope.core.embedding.EmbeddingModel;
-import io.agentscope.core.message.TextBlock;
-import java.time.Duration;
+import com.financeclaw.domain.memory.EmbeddingVector;
 import java.util.*;
-import java.util.function.Function;
-import java.util.function.Supplier;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /** Network work happens outside transactions. Every result rechecks lease, epoch and revision. */
-public final class MemoryProcessor {
-  private final MemoryMapper db;
+public final class MemoryProcessingService {
+  private final MemoryRepository db;
   private final TransactionTemplate tx;
-  private final Function<String, Extraction> extractor;
-  private final Supplier<EmbeddingModel> embeddings;
+  private final MemoryExtraction extractor;
+  private final MemoryEmbedding embeddings;
   private final String modelRevision;
 
-  public MemoryProcessor(
-      MemoryMapper db,
+  public MemoryProcessingService(
+      MemoryRepository db,
       TransactionTemplate tx,
-      Function<String, Extraction> extractor,
-      Supplier<EmbeddingModel> embeddings,
+      MemoryExtraction extractor,
+      MemoryEmbedding embeddings,
       String modelRevision) {
     this.db = db;
     this.tx = tx;
     this.extractor = extractor;
     this.embeddings = embeddings;
     this.modelRevision = modelRevision;
-  }
-
-  public static Proposal explicit(String text) {
-    if (text == null) return null;
-    for (var entry :
-        Map.of("response_language", Set.of("中文", "English"), "response_style", Set.of("简洁", "详细"))
-            .entrySet())
-      for (var value : entry.getValue())
-        if (text.equals("/remember " + entry.getKey() + "=" + value))
-          return new Proposal(entry.getKey(), value, text);
-    return null;
-  }
-
-  public static String vector(double[] vector) {
-    if (vector == null || vector.length != 1024)
-      throw new IllegalArgumentException("embedding_dimension_mismatch");
-    double norm = 0;
-    var parts = new ArrayList<String>(1024);
-    for (double v : vector) {
-      if (!Double.isFinite(v) || Math.abs(v) > Float.MAX_VALUE)
-        throw new IllegalArgumentException("invalid_embedding");
-      norm += v * v;
-      parts.add(Float.toString((float) v));
-    }
-    if (norm == 0) throw new IllegalArgumentException("zero_embedding");
-    return "{" + String.join(",", parts) + "}";
   }
 
   public Job claim() {
@@ -70,13 +40,7 @@ public final class MemoryProcessor {
 
   private boolean live(Job job, Privacy p) {
     var now = db.job(job.id());
-    return db.liveLease(job)
-        && p != null
-        && !p.purgePending()
-        && p.epoch() == job.epoch()
-        && now != null
-        && now.status().equals("running")
-        && Objects.equals(now.leaseToken(), job.leaseToken());
+    return job.live(p, now, db.liveLease(job));
   }
 
   public boolean poll() {
@@ -97,6 +61,9 @@ public final class MemoryProcessor {
   }
 
   public void process(Job job) {
+    if (org.springframework.transaction.support.TransactionSynchronizationManager
+        .isActualTransactionActive())
+      throw new IllegalStateException("Memory model work requires no ambient transaction");
     Owner owner = new Owner(job.tenant(), job.subject());
     try {
       boolean valid = tx.execute(s -> live(job, db.lock(owner)));
@@ -106,40 +73,25 @@ public final class MemoryProcessor {
       }
       if (job.kind().equals("extract")) {
         var source = db.sourceById(job.keyId());
-        if (source == null
-            || source.content() == null
-            || !source.status().equals("pending")
-            || source.epoch() != job.epoch()) throw new IllegalStateException("source_unavailable");
-        var result = extractor.apply(source.content());
+        if (source == null || !source.extractable(job))
+          throw new IllegalStateException("source_unavailable");
+        var result = extractor.extract(source.content());
         commitExtraction(job, source, result);
       } else {
         var fact = db.fact(job.keyId());
         if (fact == null
-            || !fact.status().equals("active")
-            || fact.epoch() != job.epoch()
-            || fact.revision() != job.revision()
+            || !fact.activeAt(job.epoch(), job.revision())
             || !modelRevision.equals(job.modelRevision())) {
           tx.executeWithoutResult(s -> db.finish(job, "obsolete", null));
           return;
         }
-        var model = embeddings.get();
-        if (model.getDimensions() != 1024)
-          throw new IllegalArgumentException("embedding_dimension_mismatch");
-        String vector =
-            vector(
-                model
-                    .embed(TextBlock.builder().text(fact.key() + ": " + fact.content()).build())
-                    .subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic())
-                    .block(Duration.ofSeconds(20)));
+        EmbeddingVector vector = embeddings.embed(fact.key() + ": " + fact.content());
         tx.executeWithoutResult(
             s -> {
               var p = db.lock(owner);
               if (!live(job, p)) return;
               var current = db.fact(fact.id());
-              if (current == null
-                  || !current.status().equals("active")
-                  || current.epoch() != job.epoch()
-                  || current.revision() != job.revision()) {
+              if (current == null || !current.activeAt(job.epoch(), job.revision())) {
                 db.finish(job, "obsolete", null);
                 return;
               }
@@ -159,39 +111,17 @@ public final class MemoryProcessor {
   }
 
   public void commitExtraction(Job job, Source source, Extraction result) {
-    if (result == null || result.proposals() == null || result.proposals().size() > 8)
-      throw new IllegalArgumentException("invalid_extraction");
-    Set<String> keys = new HashSet<>();
-    for (var p : result.proposals()) {
-      if (p == null
-          || !Set.of(
-                  "response_language",
-                  "response_style",
-                  "home_city",
-                  "travel_preference",
-                  "investment_preference")
-              .contains(p.key())
-          || !keys.add(p.key())
-          || p.value() == null
-          || p.value().isBlank()
-          || p.value().length() > 256
-          || p.quote() == null
-          || p.quote().length() > 1024
-          || !source.content().contains(p.quote())
-          || !p.quote().contains(p.value()))
-        throw new IllegalArgumentException("untrusted_extraction");
-    }
+    if (result == null) throw new IllegalArgumentException("invalid_extraction");
+    result.validateAgainst(source);
     Owner owner = new Owner(job.tenant(), job.subject());
     tx.executeWithoutResult(
         s -> {
           var p = db.lock(owner);
           if (!live(job, p)) return;
           var current = db.sourceById(source.id());
-          if (current == null
-              || current.epoch() != p.epoch()
-              || !current.status().equals("pending")) return;
+          if (current == null || !current.pendingAt(p.epoch())) return;
           for (var proposal : result.proposals()) {
-            boolean auto = proposal.equals(explicit(current.content()));
+            boolean auto = proposal.equals(Proposal.explicit(current.content()));
             var fact =
                 new Fact(
                     UUID.randomUUID().toString(),

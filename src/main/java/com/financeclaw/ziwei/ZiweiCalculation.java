@@ -1,10 +1,10 @@
 package com.financeclaw.ziwei;
 
-import static com.financeclaw.ziwei.ZiweiInputs.map;
+import static com.financeclaw.ziwei.ZiweiValues.map;
 
+import com.financeclaw.domain.release.ZiweiPolicy;
 import com.financeclaw.support.PayloadDigest;
 import com.financeclaw.support.PayloadJson;
-import java.nio.charset.StandardCharsets;
 import java.time.*;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
@@ -131,65 +131,10 @@ public final class ZiweiCalculation {
     artifact.put("segments", List.copyOf(segments));
     artifact.put("warnings", input.warnings());
     if (bytes(artifact) > policy.artifactBytes()) throw error("ZIWEI_ARTIFACT_BUDGET_EXCEEDED");
-    var selected = select(facts.values(), input.focus());
-    Set<String> kept = new HashSet<>();
-    selected.forEach(f -> kept.add((String) f.get("fact_id")));
-    var projection = new TreeMap<String, Object>();
-    projection.put("chart_id", chartId);
-    projection.put("birth_fingerprint", fingerprint);
-    projection.put("convention_ref", policy.convention());
-    projection.put("engine_ref", policy.engine());
-    projection.put("level", artifact.get("level"));
-    projection.put("target", stableTarget);
-    projection.put("facts", selected);
-    projection.put(
-        "segments",
-        segments.stream()
-            .map(
-                s ->
-                    Map.of(
-                        "start",
-                        s.get("start"),
-                        "end",
-                        s.get("end"),
-                        "fact_ids",
-                        ((List<?>) s.get("fact_ids")).stream().filter(kept::contains).toList()))
-            .toList());
-    projection.put(
-        "omitted_fact_ids", facts.keySet().stream().filter(id -> !kept.contains(id)).toList());
-    var warnings = new ArrayList<>(input.warnings());
-    warnings.add("投影未展示完整辅助星曜；不得据此认定未展示的格局。解读须引用 fact_id 和覆盖区间。");
-    projection.put("warnings", warnings);
-    if (bytes(projection) > policy.projectionBytes()) throw error("ZIWEI_CONTEXT_BUDGET_EXCEEDED");
-    return new Result(immutable(artifact), immutable(projection));
-  }
-
-  private static List<Map<String, Object>> select(
-      Collection<Map<String, Object>> facts, String focus) {
-    var core = facts.stream().filter(f -> ((String) f.get("fact_id")).contains(".core.")).toList();
-    if (focus.equals("overall")) return core;
-    String key =
-        Map.of("career", "careerPalace", "relationship", "spousePalace", "wealth", "wealthPalace")
-            .get(focus);
-    String display = Map.of("career", "官禄", "relationship", "夫妻", "wealth", "财帛").get(focus);
-    Set<Integer> indexes = new HashSet<>();
-    for (var fact : core) {
-      var data = map(fact.get("value"));
-      if (fact.get("palace_index") != null) {
-        if (Objects.equals(key, data.get("name_key"))
-            || "soulPalace".equals(data.get("name_key"))
-            || Boolean.TRUE.equals(data.get("is_body")))
-          indexes.addAll(surrounded(number(fact.get("palace_index"))));
-      } else if (!fact.get("layer").equals("natal")) {
-        var names = (List<?>) data.get("palace_names");
-        indexes.addAll(surrounded(names.indexOf(display)));
-        indexes.addAll(surrounded(names.indexOf("命宫")));
-      }
-    }
-    return core.stream()
-        .filter(
-            f -> f.get("palace_index") == null || indexes.contains(number(f.get("palace_index"))))
-        .toList();
+    var projection =
+        ZiweiProjection.project(
+            input, level, fingerprint, policy, chartId, stableTarget, facts, segments);
+    return new Result(ZiweiValues.immutable(artifact), projection);
   }
 
   private static Map<String, Object> fact(
@@ -236,25 +181,10 @@ public final class ZiweiCalculation {
   }
 
   public static int bytes(Object value) {
-    return PayloadJson.canonical(value).getBytes(StandardCharsets.UTF_8).length;
+    return ZiweiValues.bytes(value);
   }
 
   private static ZiweiDates.InputError error(String code) {
     return new ZiweiDates.InputError(code, "target");
-  }
-
-  @SuppressWarnings("unchecked")
-  static Map<String, Object> immutable(Map<String, Object> map) {
-    return (Map<String, Object>) freeze(map);
-  }
-
-  private static Object freeze(Object value) {
-    if (value instanceof Map<?, ?> m) {
-      var out = new TreeMap<String, Object>();
-      m.forEach((k, v) -> out.put((String) k, freeze(v)));
-      return Collections.unmodifiableMap(out);
-    }
-    if (value instanceof List<?> l) return l.stream().map(ZiweiCalculation::freeze).toList();
-    return value;
   }
 }

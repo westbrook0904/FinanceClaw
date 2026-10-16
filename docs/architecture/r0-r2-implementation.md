@@ -63,7 +63,7 @@ flowchart LR
 
 [ArchitectureTest](../../src/test/java/com/financeclaw/architecture/ArchitectureTest.java) 覆盖：
 
-1. 包循环只能减少：根据字节码依赖图寻找参与包循环的具体类边，与 [旧依赖基线](../../src/test/resources/architecture/legacy-package-cycles.txt) 对照；新增循环边直接失败。
+1. 当时的包循环门禁只允许减少：根据字节码依赖图寻找参与循环的具体类边，与旧依赖基线对照；新增循环边直接失败。该白名单已在 [R5b](r5b-implementation.md) 清零后删除，当前主业务包直接断言无循环。
 2. domain 只依赖自身和 JDK。
 3. 生产代码不自行调用 JDBC commit、rollback 或 setAutoCommit。
 4. 全部现有 API 不依赖 persistence；原 Operations 例外已删除。

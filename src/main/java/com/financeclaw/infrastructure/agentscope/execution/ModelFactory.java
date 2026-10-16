@@ -1,7 +1,7 @@
 package com.financeclaw.infrastructure.agentscope.execution;
 
-import com.financeclaw.application.ReleaseCatalog.ModelProfile;
 import com.financeclaw.domain.Governance.Blocked;
+import com.financeclaw.domain.release.ModelProfile;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.model.*;
 import io.agentscope.core.model.transport.*;

@@ -4,8 +4,11 @@ import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
-import com.financeclaw.infrastructure.memory.MemoryMapper;
-import com.financeclaw.memory.*;
+import com.financeclaw.app.memory.*;
+import com.financeclaw.app.memory.port.EmbeddingProfiles;
+import com.financeclaw.domain.memory.EmbeddingVector;
+import com.financeclaw.infrastructure.agentscope.memory.AgentScopeMemoryModels;
+import com.financeclaw.infrastructure.memory.*;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.env.MockEnvironment;
@@ -19,7 +22,7 @@ class NativeMemoryTest {
               .withProperty("financeclaw.memory.extractor.model", "memory-test")
               .withProperty("financeclaw.memory.extractor.base-url", remote.url())
               .withProperty("financeclaw.memory.extractor.api-key", "mock-key");
-      var models = new MemoryModels(env, mock(MemoryMapper.class));
+      var models = new AgentScopeMemoryModels(env, mock(EmbeddingProfiles.class));
       var result = models.extract("我住在上海");
       assertThat(result.proposals()).hasSize(1);
       assertThat(result.proposals().getFirst().value()).isEqualTo("上海");
@@ -40,7 +43,7 @@ class NativeMemoryTest {
               .withProperty("financeclaw.memory.embedding.base-url", remote.url())
               .withProperty("financeclaw.memory.embedding.api-key", "mock-key")
               .withProperty("financeclaw.memory.embedding.revision", "embedding-v1");
-      var db = mock(MemoryMapper.class);
+      var db = mock(EmbeddingProfiles.class);
       var fingerprint = new AtomicReference<String>();
       doAnswer(
               i -> {
@@ -50,18 +53,11 @@ class NativeMemoryTest {
           .when(db)
           .registerProfile(anyString(), anyString(), anyString());
       when(db.profile(anyString())).thenAnswer(i -> fingerprint.get());
-      var models = new MemoryModels(env, db);
-      var vector =
-          models
-              .embedding()
-              .embed(
-                  io.agentscope.core.message.TextBlock.builder()
-                      .text("response_language: 中文")
-                      .build())
-              .block(java.time.Duration.ofSeconds(10));
-      assertThat(vector).hasSize(1024);
+      var models = new AgentScopeMemoryModels(env, db);
+      var vector = models.embed("response_language: 中文");
+      assertThat(vector.values()).hasSize(1024);
       assertThat(remote.requests.getFirst().path("dimensions").asInt()).isEqualTo(1024);
-      assertThat(MemoryProcessor.vector(vector)).startsWith("{1.0,");
+      assertThat(MemoryVectorCodec.array(vector)).startsWith("{1.0,");
       env.setProperty("financeclaw.memory.embedding.model", "changed");
       assertThatThrownBy(models::embedding).hasMessageContaining("new revision");
     }
@@ -69,14 +65,15 @@ class NativeMemoryTest {
 
   @Test
   void invalidEmbeddingAndImplicitAutoConfirmationAreRejected() {
-    assertThat(MemoryProcessor.explicit("/remember response_style=简洁")).isNotNull();
-    assertThat(MemoryProcessor.explicit("我希望简洁一点")).isNull();
-    assertThat(MemoryProcessor.explicit("/remember home_city=上海")).isNull();
-    assertThatThrownBy(() -> MemoryProcessor.vector(new double[1023]))
+    assertThat(com.financeclaw.domain.Memory.Proposal.explicit("/remember response_style=简洁"))
+        .isNotNull();
+    assertThat(com.financeclaw.domain.Memory.Proposal.explicit("我希望简洁一点")).isNull();
+    assertThat(com.financeclaw.domain.Memory.Proposal.explicit("/remember home_city=上海")).isNull();
+    assertThatThrownBy(() -> EmbeddingVector.of(new double[1023]))
         .hasMessage("embedding_dimension_mismatch");
-    assertThatThrownBy(() -> MemoryProcessor.vector(new double[1024])).hasMessage("zero_embedding");
+    assertThatThrownBy(() -> EmbeddingVector.of(new double[1024])).hasMessage("zero_embedding");
     var nan = new double[1024];
     nan[0] = Double.NaN;
-    assertThatThrownBy(() -> MemoryProcessor.vector(nan)).hasMessage("invalid_embedding");
+    assertThatThrownBy(() -> EmbeddingVector.of(nan)).hasMessage("invalid_embedding");
   }
 }

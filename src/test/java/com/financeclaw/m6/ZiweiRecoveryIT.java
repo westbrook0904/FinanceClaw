@@ -3,6 +3,7 @@ package com.financeclaw.m6;
 import static org.assertj.core.api.Assertions.*;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.financeclaw.app.memory.MemoryService;
 import com.financeclaw.application.*;
 import com.financeclaw.bootstrap.FinanceClawApplication;
 import com.financeclaw.domain.Governance.Answer;

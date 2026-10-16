@@ -3,12 +3,14 @@ package com.financeclaw.m1;
 import com.financeclaw.app.execution.*;
 import com.financeclaw.app.execution.port.*;
 import com.financeclaw.app.interaction.AnswerInteractionService;
+import com.financeclaw.app.release.ReleaseService;
 import com.financeclaw.app.task.*;
-import com.financeclaw.application.ReleaseCatalog;
 import com.financeclaw.application.TaskService;
 import com.financeclaw.infrastructure.agentscope.AgentScopeInteractionCheckpoint;
 import com.financeclaw.infrastructure.execution.CatalogExecutionRelease;
 import com.financeclaw.infrastructure.interaction.*;
+import com.financeclaw.infrastructure.release.EnvironmentCredentials;
+import com.financeclaw.infrastructure.release.EnvironmentReleaseSource;
 import com.financeclaw.infrastructure.state.RuntimeMapper;
 import com.financeclaw.infrastructure.task.*;
 import javax.sql.DataSource;
@@ -22,7 +24,9 @@ public final class LifecycleDatabase {
   public final SqlSessionTemplate session;
   public final TaskService service;
   public final com.financeclaw.application.GovernanceService governance;
-  public final ReleaseCatalog releases = new ReleaseCatalog();
+  public final ReleaseService releases =
+      new ReleaseService(
+          new EnvironmentReleaseSource(new org.springframework.mock.env.MockEnvironment()));
   public final ExecutionLeaseService leases;
   public final ExecutionCompletionService completion;
   public final RecoverTaskService recovery;
@@ -86,6 +90,8 @@ public final class LifecycleDatabase {
       projection = new ProjectTaskService(new MyBatisTaskProjectionGateway(tasks), tx);
       var steps =
           new CapabilityStepService(new MyBatisCapabilityStepGateway(gov), leases, policies);
+      var credentials =
+          new EnvironmentCredentials(new org.springframework.mock.env.MockEnvironment());
       service =
           new TaskService(
               submission,
@@ -96,9 +102,16 @@ public final class LifecycleDatabase {
               completion,
               recovery,
               projection,
-              steps,
               new MyBatisExecutionContextGateway(gov),
-              releases);
+              releases,
+              credentials);
+      var ziweiConfiguration =
+          new com.financeclaw.infrastructure.ziwei.CatalogZiweiConfiguration(releases, credentials);
+      var ziweiInputs =
+          new com.financeclaw.app.ziwei.ZiweiInputService(
+              ziweiConfiguration,
+              new MyBatisExecutionContextGateway(gov),
+              new com.financeclaw.infrastructure.agentscope.capability.AgentScopeZiweiInputs());
       var answers =
           new AnswerInteractionService(
               new MyBatisInteractionGateway(
@@ -109,12 +122,7 @@ public final class LifecycleDatabase {
                   session.getMapper(
                       com.financeclaw.infrastructure.governance.GovernanceMapper.class)),
               new AgentScopeInteractionCheckpoint(session.getMapper(RuntimeMapper.class)),
-              new AgentScopeAnswerRules(
-                  java.util.List.of(
-                      new ZiweiAnswerValidator(
-                          service,
-                          session.getMapper(
-                              com.financeclaw.infrastructure.governance.GovernanceMapper.class)))),
+              new AgentScopeAnswerRules(java.util.List.of(new ZiweiAnswerValidator(ziweiInputs))),
               tx);
       governance =
           new com.financeclaw.application.GovernanceService(
@@ -140,7 +148,13 @@ public final class LifecycleDatabase {
               new com.financeclaw.app.research.MarketResearchService(policies, steps, market),
               policies,
               leases,
-              session.getMapper(RuntimeMapper.class));
+              session.getMapper(RuntimeMapper.class),
+              new com.financeclaw.app.ziwei.ZiweiService(
+                  policies,
+                  steps,
+                  ziweiInputs,
+                  ziweiConfiguration,
+                  new com.financeclaw.infrastructure.ziwei.GovernedZiweiPublication(governance)));
     } catch (Exception e) {
       throw new IllegalStateException(e);
     }

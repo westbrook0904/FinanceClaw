@@ -1,14 +1,14 @@
 package com.financeclaw.infrastructure.market;
 
 import com.financeclaw.app.market.port.MarketCatalog;
-import com.financeclaw.application.ReleaseCatalog;
+import com.financeclaw.app.release.ReleaseService;
 import org.springframework.stereotype.Component;
 
 @Component
 public class CatalogMarketData implements MarketCatalog {
-  private final ReleaseCatalog releases;
+  private final ReleaseService releases;
 
-  public CatalogMarketData(ReleaseCatalog releases) {
+  public CatalogMarketData(ReleaseService releases) {
     this.releases = releases;
   }
 

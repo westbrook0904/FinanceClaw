@@ -2,9 +2,11 @@ package com.financeclaw.application;
 
 import com.financeclaw.app.execution.*;
 import com.financeclaw.app.execution.port.ExecutionContextGateway;
+import com.financeclaw.app.release.ReleaseService;
 import com.financeclaw.app.task.*;
 import com.financeclaw.domain.Governance.*;
 import com.financeclaw.domain.Task.*;
+import com.financeclaw.domain.release.ReleaseDefinition;
 import java.util.List;
 import java.util.function.Supplier;
 import org.springframework.stereotype.Service;
@@ -22,9 +24,9 @@ public class TaskService {
   private final ExecutionCompletionService completion;
   private final RecoverTaskService recovery;
   private final ProjectTaskService projection;
-  private final CapabilityStepService steps;
   private final ExecutionContextGateway context;
-  private final ReleaseCatalog catalog;
+  private final ReleaseService catalog;
+  private final com.financeclaw.app.release.port.Credentials credentials;
 
   public TaskService(
       SubmitTaskService submission,
@@ -35,9 +37,9 @@ public class TaskService {
       ExecutionCompletionService completion,
       RecoverTaskService recovery,
       ProjectTaskService projection,
-      CapabilityStepService steps,
       ExecutionContextGateway context,
-      ReleaseCatalog catalog) {
+      ReleaseService catalog,
+      com.financeclaw.app.release.port.Credentials credentials) {
     this.submission = submission;
     this.queries = queries;
     this.cancellation = cancellation;
@@ -46,9 +48,9 @@ public class TaskService {
     this.completion = completion;
     this.recovery = recovery;
     this.projection = projection;
-    this.steps = steps;
     this.context = context;
     this.catalog = catalog;
+    this.credentials = credentials;
   }
 
   public String createConversation(Owner owner) {
@@ -151,16 +153,16 @@ public class TaskService {
     return projection.projectNext();
   }
 
-  public ReleaseCatalog.Release release(String hash) {
+  public ReleaseDefinition release(String hash) {
     return catalog.require(hash);
   }
 
   public String modelApiKey() {
-    return catalog.apiKey();
+    return credentials.modelApiKey();
   }
 
   public String credential(String ref) {
-    return catalog.credential(ref);
+    return credentials.resolve(ref);
   }
 
   public List<String> scopes(Claim claim) {
@@ -177,10 +179,5 @@ public class TaskService {
 
   public List<Interaction> interactions(Claim claim) {
     return context.interactions(claim.turn().id());
-  }
-
-  public Object localStep(
-      Claim claim, String namespace, String step, Object input, Supplier<Object> work) {
-    return steps.run(claim, namespace, step, input, work);
   }
 }

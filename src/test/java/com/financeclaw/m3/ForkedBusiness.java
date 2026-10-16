@@ -1,7 +1,9 @@
 package com.financeclaw.m3;
 
-import com.financeclaw.application.ReleaseCatalog;
+import com.financeclaw.domain.release.BusinessFeatures;
+import com.financeclaw.domain.release.ReleaseDefinition;
 import com.financeclaw.infrastructure.agentscope.execution.TaskAgentRuntime;
+import com.financeclaw.infrastructure.agentscope.skills.PackagedSkills;
 import com.financeclaw.infrastructure.state.RuntimeMapper;
 import com.financeclaw.m1.LifecycleDatabase;
 import com.financeclaw.tools.*;
@@ -20,16 +22,15 @@ public final class ForkedBusiness {
             new DriverManagerDataSource(
                 p.getProperty("url"), p.getProperty("user"), p.getProperty("password")));
     db.releases.publish(
-        new ReleaseCatalog.Release(
+        new ReleaseDefinition(
             "m3-tests",
             "finance_agent",
-            ReleaseCatalog.SCOPES,
-            ReleaseCatalog.OFFLINE,
+            ReleaseDefinition.SCOPES,
+            ReleaseDefinition.OFFLINE,
             null,
             12,
             32,
-            new BusinessCatalog.Features(
-                List.of(), BusinessCatalog.skillHash(), p.getProperty("market"))));
+            new BusinessFeatures(List.of(), PackagedSkills.hash(), p.getProperty("market"))));
     var c = db.service.claim("fresh-business-jvm", 60000);
     try (var worker =
         com.financeclaw.m1.TaskWorkerFixture.create(

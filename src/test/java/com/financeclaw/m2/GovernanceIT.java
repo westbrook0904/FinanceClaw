@@ -2,15 +2,20 @@ package com.financeclaw.m2;
 
 import static org.assertj.core.api.Assertions.*;
 
+import com.financeclaw.app.release.ReleaseService;
 import com.financeclaw.application.*;
 import com.financeclaw.bootstrap.FinanceClawApplication;
 import com.financeclaw.domain.Governance.*;
 import com.financeclaw.domain.Task.*;
+import com.financeclaw.domain.release.BusinessFeatures;
+import com.financeclaw.domain.release.ReleaseDefinition;
+import com.financeclaw.domain.release.RemoteEndpoint;
 import com.financeclaw.infrastructure.agentscope.execution.*;
+import com.financeclaw.infrastructure.agentscope.skills.PackagedSkills;
 import com.financeclaw.infrastructure.governance.GovernanceMapper;
+import com.financeclaw.infrastructure.release.BusinessConfigurationLoader;
 import com.financeclaw.infrastructure.state.RuntimeMapper;
 import com.financeclaw.support.PayloadJson;
-import com.financeclaw.tools.BusinessCatalog;
 import java.nio.file.*;
 import java.util.*;
 import java.util.concurrent.*;
@@ -56,7 +61,7 @@ class GovernanceIT {
   @Autowired GovernanceService governance;
   @Autowired GovernanceMapper db;
   @Autowired RuntimeMapper states;
-  @Autowired ReleaseCatalog releases;
+  @Autowired ReleaseService releases;
   @Autowired DataSource source;
   @Autowired TestRestTemplate http;
   @Autowired org.springframework.transaction.support.TransactionTemplate tx;
@@ -68,8 +73,15 @@ class GovernanceIT {
     sql = new JdbcTemplate(source);
     sql.execute("TRUNCATE business.conversations CASCADE");
     releases.publish(
-        new ReleaseCatalog.Release(
-            "m2-v1", "finance_agent", ReleaseCatalog.SCOPES, ReleaseCatalog.OFFLINE, null, 12, 16));
+        new ReleaseDefinition(
+            "m2-v1",
+            "finance_agent",
+            ReleaseDefinition.SCOPES,
+            ReleaseDefinition.OFFLINE,
+            null,
+            12,
+            16,
+            BusinessConfigurationLoader.defaults()));
   }
 
   Accepted submit(String message) {
@@ -268,8 +280,15 @@ class GovernanceIT {
     var t = submit("report");
     String pinned = turn(t).releaseHash();
     releases.publish(
-        new ReleaseCatalog.Release(
-            "m2-new", "finance_agent", List.of(), ReleaseCatalog.OFFLINE, null, 3, 3));
+        new ReleaseDefinition(
+            "m2-new",
+            "finance_agent",
+            List.of(),
+            ReleaseDefinition.OFFLINE,
+            null,
+            3,
+            3,
+            BusinessConfigurationLoader.defaults()));
     run(claim());
     var i = question(t);
     assertThat(i.releaseHash()).isEqualTo(pinned);
@@ -329,8 +348,15 @@ class GovernanceIT {
   @Test
   void serverIdentityIsFixedAndExecutionBudgetSharedAcrossAttempts() throws Exception {
     releases.publish(
-        new ReleaseCatalog.Release(
-            "limited", "finance_agent", ReleaseCatalog.SCOPES, ReleaseCatalog.OFFLINE, null, 1, 2));
+        new ReleaseDefinition(
+            "limited",
+            "finance_agent",
+            ReleaseDefinition.SCOPES,
+            ReleaseDefinition.OFFLINE,
+            null,
+            1,
+            2,
+            BusinessConfigurationLoader.defaults()));
     var t = submit("report");
     var c = claim();
     var identity = tasks.identity(c);
@@ -367,17 +393,17 @@ class GovernanceIT {
   void nativeMcpTransportArchivesResultAndRejectsContractDrift() throws Exception {
     try (var server = new MockMcp()) {
       releases.publish(
-          new ReleaseCatalog.Release(
+          new ReleaseDefinition(
               "mock-mcp",
               "finance_agent",
-              ReleaseCatalog.SCOPES,
-              ReleaseCatalog.OFFLINE,
+              ReleaseDefinition.SCOPES,
+              ReleaseDefinition.OFFLINE,
               null,
               12,
               16,
-              new BusinessCatalog.Features(
+              new BusinessFeatures(
                   List.of(
-                      new BusinessCatalog.Remote(
+                      new RemoteEndpoint(
                           "hotel",
                           server.url(),
                           List.of(java.net.URI.create(server.url()).getAuthority()),
@@ -386,7 +412,7 @@ class GovernanceIT {
                           List.of("local"),
                           List.of("hotels"),
                           2000)),
-                  BusinessCatalog.skillHash(),
+                  PackagedSkills.hash(),
                   "{}")));
       var t = submit("mcp");
       run(claim());

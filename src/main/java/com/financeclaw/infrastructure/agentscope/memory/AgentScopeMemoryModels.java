@@ -1,7 +1,9 @@
-package com.financeclaw.memory;
+package com.financeclaw.infrastructure.agentscope.memory;
 
-import com.financeclaw.application.ReleaseCatalog.ModelProfile;
+import com.financeclaw.app.memory.port.*;
 import com.financeclaw.domain.Memory.*;
+import com.financeclaw.domain.memory.EmbeddingVector;
+import com.financeclaw.domain.release.ModelProfile;
 import com.financeclaw.infrastructure.agentscope.execution.ModelFactory;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.embedding.EmbeddingModel;
@@ -17,11 +19,11 @@ import org.springframework.stereotype.Component;
  * Uses native structured output and embedding adapters. No business tools or history are supplied.
  */
 @Component
-public class MemoryModels {
+public class AgentScopeMemoryModels implements MemoryExtraction, MemoryEmbedding {
   private final Environment env;
-  private final com.financeclaw.infrastructure.memory.MemoryMapper db;
+  private final EmbeddingProfiles db;
 
-  public MemoryModels(Environment env, com.financeclaw.infrastructure.memory.MemoryMapper db) {
+  public AgentScopeMemoryModels(Environment env, EmbeddingProfiles db) {
     this.env = env;
     this.db = db;
   }
@@ -34,9 +36,10 @@ public class MemoryModels {
   }
 
   public Extraction extract(String source) {
+    requireNoTransaction();
     // Only this exact user command can auto-confirm a small enum preference. Other output is a
     // candidate.
-    var explicit = MemoryProcessor.explicit(source);
+    var explicit = Proposal.explicit(source);
     if (explicit != null) return new Extraction(List.of(explicit));
     if (env.getProperty("financeclaw.memory.extractor.model", "").isBlank())
       throw new IllegalStateException("Memory extraction model is not configured");
@@ -89,5 +92,23 @@ public class MemoryModels {
         .dimensions(1024)
         .executionConfig(ExecutionConfig.builder().maxAttempts(1).build())
         .build();
+  }
+
+  public EmbeddingVector embed(String text) {
+    requireNoTransaction();
+    var model = embedding();
+    if (model.getDimensions() != 1024)
+      throw new IllegalArgumentException("embedding_dimension_mismatch");
+    return EmbeddingVector.of(
+        model
+            .embed(TextBlock.builder().text(text).build())
+            .subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic())
+            .block(Duration.ofSeconds(20)));
+  }
+
+  private static void requireNoTransaction() {
+    if (org.springframework.transaction.support.TransactionSynchronizationManager
+        .isActualTransactionActive())
+      throw new IllegalStateException("Memory model work requires no ambient transaction");
   }
 }

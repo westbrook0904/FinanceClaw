@@ -3,6 +3,7 @@ package com.financeclaw.infrastructure.agentscope.capability;
 import com.financeclaw.application.*;
 import com.financeclaw.domain.Governance.*;
 import com.financeclaw.domain.Task.Claim;
+import com.financeclaw.domain.release.ReleaseDefinition;
 import com.financeclaw.support.PayloadJson;
 import com.financeclaw.tools.*;
 import io.agentscope.core.message.*;
@@ -16,7 +17,7 @@ public final class McpToolContribution implements ToolContribution, AutoCloseabl
   private final TaskService tasks;
   private final GovernanceService governance;
   private final Claim claim;
-  private final ReleaseCatalog.Release release;
+  private final ReleaseDefinition release;
   private final List<String> scopes;
   private final Toolkit toolkit;
   private final McpTools mcp = new McpTools();
@@ -25,7 +26,7 @@ public final class McpToolContribution implements ToolContribution, AutoCloseabl
       TaskService tasks,
       GovernanceService governance,
       Claim claim,
-      ReleaseCatalog.Release release,
+      ReleaseDefinition release,
       List<String> scopes,
       Toolkit toolkit) {
     this.tasks = tasks;

@@ -3,7 +3,7 @@ package com.financeclaw.m2;
 import static org.assertj.core.api.Assertions.*;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.financeclaw.application.ReleaseCatalog.ModelProfile;
+import com.financeclaw.domain.release.ModelProfile;
 import com.financeclaw.infrastructure.agentscope.IsolatedAgentFactory;
 import com.financeclaw.infrastructure.agentscope.execution.*;
 import com.financeclaw.support.PayloadJson;

@@ -2,6 +2,11 @@ package com.financeclaw.m3;
 
 import static org.assertj.core.api.Assertions.*;
 
+import com.financeclaw.app.release.ReleaseService;
+import com.financeclaw.domain.release.RemoteEndpoint;
+import com.financeclaw.infrastructure.agentscope.skills.PackagedSkills;
+import com.financeclaw.infrastructure.release.BusinessConfigurationLoader;
+import com.financeclaw.infrastructure.release.EnvironmentReleaseSource;
 import com.financeclaw.support.PayloadJson;
 import com.financeclaw.tools.*;
 import java.util.*;
@@ -11,12 +16,16 @@ import org.springframework.mock.env.MockEnvironment;
 class BusinessContractsTest {
   @Test
   void processBootstrapAndSpringDefaultsProduceTheSameRelease() {
-    assertThat(new com.financeclaw.application.ReleaseCatalog().currentHash())
+    assertThat(
+            new ReleaseService(
+                    new EnvironmentReleaseSource(
+                        new org.springframework.core.env.StandardEnvironment()))
+                .currentHash())
         .isEqualTo(
-            new com.financeclaw.application.ReleaseCatalog(new MockEnvironment()).currentHash());
+            new ReleaseService(new EnvironmentReleaseSource(new MockEnvironment())).currentHash());
     assertThatThrownBy(
             () ->
-                BusinessCatalog.load(
+                BusinessConfigurationLoader.load(
                     new MockEnvironment()
                         .withProperty("financeclaw.business.ziwei.enabled", "true")))
         .hasMessage("Ziwei requires explicit development mode pending M6d acceptance");
@@ -30,14 +39,14 @@ class BusinessContractsTest {
             .withProperty("financeclaw.business.hotel.url", "${MISSING_URL}")
             .withProperty("financeclaw.business.hotel.credential-ref", "${MISSING_SECRET}")
             .withProperty("financeclaw.business.taibu.enabled", "false");
-    assertThat(BusinessCatalog.load(env).remotes()).isEmpty();
+    assertThat(BusinessConfigurationLoader.load(env).remotes()).isEmpty();
   }
 
   @Test
   void endpointsCannotEscapeAllowlistOrDowngradeExternalTls() {
     assertThatThrownBy(
             () ->
-                new BusinessCatalog.Remote(
+                new RemoteEndpoint(
                     "hotel",
                     "https://evil.test/mcp",
                     List.of("trusted.test"),
@@ -49,7 +58,7 @@ class BusinessContractsTest {
         .isInstanceOf(IllegalArgumentException.class);
     assertThatThrownBy(
             () ->
-                new BusinessCatalog.Remote(
+                new RemoteEndpoint(
                     "hotel",
                     "http://trusted.test/mcp",
                     List.of("trusted.test"),
@@ -170,14 +179,14 @@ class BusinessContractsTest {
   @Test
   void nativeClasspathRepositoryLoadsProvenanceLicenseAndInstructions() throws Exception {
     try (var repo =
-        new io.agentscope.core.skill.repository.ClasspathSkillRepository(BusinessCatalog.SKILLS)) {
+        new io.agentscope.core.skill.repository.ClasspathSkillRepository(PackagedSkills.SKILLS)) {
       var skill = repo.getSkill("cocktail-from-what-i-have");
       assertThat(skill.getName()).isEqualTo("cocktail-from-what-i-have");
       assertThat(skill.getResources().get("SOURCE.json"))
           .contains("5a0326ce34b44c015fc26b5c28f6118092c806e4");
       assertThat(skill.getResources().get("LICENSE")).contains("MIT");
       assertThat(skill.getSkillContent()).contains("## Framework: Build From The Shelf");
-      assertThat(BusinessCatalog.skillHash()).hasSize(64);
+      assertThat(PackagedSkills.hash()).hasSize(64);
     }
   }
 }

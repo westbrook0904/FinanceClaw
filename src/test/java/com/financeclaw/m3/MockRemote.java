@@ -1,6 +1,8 @@
 package com.financeclaw.m3;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.financeclaw.domain.release.RemoteEndpoint;
+import com.financeclaw.infrastructure.release.BusinessResources;
 import com.financeclaw.support.PayloadJson;
 import com.financeclaw.tools.*;
 import com.sun.net.httpserver.HttpServer;
@@ -25,7 +27,8 @@ final class MockRemote implements AutoCloseable {
               .toList());
 
   MockRemote(String kind) throws Exception {
-    var config = PayloadJson.object(BusinessCatalog.read("classpath:contracts/" + kind + ".json"));
+    var config =
+        PayloadJson.object(BusinessResources.read("classpath:contracts/" + kind + ".json"));
     if (kind.equals("hotel"))
       for (var t : (List<?>) config.get("tools")) {
         var tool = (Map<?, ?>) t;
@@ -130,8 +133,8 @@ final class MockRemote implements AutoCloseable {
     server.start();
   }
 
-  BusinessCatalog.Remote definition(String service, boolean external, int timeout) {
-    return new BusinessCatalog.Remote(
+  RemoteEndpoint definition(String service, boolean external, int timeout) {
+    return new RemoteEndpoint(
         service,
         "http://127.0.0.1:" + server.getAddress().getPort() + "/mcp",
         List.of("127.0.0.1:" + server.getAddress().getPort()),

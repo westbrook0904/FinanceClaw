@@ -1,28 +1,36 @@
 package com.financeclaw.m4;
 
 import static org.assertj.core.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
 
+import com.financeclaw.app.memory.*;
+import com.financeclaw.app.memory.MemoryService;
+import com.financeclaw.app.memory.port.MemoryRepository;
 import com.financeclaw.application.*;
 import com.financeclaw.bootstrap.FinanceClawApplication;
 import com.financeclaw.domain.Memory.*;
 import com.financeclaw.domain.Task.*;
+import com.financeclaw.domain.memory.EmbeddingVector;
+import com.financeclaw.domain.memory.MemoryPolicy;
 import com.financeclaw.infrastructure.agentscope.execution.TaskAgentRuntime;
+import com.financeclaw.infrastructure.memory.*;
 import com.financeclaw.infrastructure.memory.MemoryMapper;
-import com.financeclaw.memory.*;
 import com.financeclaw.support.PayloadJson;
-import io.agentscope.core.embedding.EmbeddingModel;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.*;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.*;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.test.context.*;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
-import reactor.core.publisher.Mono;
 
 @org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc
 @SpringBootTest(
@@ -47,6 +55,7 @@ class MemoryIT {
   @Autowired org.springframework.context.ApplicationContext taskContext;
   @Autowired MemoryService memory;
   @Autowired MemoryMapper db;
+  @Autowired MemoryRepository repository;
   @Autowired TransactionTemplate tx;
   @Autowired TaskAgentRuntime runtime;
   @Autowired DataSource source;
@@ -91,31 +100,24 @@ class MemoryIT {
     assertThat(tasks.get(alice, t.conversationId(), t.turnId()).status()).isEqualTo("completed");
   }
 
-  static EmbeddingModel embedding() {
-    return new EmbeddingModel() {
-      public String getModelName() {
-        return "test";
-      }
-
-      public int getDimensions() {
-        return 1024;
-      }
-
-      public Mono<double[]> embed(io.agentscope.core.message.ContentBlock block) {
-        double[] v = new double[1024];
-        v[0] = 1;
-        return Mono.just(v);
-      }
-    };
+  static EmbeddingVector embedding() {
+    double[] v = new double[1024];
+    v[0] = 1;
+    return EmbeddingVector.of(v);
   }
 
-  MemoryProcessor processor(java.util.function.Function<String, Extraction> extractor) {
-    return new MemoryProcessor(db, tx, extractor, MemoryIT::embedding, "test-v1");
+  MemoryProcessingService processor(java.util.function.Function<String, Extraction> extractor) {
+    return new MemoryProcessingService(
+        repository, tx, extractor::apply, text -> embedding(), "test-v1");
   }
 
-  MemoryProcessor explicit() {
+  MemoryProcessingService explicit() {
     return processor(
-        text -> new Extraction(List.of(Objects.requireNonNull(MemoryProcessor.explicit(text)))));
+        text ->
+            new Extraction(
+                List.of(
+                    Objects.requireNonNull(
+                        com.financeclaw.domain.Memory.Proposal.explicit(text)))));
   }
 
   @Test
@@ -193,6 +195,138 @@ class MemoryIT {
     finish(t);
     assertThat(explicit().poll()).isTrue();
     return memory.list(alice).getFirst();
+  }
+
+  private Map<String, List<String>> memoryRows() {
+    var rows = new TreeMap<String, List<String>>();
+    for (String table :
+        List.of(
+            "owners", "sources", "facts", "recalls", "jobs", "projections", "audit", "operations"))
+      rows.put(
+          table,
+          sql.queryForList(
+              "SELECT row_to_json(t)::text FROM memory."
+                  + table
+                  + " t ORDER BY row_to_json(t)::text",
+              String.class));
+    return rows;
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"confirm", "reject", "forget", "rebuild"})
+  void operationReceiptFailureRollsBackEveryMemoryMutation(String operation) throws Exception {
+    preference();
+    explicit().poll();
+    var turn = submit(alice, "English");
+    finish(turn);
+    processor(
+            text ->
+                new Extraction(List.of(new Proposal("response_language", "English", "English"))))
+        .poll();
+    var candidate =
+        memory.list(alice).stream()
+            .filter(f -> f.status().equals("candidate"))
+            .findFirst()
+            .orElseThrow();
+    var failing = spy(new MyBatisMemoryRepository(db));
+    doThrow(new IllegalStateException("receipt-insert-failed"))
+        .when(failing)
+        .recordOperation(any(), anyString(), anyString(), anyString());
+    var service = new MemoryService(failing, tx, new MemoryPolicy(true, false, "test-v1"));
+    var before = memoryRows();
+    assertThatThrownBy(
+            () -> {
+              switch (operation) {
+                case "confirm" ->
+                    service.decide(
+                        alice, candidate.id(), candidate.revision(), true, "rollback-confirm");
+                case "reject" ->
+                    service.decide(
+                        alice, candidate.id(), candidate.revision(), false, "rollback-reject");
+                case "forget" -> service.forget(alice, 1, "rollback-forget");
+                case "rebuild" -> service.rebuild(alice, "rollback-rebuild");
+                default -> throw new AssertionError(operation);
+              }
+            })
+        .hasMessage("receipt-insert-failed");
+    assertThat(memoryRows()).isEqualTo(before);
+  }
+
+  @Test
+  void persistedPreRefactorReceiptsReplayBeforeCurrentStateChecks() throws Exception {
+    com.fasterxml.jackson.databind.JsonNode hashes;
+    try (var in = getClass().getResourceAsStream("/architecture/memory-release-baseline.json")) {
+      hashes =
+          new com.fasterxml.jackson.databind.ObjectMapper().readTree(in).path("operation_hashes");
+    }
+    memory.privacy(alice);
+    var results = Map.of("confirm", "active", "reject", "rejected", "forget", "4", "rebuild", "7");
+    results.forEach(
+        (key, result) -> db.recordOperation(alice, key, hashes.path(key).asText(), result));
+    var service = new MemoryService(repository, tx, new MemoryPolicy(true, false, "embedding-v1"));
+    var before = memoryRows();
+    assertThat(service.decide(alice, "fact", 2, true, "confirm")).isEqualTo("active");
+    assertThat(service.decide(alice, "fact", 2, false, "reject")).isEqualTo("rejected");
+    assertThat(service.forget(alice, 3, "forget")).isEqualTo(4);
+    assertThat(service.rebuild(alice, "rebuild")).isEqualTo(7);
+    assertThatThrownBy(() -> service.decide(alice, "fact", 2, false, "confirm"))
+        .hasMessage("idempotency_conflict");
+    assertThat(memoryRows()).isEqualTo(before);
+  }
+
+  @Test
+  void searchUsesModelOutsideTransactionAndDiscardsResultsAfterForget() throws Exception {
+    var fact = preference();
+    explicit().poll();
+    var forgetDuringEmbedding = new AtomicBoolean(false);
+    var search =
+        new MemorySearchService(
+            repository,
+            text -> {
+              assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
+              if (forgetDuringEmbedding.get()) memory.forget(alice, 1, "search-forget");
+              return embedding();
+            },
+            tx,
+            new MemoryPolicy(true, true, "test-v1"));
+    assertThat(search.search(alice, "language")).extracting(Fact::id).containsExactly(fact.id());
+    assertThat(search.search(bob, "language")).isEmpty();
+    forgetDuringEmbedding.set(true);
+    assertThat(search.search(alice, "language")).isEmpty();
+    assertThat(memory.privacy(alice).epoch()).isEqualTo(2);
+  }
+
+  @Test
+  void ambientTransactionsCannotEncloseMemoryModelWork() throws Exception {
+    var turn = submit(alice, "我住在上海");
+    finish(turn);
+    var calls = new AtomicInteger();
+    var processing =
+        processor(
+            text -> {
+              calls.incrementAndGet();
+              return new Extraction(List.of());
+            });
+    var job = processing.claim();
+    var search =
+        new MemorySearchService(
+            repository,
+            text -> {
+              calls.incrementAndGet();
+              return embedding();
+            },
+            tx,
+            new MemoryPolicy(true, true, "test-v1"));
+    var before = memoryRows();
+    assertThatThrownBy(() -> tx.executeWithoutResult(s -> processing.process(job)))
+        .hasMessage("Memory model work requires no ambient transaction");
+    assertThatThrownBy(() -> tx.executeWithoutResult(s -> search.search(alice, "city")))
+        .hasMessage("Memory model work requires no ambient transaction");
+    assertThat(calls).hasValue(0);
+    assertThat(memoryRows()).isEqualTo(before);
+    processing.process(job);
+    assertThat(calls).hasValue(1);
+    assertThat(db.job(job.id()).status()).isEqualTo("done");
   }
 
   @Test
@@ -322,26 +456,13 @@ class MemoryIT {
   void failedIndexCannotRollBackFactsAndCanRetryIndependently() throws Exception {
     var f = preference();
     var broken =
-        new MemoryProcessor(
-            db,
+        new MemoryProcessingService(
+            repository,
             tx,
             text -> {
               throw new AssertionError();
             },
-            () ->
-                new EmbeddingModel() {
-                  public String getModelName() {
-                    return "bad";
-                  }
-
-                  public int getDimensions() {
-                    return 1024;
-                  }
-
-                  public Mono<double[]> embed(io.agentscope.core.message.ContentBlock b) {
-                    return Mono.just(new double[] {1});
-                  }
-                },
+            text -> EmbeddingVector.of(new double[] {1}),
             "test-v1");
     broken.poll();
     assertThat(db.fact(f.id()).status()).isEqualTo("active");
@@ -388,31 +509,21 @@ class MemoryIT {
     var entered = new CountDownLatch(1);
     var release = new CountDownLatch(1);
     var worker =
-        new MemoryProcessor(
-            db,
+        new MemoryProcessingService(
+            repository,
             tx,
             text -> null,
-            () ->
-                new EmbeddingModel() {
-                  public String getModelName() {
-                    return "race";
-                  }
-
-                  public int getDimensions() {
-                    return 1024;
-                  }
-
-                  public Mono<double[]> embed(io.agentscope.core.message.ContentBlock b) {
-                    return Mono.fromCallable(
-                        () -> {
-                          entered.countDown();
-                          release.await(10, TimeUnit.SECONDS);
-                          double[] v = new double[1024];
-                          v[0] = 1;
-                          return v;
-                        });
-                  }
-                },
+            text -> {
+              entered.countDown();
+              try {
+                if (!release.await(10, TimeUnit.SECONDS))
+                  throw new IllegalStateException("Embedding wait timed out");
+              } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException(e);
+              }
+              return embedding();
+            },
             "test-v1");
     try (var pool = Executors.newVirtualThreadPerTaskExecutor()) {
       var future = pool.submit(worker::poll);
@@ -445,8 +556,7 @@ class MemoryIT {
   void vectorSearchChecksOwnerEpochRevisionAndPinnedModel() throws Exception {
     var f = preference();
     explicit().poll();
-    String vector =
-        MemoryProcessor.vector(embedding().embed(null).block()).replace('{', '[').replace('}', ']');
+    String vector = MemoryVectorCodec.query(embedding());
     assertThat(db.search(alice, "test-v1", vector)).extracting(Fact::id).containsExactly(f.id());
     assertThat(db.search(bob, "test-v1", vector)).isEmpty();
     assertThat(db.search(alice, "other-model", vector)).isEmpty();

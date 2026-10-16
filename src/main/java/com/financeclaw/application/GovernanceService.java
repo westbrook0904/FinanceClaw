@@ -5,6 +5,7 @@ import com.financeclaw.app.interaction.AnswerInteractionService;
 import com.financeclaw.domain.ExecutionScope;
 import com.financeclaw.domain.Governance.*;
 import com.financeclaw.domain.Task.*;
+import com.financeclaw.domain.release.ReleaseDefinition;
 import com.financeclaw.infrastructure.governance.GovernanceMapper;
 import com.financeclaw.infrastructure.task.TaskMapper;
 import com.financeclaw.support.PayloadDigest;
@@ -48,7 +49,7 @@ public class GovernanceService {
       Owner owner, String conversation, String key, long revision, List<String> scopes) {
     new com.financeclaw.domain.IdempotencyKey(key);
     tasks.owned(owner, conversation);
-    if (scopes == null || !ReleaseCatalog.SCOPES.containsAll(scopes))
+    if (scopes == null || !ReleaseDefinition.SCOPES.containsAll(scopes))
       throw new Problem(422, "invalid_scopes");
     String json = PayloadJson.canonical(scopes.stream().distinct().sorted().toList());
     String hash = ExecutionScope.hash(List.of(Long.toString(revision), json));

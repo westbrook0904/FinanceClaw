@@ -1,41 +1,38 @@
-package com.financeclaw.application;
+package com.financeclaw.app.memory;
 
+import com.financeclaw.app.execution.port.ExecutionMemory;
+import com.financeclaw.app.memory.port.MemoryRepository;
 import com.financeclaw.domain.ExecutionScope;
 import com.financeclaw.domain.Governance.Blocked;
 import com.financeclaw.domain.Memory.*;
 import com.financeclaw.domain.Task.*;
-import com.financeclaw.infrastructure.memory.MemoryMapper;
+import com.financeclaw.domain.memory.MemoryPolicy;
 import com.financeclaw.support.PayloadJson;
 import java.util.*;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /** SQL owns facts and privacy; SDK state and the vector index are never memory evidence. */
 @Service
-public class MemoryService {
-  private final MemoryMapper db;
+public class MemoryService implements ExecutionMemory {
+  private final MemoryRepository db;
   private final TransactionTemplate tx;
-  private final boolean enabled;
+  private final MemoryPolicy settings;
   private final String modelRevision;
 
-  public MemoryService(
-      MemoryMapper db,
-      TransactionTemplate tx,
-      @Value("${financeclaw.memory.enabled:false}") boolean enabled,
-      @Value("${financeclaw.memory.embedding.revision:disabled}") String modelRevision) {
+  public MemoryService(MemoryRepository db, TransactionTemplate tx, MemoryPolicy settings) {
     this.db = db;
     this.tx = tx;
-    this.enabled = enabled;
-    this.modelRevision = modelRevision;
+    this.settings = settings;
+    this.modelRevision = settings.embeddingRevision();
   }
 
   public boolean enabled() {
-    return enabled;
+    return settings.enabled();
   }
 
   private void requireEnabled() {
-    if (!enabled) throw new Problem(503, "memory_disabled");
+    settings.requireEnabled();
   }
 
   private Privacy owner(Owner o) {
@@ -45,10 +42,10 @@ public class MemoryService {
 
   /** Invoked inside the same admission transaction as the trusted USER journal. */
   public void admit(Turn turn) {
-    if (!enabled) return;
+    if (!settings.enabled()) return;
     Owner o = new Owner(turn.tenant(), turn.subject());
     Privacy p = owner(o);
-    if (p.purgePending()) throw new Problem(409, "purge_pending");
+    p.requireAvailable();
     db.source(
         new Source(turn.id(), o.tenant(), o.subject(), p.epoch(), turn.message(), "admitted"));
     if (!p.purgePending()) db.freeze(turn.id(), o, p.epoch());
@@ -56,32 +53,31 @@ public class MemoryService {
 
   /** Invoked inside the terminal business transaction, including receipt recovery. */
   public void completed(String turn) {
-    if (enabled && db.ready(turn) == 1) db.extractJob(turn);
+    if (settings.enabled() && db.ready(turn) == 1) db.extractJob(turn);
   }
 
   public void check(Turn turn) {
-    if (!enabled) return;
+    if (!settings.enabled()) return;
     tx.executeWithoutResult(
         s -> {
           var p = owner(new Owner(turn.tenant(), turn.subject()));
           var source = db.sourceById(turn.id());
-          if (source == null || source.epoch() != p.epoch() || p.purgePending())
-            throw new Blocked("memory_privacy_changed");
+          if (!p.permits(source)) throw new Blocked("memory_privacy_changed");
         });
   }
 
   public boolean sameEpoch(Turn turn) {
-    if (!enabled) return true;
+    if (!settings.enabled()) return true;
     return tx.execute(
         s -> {
           var p = owner(new Owner(turn.tenant(), turn.subject()));
           var source = db.sourceById(turn.id());
-          return source != null && source.epoch() == p.epoch() && !p.purgePending();
+          return p.permits(source);
         });
   }
 
   public String context(Turn turn) {
-    if (!enabled) return "";
+    if (!settings.enabled()) return "";
     return tx.execute(
         s -> {
           check(turn);
@@ -131,12 +127,8 @@ public class MemoryService {
           var replay = replay(o, key, hash);
           if (replay != null) return replay;
           var f = db.fact(id);
-          if (f == null || !f.tenant().equals(o.tenant()) || !f.subject().equals(o.subject()))
-            throw new Problem(404, "not_found");
-          if (p.purgePending()
-              || f.epoch() != p.epoch()
-              || f.revision() != revision
-              || !f.status().equals("candidate")) throw new Problem(409, "stale_memory_candidate");
+          if (f == null) throw new Problem(404, "not_found");
+          f.requireCandidate(o, p, revision);
           if (accept) db.supersede(f);
           db.status(id, accept ? "active" : "rejected");
           if (accept) db.indexJob(id, modelRevision);
@@ -156,7 +148,7 @@ public class MemoryService {
           var p = owner(o);
           var replay = replay(o, key, hash);
           if (replay != null) return Long.parseLong(replay);
-          if (p.epoch() != expectedEpoch) throw new Problem(409, "memory_epoch_conflict");
+          p.requireEpoch(expectedEpoch);
           db.forget(o);
           db.eraseSources(o);
           db.eraseFacts(o);
@@ -178,7 +170,7 @@ public class MemoryService {
           var p = owner(o);
           var replay = replay(o, key, hash);
           if (replay != null) return Integer.parseInt(replay);
-          if (p.purgePending()) throw new Problem(409, "purge_pending");
+          p.requireAvailable();
           var active = db.active(o);
           for (var f : active) db.indexJob(f.id(), modelRevision);
           db.audit(o, p.epoch(), "rebuild", modelRevision);
@@ -190,7 +182,6 @@ public class MemoryService {
   private String replay(Owner o, String key, String hash) {
     var old = db.operation(o, key);
     if (old == null) return null;
-    if (!old.requestHash().equals(hash)) throw new Problem(409, "idempotency_conflict");
-    return old.result();
+    return old.replay(hash);
   }
 }

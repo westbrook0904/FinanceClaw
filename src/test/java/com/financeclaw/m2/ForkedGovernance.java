@@ -1,5 +1,6 @@
 package com.financeclaw.m2;
 
+import com.financeclaw.infrastructure.release.BusinessConfigurationLoader;
 import com.financeclaw.infrastructure.state.RuntimeMapper;
 import com.financeclaw.m1.LifecycleDatabase;
 import java.nio.file.*;
@@ -17,14 +18,15 @@ public final class ForkedGovernance {
             new DriverManagerDataSource(
                 p.getProperty("url"), p.getProperty("user"), p.getProperty("password")));
     database.releases.publish(
-        new com.financeclaw.application.ReleaseCatalog.Release(
+        new com.financeclaw.domain.release.ReleaseDefinition(
             "m2-v1",
             "finance_agent",
-            com.financeclaw.application.ReleaseCatalog.SCOPES,
-            com.financeclaw.application.ReleaseCatalog.OFFLINE,
+            com.financeclaw.domain.release.ReleaseDefinition.SCOPES,
+            com.financeclaw.domain.release.ReleaseDefinition.OFFLINE,
             null,
             12,
-            16));
+            16,
+            BusinessConfigurationLoader.defaults()));
     var c = database.service.claim("fresh-jvm", 60000);
     try (var worker =
         com.financeclaw.m1.TaskWorkerFixture.create(

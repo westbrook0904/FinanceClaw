@@ -1,6 +1,6 @@
 # R5a：组合复盘与市场研究分层
 
-实施日期：2026-10-16。承接 [R4](r4-implementation.md)，对应 [整改方案](agentscope-cola-remediation.md) 的 R5 第一条业务切片。**本批已完成，764 项完整回归通过**（576 项单元/HTTP、188 项集成），零失败、零错误、零跳过；紫微 I/O、记忆分层和发布目录拆分仍属于 R5 后续工作。
+实施日期：2026-10-16。承接 [R4](r4-implementation.md)，对应 [整改方案](agentscope-cola-remediation.md) 的 R5 第一条业务切片。**本批已完成，764 项完整回归通过**（576 项单元/HTTP、188 项集成），零失败、零错误、零跳过。本文保留 R5a 完成时的结果；该批与 M5e、R0–R4 已保存为本地检查点 `bb58ea2`。后续紫微拆分见 [R5b](r5b-implementation.md)，记忆、发布配置与最新回归见 [R5c](r5c-implementation.md)。
 
 ## 当前调用路径
 
@@ -22,7 +22,7 @@ flowchart LR
     Research --> Native[原生 ReAct / state / interrupt]
 ```
 
-[BusinessCapabilities](../../src/main/java/com/financeclaw/infrastructure/agentscope/capability/BusinessCapabilities.java) 负责组合已迁移能力，注入正式应用用例；它不从 TaskService 取得 Mapper 或新用例。原 `tools.PortfolioReview`、`tools.MarketResearch` 和 `tools.MarketData` 已删除，只有一条业务执行路径。旧 TaskService 中已没有步骤读取方法；紫微工具仍使用的本地步骤委托留待后续迁移。
+[BusinessCapabilities](../../src/main/java/com/financeclaw/infrastructure/agentscope/capability/BusinessCapabilities.java) 负责组合已迁移能力，注入正式应用用例；它不从 TaskService 取得 Mapper 或新用例。原 `tools.PortfolioReview`、`tools.MarketResearch` 和 `tools.MarketData` 已删除，只有一条业务执行路径。R5a 完成时，旧 TaskService 中已没有步骤读取方法；当时紫微工具使用的本地步骤委托已在 R5b 移除。
 
 | 职责 | 当前入口 |
 | --- | --- |
@@ -101,10 +101,10 @@ python3 scripts/check-delivery.py
 
 初次编译补齐了一处独立探针构造参数；新增兼容断言修正了 record 字段顺序与 SDK 多态对象在嵌套 Map 中的序列化上下文，固定样本没有重新生成。Unicode 名称长度已按原生 Schema 的码点规则处理，避免领域校验额外拒绝原本合法的输入。
 
-取消测试模拟根执行器取消子订阅，验证原生模型收到取消且无成功回执；它不单独证明真实远端供应商已停止计费。本批为本地自动化验收，没有运行真实模型/MCP/飞书租户、远程 CI、生产切流或 M5e Compose 恢复演练。修改保留在工作区，本批没有新增 commit 或推送。
+取消测试模拟根执行器取消子订阅，验证原生模型收到取消且无成功回执；它不单独证明真实远端供应商已停止计费。本批为本地自动化验收，没有运行真实模型/MCP/飞书租户、远程 CI、生产切流或 M5e Compose 恢复演练。R5a 验收当时修改保留在工作区；后续已保存为本地检查点 `bb58ea2`，未推送。
 
-架构门禁新增已迁移业务适配不得依赖旧 TaskService/业务工具包，参与包循环的具体类依赖 **30 → 22**，没有新增；允许列表在完整验证前收紧。仍存在发布配置与紫微工具/资源之间的存量循环，不能称为整个工程无环。
+架构门禁新增已迁移业务适配不得依赖旧 TaskService/业务工具包，参与包循环的具体类依赖 **30 → 22**，没有新增；允许列表在完整验证前收紧。这是 R5a 当时的结果；剩余 22 条循环依赖随后已在 R5b 消除。
 
-## R5 后续
+## R5a 完成时的后续计划
 
 下一条切片为紫微输入、资源加载、结果投影与纯算法边界，保持全部冻结算法样本；随后分离记忆事实/隐私规则和模型适配，并拆发布配置，继续收缩 TaskService。角色装配及可选 Maven 模块化留到 R6；真实供应商验收仍按迁移清单单独完成。

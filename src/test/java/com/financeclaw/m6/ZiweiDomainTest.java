@@ -3,11 +3,17 @@ package com.financeclaw.m6;
 import static org.assertj.core.api.Assertions.*;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.financeclaw.app.release.ReleaseService;
+import com.financeclaw.app.ziwei.ZiweiIdentity;
 import com.financeclaw.application.*;
 import com.financeclaw.domain.Task.Owner;
+import com.financeclaw.domain.release.ZiweiPolicy;
+import com.financeclaw.infrastructure.agentscope.capability.AgentScopeZiweiInputs;
+import com.financeclaw.infrastructure.release.BusinessConfigurationLoader;
+import com.financeclaw.infrastructure.release.EnvironmentReleaseSource;
+import com.financeclaw.infrastructure.ziwei.ZiweiSchemas;
 import com.financeclaw.support.PayloadDigest;
 import com.financeclaw.support.PayloadJson;
-import com.financeclaw.tools.BusinessCatalog;
 import com.financeclaw.ziwei.*;
 import java.time.*;
 import java.util.*;
@@ -17,6 +23,7 @@ import org.junit.jupiter.params.provider.*;
 import org.springframework.mock.env.MockEnvironment;
 
 class ZiweiDomainTest {
+  static final AgentScopeZiweiInputs INPUTS = new AgentScopeZiweiInputs();
   static final String KEY = "synthetic-m6c-key-only-01234567890123456789";
   static final ZiweiPolicy POLICY =
       ZiweiPolicy.development("ZIWEI_HMAC_KEY", "test-v1", "Asia/Shanghai");
@@ -45,7 +52,7 @@ class ZiweiDomainTest {
   @Test
   void partialTargetAndTimeAreClarifiedTogetherAndSchemaCannotBeMutated() {
     var review =
-        ZiweiInputs.inspect(
+        INPUTS.inspect(
             "ziwei_daily_chart",
             Map.of(
                 "birth",
@@ -56,16 +63,16 @@ class ZiweiDomainTest {
     assertThat(review.issues())
         .extracting(ZiweiInputs.Issue::field)
         .contains("birth.time.clock", "birth.time.end", "date_range.end");
-    var schema = ZiweiInputs.schema("ziwei_natal_chart");
+    var schema = ZiweiSchemas.schema("ziwei_natal_chart");
     assertThatThrownBy(() -> ((Map<?, ?>) schema.get("$defs")).clear())
         .isInstanceOf(UnsupportedOperationException.class);
     var original = input();
     var corrected =
-        ZiweiInputs.corrected(
+        INPUTS.corrected(
             "ziwei_natal_chart",
             original,
             Map.of("birth", Map.of("time", Map.of("kind", "clock", "clock", "03:30"))));
-    assertThat(ZiweiInputs.inspect("ziwei_natal_chart", corrected, CLOCK).complete()).isTrue();
+    assertThat(INPUTS.inspect("ziwei_natal_chart", corrected, CLOCK).complete()).isTrue();
   }
 
   @Test
@@ -79,7 +86,7 @@ class ZiweiDomainTest {
     for (var level : ZiweiDates.Level.values()) {
       var old = new TreeSet<String>();
       schemas.get(level.toolName()).get("properties").fieldNames().forEachRemaining(old::add);
-      assertThat(((Map<?, ?>) ZiweiInputs.schema(level.toolName()).get("properties")).keySet())
+      assertThat(((Map<?, ?>) ZiweiSchemas.schema(level.toolName()).get("properties")).keySet())
           .isEqualTo(old);
     }
   }
@@ -87,7 +94,7 @@ class ZiweiDomainTest {
   @Test
   void aggregatesMissingBirthAndTargetWithoutInventingDefaults() {
     var review =
-        ZiweiInputs.inspect(
+        INPUTS.inspect(
             "ziwei_monthly_chart", Map.of("birth", Map.of("date", Map.of("year", 1990))), CLOCK);
     assertThat(review.complete()).isFalse();
     assertThat(review.issues())
@@ -118,7 +125,7 @@ class ZiweiDomainTest {
   void rejectsModelIdentityRulesAndGenericTargets(String field) {
     var input = input();
     input.put(field, "untrusted");
-    assertThat(ZiweiInputs.inspect("ziwei_natal_chart", input, CLOCK).issues())
+    assertThat(INPUTS.inspect("ziwei_natal_chart", input, CLOCK).issues())
         .contains(new ZiweiInputs.Issue("arguments", "ZIWEI_TOOL_INPUT_INVALID"));
   }
 
@@ -127,7 +134,7 @@ class ZiweiDomainTest {
   void semanticBirthErrorsAreSafeClarifications(Map<String, Object> change, String code) {
     var birth = birth();
     birth.putAll(change);
-    var result = ZiweiInputs.inspect("ziwei_natal_chart", Map.of("birth", birth), CLOCK);
+    var result = INPUTS.inspect("ziwei_natal_chart", Map.of("birth", birth), CLOCK);
     assertThat(result.complete()).isFalse();
     assertThat(result.issues()).extracting(ZiweiInputs.Issue::code).contains(code);
     assertThat(result.question()).doesNotContain("private-city");
@@ -161,18 +168,20 @@ class ZiweiDomainTest {
     birth.put("place", Map.of("name", "New York", "timezone", "America/New_York"));
     birth.put("date", Map.of("year", 2024, "month", 11, "day", 3));
     birth.put("time", Map.of("kind", "clock", "clock", "01:30"));
-    assertThat(ZiweiInputs.inspect("ziwei_natal_chart", Map.of("birth", birth), CLOCK).complete())
+    assertThat(INPUTS.inspect("ziwei_natal_chart", Map.of("birth", birth), CLOCK).complete())
         .isFalse();
     birth.put("time", Map.of("kind", "clock", "clock", "01:30", "fold", 1));
     assertThat(
-            ZiweiInputs.inspect("ziwei_natal_chart", Map.of("birth", birth), CLOCK)
+            INPUTS
+                .inspect("ziwei_natal_chart", Map.of("birth", birth), CLOCK)
                 .value()
                 .time()
                 .utcInstant())
         .isEqualTo(Instant.parse("2024-11-03T06:30:00Z"));
     birth.put("time", Map.of("kind", "range", "clock", "03:01", "end", "04:30"));
     assertThat(
-            ZiweiInputs.inspect("ziwei_natal_chart", Map.of("birth", birth), CLOCK)
+            INPUTS
+                .inspect("ziwei_natal_chart", Map.of("birth", birth), CLOCK)
                 .value()
                 .time()
                 .utcInstant())
@@ -184,31 +193,35 @@ class ZiweiDomainTest {
     var input = input();
     input.put("year_offset", 0);
     var corrected =
-        ZiweiInputs.corrected(
+        INPUTS.corrected(
             "ziwei_yearly_chart",
             input,
             Map.of("year", 2027, "birth", Map.of("sex_for_chart", "female")));
     assertThat(corrected).doesNotContainKey("year_offset").containsEntry("year", 2027);
     assertThat((Map<?, ?>) corrected.get("birth")).hasSize(birth().size());
-    assertThat(ZiweiInputs.inspect("ziwei_yearly_chart", corrected, CLOCK).complete()).isTrue();
+    assertThat(INPUTS.inspect("ziwei_yearly_chart", corrected, CLOCK).complete()).isTrue();
     assertThatThrownBy(
-            () -> ZiweiInputs.corrected("ziwei_yearly_chart", input, Map.of("mode", "chart_only")))
+            () -> INPUTS.corrected("ziwei_yearly_chart", input, Map.of("mode", "chart_only")))
         .isInstanceOf(IllegalArgumentException.class);
   }
 
   @Test
   void hmacBindsOwnerRulesKeyAndTimePrecisionWithoutRawIdentityInRelease() {
-    var normalized = ZiweiInputs.inspect("ziwei_natal_chart", input(), CLOCK).value();
-    String first = normalized.fingerprint(new Owner("one", "user"), POLICY, ZiweiPolicy.key(KEY));
+    var normalized = INPUTS.inspect("ziwei_natal_chart", input(), CLOCK).value();
+    String first =
+        ZiweiIdentity.fingerprint(
+            normalized, new Owner("one", "user"), POLICY, ZiweiPolicy.key(KEY));
     assertThat(first)
         .hasSize(64)
         .isNotEqualTo(
-            normalized.fingerprint(new Owner("two", "user"), POLICY, ZiweiPolicy.key(KEY)))
+            ZiweiIdentity.fingerprint(
+                normalized, new Owner("two", "user"), POLICY, ZiweiPolicy.key(KEY)))
         .isNotEqualTo(
-            normalized.fingerprint(new Owner("one", "other"), POLICY, ZiweiPolicy.key(KEY)))
+            ZiweiIdentity.fingerprint(
+                normalized, new Owner("one", "other"), POLICY, ZiweiPolicy.key(KEY)))
         .isNotEqualTo(
-            normalized.fingerprint(
-                new Owner("one", "user"), POLICY, ZiweiPolicy.key(KEY + "rotate")));
+            ZiweiIdentity.fingerprint(
+                normalized, new Owner("one", "user"), POLICY, ZiweiPolicy.key(KEY + "rotate")));
     var env =
         new MockEnvironment()
             .withProperty("financeclaw.business.ziwei.enabled", "true")
@@ -217,16 +230,17 @@ class ZiweiDomainTest {
             .withProperty("financeclaw.business.ziwei.key-version", "test-v1")
             .withProperty("financeclaw.business.ziwei.query-timezone", "Asia/Shanghai")
             .withProperty("ZIWEI_HMAC_KEY", KEY);
-    var catalog = new ReleaseCatalog(env);
+    var catalog = new ReleaseService(new EnvironmentReleaseSource(env));
     String hash = catalog.currentHash();
     assertThat(PayloadJson.canonical(catalog.require(hash)))
         .doesNotContain(KEY)
         .contains(POLICY.convention(), "2026b", POLICY.schemaHash());
     env.setProperty("financeclaw.business.ziwei.key-version", "test-v2");
-    assertThat(new ReleaseCatalog(env).currentHash()).isNotEqualTo(hash);
+    assertThat(new ReleaseService(new EnvironmentReleaseSource(env)).currentHash())
+        .isNotEqualTo(hash);
     assertThatThrownBy(() -> ZiweiPolicy.key("short")).hasMessage("ziwei_key_unavailable");
     assertThat(
-            BusinessCatalog.load(
+            BusinessConfigurationLoader.load(
                     new MockEnvironment()
                         .withProperty("financeclaw.business.ziwei.key-ref", "${MISSING}"))
                 .ziwei())
@@ -251,7 +265,7 @@ class ZiweiDomainTest {
                     input.put(
                         "date_range",
                         Map.of("start", c.get("start").asText(), "end", c.get("end").asText()));
-                  var review = ZiweiInputs.inspect(level.toolName(), input, CLOCK);
+                  var review = INPUTS.inspect(level.toolName(), input, CLOCK);
                   assertThat(review.complete()).isTrue();
                   if (c.has("error")) {
                     assertThatThrownBy(
@@ -288,9 +302,9 @@ class ZiweiDomainTest {
   @Test
   void budgetsFailWithoutTruncatingAndFocusDoesNotChangeFullChart() {
     var input = input();
-    var full = ZiweiInputs.inspect("ziwei_natal_chart", input, CLOCK).value();
+    var full = INPUTS.inspect("ziwei_natal_chart", input, CLOCK).value();
     input.put("focus", "career");
-    var focused = ZiweiInputs.inspect("ziwei_natal_chart", input, CLOCK).value();
+    var focused = INPUTS.inspect("ziwei_natal_chart", input, CLOCK).value();
     var a = ZiweiCalculation.calculate(full, ZiweiDates.Level.NATAL, "same", POLICY);
     var b = ZiweiCalculation.calculate(focused, ZiweiDates.Level.NATAL, "same", POLICY);
     assertThat(a.artifact()).isEqualTo(b.artifact());
@@ -342,7 +356,7 @@ class ZiweiDomainTest {
             14000,
             2097152);
     input.put("year", 2026);
-    var year = ZiweiInputs.inspect("ziwei_yearly_chart", input, CLOCK).value();
+    var year = INPUTS.inspect("ziwei_yearly_chart", input, CLOCK).value();
     assertThatThrownBy(
             () -> ZiweiCalculation.calculate(year, ZiweiDates.Level.YEARLY, "same", single))
         .hasMessageStartingWith("ZIWEI_RANGE_LIMIT");

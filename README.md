@@ -12,6 +12,8 @@ M5c 已本地提交 `3736aac`。**[M5d 只读预检报告](docs/migration/m5d-pr
 
 M5d 已本地提交 `993e7ac`，未推送。**[M5e 旧备份隐私核对](docs/migration/m5e-restore-privacy.md)** 检查恢复库是否遗漏备份之后的遗忘事实，并在隔离容器中演练拦截旧备份；真实环境交付和线上切换仍待验收。
 
+M5e 与 R0–R5a 已保存为本地检查点 `bb58ea2`。后续 [R5b 紫微边界拆分](docs/architecture/r5b-implementation.md) 和 [R5c 记忆与发布分层](docs/architecture/r5c-implementation.md) 已完成，最新完整回归 824 项通过，主业务包循环依赖保持为零；R5b/R5c 改动尚未提交。下一阶段为 R6 角色装配。
+
 ## 固定工具链
 
 | 组件 | 版本 |
@@ -91,6 +93,8 @@ scripts/mvn.sh spring-boot:run
 | [R3 交互与工具边界](docs/architecture/r3-implementation.md) | 回答用例、领域绑定、统一 SDK 快照、业务工具贡献与事务回归 |
 | [R4 任务与执行分层](docs/architecture/r4-implementation.md) | 任务用例、原生执行端口、Spring 原子性、恢复与取消边界 |
 | [R5a 组合与市场研究](docs/architecture/r5a-implementation.md) | 领域规则、业务步骤、原生驱动分离；发布幂等、子预算与取消回归 |
+| [R5b 紫微执行与 I/O](docs/architecture/r5b-implementation.md) | 输入、资源、密钥、计算与原生工具分离；旧回执、事务回滚和零循环门禁 |
+| [R5c 记忆与发布分层](docs/architecture/r5c-implementation.md) | 记忆领域规则、模型/持久化端口、不可变发布值与凭据分离；真实回滚、旧回执和隐私竞态验证 |
 | [Spring 事务与组件复审](docs/architecture/spring-transactions-component-review.md) | Spring 统一事务、SDK 主动提交实验证据、已接入 ArchUnit 与组件复用清单 |
 | [M1 使用与验证](docs/migration/m1-validation.md) | API 示例、恢复边界、配置及验收证据 |
 | [M0 验证记录](docs/migration/m0-validation.md) | 实际版本、测试证据、状态保存边界与继续实施决策 |
@@ -100,6 +104,7 @@ scripts/mvn.sh spring-boot:run
 | [状态适配](src/main/java/com/financeclaw/infrastructure/state) | AgentState 版本 CAS、身份隔离与墓碑 |
 | [MyBatis 状态 Mapper](src/main/java/com/financeclaw/infrastructure/state/RuntimeMapper.java) | AgentState SQL；连接与事务由 Spring/MyBatis-Spring 管理 |
 | [任务用例](src/main/java/com/financeclaw/app/task) / [执行用例](src/main/java/com/financeclaw/app/execution) | 受理、查询、取消、租约、完成回执、恢复与 Outbox |
+| [记忆用例](src/main/java/com/financeclaw/app/memory) / [发布用例](src/main/java/com/financeclaw/app/release) | 事实与隐私治理、事务外模型调用、固定发布版本与配置适配 |
 | [后台执行](src/main/java/com/financeclaw/worker/TaskWorker.java) | 有界调度、定向中断和恢复轮询 |
 | [M1 集成测试](src/test/java/com/financeclaw/m1/TaskLifecycleIT.java) | API、真实数据库竞争、独立 JVM 崩溃恢复 |
 | [M0 实验](src/test/java/com/financeclaw/m0) | SDK、PostgreSQL、子进程、故障及隔离场景 |

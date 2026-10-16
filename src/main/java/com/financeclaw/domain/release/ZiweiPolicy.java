@@ -1,4 +1,4 @@
-package com.financeclaw.ziwei;
+package com.financeclaw.domain.release;
 
 import com.financeclaw.domain.Governance.Blocked;
 import java.nio.charset.StandardCharsets;
@@ -17,14 +17,20 @@ public record ZiweiPolicy(
     int maxSegments,
     int projectionBytes,
     int artifactBytes) {
+  public static final String CHART_ENGINE = "financeclaw-java/x-iztro-fixed-0.4.0/1";
+  public static final String CALENDAR_RULES = "x-iztro-0.4.0-calendar-compat/1";
+  public static final String CALENDAR_DEPENDENCY = "cn.6tail:lunar:1.7.7";
+  public static final String INPUT_SCHEMA_HASH =
+      "d1995d5fd1ee7af28111d04a4e818696f023679e43681180ce92d530817d2ef4";
+
   public static final String CONVENTION = "financeclaw-ziwei-java-civil@1.0.0";
 
   public ZiweiPolicy {
     if (!CONVENTION.equals(convention)
-        || !ZiweiChartEngine.ENGINE.equals(engine)
-        || !ZiweiCalendar.RULES.equals(calendar)
+        || !CHART_ENGINE.equals(engine)
+        || !CALENDAR_RULES.equals(calendar)
         || !"2026b".equals(tzdb)
-        || !ZiweiInputs.schemaHash().equals(schemaHash)
+        || !INPUT_SCHEMA_HASH.equals(schemaHash)
         || keyVersion == null
         || !keyVersion.matches("[A-Za-z0-9._-]{1,64}")
         || keyRef == null
@@ -43,10 +49,10 @@ public record ZiweiPolicy(
   public static ZiweiPolicy development(String keyRef, String keyVersion, String timezone) {
     return new ZiweiPolicy(
         CONVENTION,
-        ZiweiChartEngine.ENGINE,
-        ZiweiCalendar.RULES,
+        CHART_ENGINE,
+        CALENDAR_RULES,
         "2026b",
-        ZiweiInputs.schemaHash(),
+        INPUT_SCHEMA_HASH,
         keyVersion,
         keyRef,
         timezone,
@@ -56,7 +62,7 @@ public record ZiweiPolicy(
   }
 
   public void verifyRuntime() {
-    if (!tzdb.equals(ZiweiDates.tzdbVersion(queryTimezone)))
+    if (!tzdb.equals(java.time.zone.ZoneRulesProvider.getVersions(queryTimezone).lastKey()))
       throw new Blocked("ziwei_tzdb_changed");
   }
 
@@ -69,7 +75,7 @@ public record ZiweiPolicy(
         "calendar",
         calendar,
         "calendar_dependency",
-        ZiweiCalendar.ENGINE,
+        CALENDAR_DEPENDENCY,
         "tzdb",
         tzdb,
         "time_basis",

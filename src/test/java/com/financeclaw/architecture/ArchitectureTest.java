@@ -6,16 +6,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.tngtech.archunit.core.domain.JavaClasses;
 import com.tngtech.archunit.core.importer.ClassFileImporter;
 import com.tngtech.archunit.core.importer.ImportOption;
-import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.Savepoint;
 import java.util.Set;
-import java.util.TreeSet;
 import org.junit.jupiter.api.Test;
 
-/**
- * Executable boundaries for the incremental COLA migration; existing cycles remain explicit debt.
- */
+/** Executable COLA boundaries, including a zero-cycle production package graph. */
 class ArchitectureTest {
   private static final JavaClasses PRODUCTION =
       new ClassFileImporter()
@@ -23,15 +19,10 @@ class ArchitectureTest {
           .importPackages("com.financeclaw", "com.financeclawmemory", "com.financeclawmigrate");
 
   @Test
-  void packageCyclesMayOnlyLosePreviouslyRecordedClassDependencies() throws Exception {
-    try (var in = getClass().getResourceAsStream("/architecture/legacy-package-cycles.txt")) {
-      assertThat(in).isNotNull();
-      Set<String> baseline =
-          new TreeSet<>(new String(in.readAllBytes(), StandardCharsets.UTF_8).lines().toList());
-      var added = new TreeSet<>(PackageCycles.edges(PRODUCTION));
-      added.removeAll(baseline);
-      assertThat(added).as("new class dependencies participating in package cycles").isEmpty();
-    }
+  void productionPackagesHaveNoCycles() {
+    assertThat(PackageCycles.edges(PRODUCTION))
+        .as("class dependencies participating in production package cycles")
+        .isEmpty();
   }
 
   @Test
@@ -83,6 +74,7 @@ class ArchitectureTest {
         .resideOutsideOfPackages(
             "com.financeclaw.app..",
             "com.financeclaw.domain..",
+            "com.financeclaw.ziwei..",
             "com.financeclaw.support..",
             "java..",
             "org.springframework.stereotype..",
@@ -96,7 +88,10 @@ class ArchitectureTest {
         .should()
         .dependOnClassesThat()
         .resideOutsideOfPackages(
-            "com.financeclaw.app..port..", "com.financeclaw.domain..", "java..")
+            "com.financeclaw.app..port..",
+            "com.financeclaw.domain..",
+            "com.financeclaw.ziwei..",
+            "java..")
         .check(PRODUCTION);
   }
 
@@ -111,6 +106,7 @@ class ArchitectureTest {
             "com.financeclaw.support..",
             "com.financeclaw.domain..",
             "com.fasterxml.jackson..",
+            "javax.crypto..",
             "java..")
         .check(PRODUCTION);
   }
@@ -202,6 +198,12 @@ class ArchitectureTest {
         .haveSimpleName("PortfolioDriver")
         .or()
         .haveSimpleName("PortfolioInputs")
+        .or()
+        .haveSimpleName("ZiweiToolContribution")
+        .or()
+        .haveSimpleName("AgentScopeZiweiInputs")
+        .or()
+        .haveSimpleName("ZiweiAnswerValidator")
         .should()
         .dependOnClassesThat()
         .resideInAnyPackage("com.financeclaw.application..", "com.financeclaw.tools..")
@@ -210,6 +212,83 @@ class ArchitectureTest {
         .doesNotContain(
             "com.financeclaw.tools.PortfolioReview",
             "com.financeclaw.tools.MarketData",
-            "com.financeclaw.tools.MarketResearch");
+            "com.financeclaw.tools.MarketResearch",
+            "com.financeclaw.tools.ZiweiTools",
+            "com.financeclaw.tools.CapabilitySteps");
+  }
+
+  @Test
+  void ziweiComputationKernelHasNoResourcePersistenceOrAgentDependencies() {
+    noClasses()
+        .that()
+        .resideInAPackage("com.financeclaw.app..")
+        .and()
+        .resideOutsideOfPackage("com.financeclaw.app.ziwei..")
+        .should()
+        .dependOnClassesThat()
+        .resideInAPackage("com.financeclaw.ziwei..")
+        .check(PRODUCTION);
+    // Keep the frozen calculation package stable: it is a bounded domain library using
+    // the pinned lunar arithmetic dependency and shared deterministic JSON/hash codec.
+    noClasses()
+        .that()
+        .resideInAPackage("com.financeclaw.ziwei..")
+        .should()
+        .dependOnClassesThat()
+        .resideOutsideOfPackages(
+            "com.financeclaw.ziwei..",
+            "com.financeclaw.domain..",
+            "com.financeclaw.support..",
+            "com.nlf.calendar..",
+            "java..")
+        .check(PRODUCTION);
+    noClasses()
+        .that()
+        .resideInAPackage("com.financeclaw.ziwei..")
+        .should()
+        .dependOnClassesThat()
+        .resideInAnyPackage("java.io..", "java.nio.file..", "java.net..")
+        .check(PRODUCTION);
+  }
+
+  @Test
+  void memoryAndReleaseHaveNoLegacyOrNativeTypesInApplicationContracts() {
+    assertThat(PRODUCTION.stream().map(c -> c.getName()))
+        .doesNotContain(
+            "com.financeclaw.application.MemoryService",
+            "com.financeclaw.application.ReleaseCatalog",
+            "com.financeclaw.tools.BusinessCatalog",
+            "com.financeclaw.memory.MemoryModels",
+            "com.financeclaw.memory.MemoryProcessor",
+            "com.financeclaw.memory.MemorySearch",
+            "com.financeclaw.infrastructure.execution.GovernedExecutionMemory",
+            "com.financeclaw.ziwei.ZiweiPolicy");
+    noClasses()
+        .that()
+        .resideInAnyPackage("com.financeclaw.app.memory..", "com.financeclaw.app.release..")
+        .should()
+        .dependOnClassesThat()
+        .resideInAnyPackage(
+            "java.io..", "java.nio.file..", "java.net..", "com.financeclaw.application..")
+        .check(PRODUCTION);
+    assertThat(com.financeclaw.app.execution.port.ExecutionMemory.class)
+        .isAssignableFrom(com.financeclaw.app.memory.MemoryService.class);
+  }
+
+  @Test
+  void memoryModelsCannotReachBusinessStateOrTools() {
+    noClasses()
+        .that()
+        .resideInAPackage("com.financeclaw.infrastructure.agentscope.memory..")
+        .should()
+        .dependOnClassesThat()
+        .resideInAnyPackage(
+            "com.financeclaw.application..", "com.financeclaw.tools..",
+            "com.financeclaw.infrastructure.memory..", "com.financeclaw.infrastructure.task..",
+            "com.financeclaw.infrastructure.governance..", "com.financeclaw.infrastructure.state..",
+            "com.financeclaw.infrastructure.channel..",
+                "com.financeclaw.infrastructure.agentscope.capability..")
+        .because("memory model adapters receive only extraction text and an embedding profile port")
+        .check(PRODUCTION);
   }
 }

@@ -2,12 +2,19 @@ package com.financeclaw.m3;
 
 import static org.assertj.core.api.Assertions.*;
 
+import com.financeclaw.app.release.ReleaseService;
 import com.financeclaw.application.*;
 import com.financeclaw.bootstrap.FinanceClawApplication;
 import com.financeclaw.domain.Governance.*;
 import com.financeclaw.domain.Task.*;
+import com.financeclaw.domain.release.BusinessFeatures;
+import com.financeclaw.domain.release.ModelProfile;
+import com.financeclaw.domain.release.ReleaseDefinition;
+import com.financeclaw.domain.release.RemoteEndpoint;
 import com.financeclaw.infrastructure.agentscope.execution.*;
+import com.financeclaw.infrastructure.agentscope.skills.PackagedSkills;
 import com.financeclaw.infrastructure.governance.GovernanceMapper;
+import com.financeclaw.infrastructure.release.BusinessResources;
 import com.financeclaw.infrastructure.state.*;
 import com.financeclaw.support.PayloadJson;
 import com.financeclaw.tools.*;
@@ -54,7 +61,7 @@ class BusinessIT {
   @Autowired GovernanceService governance;
   @Autowired GovernanceMapper db;
   @Autowired RuntimeMapper states;
-  @Autowired ReleaseCatalog releases;
+  @Autowired ReleaseService releases;
   @Autowired DataSource source;
   JdbcTemplate sql;
   final Owner owner = new Owner("local", "developer");
@@ -64,7 +71,7 @@ class BusinessIT {
   void reset() {
     sql = new JdbcTemplate(source);
     sql.execute("TRUNCATE business.conversations CASCADE");
-    publish(List.of(), 12, ReleaseCatalog.OFFLINE, snapshots(Instant.now()));
+    publish(List.of(), 12, ReleaseDefinition.OFFLINE, snapshots(Instant.now()));
     requests.clear();
   }
 
@@ -93,21 +100,17 @@ class BusinessIT {
                 time.toString())));
   }
 
-  void publish(
-      List<BusinessCatalog.Remote> remotes,
-      int models,
-      ReleaseCatalog.ModelProfile profile,
-      String market) {
+  void publish(List<RemoteEndpoint> remotes, int models, ModelProfile profile, String market) {
     releases.publish(
-        new ReleaseCatalog.Release(
+        new ReleaseDefinition(
             "m3-tests",
             "finance_agent",
-            ReleaseCatalog.SCOPES,
+            ReleaseDefinition.SCOPES,
             profile,
             null,
             models,
             32,
-            new BusinessCatalog.Features(remotes, BusinessCatalog.skillHash(), market)));
+            new BusinessFeatures(remotes, PackagedSkills.hash(), market)));
   }
 
   Accepted submit(String message) {
@@ -253,7 +256,7 @@ class BusinessIT {
   void hotelQueryDetailsTagsUseNativeTransportAndLargeResultsHaveBoundedAuthorizedReads()
       throws Exception {
     try (var mock = new MockRemote("hotel")) {
-      publish(List.of(mock.definition("hotel", false, 2000)), 12, ReleaseCatalog.OFFLINE, "{}");
+      publish(List.of(mock.definition("hotel", false, 2000)), 12, ReleaseDefinition.OFFLINE, "{}");
       var t = submit("hotel");
       var c = claim();
       try (var tools = new GovernedTools(tasks, governance, c)) {
@@ -301,7 +304,7 @@ class BusinessIT {
             .containsExactlyInAnyOrder("searchHotels", "getHotelDetail", "getHotelSearchTags");
       }
       mock.drift = true;
-      publish(List.of(mock.definition("hotel", false, 2000)), 12, ReleaseCatalog.OFFLINE, "{}");
+      publish(List.of(mock.definition("hotel", false, 2000)), 12, ReleaseDefinition.OFFLINE, "{}");
       submit("changed-schema");
       try (var tools = new GovernedTools(tasks, governance, claim())) {
         assertThat(
@@ -321,7 +324,7 @@ class BusinessIT {
     }
     try (var mock = new MockRemote("hotel")) {
       mock.delay = 1000;
-      publish(List.of(mock.definition("hotel", false, 200)), 12, ReleaseCatalog.OFFLINE, "{}");
+      publish(List.of(mock.definition("hotel", false, 200)), 12, ReleaseDefinition.OFFLINE, "{}");
       submit("timeout");
       try (var tools = new GovernedTools(tasks, governance, claim())) {
         assertThatThrownBy(
@@ -343,7 +346,7 @@ class BusinessIT {
     try (var mock = new MockRemote("hotel")) {
       var base = mock.definition("hotel", false, 2000);
       var configured =
-          new BusinessCatalog.Remote(
+          new RemoteEndpoint(
               base.service(),
               base.url(),
               base.allowedHosts(),
@@ -352,7 +355,7 @@ class BusinessIT {
               base.tenants(),
               base.tools(),
               base.timeoutMillis());
-      publish(List.of(configured), 12, ReleaseCatalog.OFFLINE, "{}");
+      publish(List.of(configured), 12, ReleaseDefinition.OFFLINE, "{}");
       submit("auth");
       var c = claim();
       try (var clients = new McpTools()) {
@@ -381,7 +384,7 @@ class BusinessIT {
   void structuredContentOnlyCannotBecomeSuccessfulBusinessEvidence() throws Exception {
     try (var mock = new MockRemote("hotel")) {
       mock.structuredOnly = true;
-      publish(List.of(mock.definition("hotel", false, 2000)), 12, ReleaseCatalog.OFFLINE, "{}");
+      publish(List.of(mock.definition("hotel", false, 2000)), 12, ReleaseDefinition.OFFLINE, "{}");
       submit("structured-only");
       try (var tools = new GovernedTools(tasks, governance, claim())) {
         assertThatThrownBy(
@@ -401,9 +404,9 @@ class BusinessIT {
   @Test
   void taibuUsesNativeInputsAndClassifiesServiceErrors() throws Exception {
     try (var mock = new MockRemote("taibu")) {
-      var samples = PayloadJson.object(BusinessCatalog.read("classpath:m3/taibu-samples.json"));
+      var samples = PayloadJson.object(BusinessResources.read("classpath:m3/taibu-samples.json"));
       mock.payload = ((Map<?, ?>) samples.get("almanac")).get("structuredContent");
-      publish(List.of(mock.definition("taibu", false, 2000)), 12, ReleaseCatalog.OFFLINE, "{}");
+      publish(List.of(mock.definition("taibu", false, 2000)), 12, ReleaseDefinition.OFFLINE, "{}");
       submit("taibu");
       var c = claim();
       try (var tools = new GovernedTools(tasks, governance, c)) {
@@ -565,12 +568,12 @@ class BusinessIT {
 
   @Test
   void researchFailureAndBudgetExhaustionCannotBecomeSuccess() {
-    publish(List.of(), 2, ReleaseCatalog.OFFLINE, snapshots(Instant.now()));
+    publish(List.of(), 2, ReleaseDefinition.OFFLINE, snapshots(Instant.now()));
     var t = submit("research");
     run(claim());
     assertThat(turn(t).status()).isNotEqualTo("completed");
     assertThat(db.policy(t.turnId()).modelCalls()).isEqualTo(2);
-    publish(List.of(), 12, ReleaseCatalog.OFFLINE, "{}");
+    publish(List.of(), 12, ReleaseDefinition.OFFLINE, "{}");
     var unavailable = submit("research");
     run(claim());
     assertThat(turn(unavailable).status()).isNotEqualTo("completed");
@@ -591,7 +594,7 @@ class BusinessIT {
   @Test
   void workflowRecoversInASeparateJvmUsingPersistedSteps() throws Exception {
     String market = snapshots(Instant.now());
-    publish(List.of(), 12, ReleaseCatalog.OFFLINE, market);
+    publish(List.of(), 12, ReleaseDefinition.OFFLINE, market);
     var t = submit(portfolio());
     var config = new Properties();
     config.setProperty("url", PG.getJdbcUrl());
@@ -693,7 +696,7 @@ class BusinessIT {
   void taibuConfidentialEgressAndTenantMismatchAreRejectedBeforeNetwork() {
     var contract = List.of("bazi");
     var remote =
-        new BusinessCatalog.Remote(
+        new RemoteEndpoint(
             "taibu",
             "https://example.invalid/mcp",
             List.of("example.invalid"),
@@ -708,7 +711,7 @@ class BusinessIT {
       assertThatThrownBy(() -> transport.register(new Toolkit(), remote, c.turn().tenant()))
           .hasMessage("confidential_egress_denied");
       var denied =
-          new BusinessCatalog.Remote(
+          new RemoteEndpoint(
               "taibu",
               remote.url(),
               remote.allowedHosts(),
@@ -756,12 +759,15 @@ class BusinessIT {
   @Test
   void staleSnapshotsAndDeniedApprovalCannotPublish() {
     publish(
-        List.of(), 12, ReleaseCatalog.OFFLINE, snapshots(Instant.now().minus(Duration.ofDays(10))));
+        List.of(),
+        12,
+        ReleaseDefinition.OFFLINE,
+        snapshots(Instant.now().minus(Duration.ofDays(10))));
     var stale = submit(portfolio());
     run(claim());
     assertThat(turn(stale).status()).isNotEqualTo("completed");
     assertThat(db.interactions(stale.turnId())).isEmpty();
-    publish(List.of(), 12, ReleaseCatalog.OFFLINE, snapshots(Instant.now()));
+    publish(List.of(), 12, ReleaseDefinition.OFFLINE, snapshots(Instant.now()));
     var denied = submit(portfolio());
     run(claim());
     var i = db.interactions(denied.turnId()).getFirst();

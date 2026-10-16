@@ -1,24 +1,24 @@
 package com.financeclaw.infrastructure.agentscope.capability;
 
-import com.financeclaw.application.*;
-import com.financeclaw.domain.Governance.*;
+import com.financeclaw.app.ziwei.ZiweiService;
+import com.financeclaw.domain.Governance.Pending;
 import com.financeclaw.domain.Task.Claim;
 import com.financeclaw.infrastructure.agentscope.ResumeInputs;
-import com.financeclaw.tools.ZiweiTools;
-import com.financeclaw.ziwei.*;
+import com.financeclaw.infrastructure.ziwei.ZiweiSchemas;
+import com.financeclaw.ziwei.ZiweiDates;
 import io.agentscope.core.message.*;
-import io.agentscope.core.tool.ToolCallParam;
 import java.time.Duration;
+import reactor.core.publisher.Mono;
 
+/** Only native registration, suspension, and resumed ToolResultBlock translation. */
 public final class ZiweiToolContribution implements ToolContribution, InteractionHandler {
-  private final TaskService tasks;
+  private final ZiweiService service;
   private final Claim claim;
-  private final ZiweiTools tools;
 
-  public ZiweiToolContribution(TaskService tasks, GovernanceService governance, Claim claim) {
-    this.tasks = tasks;
+  public ZiweiToolContribution(ZiweiService service, Claim claim) {
+    this.service = service;
     this.claim = claim;
-    this.tools = new ZiweiTools(tasks, governance, claim);
+    service.require(claim);
   }
 
   public void contribute(Registrar registrar) {
@@ -26,27 +26,43 @@ public final class ZiweiToolContribution implements ToolContribution, Interactio
       var name = level.toolName();
       registrar.tool(
           name,
-          ZiweiInputs.description(name),
-          ZiweiInputs.schema(name),
+          ZiweiSchemas.description(name),
+          ZiweiSchemas.schema(name),
           "ziwei:read",
-          tools::run,
+          param ->
+              Mono.fromCallable(
+                  () ->
+                      result(
+                          param.getToolUseBlock(),
+                          service.run(
+                              claim,
+                              param.getToolUseBlock().getName(),
+                              param.getToolUseBlock().getId(),
+                              param.getInput()))),
           this);
     }
   }
 
   public Pending pending(ToolUseBlock call) {
-    return tools.pending(call);
+    return service.pending(
+        claim, call.getName(), call.getId(), ResumeInputs.actionHash(call), call.getInput());
   }
 
   public Msg resume(ToolUseBlock call, Object answer) {
-    var corrected = ZiweiInputs.corrected(call.getName(), call.getInput(), answer);
-    if (!ZiweiInputs.inspect(call.getName(), corrected, tools.clock()).complete())
-      throw new Blocked("ziwei_input_incomplete");
-    tasks.consume(claim, false);
     var result =
-        tools
-            .run(ToolCallParam.builder().toolUseBlock(call).input(corrected).build())
+        Mono.fromCallable(
+                () ->
+                    result(
+                        call,
+                        service.resume(
+                            claim, call.getName(), call.getId(), call.getInput(), answer)))
             .block(Duration.ofSeconds(20));
     return ResumeInputs.result(call, result);
+  }
+
+  private static ToolResultBlock result(ToolUseBlock call, ZiweiService.Result outcome) {
+    return outcome.suspended()
+        ? ToolResultBlock.suspended(call)
+        : ToolResultBlock.text(outcome.text());
   }
 }

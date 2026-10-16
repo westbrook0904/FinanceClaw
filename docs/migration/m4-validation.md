@@ -2,6 +2,8 @@
 
 日期：2026-10-15。基线为本地提交 `abfb808`（M3 原生 Skill/MCP 与业务能力）。JDK 21.0.12+8、Spring Boot 3.5.16、AgentScope 2.0.3 保持不变。
 
+当前代码结构已在 [R5c 记忆与发布分层](../architecture/r5c-implementation.md) 中更新：HTTP/任务调用 [记忆用例](../../src/main/java/com/financeclaw/app/memory)，[领域规则](../../src/main/java/com/financeclaw/domain/Memory.java) 与 [AgentScope 适配](../../src/main/java/com/financeclaw/infrastructure/agentscope/memory/AgentScopeMemoryModels.java)、[MyBatis 存储](../../src/main/java/com/financeclaw/infrastructure/memory/MyBatisMemoryRepository.java) 分离。API、数据库和配置契约不变；本页下方的 M4 验证数字保留为阶段历史，最新完整回归见 R5c。
+
 ## 本阶段范围
 
 长期记忆使用 SQL 管理事实、来源、候选、隐私版本及处理意图，模型提取和 embedding 使用 AgentScope。飞书按用户要求采用固定版 SDK 已有能力：原生验签/解密、入站消息映射、token 管理和文本发送。**不自建 CardKit、卡片表单或飞书 HTTP 客户端**。
