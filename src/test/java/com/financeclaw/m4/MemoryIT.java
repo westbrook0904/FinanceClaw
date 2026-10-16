@@ -2,14 +2,14 @@ package com.financeclaw.m4;
 
 import static org.assertj.core.api.Assertions.*;
 
-import com.financeclaw.agent.TaskAgentRuntime;
 import com.financeclaw.application.*;
 import com.financeclaw.bootstrap.FinanceClawApplication;
 import com.financeclaw.domain.Memory.*;
 import com.financeclaw.domain.Task.*;
+import com.financeclaw.infrastructure.agentscope.execution.TaskAgentRuntime;
 import com.financeclaw.infrastructure.memory.MemoryMapper;
 import com.financeclaw.memory.*;
-import com.financeclaw.worker.TaskWorker;
+import com.financeclaw.support.PayloadJson;
 import io.agentscope.core.embedding.EmbeddingModel;
 import java.util.*;
 import java.util.concurrent.*;
@@ -44,6 +44,7 @@ class MemoryIT {
 
   @Autowired org.springframework.test.web.servlet.MockMvc http;
   @Autowired TaskService tasks;
+  @Autowired org.springframework.context.ApplicationContext taskContext;
   @Autowired MemoryService memory;
   @Autowired MemoryMapper db;
   @Autowired TransactionTemplate tx;
@@ -63,7 +64,7 @@ class MemoryIT {
     java.nio.file.Files.createDirectories(java.nio.file.Path.of("target/m4"));
     java.nio.file.Files.writeString(
         java.nio.file.Path.of("target/m4/environment.json"),
-        com.financeclaw.agent.ResumeInputs.canonical(
+        PayloadJson.canonical(
             Map.of(
                 "postgres_image",
                 M4Database.PG.getDockerImageName(),
@@ -82,7 +83,9 @@ class MemoryIT {
   }
 
   void finish(Accepted t) throws Exception {
-    try (var worker = new TaskWorker(tasks, runtime, false, false, 1, 60000, 2000)) {
+    try (var worker =
+        com.financeclaw.m1.TaskWorkerFixture.create(
+            taskContext, runtime, false, false, 1, 60000, 2000)) {
       worker.execute(tasks.claim("memory-test", 60000));
     }
     assertThat(tasks.get(alice, t.conversationId(), t.turnId()).status()).isEqualTo("completed");

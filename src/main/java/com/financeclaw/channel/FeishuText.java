@@ -1,10 +1,10 @@
 package com.financeclaw.channel;
 
-import com.financeclaw.application.GovernanceService;
 import com.financeclaw.domain.ExecutionScope;
 import com.financeclaw.domain.Feishu.Binding;
 import com.financeclaw.domain.Governance.Interaction;
 import com.financeclaw.domain.Task.*;
+import com.financeclaw.support.PayloadJson;
 import java.util.*;
 
 /**
@@ -54,7 +54,7 @@ public final class FeishuText {
   }
 
   private static String singleTextField(Interaction i) {
-    Object raw = GovernanceService.parse(i.schema());
+    Object raw = PayloadJson.parse(i.schema());
     if (!(raw instanceof Map<?, ?> schema)
         || !(schema.get("properties") instanceof Map<?, ?> properties)
         || properties.size() != 1) return null;

@@ -2,15 +2,15 @@ package com.financeclaw.m2;
 
 import static org.assertj.core.api.Assertions.*;
 
-import com.financeclaw.agent.*;
 import com.financeclaw.application.*;
 import com.financeclaw.bootstrap.FinanceClawApplication;
 import com.financeclaw.domain.Governance.*;
 import com.financeclaw.domain.Task.*;
+import com.financeclaw.infrastructure.agentscope.execution.*;
 import com.financeclaw.infrastructure.governance.GovernanceMapper;
 import com.financeclaw.infrastructure.state.RuntimeMapper;
+import com.financeclaw.support.PayloadJson;
 import com.financeclaw.tools.BusinessCatalog;
-import com.financeclaw.worker.TaskWorker;
 import java.nio.file.*;
 import java.util.*;
 import java.util.concurrent.*;
@@ -52,12 +52,14 @@ class GovernanceIT {
   }
 
   @Autowired TaskService tasks;
+  @Autowired org.springframework.context.ApplicationContext taskContext;
   @Autowired GovernanceService governance;
   @Autowired GovernanceMapper db;
   @Autowired RuntimeMapper states;
   @Autowired ReleaseCatalog releases;
   @Autowired DataSource source;
   @Autowired TestRestTemplate http;
+  @Autowired org.springframework.transaction.support.TransactionTemplate tx;
   JdbcTemplate sql;
   final Owner owner = new Owner("local", "developer");
 
@@ -81,8 +83,20 @@ class GovernanceIT {
 
   void run(Claim claim) throws Exception {
     try (var w =
-        new TaskWorker(
-            tasks, new ScriptedRuntime(tasks, governance, states), false, false, 1, 60000, 2000)) {
+        com.financeclaw.m1.TaskWorkerFixture.create(
+            taskContext,
+            new ScriptedRuntime(
+                tasks,
+                governance,
+                states,
+                taskContext.getBean(
+                    com.financeclaw.infrastructure.agentscope.capability.BusinessCapabilities
+                        .class)),
+            false,
+            false,
+            1,
+            60000,
+            2000)) {
       w.execute(claim);
     }
   }
@@ -306,7 +320,7 @@ class GovernanceIT {
     run(claim());
     var events = tasks.events(owner, t.conversationId(), t.turnId(), 0);
     assertThat(events).anyMatch(e -> e.kind().startsWith("tool_"));
-    assertThat(ResumeInputs.canonical(events))
+    assertThat(PayloadJson.canonical(events))
         .doesNotContain("PRIVATE_REPORT_PARAMETER", "PRIVATE_INTERMEDIATE_TEXT", "report_id");
     assertThat(events.stream().filter(e -> e.kind().startsWith("tool_")).toList())
         .allMatch(e -> e.text() == null && GovernedTools.NAMES.contains(e.tool()));
@@ -383,7 +397,7 @@ class GovernanceIT {
               "SELECT id FROM business.artifacts WHERE turn_id=?", String.class, t.turnId());
       assertThat(governance.read(owner, id, 100, 1).data())
           .isEqualTo(Map.of("hotels", List.of(Map.of("city", "上海", "name", "fixture"))));
-      assertThat(ResumeInputs.canonical(tasks.events(owner, t.conversationId(), t.turnId(), 0)))
+      assertThat(PayloadJson.canonical(tasks.events(owner, t.conversationId(), t.turnId(), 0)))
           .doesNotContain("PRIVATE_MCP_RAW_RESULT", "上海", "fixture");
       server.drift = true;
       var changed = submit("mcp");
@@ -406,6 +420,209 @@ class GovernanceIT {
     run(claim());
     assertThat(turn(t).status()).isEqualTo("completed");
     assertThat(reports()).isEqualTo(2);
+  }
+
+  @Test
+  void allInputAnswersInBatchMustArriveBeforeOneResumeIsQueued() throws Exception {
+    var t = submit("city-batch");
+    run(claim());
+    var questions = governance.interactions(owner, t.conversationId(), t.turnId());
+    assertThat(questions).hasSize(2);
+    answer(
+        t,
+        questions.getFirst(),
+        new Answer("input", questions.getFirst().revision(), null, null, Map.of("city", "上海")));
+    assertThat(turn(t).status()).isEqualTo("waiting");
+    assertThat(claim()).isNull();
+    answer(
+        t,
+        questions.getLast(),
+        new Answer("input", questions.getLast().revision(), null, null, Map.of("city", "北京")));
+    run(claim());
+    assertThat(turn(t).status()).isEqualTo("completed");
+    assertThat(reports()).isZero();
+  }
+
+  @Test
+  void failedTurnTransitionRollsBackAnswerCommandAndEvents() throws Exception {
+    var t = submit("report");
+    run(claim());
+    var question = question(t);
+    var before = turn(t);
+    var events = tasks.events(owner, t.conversationId(), t.turnId(), 0);
+    sql.execute(
+        "ALTER TABLE business.turns ADD CONSTRAINT r3_reject_resume CHECK (status <> 'resuming') NOT VALID");
+    try {
+      assertThatThrownBy(() -> answer(t, question, approve(question)))
+          .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+      assertPendingAnswerAndDoneCommand(question);
+      assertThat(turn(t)).isEqualTo(before);
+      assertThat(tasks.events(owner, t.conversationId(), t.turnId(), 0)).isEqualTo(events);
+    } finally {
+      sql.execute("ALTER TABLE business.turns DROP CONSTRAINT r3_reject_resume");
+    }
+  }
+
+  @Test
+  void failedResumeConditionRollsBackAnswerReceipt() throws Exception {
+    var t = submit("report");
+    run(claim());
+    var question = question(t);
+    sql.update("UPDATE business.commands SET status='queued' WHERE id=?", question.commandId());
+    assertThatThrownBy(() -> answer(t, question, approve(question)))
+        .hasMessage("stale_interaction");
+    assertThat(db.interaction(question.id()).status()).isEqualTo("pending");
+    assertThat(db.interaction(question.id()).responseHash()).isNull();
+    assertThat(turn(t).status()).isEqualTo("waiting");
+  }
+
+  @Test
+  void answerParticipatesInAnOuterSpringTransaction() throws Exception {
+    var t = submit("report");
+    run(claim());
+    var question = question(t);
+    tx.executeWithoutResult(
+        status -> {
+          answer(t, question, approve(question));
+          assertThat(db.interaction(question.id()).status()).isEqualTo("answered");
+          assertThat(turn(t).status()).isEqualTo("resuming");
+          status.setRollbackOnly();
+        });
+    assertPendingAnswerAndDoneCommand(question);
+    assertThat(turn(t).status()).isEqualTo("waiting");
+  }
+
+  private void assertPendingAnswerAndDoneCommand(Interaction question) {
+    assertThat(db.interaction(question.id()).status()).isEqualTo("pending");
+    assertThat(db.interaction(question.id()).responseHash()).isNull();
+    assertThat(
+            sql.queryForObject(
+                "SELECT status FROM business.commands WHERE id=?",
+                String.class,
+                question.commandId()))
+        .isEqualTo("done");
+    assertThat(
+            sql.queryForObject(
+                "SELECT resume_id FROM business.commands WHERE id=?",
+                String.class,
+                question.commandId()))
+        .isNull();
+  }
+
+  @Test
+  void nativeAndDirectToolDispatchValidateEffectiveInputBeforeBudgetOrArtifactWrites() {
+    var t = submit("catalog");
+    var claim = claim();
+    try (var tools = new GovernedTools(tasks, governance, claim)) {
+      var malformed =
+          io.agentscope.core.message.ToolUseBlock.builder()
+              .id("raw-schema-check")
+              .name("search_catalog")
+              .input(Map.of("city", "上海"))
+              .content("{\"city\":42}")
+              .build();
+      assertThat(
+              tools
+                  .toolkit
+                  .callTool(
+                      io.agentscope.core.tool.ToolCallParam.builder()
+                          .toolUseBlock(malformed)
+                          .input(Map.of("city", "上海"))
+                          .build())
+                  .block()
+                  .getState())
+          .isEqualTo(io.agentscope.core.message.ToolResultState.ERROR);
+      var call =
+          io.agentscope.core.message.ToolUseBlock.builder()
+              .id("schema-check")
+              .name("search_catalog")
+              .input(Map.of("city", "上海"))
+              .content("{\"city\":\"上海\"}")
+              .build();
+      var invalid =
+          io.agentscope.core.tool.ToolCallParam.builder()
+              .toolUseBlock(call)
+              .input(Map.of("city", 42))
+              .build();
+      assertThat(tools.toolkit.callTool(invalid).block().getState())
+          .isEqualTo(io.agentscope.core.message.ToolResultState.ERROR);
+      assertThatThrownBy(() -> tools.toolkit.getTool("search_catalog").callAsync(invalid).block())
+          .hasMessage("invalid_tool_input");
+      tools
+          .toolkit
+          .registration()
+          .agentTool(tools.toolkit.getTool("search_catalog"))
+          .presetParameters(Map.of("search_catalog", Map.of("city", 42)))
+          .apply();
+      assertThat(
+              tools
+                  .toolkit
+                  .callTool(
+                      io.agentscope.core.tool.ToolCallParam.builder().toolUseBlock(call).build())
+                  .block()
+                  .getState())
+          .isEqualTo(io.agentscope.core.message.ToolResultState.ERROR);
+      assertThat(db.policy(t.turnId()).toolCalls()).isZero();
+      assertThat(
+              sql.queryForObject(
+                  "SELECT count(*) FROM business.artifacts WHERE turn_id=?",
+                  Integer.class,
+                  t.turnId()))
+          .isZero();
+    }
+  }
+
+  @Test
+  void questionGenerationUsesTheSamePendingStatesAsOutcomeAndAnswerBinding() {
+    var t = submit("report");
+    var claim = claim();
+    try (var tools = new GovernedTools(tasks, governance, claim)) {
+      var approval =
+          io.agentscope.core.message.ToolUseBlock.builder()
+              .id("approval")
+              .name("create_report")
+              .input(Map.of("title", "test"))
+              .content("{\"title\":\"test\"}")
+              .state(io.agentscope.core.message.ToolCallState.ASKING)
+              .build();
+      var input =
+          io.agentscope.core.message.ToolUseBlock.builder()
+              .id("city")
+              .name("request_city")
+              .input(Map.of())
+              .content("{}")
+              .state(io.agentscope.core.message.ToolCallState.SUBMITTED)
+              .build();
+      var state =
+          io.agentscope.core.state.AgentState.builder()
+              .addMessage(
+                  io.agentscope.core.message.Msg.builder()
+                      .role(io.agentscope.core.message.MsgRole.ASSISTANT)
+                      .content(List.of(approval, input))
+                      .build())
+              .addMessage(
+                  io.agentscope.core.message.Msg.builder()
+                      .role(io.agentscope.core.message.MsgRole.TOOL)
+                      .content(
+                          List.of(
+                              io.agentscope.core.message.ToolResultBlock.of(
+                                      "approval", "create_report", List.of())
+                                  .withState(io.agentscope.core.message.ToolResultState.SUCCESS),
+                              io.agentscope.core.message.ToolResultBlock.of(
+                                      "city", "request_city", List.of())
+                                  .withState(io.agentscope.core.message.ToolResultState.RUNNING)))
+                      .build())
+              .build();
+      assertThat(TaskAgentRuntime.classify(state, 1).status()).isEqualTo("waiting");
+      assertThat(tools.pending(state))
+          .extracting(Pending::kind)
+          .containsExactly("approval", "input");
+      assertThat(tools.pending(state))
+          .extracting(Pending::callId)
+          .containsExactly("approval", "city");
+      assertThat(db.policy(t.turnId()).toolCalls()).isZero();
+      assertThat(reports()).isZero();
+    }
   }
 
   @Test
@@ -453,7 +670,7 @@ class GovernanceIT {
     headers.setContentType(MediaType.APPLICATION_JSON);
     headers.set("Idempotency-Key", "http-reply");
     String body =
-        ResumeInputs.canonical(
+        PayloadJson.canonical(
             Map.of(
                 "kind",
                 "approval",
@@ -472,7 +689,7 @@ class GovernanceIT {
                 .value())
         .isEqualTo(422);
     body =
-        ResumeInputs.canonical(
+        PayloadJson.canonical(
             Map.of(
                 "kind",
                 "approval",
@@ -506,7 +723,7 @@ class GovernanceIT {
               .id("child-call")
               .name("search_catalog")
               .input(input)
-              .content(ResumeInputs.canonical(input))
+              .content(PayloadJson.canonical(input))
               .build();
       child
           .toolkit
@@ -552,7 +769,7 @@ class GovernanceIT {
       assertThat(process.exitValue()).withFailMessage("Child failed: %s", log).isZero();
       Files.writeString(
           log.resolveSibling(log.getFileName() + ".exit.json"),
-          ResumeInputs.canonical(Map.of("scenario", scenario, "exit", 0)));
+          PayloadJson.canonical(Map.of("scenario", scenario, "exit", 0)));
     } finally {
       Files.deleteIfExists(config);
     }

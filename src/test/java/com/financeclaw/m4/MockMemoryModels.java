@@ -1,7 +1,7 @@
 package com.financeclaw.m4;
 
 import com.fasterxml.jackson.databind.*;
-import com.financeclaw.agent.ResumeInputs;
+import com.financeclaw.support.PayloadJson;
 import com.sun.net.httpserver.HttpServer;
 import java.net.*;
 import java.nio.charset.StandardCharsets;
@@ -31,7 +31,7 @@ final class MockMemoryModels implements AutoCloseable {
             var vector = new ArrayList<Double>(Collections.nCopies(dimensions, 0.0));
             vector.set(0, 1.0);
             response =
-                ResumeInputs.canonical(
+                PayloadJson.canonical(
                     Map.of(
                         "object",
                         "list",
@@ -44,7 +44,7 @@ final class MockMemoryModels implements AutoCloseable {
             exchange.getResponseHeaders().set("Content-Type", "application/json");
           } else {
             String result =
-                ResumeInputs.canonical(
+                PayloadJson.canonical(
                     Map.of(
                         "proposals",
                         List.of(Map.of("key", "home_city", "value", "上海", "quote", "我住在上海"))));
@@ -69,7 +69,7 @@ final class MockMemoryModels implements AutoCloseable {
                                     "{\"response\":" + result + "}"))));
             response =
                 "data: "
-                    + ResumeInputs.canonical(
+                    + PayloadJson.canonical(
                         Map.of(
                             "id",
                             "extract",

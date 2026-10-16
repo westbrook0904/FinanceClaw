@@ -30,6 +30,20 @@ public final class Task {
     public boolean terminal() {
       return Set.of("completed", "failed", "cancelled").contains(status);
     }
+
+    public Accepted accepted(boolean replay) {
+      return new Accepted(conversationId, id, status, revision, replay);
+    }
+
+    public Accepted replayAdmission(String hash) {
+      if (!requestHash.equals(hash)) throw new Problem(409, "idempotency_conflict");
+      return new Accepted(conversationId, id, "queued", 1, true);
+    }
+
+    public void requireClaimable() {
+      if (!Set.of("queued", "resuming").contains(status))
+        throw new IllegalStateException("Command/Turn mismatch");
+    }
   }
 
   public record Command(
@@ -42,6 +56,14 @@ public final class Task {
       String resumeId) {}
 
   public record Claim(Command command, Turn turn) {
+    public void requireCurrent(Command now) {
+      if (now == null
+          || !now.live()
+          || !now.status().equals("running")
+          || now.fence() != command.fence()
+          || !java.util.Objects.equals(now.attemptId(), command.attemptId())) throw new Fenced();
+    }
+
     public ExecutionScope scope() {
       return new ExecutionScope(
           turn.tenant(),

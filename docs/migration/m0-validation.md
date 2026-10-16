@@ -66,12 +66,14 @@ GitHub Actions 已配置同一工具链及 `verify`，远程 CI 是否通过必�
 
 ## 实现边界
 
+2026-10-16 R1 调整：`GuardedAgentRunner`、`ExecutionGate`、`EffectLedger` 和 `M0RuntimeMapper` 位于 [测试支持目录](../../src/test/java/com/financeclaw/m0/support)，不进入产品 jar。下述 M0 实验语义保持原样，历史测试数量不改写；新回归结果见 [R0–R2 实施记录](../architecture/r0-r2-implementation.md)。
+
 | 入口 | 职责 |
 | --- | --- |
 | `FinanceClawApplication` | Spring Boot 启动、数据库迁移、存活/就绪检查 |
 | `ExecutionScope` | 服务端租户/主体/会话/Agent/发布身份；长度编码哈希避免拼接歧义和 SDK 路径分隔问题 |
 | `MyBatisAgentStateStore` | 完整 AgentState JSONB 存储、数据库原子 CAS、删除墓碑、绑定身份校验 |
-| `RuntimeMapper` | MyBatis SQL 与 record 映射；状态、账本、执行锁集中管理 |
+| `RuntimeMapper` / 测试 `M0RuntimeMapper` | R1 后正式 Mapper 仅负责状态 CAS/墓碑；实验账本与执行锁移到 test support |
 | `IsolatedAgentFactory` | 每次执行独立 engine/toolkit，拒绝绕过权限评估的工具/策略，显式 `ConflictPolicy.FAIL`，禁用自动修补悬空工具 |
 | `GuardedAgentRunner` / `ExecutionGate` | M0 跨进程互斥入口；恢复输入在持有执行权后生成；未知副作用前后检查 |
 | `ResumeInputs` | 从持久状态构造审批/澄清输入；检查问题 ID、状态版本和 action hash |

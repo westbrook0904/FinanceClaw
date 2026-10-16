@@ -1,0 +1,382 @@
+{
+  "scope": "isolated real containers; offline model and synthetic market only",
+  "ziwei_development_policy": true,
+  "admission_control": true,
+  "read_only_preflight": true,
+  "restore_privacy": true,
+  "project": "financeclaw-m5e-27062cc0f5",
+  "thresholds": {
+    "scope": "Local offline model, 12 independent conversations, 4 concurrent clients; not production capacity",
+    "requests": 12,
+    "concurrency": 4,
+    "success_ratio": 1.0,
+    "p95_turn_seconds": 15,
+    "recovery_seconds": 45,
+    "startup_seconds": 180,
+    "remaining_outbox": 0
+  },
+  "checks": {
+    "shared_ziwei_policy_and_role_scoped_secret_mounts": true,
+    "empty_database_and_four_healthy_roles": {
+      "startup_seconds": 127.94590361998416
+    },
+    "background_http_and_database_privilege_boundaries": true,
+    "offline_load_and_idempotency": {
+      "requests": 12,
+      "success_ratio": 1,
+      "p95_seconds": 3.5886197579966392,
+      "provider_calls": 0,
+      "provider_cost": 0
+    },
+    "preflight_queued_and_memory_backlog": {
+      "assessment": "blocked",
+      "errors": [],
+      "observations_match": true,
+      "inventory_matches_counts": true,
+      "items": {
+        "turns": 1,
+        "notifications": 0,
+        "notification_bindings": 0,
+        "memory_jobs": 12
+      },
+      "report_sha256": "a88ad0865d0edbbb0becfa98a1faeb0c6a9e7e05f11b294086580fbf7f6335c8"
+    },
+    "preflight_truncated_inventory": {
+      "assessment": "incomplete",
+      "errors": [
+        "page_limit_memory_jobs",
+        "inventory_count_mismatch"
+      ],
+      "observations_match": true,
+      "inventory_matches_counts": false,
+      "items": {
+        "turns": 1,
+        "notifications": 0,
+        "notification_bindings": 0,
+        "memory_jobs": 1
+      },
+      "report_sha256": "2efb861d5e3c8b81dad8fce43a67eb2bce7c16e1098bb2639541089816e3cc1d"
+    },
+    "graceful_worker_stop_and_api_restart_keep_admission": true,
+    "durable_pause_rejects_new_turns_preserves_replay_and_drains_existing_work": {
+      "scope": "current_owner",
+      "admission": {
+        "paused": true,
+        "revision": 1
+      },
+      "counts": {
+        "active_commands": 0,
+        "blocked": 0,
+        "cancelling": 0,
+        "pending_forget": 0,
+        "pending_interactions": 0,
+        "pending_memory_jobs": 13,
+        "pending_notifications": 0,
+        "pending_outbox": 0,
+        "queued": 0,
+        "running": 0,
+        "uncertain_effects": 0,
+        "unprojected_notifications": 0,
+        "unverified_notifications": 0,
+        "waiting": 0
+      },
+      "drained": false
+    },
+    "sigkill_and_persisted_approval_execute_once": true,
+    "paused_admission_allows_persisted_approval_after_worker_sigkill": true,
+    "database_outage_fails_readiness_then_recovers": {
+      "recovery_seconds": 6.325293703994248,
+      "unavailable_http_statuses": [
+        503,
+        503
+      ]
+    },
+    "current_epoch_superseded_projection_is_not_a_forget_violation": {
+      "schema_version": 1,
+      "scope": "all_memory_owners",
+      "assessment": "privacy_matches_reference",
+      "errors": [],
+      "checks": {
+        "owner_sets_match": true,
+        "no_orphan_owners": true,
+        "epochs_match": true,
+        "privacy_events_match": true,
+        "no_pending_purge": true,
+        "no_unsafe_memory_rows": true,
+        "audit_history_complete": true
+      },
+      "consistency": "two_supplied_snapshots",
+      "checked_at": "2026-10-15T14:13:16.627755+00:00",
+      "owner_counts": {
+        "reference": 1,
+        "restored": 1
+      },
+      "input_sha256": {
+        "reference": "641d65671da8dd457dba3da2b11ab6efd09cb0be00d2d0a5bc981f753942e39b",
+        "restored": "641d65671da8dd457dba3da2b11ab6efd09cb0be00d2d0a5bc981f753942e39b"
+      },
+      "source_sha256": {
+        "check-restore-privacy.py": "77e9826411b6f27faf056beeb49d297555d5e31430b91a344c4fe143e2d40969",
+        "inspect-drain.py": "eaf7ec576bb976fd626b6f998f2b4c2a4706c524585b02d665640633bcefa61c"
+      }
+    },
+    "pre_forget_backup_captured_with_writers_stopped": {
+      "sha256": "e5f767076eaabb384e89600af23c9e5ab7a341840eae7ecad4b76f2532f520a2"
+    },
+    "restricted_memory_worker_and_forgetting": true,
+    "owner_drain_requires_pause_and_all_task_channel_memory_counts_zero": {
+      "scope": "current_owner",
+      "admission": {
+        "paused": true,
+        "revision": 5
+      },
+      "counts": {
+        "active_commands": 0,
+        "blocked": 0,
+        "cancelling": 0,
+        "pending_forget": 0,
+        "pending_interactions": 0,
+        "pending_memory_jobs": 0,
+        "pending_notifications": 0,
+        "pending_outbox": 0,
+        "queued": 0,
+        "running": 0,
+        "uncertain_effects": 0,
+        "unprojected_notifications": 0,
+        "unverified_notifications": 0,
+        "waiting": 0
+      },
+      "drained": true
+    },
+    "preflight_paused_and_drained": {
+      "assessment": "ready_for_review",
+      "errors": [],
+      "observations_match": true,
+      "inventory_matches_counts": true,
+      "items": {
+        "turns": 0,
+        "notifications": 0,
+        "notification_bindings": 0,
+        "memory_jobs": 0
+      },
+      "report_sha256": "0b68f7b7c09f88d625f74cd897aeab38e2ea9b612096bad7afada3248ccb6199"
+    },
+    "consistent_backup_restore_all_tables_and_privacy_epoch": {
+      "tables": 35,
+      "sha256": "3ed136f7eb2cbfd6e33e2863522b37ab7a7d19559d19297b038b65e547107b5d",
+      "rows_and_hashes": {
+        "agent_runtime.states": "17:424ff0a1abe178fe0d9e1cdf4f2aa3b7",
+        "agent_runtime.tool_effects": "0:d41d8cd98f00b204e9800998ecf8427e",
+        "business.admission": "1:c58ee27daec89f6c5b502b6d5aee2f38",
+        "business.admission_changes": "5:14d8f2cb56124ec3768127f15d3d120c",
+        "business.artifacts": "1:868196d42ebf26930e62404ea1b9b777",
+        "business.attempts": "17:790b2eb38ce75f63b6c284d8df4171b8",
+        "business.cancel_requests": "0:d41d8cd98f00b204e9800998ecf8427e",
+        "business.capability_steps": "7:7974e5dc6f72d8b7c1c75b14ec7a3dbe",
+        "business.commands": "16:d1e4e4f793c78a46c61df20242b9736e",
+        "business.conversations": "17:f9d024fd74d6374b1fbf9f106c6c5151",
+        "business.events": "71:8b3527aca577c67099753883f31c6ddd",
+        "business.grant_changes": "0:d41d8cd98f00b204e9800998ecf8427e",
+        "business.grants": "17:8e5d7a5ce51ab808dc93f8ccca92cb08",
+        "business.interactions": "1:c880eff317a858c311bd81c0925e7deb",
+        "business.journal": "32:988f4bc42262b589ffebd335cef2547e",
+        "business.outbox": "16:3938728f0aae8782c818096c097caf49",
+        "business.projections": "16:bd0774500e37b7fd12328883dc84a169",
+        "business.reports": "0:d41d8cd98f00b204e9800998ecf8427e",
+        "business.skill_refs": "0:d41d8cd98f00b204e9800998ecf8427e",
+        "business.tool_calls": "0:d41d8cd98f00b204e9800998ecf8427e",
+        "business.turn_policies": "16:fb9e3619276d93c4a119211251914dd0",
+        "business.turns": "16:7ea0787f781cee243fb9b95148983712",
+        "channel.bindings": "0:d41d8cd98f00b204e9800998ecf8427e",
+        "channel.inbox": "0:d41d8cd98f00b204e9800998ecf8427e",
+        "channel.link_codes": "0:d41d8cd98f00b204e9800998ecf8427e",
+        "channel.notices": "0:d41d8cd98f00b204e9800998ecf8427e",
+        "memory.audit": "3:556f2b487b3ae493faac4f9ee0e8548b",
+        "memory.embedding_profiles": "0:d41d8cd98f00b204e9800998ecf8427e",
+        "memory.facts": "2:9ea31e37427729c7584a9fa5300ebf6c",
+        "memory.jobs": "17:16fbd489ba33ded9957edd23227a357b",
+        "memory.operations": "1:b583729b7d5604508abbd2b422abc548",
+        "memory.owners": "1:d8b4c4a180dd71041f70419048d81c48",
+        "memory.projections": "0:d41d8cd98f00b204e9800998ecf8427e",
+        "memory.recalls": "0:d41d8cd98f00b204e9800998ecf8427e",
+        "memory.sources": "16:b00cab461f8f9d671178b22e03a597ee"
+      }
+    },
+    "old_backup_missing_later_forget_is_blocked_and_isolated": {
+      "schema_version": 1,
+      "scope": "all_memory_owners",
+      "assessment": "blocked",
+      "errors": [
+        "epochs_match",
+        "privacy_events_match"
+      ],
+      "checks": {
+        "owner_sets_match": true,
+        "no_orphan_owners": true,
+        "epochs_match": false,
+        "privacy_events_match": false,
+        "no_pending_purge": true,
+        "no_unsafe_memory_rows": true,
+        "audit_history_complete": true
+      },
+      "consistency": "two_supplied_snapshots",
+      "checked_at": "2026-10-15T14:15:18.176645+00:00",
+      "owner_counts": {
+        "reference": 1,
+        "restored": 1
+      },
+      "input_sha256": {
+        "reference": "d1f44eae93b586bb970adb24f06916c484c037abcf235d7287f235dc141a2c16",
+        "restored": "368a1c0804ec6d93f3b5e9487ea1743a67ffe58749b7c810970fc7bf0dd0e9fe"
+      },
+      "source_sha256": {
+        "check-restore-privacy.py": "77e9826411b6f27faf056beeb49d297555d5e31430b91a344c4fe143e2d40969",
+        "inspect-drain.py": "eaf7ec576bb976fd626b6f998f2b4c2a4706c524585b02d665640633bcefa61c"
+      }
+    },
+    "current_backup_matches_all_owner_privacy": {
+      "schema_version": 1,
+      "scope": "all_memory_owners",
+      "assessment": "privacy_matches_reference",
+      "errors": [],
+      "checks": {
+        "owner_sets_match": true,
+        "no_orphan_owners": true,
+        "epochs_match": true,
+        "privacy_events_match": true,
+        "no_pending_purge": true,
+        "no_unsafe_memory_rows": true,
+        "audit_history_complete": true
+      },
+      "consistency": "two_supplied_snapshots",
+      "checked_at": "2026-10-15T14:15:19.523448+00:00",
+      "owner_counts": {
+        "reference": 1,
+        "restored": 1
+      },
+      "input_sha256": {
+        "reference": "d1f44eae93b586bb970adb24f06916c484c037abcf235d7287f235dc141a2c16",
+        "restored": "fb69ee84884d5e6b16c4262c77e2474dee3ca4f9978844229b87ebee951bea0a"
+      },
+      "source_sha256": {
+        "check-restore-privacy.py": "77e9826411b6f27faf056beeb49d297555d5e31430b91a344c4fe143e2d40969",
+        "inspect-drain.py": "eaf7ec576bb976fd626b6f998f2b4c2a4706c524585b02d665640633bcefa61c"
+      }
+    },
+    "privacy_snapshot_and_comparison_are_read_only": true,
+    "epoch_only_repair_does_not_hide_missing_audit_or_old_content": {
+      "schema_version": 1,
+      "scope": "all_memory_owners",
+      "assessment": "blocked",
+      "errors": [
+        "privacy_events_match",
+        "no_unsafe_memory_rows",
+        "audit_history_complete"
+      ],
+      "checks": {
+        "owner_sets_match": true,
+        "no_orphan_owners": true,
+        "epochs_match": true,
+        "privacy_events_match": false,
+        "no_pending_purge": true,
+        "no_unsafe_memory_rows": false,
+        "audit_history_complete": false
+      },
+      "consistency": "two_supplied_snapshots",
+      "checked_at": "2026-10-15T14:15:31.733084+00:00",
+      "owner_counts": {
+        "reference": 1,
+        "restored": 1
+      },
+      "input_sha256": {
+        "reference": "d1f44eae93b586bb970adb24f06916c484c037abcf235d7287f235dc141a2c16",
+        "restored": "b9052e8eb042df4dd5f409591cb38988c2c1c5253fd635ae0bb4fdd23fdc77b9"
+      },
+      "source_sha256": {
+        "check-restore-privacy.py": "77e9826411b6f27faf056beeb49d297555d5e31430b91a344c4fe143e2d40969",
+        "inspect-drain.py": "eaf7ec576bb976fd626b6f998f2b4c2a4706c524585b02d665640633bcefa61c"
+      }
+    },
+    "sql_detects_residual_memory_and_orphan_owners": {
+      "unsafe_sources": 16,
+      "unsafe_facts": 2,
+      "unsafe_projections": 2,
+      "unsafe_recalls": 1,
+      "unsafe_jobs": 17,
+      "invalid_audit_targets": 1
+    },
+    "rejected_synthetic_restore_removed_before_runtime_start": true,
+    "preflight_restored_pause": {
+      "assessment": "ready_for_review",
+      "errors": [],
+      "observations_match": true,
+      "inventory_matches_counts": true,
+      "items": {
+        "turns": 0,
+        "notifications": 0,
+        "notification_bindings": 0,
+        "memory_jobs": 0
+      },
+      "report_sha256": "877855e7c1ef68e36feac5bcedb514baa80f24f320f6d76c7e6939a49679ebf7"
+    },
+    "restored_pause_and_audit_require_explicit_resume": true,
+    "preflight_reopened_admission": {
+      "assessment": "blocked",
+      "errors": [],
+      "observations_match": true,
+      "inventory_matches_counts": true,
+      "items": {
+        "turns": 0,
+        "notifications": 0,
+        "notification_bindings": 0,
+        "memory_jobs": 0
+      },
+      "report_sha256": "19c87fb6f36f3ff22fa3a12237b9029b16e0d3484cac0efd6757828122dc8d35"
+    },
+    "restored_runtime_keeps_results_privacy_and_accepts_new_turns": true
+  },
+  "started_at": "2026-10-15T14:08:09.664813+00:00",
+  "source_sha256": {
+    "Dockerfile": "6a37b4c767c87155dd0a934b4cb89c9c182012566ce0d5fc0f53dd4b9a910f0e",
+    ".dockerignore": "0cec955cfd44a78ab73ff26f5c251f80f6ed2932c889ec60559570d1624d398c",
+    "compose.yml": "51b9ce2834093dd768f73b6862bf77fff57a280b692132e8568a3ab72713977a",
+    "ops/postgres-init.sql": "c2cc009b2bafc6bc3ee8803885234ec03eddda7dac1e169c51759235cad93ee4",
+    "ops/container-entrypoint.sh": "dec140519e772a209c90a4ca5792688f9ceaa984751e523eca23cc334af8f02f",
+    "ops/m5-thresholds.json": "15ffff4f601287c8dbc38e6f0e1675171020208d92ebb7f7a089ada0d91a62de",
+    "scripts/validate-compose.py": "80c89273d5a4a4e50b0e2e7d91ccd4c2f414014beb77d6152209d5596bed38be",
+    "scripts/inspect-drain.py": "eaf7ec576bb976fd626b6f998f2b4c2a4706c524585b02d665640633bcefa61c",
+    "scripts/check-restore-privacy.py": "77e9826411b6f27faf056beeb49d297555d5e31430b91a344c4fe143e2d40969",
+    "ops/restore-privacy-snapshot.sql": "d08f193eb25c782991badddd5d3c030550225f724575ad3bef78abe74c39f191"
+  },
+  "operations": {
+    "provider_usage": "unavailable",
+    "calls": {
+      "model_calls": 15,
+      "tool_calls": 3
+    },
+    "notifications": {
+      "pending": 0,
+      "sending": 0,
+      "unknown": 0,
+      "submitted_unverified": 0
+    },
+    "tasks": {
+      "running": 0,
+      "blocked": 0,
+      "waiting": 0,
+      "queued": 0,
+      "completed": 16,
+      "failed": 0,
+      "oldest_queued_ms": 0,
+      "turns": 16
+    },
+    "outbox": {
+      "pending": 0
+    },
+    "provider_cost": "unavailable"
+  },
+  "jar_sha256": "c1c5197009eaca752cb8466702a774498b72dce6e3234b0a8b3db57ce0cd180a",
+  "container_image": "0ddf96d0e283c42d15dcd0d19e64637aa4cf94b2d6da18d78446e6c90562b347",
+  "success": true,
+  "finished_at": "2026-10-15T14:17:03.373363+00:00"
+}

@@ -1,0 +1,163 @@
+{
+  "scope": "synthetic privacy comparison reports only; private all-owner snapshots excluded",
+  "project": "financeclaw-m5e-27062cc0f5",
+  "reports": {
+    "current_backup.json": {
+      "schema_version": 1,
+      "scope": "all_memory_owners",
+      "assessment": "privacy_matches_reference",
+      "errors": [],
+      "checks": {
+        "owner_sets_match": true,
+        "no_orphan_owners": true,
+        "epochs_match": true,
+        "privacy_events_match": true,
+        "no_pending_purge": true,
+        "no_unsafe_memory_rows": true,
+        "audit_history_complete": true
+      },
+      "consistency": "two_supplied_snapshots",
+      "checked_at": "2026-10-15T14:15:19.523448+00:00",
+      "owner_counts": {
+        "reference": 1,
+        "restored": 1
+      },
+      "input_sha256": {
+        "reference": "d1f44eae93b586bb970adb24f06916c484c037abcf235d7287f235dc141a2c16",
+        "restored": "fb69ee84884d5e6b16c4262c77e2474dee3ca4f9978844229b87ebee951bea0a"
+      },
+      "source_sha256": {
+        "check-restore-privacy.py": "77e9826411b6f27faf056beeb49d297555d5e31430b91a344c4fe143e2d40969",
+        "inspect-drain.py": "eaf7ec576bb976fd626b6f998f2b4c2a4706c524585b02d665640633bcefa61c"
+      }
+    },
+    "current_epoch_superseded.json": {
+      "schema_version": 1,
+      "scope": "all_memory_owners",
+      "assessment": "privacy_matches_reference",
+      "errors": [],
+      "checks": {
+        "owner_sets_match": true,
+        "no_orphan_owners": true,
+        "epochs_match": true,
+        "privacy_events_match": true,
+        "no_pending_purge": true,
+        "no_unsafe_memory_rows": true,
+        "audit_history_complete": true
+      },
+      "consistency": "two_supplied_snapshots",
+      "checked_at": "2026-10-15T14:13:16.627755+00:00",
+      "owner_counts": {
+        "reference": 1,
+        "restored": 1
+      },
+      "input_sha256": {
+        "reference": "641d65671da8dd457dba3da2b11ab6efd09cb0be00d2d0a5bc981f753942e39b",
+        "restored": "641d65671da8dd457dba3da2b11ab6efd09cb0be00d2d0a5bc981f753942e39b"
+      },
+      "source_sha256": {
+        "check-restore-privacy.py": "77e9826411b6f27faf056beeb49d297555d5e31430b91a344c4fe143e2d40969",
+        "inspect-drain.py": "eaf7ec576bb976fd626b6f998f2b4c2a4706c524585b02d665640633bcefa61c"
+      }
+    },
+    "epoch_only.json": {
+      "schema_version": 1,
+      "scope": "all_memory_owners",
+      "assessment": "blocked",
+      "errors": [
+        "privacy_events_match",
+        "no_unsafe_memory_rows",
+        "audit_history_complete"
+      ],
+      "checks": {
+        "owner_sets_match": true,
+        "no_orphan_owners": true,
+        "epochs_match": true,
+        "privacy_events_match": false,
+        "no_pending_purge": true,
+        "no_unsafe_memory_rows": false,
+        "audit_history_complete": false
+      },
+      "consistency": "two_supplied_snapshots",
+      "checked_at": "2026-10-15T14:15:31.733084+00:00",
+      "owner_counts": {
+        "reference": 1,
+        "restored": 1
+      },
+      "input_sha256": {
+        "reference": "d1f44eae93b586bb970adb24f06916c484c037abcf235d7287f235dc141a2c16",
+        "restored": "b9052e8eb042df4dd5f409591cb38988c2c1c5253fd635ae0bb4fdd23fdc77b9"
+      },
+      "source_sha256": {
+        "check-restore-privacy.py": "77e9826411b6f27faf056beeb49d297555d5e31430b91a344c4fe143e2d40969",
+        "inspect-drain.py": "eaf7ec576bb976fd626b6f998f2b4c2a4706c524585b02d665640633bcefa61c"
+      }
+    },
+    "old_backup.json": {
+      "schema_version": 1,
+      "scope": "all_memory_owners",
+      "assessment": "blocked",
+      "errors": [
+        "epochs_match",
+        "privacy_events_match"
+      ],
+      "checks": {
+        "owner_sets_match": true,
+        "no_orphan_owners": true,
+        "epochs_match": false,
+        "privacy_events_match": false,
+        "no_pending_purge": true,
+        "no_unsafe_memory_rows": true,
+        "audit_history_complete": true
+      },
+      "consistency": "two_supplied_snapshots",
+      "checked_at": "2026-10-15T14:15:18.176645+00:00",
+      "owner_counts": {
+        "reference": 1,
+        "restored": 1
+      },
+      "input_sha256": {
+        "reference": "d1f44eae93b586bb970adb24f06916c484c037abcf235d7287f235dc141a2c16",
+        "restored": "368a1c0804ec6d93f3b5e9487ea1743a67ffe58749b7c810970fc7bf0dd0e9fe"
+      },
+      "source_sha256": {
+        "check-restore-privacy.py": "77e9826411b6f27faf056beeb49d297555d5e31430b91a344c4fe143e2d40969",
+        "inspect-drain.py": "eaf7ec576bb976fd626b6f998f2b4c2a4706c524585b02d665640633bcefa61c"
+      }
+    },
+    "residual_memory.json": {
+      "schema_version": 1,
+      "scope": "all_memory_owners",
+      "assessment": "blocked",
+      "errors": [
+        "no_orphan_owners",
+        "privacy_events_match",
+        "no_unsafe_memory_rows",
+        "audit_history_complete"
+      ],
+      "checks": {
+        "owner_sets_match": true,
+        "no_orphan_owners": false,
+        "epochs_match": true,
+        "privacy_events_match": false,
+        "no_pending_purge": true,
+        "no_unsafe_memory_rows": false,
+        "audit_history_complete": false
+      },
+      "consistency": "two_supplied_snapshots",
+      "checked_at": "2026-10-15T14:15:34.329867+00:00",
+      "owner_counts": {
+        "reference": 1,
+        "restored": 1
+      },
+      "input_sha256": {
+        "reference": "d1f44eae93b586bb970adb24f06916c484c037abcf235d7287f235dc141a2c16",
+        "restored": "a8c9b43de430d0dee80321cd7ebcfc18c3eb16df7bcf77c12d5645d62517b3c0"
+      },
+      "source_sha256": {
+        "check-restore-privacy.py": "77e9826411b6f27faf056beeb49d297555d5e31430b91a344c4fe143e2d40969",
+        "inspect-drain.py": "eaf7ec576bb976fd626b6f998f2b4c2a4706c524585b02d665640633bcefa61c"
+      }
+    }
+  }
+}

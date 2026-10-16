@@ -1,27 +1,27 @@
 package com.financeclaw.api;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.financeclaw.application.OperationsService;
+import com.financeclaw.app.operations.AdmissionService;
+import com.financeclaw.app.operations.OperationsQueryService;
 import com.financeclaw.domain.Operations.*;
 import com.financeclaw.domain.Task.Problem;
-import com.financeclaw.infrastructure.task.OperationsMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Map;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
 public class OperationsController {
-  private final OperationsMapper db;
-  private final OperationsService operations;
+  private final AdmissionService admissions;
+  private final OperationsQueryService operations;
 
-  public OperationsController(OperationsMapper db, OperationsService operations) {
-    this.db = db;
+  public OperationsController(AdmissionService admissions, OperationsQueryService operations) {
+    this.admissions = admissions;
     this.operations = operations;
   }
 
   @GetMapping("/v1/operations/admission")
   public Admission admission(HttpServletRequest request) {
-    return operations.admission(TaskController.owner(request));
+    return admissions.admission(TaskController.owner(request));
   }
 
   @PutMapping("/v1/operations/admission")
@@ -34,7 +34,7 @@ public class OperationsController {
         || !body.path("paused").isBoolean()
         || !body.path("revision").isIntegralNumber()
         || !body.path("revision").canConvertToLong()) throw new Problem(422, "invalid_body");
-    return operations.change(
+    return admissions.change(
         TaskController.owner(request),
         key,
         body.get("paused").booleanValue(),
@@ -57,19 +57,6 @@ public class OperationsController {
 
   @GetMapping("/v1/operations")
   public Map<String, Object> view(HttpServletRequest request) {
-    var owner = TaskController.owner(request);
-    return Map.of(
-        "tasks",
-        db.tasks(owner),
-        "calls",
-        db.calls(owner),
-        "outbox",
-        db.outbox(owner),
-        "notifications",
-        db.notifications(owner),
-        "provider_usage",
-        "unavailable",
-        "provider_cost",
-        "unavailable");
+    return operations.view(TaskController.owner(request));
   }
 }

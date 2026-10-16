@@ -3,9 +3,10 @@ package com.financeclaw.m6;
 import static org.assertj.core.api.Assertions.*;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.financeclaw.agent.ResumeInputs;
 import com.financeclaw.application.*;
 import com.financeclaw.domain.Task.Owner;
+import com.financeclaw.support.PayloadDigest;
+import com.financeclaw.support.PayloadJson;
 import com.financeclaw.tools.BusinessCatalog;
 import com.financeclaw.ziwei.*;
 import java.time.*;
@@ -72,8 +73,7 @@ class ZiweiDomainTest {
     var json = new ObjectMapper();
     byte[] fixture = getClass().getResourceAsStream("/ziwei/domain/domain.json").readAllBytes();
     var manifest = json.readTree(getClass().getResourceAsStream("/ziwei/domain/manifest.json"));
-    assertThat(
-            GovernanceService.digest(new String(fixture, java.nio.charset.StandardCharsets.UTF_8)))
+    assertThat(PayloadDigest.sha256(new String(fixture, java.nio.charset.StandardCharsets.UTF_8)))
         .isEqualTo(manifest.get("fixture_sha256").asText());
     var schemas = json.readTree(getClass().getResourceAsStream("/ziwei/reference/schemas.json"));
     for (var level : ZiweiDates.Level.values()) {
@@ -219,7 +219,7 @@ class ZiweiDomainTest {
             .withProperty("ZIWEI_HMAC_KEY", KEY);
     var catalog = new ReleaseCatalog(env);
     String hash = catalog.currentHash();
-    assertThat(ResumeInputs.canonical(catalog.require(hash)))
+    assertThat(PayloadJson.canonical(catalog.require(hash)))
         .doesNotContain(KEY)
         .contains(POLICY.convention(), "2026b", POLICY.schemaHash());
     env.setProperty("financeclaw.business.ziwei.key-version", "test-v2");

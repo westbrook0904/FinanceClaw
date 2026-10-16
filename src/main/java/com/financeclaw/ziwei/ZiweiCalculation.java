@@ -2,8 +2,8 @@ package com.financeclaw.ziwei;
 
 import static com.financeclaw.ziwei.ZiweiInputs.map;
 
-import com.financeclaw.agent.ResumeInputs;
-import com.financeclaw.application.GovernanceService;
+import com.financeclaw.support.PayloadDigest;
+import com.financeclaw.support.PayloadJson;
 import java.nio.charset.StandardCharsets;
 import java.time.*;
 import java.time.temporal.ChronoUnit;
@@ -117,8 +117,8 @@ public final class ZiweiCalculation {
                 target.clock().timezone());
     String chartId =
         "ziwei-"
-            + GovernanceService.digest(
-                ResumeInputs.canonical(
+            + PayloadDigest.sha256(
+                PayloadJson.canonical(
                     Arrays.asList(fingerprint, policy.rules(), stableTarget, level.name())));
     var artifact = new TreeMap<String, Object>();
     artifact.put("chart_id", chartId);
@@ -199,7 +199,7 @@ public final class ZiweiCalculation {
         "fact_id",
         layer
             + (auxiliary ? ".aux." : ".core.")
-            + GovernanceService.digest(ResumeInputs.canonical(value)).substring(0, 20));
+            + PayloadDigest.sha256(PayloadJson.canonical(value)).substring(0, 20));
     fact.put("layer", layer);
     fact.put("palace_index", palace);
     fact.put("value", value);
@@ -236,7 +236,7 @@ public final class ZiweiCalculation {
   }
 
   public static int bytes(Object value) {
-    return ResumeInputs.canonical(value).getBytes(StandardCharsets.UTF_8).length;
+    return PayloadJson.canonical(value).getBytes(StandardCharsets.UTF_8).length;
   }
 
   private static ZiweiDates.InputError error(String code) {

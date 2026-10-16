@@ -1,0 +1,127 @@
+package com.financeclaw.infrastructure.agentscope.capability;
+
+import com.financeclaw.application.*;
+import com.financeclaw.domain.Governance.*;
+import com.financeclaw.domain.Task.*;
+import com.financeclaw.infrastructure.agentscope.ResumeInputs;
+import com.financeclaw.support.PayloadJson;
+import com.financeclaw.support.ToolSchemas;
+import io.agentscope.core.message.*;
+import java.util.*;
+import reactor.core.publisher.Mono;
+
+public final class LocalToolContribution implements ToolContribution {
+  public static final Map<String, Object> CITY =
+      ToolSchemas.required("city", Map.of("type", "string", "minLength", 1, "maxLength", 100));
+  public static final Map<String, Object> TITLE =
+      ToolSchemas.required("title", Map.of("type", "string", "minLength", 1, "maxLength", 200));
+  public static final Map<String, Object> EMPTY =
+      Map.of("type", "object", "properties", Map.of(), "additionalProperties", false);
+  public static final Set<String> NAMES =
+      Set.of("request_city", "create_report", "search_catalog", "read_artifact");
+
+  private final GovernanceService governance;
+  private final Claim claim;
+
+  public LocalToolContribution(GovernanceService governance, Claim claim) {
+    this.governance = governance;
+    this.claim = claim;
+  }
+
+  public void contribute(Registrar registrar) {
+    registrar.tool(
+        "request_city",
+        EMPTY,
+        null,
+        p -> Mono.just(ToolResultBlock.suspended(p.getToolUseBlock())),
+        new CityInteraction());
+    registrar.tool(
+        "search_catalog",
+        CITY,
+        "catalog:read",
+        p ->
+            Mono.fromCallable(
+                () ->
+                    archived(
+                        List.of(
+                            Map.of(
+                                "city",
+                                p.getInput().get("city"),
+                                "name",
+                                "示例酒店",
+                                "source",
+                                "local-fixture")))));
+    registrar.tool(
+        "create_report",
+        TITLE,
+        "report:write",
+        p ->
+            Mono.fromCallable(
+                () ->
+                    ToolResultBlock.text(
+                        governance.report(
+                            claim,
+                            p.getToolUseBlock().getId(),
+                            ResumeInputs.actionHash(p.getToolUseBlock()),
+                            (String) p.getInput().get("title")))),
+        new ApprovalInteractionHandler(
+            call -> "是否创建报告：" + Objects.toString(call.getInput().get("title"), "")));
+    registrar.tool(
+        "read_artifact",
+        Map.of(
+            "type",
+            "object",
+            "properties",
+            Map.of(
+                "path",
+                Map.of("type", "string", "maxLength", 256),
+                "artifact_id",
+                Map.of("type", "string"),
+                "start",
+                Map.of("type", "integer", "minimum", 0),
+                "limit",
+                Map.of("type", "integer", "minimum", 1, "maximum", 100)),
+            "required",
+            List.of("artifact_id"),
+            "additionalProperties",
+            false),
+        "artifact:read",
+        p ->
+            Mono.fromCallable(
+                () ->
+                    ToolResultBlock.text(
+                        PayloadJson.canonical(
+                            governance.read(
+                                new Owner(claim.turn().tenant(), claim.turn().subject()),
+                                (String) p.getInput().get("artifact_id"),
+                                ((Number) p.getInput().getOrDefault("start", 0)).intValue(),
+                                ((Number) p.getInput().getOrDefault("limit", 20)).intValue(),
+                                (String) p.getInput().getOrDefault("path", ""))))));
+  }
+
+  private static final class CityInteraction implements InteractionHandler {
+    public Pending pending(ToolUseBlock call) {
+      return new Pending(
+          "input",
+          call.getId(),
+          call.getName(),
+          ResumeInputs.actionHash(call),
+          PayloadJson.canonical(CITY),
+          "请输入城市");
+    }
+
+    public Msg resume(ToolUseBlock call, Object answer) {
+      return ResumeInputs.clarification(call, (String) ((Map<?, ?>) answer).get("city"));
+    }
+  }
+
+  private ToolResultBlock archived(Object result) {
+    return archived(result, "artifact:read");
+  }
+
+  private ToolResultBlock archived(Object result, String scope) {
+    var a = governance.archive(claim, result, scope);
+    return ToolResultBlock.text(
+        PayloadJson.canonical(Map.of("artifact_id", a.id(), "hash", a.hash(), "bytes", a.bytes())));
+  }
+}

@@ -1,0 +1,87 @@
+{
+  "review_date": "2026-10-15",
+  "git_head": "993e7acded5340ace65d02c9aad3f272db5fac2f",
+  "scope": {
+    "production_java_unchanged": true,
+    "production_java_fingerprints_checked": 67,
+    "new_dependency": "com.tngtech.archunit:archunit:1.5.1:test",
+    "agentscope_jdbc_in_production_dependencies": false,
+    "full_unit_suite_rerun": false,
+    "postgresql_integration_rerun": false,
+    "compose_rerun": false,
+    "docker_status": "daemon unavailable"
+  },
+  "resolved_versions": {
+    "org.springframework:spring-jdbc": "6.2.19",
+    "org.springframework:spring-tx": "6.2.19",
+    "org.mybatis:mybatis-spring": "3.0.5",
+    "org.xerial:sqlite-jdbc": "3.49.1.0",
+    "org.junit.jupiter:junit-jupiter": "5.12.2",
+    "com.tngtech.archunit:archunit": "1.5.1"
+  },
+  "architecture_test": {
+    "command": "scripts/mvn.sh -B -ntp -Dtest=ArchitectureTest test spotless:check",
+    "tests": 3,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "timestamp": null,
+    "cases": [
+      "applicationCodeLeavesJdbcTransactionControlToSpring",
+      "apiDoesNotGainPersistenceDependenciesOutsideTheRecordedOperationsDebt",
+      "domainDoesNotDependOnFrameworksOrOuterLayers"
+    ],
+    "report_sha256": "d9ac28c6134cd3bffcc1655e18beaff850fb4b3d1876cb37aa1147398e155a07"
+  },
+  "format_check": "passed",
+  "transaction_probe": {
+    "validation": "isolated_real_sqlite_jdbc_transactions",
+    "postgresql_acceptance": false,
+    "java": "21.0.12+8-LTS",
+    "spring": "6.2.19",
+    "agentscope_jdbc": "2.0.3",
+    "sqlite_driver": "3.49.1.0",
+    "sqlite_database": "3.49.1",
+    "checks": {
+      "spring_mybatis_and_jdbc_rollback": {
+        "passed": true,
+        "remaining_rows": 0
+      },
+      "spring_mybatis_and_jdbc_commit": {
+        "passed": true,
+        "remaining_rows": 2
+      },
+      "raw_sdk_does_not_join_spring": {
+        "passed": true,
+        "sdk_state_survived": true,
+        "outer_row_survived": false
+      },
+      "transaction_aware_proxy_does_not_suppress_sdk_commit": {
+        "earlier_business_row_survived": true,
+        "passed": true,
+        "later_business_row_survived": false,
+        "sdk_state_survived": true
+      }
+    }
+  },
+  "official_artifacts": {
+    "agentscope-jdbc": {
+      "url": "https://repo.maven.apache.org/maven2/io/agentscope/agentscope-extensions-jdbc/2.0.3/agentscope-extensions-jdbc-2.0.3.jar",
+      "sha256": "788ba24cdf36e3140615d1f838b9fd4caa305560f9e98630c01e1fa7ab8e6aba"
+    },
+    "spring-jdbc-source": {
+      "url": "https://repo.maven.apache.org/maven2/org/springframework/spring-jdbc/6.2.19/spring-jdbc-6.2.19-sources.jar",
+      "sha256": "41fbc1371d47bda9d7adae686d51e1b655c35b54aab3ce0160c27925dcf1e3a9"
+    },
+    "cola-statemachine-source": {
+      "url": "https://repo.maven.apache.org/maven2/com/alibaba/cola/cola-component-statemachine/5.0.0/cola-component-statemachine-5.0.0-sources.jar",
+      "sha256": "4247be12c33f574c1457f15cbe1e0912ad8e5e9f6b28a3a3b2a270be9a3e8d6b"
+    }
+  },
+  "source_fingerprints": {
+    "pom.xml": "0c99b5afc1b5ef28a3dffe1a775ff66185948d5be98bcc9494b3b896e7c231da",
+    "src/test/java/com/financeclaw/architecture/ArchitectureTest.java": "ae63a004d817cd946d1c146d3b030688b05d5bdd22f81fbd872e50ed7129e0b5",
+    "docs/architecture/experiments/SpringTransactionProbe.java": "cded7b8ce0d8fc59b254197b3bae58605e41d5d2ea42fdc6042bdffa1f189dbe"
+  },
+  "reproduction_document": "docs/architecture/spring-transactions-component-review.md"
+}

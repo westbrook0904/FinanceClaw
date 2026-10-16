@@ -1,6 +1,6 @@
 package com.financeclaw.api;
 
-import com.financeclaw.application.TaskService;
+import com.financeclaw.app.task.TaskQueryService;
 import com.financeclaw.domain.Task.*;
 import java.time.Duration;
 import java.util.concurrent.Semaphore;
@@ -15,12 +15,12 @@ import reactor.core.scheduler.Schedulers;
 /** Spring MVC adapts this Publisher to SSE; Reactor owns scheduling, cancellation and timeouts. */
 @Component
 public class TaskEvents {
-  private final TaskService tasks;
+  private final TaskQueryService tasks;
   private final Duration timeout, poll;
   private final Semaphore slots;
 
   public TaskEvents(
-      TaskService tasks,
+      TaskQueryService tasks,
       @Value("${financeclaw.sse.max-connections:32}") int max,
       @Value("${financeclaw.sse.timeout-ms:30000}") long timeout,
       @Value("${financeclaw.sse.poll-ms:250}") long poll) {

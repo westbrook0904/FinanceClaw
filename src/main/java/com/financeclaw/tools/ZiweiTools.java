@@ -1,9 +1,10 @@
 package com.financeclaw.tools;
 
-import com.financeclaw.agent.ResumeInputs;
 import com.financeclaw.application.*;
 import com.financeclaw.domain.Governance.*;
 import com.financeclaw.domain.Task.*;
+import com.financeclaw.infrastructure.agentscope.ResumeInputs;
+import com.financeclaw.support.PayloadJson;
 import com.financeclaw.ziwei.*;
 import io.agentscope.core.message.*;
 import io.agentscope.core.tool.ToolCallParam;
@@ -21,20 +22,18 @@ public final class ZiweiTools {
     this.tasks = tasks;
     this.governance = governance;
     this.claim = claim;
-    this.policy = tasks.releases().require(claim.turn().releaseHash()).business().ziwei();
+    this.policy = tasks.release(claim.turn().releaseHash()).business().ziwei();
     if (policy == null) throw new Blocked("ziwei_disabled");
     policy.verifyRuntime();
   }
 
   public ZiweiDates.QueryClock clock() {
-    return new ZiweiDates.QueryClock(
-        tasks.governance().requestClock(claim.turn().id()), policy.queryTimezone());
+    return new ZiweiDates.QueryClock(tasks.requestClock(claim), policy.queryTimezone());
   }
 
   private void authorize() {
     tasks.checkDispatch(claim);
-    if (!GovernanceService.scopes(tasks.governance().policy(claim.turn().id()).scopes())
-        .contains("ziwei:read")) throw new Blocked("ziwei_denied");
+    if (!tasks.scopes(claim).contains("ziwei:read")) throw new Blocked("ziwei_denied");
   }
 
   public Pending pending(ToolUseBlock call) {
@@ -46,7 +45,7 @@ public final class ZiweiTools {
         call.getId(),
         call.getName(),
         ResumeInputs.actionHash(call),
-        ResumeInputs.canonical(ZiweiInputs.answerSchema(call.getName())),
+        PayloadJson.canonical(ZiweiInputs.answerSchema(call.getName())),
         review.question());
   }
 
@@ -55,7 +54,7 @@ public final class ZiweiTools {
         () -> {
           authorize();
           String tool = param.getToolUseBlock().getName();
-          byte[] key = ZiweiPolicy.key(tasks.releases().credential(policy.keyRef()));
+          byte[] key = ZiweiPolicy.key(tasks.credential(policy.keyRef()));
           try {
             String binding =
                 ZiweiInputs.hmac(
@@ -113,11 +112,11 @@ public final class ZiweiTools {
                                   artifact.bytes()));
                           return response;
                         });
-            return ToolResultBlock.text(ResumeInputs.canonical(receipt));
+            return ToolResultBlock.text(PayloadJson.canonical(receipt));
           } catch (ZiweiDates.InputError error) {
             // Domain errors are safe, actionable model feedback; never expose submitted values.
             return ToolResultBlock.text(
-                ResumeInputs.canonical(
+                PayloadJson.canonical(
                     Map.of(
                         "status",
                         "rejected",

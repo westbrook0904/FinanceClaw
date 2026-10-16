@@ -2,7 +2,7 @@ package com.financeclaw.m0;
 
 import static org.assertj.core.api.Assertions.*;
 
-import com.financeclaw.agent.IsolatedAgentFactory;
+import com.financeclaw.infrastructure.agentscope.IsolatedAgentFactory;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.permission.PermissionContextState;
 import io.agentscope.core.permission.PermissionMode;

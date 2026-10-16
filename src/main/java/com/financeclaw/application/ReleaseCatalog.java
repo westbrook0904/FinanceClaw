@@ -1,8 +1,8 @@
 package com.financeclaw.application;
 
-import com.financeclaw.agent.ResumeInputs;
 import com.financeclaw.domain.ExecutionScope;
 import com.financeclaw.domain.Governance.Blocked;
+import com.financeclaw.support.PayloadJson;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import org.springframework.beans.factory.annotation.Value;
@@ -56,7 +56,7 @@ public class ReleaseCatalog {
     }
 
     public String hash() {
-      return ExecutionScope.hash(List.of("agentscope-2.0.3", ResumeInputs.canonical(this)));
+      return ExecutionScope.hash(List.of("agentscope-2.0.3", PayloadJson.canonical(this)));
     }
   }
 

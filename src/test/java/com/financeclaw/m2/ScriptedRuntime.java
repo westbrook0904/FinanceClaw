@@ -1,9 +1,10 @@
 package com.financeclaw.m2;
 
-import com.financeclaw.agent.*;
 import com.financeclaw.application.TaskService;
 import com.financeclaw.domain.Task.*;
+import com.financeclaw.infrastructure.agentscope.execution.*;
 import com.financeclaw.infrastructure.state.RuntimeMapper;
+import com.financeclaw.support.PayloadJson;
 import io.agentscope.core.message.*;
 import io.agentscope.core.model.*;
 import java.util.*;
@@ -13,8 +14,9 @@ public final class ScriptedRuntime extends TaskAgentRuntime {
   public ScriptedRuntime(
       TaskService tasks,
       com.financeclaw.application.GovernanceService governance,
-      RuntimeMapper states) {
-    super(tasks, governance, states, 15000);
+      RuntimeMapper states,
+      com.financeclaw.infrastructure.agentscope.capability.BusinessCapabilities capabilities) {
+    super(tasks, governance, states, capabilities, 15000);
   }
 
   @Override
@@ -28,7 +30,7 @@ public final class ScriptedRuntime extends TaskAgentRuntime {
           List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
         String name =
             switch (claim.turn().message()) {
-              case "city" -> "request_city";
+              case "city", "city-batch" -> "request_city";
               case "catalog" -> "search_catalog";
               case "mcp" -> "hotels";
               default -> "create_report";
@@ -40,7 +42,8 @@ public final class ScriptedRuntime extends TaskAgentRuntime {
                 .map(ToolResultBlock::getId)
                 .distinct()
                 .count();
-        boolean resolved = resolvedCount >= (claim.turn().message().equals("batch") ? 2 : 1);
+        boolean batch = Set.of("batch", "city-batch").contains(claim.turn().message());
+        boolean resolved = resolvedCount >= (batch ? 2 : 1);
         if (resolved)
           return Flux.just(
               ChatResponse.builder()
@@ -56,20 +59,20 @@ public final class ScriptedRuntime extends TaskAgentRuntime {
                 .id("call-1")
                 .name(name)
                 .input(input)
-                .content(ResumeInputs.canonical(input))
+                .content(PayloadJson.canonical(input))
                 .build();
         return Flux.just(
             ChatResponse.builder()
                 .id("response")
                 .content(
-                    (claim.turn().message().equals("batch")
+                    (batch
                         ? List.of(
                             tool,
                             ToolUseBlock.builder()
                                 .id("call-2")
                                 .name(name)
                                 .input(input)
-                                .content(ResumeInputs.canonical(input))
+                                .content(PayloadJson.canonical(input))
                                 .build())
                         : List.of(
                             TextBlock.builder().text("PRIVATE_INTERMEDIATE_TEXT").build(), tool)))

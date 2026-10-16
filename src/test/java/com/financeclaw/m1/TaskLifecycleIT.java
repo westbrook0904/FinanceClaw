@@ -1,12 +1,21 @@
 package com.financeclaw.m1;
 
 import static org.assertj.core.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
 
-import com.financeclaw.agent.TaskAgentRuntime;
+import com.financeclaw.app.execution.*;
+import com.financeclaw.app.execution.port.*;
+import com.financeclaw.app.task.*;
+import com.financeclaw.app.task.port.*;
 import com.financeclaw.application.TaskService;
 import com.financeclaw.bootstrap.FinanceClawApplication;
+import com.financeclaw.domain.Governance.Pending;
 import com.financeclaw.domain.Task.*;
+import com.financeclaw.infrastructure.agentscope.execution.TaskAgentRuntime;
+import com.financeclaw.infrastructure.governance.GovernanceMapper;
 import com.financeclaw.infrastructure.state.*;
+import com.financeclaw.infrastructure.task.*;
 import com.financeclaw.infrastructure.task.TaskMapper;
 import com.financeclaw.worker.TaskWorker;
 import io.agentscope.core.message.*;
@@ -55,6 +64,7 @@ class TaskLifecycleIT {
   }
 
   @Autowired TaskService tasks;
+  @Autowired org.springframework.context.ApplicationContext taskContext;
   @Autowired com.financeclaw.application.GovernanceService governance;
   @Autowired TaskAgentRuntime runtime;
   @Autowired TaskWorker worker;
@@ -137,7 +147,13 @@ class TaskLifecycleIT {
       Claim c1 = claim(), c2 = claim();
       CountDownLatch both = new CountDownLatch(2);
       TaskAgentRuntime concurrent =
-          new TaskAgentRuntime(tasks, governance, states, 5000) {
+          new TaskAgentRuntime(
+              tasks,
+              governance,
+              states,
+              taskContext.getBean(
+                  com.financeclaw.infrastructure.agentscope.capability.BusinessCapabilities.class),
+              5000) {
             @Override
             protected Model model(Claim c) {
               return scripted(
@@ -299,7 +315,13 @@ class TaskLifecycleIT {
     var c = claim();
     CountDownLatch started = new CountDownLatch(1);
     TaskAgentRuntime slow =
-        new TaskAgentRuntime(tasks, governance, states, 5000) {
+        new TaskAgentRuntime(
+            tasks,
+            governance,
+            states,
+            taskContext.getBean(
+                com.financeclaw.infrastructure.agentscope.capability.BusinessCapabilities.class),
+            5000) {
           @Override
           protected Model model(Claim claim) {
             return new Model() {
@@ -315,7 +337,9 @@ class TaskLifecycleIT {
             };
           }
         };
-    try (var w = new TaskWorker(tasks, slow, false, false, 1, 60000, 2000);
+    try (var w =
+            com.financeclaw.m1.TaskWorkerFixture.create(
+                taskContext, slow, false, false, 1, 60000, 2000);
         var pool = Executors.newFixedThreadPool(1)) {
       var execution = pool.submit(() -> w.execute(c));
       assertThat(started.await(3, TimeUnit.SECONDS)).isTrue();
@@ -354,7 +378,13 @@ class TaskLifecycleIT {
     var t = submit();
     var c = claim();
     TaskAgentRuntime broken =
-        new TaskAgentRuntime(tasks, governance, states, 5000) {
+        new TaskAgentRuntime(
+            tasks,
+            governance,
+            states,
+            taskContext.getBean(
+                com.financeclaw.infrastructure.agentscope.capability.BusinessCapabilities.class),
+            5000) {
           @Override
           protected Model model(Claim claim) {
             return scripted(
@@ -364,7 +394,9 @@ class TaskLifecycleIT {
                 "never");
           }
         };
-    try (var w = new TaskWorker(tasks, broken, false, false, 1, 60000, 2000)) {
+    try (var w =
+        com.financeclaw.m1.TaskWorkerFixture.create(
+            taskContext, broken, false, false, 1, 60000, 2000)) {
       w.execute(c);
     } catch (InterruptedException e) {
       throw new RuntimeException(e);
@@ -493,21 +525,12 @@ class TaskLifecycleIT {
     var t = submit();
     var c = claim();
     var failing =
-        new TaskService(
-            mapper,
-            states,
-            new org.springframework.transaction.support.TransactionTemplate(
-                new org.springframework.jdbc.datasource.DataSourceTransactionManager(source)),
-            tasks.governance(),
-            tasks.releases()) {
-          @Override
-          public void finish(Claim claim) {
-            throw new IllegalStateException("injected commit failure");
-          }
-        };
-    try (var w = new TaskWorker(failing, runtime, false, false, 1, 60000, 2000)) {
-      w.execute(c);
-    }
+        org.mockito.Mockito.spy(
+            taskContext.getBean(com.financeclaw.app.execution.ExecutionCompletionService.class));
+    org.mockito.Mockito.doThrow(new IllegalStateException("injected commit failure"))
+        .when(failing)
+        .finish(c);
+    new com.financeclaw.app.execution.ExecuteTaskService(failing, runtime).execute(c);
     assertThat(turn(t).status()).isEqualTo("running");
     assertThat(mapper.receipt(c.command().attemptId()).outcome()).isEqualTo("completed");
     probe.expire();
@@ -517,12 +540,320 @@ class TaskLifecycleIT {
   }
 
   @Test
+  void admissionFailureRollsBackTurnPolicyCommandJournalAndEvent() {
+    String conversation = tasks.createConversation(owner);
+    var admission = spy(new MyBatisTaskAdmissionGateway(mapper));
+    doAnswer(
+            call -> {
+              call.callRealMethod();
+              throw new IllegalStateException("after admission writes");
+            })
+        .when(admission)
+        .recordAdmission(any(), anyString());
+    var useCase =
+        new SubmitTaskService(
+            admission,
+            bean(ExecutionPolicyGateway.class),
+            bean(ExecutionRelease.class),
+            bean(ExecutionMemory.class),
+            transaction());
+    assertThatThrownBy(() -> useCase.submit(owner, conversation, "atomic-admission", "hello"))
+        .hasMessage("after admission writes");
+    for (String table : List.of("turns", "turn_policies", "commands", "journal", "events"))
+      assertThat(count(table)).as(table).isZero();
+    assertThat(count("conversations")).isEqualTo(1);
+    assertThat(tasks.submit(owner, conversation, "atomic-admission", "hello").idempotentReplay())
+        .isFalse();
+  }
+
+  @Test
+  void claimFailureRollsBackAttemptFenceAndRunningEvent() {
+    var accepted = submit();
+    var transitions =
+        spy(
+            new TaskTransitionService(
+                bean(TaskMutationGateway.class),
+                bean(ExecutionPolicyGateway.class),
+                bean(ExecutionMemory.class)));
+    doAnswer(
+            call -> {
+              call.callRealMethod();
+              throw new IllegalStateException("after running event");
+            })
+        .when(transitions)
+        .change(any(), eq("running"), isNull(), isNull());
+    var leases =
+        new ExecutionLeaseService(
+            bean(CommandGateway.class),
+            bean(TaskMutationGateway.class),
+            bean(TaskQueryGateway.class),
+            transitions,
+            transaction());
+    assertThatThrownBy(() -> leases.claim("fault", 60000)).hasMessage("after running event");
+    assertThat(turn(accepted).status()).isEqualTo("queued");
+    assertThat(turn(accepted).revision()).isEqualTo(1);
+    var command = mapper.lockTurnCommand(accepted.turnId());
+    assertThat(command.status()).isEqualTo("queued");
+    assertThat(command.attemptId()).isNull();
+    assertThat(command.fence()).isZero();
+    assertThat(probe.attempts()).isZero();
+    assertThat(count("events")).isEqualTo(1);
+    assertThat(claim()).isNotNull();
+  }
+
+  @Test
+  void waitingReceiptAndAllQuestionsRollBackWhenLastInsertFails() {
+    var accepted = submit();
+    var claim = claim();
+    var saved = runtime.execute(claim);
+    var outcome =
+        new Outcome(
+            "waiting",
+            null,
+            saved.stateVersion(),
+            List.of(
+                new Pending("input", "first", "request_city", "first-hash", "{}", "City?"),
+                new Pending("input", "second", "request_city", "second-hash", "{}", "City?")));
+    var receipts =
+        spy(new MyBatisExecutionReceiptGateway(mapper, states, bean(GovernanceMapper.class)));
+    var inserts = new java.util.concurrent.atomic.AtomicInteger();
+    doAnswer(
+            call -> {
+              call.callRealMethod();
+              if (inserts.incrementAndGet() == 2)
+                throw new IllegalStateException("after last question");
+              return null;
+            })
+        .when(receipts)
+        .insertInteraction(any());
+    assertThatThrownBy(
+            () ->
+                completion(
+                        bean(TaskMutationGateway.class),
+                        receipts,
+                        bean(TaskTransitionService.class))
+                    .seal(claim, outcome))
+        .hasMessage("after last question");
+    assertThat(mapper.receipt(claim.command().attemptId()).outcome()).isNull();
+    assertThat(count("interactions")).isZero();
+    assertThat(turn(accepted).status()).isEqualTo("running");
+    tasks.seal(claim, outcome);
+    tasks.finish(claim);
+    assertThat(turn(accepted).status()).isEqualTo("waiting");
+    assertThat(count("interactions")).isEqualTo(2);
+    assertThat(probe.outbox()).isZero();
+  }
+
+  @Test
+  void failureAfterOutboxRollsBackCompletionAndRecoveryUsesSealedReceiptOnce() {
+    var accepted = submit();
+    var claim = claim();
+    tasks.seal(claim, runtime.execute(claim));
+    long sealedRevision = turn(accepted).revision();
+    int sealedEvents = count("events");
+    var mutations = spy(new MyBatisTaskMutationGateway(mapper));
+    doAnswer(
+            call -> {
+              call.callRealMethod();
+              throw new IllegalStateException("after outbox");
+            })
+        .when(mutations)
+        .outbox(anyString());
+    var transitions =
+        new TaskTransitionService(
+            mutations, bean(ExecutionPolicyGateway.class), bean(ExecutionMemory.class));
+    assertThatThrownBy(
+            () ->
+                completion(mutations, bean(ExecutionReceiptGateway.class), transitions)
+                    .finish(claim))
+        .hasMessage("after outbox");
+    assertThat(turn(accepted).status()).isEqualTo("running");
+    assertThat(turn(accepted).revision()).isEqualTo(sealedRevision);
+    assertThat(count("events")).isEqualTo(sealedEvents);
+    assertThat(probe.answers()).isZero();
+    assertThat(probe.outbox()).isZero();
+    assertThat(mapper.lockCommand(claim.command().id()).fence()).isEqualTo(claim.command().fence());
+    assertThat(mapper.receipt(claim.command().attemptId()).outcome()).isEqualTo("completed");
+    probe.expire();
+    assertThat(tasks.recoverExpired()).isEqualTo(1);
+    assertThat(tasks.recoverExpired()).isZero();
+    assertThat(turn(accepted).status()).isEqualTo("completed");
+    assertThat(probe.answers()).isEqualTo(1);
+    assertThat(probe.outbox()).isEqualTo(1);
+    assertThat(probe.attempts()).isEqualTo(1);
+  }
+
+  @Test
+  void cancellationReceiptFailureRollsBackStateEventOutboxAndCommand() {
+    var accepted = submit();
+    var mutations = spy(new MyBatisTaskMutationGateway(mapper));
+    doAnswer(
+            call -> {
+              call.callRealMethod();
+              throw new IllegalStateException("after cancel receipt");
+            })
+        .when(mutations)
+        .recordCancel(anyString(), anyString(), anyString(), anyLong());
+    var cancel =
+        new CancelTaskService(
+            bean(TaskQueryService.class),
+            bean(TaskQueryGateway.class),
+            mutations,
+            bean(CommandGateway.class),
+            bean(ExecutionPolicyGateway.class),
+            bean(TaskTransitionService.class),
+            transaction());
+    assertThatThrownBy(
+            () -> cancel.cancel(owner, accepted.conversationId(), accepted.turnId(), "stop"))
+        .hasMessage("after cancel receipt");
+    assertThat(turn(accepted).status()).isEqualTo("queued");
+    assertThat(turn(accepted).revision()).isEqualTo(1);
+    assertThat(mapper.lockTurnCommand(accepted.turnId()).status()).isEqualTo("queued");
+    assertThat(count("cancel_requests")).isZero();
+    assertThat(count("events")).isEqualTo(1);
+    assertThat(probe.outbox()).isZero();
+    assertThat(
+            tasks
+                .cancel(owner, accepted.conversationId(), accepted.turnId(), "stop")
+                .idempotentReplay())
+        .isFalse();
+    assertThat(probe.outbox()).isEqualTo(1);
+  }
+
+  @Test
+  void projectionAndDeliveryAcknowledgementRollBackTogether() {
+    var accepted = submit();
+    run(claim());
+    var projection = spy(new MyBatisTaskProjectionGateway(mapper));
+    doAnswer(
+            call -> {
+              call.callRealMethod();
+              throw new IllegalStateException("after delivered");
+            })
+        .when(projection)
+        .delivered(anyLong());
+    assertThatThrownBy(() -> new ProjectTaskService(projection, transaction()).projectNext())
+        .hasMessage("after delivered");
+    assertThat(probe.projections()).isZero();
+    assertThat(probe.pending()).isEqualTo(1);
+    assertThat(tasks.projectNext()).isTrue();
+    assertThat(tasks.projectNext()).isFalse();
+    assertThat(probe.projection(accepted.turnId())).isEqualTo("completed");
+  }
+
+  @Test
+  void nativePortRunsOnceOutsideTransactionsAndAmbientTransactionsAreRejected() {
+    var accepted = submit();
+    var claim = claim();
+    var nativePort = mock(AgentExecutionPort.class);
+    when(nativePort.execute(claim))
+        .thenAnswer(
+            call -> {
+              assertThat(
+                      org.springframework.transaction.support.TransactionSynchronizationManager
+                          .isActualTransactionActive())
+                  .isFalse();
+              return runtime.execute(claim);
+            });
+    var execute = new ExecuteTaskService(bean(ExecutionCompletionService.class), nativePort);
+    assertThatThrownBy(() -> transaction().executeWithoutResult(s -> execute.execute(claim)))
+        .hasMessage("Native execution must run outside a transaction");
+    verifyNoInteractions(nativePort);
+    execute.execute(claim);
+    verify(nativePort, times(1)).execute(claim);
+    assertThat(turn(accepted).status()).isEqualTo("completed");
+  }
+
+  @Test
+  void recoveryDoesNotCallNativePortForUnknownOrSealedAttempts() throws Exception {
+    var unknown = submit();
+    claim();
+    var sealed = submit();
+    var saved = claim();
+    tasks.seal(saved, runtime.execute(saved));
+    probe.expire();
+    var nativePort = mock(AgentExecutionPort.class);
+    try (var worker =
+        TaskWorkerFixture.create(taskContext, nativePort, true, false, 1, 60000, 2000)) {
+      worker.poll();
+      worker.poll();
+    }
+    verifyNoInteractions(nativePort);
+    assertThat(turn(unknown).status()).isEqualTo("blocked");
+    assertThat(turn(unknown).reason()).isEqualTo("unconfirmed_execution");
+    assertThat(turn(sealed).status()).isEqualTo("completed");
+    assertThat(probe.attempts()).isEqualTo(2);
+    assertThat(probe.answers()).isEqualTo(1);
+  }
+
+  @Test
+  void expiredOwnerCannotSaveStateOrSealEvenBeforeRecoveryRuns() {
+    var accepted = submit();
+    var claim = claim();
+    var outcome = runtime.execute(claim);
+    long beforeExpiry = turn(accepted).revision();
+    probe.expire();
+    assertThatThrownBy(
+            () ->
+                tasks.fenced(
+                    claim,
+                    () ->
+                        new MyBatisAgentStateStore(states, claim.scope())
+                            .saveIfVersion(
+                                claim.scope().userId(),
+                                claim.scope().sessionId(),
+                                "agent_state",
+                                AgentState.builder().build(),
+                                outcome.stateVersion())))
+        .isInstanceOf(Fenced.class);
+    assertThatThrownBy(() -> tasks.seal(claim, outcome)).isInstanceOf(Fenced.class);
+    assertThatThrownBy(() -> tasks.progress(claim, "text_delta", "late", null))
+        .isInstanceOf(Fenced.class);
+    assertThat(mapper.receipt(claim.command().attemptId()).outcome()).isNull();
+    assertThat(turn(accepted).revision()).isEqualTo(beforeExpiry);
+    assertThat(tasks.recoverExpired()).isEqualTo(1);
+    assertThat(turn(accepted).reason()).isEqualTo("unconfirmed_execution");
+  }
+
+  <T> T bean(Class<T> type) {
+    return taskContext.getBean(type);
+  }
+
+  org.springframework.transaction.support.TransactionTemplate transaction() {
+    return bean(org.springframework.transaction.support.TransactionTemplate.class);
+  }
+
+  int count(String table) {
+    return new org.springframework.jdbc.core.JdbcTemplate(source)
+        .queryForObject("SELECT count(*) FROM business." + table, Integer.class);
+  }
+
+  ExecutionCompletionService completion(
+      TaskMutationGateway mutations,
+      ExecutionReceiptGateway receipts,
+      TaskTransitionService transitions) {
+    return new ExecutionCompletionService(
+        mutations,
+        bean(CommandGateway.class),
+        receipts,
+        bean(ExecutionLeaseService.class),
+        bean(ExecutionPolicyService.class),
+        transitions);
+  }
+
+  @Test
   void workerPollIsAsynchronousAndBoundedAndHeartbeatsCancellation() throws Exception {
     var first = submit();
     var second = submit();
     CountDownLatch started = new CountDownLatch(1);
     TaskAgentRuntime slow =
-        new TaskAgentRuntime(tasks, governance, states, 30000) {
+        new TaskAgentRuntime(
+            tasks,
+            governance,
+            states,
+            taskContext.getBean(
+                com.financeclaw.infrastructure.agentscope.capability.BusinessCapabilities.class),
+            30000) {
           @Override
           protected Model model(Claim claim) {
             return new Model() {
@@ -538,7 +869,9 @@ class TaskLifecycleIT {
             };
           }
         };
-    try (var w = new TaskWorker(tasks, slow, true, true, 1, 60000, 2000)) {
+    try (var w =
+        com.financeclaw.m1.TaskWorkerFixture.create(
+            taskContext, slow, true, true, 1, 60000, 2000)) {
       w.poll();
       assertThat(started.await(3, TimeUnit.SECONDS)).isTrue();
       assertThat(turn(first).status()).isEqualTo("running");
@@ -559,7 +892,13 @@ class TaskLifecycleIT {
     var t = submit();
     var c = claim();
     TaskAgentRuntime timeout =
-        new TaskAgentRuntime(tasks, governance, states, 150) {
+        new TaskAgentRuntime(
+            tasks,
+            governance,
+            states,
+            taskContext.getBean(
+                com.financeclaw.infrastructure.agentscope.capability.BusinessCapabilities.class),
+            150) {
           @Override
           protected Model model(Claim claim) {
             return new Model() {
@@ -574,7 +913,9 @@ class TaskLifecycleIT {
             };
           }
         };
-    try (var w = new TaskWorker(tasks, timeout, false, false, 1, 60000, 2000)) {
+    try (var w =
+        com.financeclaw.m1.TaskWorkerFixture.create(
+            taskContext, timeout, false, false, 1, 60000, 2000)) {
       w.execute(c);
     }
     assertThat(turn(t).status()).isEqualTo("failed");

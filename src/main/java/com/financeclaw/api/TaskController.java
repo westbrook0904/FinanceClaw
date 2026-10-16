@@ -1,7 +1,9 @@
 package com.financeclaw.api;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.financeclaw.application.TaskService;
+import com.financeclaw.app.task.CancelTaskService;
+import com.financeclaw.app.task.SubmitTaskService;
+import com.financeclaw.app.task.TaskQueryService;
 import com.financeclaw.domain.Task.*;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
@@ -14,11 +16,19 @@ import reactor.core.publisher.Flux;
 @RestController
 @RequestMapping("/v1/conversations")
 public class TaskController {
-  private final TaskService tasks;
+  private final SubmitTaskService submission;
+  private final TaskQueryService queries;
+  private final CancelTaskService cancellation;
   private final TaskEvents streams;
 
-  public TaskController(TaskService tasks, TaskEvents streams) {
-    this.tasks = tasks;
+  public TaskController(
+      SubmitTaskService submission,
+      TaskQueryService queries,
+      CancelTaskService cancellation,
+      TaskEvents streams) {
+    this.submission = submission;
+    this.queries = queries;
+    this.cancellation = cancellation;
     this.streams = streams;
   }
 
@@ -30,7 +40,7 @@ public class TaskController {
   public ResponseEntity<?> create(HttpServletRequest request, @RequestBody JsonNode body) {
     if (!body.isObject() || !body.isEmpty()) throw new Problem(422, "invalid_body");
     return ResponseEntity.status(201)
-        .body(Map.of("conversation_id", tasks.createConversation(owner(request))));
+        .body(Map.of("conversation_id", submission.createConversation(owner(request))));
   }
 
   @PostMapping("/{conversation}/turns")
@@ -42,7 +52,8 @@ public class TaskController {
     if (!body.isObject() || body.size() != 1 || !body.path("message").isTextual())
       throw new Problem(422, "invalid_body");
     return ResponseEntity.accepted()
-        .body(tasks.submit(owner(request), conversation, key, body.get("message").textValue()));
+        .body(
+            submission.submit(owner(request), conversation, key, body.get("message").textValue()));
   }
 
   public record Snapshot(
@@ -56,7 +67,7 @@ public class TaskController {
   @GetMapping("/{conversation}/turns/{turn}")
   public Snapshot get(
       HttpServletRequest request, @PathVariable String conversation, @PathVariable String turn) {
-    Turn t = tasks.get(owner(request), conversation, turn);
+    Turn t = queries.get(owner(request), conversation, turn);
     return new Snapshot(
         t.conversationId(), t.id(), t.status(), t.revision(), t.result(), t.reason());
   }
@@ -70,7 +81,8 @@ public class TaskController {
       @RequestBody(required = false) JsonNode body) {
     if (body != null && (!body.isObject() || !body.isEmpty()))
       throw new Problem(422, "invalid_body");
-    return ResponseEntity.accepted().body(tasks.cancel(owner(request), conversation, turn, key));
+    return ResponseEntity.accepted()
+        .body(cancellation.cancel(owner(request), conversation, turn, key));
   }
 
   @GetMapping("/{conversation}/messages")
@@ -79,7 +91,7 @@ public class TaskController {
       @PathVariable String conversation,
       @RequestParam(defaultValue = "0") long after,
       @RequestParam(defaultValue = "100") int limit) {
-    return tasks.messages(owner(request), conversation, after, limit);
+    return queries.messages(owner(request), conversation, after, limit);
   }
 
   @GetMapping(

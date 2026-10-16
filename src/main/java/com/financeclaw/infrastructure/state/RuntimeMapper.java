@@ -2,14 +2,12 @@ package com.financeclaw.infrastructure.state;
 
 import org.apache.ibatis.annotations.*;
 
-/** SQL contracts for AgentState, tool receipts, and M0 execution admission. */
+/** Production AgentState CAS and tombstone SQL; Spring owns transaction boundaries. */
 @Mapper
 public interface RuntimeMapper {
   record StateKey(String namespace, String user, String session, String key) {}
 
   record StateRow(String payload, long version, boolean deleted) {}
-
-  record EffectRow(String requestHash, String status, String resultJson) {}
 
   @Select(
       """
@@ -43,44 +41,4 @@ public interface RuntimeMapper {
       DO UPDATE SET payload=NULL,deleted=TRUE,version=agent_runtime.states.version+1
       """)
   int tombstoneState(StateKey id);
-
-  @Insert(
-      """
-      INSERT INTO agent_runtime.tool_effects(scope_key,operation_id,request_hash,status)
-      VALUES (#{scope},#{operation},#{hash},'pending') ON CONFLICT DO NOTHING
-      """)
-  int beginEffect(
-      @Param("scope") String scope,
-      @Param("operation") String operation,
-      @Param("hash") String hash);
-
-  @Select(
-      """
-      SELECT request_hash,status,result_json::text FROM agent_runtime.tool_effects
-      WHERE scope_key=#{scope} AND operation_id=#{operation}
-      """)
-  EffectRow findEffect(@Param("scope") String scope, @Param("operation") String operation);
-
-  @Update(
-      """
-      UPDATE agent_runtime.tool_effects SET status='completed',result_json=CAST(#{json} AS jsonb)
-      WHERE scope_key=#{scope} AND operation_id=#{operation} AND request_hash=#{hash} AND status='pending'
-      """)
-  int completeEffect(
-      @Param("scope") String scope,
-      @Param("operation") String operation,
-      @Param("hash") String hash,
-      @Param("json") String json);
-
-  @Select(
-      "SELECT EXISTS(SELECT 1 FROM agent_runtime.tool_effects WHERE scope_key=#{scope} AND status='pending')")
-  boolean hasPendingEffect(String scope);
-
-  @Select("SELECT pg_try_advisory_lock(#{key})")
-  @Options(useCache = false, flushCache = Options.FlushCachePolicy.TRUE)
-  boolean tryLock(long key);
-
-  @Select("SELECT pg_advisory_unlock(#{key})")
-  @Options(useCache = false, flushCache = Options.FlushCachePolicy.TRUE)
-  boolean unlock(long key);
 }

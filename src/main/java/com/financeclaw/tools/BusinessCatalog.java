@@ -1,8 +1,8 @@
 package com.financeclaw.tools;
 
-import com.financeclaw.agent.ResumeInputs;
-import com.financeclaw.application.GovernanceService;
 import com.financeclaw.domain.Governance.Blocked;
+import com.financeclaw.support.PayloadDigest;
+import com.financeclaw.support.PayloadJson;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
@@ -108,7 +108,7 @@ public final class BusinessCatalog {
         assets.put(
             skill.getName(),
             List.of(skill.getMetadata(), skill.getSkillContent(), skill.getResources()));
-      return GovernanceService.digest(ResumeInputs.canonical(assets));
+      return PayloadDigest.sha256(PayloadJson.canonical(assets));
     } catch (java.io.IOException e) {
       throw new IllegalArgumentException("Cannot load packaged skills", e);
     }

@@ -2,7 +2,7 @@ package com.financeclaw.m1;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.financeclaw.agent.TaskAgentRuntime;
+import com.financeclaw.infrastructure.agentscope.execution.TaskAgentRuntime;
 import io.agentscope.core.message.*;
 import io.agentscope.core.state.AgentState;
 import java.util.Map;

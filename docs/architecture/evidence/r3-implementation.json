@@ -1,0 +1,1029 @@
+{
+  "milestone": "R3-interaction-tools",
+  "collected_at_utc": "2026-10-15T17:05:36.761724+00:00",
+  "base_commit": "993e7acded5340ace65d02c9aad3f272db5fac2f",
+  "scope": "Local R3 implementation on top of existing M5e and R0-R2 changes. No commit, push, SDK upgrade or schema migration.",
+  "toolchain": {
+    "jdk": {
+      "distribution": "Temurin",
+      "version": "21.0.12+8",
+      "assets": {
+        "linux-aarch64": {
+          "url": "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.12%2B8/OpenJDK21U-jdk_aarch64_linux_hotspot_21.0.12_8.tar.gz",
+          "sha256": "eba38e871b02d407897bfe017ea35352dfc1420ef6d2112425b0c67325ca509d"
+        },
+        "darwin-arm64": {
+          "url": "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.12%2B8/OpenJDK21U-jdk_aarch64_mac_hotspot_21.0.12_8.tar.gz",
+          "sha256": "021d629349ebc12a409faa517b837ec80ceee8f58a5ac85c788ecad07ca6881c"
+        },
+        "linux-x86_64": {
+          "url": "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.12%2B8/OpenJDK21U-jdk_x64_linux_hotspot_21.0.12_8.tar.gz",
+          "sha256": "e4446ff06a276155697597cc0f1b15da004ff083f4964a35271ecee567177370"
+        },
+        "darwin-x86_64": {
+          "url": "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.12%2B8/OpenJDK21U-jdk_x64_mac_hotspot_21.0.12_8.tar.gz",
+          "sha256": "6b85c260eea574a995eacd0b3ee23c8042aa93b23a08e6478edafca0a0333d7f"
+        }
+      }
+    },
+    "maven": "3.9.11",
+    "spring_boot": "3.5.16",
+    "agentscope": "2.0.3",
+    "mybatis_starter": "3.0.5",
+    "lunar": "1.7.7",
+    "ziwei_engine": "financeclaw-java/x-iztro-fixed-0.4.0/1"
+  },
+  "validation": {
+    "command": "scripts/mvn.sh -B -ntp spotless:apply clean verify spotless:check",
+    "success": true,
+    "unit_tests": 556,
+    "integration_tests": 173,
+    "unique_tests": 729,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "finished_at": "2026-10-16T01:04:44+08:00",
+    "log_sha256": "5b190244eaddcac597f7769c6b2582f60be2a8929b53a8d7812ece6e28f62684",
+    "static_delivery_check": "python3 scripts/check-delivery.py passed",
+    "coverage": "Real PostgreSQL/pgvector and Spring/MyBatis rollback; loopback model/MCP/Feishu; independent JVM crash recovery; packaged deployment image; synthetic inputs.",
+    "excluded": [
+      "No Compose backup-restore/privacy rerun",
+      "No real model/MCP/Feishu tenant acceptance",
+      "No remote CI",
+      "No production cutover"
+    ],
+    "suites": {
+      "surefire-reports": [
+        {
+          "tests": 18,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "name": "com.financeclaw.architecture.AgentStateInspectorTest",
+          "seconds": 0.047,
+          "report_sha256": "9d0038ae6f25ba79472fdfdba1c4df04fe4a6c1ce18702c1bfc6e5289a67fc69"
+        },
+        {
+          "tests": 8,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "name": "com.financeclaw.architecture.ArchitectureTest",
+          "seconds": 3.011,
+          "report_sha256": "900d898d83ab8e89d9ee0e1dfcd3d95c5852ae15a92000984f38cbda35f91d47"
+        },
+        {
+          "tests": 17,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "name": "com.financeclaw.architecture.InteractionHttpContractTest",
+          "seconds": 2.116,
+          "report_sha256": "b1f52f3a84acea3d3c8b71681e005d74c7ecf615ebc82ae00b0f722f9569932e"
+        },
+        {
+          "tests": 6,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "name": "com.financeclaw.architecture.OperationsHttpContractTest",
+          "seconds": 0.308,
+          "report_sha256": "7c1d3da85196b5bc038e64a0f7520c16d4cc5d5ec0b237b24c983d1026edd7ba"
+        },
+        {
+          "tests": 10,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "name": "com.financeclaw.architecture.OperationsRulesTest",
+          "seconds": 0.07,
+          "report_sha256": "0cd3c2f24c1e080488b5d454ed070b067413b3bba4929c73822cb4b188a53cfa"
+        },
+        {
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "name": "com.financeclaw.architecture.SerializationCompatibilityTest",
+          "seconds": 0.013,
+          "report_sha256": "81e70254ad3e2744a5bf7007c79d584ab6449f89dce778fd428b5d2b37c085bb"
+        },
+        {
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "name": "com.financeclaw.m0.AgentFactoryTest",
+          "seconds": 0.005,
+          "report_sha256": "1ead32b9b070895eac0c32b4b7ac25d50062343a297e26c7e79a089806c00094"
+        },
+        {
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "name": "com.financeclaw.m0.ExecutionScopeTest",
+          "seconds": 0.002,
+          "report_sha256": "db5f7f734bd6178fb8e2167bb39ffac955871a4b7416458bc15d208e6af21367"
+        },
+        {
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "name": "com.financeclaw.m0.ModelPayloadTest",
+          "seconds": 0.344,
+          "report_sha256": "a4507baf1c218b96185a9c72ed73975a82a534a01934154e4a9cbb81b715a2b7"
+        },
+        {
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "name": "com.financeclaw.m0.SdkMiddlewareTest",
+          "seconds": 0.221,
+          "report_sha256": "d8fc9274223f94613c3ba44d4763b6896ca863a9239e3b59a4a9de98bc8cab79"
+        },
+        {
+          "tests": 6,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "name": "com.financeclaw.m1.OutcomeTest",
+          "seconds": 0.255,
+          "report_sha256": "6537b110909d2e85aa4f01f453051c42d8fe367299174e230dedf3e81aba05ed"
+        },
+        {
+          "tests": 12,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "name": "com.financeclaw.m2.ModelPolicyTest",
+          "seconds": 0.057,
+          "report_sha256": "0b45fa583753a03e33966dbb7e680f4fd1e165a09bc85ee1a8c99000e4582d65"
+        },
+        {
+          "tests": 8,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "name": "com.financeclaw.m3.BusinessContractsTest",
+          "seconds": 0.025,
+          "report_sha256": "4dcb04a1f0c17817afe1b8be12e2b0d8310a712996dca1fdd12f7cb75dcbf7b4"
+        },
+        {
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "name": "com.financeclaw.m4.NativeMemoryTest",
+          "seconds": 0.912,
+          "report_sha256": "dbb2924390258424de90f1c2012a22b299fc3daa2b3e538f39882a7bef0ec848"
+        },
+        {
+          "tests": 4,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "name": "com.financeclaw.m5.DeploymentAccessTest",
+          "seconds": 0.03,
+          "report_sha256": "f1440c653ab140ff5c8910a6abf821a456610f58f44c448b139e3ec4cca5badb"
+        },
+        {
+          "tests": 236,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "name": "com.financeclaw.m6.ZiweiCalendarTest",
+          "seconds": 24.542,
+          "report_sha256": "8512df0e5a8862f31664db82310264dd1966b487582b4c35c55ff69d656aff01"
+        },
+        {
+          "tests": 14,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "name": "com.financeclaw.m6.ZiweiChartEngineTest",
+          "seconds": 6.14,
+          "report_sha256": "165ee72aa831d79a519dfb41ad51c11838071499bb3044d8bf4c23b4017a06e6"
+        },
+        {
+          "tests": 150,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "name": "com.financeclaw.m6.ZiweiDatesTest",
+          "seconds": 0.305,
+          "report_sha256": "565aa9d1f62f875fc9b52024a86dbb7b14b386c461d5a45fde2b4227f8ea19b9"
+        },
+        {
+          "tests": 56,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "name": "com.financeclaw.m6.ZiweiDomainTest",
+          "seconds": 5.178,
+          "report_sha256": "484a3a232a47b7300d9197e4a3631f133f6e045679b7d2eccbda2b7ac9146656"
+        }
+      ],
+      "failsafe-reports": [
+        {
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "name": "com.financeclaw.m0.ApplicationIT",
+          "seconds": 4.061,
+          "report_sha256": "9f10b93e08546504e2fafc716b586a19a7d9ff9d3b09336b90dde327e16ad6b1"
+        },
+        {
+          "tests": 13,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "name": "com.financeclaw.m0.RecoveryIT",
+          "seconds": 43.25,
+          "report_sha256": "be294196b0245f66a67916f6d14b6d70d3cb9f395813793daa87e2c21ee3846c"
+        },
+        {
+          "tests": 8,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "name": "com.financeclaw.m0.StateAndIsolationIT",
+          "seconds": 1.945,
+          "report_sha256": "b700ea37e5cdbeb08a7b9314823039579c7c24b87e0b2b2c8c590d633d2a734e"
+        },
+        {
+          "tests": 17,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "name": "com.financeclaw.m1.TaskLifecycleIT",
+          "seconds": 32.214,
+          "report_sha256": "b3f4162b9f76f76917c21311f2a73e35e25a425e2ad5f2976728d419565fce20"
+        },
+        {
+          "tests": 26,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "name": "com.financeclaw.m2.GovernanceIT",
+          "seconds": 20.731,
+          "report_sha256": "b442b33edda29fa71134547d1cb61634a155b557e01e9904b73505e28002a4f1"
+        },
+        {
+          "tests": 18,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "name": "com.financeclaw.m3.BusinessIT",
+          "seconds": 15.093,
+          "report_sha256": "a99b4d70a40d7581e081f2385d086b9ee7f2e9d8fcb1bd6349be319438b656dd"
+        },
+        {
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "name": "com.financeclaw.m3.NativeSkillsIT",
+          "seconds": 1.389,
+          "report_sha256": "25c5f0dba4f6c5062087a51ae3fbe02472ba9dad1b65d13a588fa2fbff78d228"
+        },
+        {
+          "tests": 12,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "name": "com.financeclaw.m4.FeishuIT",
+          "seconds": 6.081,
+          "report_sha256": "60e43593564dafef4952fb36596137e7b80a6d2480440c8876035c1181cdf51f"
+        },
+        {
+          "tests": 14,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "name": "com.financeclaw.m4.MemoryIT",
+          "seconds": 13.395,
+          "report_sha256": "cbcbedc5f7b12f3efd1c38dfa9c92a85b0db5aaa15245c463fd2c5c7a99a8005"
+        },
+        {
+          "tests": 16,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "name": "com.financeclaw.m5.AdmissionIT",
+          "seconds": 7.274,
+          "report_sha256": "1c60f9fe42935bbc66c8af9c4ca78c49187fe14f144b3cd2b8fe6d1b10447b20"
+        },
+        {
+          "tests": 17,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "name": "com.financeclaw.m5.BacklogIT",
+          "seconds": 5.129,
+          "report_sha256": "0dc611d2a9a7a90f578ec0f52804061075d1d5047ae75a224d1ce9a7b6c95cd2"
+        },
+        {
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "name": "com.financeclaw.m5.OperationsIT",
+          "seconds": 3.191,
+          "report_sha256": "afe836a8ad70392e9b7e59dd67423682168632b64b6f4c8156b54be4c913c67e"
+        },
+        {
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "name": "com.financeclaw.m6.ZiweiPackagedIT",
+          "seconds": 4.455,
+          "report_sha256": "c6cbdac49ba47b4e60c67d2285499064eb73d0d4563514763372311b9914e84c"
+        },
+        {
+          "tests": 13,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "name": "com.financeclaw.m6.ZiweiRecoveryIT",
+          "seconds": 200.213,
+          "report_sha256": "c7cd236e789f8b929f7772e3061c6fc7727ffd36c81357edfc7f08ad9c78ee63"
+        },
+        {
+          "tests": 14,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "name": "com.financeclaw.m6.ZiweiToolsIT",
+          "seconds": 12.22,
+          "report_sha256": "f8fcb8a018831cf7c32faf5577e082dc7dcdc39c49c089a2ed0005c662edb0d3"
+        }
+      ]
+    },
+    "initial_regression": {
+      "failing_cases": [
+        "com.financeclaw.m6.ZiweiRecoveryIT.sealedSuspensionAndAnswerSurviveIndependentProcessRestarts",
+        "com.financeclaw.m3.BusinessIT.researchClarifiesAtRootThenResumesWithOriginalTask",
+        "com.financeclaw.m6.ZiweiToolsIT.nativeSuspensionResumesOnlyCompleteAnswerWithOriginalTurnClockAndRelease"
+      ],
+      "cause": "SDK 2.0.3 ToolResultBlock.text()/of() defaults to unbound RUNNING before ReAct finalizes a completed tool return.",
+      "repair": "Only completed unbound raw returns without the native error marker become SUCCESS. Bound RUNNING, errors, denial, interruption and suspension remain rejected. Added explicit regression and reran full clean verification.",
+      "initial_log_sha256": "0af84a2e0e52b4902787910928331934b035e1cd94476bf6c4ec2c02c7428aca"
+    }
+  },
+  "architecture": {
+    "production_java_files": 92,
+    "production_physical_lines": 9621,
+    "archunit_tests": 8,
+    "cyclic_class_edges_before": 73,
+    "cyclic_class_edges_after": 32,
+    "removed_cyclic_class_edges": [
+      "com.financeclaw.agent.GovernedTools -> com.financeclaw.application.GovernanceService",
+      "com.financeclaw.agent.GovernedTools -> com.financeclaw.application.ReleaseCatalog",
+      "com.financeclaw.agent.GovernedTools -> com.financeclaw.application.ReleaseCatalog$Release",
+      "com.financeclaw.agent.GovernedTools -> com.financeclaw.application.TaskService",
+      "com.financeclaw.agent.GovernedTools -> com.financeclaw.tools.BusinessCatalog",
+      "com.financeclaw.agent.GovernedTools -> com.financeclaw.tools.BusinessCatalog$Features",
+      "com.financeclaw.agent.GovernedTools -> com.financeclaw.tools.BusinessCatalog$Remote",
+      "com.financeclaw.agent.GovernedTools -> com.financeclaw.tools.MarketData",
+      "com.financeclaw.agent.GovernedTools -> com.financeclaw.tools.MarketResearch",
+      "com.financeclaw.agent.GovernedTools -> com.financeclaw.tools.McpTools",
+      "com.financeclaw.agent.GovernedTools -> com.financeclaw.tools.PortfolioReview",
+      "com.financeclaw.agent.GovernedTools -> com.financeclaw.tools.TaibuInputs",
+      "com.financeclaw.agent.GovernedTools -> com.financeclaw.tools.ZiweiTools",
+      "com.financeclaw.agent.GovernedTools -> com.financeclaw.ziwei.ZiweiDates$Level",
+      "com.financeclaw.agent.GovernedTools -> com.financeclaw.ziwei.ZiweiInputs",
+      "com.financeclaw.agent.GovernedTools -> com.financeclaw.ziwei.ZiweiInputs$Review",
+      "com.financeclaw.agent.GovernedTools$1 -> com.financeclaw.application.TaskService",
+      "com.financeclaw.agent.GovernedTools$2 -> com.financeclaw.application.TaskService",
+      "com.financeclaw.agent.ModelFactory -> com.financeclaw.application.ReleaseCatalog$ModelProfile",
+      "com.financeclaw.agent.ModelFactory$1 -> com.financeclaw.application.ReleaseCatalog$ModelProfile",
+      "com.financeclaw.agent.TaskAgentRuntime -> com.financeclaw.application.GovernanceService",
+      "com.financeclaw.agent.TaskAgentRuntime -> com.financeclaw.application.ReleaseCatalog",
+      "com.financeclaw.agent.TaskAgentRuntime -> com.financeclaw.application.ReleaseCatalog$ModelProfile",
+      "com.financeclaw.agent.TaskAgentRuntime -> com.financeclaw.application.ReleaseCatalog$Release",
+      "com.financeclaw.agent.TaskAgentRuntime -> com.financeclaw.application.TaskService",
+      "com.financeclaw.agent.TaskAgentRuntime -> com.financeclaw.tools.PortfolioReview",
+      "com.financeclaw.agent.TaskAgentRuntime$1 -> com.financeclaw.application.TaskService",
+      "com.financeclaw.agent.TaskAgentRuntime$2 -> com.financeclaw.application.TaskService",
+      "com.financeclaw.agent.TaskAgentRuntime$3 -> com.financeclaw.application.TaskService",
+      "com.financeclaw.agent.TaskAgentRuntime$4 -> com.financeclaw.application.TaskService",
+      "com.financeclaw.application.GovernanceService -> com.financeclaw.agent.ResumeInputs",
+      "com.financeclaw.application.GovernanceService -> com.financeclaw.tools.BusinessCatalog$Features",
+      "com.financeclaw.application.GovernanceService -> com.financeclaw.ziwei.ZiweiDates$QueryClock",
+      "com.financeclaw.application.GovernanceService -> com.financeclaw.ziwei.ZiweiInputs",
+      "com.financeclaw.application.GovernanceService -> com.financeclaw.ziwei.ZiweiInputs$Review",
+      "com.financeclaw.application.GovernanceService -> com.financeclaw.ziwei.ZiweiPolicy",
+      "com.financeclaw.tools.MarketData -> com.financeclaw.agent.GovernedTools",
+      "com.financeclaw.tools.MarketResearch -> com.financeclaw.agent.IsolatedAgentFactory",
+      "com.financeclaw.tools.MarketResearch -> com.financeclaw.agent.TaskAgentRuntime",
+      "com.financeclaw.tools.PortfolioReview -> com.financeclaw.agent.GovernedTools",
+      "com.financeclaw.tools.ZiweiTools -> com.financeclaw.agent.ResumeInputs"
+    ],
+    "added_cyclic_class_edges": [],
+    "cycle_allowance_tightened_before_full_verification": true,
+    "schema_validation_decision": "Retain SDK raw-input, effective-input adapter, HTTP answer and business-correction validation. Runtime input and presets make them non-equivalent; negative integration tests verify no budget/artifact side effects.",
+    "sdk_sources": {
+      "io/agentscope/core/tool/ToolExecutor.java": "243e624eab4e21515d9005f1b20ae61502f6e5480135e061aa7dad6ce2b8694a",
+      "io/agentscope/core/message/ToolResultBlock.java": "79d90f39f4eab6b2e01750c7518079bc4a4537899d91732e19fb733e1d18866c",
+      "io/agentscope/core/ReActAgent.java": "4120f353ba265459ff92351f1ea9271e94cdbc6112068b75defffc7ef9d8a7de"
+    }
+  },
+  "packaging": {
+    "jar_sha256": "1393dd92ff51989b9cdb1bad76fa18aa69651850ef1e73e9f342afb06484515a",
+    "required_classes": [
+      "app/interaction/AnswerInteractionService",
+      "domain/InteractionBinding",
+      "infrastructure/agentscope/AgentStateInspector",
+      "infrastructure/agentscope/IsolatedAgentFactory",
+      "infrastructure/agentscope/ResumeInputs"
+    ],
+    "forbidden_classes": [
+      "agent/IsolatedAgentFactory",
+      "agent/ResumeInputs",
+      "agent/GuardedAgentRunner",
+      "infrastructure/state/ExecutionGate",
+      "infrastructure/state/EffectLedger",
+      "application/OperationsService"
+    ],
+    "missing": [],
+    "unexpected": []
+  },
+  "protected_files_unchanged": {
+    "src/main/resources/application-api.yml": "011ffd8d3d093aa3d3a3d9f0e61040daac9fd9f840d27564dcfd752b524fe165",
+    "src/main/resources/application-integrations.yml": "32cb5552293dbfa34198aa0f0bbfebebebc87b45c80ca590168f29ca4f766c5e",
+    "src/main/resources/application.yml": "32042f43b6a840fc3939df859c725ff18f8b1665ec9e731e7a04b4e3b64205bc",
+    "src/main/resources/application-worker.yml": "9709d81d4d0e48eea29de1019d172e269c4218ec1c06c6b2d55d54d5dedad594",
+    "src/main/java/com/financeclaw/ziwei/ZiweiCalculation.java": "96317a9f212a28620118af1474823cf43585ae6e35ec5fbc8b65576437430658",
+    "src/main/java/com/financeclaw/ziwei/ZiweiTables.java": "f30074b5077781839f3634ecb7cdc7b0dac11f421653ee557ff366a7a1034d9f",
+    "src/main/java/com/financeclaw/ziwei/ZiweiDates.java": "8bde5743c8ba3b8f8050fbf5d4a2b143074c69018b8723f82576b6b70bd3fc17",
+    "src/main/java/com/financeclaw/ziwei/ZiweiPolicy.java": "80db9c87448eb1360ce3dbb63f04c63fe0bf9eb0f125bc812fffc60caa3d470b",
+    "src/main/java/com/financeclaw/ziwei/ZiweiCalendar.java": "0a7d8b655aa83dbe146256355d7fa29972475c1841cc662116a1ceec378a4499",
+    "src/main/java/com/financeclaw/ziwei/ZiweiChartEngine.java": "c2cdd0fce19908258bb09fa33e6d122c25a24073d857992b6261cf253ed985cf",
+    "src/main/java/com/financeclaw/ziwei/ZiweiRules.java": "fdadd86db0ddf9ffeb2369a27d344426a757abce517545114469289d3f6b7eb8",
+    "src/main/java/com/financeclaw/ziwei/ZiweiStars.java": "ba7b4b57a37443d083e6acc3c43fb3e1dab6ab0cbb9c5f95fbe9324b2f91870c",
+    "src/main/java/com/financeclaw/ziwei/ZiweiInputs.java": "acc36ec2b523126d292ac21db046aec5f09e6c07bcd419500ab40fd60cc9499b",
+    "src/main/java/com/financeclaw/channel/FeishuService.java": "623e8c0c05548cd303518b960ad93b0c21ba34dc8fb5248f1d02afae66863640",
+    "src/main/java/com/financeclaw/channel/FeishuText.java": "8a97654ea50e65ba7a38a9f1a2029920d883e17b116fc46868aaaef5cfe78551",
+    "src/main/java/com/financeclaw/channel/FeishuIngress.java": "e5093f169898a0cf62105c8e47f05cd300c191acc6628fdbd7867ac598b97b7d",
+    "src/main/java/com/financeclaw/channel/AgentScopeFeishu.java": "8242f498ca730e060f448d800679d6ade3b6923d096a403cdfb22628202ce4c2",
+    "src/main/java/com/financeclaw/channel/FeishuDelivery.java": "fcaa2c5a2650084b0f0de0e0e3f49bfa28d272952238153a8e2a7859a5d187e1",
+    "src/main/java/com/financeclaw/channel/FeishuSettings.java": "fb748281757f5aaf0b4a39fe0678bbeb893f8dedc8dd55d360b414ddaf5aa1f4",
+    "src/main/java/com/financeclaw/application/TaskService.java": "9e55384e26b0330f9563ecec2c368ed2139fedf1f210fe3df00eb66a17de236b",
+    "src/main/java/com/financeclaw/domain/Task.java": "0619a422efcdfc0ac91e7e04629b352bc209cfdeff0b9c2d878487b48e784d13",
+    "src/main/java/com/financeclaw/infrastructure/memory/MemoryMapper.java": "794c7a9c3572c59a8b792b7cfbd90846392ae29de623f08c344b1dcdfbc8f3bf",
+    "src/main/java/com/financeclaw/infrastructure/state/RuntimeMapper.java": "14352cab72ae33f280522958a3d25940846d23130aa58ca44c6b73bb05005600",
+    "src/main/java/com/financeclaw/infrastructure/channel/FeishuMapper.java": "9131454a1f068bc98a22c49bf2a0ceff5ebdb4613ea00bea6df197ab161724dc",
+    "src/main/java/com/financeclaw/infrastructure/task/TaskMapper.java": "2ad304ae5104a156c8a9a7c11d4e7ee27205ffad95572f024a9eebab2b60a238",
+    "src/main/java/com/financeclaw/infrastructure/task/OperationsMapper.java": "3b0214d5b1b29a0fa73e1164f1a500e51e87faaa3452d94073b5005d296468fd",
+    "src/main/java/com/financeclaw/infrastructure/governance/GovernanceMapper.java": "7f9996d93bba20d00ba0ea6465aa0176ebb22d044c32aecca7361360156b650b",
+    "src/main/resources/ziwei/inputs.json": "d1995d5fd1ee7af28111d04a4e818696f023679e43681180ce92d530817d2ef4",
+    "src/main/resources/deployment/grants.sql": "80fa1debe70b17a5882b35df08af3537f34007779c68e5dc84ab08fee77885dc",
+    "src/main/resources/skills/cocktail-from-what-i-have/LICENSE": "18a87eaf5c6017a3ffc7a3c4927627d530cc1541406cb3e705576a1b8c47c6bd",
+    "src/main/resources/skills/cocktail-from-what-i-have/SOURCE.json": "1db4c22bf94ac30494416bb44c8a5a17a127d50c0cbc5b9e9863be23d69d25f2",
+    "src/main/resources/skills/cocktail-from-what-i-have/SKILL.md": "9e3b5fcdcf9fa06be759f11e7139afe056ee9e9209cb7d3f2bf9c759da2ee4c6",
+    "src/main/resources/skills/cocktail-from-what-i-have/agents/openai.yaml": "1a09df787de5cb495ae9e39faae75c4235e428f34c75a44c2feeb8a8ad1dcaaf",
+    "src/main/resources/db/migration/V3__governed_execution.sql": "b76c882bf0c767671eb7f2a4319d5f2c3c8b6cd72ddd1de8dec42580bc3bcaf5",
+    "src/main/resources/db/migration/V5__memory_and_feishu.sql": "30039a723be388b8df9e37218b61cc51f3b7474d3e913e851ca3e2cabb59c9be",
+    "src/main/resources/db/migration/V6__admission_control.sql": "e9d9c883c9c2f2a6875aa7e305ab0ce5cbc2f8c3d9aeb67ce6438b96d2755913",
+    "src/main/resources/db/migration/V1__m0_agent_state.sql": "5b3d7bd3889e65b5114e705d24711d41de04e8698533390a781166d90547fc7e",
+    "src/main/resources/db/migration/V4__business_capabilities.sql": "d7e2dd0cd8cd435c950178d4e06bdd2c7a6e36c3db786257eef1d8a5ccb81e1a",
+    "src/main/resources/db/migration/V2__task_lifecycle.sql": "144d3eec16f54256a8843648a096274f7376b680ee3694a4eda3bcdfd5b7fb14",
+    "src/main/resources/META-INF/licenses/iztro.txt": "c9884f87e83a5f9ea598146e3a93cd439cf3703cb152555a13d6654396814244",
+    "src/main/resources/META-INF/licenses/x-iztro-0.4.0.txt": "0c0c2ddc26928837fe5ecae2749ad444ff67c2ec923bc2ac6df7fadb23cffb0b",
+    "src/main/resources/META-INF/licenses/lunar-1.7.7.txt": "d9210caf1844dcf410095cea464b79800aad30dbd49df092076b9f0ddc015404",
+    "src/test/resources/architecture/operations-http.json": "6e010e79b23d886f446b4206af4695f48005f94cc075b22c8eff2f7993236b5b",
+    "src/test/resources/architecture/serialization-baseline.json": "0ff0f87546b1337062ca1ec9e9056c8a7cd702b385ec3b2de8a53f38b4bfa53f",
+    "docs/migration/m5e-restore-privacy.md": "fe8517af295454ef1d9b8ea7a7ef15b10ee8ea11d08f526bcfcb1b22c5a86cb8",
+    "docs/migration/evidence/m5e-compose-results.json": "aa66b0dafb9152affb354ad1bc6a0a9007723eecaec339edceee147f48fb13b3",
+    "docs/migration/evidence/m5e-local-results.json": "3ce9eaabec0a38ddeb86f2231bc7ec0a72d71a5dbe152d5623766d472861edf2",
+    "docs/migration/evidence/m5e-privacy-reports.json": "2c840e623f5a99fb6cdd36afdac10bc9fce28e7a9ed82b571428e93a7075f483",
+    "scripts/check-delivery.py": "b53b8a4e89a695ce45ab5365dc5f0652c40230b230eddede69a16ccce3819cfb",
+    "scripts/export-ziwei-calendar.py": "de1c1b3d7aea2d7a3bf4df2307f345d260caba07c14745fb6ed2b3f9ee8354b6",
+    "scripts/compare-ziwei-charts.py": "b08cc70d33241a6d9543d738c1d1db0f1e2b3bfcf12df5f8ed8de4dd95c522e3",
+    "scripts/bootstrap-jdk.py": "4f631dbf28698179897f17af1a3ddc06c22e199ec3d1e9ef312554a2506467e1",
+    "scripts/test-live-acceptance.py": "a4651dd6c4897eb2be7fe9bc67f74644ccb36214e03b42abe75b6c377a2ada5b",
+    "scripts/memory-worker.sh": "fa18628fa06ce1fbec6621c20b50813de490b463d439c0d37be07a75872f5591",
+    "scripts/import-ziwei-tables.py": "d742f60edeb2adb3c2300c293158fbc29a0293c6f6fbad9f355b9b0935018f8d",
+    "scripts/validate-compose.py": "80c89273d5a4a4e50b0e2e7d91ccd4c2f414014beb77d6152209d5596bed38be",
+    "scripts/CalendarProbe.java": "53c9b5456151790f46eabce3aa25348707d0dc41b0fab3f2ced8ad7875044cb4",
+    "scripts/export-ziwei-baseline.py": "3509d9f217a4a8941e611bcd4fc9025e3631777e0c5ebed452301f6471d35ba8",
+    "scripts/inspect-drain.py": "eaf7ec576bb976fd626b6f998f2b4c2a4706c524585b02d665640633bcefa61c",
+    "scripts/init-local.py": "d976818d6339a0ba958ad4771ca42c5d346736bc34a2bb0b29e8d2a6f4386792",
+    "scripts/check-restore-privacy.py": "77e9826411b6f27faf056beeb49d297555d5e31430b91a344c4fe143e2d40969",
+    "scripts/export-ziwei-domain.py": "605c57cde9271033f94517efdcdd84103ad45b42fc13a28b2b455d5df92d07fd",
+    "scripts/validate-live.py": "447052f1c0a6702852e904b7c84795e7d3f0c99099cb5021a2eaf0caf057e676",
+    "scripts/export-ziwei-charts.py": "ebe66f7ebf9922896fbf3dba73dbe6ddff6d0f07f1326885d906e1a727b06703",
+    "scripts/collect-evidence.py": "921f30107e3862f285f930825fe4d6a6e666fc403a7cd35a11ac062a79cc696e",
+    "scripts/test-inspect-drain.py": "4a76f21098dea69c2ac229e3eb3b662de3920222fce088f89e46dbe64faf4e2b",
+    "scripts/mvn.sh": "2aa3bc87de3553f650707eb34f379373a9eb16dcc5b400327bc15822a1ebf313",
+    "scripts/test-restore-privacy.py": "f3a79c6e3d5595f3706972656bfe62537f111314cc6863da7a9de96245dd0c3f",
+    "scripts/collect-m0-evidence.py": "29421f946180c49e719bfac1ad9446de24ca2d56a1bd96a90c4d59d3602177ed",
+    "scripts/__pycache__/inspect-drain.cpython-314.pyc": "0d1ef0747701555c6d2fa234cbff76e8bcb70090a95709d8529c131f7e11c2c9",
+    "scripts/__pycache__/check-restore-privacy.cpython-314.pyc": "b77c8e4d50e0e678474c3ae0255e573a1099802e81d89e82615f32b3fca40ffd",
+    "scripts/__pycache__/validate-live.cpython-314.pyc": "e18e3d64bfd01d9edcd613ecce995916648a54ceda456c83720621a737c13f3b",
+    "scripts/__pycache__/collect-m1-evidence.cpython-314.pyc": "942e95685dbad18b5c11b89bcb90acb350165d876be313eb24fcdae480b8b999",
+    "ops/container-entrypoint.sh": "dec140519e772a209c90a4ca5792688f9ceaa984751e523eca23cc334af8f02f",
+    "ops/memory-worker-grants.sql": "df17f23aa3c3dd37913f1df15aaa176e4a4693d7d555f9e92d22b78800ac8254",
+    "ops/restore-privacy-snapshot.sql": "d08f193eb25c782991badddd5d3c030550225f724575ad3bef78abe74c39f191",
+    "ops/memory-vector-index.sql": "bc9544dc593ae7e3fbb3c56f36228499b43c19e388536f66ba4230f17f6a8e78",
+    "ops/postgres-init.sql": "c2cc009b2bafc6bc3ee8803885234ec03eddda7dac1e169c51759235cad93ee4",
+    "ops/m5-thresholds.json": "15ffff4f601287c8dbc38e6f0e1675171020208d92ebb7f7a089ada0d91a62de",
+    ".github/workflows/live-acceptance.yml": "d2f0fad149c1035c500161c5130b1419a272b0f057eb51479179d28993ae3c6f",
+    ".github/workflows/ci.yml": "df9f2a4d734b1204d0e4127d29f9fdb5be38e2cb2ae22ac4a420d203c752794d",
+    "pom.xml": "0c99b5afc1b5ef28a3dffe1a775ff66185948d5be98bcc9494b3b896e7c231da"
+  },
+  "r3_file_changes": [
+    {
+      "path": "README.md",
+      "status": "modified",
+      "before_sha256": "fbd3cc4966466235d8e742a9d1ae1a44bf952c333af429a64289ef17c6e41274",
+      "after_sha256": "83e898a5b5cf4cb6c8f320ef163d2ecc054fbc49e6eec707aa1747bec40bf37c"
+    },
+    {
+      "path": "docs/architecture/agentscope-cola-remediation.md",
+      "status": "modified",
+      "before_sha256": "ea43e35589df01d1de7cef75aa40012ef6ab0b1da1304076c0d3b804a1446c38",
+      "after_sha256": "7c7bdeb2e8ae6eb0638023d1c0abfb63c04d7abd56c1879acbf716b0f2451bc5"
+    },
+    {
+      "path": "docs/architecture/r0-r2-implementation.md",
+      "status": "modified",
+      "before_sha256": "be05033bcd2d687e9d0e0db11fab3ab9f614fc7c9463e9b4ec3c6e9d7a37dfbc",
+      "after_sha256": "af3b2023260cf75543c8e9e4180309039c833115d5f7506020ce7f63bf342e58"
+    },
+    {
+      "path": "docs/architecture/r3-implementation.md",
+      "status": "added",
+      "before_sha256": null,
+      "after_sha256": "ffb2f5c23e764b95e82e270412adf7b819695cf879600ae9ecaae9c1cd7f3ddf"
+    },
+    {
+      "path": "docs/architecture/spring-transactions-component-review.md",
+      "status": "modified",
+      "before_sha256": "854074cede2dc47c5d7c8e6d8a6f570f16173948d9d339c02558a77210cbab95",
+      "after_sha256": "e47f698e307d76f6ada9e2be95a378ffb4d966b4e03fdd10c303781050463ebe"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/agent/GovernedTools.java",
+      "status": "modified",
+      "before_sha256": "d1cd429953429d14caea926bbf0ad823b49176529b2f1eff3128696bb402d0d8",
+      "after_sha256": "b14cf8260315256daa806991cd9311b4600c73ebe0ded1ad8b9882bad00a0837"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/agent/IsolatedAgentFactory.java",
+      "status": "removed",
+      "before_sha256": "febbf97254c22f3e87e4e420ef82777fc95e8ff46b69c80c0702bda058bfbd69",
+      "after_sha256": null
+    },
+    {
+      "path": "src/main/java/com/financeclaw/agent/ResumeInputs.java",
+      "status": "removed",
+      "before_sha256": "cdf518be8e6faadc91bff11b3ff84cb57a11bfbf5f0a54d66102773599fc9b63",
+      "after_sha256": null
+    },
+    {
+      "path": "src/main/java/com/financeclaw/agent/TaskAgentRuntime.java",
+      "status": "modified",
+      "before_sha256": "699d72f8b31d46d7f792aeefed19077aab90d56bf0a57f8c4dbaf3a767953f52",
+      "after_sha256": "e2321a3514d71fe166d5db0aa6c0592b12fda52ae6efc98dd44d7792c265f9f1"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/app/interaction/AnswerInteractionService.java",
+      "status": "added",
+      "before_sha256": null,
+      "after_sha256": "a631d0bf761e8dcfca4d8a4c99b315115c53b6c3e5f6dd3eb1bf1195c93dc2d5"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/app/interaction/port/InteractionAnswerRules.java",
+      "status": "added",
+      "before_sha256": null,
+      "after_sha256": "a68900705fc17d565601954c6ef9fbf4a780bf79dfcd5d15c8d6289669c11fe0"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/app/interaction/port/InteractionCheckpoint.java",
+      "status": "added",
+      "before_sha256": null,
+      "after_sha256": "048a1ccd44e89a05394f27e026c5e4347328061cd64d9d45816f3a561b3d539b"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/app/interaction/port/InteractionGateway.java",
+      "status": "added",
+      "before_sha256": null,
+      "after_sha256": "4ed25ef0b311fae7d29d69b02b2fa9db10db6cf150944db6793be3e2bccfbf23"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/application/GovernanceService.java",
+      "status": "modified",
+      "before_sha256": "756fcdc19954fdd4870f4af203615223a28e2bc40e62df29af769ffc698fd699",
+      "after_sha256": "260be779de4fec15c94eaa0b642abd500e173861efd02e2be5bfc0054c1668e4"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/domain/InteractionBinding.java",
+      "status": "added",
+      "before_sha256": null,
+      "after_sha256": "f9a907edfce9fcf9a8ee38d0d963466c1fce70acbec76dcb4cf523f24e965881"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/infrastructure/agentscope/AgentScopeInteractionCheckpoint.java",
+      "status": "added",
+      "before_sha256": null,
+      "after_sha256": "b01e982a232b4c5da2254f1f883b33c791a9b4c33f05c30c720a09f479614546"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/infrastructure/agentscope/AgentStateInspector.java",
+      "status": "added",
+      "before_sha256": null,
+      "after_sha256": "961ef8e66078a9fff4478e184a5980b91f27994add0e0ef1047e7db362852400"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/infrastructure/agentscope/IsolatedAgentFactory.java",
+      "status": "added",
+      "before_sha256": null,
+      "after_sha256": "f6756d40a6ef7958c949f633dd0fcd01c7185c482c8e6688fe4e42ad3a02da0a"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/infrastructure/agentscope/ResumeInputs.java",
+      "status": "added",
+      "before_sha256": null,
+      "after_sha256": "b8955c9567ba8ff06136924c5a684c22588e62d22042b7756f0ea6a5b97be33b"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/infrastructure/agentscope/capability/ApprovalInteractionHandler.java",
+      "status": "added",
+      "before_sha256": null,
+      "after_sha256": "54bc01aaf2bc5339efe32432fdd61084b8914de1d052b3ffd61b6bdd73553153"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/infrastructure/agentscope/capability/InteractionHandler.java",
+      "status": "added",
+      "before_sha256": null,
+      "after_sha256": "e0f25056c5f853257b2d1e7d8ab6b9999a5a75f0524ae64414f1a196865bad27"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/infrastructure/agentscope/capability/LocalToolContribution.java",
+      "status": "added",
+      "before_sha256": null,
+      "after_sha256": "8cfbabb7fd3428f281dd3e3565169e3dd1abe019b73e8b42cb1ea459e45a024a"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/infrastructure/agentscope/capability/MarketToolContribution.java",
+      "status": "added",
+      "before_sha256": null,
+      "after_sha256": "55c9dd671de4b9c5eb9b326beccce3f73f0da2b553e21dea433756d8954c3f7f"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/infrastructure/agentscope/capability/McpToolContribution.java",
+      "status": "added",
+      "before_sha256": null,
+      "after_sha256": "33c5108674567a0d5defe617936618b0f908217c64cbb150f3023f82f3344eb0"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/infrastructure/agentscope/capability/PortfolioToolContribution.java",
+      "status": "added",
+      "before_sha256": null,
+      "after_sha256": "8f5a80800116dc939db2cf96a978bb182d396a998fd862346f3c0ac52d7e41a9"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/infrastructure/agentscope/capability/ToolContribution.java",
+      "status": "added",
+      "before_sha256": null,
+      "after_sha256": "9a8b509946bd345e14ee2b56ba06ebce3645e1124f496f07dc26e679533fe8b4"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/infrastructure/agentscope/capability/ZiweiToolContribution.java",
+      "status": "added",
+      "before_sha256": null,
+      "after_sha256": "45722853eb15ef641a9c44bed02d77004c4104d86c9a5f45557191d48bce0e2d"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/infrastructure/interaction/AgentScopeAnswerRules.java",
+      "status": "added",
+      "before_sha256": null,
+      "after_sha256": "a930bd5fc213e6d9b3a3d2b344f0c2b49ab1d75dcafc9ac08bf826dac4e9d910"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/infrastructure/interaction/BusinessAnswerValidator.java",
+      "status": "added",
+      "before_sha256": null,
+      "after_sha256": "d827b5a8716512cefe54d5c3ae03f0b43f000f3b65405a08bb7e0470617eccf4"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/infrastructure/interaction/MyBatisInteractionGateway.java",
+      "status": "added",
+      "before_sha256": null,
+      "after_sha256": "63415d23c36ca7df11189665bd57f31a4df5774a7c29450ff9d0a417bcb0c474"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/infrastructure/interaction/ZiweiAnswerValidator.java",
+      "status": "added",
+      "before_sha256": null,
+      "after_sha256": "c600e6b2e6142f732023f0a4282c1e4eccf9194cb74de6928f07c25c0bff170b"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/support/ToolSchemas.java",
+      "status": "added",
+      "before_sha256": null,
+      "after_sha256": "8eeff54fa1c0e37b9824dc49a6d2a70cc87cbc28bcedbeff37898f78830a5d62"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/tools/MarketData.java",
+      "status": "modified",
+      "before_sha256": "5dfcb959d8d783477126214379e807d43cb510bbc2a6d14cad45bd0ae7bff06b",
+      "after_sha256": "b14d3302acfb10ab5c3eb928d8552573c8bf3284f7a8ae5a5ea2baeb80e1c129"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/tools/MarketResearch.java",
+      "status": "modified",
+      "before_sha256": "faa7510a20c69483991c58ad76c85f656ae2571a2660124c82b7844140be9039",
+      "after_sha256": "99dbd380c1336d8d92ad4332acf10e4cdab283c7f1227eeb3e4d6c3a42988c91"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/tools/PortfolioReview.java",
+      "status": "modified",
+      "before_sha256": "e1ec68c13d5ef0e34f6cbc0ef4eb832cf0a4f255b9b3bec30a1f3af107739adf",
+      "after_sha256": "aec5eae594615dce0efd73eada1f9d2f2b590d8da49db4df47328643a399968a"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/tools/ZiweiTools.java",
+      "status": "modified",
+      "before_sha256": "c2cd9d39c585a5b30b31a2c1f797d0bab060f6b9dc8461ae726ac62542b1ed1f",
+      "after_sha256": "70b6c52553635ba71b25c76aa3f7da1ee0340af491cf586cda6d8ad8bb069fea"
+    },
+    {
+      "path": "src/test/java/com/financeclaw/architecture/AgentStateInspectorTest.java",
+      "status": "added",
+      "before_sha256": null,
+      "after_sha256": "1fbc9bbeea9eedab1a7d4dc21a4473417aa15e36a8f534c8ec7d60eab375c7d9"
+    },
+    {
+      "path": "src/test/java/com/financeclaw/architecture/ArchitectureTest.java",
+      "status": "modified",
+      "before_sha256": "273a50126a9ead6f1e5cb68562e2b18c5915b664581a4ce7faed28a69ca7df30",
+      "after_sha256": "5af17b16c135caed6e0d6c819be5b16a3734521551aa62cb9aa8f32e778d4e04"
+    },
+    {
+      "path": "src/test/java/com/financeclaw/architecture/CompatibilitySamples.java",
+      "status": "modified",
+      "before_sha256": "96b0840317e248ca8f8c1c4473c3316e2b1a20653ddc21306dbbdca2551df497",
+      "after_sha256": "8ebb7108338080df62f51d3d22933074d65ee6f29c517b67cd64eaabc9297675"
+    },
+    {
+      "path": "src/test/java/com/financeclaw/architecture/InteractionHttpContractTest.java",
+      "status": "added",
+      "before_sha256": null,
+      "after_sha256": "065101307c9d325903b0c59a8b5621df12811f07365f57317b20e0af7d49c5c3"
+    },
+    {
+      "path": "src/test/java/com/financeclaw/m0/AgentFactoryTest.java",
+      "status": "modified",
+      "before_sha256": "a5b1f7f904ef07ccc246ba2f26af0780b2d1c3b585ed365c55d2332b8049c6ec",
+      "after_sha256": "d5cbe260d0d28f337c7690afd402cfb947211bffd6f4070e137ed3e88a3617c4"
+    },
+    {
+      "path": "src/test/java/com/financeclaw/m0/ForkedProbe.java",
+      "status": "modified",
+      "before_sha256": "5488766c58db4309d4f77d1a8ce7f593dbe3b5afe49f7b5c3361e32409fb8944",
+      "after_sha256": "1e07d5086a3b40ac463695a222ede455f3b113a6f4b618fec6c99be804b95742"
+    },
+    {
+      "path": "src/test/java/com/financeclaw/m0/RecoveryIT.java",
+      "status": "modified",
+      "before_sha256": "cff9e5f0d01511a22ddc5ea3ed52bdaa5c10660d0abec43b074fa98d65d3ec08",
+      "after_sha256": "e82173952b784375453b8282233b0a1c9387d56eeaef2f8652c847129490e062"
+    },
+    {
+      "path": "src/test/java/com/financeclaw/m0/StateAndIsolationIT.java",
+      "status": "modified",
+      "before_sha256": "286827d6d04c8bd7f09adbc0007b229eb33bf3b536a9d9e5c84851f01f931420",
+      "after_sha256": "fd432f29ff919d8bb17dfd100dcb5706d5a3b5d24ee41423d930f6e6b70f6f32"
+    },
+    {
+      "path": "src/test/java/com/financeclaw/m0/support/GuardedAgentRunner.java",
+      "status": "modified",
+      "before_sha256": "52593680f22a581050bb4621656390aec15344444e2e6f2bd9bde7ebd2f45879",
+      "after_sha256": "dec2a0d2ecaa209a88e6b6d5cc1d35a0e95d7e5864c30c2eff984c894186b2b3"
+    },
+    {
+      "path": "src/test/java/com/financeclaw/m1/LifecycleDatabase.java",
+      "status": "modified",
+      "before_sha256": "77d5f309535abaa31ef72a95ad852e4eb2954bb89e7fe42882634e7ec9b68ccf",
+      "after_sha256": "b081231514e3bb388bd2b4d7a640d93389dcc739643e3f5cd05580441378d58a"
+    },
+    {
+      "path": "src/test/java/com/financeclaw/m2/GovernanceIT.java",
+      "status": "modified",
+      "before_sha256": "1982d9c18ee6ec0e00f004fa2850a53178e40907e97b33f0fb713d6fcf2e2094",
+      "after_sha256": "4e726c257c5093c6302b757b9a6654ae2e603196ca10c066b3f43c33d79207c9"
+    },
+    {
+      "path": "src/test/java/com/financeclaw/m2/ModelPolicyTest.java",
+      "status": "modified",
+      "before_sha256": "490a96d52f85db3cb2cd9f95944687b464b3870adc2235fc8127ba2e9884de1c",
+      "after_sha256": "18d0ca192f50d81c88b099bcf86d8619eaf9595cf46e6112ac9385ab1fe307c5"
+    },
+    {
+      "path": "src/test/java/com/financeclaw/m2/ScriptedRuntime.java",
+      "status": "modified",
+      "before_sha256": "54ea06bcec6c244333c73e1eddf67a2f3afd8f8421435642f88e2bb73ffb13f0",
+      "after_sha256": "66c60bfc62e7f8f7c8e54da7df6b3690dc5f344492588c975f6d2e34b0275e20"
+    },
+    {
+      "path": "src/test/resources/architecture/legacy-package-cycles.txt",
+      "status": "modified",
+      "before_sha256": "dc2dd117977ee1974b35fae0e0fc0ca0dc1f5335193802eb877befedb0b3e07e",
+      "after_sha256": "9aa82d43925aa8acd94e54b58d37eaabbe01f42c9b157237294352296d422d40"
+    }
+  ],
+  "verified_source_fingerprints": {
+    "src/main/java/com/financeclaw/agent/BudgetedTransport.java": "8a7c70697601fcb48769d333424e497aa264aa8f620575915297131be04b45e2",
+    "src/main/java/com/financeclaw/agent/GovernedTools.java": "b14cf8260315256daa806991cd9311b4600c73ebe0ded1ad8b9882bad00a0837",
+    "src/main/java/com/financeclaw/agent/ModelFactory.java": "1ec485dc7349241769471cc75ea27fcc3928364872242e03fadd30721535c8ff",
+    "src/main/java/com/financeclaw/agent/TaskAgentRuntime.java": "e2321a3514d71fe166d5db0aa6c0592b12fda52ae6efc98dd44d7792c265f9f1",
+    "src/main/java/com/financeclaw/api/ApiErrors.java": "f16b8c96885e0315f5e068d8fb700e951b5d695d0f0ed45b4957c04734042a2a",
+    "src/main/java/com/financeclaw/api/BearerIdentity.java": "01eaf67e8ecac1aeb0c745622e7d3f0591cf4a8e398a2f343bac4524d667d21a",
+    "src/main/java/com/financeclaw/api/FeishuController.java": "77a185d759a1c584a3af62e56bf5473e7493cfda0f9ad949aa826ff18263d303",
+    "src/main/java/com/financeclaw/api/GovernanceController.java": "814ec588cc4d59126079e300b1233fc2bd97de646b11dfbad5854fdee3cb5f93",
+    "src/main/java/com/financeclaw/api/MemoryController.java": "bc4289c92fcfd43d7e468a99d4e60977478a110744704c71f8cd7b986a8f2796",
+    "src/main/java/com/financeclaw/api/OperationsController.java": "45a67f0e92e9ece10392f1c488e256cfdd374c4266812c10b89185881faaf52b",
+    "src/main/java/com/financeclaw/api/TaskController.java": "060d7bfa29a6a74ed26e56e5756cf09f5ba277f993feb57bfec8d951941df966",
+    "src/main/java/com/financeclaw/api/TaskEvents.java": "66693278784936b25be5a13bb0deadc5002dfff2da79428f68609ade7d12b40f",
+    "src/main/java/com/financeclaw/app/interaction/AnswerInteractionService.java": "a631d0bf761e8dcfca4d8a4c99b315115c53b6c3e5f6dd3eb1bf1195c93dc2d5",
+    "src/main/java/com/financeclaw/app/interaction/port/InteractionAnswerRules.java": "a68900705fc17d565601954c6ef9fbf4a780bf79dfcd5d15c8d6289669c11fe0",
+    "src/main/java/com/financeclaw/app/interaction/port/InteractionCheckpoint.java": "048a1ccd44e89a05394f27e026c5e4347328061cd64d9d45816f3a561b3d539b",
+    "src/main/java/com/financeclaw/app/interaction/port/InteractionGateway.java": "4ed25ef0b311fae7d29d69b02b2fa9db10db6cf150944db6793be3e2bccfbf23",
+    "src/main/java/com/financeclaw/app/operations/AdmissionService.java": "c5a5427c6ec8dbc68b714a99a8dd94283425e6824313c9eaad261a8c252b835b",
+    "src/main/java/com/financeclaw/app/operations/OperationsQueryService.java": "e984d37b7b825d2a70de72dc24333db7eda3dd46520ca7c6e97e9c3e99734b23",
+    "src/main/java/com/financeclaw/app/operations/port/AdmissionGateway.java": "9e23453a8d2bf4ba4e4d5de53ae03eb237e92e4b78c5265d88ed8f9790c312e4",
+    "src/main/java/com/financeclaw/app/operations/port/OperationsReadGateway.java": "defdc13f48c745b1509fbb444f426323a9a4c0a94861b175b1010bc1ddbc1541",
+    "src/main/java/com/financeclaw/application/GovernanceService.java": "260be779de4fec15c94eaa0b642abd500e173861efd02e2be5bfc0054c1668e4",
+    "src/main/java/com/financeclaw/application/MemoryService.java": "5f09d4e16347d4a0c5d15068da4eb676475c63f0f29c559d80b1309ca7cb8524",
+    "src/main/java/com/financeclaw/application/ReleaseCatalog.java": "5b79bef7204ea6c15db54cccdb1556d1f2059975ff873f0cf0f6c41475621e78",
+    "src/main/java/com/financeclaw/application/TaskService.java": "9e55384e26b0330f9563ecec2c368ed2139fedf1f210fe3df00eb66a17de236b",
+    "src/main/java/com/financeclaw/bootstrap/DeploymentAccess.java": "d395e06bae2a8f08824033ccb034c1f7185b8f318bb90ef6ee20b2e148a88fcd",
+    "src/main/java/com/financeclaw/bootstrap/FinanceClawApplication.java": "ee4fb036e15c3ee9bb845dde008cbac7bc964def93f5be928c91c10574817295",
+    "src/main/java/com/financeclaw/bootstrap/RuntimeHealth.java": "cd716ac9aa8a100d3e55cc350278dadcbe4a8a82ab3db105aed20eeb4cf83873",
+    "src/main/java/com/financeclaw/channel/AgentScopeFeishu.java": "8242f498ca730e060f448d800679d6ade3b6923d096a403cdfb22628202ce4c2",
+    "src/main/java/com/financeclaw/channel/FeishuDelivery.java": "fcaa2c5a2650084b0f0de0e0e3f49bfa28d272952238153a8e2a7859a5d187e1",
+    "src/main/java/com/financeclaw/channel/FeishuIngress.java": "e5093f169898a0cf62105c8e47f05cd300c191acc6628fdbd7867ac598b97b7d",
+    "src/main/java/com/financeclaw/channel/FeishuService.java": "623e8c0c05548cd303518b960ad93b0c21ba34dc8fb5248f1d02afae66863640",
+    "src/main/java/com/financeclaw/channel/FeishuSettings.java": "fb748281757f5aaf0b4a39fe0678bbeb893f8dedc8dd55d360b414ddaf5aa1f4",
+    "src/main/java/com/financeclaw/channel/FeishuText.java": "8a97654ea50e65ba7a38a9f1a2029920d883e17b116fc46868aaaef5cfe78551",
+    "src/main/java/com/financeclaw/domain/ExecutionScope.java": "69928bbe89c0e7d04f11d411158ef6dacdd68773a9e39883d4e7a31da685bd10",
+    "src/main/java/com/financeclaw/domain/Feishu.java": "e0f8a8f5285a31b09c759e9cc7e18c52a63136928e618aa92eee40540b0e6f98",
+    "src/main/java/com/financeclaw/domain/Governance.java": "1df3612c20ac759d5e86d085b4ee341003f245a6466aec2f93d03c5c57ab8f4b",
+    "src/main/java/com/financeclaw/domain/IdempotencyKey.java": "67451f99d8c3a9d71a265df98648882b3c4afd7b87e36432c3219f214e633ad0",
+    "src/main/java/com/financeclaw/domain/InteractionBinding.java": "f9a907edfce9fcf9a8ee38d0d963466c1fce70acbec76dcb4cf523f24e965881",
+    "src/main/java/com/financeclaw/domain/Memory.java": "bb5c85594f835cf9d0333932654f6ce650c13bbac4b1fe6ce591e2f2c5816ee9",
+    "src/main/java/com/financeclaw/domain/Operations.java": "c4df5ecbae3aefbe8df824d66c24b8e539dbc3d4f8e159746577802ca456907e",
+    "src/main/java/com/financeclaw/domain/Task.java": "0619a422efcdfc0ac91e7e04629b352bc209cfdeff0b9c2d878487b48e784d13",
+    "src/main/java/com/financeclaw/infrastructure/agentscope/AgentScopeInteractionCheckpoint.java": "b01e982a232b4c5da2254f1f883b33c791a9b4c33f05c30c720a09f479614546",
+    "src/main/java/com/financeclaw/infrastructure/agentscope/AgentStateInspector.java": "961ef8e66078a9fff4478e184a5980b91f27994add0e0ef1047e7db362852400",
+    "src/main/java/com/financeclaw/infrastructure/agentscope/IsolatedAgentFactory.java": "f6756d40a6ef7958c949f633dd0fcd01c7185c482c8e6688fe4e42ad3a02da0a",
+    "src/main/java/com/financeclaw/infrastructure/agentscope/ResumeInputs.java": "b8955c9567ba8ff06136924c5a684c22588e62d22042b7756f0ea6a5b97be33b",
+    "src/main/java/com/financeclaw/infrastructure/agentscope/capability/ApprovalInteractionHandler.java": "54bc01aaf2bc5339efe32432fdd61084b8914de1d052b3ffd61b6bdd73553153",
+    "src/main/java/com/financeclaw/infrastructure/agentscope/capability/InteractionHandler.java": "e0f25056c5f853257b2d1e7d8ab6b9999a5a75f0524ae64414f1a196865bad27",
+    "src/main/java/com/financeclaw/infrastructure/agentscope/capability/LocalToolContribution.java": "8cfbabb7fd3428f281dd3e3565169e3dd1abe019b73e8b42cb1ea459e45a024a",
+    "src/main/java/com/financeclaw/infrastructure/agentscope/capability/MarketToolContribution.java": "55c9dd671de4b9c5eb9b326beccce3f73f0da2b553e21dea433756d8954c3f7f",
+    "src/main/java/com/financeclaw/infrastructure/agentscope/capability/McpToolContribution.java": "33c5108674567a0d5defe617936618b0f908217c64cbb150f3023f82f3344eb0",
+    "src/main/java/com/financeclaw/infrastructure/agentscope/capability/PortfolioToolContribution.java": "8f5a80800116dc939db2cf96a978bb182d396a998fd862346f3c0ac52d7e41a9",
+    "src/main/java/com/financeclaw/infrastructure/agentscope/capability/ToolContribution.java": "9a8b509946bd345e14ee2b56ba06ebce3645e1124f496f07dc26e679533fe8b4",
+    "src/main/java/com/financeclaw/infrastructure/agentscope/capability/ZiweiToolContribution.java": "45722853eb15ef641a9c44bed02d77004c4104d86c9a5f45557191d48bce0e2d",
+    "src/main/java/com/financeclaw/infrastructure/channel/FeishuMapper.java": "9131454a1f068bc98a22c49bf2a0ceff5ebdb4613ea00bea6df197ab161724dc",
+    "src/main/java/com/financeclaw/infrastructure/governance/GovernanceMapper.java": "7f9996d93bba20d00ba0ea6465aa0176ebb22d044c32aecca7361360156b650b",
+    "src/main/java/com/financeclaw/infrastructure/interaction/AgentScopeAnswerRules.java": "a930bd5fc213e6d9b3a3d2b344f0c2b49ab1d75dcafc9ac08bf826dac4e9d910",
+    "src/main/java/com/financeclaw/infrastructure/interaction/BusinessAnswerValidator.java": "d827b5a8716512cefe54d5c3ae03f0b43f000f3b65405a08bb7e0470617eccf4",
+    "src/main/java/com/financeclaw/infrastructure/interaction/MyBatisInteractionGateway.java": "63415d23c36ca7df11189665bd57f31a4df5774a7c29450ff9d0a417bcb0c474",
+    "src/main/java/com/financeclaw/infrastructure/interaction/ZiweiAnswerValidator.java": "c600e6b2e6142f732023f0a4282c1e4eccf9194cb74de6928f07c25c0bff170b",
+    "src/main/java/com/financeclaw/infrastructure/memory/MemoryMapper.java": "794c7a9c3572c59a8b792b7cfbd90846392ae29de623f08c344b1dcdfbc8f3bf",
+    "src/main/java/com/financeclaw/infrastructure/operations/MyBatisAdmissionGateway.java": "6e51af068f8d38bc09917ebc73284ab1c123bedd0f8d46d52aad5e8cfb1df982",
+    "src/main/java/com/financeclaw/infrastructure/operations/MyBatisOperationsReadGateway.java": "92011e793a75fb2bdd22110063f737ad7ba3ab532ded49ecca3c7942c5258581",
+    "src/main/java/com/financeclaw/infrastructure/state/MyBatisAgentStateStore.java": "c491637aa3df4339f9532d02104699f9e56dd62376b33d3ac5d199144bd8d06a",
+    "src/main/java/com/financeclaw/infrastructure/state/RuntimeMapper.java": "14352cab72ae33f280522958a3d25940846d23130aa58ca44c6b73bb05005600",
+    "src/main/java/com/financeclaw/infrastructure/task/OperationsMapper.java": "3b0214d5b1b29a0fa73e1164f1a500e51e87faaa3452d94073b5005d296468fd",
+    "src/main/java/com/financeclaw/infrastructure/task/TaskMapper.java": "2ad304ae5104a156c8a9a7c11d4e7ee27205ffad95572f024a9eebab2b60a238",
+    "src/main/java/com/financeclaw/memory/MemoryModels.java": "5259af81055638dd8f173bc79c0495728ce5e61cc4a0edf3da35367c750d4cf9",
+    "src/main/java/com/financeclaw/memory/MemoryProcessor.java": "ddf8cd593e6834d455c4e0fd0e56db9cd1125f54246fd740bd10a4d560dd1fc8",
+    "src/main/java/com/financeclaw/memory/MemorySearch.java": "23081dfa5a3d06d2f6383caea5ff8fccf62f9fc1f0848b203344c652cc568fb0",
+    "src/main/java/com/financeclaw/support/PayloadDigest.java": "734a17e49bf29256113c7ef3d52d30f94b663a7e5849e18d3cfe11f8c1102000",
+    "src/main/java/com/financeclaw/support/PayloadJson.java": "16dd380dde57f4b260c1beaf40bf2f23421e364bf6c4250587eabaa58dfdff11",
+    "src/main/java/com/financeclaw/support/ToolSchemas.java": "8eeff54fa1c0e37b9824dc49a6d2a70cc87cbc28bcedbeff37898f78830a5d62",
+    "src/main/java/com/financeclaw/tools/BusinessCatalog.java": "26f44b85de49f79cc9efd0b90b800910705ba0e37ec6b96f732002fef1b4f559",
+    "src/main/java/com/financeclaw/tools/CapabilitySteps.java": "70c7a250c3ba78ac2153bc37dd8f2e3ed33d34234fe0079598b96b1e0c448150",
+    "src/main/java/com/financeclaw/tools/MarketData.java": "b14d3302acfb10ab5c3eb928d8552573c8bf3284f7a8ae5a5ea2baeb80e1c129",
+    "src/main/java/com/financeclaw/tools/MarketResearch.java": "99dbd380c1336d8d92ad4332acf10e4cdab283c7f1227eeb3e4d6c3a42988c91",
+    "src/main/java/com/financeclaw/tools/McpTools.java": "188d37306fb08cdc7a176e30b7846a6a947816deaa7db3e40fe70e3a241913d7",
+    "src/main/java/com/financeclaw/tools/PortfolioReview.java": "aec5eae594615dce0efd73eada1f9d2f2b590d8da49db4df47328643a399968a",
+    "src/main/java/com/financeclaw/tools/TaibuInputs.java": "7178dba95602a1d12e7fd4896c254d0d490ae246ffc387e69ae95b330873e451",
+    "src/main/java/com/financeclaw/tools/ZiweiTools.java": "70b6c52553635ba71b25c76aa3f7da1ee0340af491cf586cda6d8ad8bb069fea",
+    "src/main/java/com/financeclaw/worker/TaskWorker.java": "d75173cd4a54b25eedfad977b90454326deafd51b75fe9d7fe9995466f200128",
+    "src/main/java/com/financeclaw/ziwei/ZiweiCalculation.java": "96317a9f212a28620118af1474823cf43585ae6e35ec5fbc8b65576437430658",
+    "src/main/java/com/financeclaw/ziwei/ZiweiCalendar.java": "0a7d8b655aa83dbe146256355d7fa29972475c1841cc662116a1ceec378a4499",
+    "src/main/java/com/financeclaw/ziwei/ZiweiChartEngine.java": "c2cdd0fce19908258bb09fa33e6d122c25a24073d857992b6261cf253ed985cf",
+    "src/main/java/com/financeclaw/ziwei/ZiweiDates.java": "8bde5743c8ba3b8f8050fbf5d4a2b143074c69018b8723f82576b6b70bd3fc17",
+    "src/main/java/com/financeclaw/ziwei/ZiweiInputs.java": "acc36ec2b523126d292ac21db046aec5f09e6c07bcd419500ab40fd60cc9499b",
+    "src/main/java/com/financeclaw/ziwei/ZiweiPolicy.java": "80db9c87448eb1360ce3dbb63f04c63fe0bf9eb0f125bc812fffc60caa3d470b",
+    "src/main/java/com/financeclaw/ziwei/ZiweiRules.java": "fdadd86db0ddf9ffeb2369a27d344426a757abce517545114469289d3f6b7eb8",
+    "src/main/java/com/financeclaw/ziwei/ZiweiStars.java": "ba7b4b57a37443d083e6acc3c43fb3e1dab6ab0cbb9c5f95fbe9324b2f91870c",
+    "src/main/java/com/financeclaw/ziwei/ZiweiTables.java": "f30074b5077781839f3634ecb7cdc7b0dac11f421653ee557ff366a7a1034d9f",
+    "src/main/java/com/financeclawmemory/MemoryWorkerApplication.java": "5118c8626195b43594d5557f94561ddde35a5f1b39a39fb685b1600a09b6ce83",
+    "src/main/java/com/financeclawmigrate/MigrationApplication.java": "c1be05b482a61626d81c331e77cd4b4e5fffdf5fa1ceef465746c5146b9ae8df",
+    "src/main/resources/META-INF/licenses/iztro.txt": "c9884f87e83a5f9ea598146e3a93cd439cf3703cb152555a13d6654396814244",
+    "src/main/resources/META-INF/licenses/lunar-1.7.7.txt": "d9210caf1844dcf410095cea464b79800aad30dbd49df092076b9f0ddc015404",
+    "src/main/resources/META-INF/licenses/x-iztro-0.4.0.txt": "0c0c2ddc26928837fe5ecae2749ad444ff67c2ec923bc2ac6df7fadb23cffb0b",
+    "src/main/resources/application-api.yml": "011ffd8d3d093aa3d3a3d9f0e61040daac9fd9f840d27564dcfd752b524fe165",
+    "src/main/resources/application-integrations.yml": "32cb5552293dbfa34198aa0f0bbfebebebc87b45c80ca590168f29ca4f766c5e",
+    "src/main/resources/application-worker.yml": "9709d81d4d0e48eea29de1019d172e269c4218ec1c06c6b2d55d54d5dedad594",
+    "src/main/resources/application.yml": "32042f43b6a840fc3939df859c725ff18f8b1665ec9e731e7a04b4e3b64205bc",
+    "src/main/resources/db/migration/V1__m0_agent_state.sql": "5b3d7bd3889e65b5114e705d24711d41de04e8698533390a781166d90547fc7e",
+    "src/main/resources/db/migration/V2__task_lifecycle.sql": "144d3eec16f54256a8843648a096274f7376b680ee3694a4eda3bcdfd5b7fb14",
+    "src/main/resources/db/migration/V3__governed_execution.sql": "b76c882bf0c767671eb7f2a4319d5f2c3c8b6cd72ddd1de8dec42580bc3bcaf5",
+    "src/main/resources/db/migration/V4__business_capabilities.sql": "d7e2dd0cd8cd435c950178d4e06bdd2c7a6e36c3db786257eef1d8a5ccb81e1a",
+    "src/main/resources/db/migration/V5__memory_and_feishu.sql": "30039a723be388b8df9e37218b61cc51f3b7474d3e913e851ca3e2cabb59c9be",
+    "src/main/resources/db/migration/V6__admission_control.sql": "e9d9c883c9c2f2a6875aa7e305ab0ce5cbc2f8c3d9aeb67ce6438b96d2755913",
+    "src/main/resources/deployment/grants.sql": "80fa1debe70b17a5882b35df08af3537f34007779c68e5dc84ab08fee77885dc",
+    "src/main/resources/skills/cocktail-from-what-i-have/LICENSE": "18a87eaf5c6017a3ffc7a3c4927627d530cc1541406cb3e705576a1b8c47c6bd",
+    "src/main/resources/skills/cocktail-from-what-i-have/SKILL.md": "9e3b5fcdcf9fa06be759f11e7139afe056ee9e9209cb7d3f2bf9c759da2ee4c6",
+    "src/main/resources/skills/cocktail-from-what-i-have/SOURCE.json": "1db4c22bf94ac30494416bb44c8a5a17a127d50c0cbc5b9e9863be23d69d25f2",
+    "src/main/resources/skills/cocktail-from-what-i-have/agents/openai.yaml": "1a09df787de5cb495ae9e39faae75c4235e428f34c75a44c2feeb8a8ad1dcaaf",
+    "src/main/resources/ziwei/inputs.json": "d1995d5fd1ee7af28111d04a4e818696f023679e43681180ce92d530817d2ef4",
+    "src/test/java/com/financeclaw/architecture/AgentStateInspectorTest.java": "1fbc9bbeea9eedab1a7d4dc21a4473417aa15e36a8f534c8ec7d60eab375c7d9",
+    "src/test/java/com/financeclaw/architecture/ArchitectureTest.java": "5af17b16c135caed6e0d6c819be5b16a3734521551aa62cb9aa8f32e778d4e04",
+    "src/test/java/com/financeclaw/architecture/CompatibilitySamples.java": "8ebb7108338080df62f51d3d22933074d65ee6f29c517b67cd64eaabc9297675",
+    "src/test/java/com/financeclaw/architecture/InteractionHttpContractTest.java": "065101307c9d325903b0c59a8b5621df12811f07365f57317b20e0af7d49c5c3",
+    "src/test/java/com/financeclaw/architecture/OperationsHttpContractTest.java": "b3d00a12b651343f1866385469653b150358e51e9bfc4882a8b224589b95ff3e",
+    "src/test/java/com/financeclaw/architecture/OperationsRulesTest.java": "22fc0959be87017300c00f29177e1d6a66a542590d543b3a441bccae21b926f4",
+    "src/test/java/com/financeclaw/architecture/PackageCycles.java": "74c17d5efccfdfa0fe632fcc2dedecb9fc7d62a5c88d9e5a60bd081deadcf715",
+    "src/test/java/com/financeclaw/architecture/SerializationCompatibilityTest.java": "e4217ef6bfb5a4ea001d78fbfff1ddd13731f87caad45de80f03ef19e3b59ec7",
+    "src/test/java/com/financeclaw/m0/AgentFactoryTest.java": "d5cbe260d0d28f337c7690afd402cfb947211bffd6f4070e137ed3e88a3617c4",
+    "src/test/java/com/financeclaw/m0/ApplicationIT.java": "d063b29e226ec68eb8048ac16f8211ff89dc8f7d0c9964efed680854fb37d7aa",
+    "src/test/java/com/financeclaw/m0/ExecutionScopeTest.java": "f784bcd7d09188d51b4a4887f9e631a1fd3736502a0354471b044e3075d51f47",
+    "src/test/java/com/financeclaw/m0/ForkedProbe.java": "1e07d5086a3b40ac463695a222ede455f3b113a6f4b618fec6c99be804b95742",
+    "src/test/java/com/financeclaw/m0/ModelPayloadTest.java": "153c75e6291558844ac5f43c5d32f8eecafa7861bab31f6b7cd6b57fea5d15cc",
+    "src/test/java/com/financeclaw/m0/PostgresSupport.java": "374bd9a94be89547da8650029dfecd8b18351f78114c7c71cf4f6e22b0394713",
+    "src/test/java/com/financeclaw/m0/ProbeFixtures.java": "ca3c87e1c9504dd6344a42c5e24c76cc4f9ecd59bf1c1618850ef1645f27c7a9",
+    "src/test/java/com/financeclaw/m0/ProbeMapper.java": "818a2807f6991ff7378b4314c8b1accdad028726d72d96d46594b5ee853b30a1",
+    "src/test/java/com/financeclaw/m0/RecoveryIT.java": "e82173952b784375453b8282233b0a1c9387d56eeaef2f8652c847129490e062",
+    "src/test/java/com/financeclaw/m0/SdkMiddlewareTest.java": "59ca55c8e66f682d56f8cfcec6cc3fc37e3cbca4e7e02e11273e6165ca9205d7",
+    "src/test/java/com/financeclaw/m0/StateAndIsolationIT.java": "fd432f29ff919d8bb17dfd100dcb5706d5a3b5d24ee41423d930f6e6b70f6f32",
+    "src/test/java/com/financeclaw/m0/support/EffectLedger.java": "8e6d0eccec024a96c1528939ad8b99c2144c926756610f80c7fd5401c7245800",
+    "src/test/java/com/financeclaw/m0/support/ExecutionGate.java": "758c609c5854f95750a1774719de11bfffde73512664d4c4d37902a640e695f8",
+    "src/test/java/com/financeclaw/m0/support/GuardedAgentRunner.java": "dec2a0d2ecaa209a88e6b6d5cc1d35a0e95d7e5864c30c2eff984c894186b2b3",
+    "src/test/java/com/financeclaw/m0/support/M0RuntimeMapper.java": "f3ffe35d1c2eacbe97883d13ddb53ecdc4b93ec0364d4853e3bac51652ea6d06",
+    "src/test/java/com/financeclaw/m1/ForkedTask.java": "5462a31a82217c93d3ffb314adf758754b6321bb4333ef22c989f56d447cac21",
+    "src/test/java/com/financeclaw/m1/LifecycleDatabase.java": "b081231514e3bb388bd2b4d7a640d93389dcc739643e3f5cd05580441378d58a",
+    "src/test/java/com/financeclaw/m1/LifecycleProbeMapper.java": "d78ea9c965fa52a9887c75576fe7fdc3760de8b816e602badf0fca4c4b58e6c3",
+    "src/test/java/com/financeclaw/m1/OutcomeTest.java": "9b8dc707de2a474c43127687868d2273321e0d73d97e49b6edce1a21a3d2193a",
+    "src/test/java/com/financeclaw/m1/TaskLifecycleIT.java": "d27d1e803cfbaa7fe904ecbadc71270908918a1657c7122213207dbb386729e5",
+    "src/test/java/com/financeclaw/m2/ForkedGovernance.java": "3a6a34d59a886db9a8188a4c87a82e5667477d1cb5922b0eb464fbe2ae628fec",
+    "src/test/java/com/financeclaw/m2/GovernanceIT.java": "4e726c257c5093c6302b757b9a6654ae2e603196ca10c066b3f43c33d79207c9",
+    "src/test/java/com/financeclaw/m2/MockMcp.java": "054f6ce65105c7f5e44a68bfb13c0fc769cb585a9e80501aaf20c4e46b203b0c",
+    "src/test/java/com/financeclaw/m2/ModelPolicyTest.java": "18d0ca192f50d81c88b099bcf86d8619eaf9595cf46e6112ac9385ab1fe307c5",
+    "src/test/java/com/financeclaw/m2/ScriptedRuntime.java": "66c60bfc62e7f8f7c8e54da7df6b3690dc5f344492588c975f6d2e34b0275e20",
+    "src/test/java/com/financeclaw/m3/BusinessContractsTest.java": "9605e148d021d7e8c1a4ffb52768bb5ee38d44f4347dc5995c5a0e8f0d0dcb8e",
+    "src/test/java/com/financeclaw/m3/BusinessIT.java": "86e984256c82105714ff3371024ec299a9c5a1968b97fc1986a55e153ae03ea7",
+    "src/test/java/com/financeclaw/m3/ForkedBusiness.java": "21c5e20cf511df8aded0b316529efef2c1f9801a3c0502ac03e00459eddc25d5",
+    "src/test/java/com/financeclaw/m3/MockRemote.java": "0c75b7741840716d989abcfc6a5932c7e6bf080d31807db03ec6aa11c9fc35e8",
+    "src/test/java/com/financeclaw/m3/NativeSkillsIT.java": "7e40415267c56d013a2123c63b1d91acee84524bf1bf3f1138ab4a5ce015cc82",
+    "src/test/java/com/financeclaw/m4/FeishuIT.java": "65b4bac12b392e21aae7a3ea1859c6ffd3209e28f11cb39c486713033b8d07ea",
+    "src/test/java/com/financeclaw/m4/M4Database.java": "8c75b8ca64c763c7ed94fd6d64ce15df284f7a7a76cd23dc13caa1a24a8d99e9",
+    "src/test/java/com/financeclaw/m4/MemoryIT.java": "ebc2b1835b8cd6cc3f3f19bd80641efb89188017c8d6481e76474d3e4033a3c4",
+    "src/test/java/com/financeclaw/m4/MockFeishu.java": "446e032b41c003339f63850d4ec73d00cd98eed7d38ceb41ef087e5da16dbcee",
+    "src/test/java/com/financeclaw/m4/MockMemoryModels.java": "d8671896dbca08802efc3577e28e090cf96bed991bcd4b25db86ff7292687ca2",
+    "src/test/java/com/financeclaw/m4/NativeMemoryTest.java": "9f35c0d9acf4c1c3404dcdc7a12ca19c2031fb55e16aa05020994cb32bca9043",
+    "src/test/java/com/financeclaw/m5/AdmissionIT.java": "d9ca47b2d722e133d84cd87e74aa3e4c69fbd6f38c3554a5cea13a569af12986",
+    "src/test/java/com/financeclaw/m5/BacklogIT.java": "6ae3db34530e9a97ce54a64ad9b91cf993760f9a1891c8c3e1945eabd1eb0084",
+    "src/test/java/com/financeclaw/m5/DeploymentAccessTest.java": "93363fe1bf4bb0a137d2dfc2608e2e99a82a488f106afb6e0767fd3a6e99e622",
+    "src/test/java/com/financeclaw/m5/OperationsIT.java": "08ef54e04dc61c509346b3721d7ed7289b58ae1ad8a435e196ba637e7a275c85",
+    "src/test/java/com/financeclaw/m6/ZiweiCalendarTest.java": "f2730b3e2cf4e0e69d4aa349724d086177fbc1a474b4b248e6eddc0107146b19",
+    "src/test/java/com/financeclaw/m6/ZiweiChartEngineTest.java": "8889dd228dc49f4fcb19ee8bc1159a21eee8f1a9329970cec31140040c265d70",
+    "src/test/java/com/financeclaw/m6/ZiweiDatesTest.java": "665b6bd7fc5470b680255c47f40ed24cc67f7614cc842c11a59737af7ee78af7",
+    "src/test/java/com/financeclaw/m6/ZiweiDomainTest.java": "06ced3d31c292653fcef87349d3787728cbae9bad6213e91a667af73db4955e1",
+    "src/test/java/com/financeclaw/m6/ZiweiPackagedIT.java": "ca6003cd874146ea779a4fd128f451616a447d246e91999647a0c587350dcda6",
+    "src/test/java/com/financeclaw/m6/ZiweiPackagedProbe.java": "d1958d1113f54647adfe04f74b8105399d4d8be2abdad1cf433abae6f8ed870e",
+    "src/test/java/com/financeclaw/m6/ZiweiRecoveryIT.java": "f71f4e54e8c8e301b5a3439f8fd9081a8fb8fc410b38c451d1f993e0bbaeeb37",
+    "src/test/java/com/financeclaw/m6/ZiweiRuntimeProbe.java": "43708295aa9921ec3db48685bfaa67a2b0e08f12e79bc04fb64a9a812a846186",
+    "src/test/java/com/financeclaw/m6/ZiweiToolsIT.java": "d22ed18fbc7cd31e257f27fa3cd637834f08b4904b6d874d5697142d1a2b9b13",
+    "src/test/resources/architecture/legacy-package-cycles.txt": "9aa82d43925aa8acd94e54b58d37eaabbe01f42c9b157237294352296d422d40",
+    "src/test/resources/architecture/operations-http.json": "6e010e79b23d886f446b4206af4695f48005f94cc075b22c8eff2f7993236b5b",
+    "src/test/resources/architecture/serialization-baseline.json": "0ff0f87546b1337062ca1ec9e9056c8a7cd702b385ec3b2de8a53f38b4bfa53f",
+    "src/test/resources/contracts/hotel.json": "b88834f902c1ef6bc7be41f035c56eafe97ea86031c26de3a987616d1202cae1",
+    "src/test/resources/contracts/taibu.json": "602fa7740e4150d0f16f3a4ef854f9a95abe725cd2dd07ce06f382e85f21e608",
+    "src/test/resources/m3/taibu-samples.json": "9ee26702392614a77633c8f5831d1ef57e6a5bf489627328eba61f62d5e1338f",
+    "src/test/resources/ziwei/calendar/calendar-manifest.json": "b655a519c09ef0954fc4219bc2b2af90dad43293bb04d06173b860731d2e267f",
+    "src/test/resources/ziwei/calendar/calendar.tsv.gz": "a773e8081a955f8f7e367a57a2136f83233b17720b4e6c087ebd783ee39227a6",
+    "src/test/resources/ziwei/charts/charts.jsonl.gz": "d4fff13ce9e71253b0bfffc893a5285dbbe5cffb75d69ef4747263e04ecfa19e",
+    "src/test/resources/ziwei/charts/manifest.json": "70ccb601845db0bda661bc6c8a2ac5dad3a277b7003ef355ad2cf97aed44e233",
+    "src/test/resources/ziwei/domain/domain.json": "731b55d44873327884b74c6113cfff4f75caf22b032ad6d387585fcaae19d6ad",
+    "src/test/resources/ziwei/domain/manifest.json": "89143651711aae0b6b52c75315b9e00900ba4bce2d964bb29897679af6d6daeb",
+    "src/test/resources/ziwei/reference/charts.json": "21d2c9ae181c031bf52e8b64095151bf36518dde3b79ae620e81e0490467795c",
+    "src/test/resources/ziwei/reference/dates.json": "98a746b720472fcb227233ed1a22edb34af27c94f47372da8b5b6a5be0d678c9",
+    "src/test/resources/ziwei/reference/manifest.json": "8dcf2f17f481101d6627e63a5e9c83ddded8719b1b01bf8b4a12d4d53c3face1",
+    "src/test/resources/ziwei/reference/schemas.json": "443165d9d3526fd7f525ca7eb6796132e78766208870b6cc52786b0304d34150",
+    "pom.xml": "0c99b5afc1b5ef28a3dffe1a775ff66185948d5be98bcc9494b3b896e7c231da"
+  }
+}

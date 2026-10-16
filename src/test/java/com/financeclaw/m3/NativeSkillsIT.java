@@ -2,10 +2,9 @@ package com.financeclaw.m3;
 
 import static org.assertj.core.api.Assertions.*;
 
-import com.financeclaw.agent.ModelFactory;
 import com.financeclaw.application.ReleaseCatalog.ModelProfile;
+import com.financeclaw.infrastructure.agentscope.execution.ModelFactory;
 import com.financeclaw.tools.BusinessCatalog;
-import com.financeclaw.tools.PortfolioReview;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.message.*;
 import io.agentscope.core.model.*;
@@ -96,7 +95,7 @@ class NativeSkillsIT {
                         .id("load")
                         .content(
                             List.of(
-                                PortfolioReview.call(
+                                com.financeclaw.infrastructure.agentscope.NativeToolCalls.call(
                                     "load-1",
                                     "load_skill_through_path",
                                     Map.of("skillId", skillId, "path", "SKILL.md"))))

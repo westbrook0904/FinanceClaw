@@ -3,8 +3,10 @@ package com.financeclaw.m2;
 import static org.assertj.core.api.Assertions.*;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.financeclaw.agent.*;
 import com.financeclaw.application.ReleaseCatalog.ModelProfile;
+import com.financeclaw.infrastructure.agentscope.IsolatedAgentFactory;
+import com.financeclaw.infrastructure.agentscope.execution.*;
+import com.financeclaw.support.PayloadJson;
 import io.agentscope.core.message.*;
 import io.agentscope.core.model.*;
 import io.agentscope.core.model.transport.*;
@@ -90,8 +92,7 @@ class ModelPolicyTest {
                       "role",
                       "tool",
                       "content",
-                      ResumeInputs.canonical(
-                          Collections.nCopies(100, Map.of("hotel", "超长酒店资料"))))));
+                      PayloadJson.canonical(Collections.nCopies(100, Map.of("hotel", "超长酒店资料"))))));
       case "tools" ->
           request.put(
               "tools",
@@ -148,7 +149,7 @@ class ModelPolicyTest {
                               "input_audio",
                               Map.of("data", "YQ==", "format", "wav"))))));
     }
-    assertThatThrownBy(() -> transport.check(ResumeInputs.canonical(request)))
+    assertThatThrownBy(() -> transport.check(PayloadJson.canonical(request)))
         .isInstanceOf(IllegalArgumentException.class);
     assertThat(wire.count).hasValue(0);
   }
@@ -157,7 +158,7 @@ class ModelPolicyTest {
   void byteFallbackCountsNonAsciiAndAllSchemasWithoutTokenizerCache() {
     var t = new BudgetedTransport(new Capture(), 10000, 12000, 128, 32);
     String request =
-        ResumeInputs.canonical(
+        PayloadJson.canonical(
             Map.of(
                 "messages",
                 List.of(Map.of("role", "user", "content", "中文🙂")),

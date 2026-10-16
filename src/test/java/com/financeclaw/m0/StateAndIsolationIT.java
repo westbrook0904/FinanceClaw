@@ -2,13 +2,13 @@ package com.financeclaw.m0;
 
 import static org.assertj.core.api.Assertions.*;
 
-import com.financeclaw.agent.GuardedAgentRunner;
-import com.financeclaw.agent.IsolatedAgentFactory;
 import com.financeclaw.domain.ExecutionScope;
-import com.financeclaw.infrastructure.state.EffectLedger;
-import com.financeclaw.infrastructure.state.ExecutionGate;
+import com.financeclaw.infrastructure.agentscope.IsolatedAgentFactory;
 import com.financeclaw.infrastructure.state.MyBatisAgentStateStore;
 import com.financeclaw.infrastructure.state.RuntimeMapper;
+import com.financeclaw.m0.support.EffectLedger;
+import com.financeclaw.m0.support.ExecutionGate;
+import com.financeclaw.m0.support.GuardedAgentRunner;
 import io.agentscope.core.message.*;
 import io.agentscope.core.model.*;
 import io.agentscope.core.state.*;
@@ -321,7 +321,7 @@ class StateAndIsolationIT extends PostgresSupport {
   @Test
   void effectIdempotencyRejectsChangedPayloadAndReusesVerifiedResult() {
     var scope = scope();
-    var ledger = new EffectLedger(MAPPER, scope);
+    var ledger = new EffectLedger(EFFECTS, scope);
     String hash = "a".repeat(64);
     assertThat(ledger.begin("op", hash)).isEmpty();
     assertThatThrownBy(() -> ledger.begin("op", hash))

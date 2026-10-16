@@ -2,7 +2,6 @@ package com.financeclaw.m2;
 
 import com.financeclaw.infrastructure.state.RuntimeMapper;
 import com.financeclaw.m1.LifecycleDatabase;
-import com.financeclaw.worker.TaskWorker;
 import java.nio.file.*;
 import java.util.Properties;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
@@ -17,26 +16,24 @@ public final class ForkedGovernance {
         new LifecycleDatabase(
             new DriverManagerDataSource(
                 p.getProperty("url"), p.getProperty("user"), p.getProperty("password")));
-    database
-        .service
-        .releases()
-        .publish(
-            new com.financeclaw.application.ReleaseCatalog.Release(
-                "m2-v1",
-                "finance_agent",
-                com.financeclaw.application.ReleaseCatalog.SCOPES,
-                com.financeclaw.application.ReleaseCatalog.OFFLINE,
-                null,
-                12,
-                16));
+    database.releases.publish(
+        new com.financeclaw.application.ReleaseCatalog.Release(
+            "m2-v1",
+            "finance_agent",
+            com.financeclaw.application.ReleaseCatalog.SCOPES,
+            com.financeclaw.application.ReleaseCatalog.OFFLINE,
+            null,
+            12,
+            16));
     var c = database.service.claim("fresh-jvm", 60000);
     try (var worker =
-        new TaskWorker(
-            database.service,
+        com.financeclaw.m1.TaskWorkerFixture.create(
+            database,
             new ScriptedRuntime(
                 database.service,
                 database.governance,
-                database.session.getMapper(RuntimeMapper.class)),
+                database.session.getMapper(RuntimeMapper.class),
+                database.business),
             false,
             false,
             1,

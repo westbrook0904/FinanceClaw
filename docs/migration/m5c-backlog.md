@@ -71,4 +71,4 @@ python3 scripts/check-delivery.py
 
 没有新增数据库迁移或依赖。M5b 的 14 项 Compose 记录属于其历史 JAR；本阶段不将历史结果算作当前 JAR 的容器复测。完整 Java 回归包含原有独立 JVM 和实际镜像五工具测试。真实环境、线上切换与紫微普通启用仍保留原门禁。
 
-代码入口：[OperationsController](../../src/main/java/com/financeclaw/api/OperationsController.java)、[OperationsService](../../src/main/java/com/financeclaw/application/OperationsService.java)、[OperationsMapper](../../src/main/java/com/financeclaw/infrastructure/task/OperationsMapper.java)。
+代码入口：[OperationsController](../../src/main/java/com/financeclaw/api/OperationsController.java)、[AdmissionService](../../src/main/java/com/financeclaw/app/operations/AdmissionService.java)、[OperationsQueryService](../../src/main/java/com/financeclaw/app/operations/OperationsQueryService.java)、[OperationsMapper](../../src/main/java/com/financeclaw/infrastructure/task/OperationsMapper.java)。

@@ -1,0 +1,688 @@
+{
+  "review_date": "2026-10-15",
+  "git_head": "993e7acded5340ace65d02c9aad3f272db5fac2f",
+  "initial_worktree_status": [
+    " M .github/workflows/ci.yml",
+    " M README.md",
+    " M docs/migration/acceptance-checklist.md",
+    " M docs/migration/agentscope-java-migration.md",
+    " M docs/migration/framework-reuse-review.md",
+    " M docs/migration/m5-validation.md",
+    " M docs/migration/m5d-preflight.md",
+    " M scripts/collect-evidence.py",
+    " M scripts/validate-compose.py",
+    "?? docs/migration/evidence/m5e-compose-results.json",
+    "?? docs/migration/evidence/m5e-local-results.json",
+    "?? docs/migration/evidence/m5e-privacy-reports.json",
+    "?? docs/migration/m5e-restore-privacy.md",
+    "?? ops/restore-privacy-snapshot.sql",
+    "?? scripts/check-restore-privacy.py",
+    "?? scripts/test-restore-privacy.py"
+  ],
+  "scope": "Static review of working tree; no new Java, Compose, or live-provider validation in this review.",
+  "methodology": {
+    "lines": "Physical lines including blanks and comments.",
+    "edges": "Explicit Java imports, grouped by first package segment under com.financeclaw; static and wildcard imports included. Fully qualified inline references, reflection, Spring wiring and runtime calls excluded. Cycles are a confirmed lower bound."
+  },
+  "java_file_count": 67,
+  "physical_java_lines": 8943,
+  "package_file_counts": {
+    "agent": 7,
+    "api": 8,
+    "application": 5,
+    "bootstrap": 3,
+    "channel": 6,
+    "com.financeclawmemory": 1,
+    "com.financeclawmigrate": 1,
+    "domain": 6,
+    "infrastructure": 9,
+    "memory": 3,
+    "tools": 8,
+    "worker": 1,
+    "ziwei": 9
+  },
+  "explicit_import_edges": [
+    [
+      "agent",
+      "application"
+    ],
+    [
+      "agent",
+      "domain"
+    ],
+    [
+      "agent",
+      "infrastructure"
+    ],
+    [
+      "agent",
+      "tools"
+    ],
+    [
+      "agent",
+      "ziwei"
+    ],
+    [
+      "api",
+      "application"
+    ],
+    [
+      "api",
+      "channel"
+    ],
+    [
+      "api",
+      "domain"
+    ],
+    [
+      "api",
+      "infrastructure"
+    ],
+    [
+      "application",
+      "agent"
+    ],
+    [
+      "application",
+      "domain"
+    ],
+    [
+      "application",
+      "infrastructure"
+    ],
+    [
+      "application",
+      "ziwei"
+    ],
+    [
+      "bootstrap",
+      "infrastructure"
+    ],
+    [
+      "channel",
+      "agent"
+    ],
+    [
+      "channel",
+      "application"
+    ],
+    [
+      "channel",
+      "domain"
+    ],
+    [
+      "channel",
+      "infrastructure"
+    ],
+    [
+      "com.financeclawmemory",
+      "infrastructure"
+    ],
+    [
+      "com.financeclawmemory",
+      "memory"
+    ],
+    [
+      "infrastructure",
+      "domain"
+    ],
+    [
+      "memory",
+      "agent"
+    ],
+    [
+      "memory",
+      "application"
+    ],
+    [
+      "memory",
+      "domain"
+    ],
+    [
+      "memory",
+      "infrastructure"
+    ],
+    [
+      "tools",
+      "agent"
+    ],
+    [
+      "tools",
+      "application"
+    ],
+    [
+      "tools",
+      "domain"
+    ],
+    [
+      "tools",
+      "infrastructure"
+    ],
+    [
+      "tools",
+      "ziwei"
+    ],
+    [
+      "worker",
+      "agent"
+    ],
+    [
+      "worker",
+      "application"
+    ],
+    [
+      "worker",
+      "domain"
+    ],
+    [
+      "ziwei",
+      "agent"
+    ],
+    [
+      "ziwei",
+      "application"
+    ],
+    [
+      "ziwei",
+      "domain"
+    ]
+  ],
+  "cyclic_components": [
+    [
+      "agent",
+      "application",
+      "tools",
+      "ziwei"
+    ]
+  ],
+  "reviewed_sdk_source_artifacts": [
+    {
+      "artifact": "agentscope-core",
+      "version": "2.0.3",
+      "url": "https://repo.maven.apache.org/maven2/io/agentscope/agentscope-core/2.0.3/agentscope-core-2.0.3-sources.jar",
+      "sha256": "a1219ae6e50265484b248bc016a4978ccaa35a5786a1c6b9d90dad42608b154e"
+    },
+    {
+      "artifact": "agentscope-extensions-agent-protocol",
+      "version": "2.0.3",
+      "url": "https://repo.maven.apache.org/maven2/io/agentscope/agentscope-extensions-agent-protocol/2.0.3/agentscope-extensions-agent-protocol-2.0.3-sources.jar",
+      "sha256": "1cc994908f25e828a31e2ebbf0f7cd3e35ded789c140fda84f634b12cb80c50f"
+    },
+    {
+      "artifact": "agentscope-extensions-jdbc",
+      "version": "2.0.3",
+      "url": "https://repo.maven.apache.org/maven2/io/agentscope/agentscope-extensions-jdbc/2.0.3/agentscope-extensions-jdbc-2.0.3-sources.jar",
+      "sha256": "1d593714d01877414d6ead83f22d9613ce6d4c28acf033adf4b1628563fca1f6"
+    },
+    {
+      "artifact": "agentscope-harness",
+      "version": "2.0.3",
+      "url": "https://repo.maven.apache.org/maven2/io/agentscope/agentscope-harness/2.0.3/agentscope-harness-2.0.3-sources.jar",
+      "sha256": "6e30e9429eedc1551e858674b57541d94fd9b7b753550c844f3fe8bdbbf12034"
+    },
+    {
+      "artifact": "agentscope-extensions-channel-feishu",
+      "version": "2.0.3",
+      "url": "https://repo.maven.apache.org/maven2/io/agentscope/agentscope-extensions-channel-feishu/2.0.3/agentscope-extensions-channel-feishu-2.0.3-sources.jar",
+      "sha256": "cb2a5ede870b048887f6ba3191f8b7935c6c07a66d55b946237854c25b018b8a"
+    },
+    {
+      "artifact": "agentscope-extensions-rag-simple",
+      "version": "2.0.3",
+      "url": "https://repo.maven.apache.org/maven2/io/agentscope/agentscope-extensions-rag-simple/2.0.3/agentscope-extensions-rag-simple-2.0.3-sources.jar",
+      "sha256": "d7670a24424dde95c8b1c2ef4c14ac4f6ce64771375137030ae0d7500eaf9529"
+    }
+  ],
+  "source_files": [
+    {
+      "path": "src/main/java/com/financeclaw/agent/BudgetedTransport.java",
+      "lines": 85,
+      "sha256": "8a7c70697601fcb48769d333424e497aa264aa8f620575915297131be04b45e2",
+      "package": "com.financeclaw.agent"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/agent/GovernedTools.java",
+      "lines": 460,
+      "sha256": "12ba8f93d20ebb040704e61d119ea94c764d0e7451343436f6127b2897517538",
+      "package": "com.financeclaw.agent"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/agent/GuardedAgentRunner.java",
+      "lines": 47,
+      "sha256": "ee04129acf2015d55912add891978956fda5cbd21283d3a853c6812afc977870",
+      "package": "com.financeclaw.agent"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/agent/IsolatedAgentFactory.java",
+      "lines": 75,
+      "sha256": "febbf97254c22f3e87e4e420ef82777fc95e8ff46b69c80c0702bda058bfbd69",
+      "package": "com.financeclaw.agent"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/agent/ModelFactory.java",
+      "lines": 78,
+      "sha256": "1ec485dc7349241769471cc75ea27fcc3928364872242e03fadd30721535c8ff",
+      "package": "com.financeclaw.agent"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/agent/ResumeInputs.java",
+      "lines": 98,
+      "sha256": "ea240204d87bba189c8f247b7ed71d2e1243347ab9e9a30b4ffedae4f28844d9",
+      "package": "com.financeclaw.agent"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/agent/TaskAgentRuntime.java",
+      "lines": 331,
+      "sha256": "47e99ec0dbe8e447f6e177b99d7a32287fb216efd62dfa86c89045529cbab0fb",
+      "package": "com.financeclaw.agent"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/api/ApiErrors.java",
+      "lines": 29,
+      "sha256": "f16b8c96885e0315f5e068d8fb700e951b5d695d0f0ed45b4957c04734042a2a",
+      "package": "com.financeclaw.api"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/api/BearerIdentity.java",
+      "lines": 55,
+      "sha256": "01eaf67e8ecac1aeb0c745622e7d3f0591cf4a8e398a2f343bac4524d667d21a",
+      "package": "com.financeclaw.api"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/api/FeishuController.java",
+      "lines": 49,
+      "sha256": "77a185d759a1c584a3af62e56bf5473e7493cfda0f9ad949aa826ff18263d303",
+      "package": "com.financeclaw.api"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/api/GovernanceController.java",
+      "lines": 119,
+      "sha256": "e2ab459396dd79adda4d77f0f17a53c6fc1cf31a4b6b7ec5a44c420f0864f349",
+      "package": "com.financeclaw.api"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/api/MemoryController.java",
+      "lines": 67,
+      "sha256": "bc4289c92fcfd43d7e468a99d4e60977478a110744704c71f8cd7b986a8f2796",
+      "package": "com.financeclaw.api"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/api/OperationsController.java",
+      "lines": 75,
+      "sha256": "142e3bfe22562f9e6ef5e7d66af1f4466beaa348ea7023b4fa6a30059a3032c6",
+      "package": "com.financeclaw.api"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/api/TaskController.java",
+      "lines": 98,
+      "sha256": "060d7bfa29a6a74ed26e56e5756cf09f5ba277f993feb57bfec8d951941df966",
+      "package": "com.financeclaw.api"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/api/TaskEvents.java",
+      "lines": 81,
+      "sha256": "66693278784936b25be5a13bb0deadc5002dfff2da79428f68609ade7d12b40f",
+      "package": "com.financeclaw.api"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/application/GovernanceService.java",
+      "lines": 333,
+      "sha256": "f2d922863acdd6d22c246727305cdfe096506497351f1fa85fddaea1e584cf7b",
+      "package": "com.financeclaw.application"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/application/MemoryService.java",
+      "lines": 195,
+      "sha256": "960d85dc64b74baf7fc95d208ae806260c5fbdf56d0c45b64c3799898a8039b0",
+      "package": "com.financeclaw.application"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/application/OperationsService.java",
+      "lines": 94,
+      "sha256": "0e9db9942bf009baea911683f8983a6671528248c2afeb63c247a746991533b5",
+      "package": "com.financeclaw.application"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/application/ReleaseCatalog.java",
+      "lines": 174,
+      "sha256": "d2375ad8f1378bcd2f941af84a1c69bdef7025b6f3f209e6b7e2ca59d18a54f6",
+      "package": "com.financeclaw.application"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/application/TaskService.java",
+      "lines": 473,
+      "sha256": "6e99a2d748649157bebd03b8dbeaf535dccb9420940ce1f0ecd5702e6ccf764f",
+      "package": "com.financeclaw.application"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/bootstrap/DeploymentAccess.java",
+      "lines": 46,
+      "sha256": "d395e06bae2a8f08824033ccb034c1f7185b8f318bb90ef6ee20b2e148a88fcd",
+      "package": "com.financeclaw.bootstrap"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/bootstrap/FinanceClawApplication.java",
+      "lines": 16,
+      "sha256": "ee4fb036e15c3ee9bb845dde008cbac7bc964def93f5be928c91c10574817295",
+      "package": "com.financeclaw.bootstrap"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/bootstrap/RuntimeHealth.java",
+      "lines": 28,
+      "sha256": "cd716ac9aa8a100d3e55cc350278dadcbe4a8a82ab3db105aed20eeb4cf83873",
+      "package": "com.financeclaw.bootstrap"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/channel/AgentScopeFeishu.java",
+      "lines": 56,
+      "sha256": "8242f498ca730e060f448d800679d6ade3b6923d096a403cdfb22628202ce4c2",
+      "package": "com.financeclaw.channel"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/channel/FeishuDelivery.java",
+      "lines": 112,
+      "sha256": "fcaa2c5a2650084b0f0de0e0e3f49bfa28d272952238153a8e2a7859a5d187e1",
+      "package": "com.financeclaw.channel"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/channel/FeishuIngress.java",
+      "lines": 54,
+      "sha256": "e5093f169898a0cf62105c8e47f05cd300c191acc6628fdbd7867ac598b97b7d",
+      "package": "com.financeclaw.channel"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/channel/FeishuService.java",
+      "lines": 182,
+      "sha256": "3cb57b2719c87918ff8c6c204bee9d2f32563fb3b410454816fdcd81ca289588",
+      "package": "com.financeclaw.channel"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/channel/FeishuSettings.java",
+      "lines": 34,
+      "sha256": "fb748281757f5aaf0b4a39fe0678bbeb893f8dedc8dd55d360b414ddaf5aa1f4",
+      "package": "com.financeclaw.channel"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/channel/FeishuText.java",
+      "lines": 72,
+      "sha256": "ecfae5c1bc914bd8d829c7049674887b62da265181611d09f7219a791e6c8aaf",
+      "package": "com.financeclaw.channel"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/domain/ExecutionScope.java",
+      "lines": 50,
+      "sha256": "69928bbe89c0e7d04f11d411158ef6dacdd68773a9e39883d4e7a31da685bd10",
+      "package": "com.financeclaw.domain"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/domain/Feishu.java",
+      "lines": 31,
+      "sha256": "e0f8a8f5285a31b09c759e9cc7e18c52a63136928e618aa92eee40540b0e6f98",
+      "package": "com.financeclaw.domain"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/domain/Governance.java",
+      "lines": 88,
+      "sha256": "1df3612c20ac759d5e86d085b4ee341003f245a6466aec2f93d03c5c57ab8f4b",
+      "package": "com.financeclaw.domain"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/domain/Memory.java",
+      "lines": 43,
+      "sha256": "bb5c85594f835cf9d0333932654f6ce650c13bbac4b1fe6ce591e2f2c5816ee9",
+      "package": "com.financeclaw.domain"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/domain/Operations.java",
+      "lines": 56,
+      "sha256": "52115ae15fe8fd3cba7c139bebb63611517996cc0c963653e64de2b73d175349",
+      "package": "com.financeclaw.domain"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/domain/Task.java",
+      "lines": 109,
+      "sha256": "0619a422efcdfc0ac91e7e04629b352bc209cfdeff0b9c2d878487b48e784d13",
+      "package": "com.financeclaw.domain"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/infrastructure/channel/FeishuMapper.java",
+      "lines": 89,
+      "sha256": "9131454a1f068bc98a22c49bf2a0ceff5ebdb4613ea00bea6df197ab161724dc",
+      "package": "com.financeclaw.infrastructure.channel"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/infrastructure/governance/GovernanceMapper.java",
+      "lines": 152,
+      "sha256": "7f9996d93bba20d00ba0ea6465aa0176ebb22d044c32aecca7361360156b650b",
+      "package": "com.financeclaw.infrastructure.governance"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/infrastructure/memory/MemoryMapper.java",
+      "lines": 178,
+      "sha256": "794c7a9c3572c59a8b792b7cfbd90846392ae29de623f08c344b1dcdfbc8f3bf",
+      "package": "com.financeclaw.infrastructure.memory"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/infrastructure/state/EffectLedger.java",
+      "lines": 40,
+      "sha256": "970731f116c2a09f46a2ff2c2789ecd35461416bff0e0be1376397509d9b6d29",
+      "package": "com.financeclaw.infrastructure.state"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/infrastructure/state/ExecutionGate.java",
+      "lines": 39,
+      "sha256": "2ae0f168bde9ee955b7d8b417f3d9d487de740c3a862b19ae9051fda110447b0",
+      "package": "com.financeclaw.infrastructure.state"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/infrastructure/state/MyBatisAgentStateStore.java",
+      "lines": 104,
+      "sha256": "c491637aa3df4339f9532d02104699f9e56dd62376b33d3ac5d199144bd8d06a",
+      "package": "com.financeclaw.infrastructure.state"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/infrastructure/state/RuntimeMapper.java",
+      "lines": 86,
+      "sha256": "18c1ec90be5383a4d9c432ca829fe3b784126a5f3df097bc8d737cd6c754f9ba",
+      "package": "com.financeclaw.infrastructure.state"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/infrastructure/task/OperationsMapper.java",
+      "lines": 149,
+      "sha256": "3b0214d5b1b29a0fa73e1164f1a500e51e87faaa3452d94073b5005d296468fd",
+      "package": "com.financeclaw.infrastructure.task"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/infrastructure/task/TaskMapper.java",
+      "lines": 226,
+      "sha256": "2ad304ae5104a156c8a9a7c11d4e7ee27205ffad95572f024a9eebab2b60a238",
+      "package": "com.financeclaw.infrastructure.task"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/memory/MemoryModels.java",
+      "lines": 93,
+      "sha256": "5259af81055638dd8f173bc79c0495728ce5e61cc4a0edf3da35367c750d4cf9",
+      "package": "com.financeclaw.memory"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/memory/MemoryProcessor.java",
+      "lines": 233,
+      "sha256": "ddf8cd593e6834d455c4e0fd0e56db9cd1125f54246fd740bd10a4d560dd1fc8",
+      "package": "com.financeclaw.memory"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/memory/MemorySearch.java",
+      "lines": 66,
+      "sha256": "23081dfa5a3d06d2f6383caea5ff8fccf62f9fc1f0848b203344c652cc568fb0",
+      "package": "com.financeclaw.memory"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/tools/BusinessCatalog.java",
+      "lines": 149,
+      "sha256": "9407099e3cd5f032ef77f77c334fa8a6176295789ff1c6b3649f146cdee2252a",
+      "package": "com.financeclaw.tools"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/tools/CapabilitySteps.java",
+      "lines": 39,
+      "sha256": "1ef8eab8dbe9798e0419f9c5cef48758ee8a312abe6ce4763701f229b64298fa",
+      "package": "com.financeclaw.tools"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/tools/MarketData.java",
+      "lines": 72,
+      "sha256": "31e98251f79633c3973fd9fea4f34df2ce90463f3b3945eaaa6948e317ae4c08",
+      "package": "com.financeclaw.tools"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/tools/MarketResearch.java",
+      "lines": 265,
+      "sha256": "e901ddf1be94e274c2820a0ca2b00dd384c86b1501720d797ff8d0fb645b80b7",
+      "package": "com.financeclaw.tools"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/tools/McpTools.java",
+      "lines": 71,
+      "sha256": "188d37306fb08cdc7a176e30b7846a6a947816deaa7db3e40fe70e3a241913d7",
+      "package": "com.financeclaw.tools"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/tools/PortfolioReview.java",
+      "lines": 287,
+      "sha256": "4c54839470804e58f101c5c88dcef9a7df852803e0591b3b0e18b01d7564d320",
+      "package": "com.financeclaw.tools"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/tools/TaibuInputs.java",
+      "lines": 79,
+      "sha256": "7178dba95602a1d12e7fd4896c254d0d490ae246ffc387e69ae95b330873e451",
+      "package": "com.financeclaw.tools"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/tools/ZiweiTools.java",
+      "lines": 135,
+      "sha256": "25ee2034f1411dddc651404b72effac8e18bc4b57908f4daf10e420a1ffe1e42",
+      "package": "com.financeclaw.tools"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/worker/TaskWorker.java",
+      "lines": 154,
+      "sha256": "d75173cd4a54b25eedfad977b90454326deafd51b75fe9d7fe9995466f200128",
+      "package": "com.financeclaw.worker"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/ziwei/ZiweiCalculation.java",
+      "lines": 260,
+      "sha256": "8477aeb3aa734ff164cdfb7236eabc760ddd9becbd902d54a73fa0d634348afa",
+      "package": "com.financeclaw.ziwei"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/ziwei/ZiweiCalendar.java",
+      "lines": 113,
+      "sha256": "0a7d8b655aa83dbe146256355d7fa29972475c1841cc662116a1ceec378a4499",
+      "package": "com.financeclaw.ziwei"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/ziwei/ZiweiChartEngine.java",
+      "lines": 365,
+      "sha256": "c2cdd0fce19908258bb09fa33e6d122c25a24073d857992b6261cf253ed985cf",
+      "package": "com.financeclaw.ziwei"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/ziwei/ZiweiDates.java",
+      "lines": 254,
+      "sha256": "8bde5743c8ba3b8f8050fbf5d4a2b143074c69018b8723f82576b6b70bd3fc17",
+      "package": "com.financeclaw.ziwei"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/ziwei/ZiweiInputs.java",
+      "lines": 311,
+      "sha256": "b066ab20430f874e44e2dc4315bc82fa5b680ef85b979e7079a29b01f4ec7324",
+      "package": "com.financeclaw.ziwei"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/ziwei/ZiweiPolicy.java",
+      "lines": 86,
+      "sha256": "80db9c87448eb1360ce3dbb63f04c63fe0bf9eb0f125bc812fffc60caa3d470b",
+      "package": "com.financeclaw.ziwei"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/ziwei/ZiweiRules.java",
+      "lines": 136,
+      "sha256": "fdadd86db0ddf9ffeb2369a27d344426a757abce517545114469289d3f6b7eb8",
+      "package": "com.financeclaw.ziwei"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/ziwei/ZiweiStars.java",
+      "lines": 293,
+      "sha256": "ba7b4b57a37443d083e6acc3c43fb3e1dab6ab0cbb9c5f95fbe9324b2f91870c",
+      "package": "com.financeclaw.ziwei"
+    },
+    {
+      "path": "src/main/java/com/financeclaw/ziwei/ZiweiTables.java",
+      "lines": 314,
+      "sha256": "f30074b5077781839f3634ecb7cdc7b0dac11f421653ee557ff366a7a1034d9f",
+      "package": "com.financeclaw.ziwei"
+    },
+    {
+      "path": "src/main/java/com/financeclawmemory/MemoryWorkerApplication.java",
+      "lines": 86,
+      "sha256": "5118c8626195b43594d5557f94561ddde35a5f1b39a39fb685b1600a09b6ce83",
+      "package": "com.financeclawmemory"
+    },
+    {
+      "path": "src/main/java/com/financeclawmigrate/MigrationApplication.java",
+      "lines": 26,
+      "sha256": "c1be05b482a61626d81c331e77cd4b4e5fffdf5fa1ceef465746c5146b9ae8df",
+      "package": "com.financeclawmigrate"
+    }
+  ],
+  "verified_official_source_links": {
+    "tag": "v2.0.3",
+    "tree_sha": "1b8e3dcd2338550ae5198bdb2a7bae56df5bf2e0",
+    "tree_url": "https://api.github.com/repos/agentscope-ai/agentscope-java/git/trees/v2.0.3?recursive=1",
+    "method": "Each listed file exists in the official tag and its Git blob SHA-1 matches the Maven source-jar contents.",
+    "files": [
+      {
+        "repository_path": "agentscope-core/src/main/java/io/agentscope/core/tool/ToolExecutor.java",
+        "git_blob_sha1": "7d9c13a6813df95fc98b6112ffd1827bc8f7106a"
+      },
+      {
+        "repository_path": "agentscope-harness/src/main/java/io/agentscope/harness/agent/gateway/LocalSessionTurnGate.java",
+        "git_blob_sha1": "422fdf8d3ee0eacc000a2fecfac4b98879523fb2"
+      },
+      {
+        "repository_path": "agentscope-harness/src/main/java/io/agentscope/harness/agent/gateway/HarnessGateway.java",
+        "git_blob_sha1": "2eabc945ab9db2a13a298ecb36950d04fd0499f8"
+      },
+      {
+        "repository_path": "agentscope-harness/src/main/java/io/agentscope/harness/agent/bus/WorkspaceMessageBus.java",
+        "git_blob_sha1": "1c7f87fe0194e4476573b43795f1052972a6e679"
+      },
+      {
+        "repository_path": "agentscope-extensions/agentscope-extensions-jdbc/src/main/java/io/agentscope/extensions/jdbc/state/JdbcAgentStateStore.java",
+        "git_blob_sha1": "daa94a4e3724b66a9eff5abfb72a622bf4306666"
+      },
+      {
+        "repository_path": "agentscope-extensions/agentscope-extensions-protocol/agentscope-extensions-agent-protocol/src/main/java/io/agentscope/extensions/agentprotocol/AgentProtocolTaskEventBus.java",
+        "git_blob_sha1": "4dd0dcb5c7d1566dddf03e19379bb96bc36cf35f"
+      },
+      {
+        "repository_path": "agentscope-core/src/main/java/io/agentscope/core/tool/subagent/SubAgentTool.java",
+        "git_blob_sha1": "a4c3d7bee918b34fe2c01ba014a926f00e287592"
+      },
+      {
+        "repository_path": "agentscope-core/src/main/java/io/agentscope/core/memory/LongTermMemory.java",
+        "git_blob_sha1": "c81e83e2e71980e1c5fa0dd20a26304294a68bd4"
+      },
+      {
+        "repository_path": "agentscope-harness/src/main/java/io/agentscope/harness/agent/memory/compaction/ConversationCompactor.java",
+        "git_blob_sha1": "b92b09344062c1f267fbf122e43b7f5fa6cf98df"
+      },
+      {
+        "repository_path": "agentscope-extensions/agentscope-extensions-channel/agentscope-extensions-channel-feishu/src/main/java/io/agentscope/extensions/channel/feishu/FeishuOutboundClient.java",
+        "git_blob_sha1": "6e8cb08e57aacd4d9c6cf78a819a1f93b8f13711"
+      }
+    ]
+  }
+}

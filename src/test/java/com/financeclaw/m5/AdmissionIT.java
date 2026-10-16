@@ -4,14 +4,15 @@ import static org.assertj.core.api.Assertions.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-import com.financeclaw.agent.TaskAgentRuntime;
+import com.financeclaw.app.operations.AdmissionService;
+import com.financeclaw.app.operations.OperationsQueryService;
 import com.financeclaw.application.*;
 import com.financeclaw.bootstrap.FinanceClawApplication;
 import com.financeclaw.domain.Governance.Answer;
 import com.financeclaw.domain.Task.*;
+import com.financeclaw.infrastructure.agentscope.execution.TaskAgentRuntime;
 import com.financeclaw.infrastructure.state.RuntimeMapper;
 import com.financeclaw.m2.ScriptedRuntime;
-import com.financeclaw.worker.TaskWorker;
 import java.util.*;
 import java.util.concurrent.*;
 import javax.sql.DataSource;
@@ -50,8 +51,10 @@ class AdmissionIT {
   }
 
   @Autowired TaskService tasks;
+  @Autowired org.springframework.context.ApplicationContext taskContext;
   @Autowired GovernanceService governance;
-  @Autowired OperationsService operations;
+  @Autowired AdmissionService admissions;
+  @Autowired OperationsQueryService operations;
   @Autowired TaskAgentRuntime runtime;
   @Autowired RuntimeMapper states;
   @Autowired TransactionTemplate tx;
@@ -73,7 +76,9 @@ class AdmissionIT {
   }
 
   void run(TaskAgentRuntime agent) throws Exception {
-    try (var worker = new TaskWorker(tasks, agent, false, false, 1, 60000, 2000)) {
+    try (var worker =
+        com.financeclaw.m1.TaskWorkerFixture.create(
+            taskContext, agent, false, false, 1, 60000, 2000)) {
       worker.execute(Objects.requireNonNull(tasks.claim("m5b-test", 60000)));
     }
   }
@@ -147,18 +152,18 @@ class AdmissionIT {
 
   @Test
   void controlReceiptsAreIdempotentAndStaleChangesCannotReopenAdmission() {
-    var paused = operations.change(owner, "pause", true, 0);
+    var paused = admissions.change(owner, "pause", true, 0);
     assertThat(paused.revision()).isEqualTo(1);
-    assertThat(operations.change(owner, "pause", true, 0).idempotentReplay()).isTrue();
-    assertThatThrownBy(() -> operations.change(owner, "pause", false, 0))
+    assertThat(admissions.change(owner, "pause", true, 0).idempotentReplay()).isTrue();
+    assertThatThrownBy(() -> admissions.change(owner, "pause", false, 0))
         .hasMessage("idempotency_conflict");
-    assertThatThrownBy(() -> operations.change(owner, "stale", false, 0))
+    assertThatThrownBy(() -> admissions.change(owner, "stale", false, 0))
         .hasMessage("admission_revision_changed");
-    operations.change(owner, "resume", false, 1);
+    admissions.change(owner, "resume", false, 1);
     // An old pause receipt remains the old result; it does not pause a second time.
-    assertThat(operations.change(owner, "pause", true, 0).paused()).isTrue();
-    assertThat(operations.admission(owner).paused()).isFalse();
-    assertThat(operations.admission(owner).revision()).isEqualTo(2);
+    assertThat(admissions.change(owner, "pause", true, 0).paused()).isTrue();
+    assertThat(admissions.admission(owner).paused()).isFalse();
+    assertThat(admissions.admission(owner).revision()).isEqualTo(2);
     assertThat(count("business.admission_changes")).isEqualTo(2);
     assertThat(operations.drain(owner).drained()).isFalse();
     submit("accepted after resume");
@@ -168,7 +173,7 @@ class AdmissionIT {
   void duplicateSubmissionStillReturnsOriginalReceiptAfterPauseAndCancellation() {
     String c = tasks.createConversation(owner);
     var first = tasks.submit(owner, c, "original", "same-message");
-    operations.change(owner, "pause", true, 0);
+    admissions.change(owner, "pause", true, 0);
     assertThat(tasks.submit(owner, c, "original", "same-message").turnId())
         .isEqualTo(first.turnId());
     assertThatThrownBy(() -> tasks.submit(owner, c, "original", "changed"))
@@ -182,10 +187,10 @@ class AdmissionIT {
 
   @Test
   void ownerScopedPauseAndReportDoNotBlockOrRevealOtherOwners() {
-    operations.change(owner, "pause", true, 0);
+    admissions.change(owner, "pause", true, 0);
     for (var other : List.of(new Owner("local", "other"), new Owner("other", "developer"))) {
       tasks.submit(other, tasks.createConversation(other), "same-key", "private-other-message");
-      assertThat(operations.admission(other).paused()).isFalse();
+      assertThat(admissions.admission(other).paused()).isFalse();
       assertThat(operations.drain(other).counts()).containsEntry("queued", 1L);
     }
     assertThat(operations.drain(owner).counts().values()).allMatch(n -> n == 0);
@@ -196,7 +201,7 @@ class AdmissionIT {
   @Test
   void queuedWorkContinuesAndCompletionRequiresOutboxDrain() throws Exception {
     var accepted = submit("offline-work");
-    operations.change(owner, "pause", true, 0);
+    admissions.change(owner, "pause", true, 0);
     assertThat(operations.drain(owner).counts())
         .containsEntry("queued", 1L)
         .containsEntry("active_commands", 1L);
@@ -214,9 +219,15 @@ class AdmissionIT {
   void nativeClarificationAndApprovalCanFinishWhileNewTasksArePaused(String message)
       throws Exception {
     var accepted = submit(message);
-    var scripted = new ScriptedRuntime(tasks, governance, states);
+    var scripted =
+        new ScriptedRuntime(
+            tasks,
+            governance,
+            states,
+            taskContext.getBean(
+                com.financeclaw.infrastructure.agentscope.capability.BusinessCapabilities.class));
     run(scripted);
-    operations.change(owner, "pause", true, 0);
+    admissions.change(owner, "pause", true, 0);
     assertThat(operations.drain(owner).counts())
         .containsEntry("waiting", 1L)
         .containsEntry("pending_interactions", 1L);
@@ -241,7 +252,7 @@ class AdmissionIT {
   void cancellationInProgressAndUnknownEffectsNeverCountAsDrained() {
     var t = submit("running");
     var claim = tasks.claim("test", 60000);
-    operations.change(owner, "pause", true, 0);
+    admissions.change(owner, "pause", true, 0);
     tasks.cancel(owner, t.conversationId(), t.turnId(), "cancel");
     assertThat(operations.drain(owner).counts())
         .containsEntry("cancelling", 1L)
@@ -261,7 +272,7 @@ class AdmissionIT {
   @Test
   void unprojectedUnverifiedNotificationsAndMemoryWritesRemainVisible() {
     var t = submit("private-not-in-operating-report");
-    operations.change(owner, "pause", true, 0);
+    admissions.change(owner, "pause", true, 0);
     tasks.cancel(owner, t.conversationId(), t.turnId(), "cancel");
     project();
     sql.update(
@@ -307,7 +318,7 @@ class AdmissionIT {
   @ParameterizedTest
   @ValueSource(booleans = {true, false})
   void pauseAndActualAdmissionTransactionsHaveOneOrdering(boolean pauseFirst) throws Exception {
-    operations.change(owner, "initial", false, 0);
+    admissions.change(owner, "initial", false, 0);
     String c = tasks.createConversation(owner);
     var held = new CountDownLatch(1);
     var release = new CountDownLatch(1);
@@ -317,7 +328,7 @@ class AdmissionIT {
               () ->
                   tx.execute(
                       s -> {
-                        if (pauseFirst) operations.change(owner, "pause", true, 1);
+                        if (pauseFirst) admissions.change(owner, "pause", true, 1);
                         else tasks.submit(owner, c, "new", "message");
                         held.countDown();
                         await(release);
@@ -327,7 +338,7 @@ class AdmissionIT {
       var second =
           executor.submit(
               () -> {
-                if (!pauseFirst) return operations.change(owner, "pause", true, 1);
+                if (!pauseFirst) return admissions.change(owner, "pause", true, 1);
                 try {
                   return tasks.submit(owner, c, "new", "message");
                 } catch (Problem problem) {
@@ -354,7 +365,7 @@ class AdmissionIT {
       Object result = second.get(10, TimeUnit.SECONDS);
       if (pauseFirst) assertThat(result).isEqualTo("admission_paused");
       assertThat(count("business.turns")).isEqualTo(pauseFirst ? 0 : 1);
-      assertThat(operations.admission(owner).paused()).isTrue();
+      assertThat(admissions.admission(owner).paused()).isTrue();
       assertThatThrownBy(() -> submit("later")).hasMessage("admission_paused");
     } finally {
       release.countDown();
@@ -371,7 +382,7 @@ class AdmissionIT {
 
   @Test
   void admissionUsesSharedLocksAcrossIndependentConversations() throws Exception {
-    operations.change(owner, "initial", false, 0);
+    admissions.change(owner, "initial", false, 0);
     var held = new CountDownLatch(1);
     var release = new CountDownLatch(1);
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
@@ -403,12 +414,46 @@ class AdmissionIT {
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
       var futures = new ArrayList<Future<com.financeclaw.domain.Operations.Receipt>>();
       for (int i = 0; i < 6; i++)
-        futures.add(executor.submit(() -> operations.change(owner, "same", true, 0)));
+        futures.add(executor.submit(() -> admissions.change(owner, "same", true, 0)));
       int replay = 0;
       for (var f : futures) if (f.get(10, TimeUnit.SECONDS).idempotentReplay()) replay++;
       assertThat(replay).isEqualTo(5);
       assertThat(count("business.admission_changes")).isEqualTo(1);
-      assertThat(operations.admission(owner).revision()).isEqualTo(1);
+      assertThat(admissions.admission(owner).revision()).isEqualTo(1);
     }
+  }
+
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  void receiptFailureRollsBackTheAdmissionRowAndItsRevision(boolean existing) {
+    if (existing) admissions.change(owner, "initial", false, 0);
+    long revision = existing ? 1 : 0;
+    sql.execute(
+        "ALTER TABLE business.admission_changes ADD CONSTRAINT r2_receipt_failure CHECK (idempotency_key <> 'fail-receipt')");
+    try {
+      assertThatThrownBy(() -> admissions.change(owner, "fail-receipt", true, revision))
+          .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+      assertThat(admissions.admission(owner))
+          .isEqualTo(new com.financeclaw.domain.Operations.Admission(false, revision));
+      assertThat(count("business.admission")).isEqualTo(existing ? 1 : 0);
+      assertThat(count("business.admission_changes")).isEqualTo(existing ? 1 : 0);
+    } finally {
+      sql.execute("ALTER TABLE business.admission_changes DROP CONSTRAINT r2_receipt_failure");
+    }
+    var retry = admissions.change(owner, "fail-receipt", true, revision);
+    assertThat(retry.idempotentReplay()).isFalse();
+    assertThat(retry.revision()).isEqualTo(revision + 1);
+  }
+
+  @Test
+  void admissionAndReceiptJoinAnExistingSpringTransaction() {
+    tx.executeWithoutResult(
+        status -> {
+          admissions.change(owner, "outer", true, 0);
+          assertThat(admissions.admission(owner).paused()).isTrue();
+          status.setRollbackOnly();
+        });
+    assertThat(count("business.admission")).isZero();
+    assertThat(count("business.admission_changes")).isZero();
   }
 }

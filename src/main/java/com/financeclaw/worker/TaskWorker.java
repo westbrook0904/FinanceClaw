@@ -1,7 +1,7 @@
 package com.financeclaw.worker;
 
-import com.financeclaw.agent.TaskAgentRuntime;
-import com.financeclaw.application.TaskService;
+import com.financeclaw.app.execution.*;
+import com.financeclaw.app.task.ProjectTaskService;
 import com.financeclaw.domain.Task.*;
 import jakarta.annotation.PreDestroy;
 import java.util.Map;
@@ -13,8 +13,10 @@ import org.springframework.stereotype.Component;
 
 @Component
 public class TaskWorker implements AutoCloseable {
-  private final TaskService tasks;
-  private final TaskAgentRuntime runtime;
+  private final ExecutionLeaseService leases;
+  private final RecoverTaskService recovery;
+  private final ProjectTaskService projection;
+  private final ExecuteTaskService execution;
   private final boolean enabled, integrations;
   private final long lease;
   private final Semaphore slots;
@@ -24,8 +26,10 @@ public class TaskWorker implements AutoCloseable {
   private volatile boolean closing;
 
   public TaskWorker(
-      TaskService tasks,
-      TaskAgentRuntime runtime,
+      ExecutionLeaseService leases,
+      RecoverTaskService recovery,
+      ProjectTaskService projection,
+      ExecuteTaskService execution,
       @Value("${financeclaw.worker.enabled:true}") boolean enabled,
       @Value("${financeclaw.integrations.enabled:true}") boolean integrations,
       @Value("${financeclaw.worker.parallelism:4}") int parallelism,
@@ -33,8 +37,10 @@ public class TaskWorker implements AutoCloseable {
       @Value("${financeclaw.worker.heartbeat-ms:2000}") long heartbeat) {
     if (parallelism < 1 || parallelism > 32 || lease < heartbeat * 3 || heartbeat < 100)
       throw new IllegalArgumentException("Invalid worker limits");
-    this.tasks = tasks;
-    this.runtime = runtime;
+    this.leases = leases;
+    this.recovery = recovery;
+    this.projection = projection;
+    this.execution = execution;
     this.enabled = enabled;
     this.integrations = integrations;
     this.lease = lease;
@@ -53,15 +59,15 @@ public class TaskWorker implements AutoCloseable {
   public void poll() {
     if (closing) return;
     if (integrations)
-      for (int i = 0; i < 50 && tasks.projectNext(); i++) {
+      for (int i = 0; i < 50 && projection.projectNext(); i++) {
         /* bounded local outbox drain */
       }
     if (!enabled) return;
-    tasks.recoverExpired();
+    recovery.recoverExpired();
     while (!closing && slots.tryAcquire()) {
       Claim c;
       try {
-        c = tasks.claim(worker, lease);
+        c = leases.claim(worker, lease);
       } catch (RuntimeException e) {
         slots.release();
         throw e;
@@ -89,45 +95,7 @@ public class TaskWorker implements AutoCloseable {
   }
 
   public void execute(Claim claim) {
-    Outcome result;
-    try {
-      result = runtime.execute(claim);
-    } catch (com.financeclaw.domain.Governance.Blocked blocked) {
-      try {
-        tasks.block(claim, blocked.getMessage());
-      } catch (RuntimeException lost) {
-        /* lease recovery */
-      }
-      return;
-    } catch (Fenced ignored) {
-      // Cancellation may win after claim but before SDK dispatch. Confirm that stopped attempt.
-      try {
-        tasks.fail(claim);
-      } catch (RuntimeException lost) {
-        /* Expired owner remains fenced. */
-      }
-      return;
-    } catch (RuntimeException error) {
-      try {
-        tasks.fail(claim);
-      } catch (RuntimeException ignored) {
-        /* Reconcile after lease expiry. */
-      }
-      return;
-    }
-    try {
-      if (tasks.acknowledgeCancel(claim)) return;
-      tasks.seal(claim, result);
-      tasks.finish(claim);
-    } catch (com.financeclaw.domain.Governance.Blocked blocked) {
-      try {
-        tasks.block(claim, blocked.getMessage());
-      } catch (RuntimeException lost) {
-        /* recover expired lease */
-      }
-    } catch (RuntimeException ignored) {
-      /* Preserve a sealed receipt; never turn commit uncertainty into failure. */
-    }
+    execution.execute(claim);
   }
 
   @Scheduled(fixedDelayString = "${financeclaw.worker.heartbeat-ms:2000}")
@@ -137,9 +105,9 @@ public class TaskWorker implements AutoCloseable {
         .forEach(
             c -> {
               try {
-                if (tasks.heartbeat(c, lease)) runtime.interrupt(c);
+                if (leases.heartbeat(c, lease)) execution.interrupt(c);
               } catch (RuntimeException lost) {
-                runtime.interrupt(c);
+                execution.interrupt(c);
               }
             });
   }
@@ -147,7 +115,7 @@ public class TaskWorker implements AutoCloseable {
   @PreDestroy
   public void close() throws InterruptedException {
     closing = true;
-    active.values().forEach(runtime::interrupt);
+    active.values().forEach(execution::interrupt);
     pool.shutdown();
     if (!pool.getThreadPoolExecutor().isTerminated()) pool.getThreadPoolExecutor().shutdownNow();
   }

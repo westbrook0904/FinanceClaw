@@ -109,5 +109,5 @@ python3 scripts/check-delivery.py
 | [ZiweiPolicy](../../src/main/java/com/financeclaw/ziwei/ZiweiPolicy.java) | 固定规则、Schema 摘要和预算配置 |
 | [ZiweiCalculation](../../src/main/java/com/financeclaw/ziwei/ZiweiCalculation.java) | 事实、分段、主题投影和预算 |
 | [ZiweiTools](../../src/main/java/com/financeclaw/tools/ZiweiTools.java) | Claim 鉴权、固定时钟、原生暂停、事务回执与归档 |
-| [GovernedTools](../../src/main/java/com/financeclaw/agent/GovernedTools.java) | 原生 Toolkit 注册与恢复适配 |
+| [GovernedTools](../../src/main/java/com/financeclaw/infrastructure/agentscope/execution/GovernedTools.java) | 原生 Toolkit 注册与恢复适配 |
 | [领域测试](../../src/test/java/com/financeclaw/m6/ZiweiDomainTest.java) / [集成测试](../../src/test/java/com/financeclaw/m6/ZiweiToolsIT.java) | 可复现的验收证据 |

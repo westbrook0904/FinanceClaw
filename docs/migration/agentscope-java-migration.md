@@ -351,6 +351,8 @@ OpenTelemetry 关联 `conversation_id / turn_id / command_id / attempt_id / tool
 
 [M5d](m5d-preflight.md) 通过这些运维接口生成只读预检报告，记录前后观测和分页完整性。报告供人工复核，不替代全局停写、隐私历史核对或渠道切换授权。
 
+[M5e](m5e-restore-privacy.md) 增加数据库管理员导出的全主体隐私快照核对。在隔离恢复库接入运行角色之前，比较权威最新状态与恢复库的 epoch、遗忘审计及残留数据。旧备份缺少后续遗忘事实时保持隔离；不自动修复、恢复业务或反向导入。
+
 如后续需要替换正在使用的 Python 环境，执行：
 
 1. 备份应用库、原生库和 Artifact，记录一致性时点；在隔离环境演练恢复。

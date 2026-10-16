@@ -1,8 +1,8 @@
 package com.financeclaw.ziwei;
 
-import com.financeclaw.agent.ResumeInputs;
-import com.financeclaw.application.GovernanceService;
 import com.financeclaw.domain.Task.Owner;
+import com.financeclaw.support.PayloadDigest;
+import com.financeclaw.support.PayloadJson;
 import io.agentscope.core.tool.ToolValidator;
 import java.nio.charset.StandardCharsets;
 import java.time.*;
@@ -15,7 +15,7 @@ public final class ZiweiInputs {
   private static final String RESOURCE =
       com.financeclaw.tools.BusinessCatalog.read("classpath:ziwei/inputs.json");
   private static final Map<String, Object> DOCUMENT =
-      ZiweiCalculation.immutable(GovernanceService.object(RESOURCE));
+      ZiweiCalculation.immutable(PayloadJson.object(RESOURCE));
   private static final Map<String, List<String>> CITIES =
       Map.of(
           "北京",
@@ -109,7 +109,7 @@ public final class ZiweiInputs {
   }
 
   public static String schemaHash() {
-    return GovernanceService.digest(RESOURCE);
+    return PayloadDigest.sha256(RESOURCE);
   }
 
   public static boolean supports(String tool) {
@@ -151,7 +151,7 @@ public final class ZiweiInputs {
 
   public static Map<String, Object> corrected(
       String tool, Map<String, Object> input, Object answer) {
-    if (ToolValidator.validateInput(ResumeInputs.canonical(answer), answerSchema(tool)) != null)
+    if (ToolValidator.validateInput(PayloadJson.canonical(answer), answerSchema(tool)) != null)
       throw new IllegalArgumentException("Invalid Ziwei clarification");
     Map<String, Object> patch = map(answer);
     var merged = new TreeMap<>(input);
@@ -187,7 +187,7 @@ public final class ZiweiInputs {
       String tool, Map<String, Object> input, ZiweiDates.QueryClock clock) {
     var issues = new ArrayList<Issue>();
     if (input == null
-        || ToolValidator.validateInput(ResumeInputs.canonical(input), schema(tool)) != null)
+        || ToolValidator.validateInput(PayloadJson.canonical(input), schema(tool)) != null)
       return new Review(null, List.of(new Issue("arguments", "ZIWEI_TOOL_INPUT_INVALID")));
     var birth = map(input.get("birth"));
     for (String key : List.of("calendar", "date", "place", "sex_for_chart"))
@@ -271,7 +271,7 @@ public final class ZiweiInputs {
             ZiweiChartEngine.Birth.of(solar, time.shichen(), (String) birth.get("sex_for_chart")),
             zone,
             time,
-            ResumeInputs.canonical(birth),
+            PayloadJson.canonical(birth),
             target,
             (String) input.getOrDefault("focus", "overall"),
             (String) input.getOrDefault("mode", "interpretation"),
@@ -303,7 +303,7 @@ public final class ZiweiInputs {
       var mac = Mac.getInstance("HmacSHA256");
       mac.init(new SecretKeySpec(key, "HmacSHA256"));
       return HexFormat.of()
-          .formatHex(mac.doFinal(ResumeInputs.canonical(value).getBytes(StandardCharsets.UTF_8)));
+          .formatHex(mac.doFinal(PayloadJson.canonical(value).getBytes(StandardCharsets.UTF_8)));
     } catch (java.security.GeneralSecurityException e) {
       throw new IllegalStateException("HMAC unavailable");
     }

@@ -2,15 +2,15 @@ package com.financeclaw.m3;
 
 import static org.assertj.core.api.Assertions.*;
 
-import com.financeclaw.agent.*;
 import com.financeclaw.application.*;
 import com.financeclaw.bootstrap.FinanceClawApplication;
 import com.financeclaw.domain.Governance.*;
 import com.financeclaw.domain.Task.*;
+import com.financeclaw.infrastructure.agentscope.execution.*;
 import com.financeclaw.infrastructure.governance.GovernanceMapper;
 import com.financeclaw.infrastructure.state.*;
+import com.financeclaw.support.PayloadJson;
 import com.financeclaw.tools.*;
-import com.financeclaw.worker.TaskWorker;
 import io.agentscope.core.message.*;
 import io.agentscope.core.model.*;
 import io.agentscope.core.tool.*;
@@ -50,6 +50,7 @@ class BusinessIT {
   }
 
   @Autowired TaskService tasks;
+  @Autowired org.springframework.context.ApplicationContext taskContext;
   @Autowired GovernanceService governance;
   @Autowired GovernanceMapper db;
   @Autowired RuntimeMapper states;
@@ -68,7 +69,7 @@ class BusinessIT {
   }
 
   static String snapshots(Instant time) {
-    return ResumeInputs.canonical(
+    return PayloadJson.canonical(
         Map.of(
             "AAPL",
             Map.of(
@@ -123,7 +124,13 @@ class BusinessIT {
   }
 
   TaskAgentRuntime runtime() {
-    return new TaskAgentRuntime(tasks, governance, states, 25000) {
+    return new TaskAgentRuntime(
+        tasks,
+        governance,
+        states,
+        taskContext.getBean(
+            com.financeclaw.infrastructure.agentscope.capability.BusinessCapabilities.class),
+        25000) {
       @Override
       protected Model model(Claim claim) {
         return new Model() {
@@ -152,12 +159,14 @@ class BusinessIT {
                       ((List<?>) ((Map<?, ?>) properties.get("skillId")).get("enum")).getFirst();
               String path = raw.contains("traversal") ? "../application.yml" : "SKILL.md";
               var load =
-                  PortfolioReview.call("skill-1", SKILL_TOOL, Map.of("skillId", id, "path", path));
+                  com.financeclaw.infrastructure.agentscope.NativeToolCalls.call(
+                      "skill-1", SKILL_TOOL, Map.of("skillId", id, "path", path));
               content =
                   raw.contains("parallel")
                       ? List.of(
                           load,
-                          PortfolioReview.call("call-2", "search_catalog", Map.of("city", "上海")))
+                          com.financeclaw.infrastructure.agentscope.NativeToolCalls.call(
+                              "call-2", "search_catalog", Map.of("city", "上海")))
                       : List.of(load);
             } else if (raw.startsWith("/skill ")
                 && raw.contains("resource")
@@ -169,14 +178,14 @@ class BusinessIT {
                       ((List<?>) ((Map<?, ?>) properties.get("skillId")).get("enum")).getFirst();
               content =
                   List.of(
-                      PortfolioReview.call(
+                      com.financeclaw.infrastructure.agentscope.NativeToolCalls.call(
                           "skill-2", SKILL_TOOL, Map.of("skillId", id, "path", "SOURCE.json")));
             } else if (raw.startsWith("/skill ")
                 && raw.contains("approval")
                 && resolved.size() == 1) {
               content =
                   List.of(
-                      PortfolioReview.call(
+                      com.financeclaw.infrastructure.agentscope.NativeToolCalls.call(
                           "call-1", "create_report", Map.of("title", "skill resume")));
             } else if (!resolved.isEmpty())
               content =
@@ -193,7 +202,7 @@ class BusinessIT {
             else if (raw.startsWith("research"))
               content =
                   List.of(
-                      PortfolioReview.call(
+                      com.financeclaw.infrastructure.agentscope.NativeToolCalls.call(
                           "call-1",
                           "market_research",
                           raw.contains("missing")
@@ -214,7 +223,9 @@ class BusinessIT {
   }
 
   void run(Claim c) {
-    try (var worker = new TaskWorker(tasks, runtime(), false, false, 1, 60000, 2000)) {
+    try (var worker =
+        com.financeclaw.m1.TaskWorkerFixture.create(
+            taskContext, runtime(), false, false, 1, 60000, 2000)) {
       worker.execute(c);
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
@@ -224,7 +235,8 @@ class BusinessIT {
 
   ToolCallParam param(String tool, Map<String, Object> input) {
     return ToolCallParam.builder()
-        .toolUseBlock(PortfolioReview.call("call-1", tool, input))
+        .toolUseBlock(
+            com.financeclaw.infrastructure.agentscope.NativeToolCalls.call("call-1", tool, input))
         .input(input)
         .build();
   }
@@ -258,7 +270,7 @@ class BusinessIT {
                   .getTool(name)
                   .callAsync(param(name, input))
                   .block(Duration.ofSeconds(8));
-          String id = (String) GovernanceService.object(text(result)).get("artifact_id");
+          String id = (String) PayloadJson.object(text(result)).get("artifact_id");
           var page = governance.read(owner, id, 790, 100, "/hotels");
           assertThat(page.total()).isEqualTo(800);
           assertThat(page.count()).isEqualTo(10);
@@ -359,7 +371,7 @@ class BusinessIT {
             .block(Duration.ofSeconds(8));
         assertThat(mock.authorization).isEqualTo("Bearer loopback-test-only");
       }
-      assertThat(ResumeInputs.canonical(releases.require(c.turn().releaseHash())))
+      assertThat(PayloadJson.canonical(releases.require(c.turn().releaseHash())))
           .contains("M3_TEST_TOKEN")
           .doesNotContain("loopback-test-only");
     }
@@ -389,8 +401,7 @@ class BusinessIT {
   @Test
   void taibuUsesNativeInputsAndClassifiesServiceErrors() throws Exception {
     try (var mock = new MockRemote("taibu")) {
-      var samples =
-          GovernanceService.object(BusinessCatalog.read("classpath:m3/taibu-samples.json"));
+      var samples = PayloadJson.object(BusinessCatalog.read("classpath:m3/taibu-samples.json"));
       mock.payload = ((Map<?, ?>) samples.get("almanac")).get("structuredContent");
       publish(List.of(mock.definition("taibu", false, 2000)), 12, ReleaseCatalog.OFFLINE, "{}");
       submit("taibu");
@@ -432,11 +443,11 @@ class BusinessIT {
     var c = claim();
     run(c);
     assertThat(turn(t).status()).isEqualTo("completed");
-    String first = ResumeInputs.canonical(requests.getFirst());
+    String first = PayloadJson.canonical(requests.getFirst());
     assertThat(first)
         .contains(SKILL_NAME, SKILL_TOOL)
         .doesNotContain("## Framework: Build From The Shelf");
-    String later = ResumeInputs.canonical(requests.getLast());
+    String later = PayloadJson.canonical(requests.getLast());
     assertThat(later)
         .contains("## Framework: Build From The Shelf", "5a0326ce34b44c015fc26b5c28f6118092c806e4");
     assertThat(saved(c)).contains("## Framework: Build From The Shelf", "SOURCE.json");
@@ -447,7 +458,7 @@ class BusinessIT {
                 Integer.class,
                 t.turnId()))
         .isZero();
-    assertThat(ResumeInputs.canonical(tasks.events(owner, t.conversationId(), t.turnId(), 0)))
+    assertThat(PayloadJson.canonical(tasks.events(owner, t.conversationId(), t.turnId(), 0)))
         .contains(SKILL_TOOL)
         .doesNotContain("## Framework: Build From The Shelf");
   }
@@ -500,7 +511,7 @@ class BusinessIT {
     var t = tasks.submit(owner, conversation, "without-skill", "hello");
     run(claim());
     assertThat(turn(t).status()).isEqualTo("completed");
-    assertThat(ResumeInputs.canonical(requests)).doesNotContain(SKILL_NAME, SKILL_TOOL);
+    assertThat(PayloadJson.canonical(requests)).doesNotContain(SKILL_NAME, SKILL_TOOL);
   }
 
   @Test
@@ -510,7 +521,7 @@ class BusinessIT {
     run(c);
     assertThat(turn(t).status()).isEqualTo("completed");
     assertThat(turn(t).result()).contains("m3-synthetic-fixture", "as_of", "analysis_period");
-    var scope = new MarketResearch(tasks, c, states, null).scope("call-1");
+    var scope = com.financeclaw.domain.research.ResearchRun.scope(c.scope(), "call-1");
     assertThat(scope.key()).isNotEqualTo(c.scope().key());
     var state =
         new MyBatisAgentStateStore(states, scope)
@@ -566,8 +577,8 @@ class BusinessIT {
   }
 
   static String portfolio() {
-    return PortfolioReview.COMMAND
-        + ResumeInputs.canonical(
+    return com.financeclaw.app.portfolio.PortfolioReviewService.COMMAND
+        + PayloadJson.canonical(
             Map.of(
                 "portfolio_name",
                 "M3组合",
@@ -624,7 +635,7 @@ class BusinessIT {
         assertThat(turn(t).status()).isEqualTo(expected);
       }
       java.nio.file.Files.writeString(
-          evidence.resolve("process-exits.json"), ResumeInputs.canonical(exits) + "\n");
+          evidence.resolve("process-exits.json"), PayloadJson.canonical(exits) + "\n");
     } finally {
       java.nio.file.Files.deleteIfExists(file);
     }
@@ -653,8 +664,9 @@ class BusinessIT {
     assertThat(turn(first).status()).isEqualTo("completed");
     assertThat(tasks.get(other, second.conversationId(), second.turnId()).status())
         .isEqualTo("completed");
-    assertThat(new MarketResearch(tasks, one, states, null).scope("call-1").key())
-        .isNotEqualTo(new MarketResearch(tasks, two, states, null).scope("call-1").key());
+    assertThat(com.financeclaw.domain.research.ResearchRun.scope(one.scope(), "call-1").key())
+        .isNotEqualTo(
+            com.financeclaw.domain.research.ResearchRun.scope(two.scope(), "call-1").key());
     assertThat(db.step(first.turnId(), "child:call-1", "result")).isNotNull();
     assertThat(db.step(second.turnId(), "child:call-1", "result")).isNotNull();
   }
@@ -759,5 +771,249 @@ class BusinessIT {
     assertThat(turn(denied).status()).isEqualTo("failed");
     assertThat(sql.queryForObject("SELECT count(*) FROM business.artifacts", Integer.class))
         .isZero();
+  }
+
+  com.financeclaw.app.portfolio.PortfolioReviewService portfolioService() {
+    return taskContext.getBean(com.financeclaw.app.portfolio.PortfolioReviewService.class);
+  }
+
+  com.financeclaw.app.research.MarketResearchService researchService() {
+    return taskContext.getBean(com.financeclaw.app.research.MarketResearchService.class);
+  }
+
+  com.financeclaw.infrastructure.agentscope.capability.MarketResearchAgent child(
+      Claim claim, Model model) {
+    return new com.financeclaw.infrastructure.agentscope.capability.MarketResearchAgent(
+        researchService(),
+        taskContext.getBean(com.financeclaw.app.execution.ExecutionLeaseService.class),
+        states,
+        claim,
+        model);
+  }
+
+  static Map<String, Object> researchInput() {
+    return Map.of(
+        "task", "bounded research", "symbols", List.of("AAPL"), "analysis_period", "2026-10");
+  }
+
+  @Test
+  void portfolioArchiveAndStepReceiptRollbackTogetherAndReplayOnlyOnce() {
+    var t = submit(portfolio());
+    var c = claim();
+    var request =
+        com.financeclaw.infrastructure.agentscope.capability.PortfolioInputs.parse(
+            PayloadJson.object(
+                c.turn()
+                    .message()
+                    .substring(
+                        com.financeclaw.app.portfolio.PortfolioReviewService.COMMAND.length())));
+    var prepared = portfolioService().prepare(c, request);
+    String hash = (String) prepared.get("draft_hash");
+    var fault =
+        new com.financeclaw.app.portfolio.PortfolioReviewService(
+            taskContext.getBean(com.financeclaw.app.execution.CapabilityStepService.class),
+            taskContext.getBean(com.financeclaw.app.execution.ExecutionPolicyService.class),
+            taskContext.getBean(com.financeclaw.app.market.MarketDataService.class),
+            (claim, draft) -> {
+              assertThat(
+                      org.springframework.transaction.support.TransactionSynchronizationManager
+                          .isActualTransactionActive())
+                  .isTrue();
+              governance.archive(claim, draft, "workflow:run");
+              throw new IllegalStateException("after_archive");
+            });
+    assertThatThrownBy(() -> fault.publish(c, hash)).hasMessage("after_archive");
+    assertThat(
+            sql.queryForObject(
+                "SELECT count(*) FROM business.artifacts WHERE turn_id=?",
+                Integer.class,
+                t.turnId()))
+        .isZero();
+    assertThat(
+            db.step(
+                t.turnId(),
+                com.financeclaw.app.portfolio.PortfolioReviewService.NAMESPACE,
+                "publish_report"))
+        .isNull();
+    var result = portfolioService().publish(c, hash);
+    assertThat(portfolioService().publish(c, hash)).isEqualTo(result);
+    assertThatThrownBy(() -> portfolioService().publish(c, "0".repeat(64)))
+        .hasMessage("workflow_draft_mismatch");
+    assertThat(
+            sql.queryForObject(
+                "SELECT count(*) FROM business.artifacts WHERE turn_id=?",
+                Integer.class,
+                t.turnId()))
+        .isEqualTo(1);
+  }
+
+  @Test
+  void frozenLegacyApprovalStepCanPublishWithoutRecomputingOldMarketData() throws Exception {
+    var t = submit(portfolio());
+    var c = claim();
+    Map<String, Object> old;
+    try (var in =
+        getClass().getResourceAsStream("/architecture/portfolio-research-baseline.json")) {
+      old =
+          PayloadJson.object(
+              new String(
+                  Objects.requireNonNull(in).readAllBytes(),
+                  java.nio.charset.StandardCharsets.UTF_8));
+    }
+    var prepared = (Map<?, ?>) old.get("prepared");
+    var steps = (Map<?, ?>) old.get("steps");
+    var approval = (Map<?, ?>) steps.get("publication_approval");
+    db.saveStep(
+        t.turnId(),
+        com.financeclaw.app.portfolio.PortfolioReviewService.NAMESPACE,
+        "publication_approval",
+        (String) approval.get("input_hash"),
+        PayloadJson.canonical(prepared));
+    String hash = (String) prepared.get("draft_hash");
+    assertThat(portfolioService().preparedHash(c)).isEqualTo(hash);
+    var published = (Map<?, ?>) portfolioService().publish(c, hash);
+    assertThat(portfolioService().publish(c, hash)).isEqualTo(published);
+    assertThat(db.policy(t.turnId()).toolCalls()).isZero();
+    assertThat(
+            sql.queryForObject(
+                "SELECT payload::text FROM business.artifacts WHERE turn_id=?",
+                String.class,
+                t.turnId()))
+        .contains("r5-frozen-fixture");
+  }
+
+  @Test
+  void cachedChildResultChecksInputAndCurrentAuthorizationBeforeReturning() {
+    var t = submit("cached child");
+    var c = claim();
+    var input = researchInput();
+    var steps = taskContext.getBean(com.financeclaw.app.execution.CapabilityStepService.class);
+    steps.run(
+        c,
+        "child:call-1",
+        "result",
+        input,
+        () -> Map.of("outcome", "success", "summary", "frozen child result"));
+    var model = org.mockito.Mockito.mock(Model.class);
+    assertThat(
+            child(c, model)
+                .run(param("market_research", input))
+                .block(Duration.ofSeconds(5))
+                .getOutput())
+        .isNotEmpty();
+    org.mockito.Mockito.verifyNoInteractions(model);
+    assertThat(db.policy(t.turnId()).modelCalls()).isZero();
+    var changed = new TreeMap<>(input);
+    changed.put("analysis_period", "other");
+    assertThatThrownBy(() -> child(c, model).run(param("market_research", changed)).block())
+        .hasMessage("child_input_conflict");
+    governance.changeGrant(owner, t.conversationId(), "revoke-child", 1, List.of("market:read"));
+    assertThatThrownBy(() -> child(c, model).run(param("market_research", input)).block())
+        .hasMessage("authorization_changed");
+    org.mockito.Mockito.verifyNoInteractions(model);
+  }
+
+  @Test
+  void nativeChildModelLimitIsEnforcedAgainstTheSameRootCounters() {
+    var t = submit("bounded model");
+    var c = claim();
+    var calls = new java.util.concurrent.atomic.AtomicInteger();
+    Model endless =
+        new Model() {
+          public String getModelName() {
+            return "child-model-budget-probe";
+          }
+
+          public Flux<ChatResponse> stream(
+              List<Msg> messages, List<ToolSchema> schemas, GenerateOptions options) {
+            assertThat(
+                    org.springframework.transaction.support.TransactionSynchronizationManager
+                        .isActualTransactionActive())
+                .isFalse();
+            int n = calls.incrementAndGet();
+            return Flux.just(
+                ChatResponse.builder()
+                    .id("child-" + n)
+                    .content(
+                        List.of(
+                            com.financeclaw.infrastructure.agentscope.NativeToolCalls.call(
+                                "snapshot-" + n, "market_snapshot", Map.of("symbol", "AAPL"))))
+                    .build());
+          }
+        };
+    assertThatThrownBy(
+            () ->
+                child(c, endless)
+                    .run(param("market_research", researchInput()))
+                    .block(Duration.ofSeconds(20)))
+        .isInstanceOf(Blocked.class);
+    assertThat(calls.get()).isEqualTo(4);
+    assertThat(db.policy(t.turnId()).modelCalls()).isEqualTo(4);
+    assertThat(db.step(t.turnId(), "child:call-1", "result")).isNull();
+  }
+
+  @Test
+  void childCannotExpandSymbolsOrSpendMoreThanTenSnapshotCalls() {
+    var t = submit("bounded snapshots");
+    var c = claim();
+    var execution = researchService().begin(c, "call-1", researchInput());
+    assertThatThrownBy(
+            () -> researchService().snapshot(execution, "outside", Map.of("symbol", "NVDA")))
+        .hasMessage("child_scope_expansion");
+    assertThat(db.policy(t.turnId()).toolCalls()).isZero();
+    var bounded = researchService().begin(c, "call-2", researchInput());
+    for (int n = 0; n < 10; n++)
+      researchService().snapshot(bounded, "snapshot-" + n, Map.of("symbol", "aapl"));
+    var exhausted = bounded;
+    assertThatThrownBy(
+            () -> researchService().snapshot(exhausted, "overflow", Map.of("symbol", "AAPL")))
+        .hasMessage("child_tool_budget_exceeded");
+    assertThat(db.policy(t.turnId()).toolCalls()).isEqualTo(10);
+    assertThatThrownBy(() -> researchService().complete(exhausted, false, "not complete"))
+        .hasMessage("child_incomplete");
+    assertThat(db.step(t.turnId(), "child:call-2", "result")).isNull();
+  }
+
+  @Test
+  void cancellingTheRootStopsAnInFlightChildAndCannotSaveSuccess() throws Exception {
+    var t = submit("cancel child");
+    var c = claim();
+    var started = new CountDownLatch(1);
+    var cancelled = new CountDownLatch(1);
+    var terminated = new CountDownLatch(1);
+    Model slow =
+        new Model() {
+          public String getModelName() {
+            return "child-cancellation-probe";
+          }
+
+          public Flux<ChatResponse> stream(
+              List<Msg> messages, List<ToolSchema> schemas, GenerateOptions options) {
+            assertThat(
+                    org.springframework.transaction.support.TransactionSynchronizationManager
+                        .isActualTransactionActive())
+                .isFalse();
+            return Flux.<ChatResponse>never()
+                .doOnSubscribe(s -> started.countDown())
+                .doOnCancel(cancelled::countDown);
+          }
+        };
+    var execution =
+        child(c, slow)
+            .run(param("market_research", researchInput()))
+            .subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic())
+            .doFinally(signal -> terminated.countDown())
+            .subscribe(result -> {}, error -> {});
+    try {
+      assertThat(started.await(10, TimeUnit.SECONDS)).isTrue();
+      tasks.cancel(owner, t.conversationId(), t.turnId(), "cancel-child");
+      execution.dispose();
+      assertThat(cancelled.await(10, TimeUnit.SECONDS)).isTrue();
+      assertThat(terminated.await(10, TimeUnit.SECONDS)).isTrue();
+      assertThat(db.step(t.turnId(), "child:call-1", "result")).isNull();
+      assertThat(turn(t).status()).isEqualTo("cancelling");
+    } finally {
+      execution.dispose();
+    }
   }
 }

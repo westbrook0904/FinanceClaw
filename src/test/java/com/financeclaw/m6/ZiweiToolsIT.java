@@ -2,14 +2,14 @@ package com.financeclaw.m6;
 
 import static org.assertj.core.api.Assertions.*;
 
-import com.financeclaw.agent.*;
 import com.financeclaw.application.*;
 import com.financeclaw.bootstrap.FinanceClawApplication;
 import com.financeclaw.domain.Governance.*;
 import com.financeclaw.domain.Task.*;
+import com.financeclaw.infrastructure.agentscope.execution.*;
 import com.financeclaw.infrastructure.state.*;
+import com.financeclaw.support.PayloadJson;
 import com.financeclaw.tools.*;
-import com.financeclaw.worker.TaskWorker;
 import com.financeclaw.ziwei.*;
 import io.agentscope.core.message.*;
 import io.agentscope.core.model.*;
@@ -56,6 +56,7 @@ class ZiweiToolsIT {
   }
 
   @Autowired TaskService tasks;
+  @Autowired org.springframework.context.ApplicationContext taskContext;
   @Autowired GovernanceService governance;
   @Autowired MemoryService memory;
   @Autowired ReleaseCatalog releases;
@@ -105,7 +106,7 @@ class ZiweiToolsIT {
                       .run(
                           ToolCallParam.builder()
                               .toolUseBlock(
-                                  PortfolioReview.call(
+                                  com.financeclaw.infrastructure.agentscope.NativeToolCalls.call(
                                       "direct", "ziwei_natal_chart", ZiweiDomainTest.input()))
                               .input(ZiweiDomainTest.input())
                               .build())
@@ -137,7 +138,11 @@ class ZiweiToolsIT {
           .containsEntry("code", "ZIWEI_CONTEXT_BUDGET_EXCEEDED");
       assertThat(sql.queryForObject("SELECT count(*) FROM business.artifacts", Integer.class))
           .isZero();
-      assertThat(tasks.governance().step(claim.turn().id(), "ziwei:budget", "result")).isNull();
+      assertThat(
+              taskContext
+                  .getBean(com.financeclaw.infrastructure.governance.GovernanceMapper.class)
+                  .step(claim.turn().id(), "ziwei:budget", "result"))
+          .isNull();
     }
   }
 
@@ -240,7 +245,10 @@ class ZiweiToolsIT {
 
   GovernedTools tools(Claim claim) {
     var t = new GovernedTools(tasks, governance, claim);
-    t.business(null, states);
+    t.business(
+        null,
+        taskContext.getBean(
+            com.financeclaw.infrastructure.agentscope.capability.BusinessCapabilities.class));
     return t;
   }
 
@@ -251,11 +259,13 @@ class ZiweiToolsIT {
             .getTool(name)
             .callAsync(
                 ToolCallParam.builder()
-                    .toolUseBlock(PortfolioReview.call(id, name, input))
+                    .toolUseBlock(
+                        com.financeclaw.infrastructure.agentscope.NativeToolCalls.call(
+                            id, name, input))
                     .input(input)
                     .build())
             .block(Duration.ofSeconds(30));
-    return GovernanceService.object(((TextBlock) block.getOutput().getFirst()).getText());
+    return PayloadJson.object(((TextBlock) block.getOutput().getFirst()).getText());
   }
 
   String artifact(Map<String, Object> response) {
@@ -280,7 +290,11 @@ class ZiweiToolsIT {
       assertThat(governance.read(alice, artifact(response), 0, 1, "/facts").count()).isEqualTo(1);
       assertThatThrownBy(() -> governance.read(bob, artifact(response), 0, 1))
           .hasMessage("not_found");
-      assertThat(tasks.governance().artifactScope(artifact(response))).isEqualTo("ziwei:read");
+      assertThat(
+              taskContext
+                  .getBean(com.financeclaw.infrastructure.governance.GovernanceMapper.class)
+                  .artifactScope(artifact(response)))
+          .isEqualTo("ziwei:read");
       var changed = new TreeMap<>(input);
       changed.put("focus", "career");
       assertThatThrownBy(() -> call(tools, "fixed-call", level.toolName(), changed))
@@ -357,7 +371,13 @@ class ZiweiToolsIT {
   }
 
   TaskAgentRuntime runtime(Map<String, Object> input) {
-    return new TaskAgentRuntime(tasks, governance, states, 30000) {
+    return new TaskAgentRuntime(
+        tasks,
+        governance,
+        states,
+        taskContext.getBean(
+            com.financeclaw.infrastructure.agentscope.capability.BusinessCapabilities.class),
+        30000) {
       @Override
       protected Model model(Claim c) {
         return new Model() {
@@ -377,7 +397,9 @@ class ZiweiToolsIT {
                     .content(
                         resolved
                             ? List.of(TextBlock.builder().text("已核对事实与覆盖区间。仅供传统文化参考。").build())
-                            : List.of(PortfolioReview.call("clarify", "ziwei_yearly_chart", input)))
+                            : List.of(
+                                com.financeclaw.infrastructure.agentscope.NativeToolCalls.call(
+                                    "clarify", "ziwei_yearly_chart", input)))
                     .build());
           }
         };
@@ -386,7 +408,9 @@ class ZiweiToolsIT {
   }
 
   void run(Claim claim, TaskAgentRuntime runtime) throws Exception {
-    try (var worker = new TaskWorker(tasks, runtime, false, false, 1, 120000, 2000)) {
+    try (var worker =
+        com.financeclaw.m1.TaskWorkerFixture.create(
+            taskContext, runtime, false, false, 1, 120000, 2000)) {
       worker.execute(claim);
     }
   }
@@ -419,7 +443,12 @@ class ZiweiToolsIT {
                         null,
                         Map.of("birth", Map.of("time_basis", "civil")))))
         .hasMessage("ziwei_input_incomplete");
-    assertThat(tasks.governance().interaction(i.id()).status()).isEqualTo("pending");
+    assertThat(
+            taskContext
+                .getBean(com.financeclaw.infrastructure.governance.GovernanceMapper.class)
+                .interaction(i.id())
+                .status())
+        .isEqualTo("pending");
     var answer =
         new Answer(
             "input", i.revision(), null, null, Map.of("birth", Map.of("sex_for_chart", "male")));
@@ -439,7 +468,7 @@ class ZiweiToolsIT {
             "SELECT payload FROM business.artifacts WHERE turn_id=?",
             String.class,
             accepted.turnId());
-    assertThat(GovernanceService.object(payload).get("target"))
+    assertThat(PayloadJson.object(payload).get("target"))
         .isEqualTo(Map.of("start", "2026-01-01", "end", "2027-01-01", "timezone", "Asia/Shanghai"));
     assertThat(sql.queryForObject("SELECT count(*) FROM business.artifacts", Integer.class))
         .isEqualTo(1);

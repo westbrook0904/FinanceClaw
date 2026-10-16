@@ -5,6 +5,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.financeclaw.app.operations.AdmissionService;
+import com.financeclaw.app.operations.OperationsQueryService;
 import com.financeclaw.application.*;
 import com.financeclaw.bootstrap.FinanceClawApplication;
 import com.financeclaw.domain.Operations.*;
@@ -44,7 +46,8 @@ class BacklogIT {
     r.add("spring.datasource.password", PG::getPassword);
   }
 
-  @Autowired OperationsService operations;
+  @Autowired OperationsQueryService operations;
+  @Autowired AdmissionService admissions;
   @Autowired TaskService tasks;
   @Autowired DataSource source;
   @Autowired MockMvc http;
@@ -321,7 +324,7 @@ class BacklogIT {
   @Test
   void inspectionWritesNothingAndRetainsPrivacyBacklog() {
     submit(owner);
-    operations.change(owner, "pause", true, 0);
+    admissions.change(owner, "pause", true, 0);
     sql.update(
         "INSERT INTO memory.owners(tenant,subject,purge_pending) VALUES('local','developer',true)");
     Map<String, String> before = fingerprints();

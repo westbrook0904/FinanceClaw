@@ -2,6 +2,7 @@ package com.financeclaw.m0;
 
 import com.financeclaw.domain.ExecutionScope;
 import com.financeclaw.infrastructure.state.RuntimeMapper;
+import com.financeclaw.m0.support.M0RuntimeMapper;
 import javax.sql.DataSource;
 import org.flywaydb.core.Flyway;
 import org.mybatis.spring.SqlSessionTemplate;
@@ -17,6 +18,7 @@ abstract class PostgresSupport {
   static final DataSource SOURCE;
   static final SqlSessionTemplate DATABASE;
   static final RuntimeMapper MAPPER;
+  static final M0RuntimeMapper EFFECTS;
 
   static {
     POSTGRES.start();
@@ -24,6 +26,7 @@ abstract class PostgresSupport {
     Flyway.configure().dataSource(SOURCE).load().migrate();
     DATABASE = ProbeFixtures.database(SOURCE);
     MAPPER = DATABASE.getMapper(RuntimeMapper.class);
+    EFFECTS = DATABASE.getMapper(M0RuntimeMapper.class);
     DATABASE.getMapper(ProbeMapper.class).createExternalSystem();
     try {
       java.nio.file.Files.createDirectories(java.nio.file.Path.of("target/m0"));

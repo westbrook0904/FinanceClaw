@@ -1,11 +1,11 @@
 package com.financeclaw.m0;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.financeclaw.agent.GuardedAgentRunner;
-import com.financeclaw.agent.ResumeInputs;
 import com.financeclaw.domain.ExecutionScope;
+import com.financeclaw.infrastructure.agentscope.ResumeInputs;
 import com.financeclaw.infrastructure.state.MyBatisAgentStateStore;
 import com.financeclaw.infrastructure.state.RuntimeMapper;
+import com.financeclaw.m0.support.GuardedAgentRunner;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.UserMessage;
 import io.agentscope.core.state.AgentState;

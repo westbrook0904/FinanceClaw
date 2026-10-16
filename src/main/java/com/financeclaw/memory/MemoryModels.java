@@ -1,8 +1,8 @@
 package com.financeclaw.memory;
 
-import com.financeclaw.agent.ModelFactory;
 import com.financeclaw.application.ReleaseCatalog.ModelProfile;
 import com.financeclaw.domain.Memory.*;
+import com.financeclaw.infrastructure.agentscope.execution.ModelFactory;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.embedding.EmbeddingModel;
 import io.agentscope.core.embedding.openai.OpenAITextEmbedding;

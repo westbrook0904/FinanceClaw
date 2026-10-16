@@ -3,16 +3,17 @@ package com.financeclaw.m4;
 import static org.assertj.core.api.Assertions.*;
 
 import com.fasterxml.jackson.databind.*;
-import com.financeclaw.agent.*;
+import com.financeclaw.app.operations.AdmissionService;
 import com.financeclaw.application.*;
 import com.financeclaw.bootstrap.FinanceClawApplication;
 import com.financeclaw.channel.*;
 import com.financeclaw.domain.Feishu.*;
 import com.financeclaw.domain.Task.Owner;
+import com.financeclaw.infrastructure.agentscope.execution.*;
 import com.financeclaw.infrastructure.channel.FeishuMapper;
 import com.financeclaw.infrastructure.state.RuntimeMapper;
 import com.financeclaw.m2.ScriptedRuntime;
-import com.financeclaw.worker.TaskWorker;
+import com.financeclaw.support.PayloadJson;
 import java.nio.charset.StandardCharsets;
 import java.security.*;
 import java.time.Instant;
@@ -58,7 +59,8 @@ class FeishuIT {
   @Autowired FeishuMapper db;
   @Autowired FeishuDelivery delivery;
   @Autowired TaskService tasks;
-  @Autowired OperationsService operations;
+  @Autowired org.springframework.context.ApplicationContext taskContext;
+  @Autowired AdmissionService admissions;
   @Autowired GovernanceService governance;
   @Autowired RuntimeMapper states;
   @Autowired TaskAgentRuntime runtime;
@@ -116,7 +118,7 @@ class FeishuIT {
                     "message_type",
                     "text",
                     "content",
-                    ResumeInputs.canonical(Map.of("text", text))))));
+                    PayloadJson.canonical(Map.of("text", text))))));
   }
 
   Binding binding() {
@@ -139,9 +141,17 @@ class FeishuIT {
 
   void run(boolean scripted) throws Exception {
     try (var worker =
-        new TaskWorker(
-            tasks,
-            scripted ? new ScriptedRuntime(tasks, governance, states) : runtime,
+        com.financeclaw.m1.TaskWorkerFixture.create(
+            taskContext,
+            scripted
+                ? new ScriptedRuntime(
+                    tasks,
+                    governance,
+                    states,
+                    taskContext.getBean(
+                        com.financeclaw.infrastructure.agentscope.capability.BusinessCapabilities
+                            .class))
+                : runtime,
             false,
             false,
             1,
@@ -177,7 +187,7 @@ class FeishuIT {
   @Test
   void encryptedSignedChallengeUsesNativeCryptoAndRejectsReplay() throws Exception {
     String plaintext =
-        ResumeInputs.canonical(
+        PayloadJson.canonical(
             Map.of("type", "url_verification", "token", "test-token", "challenge", "challenge-ok"));
     byte[] iv = new byte[16];
     new SecureRandom().nextBytes(iv);
@@ -194,7 +204,7 @@ class FeishuIT {
     System.arraycopy(iv, 0, bytes, 0, 16);
     System.arraycopy(encrypted, 0, bytes, 16, encrypted.length);
     String body =
-        ResumeInputs.canonical(Map.of("encrypt", Base64.getEncoder().encodeToString(bytes)));
+        PayloadJson.canonical(Map.of("encrypt", Base64.getEncoder().encodeToString(bytes)));
     String now = Long.toString(Instant.now().getEpochSecond());
     assertThat(callback(body, now, true).getBody()).contains("challenge-ok");
     assertThat(callback(body, now, false).getStatusCode().value()).isEqualTo(401);
@@ -223,7 +233,7 @@ class FeishuIT {
     var original = message("first", "om_first", "city");
     service.receive(original);
     run(true);
-    operations.change(owner, "pause", true, 0);
+    admissions.change(owner, "pause", true, 0);
     service.receive(original); // Original event receipt remains available while paused.
     send("上海"); // Native input interaction resumes the original Turn.
     run(true);
@@ -234,7 +244,7 @@ class FeishuIT {
     assertThat(db.inbox("new")).isNull();
     assertThat(sql.queryForObject("SELECT count(*) FROM business.turns", Integer.class))
         .isEqualTo(1);
-    operations.change(owner, "resume", false, 1);
+    admissions.change(owner, "resume", false, 1);
     service.receive(next);
     service.receive(next);
     assertThat(sql.queryForObject("SELECT count(*) FROM business.turns", Integer.class))

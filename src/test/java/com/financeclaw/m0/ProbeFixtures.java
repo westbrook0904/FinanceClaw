@@ -1,9 +1,10 @@
 package com.financeclaw.m0;
 
-import com.financeclaw.agent.ResumeInputs;
 import com.financeclaw.domain.ExecutionScope;
-import com.financeclaw.infrastructure.state.EffectLedger;
 import com.financeclaw.infrastructure.state.RuntimeMapper;
+import com.financeclaw.m0.support.EffectLedger;
+import com.financeclaw.m0.support.M0RuntimeMapper;
+import com.financeclaw.support.PayloadJson;
 import io.agentscope.core.message.*;
 import io.agentscope.core.model.*;
 import io.agentscope.core.permission.*;
@@ -64,7 +65,7 @@ final class ProbeFixtures {
                           .id(CALL_ID)
                           .name(tool)
                           .input(TOOL_INPUT)
-                          .content(ResumeInputs.canonical(TOOL_INPUT))
+                          .content(PayloadJson.canonical(TOOL_INPUT))
                           .build()));
             });
       }
@@ -98,9 +99,9 @@ final class ProbeFixtures {
                     throw new IllegalStateException("injected tool failure");
                   String operation = (String) param.getInput().get("operation");
                   String hash =
-                      ExecutionScope.hash(List.of(tool, ResumeInputs.canonical(param.getInput())));
+                      ExecutionScope.hash(List.of(tool, PayloadJson.canonical(param.getInput())));
                   EffectLedger ledger =
-                      new EffectLedger(database.getMapper(RuntimeMapper.class), scope);
+                      new EffectLedger(database.getMapper(M0RuntimeMapper.class), scope);
                   var previous = ledger.begin(operation, hash);
                   if (previous.isPresent()) return ToolResultBlock.text(previous.get());
                   if ("after-intent".equals(crash)) Runtime.getRuntime().halt(74);
@@ -125,6 +126,7 @@ final class ProbeFixtures {
       configuration.setCacheEnabled(false);
       configuration.setLocalCacheScope(LocalCacheScope.STATEMENT);
       configuration.addMapper(RuntimeMapper.class);
+      configuration.addMapper(M0RuntimeMapper.class);
       configuration.addMapper(ProbeMapper.class);
       var factory = new SqlSessionFactoryBean();
       factory.setDataSource(source);

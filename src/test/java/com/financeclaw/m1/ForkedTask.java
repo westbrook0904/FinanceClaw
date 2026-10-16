@@ -1,6 +1,6 @@
 package com.financeclaw.m1;
 
-import com.financeclaw.agent.TaskAgentRuntime;
+import com.financeclaw.infrastructure.agentscope.execution.TaskAgentRuntime;
 import com.financeclaw.infrastructure.state.RuntimeMapper;
 import java.nio.file.*;
 import java.util.Properties;
@@ -27,7 +27,11 @@ public final class ForkedTask {
     if (mode.equals("after-claim")) Runtime.getRuntime().halt(73);
     var result =
         new TaskAgentRuntime(
-                db.service, db.governance, db.session.getMapper(RuntimeMapper.class), 5000)
+                db.service,
+                db.governance,
+                db.session.getMapper(RuntimeMapper.class),
+                db.business,
+                5000)
             .execute(claim);
     if (mode.equals("after-save")) Runtime.getRuntime().halt(73);
     db.service.seal(claim, result);

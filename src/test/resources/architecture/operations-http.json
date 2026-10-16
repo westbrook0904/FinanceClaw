@@ -1,0 +1,102 @@
+{
+  "overview": {
+    "tasks": {
+      "turns": 3,
+      "oldest_queued_ms": 12.5
+    },
+    "calls": {
+      "model_calls": 4,
+      "tool_calls": 2
+    },
+    "outbox": {
+      "pending": 1
+    },
+    "notifications": {
+      "pending": 0,
+      "sending": 0,
+      "unknown": 1,
+      "submitted_unverified": 0
+    },
+    "provider_usage": "unavailable",
+    "provider_cost": "unavailable"
+  },
+  "admission": {
+    "paused": true,
+    "revision": 2
+  },
+  "receipt": {
+    "paused": false,
+    "revision": 3,
+    "idempotent_replay": false
+  },
+  "drain": {
+    "scope": "current_owner",
+    "admission": {
+      "paused": true,
+      "revision": 2
+    },
+    "counts": {
+      "queued": 1,
+      "pending_outbox": 0
+    },
+    "drained": false
+  },
+  "turns": {
+    "scope": "current_owner",
+    "items": [
+      {
+        "id": "t-1",
+        "conversation_id": "c-1",
+        "status": "blocked",
+        "revision": 7,
+        "reason": null,
+        "command_status": "blocked",
+        "pending_interactions": 1,
+        "uncertain_effects": 1,
+        "pending_outbox": 0
+      }
+    ],
+    "next_after": "t-1"
+  },
+  "notifications": {
+    "scope": "current_owner",
+    "items": [
+      {
+        "id": "n-1",
+        "conversation_id": "c-1",
+        "turn_id": "t-1",
+        "status": "unknown",
+        "revision": 7
+      }
+    ],
+    "next_after": null
+  },
+  "notification_bindings": {
+    "scope": "current_owner",
+    "items": [
+      {
+        "id": "b-1",
+        "conversation_id": "c-1",
+        "turn_id": "t-1",
+        "status": "blocked",
+        "revision": 7
+      }
+    ],
+    "next_after": null
+  },
+  "memory_jobs": {
+    "scope": "current_owner",
+    "items": [
+      {
+        "id": "10",
+        "kind": "purge",
+        "status": "pending",
+        "epoch": 3,
+        "revision": 8,
+        "attempts": 2,
+        "error_code": null
+      }
+    ],
+    "next_after": null
+  }
+}

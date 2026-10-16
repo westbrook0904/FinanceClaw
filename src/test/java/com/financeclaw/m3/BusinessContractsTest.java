@@ -2,7 +2,7 @@ package com.financeclaw.m3;
 
 import static org.assertj.core.api.Assertions.*;
 
-import com.financeclaw.agent.ResumeInputs;
+import com.financeclaw.support.PayloadJson;
 import com.financeclaw.tools.*;
 import java.util.*;
 import org.junit.jupiter.api.Test;
@@ -112,11 +112,14 @@ class BusinessContractsTest {
             "test",
             "positions",
             List.of(Map.of("symbol", "aapl", "quantity", "0.00000001", "cost_basis", 0)));
-    assertThat(ResumeInputs.canonical(PortfolioReview.normalize((Map) p)))
+    assertThat(
+            PayloadJson.canonical(
+                com.financeclaw.infrastructure.agentscope.capability.PortfolioInputs.parse((Map) p)
+                    .payload()))
         .contains("AAPL", "0.00000001");
     assertThatThrownBy(
             () ->
-                PortfolioReview.normalize(
+                com.financeclaw.infrastructure.agentscope.capability.PortfolioInputs.parse(
                     Map.of(
                         "portfolio_name",
                         "x",
@@ -127,7 +130,7 @@ class BusinessContractsTest {
         .hasMessage("duplicate_portfolio_symbol");
     assertThatThrownBy(
             () ->
-                PortfolioReview.normalize(
+                com.financeclaw.infrastructure.agentscope.capability.PortfolioInputs.parse(
                     Map.of(
                         "portfolio_name",
                         "x",
@@ -144,7 +147,21 @@ class BusinessContractsTest {
         List.of(
             Map.<String, Object>of("price", "100.00", "quantity", "1"),
             Map.<String, Object>of("price", "100.00", "quantity", "3"));
-    assertThat(PortfolioReview.analyze(rows))
+    assertThat(
+            com.financeclaw.app.portfolio.PortfolioReviewService.exposure(
+                com.financeclaw.domain.portfolio.Portfolio.Exposure.analyze(
+                    rows.stream()
+                        .map(
+                            row ->
+                                new com.financeclaw.domain.portfolio.Portfolio.Holding(
+                                    new com.financeclaw.domain.market.MarketSnapshot(
+                                        "AAPL",
+                                        new java.math.BigDecimal(row.get("price").toString()),
+                                        "USD",
+                                        "test",
+                                        "2026-10-16T00:00:00Z"),
+                                    new java.math.BigDecimal(row.get("quantity").toString())))
+                        .toList())))
         .containsEntry("total_market_value", "400.00")
         .containsEntry("largest_position_weight", "0.7500")
         .containsEntry("risk_band", "high");

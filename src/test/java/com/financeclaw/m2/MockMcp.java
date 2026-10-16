@@ -1,7 +1,7 @@
 package com.financeclaw.m2;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.financeclaw.agent.GovernedTools;
+import com.financeclaw.infrastructure.agentscope.execution.GovernedTools;
 import com.sun.net.httpserver.HttpServer;
 import java.net.InetSocketAddress;
 import java.util.*;

@@ -3,6 +3,7 @@ package com.financeclaw.api;
 import com.financeclaw.application.GovernanceService;
 import com.financeclaw.domain.Governance.*;
 import com.financeclaw.domain.Task.Problem;
+import com.financeclaw.support.PayloadJson;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 import org.springframework.web.bind.annotation.*;
@@ -35,7 +36,7 @@ public class GovernanceController {
   public GrantView grant(HttpServletRequest request, @PathVariable String conversation) {
     var g = service.grant(TaskController.owner(request), conversation);
     if (g == null) throw new Problem(409, "grant_unavailable");
-    return new GrantView(g.revision(), GovernanceService.scopes(g.scopes()));
+    return new GrantView(g.revision(), PayloadJson.scopes(g.scopes()));
   }
 
   @PutMapping("/conversations/{conversation}/grant")
@@ -47,7 +48,7 @@ public class GovernanceController {
     var g =
         service.changeGrant(
             TaskController.owner(request), conversation, key, value.revision(), value.scopes());
-    return new GrantView(g.revision(), GovernanceService.scopes(g.scopes()));
+    return new GrantView(g.revision(), PayloadJson.scopes(g.scopes()));
   }
 
   @GetMapping("/conversations/{conversation}/turns/{turn}/interactions")
@@ -61,7 +62,7 @@ public class GovernanceController {
                     i.kind(),
                     i.tool(),
                     i.actionHash(),
-                    GovernanceService.parse(i.schema()),
+                    PayloadJson.parse(i.schema()),
                     i.question(),
                     i.revision(),
                     i.status(),
@@ -90,7 +91,7 @@ public class GovernanceController {
         i.kind(),
         i.tool(),
         i.actionHash(),
-        GovernanceService.parse(i.schema()),
+        PayloadJson.parse(i.schema()),
         i.question(),
         i.revision(),
         i.status(),

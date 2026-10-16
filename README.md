@@ -10,6 +10,8 @@ M5b 已本地提交 `07a9bfb`。后续 **[M5c 排空阻塞项定位](docs/migrat
 
 M5c 已本地提交 `3736aac`。**[M5d 只读预检报告](docs/migration/m5d-preflight.md)** 将受理状态、计数与分页明细保存为本地证据，区分仍有阻塞、检查不完整和可供人工复核，不自动切换服务。
 
+M5d 已本地提交 `993e7ac`，未推送。**[M5e 旧备份隐私核对](docs/migration/m5e-restore-privacy.md)** 检查恢复库是否遗漏备份之后的遗忘事实，并在隔离容器中演练拦截旧备份；真实环境交付和线上切换仍待验收。
+
 ## 固定工具链
 
 | 组件 | 版本 |
@@ -38,10 +40,11 @@ scripts/mvn.sh -B -ntp verify spotless:check
 # 整理本次测试结果及源码指纹
 python3 scripts/test-live-acceptance.py
 python3 scripts/test-inspect-drain.py
+python3 scripts/test-restore-privacy.py
 python3 scripts/collect-evidence.py
 ```
 
-成功时 Maven 输出 `BUILD SUCCESS`，可执行包位于 `target/financeclaw-java-0.1.0-SNAPSHOT.jar`，证据汇总位于 `target/m5d/results.json`。`scripts/mvn.sh test` 仅执行不依赖 PostgreSQL 的单元/HTTP 契约测试，不能代替包含 PostgreSQL 和业务 API 的完整验证。
+成功时 Maven 输出 `BUILD SUCCESS`，可执行包位于 `target/financeclaw-java-0.1.0-SNAPSHOT.jar`，证据汇总位于 `target/m5e/results.json`。`scripts/mvn.sh test` 仅执行不依赖 PostgreSQL 的单元/HTTP 契约测试，不能代替包含 PostgreSQL 和业务 API 的完整验证。
 
 ## 容器部署
 
@@ -77,19 +80,26 @@ scripts/mvn.sh spring-boot:run
 | [M5b 暂停与排空](docs/migration/m5b-admission.md) | 按认证主体暂停/恢复受理、并发边界、任务/渠道/记忆积压及恢复演练 |
 | [M5c 阻塞项定位](docs/migration/m5c-backlog.md) | 只读分页、原任务/通知定位、记忆作业和查询权限边界 |
 | [M5d 只读预检](docs/migration/m5d-preflight.md) | CLI 留档、前后观测核对、分页完整性与退出码 |
+| [M5e 旧备份隐私核对](docs/migration/m5e-restore-privacy.md) | 全主体隐私快照、遗忘审计与残留检查、旧库隔离演练 |
 | [M6 紫微迁移](docs/migration/m6-validation.md) | M6a 日期契约、[M6b 历法](docs/migration/m6b-calendar.md)与[完整排盘比对](docs/migration/m6b-charts.md)；[M6c 领域接入](docs/migration/m6c-domain.md)、[M6d 恢复与部署](docs/migration/m6d-recovery.md)，真实模型验收待完成 |
 | [M4 记忆与原生飞书](docs/migration/m4-validation.md) | 记忆 API、独立 Worker、pgvector、原生飞书配置及 SDK 能力边界 |
 | [M3 业务与验证](docs/migration/m3-validation.md) | 酒店/Taibu 配置、调酒 Skill、市场研究、固定 Workflow 及模拟验收 |
 | [M2 使用与验证](docs/migration/m2-validation.md) | 授权与交互 API、Artifact、模型配置、测试和限制 |
 | [框架复用审查](docs/migration/framework-reuse-review.md) | 原生能力的复用方式及保留业务适配的原因 |
+| [AgentScope 与 COLA 整改方案](docs/architecture/agentscope-cola-remediation.md) | 重复实现核查、依赖环、目标包结构、领域对象与 R0–R7 整改顺序 |
+| [R0–R2 实施记录](docs/architecture/r0-r2-implementation.md) | 固定契约、M0 测试隔离、Operations 分层、Spring 事务与实际回归结果 |
+| [R3 交互与工具边界](docs/architecture/r3-implementation.md) | 回答用例、领域绑定、统一 SDK 快照、业务工具贡献与事务回归 |
+| [R4 任务与执行分层](docs/architecture/r4-implementation.md) | 任务用例、原生执行端口、Spring 原子性、恢复与取消边界 |
+| [R5a 组合与市场研究](docs/architecture/r5a-implementation.md) | 领域规则、业务步骤、原生驱动分离；发布幂等、子预算与取消回归 |
+| [Spring 事务与组件复审](docs/architecture/spring-transactions-component-review.md) | Spring 统一事务、SDK 主动提交实验证据、已接入 ArchUnit 与组件复用清单 |
 | [M1 使用与验证](docs/migration/m1-validation.md) | API 示例、恢复边界、配置及验收证据 |
 | [M0 验证记录](docs/migration/m0-validation.md) | 实际版本、测试证据、状态保存边界与继续实施决策 |
 | [迁移方案](docs/migration/agentscope-java-migration.md) | 源系统、能力映射、目标架构及分阶段实施 |
 | [验收清单](docs/migration/acceptance-checklist.md) | 已完成范围与后续阶段的验收条件 |
-| [Agent 适配器](src/main/java/com/financeclaw/agent) | 独立 engine、恢复输入、执行入口、发送前预算检查 |
-| [状态与执行保护](src/main/java/com/financeclaw/infrastructure/state) | 原子 CAS、执行互斥、工具结果核对实验 |
-| [MyBatis Mapper](src/main/java/com/financeclaw/infrastructure/state/RuntimeMapper.java) | 统一管理状态、工具账本及互斥 SQL；Spring Boot 自动配置连接与映射 |
-| [任务事务与恢复](src/main/java/com/financeclaw/application/TaskService.java) | 幂等、领取、租约、取消、完成回执与 Outbox |
+| [Agent 适配器](src/main/java/com/financeclaw/infrastructure/agentscope) | 原生执行、恢复、业务工具适配与发送前预算检查 |
+| [状态适配](src/main/java/com/financeclaw/infrastructure/state) | AgentState 版本 CAS、身份隔离与墓碑 |
+| [MyBatis 状态 Mapper](src/main/java/com/financeclaw/infrastructure/state/RuntimeMapper.java) | AgentState SQL；连接与事务由 Spring/MyBatis-Spring 管理 |
+| [任务用例](src/main/java/com/financeclaw/app/task) / [执行用例](src/main/java/com/financeclaw/app/execution) | 受理、查询、取消、租约、完成回执、恢复与 Outbox |
 | [后台执行](src/main/java/com/financeclaw/worker/TaskWorker.java) | 有界调度、定向中断和恢复轮询 |
 | [M1 集成测试](src/test/java/com/financeclaw/m1/TaskLifecycleIT.java) | API、真实数据库竞争、独立 JVM 崩溃恢复 |
 | [M0 实验](src/test/java/com/financeclaw/m0) | SDK、PostgreSQL、子进程、故障及隔离场景 |

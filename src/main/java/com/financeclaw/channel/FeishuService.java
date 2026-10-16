@@ -1,13 +1,13 @@
 package com.financeclaw.channel;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.financeclaw.agent.ResumeInputs;
 import com.financeclaw.application.*;
 import com.financeclaw.domain.ExecutionScope;
 import com.financeclaw.domain.Feishu.*;
 import com.financeclaw.domain.Governance.*;
 import com.financeclaw.domain.Task.*;
 import com.financeclaw.infrastructure.channel.FeishuMapper;
+import com.financeclaw.support.PayloadJson;
 import io.agentscope.extensions.channel.feishu.FeishuInboundMapper;
 import java.util.*;
 import org.springframework.stereotype.Service;
@@ -72,7 +72,7 @@ public class FeishuService {
             .orElseThrow(() -> new Problem(422, "text_required"));
     String user = required(body.path("sender").path("sender_id"), "open_id");
     String chat = inbound.peer().id();
-    String requestHash = hash(ResumeInputs.canonical(GovernanceService.parse(root.toString())));
+    String requestHash = hash(PayloadJson.canonical(PayloadJson.parse(root.toString())));
     String text = inbound.messages().getFirst().getTextContent();
     return tx.execute(
         s -> {
@@ -80,7 +80,7 @@ public class FeishuService {
           var old = db.inbox(event);
           if (old != null) {
             if (!old.requestHash().equals(requestHash)) throw new Problem(409, "event_conflict");
-            return GovernanceService.parse(old.receipt());
+            return PayloadJson.parse(old.receipt());
           }
           if (text.startsWith("/bind ")) {
             String code = text.substring(6).trim();
@@ -175,7 +175,7 @@ public class FeishuService {
             }
           }
           Object result = Map.of("code", 0);
-          db.recordInbox(event, binding.id(), requestHash, ResumeInputs.canonical(result));
+          db.recordInbox(event, binding.id(), requestHash, PayloadJson.canonical(result));
           return result;
         });
   }

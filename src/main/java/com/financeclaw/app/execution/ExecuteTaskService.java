@@ -1,0 +1,68 @@
+package com.financeclaw.app.execution;
+
+import com.financeclaw.app.execution.port.*;
+import com.financeclaw.app.task.port.*;
+import com.financeclaw.domain.Governance.*;
+import com.financeclaw.domain.Task.*;
+import java.util.*;
+import org.springframework.stereotype.Service;
+
+@Service
+public class ExecuteTaskService {
+  private final ExecutionCompletionService completion;
+  private final AgentExecutionPort runtime;
+
+  public ExecuteTaskService(ExecutionCompletionService completion, AgentExecutionPort runtime) {
+    this.completion = completion;
+    this.runtime = runtime;
+  }
+
+  public void execute(Claim claim) {
+    if (org.springframework.transaction.support.TransactionSynchronizationManager
+        .isActualTransactionActive())
+      throw new IllegalStateException("Native execution must run outside a transaction");
+    Outcome result;
+    try {
+      result = runtime.execute(claim);
+    } catch (com.financeclaw.domain.Governance.Blocked blocked) {
+      try {
+        completion.block(claim, blocked.getMessage());
+      } catch (RuntimeException lost) {
+        /* lease recovery */
+      }
+      return;
+    } catch (Fenced ignored) {
+      // Cancellation may win after claim but before SDK dispatch. Confirm that stopped attempt.
+      try {
+        completion.fail(claim);
+      } catch (RuntimeException lost) {
+        /* Expired owner remains fenced. */
+      }
+      return;
+    } catch (RuntimeException error) {
+      try {
+        completion.fail(claim);
+      } catch (RuntimeException ignored) {
+        /* Reconcile after lease expiry. */
+      }
+      return;
+    }
+    try {
+      if (completion.acknowledgeCancel(claim)) return;
+      completion.seal(claim, result);
+      completion.finish(claim);
+    } catch (com.financeclaw.domain.Governance.Blocked blocked) {
+      try {
+        completion.block(claim, blocked.getMessage());
+      } catch (RuntimeException lost) {
+        /* recover expired lease */
+      }
+    } catch (RuntimeException ignored) {
+      /* Preserve a sealed receipt; never turn commit uncertainty into failure. */
+    }
+  }
+
+  public void interrupt(Claim claim) {
+    runtime.interrupt(claim);
+  }
+}

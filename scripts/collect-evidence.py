@@ -56,7 +56,11 @@ preflight = json.loads((root / "target/m5d/preflight-tests.json").read_text())
 if (preflight['tests'] != 12 or any(preflight[k] for k in ('failures', 'errors', 'skipped'))
         or any(manifest['scripts/' + name] != value for name, value in preflight['source_sha256'].items())):
     raise SystemExit('Drain preflight evidence is stale or failed; run scripts/test-inspect-drain.py')
-evidence = {"base_commit": "3736aac12bee8ad7d3d1de2aa66e3136649d4550", "milestone": "M5d-read-only-preflight", "collected_at_utc": datetime.now(timezone.utc).isoformat(),
+privacy = json.loads((root / "target/m5e/privacy-tests.json").read_text())
+if (privacy['tests'] != 13 or any(privacy[k] for k in ('failures', 'errors', 'skipped'))
+        or any(manifest[name] != value for name, value in privacy['source_sha256'].items())):
+    raise SystemExit('Restore privacy evidence is stale or failed; run scripts/test-restore-privacy.py')
+evidence = {"base_commit": "993e7acded5340ace65d02c9aad3f272db5fac2f", "milestone": "M5e-restore-privacy", "collected_at_utc": datetime.now(timezone.utc).isoformat(),
             "application_jar_sha256": hashlib.sha256((root / "target/financeclaw-java-0.1.0-SNAPSHOT.jar").read_bytes()).hexdigest(),
             "toolchain": json.loads((root / "toolchains.lock.json").read_text()),
             "environment": json.loads((root / "target/m0/environment.json").read_text()),
@@ -70,12 +74,14 @@ evidence = {"base_commit": "3736aac12bee8ad7d3d1de2aa66e3136649d4550", "mileston
             "ziwei_runtime_packaging": packaging,
             "live_validator_contract_tests": validator,
             "drain_preflight_contract_tests": preflight,
+            "restore_privacy_contract_tests": privacy,
             "total_tests": sum(s["tests"] for s in suites), "suites": suites, "source_sha256": manifest,
             "validation_scope": "Local PostgreSQL, pgvector and independent JVMs; native loopback model/MCP/Feishu adapters; M6 date contracts, calendar compatibility, 2524 full chart comparisons, domain facts and focus parity, native Toolkit suspension/resume, scoped artifacts, HMAC, budgets and privacy. M6d packaged process crash recovery, cancellation/privacy competition, deployment image with five native tools and no Python, offline live-validator contracts. Development gate retained: no real model Ziwei selection, real provider/MCP/Feishu tenant or remote CI execution. Compose validation is recorded separately."}
 evidence['validation_scope'] += ' M5b owner-scoped admission pause/resume, revision and idempotency receipts, PostgreSQL submission/pause races, existing approval/input/cancellation and Feishu continuity, drain counts including uncertain effects, notification and memory backlogs.'
 evidence['validation_scope'] += ' M5c read-only owner-scoped keyset pages for task, notification, unprojected binding and memory job blockers; terminal-turn residual facts, numeric job ordering, foreign-owner exclusion and content minimization.'
 evidence['validation_scope'] += ' M5d adds only delivery tooling: read-only operations API observations, inventory/count comparison, incomplete scan handling and private report files. The Java build inputs and jar retain their M5c full-suite validation. Preflight fixtures and loopback HTTP/CLI contracts ran separately; deployed CLI observations are in Compose evidence.'
-destination = root / "target/m5d/results.json"
+evidence['validation_scope'] += ' M5e adds offline all-owner privacy snapshot comparison and a read-only SQL snapshot query. Java inputs remain unchanged; SQL and pre-forget backup isolation are exercised separately in Compose. Matching supplied snapshots does not prove reference freshness or authorize production recovery.'
+destination = root / "target/m5e/results.json"
 destination.parent.mkdir(parents=True, exist_ok=True)
 destination.write_text(json.dumps(evidence, ensure_ascii=False, indent=2) + "\n")
 print(f"{evidence['total_tests']} tests passed; evidence: {destination}")

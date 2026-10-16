@@ -1,7 +1,7 @@
 package com.financeclaw.m4;
 
 import com.fasterxml.jackson.databind.*;
-import com.financeclaw.agent.ResumeInputs;
+import com.financeclaw.support.PayloadJson;
 import com.sun.net.httpserver.HttpServer;
 import java.net.*;
 import java.nio.charset.StandardCharsets;
@@ -43,7 +43,7 @@ final class MockFeishu implements AutoCloseable {
             status = 404;
             result = Map.of("code", 999);
           }
-          byte[] bytes = ResumeInputs.canonical(result).getBytes(StandardCharsets.UTF_8);
+          byte[] bytes = PayloadJson.canonical(result).getBytes(StandardCharsets.UTF_8);
           exchange.getResponseHeaders().set("Content-Type", "application/json");
           exchange.sendResponseHeaders(status, bytes.length);
           exchange.getResponseBody().write(bytes);

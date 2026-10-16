@@ -8,6 +8,7 @@ import json
 import math
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 import time
@@ -21,13 +22,16 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--ziwei', action='store_true', help='Also boot the shared Ziwei development policy and secret configuration')
 parser.add_argument('--admission', action='store_true', help='Verify durable admission pause, drain and resume across deployment recovery')
 parser.add_argument('--preflight', action='store_true', help='Verify the read-only drain report CLI (requires --admission)')
+parser.add_argument('--restore-privacy', action='store_true', help='Keep pre-forget backups isolated and compare all-owner privacy (requires --preflight)')
 ARGS = parser.parse_args()
 if ARGS.preflight and not ARGS.admission:
     parser.error('--preflight requires --admission')
-OUT = ROOT / ('target/m5d/deployment' if ARGS.preflight else 'target/m5b/deployment' if ARGS.admission else 'target/m6/deployment' if ARGS.ziwei else 'target/m5')
+if ARGS.restore_privacy and not ARGS.preflight:
+    parser.error('--restore-privacy requires --preflight')
+OUT = ROOT / ('target/m5e/deployment' if ARGS.restore_privacy else 'target/m5d/deployment' if ARGS.preflight else 'target/m5b/deployment' if ARGS.admission else 'target/m6/deployment' if ARGS.ziwei else 'target/m5')
 OUT.mkdir(parents=True, exist_ok=True)
 THRESHOLDS = json.loads((ROOT / 'ops/m5-thresholds.json').read_text())
-PROJECT = ('financeclaw-m5d-' if ARGS.preflight else 'financeclaw-m5b-' if ARGS.admission else 'financeclaw-m6d-' if ARGS.ziwei else 'financeclaw-m5-') + uuid.uuid4().hex[:10]
+PROJECT = ('financeclaw-m5e-' if ARGS.restore_privacy else 'financeclaw-m5d-' if ARGS.preflight else 'financeclaw-m5b-' if ARGS.admission else 'financeclaw-m6d-' if ARGS.ziwei else 'financeclaw-m5-') + uuid.uuid4().hex[:10]
 TEMP = ROOT / '.cache' / PROJECT
 TEMP.mkdir(parents=True)
 ENV = os.environ.copy()
@@ -60,12 +64,15 @@ RESULT = {'scope': 'isolated real containers; offline model and synthetic market
           'ziwei_development_policy': ARGS.ziwei,
           'admission_control': ARGS.admission,
           'read_only_preflight': ARGS.preflight,
+          'restore_privacy': ARGS.restore_privacy,
           'project': PROJECT, 'thresholds': THRESHOLDS, 'checks': {},
           'started_at': datetime.now(timezone.utc).isoformat()}
 INPUTS = ('Dockerfile', '.dockerignore', 'compose.yml', 'ops/postgres-init.sql',
           'ops/container-entrypoint.sh', 'ops/m5-thresholds.json', 'scripts/validate-compose.py')
 if ARGS.preflight:
     INPUTS += ('scripts/inspect-drain.py',)
+if ARGS.restore_privacy:
+    INPUTS += ('scripts/check-restore-privacy.py', 'ops/restore-privacy-snapshot.sql')
 RESULT['source_sha256'] = {p: hashlib.sha256((ROOT / p).read_bytes()).hexdigest() for p in INPUTS}
 (OUT / 'compose-results.json').unlink(missing_ok=True)
 URL = ''
@@ -146,9 +153,13 @@ def terminal(path, status='completed'):
 def fingerprints(database):
     tables = sql("SELECT schemaname||'.'||tablename FROM pg_tables WHERE schemaname IN "
                  "('business','agent_runtime','memory','channel') ORDER BY 1", database).splitlines()
-    return {table: sql("SELECT count(*)||':'||md5(COALESCE(string_agg(md5(to_jsonb(t)::text),'' "
-                       f"ORDER BY md5(to_jsonb(t)::text)),'')) FROM {table} t", database)
-            for table in tables}
+    assert tables and all(re.fullmatch(r'[a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*', t) for t in tables)
+    # One statement preserves the original per-table count/hash formula and shares one snapshot.
+    # Avoid hundreds of Docker/psql invocations when comparing several isolated restore databases.
+    queries = [f"SELECT '{table}' AS name, count(*)||':'||md5(COALESCE("
+               f"string_agg(md5(to_jsonb(t)::text),'' ORDER BY md5(to_jsonb(t)::text)),'')) AS fingerprint FROM {table} t"
+               for table in tables]
+    return json.loads(sql('SELECT json_object_agg(name,fingerprint) FROM (' + ' UNION ALL '.join(queries) + ') hashes', database))
 
 
 def admission(paused, key):
@@ -179,6 +190,42 @@ def preflight(name, expected, page_size=2, max_pages=20):
          'inventory_matches_counts': report.get('inventory_matches_counts'),
          'items': {kind: len(rows) for kind, rows in report['items'].items()},
          'report_sha256': hashlib.sha256(destination.read_bytes()).hexdigest()})
+
+
+def privacy_snapshot(database, name):
+    # No tenant filtering. Capture inside one read-only repeatable-read transaction.
+    raw = compose('exec', '-T', 'postgres', 'psql', '-X', '-qAt', '-U', 'postgres',
+                  '-d', database, '-v', 'ON_ERROR_STOP=1',
+                  data=(ROOT / 'ops/restore-privacy-snapshot.sql').read_bytes())
+    destination = TEMP / (name + '.json')
+    with destination.open('xb') as out:
+        os.chmod(destination, 0o600)
+        out.write(raw)
+    return destination
+
+
+def privacy_check(reference, restored_snapshot, name, expected):
+    destination = OUT / 'privacy' / PROJECT / (name + '.json')
+    command([sys.executable, str(ROOT / 'scripts/check-restore-privacy.py'),
+             '--reference', str(reference), '--restored', str(restored_snapshot), '--output', str(destination)],
+            expected_exit={'privacy_matches_reference': 0, 'blocked': 2, 'incomplete': 3}[expected])
+    report = json.loads(destination.read_text())
+    assert report['assessment'] == expected
+    assert destination.stat().st_mode & 0o777 == 0o600
+    for path, label in ((reference, 'reference'), (restored_snapshot, 'restored')):
+        assert report['input_sha256'][label] == hashlib.sha256(path.read_bytes()).hexdigest()
+    for name in ('check-restore-privacy.py', 'inspect-drain.py'):
+        assert report['source_sha256'][name] == RESULT['source_sha256']['scripts/' + name]
+    assert not any(value in destination.read_text() for value in (TOKEN, 'response_style', '简洁'))
+    return report
+
+
+def require_no_runtime_connections(*databases):
+    # Only the PostgreSQL container is running. The check is an observation, not a global fence.
+    running = compose('ps', '--services', '--status', 'running').decode().split()
+    assert running == ['postgres'], running
+    for database in databases:
+        assert sql(f"SELECT count(*) FROM pg_stat_activity WHERE datname='{database}'", 'postgres') == '0'
 
 
 try:
@@ -310,6 +357,25 @@ try:
     terminal(mp)
     wait(lambda: any(f['status'] == 'active' for f in api('/v1/memory')))
     epoch = api('/v1/memory/privacy')['epoch']
+    if ARGS.restore_privacy:
+        compose('stop', 'api', 'worker', 'integrations', 'memory-worker')
+        require_no_runtime_connections('financeclaw_java')
+        # A superseded projection at the current epoch is legitimately retained and query-filtered.
+        # Privacy checks must not mistake it for resurrection after forgetting.
+        sql("INSERT INTO memory.facts(id,source_id,tenant,subject,epoch,key,content,evidence,revision,status) "
+            "SELECT id||'-superseded',source_id,tenant,subject,epoch,'home_city','synthetic','synthetic',2,'superseded' "
+            "FROM memory.facts WHERE status='active'; "
+            "INSERT INTO memory.projections(fact_id,tenant,subject,epoch,revision,model_revision,dimensions,embedding) "
+            "SELECT id,tenant,subject,epoch,1,'m5e-superseded',1024,array_fill(0.1::real,ARRAY[1024]) "
+            "FROM memory.facts WHERE status='superseded'")
+        current_epoch = privacy_snapshot('financeclaw_java', 'current-epoch-superseded')
+        current_report = privacy_check(current_epoch, current_epoch, 'current_epoch_superseded', 'privacy_matches_reference')
+        mark('current_epoch_superseded_projection_is_not_a_forget_violation', current_report)
+        old_backup = compose('exec', '-T', 'postgres', 'pg_dump', '-U', 'postgres', '-d', 'financeclaw_java', '-Fc')
+        assert sql("SELECT count(*) FROM memory.facts WHERE status='active' AND content IS NOT NULL") == '1'
+        mark('pre_forget_backup_captured_with_writers_stopped', {'sha256': hashlib.sha256(old_backup).hexdigest()})
+        compose('up', '-d', '--no-deps', '--wait', 'api', 'worker', 'integrations', 'memory-worker')
+        URL = 'http://' + compose('port', 'api', '8080').decode().strip()
     assert api('/v1/memory/forget', {'epoch': epoch}, 'forget-once')['epoch'] == epoch + 1
     wait(lambda: not api('/v1/memory/privacy')['purge_pending'])
     assert api('/v1/memory') == []
@@ -338,6 +404,50 @@ try:
     assert sql("SELECT count(*) FROM memory.facts WHERE content<>''", restored) == '0'
     mark('consistent_backup_restore_all_tables_and_privacy_epoch',
          {'tables': len(original), 'sha256': hashlib.sha256(backup).hexdigest(), 'rows_and_hashes': original})
+    if ARGS.restore_privacy:
+        old_database = 'financeclaw_stale_' + uuid.uuid4().hex[:10]
+        sql(f'CREATE DATABASE {old_database} OWNER financeclaw')
+        compose('exec', '-T', 'postgres', 'pg_restore', '-U', 'postgres', '-d', old_database, '--exit-on-error', data=old_backup)
+        require_no_runtime_connections('financeclaw_java', restored, old_database)
+        before_privacy = {db: fingerprints(db) for db in ('financeclaw_java', restored, old_database)}
+        reference = privacy_snapshot('financeclaw_java', 'authoritative-privacy')
+        stale_snapshot = privacy_snapshot(old_database, 'stale-privacy')
+        clean_snapshot = privacy_snapshot(restored, 'restored-privacy')
+        stale_report = privacy_check(reference, stale_snapshot, 'old_backup', 'blocked')
+        assert 'epochs_match' in stale_report['errors'] and 'privacy_events_match' in stale_report['errors']
+        assert sql("SELECT count(*) FROM memory.facts WHERE status='active' AND content IS NOT NULL", old_database) == '1'
+        mark('old_backup_missing_later_forget_is_blocked_and_isolated', stale_report)
+        clean_report = privacy_check(reference, clean_snapshot, 'current_backup', 'privacy_matches_reference')
+        mark('current_backup_matches_all_owner_privacy', clean_report)
+        assert {db: fingerprints(db) for db in before_privacy} == before_privacy
+        require_no_runtime_connections('financeclaw_java', restored, old_database)
+        mark('privacy_snapshot_and_comparison_are_read_only')
+        # Corrupt only the disposable stale clone to show epoch alone cannot bypass the check.
+        sql(f'UPDATE memory.owners SET epoch={epoch + 1}', old_database)
+        forged = privacy_snapshot(old_database, 'epoch-only-privacy')
+        forged_report = privacy_check(reference, forged, 'epoch_only', 'blocked')
+        assert forged_report['checks']['epochs_match']
+        assert 'privacy_events_match' in forged_report['errors'] and 'no_unsafe_memory_rows' in forged_report['errors']
+        mark('epoch_only_repair_does_not_hide_missing_audit_or_old_content', forged_report)
+        sql("INSERT INTO memory.projections(fact_id,tenant,subject,epoch,revision,model_revision,dimensions,embedding) "
+            "SELECT id,tenant,subject,epoch,revision,'m5e-synthetic',1024,array_fill(0.1::real,ARRAY[1024]) "
+            "FROM memory.facts WHERE status='active'; "
+            "INSERT INTO memory.recalls(turn_id,fact_id,revision,epoch) "
+            "SELECT source_id,id,revision,epoch FROM memory.facts WHERE status='active' ON CONFLICT DO NOTHING; "
+            f"INSERT INTO memory.audit(tenant,subject,epoch,action,target) VALUES "
+            f"('local','developer',{epoch + 1},'forget','invalid-target'),"
+            "('m5e-orphan','synthetic',2,'forget','all')", old_database)
+        residual = privacy_snapshot(old_database, 'residual-privacy')
+        residual_state = json.loads(residual.read_text())
+        owner = next(o for o in residual_state['owners'] if o['tenant'] == 'local' and o['subject'] == 'developer')
+        counters = ('unsafe_sources', 'unsafe_facts', 'unsafe_projections', 'unsafe_recalls', 'unsafe_jobs', 'invalid_audit_targets')
+        assert all(owner[k] > 0 for k in counters) and residual_state['orphan_owners'] > 0
+        residual_report = privacy_check(reference, residual, 'residual_memory', 'blocked')
+        assert 'no_orphan_owners' in residual_report['errors'] and 'no_unsafe_memory_rows' in residual_report['errors']
+        mark('sql_detects_residual_memory_and_orphan_owners', {k: owner[k] for k in counters})
+        # Delete only this synthetic, never-connected restore. No restore script repairs privacy.
+        sql(f'DROP DATABASE {old_database}')
+        mark('rejected_synthetic_restore_removed_before_runtime_start')
     restore_override = {'services': {s: {'environment': {
         'FINANCECLAW_DATABASE_URL' if s != 'memory-worker' else 'FINANCECLAW_MEMORY_DATABASE_URL':
         f'jdbc:postgresql://postgres:5432/{restored}'}} for s in ('api', 'worker', 'integrations', 'memory-worker')}}

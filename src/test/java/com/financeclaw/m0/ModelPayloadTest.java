@@ -4,7 +4,7 @@ import static org.assertj.core.api.Assertions.*;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.financeclaw.agent.BudgetedTransport;
+import com.financeclaw.infrastructure.agentscope.execution.BudgetedTransport;
 import com.sun.net.httpserver.HttpServer;
 import io.agentscope.core.formatter.JsonSchema;
 import io.agentscope.core.formatter.ResponseFormat;

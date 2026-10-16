@@ -1,12 +1,11 @@
 package com.financeclaw.m6;
 
-import com.financeclaw.agent.*;
 import com.financeclaw.application.*;
 import com.financeclaw.bootstrap.FinanceClawApplication;
 import com.financeclaw.domain.Task.*;
+import com.financeclaw.infrastructure.agentscope.execution.*;
 import com.financeclaw.infrastructure.state.RuntimeMapper;
-import com.financeclaw.tools.PortfolioReview;
-import com.financeclaw.worker.TaskWorker;
+import com.financeclaw.support.PayloadJson;
 import io.agentscope.core.message.*;
 import io.agentscope.core.model.*;
 import java.nio.file.*;
@@ -19,8 +18,12 @@ public final class ZiweiRuntimeProbe extends TaskAgentRuntime implements Model {
   private final Properties settings;
 
   private ZiweiRuntimeProbe(
-      TaskService tasks, GovernanceService governance, RuntimeMapper states, Properties settings) {
-    super(tasks, governance, states, 60000);
+      TaskService tasks,
+      GovernanceService governance,
+      RuntimeMapper states,
+      com.financeclaw.infrastructure.agentscope.capability.BusinessCapabilities capabilities,
+      Properties settings) {
+    super(tasks, governance, states, capabilities, 60000);
     this.settings = settings;
   }
 
@@ -47,13 +50,30 @@ public final class ZiweiRuntimeProbe extends TaskAgentRuntime implements Model {
                 tasks,
                 context.getBean(GovernanceService.class),
                 context.getBean(RuntimeMapper.class),
+                context.getBean(
+                    com.financeclaw.infrastructure.agentscope.capability.BusinessCapabilities
+                        .class),
                 settings);
         if (settings.getProperty("probe.mode").equals("after-seal")) {
           var result = runtime.execute(claim);
           tasks.seal(claim, result);
           Runtime.getRuntime().halt(73);
         }
-        try (var worker = new TaskWorker(tasks, runtime, false, false, 1, 120000, 2000)) {
+        // This launcher is packaged alone; all assembly dependencies must come from the product
+        // jar.
+        try (var worker =
+            new com.financeclaw.worker.TaskWorker(
+                context.getBean(com.financeclaw.app.execution.ExecutionLeaseService.class),
+                context.getBean(com.financeclaw.app.execution.RecoverTaskService.class),
+                context.getBean(com.financeclaw.app.task.ProjectTaskService.class),
+                new com.financeclaw.app.execution.ExecuteTaskService(
+                    context.getBean(com.financeclaw.app.execution.ExecutionCompletionService.class),
+                    runtime),
+                false,
+                false,
+                1,
+                120000,
+                2000)) {
           worker.execute(claim);
         }
       }
@@ -84,7 +104,7 @@ public final class ZiweiRuntimeProbe extends TaskAgentRuntime implements Model {
     if ((resolved == 0 && mode.equals("before-tool"))
         || (resolved > 0 && mode.equals("after-tool"))) barrier();
     String[] names = settings.getProperty("probe.tools", "ziwei_yearly_chart").split(",");
-    var input = GovernanceService.object(settings.getProperty("probe.input"));
+    var input = PayloadJson.object(settings.getProperty("probe.input"));
     if (resolved < names.length && names[(int) resolved].equals("ziwei_natal_chart")) {
       input = new TreeMap<>(input);
       input.remove("on_date");
@@ -97,7 +117,8 @@ public final class ZiweiRuntimeProbe extends TaskAgentRuntime implements Model {
                 resolved >= names.length
                     ? List.of(TextBlock.builder().text("合成盘面已核对。仅供传统文化参考。").build())
                     : List.of(
-                        PortfolioReview.call("fixed-" + resolved, names[(int) resolved], input)))
+                        com.financeclaw.infrastructure.agentscope.NativeToolCalls.call(
+                            "fixed-" + resolved, names[(int) resolved], input)))
             .build());
   }
 

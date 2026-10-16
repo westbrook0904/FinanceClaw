@@ -1,7 +1,7 @@
 package com.financeclaw.m3;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.financeclaw.application.GovernanceService;
+import com.financeclaw.support.PayloadJson;
 import com.financeclaw.tools.*;
 import com.sun.net.httpserver.HttpServer;
 import java.net.InetSocketAddress;
@@ -25,25 +25,19 @@ final class MockRemote implements AutoCloseable {
               .toList());
 
   MockRemote(String kind) throws Exception {
-    var config =
-        GovernanceService.object(BusinessCatalog.read("classpath:contracts/" + kind + ".json"));
+    var config = PayloadJson.object(BusinessCatalog.read("classpath:contracts/" + kind + ".json"));
     if (kind.equals("hotel"))
       for (var t : (List<?>) config.get("tools")) {
         var tool = (Map<?, ?>) t;
-        contracts.put(
-            (String) tool.get("name"),
-            com.financeclaw.agent.ResumeInputs.canonical(tool.get("inputSchema")));
+        contracts.put((String) tool.get("name"), PayloadJson.canonical(tool.get("inputSchema")));
       }
     else
       for (var name : List.of("almanac", "bazi")) {
         contracts.put(
-            name,
-            com.financeclaw.agent.ResumeInputs.canonical(
-                ((Map<?, ?>) config.get(name)).get("inputSchema")));
+            name, PayloadJson.canonical(((Map<?, ?>) config.get(name)).get("inputSchema")));
         contracts.put(
             name + ":output",
-            com.financeclaw.agent.ResumeInputs.canonical(
-                ((Map<?, ?>) config.get(name)).get("outputSchema")));
+            PayloadJson.canonical(((Map<?, ?>) config.get(name)).get("outputSchema")));
       }
     server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
     server.setExecutor(executor);
@@ -79,8 +73,7 @@ final class MockRemote implements AutoCloseable {
                               .filter(e -> !e.getKey().endsWith(":output"))
                               .map(
                                   e -> {
-                                    var schema =
-                                        new TreeMap<>(GovernanceService.object(e.getValue()));
+                                    var schema = new TreeMap<>(PayloadJson.object(e.getValue()));
                                     if (annotations) {
                                       schema.put("title", "new text");
                                       schema.put("description", "new wording");

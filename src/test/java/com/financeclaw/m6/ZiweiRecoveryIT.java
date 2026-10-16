@@ -3,11 +3,11 @@ package com.financeclaw.m6;
 import static org.assertj.core.api.Assertions.*;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.financeclaw.agent.ResumeInputs;
 import com.financeclaw.application.*;
 import com.financeclaw.bootstrap.FinanceClawApplication;
 import com.financeclaw.domain.Governance.Answer;
 import com.financeclaw.domain.Task.*;
+import com.financeclaw.support.PayloadJson;
 import java.nio.file.*;
 import java.time.Duration;
 import java.util.*;
@@ -131,7 +131,7 @@ class ZiweiRecoveryIT {
     var input = ZiweiDomainTest.input();
     input.put("year_offset", 0);
     if (missingSex) ((Map<?, ?>) input.get("birth")).remove("sex_for_chart");
-    p.setProperty("probe.input", ResumeInputs.canonical(input));
+    p.setProperty("probe.input", PayloadJson.canonical(input));
     return p;
   }
 
@@ -323,7 +323,7 @@ class ZiweiRecoveryIT {
         "ziwei_natal_chart,ziwei_decadal_chart,ziwei_yearly_chart,ziwei_monthly_chart,ziwei_daily_chart");
     var input = ZiweiDomainTest.input();
     input.put("on_date", "2026-02-17");
-    p.setProperty("probe.input", ResumeInputs.canonical(input));
+    p.setProperty("probe.input", PayloadJson.canonical(input));
     String image = "financeclaw-java:m6d-test-" + UUID.randomUUID();
     Process build =
         new ProcessBuilder("docker", "build", "--tag", image, ".")

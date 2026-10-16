@@ -3,10 +3,11 @@ package com.financeclaw.m0;
 import static org.assertj.core.api.Assertions.*;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.financeclaw.agent.ResumeInputs;
 import com.financeclaw.domain.ExecutionScope;
-import com.financeclaw.infrastructure.state.EffectLedger;
+import com.financeclaw.infrastructure.agentscope.ResumeInputs;
 import com.financeclaw.infrastructure.state.MyBatisAgentStateStore;
+import com.financeclaw.m0.support.EffectLedger;
+import com.financeclaw.support.PayloadJson;
 import io.agentscope.core.message.ToolUseBlock;
 import io.agentscope.core.state.AgentState;
 import java.nio.file.Files;
@@ -83,8 +84,7 @@ class RecoveryIT extends PostgresSupport {
   void anotherJvmCannotExecuteAnAlreadyOwnedScope() throws Exception {
     var scope = scope();
     try (var ignored =
-        com.financeclaw.infrastructure.state.ExecutionGate.acquire(
-            DATABASE.getSqlSessionFactory(), scope)) {
+        com.financeclaw.m0.support.ExecutionGate.acquire(DATABASE.getSqlSessionFactory(), scope)) {
       var competing = fork(scope, "normal", "");
       assertThat(competing.code()).isNotZero();
       assertThat(competing.output()).contains("already active");
@@ -250,8 +250,8 @@ class RecoveryIT extends PostgresSupport {
     // The separate probe table acts as the external system of record.
     String hash =
         ExecutionScope.hash(
-            List.of("write_report", ResumeInputs.canonical(ProbeFixtures.TOOL_INPUT)));
-    new EffectLedger(MAPPER, scope).complete("report-1", hash, "{\"status\":\"created\"}");
+            List.of("write_report", PayloadJson.canonical(ProbeFixtures.TOOL_INPUT)));
+    new EffectLedger(EFFECTS, scope).complete("report-1", hash, "{\"status\":\"created\"}");
     var verified = fork(scope, "normal", "");
     assertThat(verified.code()).withFailMessage(verified.output()).isZero();
     assertThat(ProbeFixtures.effects(DATABASE, scope)).isEqualTo(1);
