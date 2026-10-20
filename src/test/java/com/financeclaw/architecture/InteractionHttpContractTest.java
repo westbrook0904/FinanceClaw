@@ -8,7 +8,6 @@ import com.fasterxml.jackson.databind.*;
 import com.financeclaw.api.*;
 import com.financeclaw.app.interaction.AnswerInteractionService;
 import com.financeclaw.app.interaction.port.*;
-import com.financeclaw.application.*;
 import com.financeclaw.domain.ExecutionScope;
 import com.financeclaw.domain.Governance.*;
 import com.financeclaw.domain.InteractionBinding;
@@ -73,9 +72,8 @@ class InteractionHttpContractTest {
     var answers =
         new AnswerInteractionService(
             gateway, checkpoints, new AgentScopeAnswerRules(List.of()), tx);
-    var facade = new GovernanceService(null, null, null, null, null, null, answers, tx);
     http =
-        MockMvcBuilders.standaloneSetup(new GovernanceController(facade))
+        MockMvcBuilders.standaloneSetup(new GovernanceController(null, null, answers))
             .setMessageConverters(new MappingJackson2HttpMessageConverter(json))
             .setControllerAdvice(new ApiErrors())
             .addFilters(new BearerIdentity("contract-test-only", owner.tenant(), owner.subject()))

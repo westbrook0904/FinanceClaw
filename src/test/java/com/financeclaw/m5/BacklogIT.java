@@ -7,10 +7,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.financeclaw.app.operations.AdmissionService;
 import com.financeclaw.app.operations.OperationsQueryService;
-import com.financeclaw.application.*;
 import com.financeclaw.bootstrap.FinanceClawApplication;
 import com.financeclaw.domain.Operations.*;
 import com.financeclaw.domain.Task.*;
+import com.financeclaw.fixture.TaskFixture;
 import java.util.*;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.*;
@@ -19,11 +19,13 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.*;
 import org.springframework.test.web.servlet.MockMvc;
 import org.testcontainers.containers.PostgreSQLContainer;
 
+@Import(TaskFixture.class)
 @SpringBootTest(
     classes = FinanceClawApplication.class,
     properties = {
@@ -48,7 +50,7 @@ class BacklogIT {
 
   @Autowired OperationsQueryService operations;
   @Autowired AdmissionService admissions;
-  @Autowired TaskService tasks;
+  @Autowired TaskFixture tasks;
   @Autowired DataSource source;
   @Autowired MockMvc http;
   @Autowired ObjectMapper json;

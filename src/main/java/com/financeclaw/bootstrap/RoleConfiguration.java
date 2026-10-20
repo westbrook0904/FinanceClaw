@@ -1,23 +1,28 @@
 package com.financeclaw.bootstrap;
 
 import com.financeclaw.api.*;
+import com.financeclaw.app.artifact.ArtifactService;
 import com.financeclaw.app.execution.*;
+import com.financeclaw.app.governance.GrantService;
 import com.financeclaw.app.interaction.AnswerInteractionService;
 import com.financeclaw.app.market.MarketDataService;
 import com.financeclaw.app.memory.*;
 import com.financeclaw.app.operations.*;
 import com.financeclaw.app.portfolio.PortfolioReviewService;
 import com.financeclaw.app.release.ReleaseService;
+import com.financeclaw.app.report.ReportService;
 import com.financeclaw.app.research.MarketResearchService;
 import com.financeclaw.app.task.*;
 import com.financeclaw.app.ziwei.*;
-import com.financeclaw.application.*;
 import com.financeclaw.channel.*;
 import com.financeclaw.infrastructure.agentscope.AgentScopeInteractionCheckpoint;
 import com.financeclaw.infrastructure.agentscope.capability.*;
 import com.financeclaw.infrastructure.agentscope.execution.TaskAgentRuntime;
 import com.financeclaw.infrastructure.agentscope.memory.AgentScopeMemoryModels;
+import com.financeclaw.infrastructure.artifact.MyBatisArtifactGateway;
 import com.financeclaw.infrastructure.execution.CatalogExecutionRelease;
+import com.financeclaw.infrastructure.governance.MyBatisGrantGateway;
+import com.financeclaw.infrastructure.governance.MyBatisReportGateway;
 import com.financeclaw.infrastructure.interaction.*;
 import com.financeclaw.infrastructure.market.CatalogMarketData;
 import com.financeclaw.infrastructure.memory.*;
@@ -95,7 +100,8 @@ public final class RoleConfiguration {
     TaskTransitionService.class,
     ExecutionLeaseService.class,
     ExecutionPolicyService.class,
-    GovernanceService.class,
+    ArtifactService.class,
+    MyBatisArtifactGateway.class,
     AnswerInteractionService.class,
     MyBatisInteractionGateway.class,
     AgentScopeInteractionCheckpoint.class,
@@ -110,6 +116,8 @@ public final class RoleConfiguration {
   @Configuration(proxyBeanMethods = false)
   @Import({
     GovernedTasks.class,
+    GrantService.class,
+    MyBatisGrantGateway.class,
     MapperConfiguration.Operations.class,
     MapperConfiguration.Channel.class,
     AdmissionService.class,
@@ -136,8 +144,8 @@ public final class RoleConfiguration {
   @Configuration(proxyBeanMethods = false)
   @Import({
     GovernedTasks.class,
-    Projection.class,
-    TaskService.class,
+    ReportService.class,
+    MyBatisReportGateway.class,
     MyBatisExecutionReceiptGateway.class,
     ExecutionCompletionService.class,
     RecoverTaskService.class,

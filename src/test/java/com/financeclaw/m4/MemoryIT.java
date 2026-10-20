@@ -7,12 +7,12 @@ import static org.mockito.Mockito.*;
 import com.financeclaw.app.memory.*;
 import com.financeclaw.app.memory.MemoryService;
 import com.financeclaw.app.memory.port.MemoryRepository;
-import com.financeclaw.application.*;
 import com.financeclaw.bootstrap.FinanceClawApplication;
 import com.financeclaw.domain.Memory.*;
 import com.financeclaw.domain.Task.*;
 import com.financeclaw.domain.memory.EmbeddingVector;
 import com.financeclaw.domain.memory.MemoryPolicy;
+import com.financeclaw.fixture.TaskFixture;
 import com.financeclaw.infrastructure.agentscope.execution.TaskAgentRuntime;
 import com.financeclaw.infrastructure.memory.*;
 import com.financeclaw.infrastructure.memory.MemoryMapper;
@@ -26,6 +26,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.test.context.*;
@@ -33,6 +34,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import org.springframework.transaction.support.TransactionTemplate;
 
 @org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc
+@Import(TaskFixture.class)
 @SpringBootTest(
     classes = FinanceClawApplication.class,
     properties = {
@@ -51,7 +53,7 @@ class MemoryIT {
   }
 
   @Autowired org.springframework.test.web.servlet.MockMvc http;
-  @Autowired TaskService tasks;
+  @Autowired TaskFixture tasks;
   @Autowired org.springframework.context.ApplicationContext taskContext;
   @Autowired MemoryService memory;
   @Autowired MemoryMapper db;

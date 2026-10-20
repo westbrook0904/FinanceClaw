@@ -1,6 +1,10 @@
 package com.financeclaw.infrastructure.agentscope.execution;
 
-import com.financeclaw.application.*;
+import com.financeclaw.app.artifact.ArtifactService;
+import com.financeclaw.app.execution.ExecutionPolicyService;
+import com.financeclaw.app.release.ReleaseService;
+import com.financeclaw.app.release.port.Credentials;
+import com.financeclaw.app.report.ReportService;
 import com.financeclaw.domain.Governance.*;
 import com.financeclaw.domain.Task.*;
 import com.financeclaw.domain.release.ReleaseDefinition;
@@ -25,8 +29,11 @@ public final class GovernedTools implements AutoCloseable {
   public static final Map<String, Object> TITLE = LocalToolContribution.TITLE;
   public static final Map<String, Object> EMPTY = LocalToolContribution.EMPTY;
   public static final Set<String> NAMES = LocalToolContribution.NAMES;
-  private final TaskService tasks;
-  private final GovernanceService governance;
+  private final ExecutionPolicyService policy;
+  private final ReleaseService releases;
+  private final Credentials credentials;
+  private final ArtifactService artifacts;
+  private final ReportService reports;
   private final Claim claim;
   private final ReleaseDefinition release;
   private final List<String> scopes;
@@ -35,21 +42,36 @@ public final class GovernedTools implements AutoCloseable {
   private final Map<String, InteractionHandler> interactions = new HashMap<>();
   public final Toolkit toolkit = new Toolkit();
 
-  public GovernedTools(TaskService tasks, GovernanceService governance, Claim claim) {
-    this(tasks, governance, claim, tasks.scopes(claim));
+  public GovernedTools(
+      ExecutionPolicyService policy,
+      ReleaseService releases,
+      Credentials credentials,
+      ArtifactService artifacts,
+      ReportService reports,
+      Claim claim) {
+    this(policy, releases, credentials, artifacts, reports, claim, policy.scopes(claim));
   }
 
   private GovernedTools(
-      TaskService tasks, GovernanceService governance, Claim claim, List<String> allowed) {
-    this.tasks = tasks;
-    this.governance = governance;
+      ExecutionPolicyService policy,
+      ReleaseService releases,
+      Credentials credentials,
+      ArtifactService artifacts,
+      ReportService reports,
+      Claim claim,
+      List<String> allowed) {
+    this.policy = policy;
+    this.releases = releases;
+    this.credentials = credentials;
+    this.artifacts = artifacts;
+    this.reports = reports;
     this.claim = claim;
-    release = tasks.release(claim.turn().releaseHash());
-    var root = tasks.scopes(claim);
+    release = releases.require(claim.turn().releaseHash());
+    var root = policy.scopes(claim);
     if (!root.containsAll(allowed)) throw new Blocked("scope_expansion_denied");
     scopes = List.copyOf(allowed.stream().filter(release.scopes()::contains).toList());
-    new LocalToolContribution(governance, claim).contribute(this::register);
-    mcp = new McpToolContribution(tasks, governance, claim, release, scopes, toolkit);
+    new LocalToolContribution(artifacts, reports, claim).contribute(this::register);
+    mcp = new McpToolContribution(policy, credentials, artifacts, claim, release, scopes, toolkit);
     try {
       mcp.contribute(this::register);
       if (scopes.contains("skill:use")) {
@@ -84,10 +106,10 @@ public final class GovernedTools implements AutoCloseable {
                 () -> {
                   for (var call : input.toolCalls()) {
                     if (call.getName().equals("load_skill_through_path")) {
-                      tasks.checkDispatch(claim);
-                      if (!tasks.scopes(claim).contains("skill:use"))
+                      policy.checkDispatch(claim);
+                      if (!policy.scopes(claim).contains("skill:use"))
                         throw new Blocked("tool_denied");
-                      tasks.consume(claim, false);
+                      policy.consume(claim, false);
                     }
                   }
                   return next.apply(input);
@@ -121,7 +143,8 @@ public final class GovernedTools implements AutoCloseable {
    */
   public GovernedTools narrow(List<String> requested) {
     if (!scopes.containsAll(requested)) throw new Blocked("scope_expansion_denied");
-    return new GovernedTools(tasks, governance, claim, List.copyOf(requested));
+    return new GovernedTools(
+        policy, releases, credentials, artifacts, reports, claim, List.copyOf(requested));
   }
 
   public static Map<String, Object> schema(String key, Map<String, Object> property) {
@@ -160,15 +183,15 @@ public final class GovernedTools implements AutoCloseable {
           public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
             return Mono.defer(
                     () -> {
-                      tasks.checkDispatch(claim);
-                      if (scope != null && !tasks.scopes(claim).contains(scope))
+                      policy.checkDispatch(claim);
+                      if (scope != null && !policy.scopes(claim).contains(scope))
                         throw new Blocked("tool_denied");
                       // SDK 2.0.3 validates raw content before merging input/presets. This is
                       // the effective-input boundary, also used by direct adapter calls.
                       if (ToolValidator.validateInput(
                               PayloadJson.canonical(param.getInput()), schema)
                           != null) throw new Blocked("invalid_tool_input");
-                      tasks.consume(claim, false);
+                      policy.consume(claim, false);
                       return action.apply(param);
                     })
                 .onErrorMap(

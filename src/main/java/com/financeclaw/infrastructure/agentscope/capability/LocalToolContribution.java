@@ -1,6 +1,7 @@
 package com.financeclaw.infrastructure.agentscope.capability;
 
-import com.financeclaw.application.*;
+import com.financeclaw.app.artifact.ArtifactService;
+import com.financeclaw.app.report.ReportService;
 import com.financeclaw.domain.Governance.*;
 import com.financeclaw.domain.Task.*;
 import com.financeclaw.infrastructure.agentscope.ResumeInputs;
@@ -20,11 +21,13 @@ public final class LocalToolContribution implements ToolContribution {
   public static final Set<String> NAMES =
       Set.of("request_city", "create_report", "search_catalog", "read_artifact");
 
-  private final GovernanceService governance;
+  private final ArtifactService artifacts;
+  private final ReportService reports;
   private final Claim claim;
 
-  public LocalToolContribution(GovernanceService governance, Claim claim) {
-    this.governance = governance;
+  public LocalToolContribution(ArtifactService artifacts, ReportService reports, Claim claim) {
+    this.artifacts = artifacts;
+    this.reports = reports;
     this.claim = claim;
   }
 
@@ -59,7 +62,7 @@ public final class LocalToolContribution implements ToolContribution {
             Mono.fromCallable(
                 () ->
                     ToolResultBlock.text(
-                        governance.report(
+                        reports.report(
                             claim,
                             p.getToolUseBlock().getId(),
                             ResumeInputs.actionHash(p.getToolUseBlock()),
@@ -91,7 +94,7 @@ public final class LocalToolContribution implements ToolContribution {
                 () ->
                     ToolResultBlock.text(
                         PayloadJson.canonical(
-                            governance.read(
+                            artifacts.read(
                                 new Owner(claim.turn().tenant(), claim.turn().subject()),
                                 (String) p.getInput().get("artifact_id"),
                                 ((Number) p.getInput().getOrDefault("start", 0)).intValue(),
@@ -120,7 +123,7 @@ public final class LocalToolContribution implements ToolContribution {
   }
 
   private ToolResultBlock archived(Object result, String scope) {
-    var a = governance.archive(claim, result, scope);
+    var a = artifacts.archive(claim, result, scope);
     return ToolResultBlock.text(
         PayloadJson.canonical(Map.of("artifact_id", a.id(), "hash", a.hash(), "bytes", a.bytes())));
   }

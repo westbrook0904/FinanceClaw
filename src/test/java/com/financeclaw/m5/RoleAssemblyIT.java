@@ -3,16 +3,20 @@ package com.financeclaw.m5;
 import static org.assertj.core.api.Assertions.*;
 
 import com.fasterxml.jackson.databind.*;
+import com.financeclaw.app.artifact.ArtifactService;
 import com.financeclaw.app.execution.port.AgentExecutionPort;
+import com.financeclaw.app.governance.GrantService;
 import com.financeclaw.app.memory.*;
 import com.financeclaw.app.release.ReleaseService;
-import com.financeclaw.application.*;
+import com.financeclaw.app.report.ReportService;
 import com.financeclaw.bootstrap.FinanceClawApplication;
 import com.financeclaw.channel.*;
 import com.financeclaw.infrastructure.agentscope.capability.BusinessCapabilities;
 import com.financeclaw.infrastructure.agentscope.memory.AgentScopeMemoryModels;
 import com.financeclaw.infrastructure.channel.FeishuMapper;
 import com.financeclaw.infrastructure.governance.GovernanceMapper;
+import com.financeclaw.infrastructure.governance.MyBatisGrantGateway;
+import com.financeclaw.infrastructure.governance.MyBatisReportGateway;
 import com.financeclaw.infrastructure.memory.MemoryMapper;
 import com.financeclaw.infrastructure.state.RuntimeMapper;
 import com.financeclaw.infrastructure.task.*;
@@ -170,6 +174,11 @@ class RoleAssemblyIT {
       var type = context.getType(name);
       if (type != null && type.getName().startsWith("com.financeclaw")) beans.add(type.getName());
     }
+    assertThat(beans)
+        .noneMatch(
+            name ->
+                name.startsWith("com.financeclaw.application.")
+                    || name.startsWith("com.financeclaw.fixture."));
     INVENTORY.put(role, Map.of("beans", beans, "mappers", mappers(context)));
   }
 
@@ -237,18 +246,31 @@ class RoleAssemblyIT {
         absent(context, TaskWorker.class, AgentExecutionPort.class, BusinessCapabilities.class);
       if (!combined && !role.equals("integrations"))
         absent(context, OutboxProjector.class, FeishuDelivery.class, AgentScopeFeishu.class);
+      if (api) {
+        assertThat(context.getBean(GrantService.class)).isNotNull();
+        assertThat(context.getBean(ArtifactService.class)).isNotNull();
+      }
+      if (combined || role.equals("worker")) {
+        assertThat(context.getBean(ArtifactService.class)).isNotNull();
+        assertThat(context.getBean(ReportService.class)).isNotNull();
+      }
       if (role.equals("api"))
         absent(
             context,
-            TaskService.class,
             com.financeclaw.app.task.ProjectTaskService.class,
             com.financeclaw.infrastructure.task.MyBatisTaskProjectionGateway.class,
             com.financeclaw.app.execution.RecoverTaskService.class,
             com.financeclaw.app.execution.ExecutionCompletionService.class,
-            com.financeclaw.infrastructure.task.MyBatisExecutionReceiptGateway.class);
+            com.financeclaw.infrastructure.task.MyBatisExecutionReceiptGateway.class,
+            ReportService.class,
+            MyBatisReportGateway.class);
       if (role.equals("worker"))
         absent(
             context,
+            GrantService.class,
+            MyBatisGrantGateway.class,
+            com.financeclaw.app.task.ProjectTaskService.class,
+            com.financeclaw.infrastructure.task.MyBatisTaskProjectionGateway.class,
             FeishuSettings.class,
             FeishuService.class,
             FeishuIngress.class,
@@ -257,8 +279,9 @@ class RoleAssemblyIT {
       if (role.equals("integrations"))
         absent(
             context,
-            TaskService.class,
-            GovernanceService.class,
+            GrantService.class,
+            ArtifactService.class,
+            ReportService.class,
             ReleaseService.class,
             MemoryService.class,
             AgentScopeMemoryModels.class,
@@ -300,8 +323,9 @@ class RoleAssemblyIT {
       assertThat(controllers(context)).isEmpty();
       absent(
           context,
-          TaskService.class,
-          GovernanceService.class,
+          GrantService.class,
+          ArtifactService.class,
+          ReportService.class,
           ReleaseService.class,
           TaskWorker.class,
           AgentExecutionPort.class,
@@ -349,8 +373,9 @@ class RoleAssemblyIT {
       absent(
           context,
           SqlSessionFactory.class,
-          TaskService.class,
-          GovernanceService.class,
+          GrantService.class,
+          ArtifactService.class,
+          ReportService.class,
           ReleaseService.class,
           TaskWorker.class,
           AgentExecutionPort.class,

@@ -1,6 +1,8 @@
 package com.financeclaw.infrastructure.agentscope.capability;
 
-import com.financeclaw.application.*;
+import com.financeclaw.app.artifact.ArtifactService;
+import com.financeclaw.app.execution.ExecutionPolicyService;
+import com.financeclaw.app.release.port.Credentials;
 import com.financeclaw.domain.Governance.*;
 import com.financeclaw.domain.Task.Claim;
 import com.financeclaw.domain.release.ReleaseDefinition;
@@ -14,8 +16,9 @@ import java.util.*;
  * Keep native MCP transport and schemas; add only dispatch policy and governed artifact storage.
  */
 public final class McpToolContribution implements ToolContribution, AutoCloseable {
-  private final TaskService tasks;
-  private final GovernanceService governance;
+  private final ExecutionPolicyService policy;
+  private final Credentials credentials;
+  private final ArtifactService artifacts;
   private final Claim claim;
   private final ReleaseDefinition release;
   private final List<String> scopes;
@@ -23,14 +26,16 @@ public final class McpToolContribution implements ToolContribution, AutoCloseabl
   private final McpTools mcp = new McpTools();
 
   public McpToolContribution(
-      TaskService tasks,
-      GovernanceService governance,
+      ExecutionPolicyService policy,
+      Credentials credentials,
+      ArtifactService artifacts,
       Claim claim,
       ReleaseDefinition release,
       List<String> scopes,
       Toolkit toolkit) {
-    this.tasks = tasks;
-    this.governance = governance;
+    this.policy = policy;
+    this.credentials = credentials;
+    this.artifacts = artifacts;
     this.claim = claim;
     this.release = release;
     this.scopes = List.copyOf(scopes);
@@ -41,8 +46,8 @@ public final class McpToolContribution implements ToolContribution, AutoCloseabl
     for (var service : release.business().remotes()) {
       String scope = service.service().equals("taibu") ? "taibu:read" : "travel:read";
       if (!scopes.contains(scope)) continue;
-      tasks.checkDispatch(claim);
-      mcp.register(toolkit, service, claim.turn().tenant(), tasks::credential);
+      policy.checkDispatch(claim);
+      mcp.register(toolkit, service, claim.turn().tenant(), credentials::resolve);
       for (String name : service.tools()) {
         var nativeTool = toolkit.getTool(name);
         // Keep the native name/schema/call implementation. This adapter only enforces product
@@ -87,7 +92,7 @@ public final class McpToolContribution implements ToolContribution, AutoCloseabl
   }
 
   private ToolResultBlock archived(Object result, String scope) {
-    var artifact = governance.archive(claim, result, scope);
+    var artifact = artifacts.archive(claim, result, scope);
     return ToolResultBlock.text(
         PayloadJson.canonical(
             Map.of(

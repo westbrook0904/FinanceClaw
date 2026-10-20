@@ -1,4 +1,4 @@
-package com.financeclaw.application;
+package com.financeclaw.fixture;
 
 import com.financeclaw.app.execution.*;
 import com.financeclaw.app.execution.port.ExecutionContextGateway;
@@ -9,13 +9,9 @@ import com.financeclaw.domain.Task.*;
 import com.financeclaw.domain.release.ReleaseDefinition;
 import java.util.List;
 import java.util.function.Supplier;
-import org.springframework.stereotype.Service;
 
-/**
- * Compatibility facade for legacy business tools and channels; all task transactions live in app.
- */
-@Service
-public class TaskService {
+/** Test driver delegating lifecycle scenarios to production application services. */
+public final class TaskFixture {
   private final SubmitTaskService submission;
   private final TaskQueryService queries;
   private final CancelTaskService cancellation;
@@ -28,7 +24,7 @@ public class TaskService {
   private final ReleaseService catalog;
   private final com.financeclaw.app.release.port.Credentials credentials;
 
-  public TaskService(
+  public TaskFixture(
       SubmitTaskService submission,
       TaskQueryService queries,
       CancelTaskService cancellation,
@@ -51,6 +47,26 @@ public class TaskService {
     this.context = context;
     this.catalog = catalog;
     this.credentials = credentials;
+  }
+
+  public ExecutionPolicyService policy() {
+    return policy;
+  }
+
+  public ExecutionLeaseService leases() {
+    return leases;
+  }
+
+  public ReleaseService releases() {
+    return catalog;
+  }
+
+  public com.financeclaw.app.release.port.Credentials credentials() {
+    return credentials;
+  }
+
+  public ExecutionContextGateway context() {
+    return context;
   }
 
   public String createConversation(Owner owner) {

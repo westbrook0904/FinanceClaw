@@ -1,6 +1,11 @@
 package com.financeclaw.m6;
 
-import com.financeclaw.application.*;
+import com.financeclaw.app.artifact.ArtifactService;
+import com.financeclaw.app.execution.*;
+import com.financeclaw.app.execution.port.ExecutionContextGateway;
+import com.financeclaw.app.release.ReleaseService;
+import com.financeclaw.app.release.port.Credentials;
+import com.financeclaw.app.report.ReportService;
 import com.financeclaw.bootstrap.FinanceClawApplication;
 import com.financeclaw.domain.Task.*;
 import com.financeclaw.infrastructure.agentscope.execution.*;
@@ -18,12 +23,27 @@ public final class ZiweiRuntimeProbe extends TaskAgentRuntime implements Model {
   private final Properties settings;
 
   private ZiweiRuntimeProbe(
-      TaskService tasks,
-      GovernanceService governance,
+      ExecutionPolicyService policy,
+      ExecutionLeaseService leases,
+      ReleaseService releases,
+      Credentials credentials,
+      ExecutionContextGateway executionContext,
+      ArtifactService artifacts,
+      ReportService reports,
       RuntimeMapper states,
       com.financeclaw.infrastructure.agentscope.capability.BusinessCapabilities capabilities,
       Properties settings) {
-    super(tasks, governance, states, capabilities, 60000);
+    super(
+        policy,
+        leases,
+        releases,
+        credentials,
+        executionContext,
+        artifacts,
+        reports,
+        states,
+        capabilities,
+        60000);
     this.settings = settings;
   }
 
@@ -40,15 +60,22 @@ public final class ZiweiRuntimeProbe extends TaskAgentRuntime implements Model {
             .map(k -> "--" + k + "=" + settings.getProperty(k))
             .toArray(String[]::new);
     try (var context = application.run(properties)) {
-      var tasks = context.getBean(TaskService.class);
+      var leases = context.getBean(ExecutionLeaseService.class);
+      var recovery = context.getBean(RecoverTaskService.class);
+      var completion = context.getBean(ExecutionCompletionService.class);
       if (settings.getProperty("probe.mode").equals("recover")) {
-        tasks.recoverExpired();
+        recovery.recoverExpired();
       } else {
-        var claim = Objects.requireNonNull(tasks.claim("m6d-fork", 120000), "queued command");
+        var claim = Objects.requireNonNull(leases.claim("m6d-fork", 120000), "queued command");
         var runtime =
             new ZiweiRuntimeProbe(
-                tasks,
-                context.getBean(GovernanceService.class),
+                context.getBean(ExecutionPolicyService.class),
+                leases,
+                context.getBean(ReleaseService.class),
+                context.getBean(Credentials.class),
+                context.getBean(ExecutionContextGateway.class),
+                context.getBean(ArtifactService.class),
+                context.getBean(ReportService.class),
                 context.getBean(RuntimeMapper.class),
                 context.getBean(
                     com.financeclaw.infrastructure.agentscope.capability.BusinessCapabilities
@@ -56,18 +83,16 @@ public final class ZiweiRuntimeProbe extends TaskAgentRuntime implements Model {
                 settings);
         if (settings.getProperty("probe.mode").equals("after-seal")) {
           var result = runtime.execute(claim);
-          tasks.seal(claim, result);
+          completion.seal(claim, result);
           Runtime.getRuntime().halt(73);
         }
         // This launcher is packaged alone; all assembly dependencies must come from the product
         // jar.
         try (var worker =
             new com.financeclaw.worker.TaskWorker(
-                context.getBean(com.financeclaw.app.execution.ExecutionLeaseService.class),
-                context.getBean(com.financeclaw.app.execution.RecoverTaskService.class),
-                new com.financeclaw.app.execution.ExecuteTaskService(
-                    context.getBean(com.financeclaw.app.execution.ExecutionCompletionService.class),
-                    runtime),
+                leases,
+                recovery,
+                new ExecuteTaskService(completion, runtime),
                 false,
                 1,
                 120000,

@@ -3,7 +3,6 @@ package com.financeclaw.m3;
 import static org.assertj.core.api.Assertions.*;
 
 import com.financeclaw.app.release.ReleaseService;
-import com.financeclaw.application.*;
 import com.financeclaw.bootstrap.FinanceClawApplication;
 import com.financeclaw.domain.Governance.*;
 import com.financeclaw.domain.Task.*;
@@ -11,6 +10,8 @@ import com.financeclaw.domain.release.BusinessFeatures;
 import com.financeclaw.domain.release.ModelProfile;
 import com.financeclaw.domain.release.ReleaseDefinition;
 import com.financeclaw.domain.release.RemoteEndpoint;
+import com.financeclaw.fixture.GovernanceFixture;
+import com.financeclaw.fixture.TaskFixture;
 import com.financeclaw.infrastructure.agentscope.execution.*;
 import com.financeclaw.infrastructure.agentscope.skills.PackagedSkills;
 import com.financeclaw.infrastructure.governance.GovernanceMapper;
@@ -28,11 +29,13 @@ import javax.sql.DataSource;
 import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.*;
 import org.testcontainers.containers.PostgreSQLContainer;
 import reactor.core.publisher.Flux;
 
+@Import({TaskFixture.class, GovernanceFixture.class})
 @SpringBootTest(
     classes = FinanceClawApplication.class,
     properties = {"financeclaw.worker.enabled=false", "financeclaw.integrations.enabled=false"})
@@ -56,9 +59,9 @@ class BusinessIT {
     r.add("spring.datasource.password", PG::getPassword);
   }
 
-  @Autowired TaskService tasks;
+  @Autowired TaskFixture tasks;
   @Autowired org.springframework.context.ApplicationContext taskContext;
-  @Autowired GovernanceService governance;
+  @Autowired GovernanceFixture governance;
   @Autowired GovernanceMapper db;
   @Autowired RuntimeMapper states;
   @Autowired ReleaseService releases;
@@ -128,8 +131,13 @@ class BusinessIT {
 
   TaskAgentRuntime runtime() {
     return new TaskAgentRuntime(
-        tasks,
-        governance,
+        tasks.policy(),
+        tasks.leases(),
+        tasks.releases(),
+        tasks.credentials(),
+        tasks.context(),
+        governance.artifacts(),
+        governance.reports(),
         states,
         taskContext.getBean(
             com.financeclaw.infrastructure.agentscope.capability.BusinessCapabilities.class),
@@ -259,7 +267,14 @@ class BusinessIT {
       publish(List.of(mock.definition("hotel", false, 2000)), 12, ReleaseDefinition.OFFLINE, "{}");
       var t = submit("hotel");
       var c = claim();
-      try (var tools = new GovernedTools(tasks, governance, c)) {
+      try (var tools =
+          new GovernedTools(
+              tasks.policy(),
+              tasks.releases(),
+              tasks.credentials(),
+              governance.artifacts(),
+              governance.reports(),
+              c)) {
         for (var name : List.of("searchHotels", "getHotelDetail", "getHotelSearchTags")) {
           var input =
               name.equals("searchHotels")
@@ -306,7 +321,14 @@ class BusinessIT {
       mock.drift = true;
       publish(List.of(mock.definition("hotel", false, 2000)), 12, ReleaseDefinition.OFFLINE, "{}");
       submit("changed-schema");
-      try (var tools = new GovernedTools(tasks, governance, claim())) {
+      try (var tools =
+          new GovernedTools(
+              tasks.policy(),
+              tasks.releases(),
+              tasks.credentials(),
+              governance.artifacts(),
+              governance.reports(),
+              claim())) {
         assertThat(
                 (List<String>)
                     tools.toolkit.getTool("getHotelSearchTags").getParameters().get("required"))
@@ -326,7 +348,14 @@ class BusinessIT {
       mock.delay = 1000;
       publish(List.of(mock.definition("hotel", false, 200)), 12, ReleaseDefinition.OFFLINE, "{}");
       submit("timeout");
-      try (var tools = new GovernedTools(tasks, governance, claim())) {
+      try (var tools =
+          new GovernedTools(
+              tasks.policy(),
+              tasks.releases(),
+              tasks.credentials(),
+              governance.artifacts(),
+              governance.reports(),
+              claim())) {
         assertThatThrownBy(
                 () ->
                     tools
@@ -386,7 +415,14 @@ class BusinessIT {
       mock.structuredOnly = true;
       publish(List.of(mock.definition("hotel", false, 2000)), 12, ReleaseDefinition.OFFLINE, "{}");
       submit("structured-only");
-      try (var tools = new GovernedTools(tasks, governance, claim())) {
+      try (var tools =
+          new GovernedTools(
+              tasks.policy(),
+              tasks.releases(),
+              tasks.credentials(),
+              governance.artifacts(),
+              governance.reports(),
+              claim())) {
         assertThatThrownBy(
                 () ->
                     tools
@@ -409,7 +445,14 @@ class BusinessIT {
       publish(List.of(mock.definition("taibu", false, 2000)), 12, ReleaseDefinition.OFFLINE, "{}");
       submit("taibu");
       var c = claim();
-      try (var tools = new GovernedTools(tasks, governance, c)) {
+      try (var tools =
+          new GovernedTools(
+              tasks.policy(),
+              tasks.releases(),
+              tasks.credentials(),
+              governance.artifacts(),
+              governance.reports(),
+              c)) {
         assertThat(
                 text(
                     tools

@@ -6,10 +6,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.financeclaw.app.operations.AdmissionService;
 import com.financeclaw.app.operations.OperationsQueryService;
-import com.financeclaw.application.*;
 import com.financeclaw.bootstrap.FinanceClawApplication;
 import com.financeclaw.domain.Governance.Answer;
 import com.financeclaw.domain.Task.*;
+import com.financeclaw.fixture.GovernanceFixture;
+import com.financeclaw.fixture.TaskFixture;
 import com.financeclaw.infrastructure.agentscope.execution.TaskAgentRuntime;
 import com.financeclaw.infrastructure.state.RuntimeMapper;
 import com.financeclaw.m2.ScriptedRuntime;
@@ -22,12 +23,14 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.*;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.containers.PostgreSQLContainer;
 
+@Import({TaskFixture.class, GovernanceFixture.class})
 @SpringBootTest(
     classes = FinanceClawApplication.class,
     properties = {
@@ -50,9 +53,9 @@ class AdmissionIT {
     r.add("spring.datasource.password", PG::getPassword);
   }
 
-  @Autowired TaskService tasks;
+  @Autowired TaskFixture tasks;
   @Autowired org.springframework.context.ApplicationContext taskContext;
-  @Autowired GovernanceService governance;
+  @Autowired GovernanceFixture governance;
   @Autowired AdmissionService admissions;
   @Autowired OperationsQueryService operations;
   @Autowired TaskAgentRuntime runtime;

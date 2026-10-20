@@ -1,12 +1,16 @@
 # AgentScope 复用与 COLA 架构整改方案
 
-审查日期：2026-10-15；实施更新：2026-10-16。**R0–R6 已完成，最新完整回归 835 项通过，隔离 Compose 27 项检查通过**。固定契约、M0 隔离、编码边界与 Operations 切片见 [R0–R2 实施记录](r0-r2-implementation.md)；回答用例、工具交互、统一 SDK 快照与实际回归见 [R3 实施记录](r3-implementation.md)。任务用例、原生执行端口与事务回滚验证见 [R4 实施记录](r4-implementation.md)。组合复盘与市场研究的分层见 [R5a 实施记录](r5a-implementation.md)，紫微输入/资源/用例边界见 [R5b 实施记录](r5b-implementation.md)，记忆领域规则、模型/存储端口与发布配置见 [R5c 实施记录](r5c-implementation.md)。本地检查点 `bb58ea2` 保存 M5e 与 R0–R5a，`7e5a903` 保存 R5b/R5c，均未推送。[R6 实施记录](r6-implementation.md)说明显式角色装配、实际 Bean/Mapper 清单、恢复验证和保留单 Maven 模块的决定；R6 已保存为本地检查点 `43d0c53`，未推送。后续[治理与飞书入口依赖收缩](entrypoint-decoupling.md)已实现并通过 630 项单元/HTTP/架构测试；数据库集成暂被 Docker API 500 阻断，本批新增改动未提交。组件选择依据见 [Spring 事务与组件复审](spring-transactions-component-review.md)。
+审查日期：2026-10-15；实施更新：2026-10-20。**R0–R6 已完成；R6 批次完整回归 835 项通过，隔离 Compose 27 项检查通过**。固定契约、M0 隔离、编码边界与 Operations 切片见 [R0–R2 实施记录](r0-r2-implementation.md)；回答用例、工具交互、统一 SDK 快照与实际回归见 [R3 实施记录](r3-implementation.md)。任务用例、原生执行端口与事务回滚验证见 [R4 实施记录](r4-implementation.md)。组合复盘与市场研究的分层见 [R5a 实施记录](r5a-implementation.md)，紫微输入/资源/用例边界见 [R5b 实施记录](r5b-implementation.md)，记忆领域规则、模型/存储端口与发布配置见 [R5c 实施记录](r5c-implementation.md)。本地检查点 `bb58ea2` 保存 M5e 与 R0–R5a，`7e5a903` 保存 R5b/R5c，均未推送。[R6 实施记录](r6-implementation.md)说明显式角色装配、实际 Bean/Mapper 清单、恢复验证和保留单 Maven 模块的决定；R6 已保存为本地检查点 `43d0c53`，未推送。组件选择依据见 [Spring 事务与组件复审](spring-transactions-component-review.md)。
+
+后续[治理与飞书入口依赖收缩](entrypoint-decoupling.md)已本地提交 `0c549fa`，未推送，该批通过 630 项单元/HTTP/架构测试。[原生执行适配依赖收缩](runtime-decoupling.md)已删除生产 TaskService，Worker 不再构造投影用例及网关，测试委托移入 TaskFixture；该批通过 630 项单元/HTTP/架构测试及 1 项不依赖 Docker 的产品打包检查，包含探针字节码依赖门禁。
+
+最新[治理用例分层](governance-decoupling.md)已删除生产 GovernanceService，拆出 GrantService、ArtifactService、ReportService，HTTP 回答直接使用 AnswerInteractionService；旧 application 生产包已清空。API 不装配 ReportService，Worker 不装配 GrantService，Integrations 两者皆不装配。原生执行与治理分层这两批改动仍未提交或推送，HEAD 为 `0c549fa`；本批通过 685 项单元/HTTP/架构测试与 1 项产品打包检查，以上旧批次数字保留为历史证据。Docker API 再次检查仍返回 HTTP 500，数据库、角色实际启动、独立进程恢复与 Compose 未重跑，不能用历史结果代替当前验收。
 
 ## 1. 结论与决策
 
 **存在局部重复和可收敛的适配代码，但没有证据支持把当前业务治理整体替换为 AgentScope Harness。建议采用 COLA 的分层和依赖倒置，先在单 Maven 工程内实施，再按实际需要拆模块。**
 
-整改前的主要成本来自职责和依赖交织：`application`、`agent`、`tools`、`ziwei` 形成循环依赖，增加工具需要修改多处业务分支。R0–R5b 已将参与循环的具体类依赖从 93 条降到 0 条，并删除循环白名单。R5c 已完成记忆与发布配置分层，R6 已完成角色装配，并将零循环门禁扩大到独立 Memory/Migrate 启动根；剩余旧 facade 调用者仍需逐步收敛，包图无环不等于这些职责已经消失。
+整改前的主要成本来自职责和依赖交织：`application`、`agent`、`tools`、`ziwei` 形成循环依赖，增加工具需要修改多处业务分支。R0–R5b 已将参与循环的具体类依赖从 93 条降到 0 条，并删除循环白名单。R5c 已完成记忆与发布配置分层，R6 已完成角色装配，并将零循环门禁扩大到独立 Memory/Migrate 启动根；后续已删除生产 TaskService 与 GovernanceService。授权、Artifact 和报告发布分别进入独立应用服务，通过窄端口访问持久化适配；HTTP 和飞书回答直接进入已有回答用例。最新职责拆分已落地，数据库事务与角色启动仍需补齐本批运行验证。
 
 本次建议分为四类：
 
@@ -90,13 +94,13 @@ Harness 的 `WorkspaceMessageBus` 可以利用共享文件系统传输消息，�
 
 ### 3.4 Spring 统一事务，状态接口与业务约束分别处理
 
-原生 [JdbcAgentStateStore](https://github.com/agentscope-ai/agentscope-java/blob/v2.0.3/agentscope-extensions/agentscope-extensions-jdbc/src/main/java/io/agentscope/extensions/jdbc/state/JdbcAgentStateStore.java) 已有版本与 CAS，但 2.0.3 会主动 `commit/rollback`，即使连接已经处于外部事务。当前 [MyBatisAgentStateStore](../../src/main/java/com/financeclaw/infrastructure/state/MyBatisAgentStateStore.java) 不手工管理 JDBC 事务：它通过 MyBatis-Spring 参与 `tasks.fenced(...)` 的 Spring 短事务，同时验证 scope 和墓碑。
+原生 [JdbcAgentStateStore](https://github.com/agentscope-ai/agentscope-java/blob/v2.0.3/agentscope-extensions/agentscope-extensions-jdbc/src/main/java/io/agentscope/extensions/jdbc/state/JdbcAgentStateStore.java) 已有版本与 CAS，但 2.0.3 会主动 `commit/rollback`，即使连接已经处于外部事务。当前 [MyBatisAgentStateStore](../../src/main/java/com/financeclaw/infrastructure/state/MyBatisAgentStateStore.java) 不手工管理 JDBC 事务：它通过 MyBatis-Spring 参与 `ExecutionLeaseService.fenced(...)` 的 Spring 短事务，同时验证 scope 和墓碑。
 
 第二轮真实 JDBC 实验已确认：MyBatis 与 JdbcClient 可以在同一 Spring 事务中统一提交/回滚；单加 `TransactionAwareDataSourceProxy` 不能阻止该 SDK 实现提前提交外层业务 SQL。因此当前决策是直接由 Spring 管事务，继续采用薄状态适配；不再把“能否用 Spring”留作后期实验，也不为 SDK 提交行为自建通用连接代理。数据访问实现以后可以换，**fence 与 CAS 同事务**以及墓碑/身份规则继续验收。详见 [事务复审与实验](spring-transactions-component-review.md)。
 
 默认 [AgentProtocolTaskEventBus](https://github.com/agentscope-ai/agentscope-java/blob/v2.0.3/agentscope-extensions/agentscope-extensions-protocol/agentscope-extensions-agent-protocol/src/main/java/io/agentscope/extensions/agentprotocol/AgentProtocolTaskEventBus.java) 使用进程内 replay sink，并在 complete 后移除通道。业务 SQL 事件投影解决重启、跨实例和身份隔离，应保留。也可以为框架接口实现持久总线，但若当前产品没有协议接入需求，这会增加一层适配而不会减少业务实现。
 
-原 `CapabilitySteps`（R5b 已移除，调用方直接使用 CapabilityStepService）的本地确定性步骤缓存、`GovernanceService.report` 的本地发布效果，以及 M0 `EffectLedger` 不是三个可无差别合并的“幂等工具”。前两者的事务和恢复语义不同；M0 则是实验代码。对于无法确认结果的外部写入，保持阻塞/核对语义，不能以框架 retry 或新的 command 自动重放。
+原 `CapabilitySteps`（R5b 已移除，调用方直接使用 CapabilityStepService）的本地确定性步骤缓存、原 `GovernanceService.report`（现已迁入 [ReportService](../../src/main/java/com/financeclaw/app/report/ReportService.java)）的本地发布效果，以及 M0 `EffectLedger` 不是三个可无差别合并的“幂等工具”。前两者的事务和恢复语义不同；M0 则是实验代码。对于无法确认结果的外部写入，保持阻塞/核对语义，不能以框架 retry 或新的 command 自动重放。
 
 ### 3.5 子 Agent、Workflow、记忆：保留什么，未来可复用什么
 
@@ -142,9 +146,9 @@ flowchart LR
 
 | 编号 / 优先级 | 可核对的证据 | 造成的影响 | 整改方向 |
 | --- | --- | --- | --- |
-| A01 / 高 | [TaskService](../../src/main/java/com/financeclaw/application/TaskService.java)：`submit`、`claim`、`fenced`、`checkPolicy`、`seal`、`finish`、`recoverExpired`、`change` | 任务用例、执行租约、策略、投影和副作用集中；所有工具依赖大服务 | 按受理/查询/执行/恢复拆用例；先保持事务语句和锁顺序 |
+| A01 / 高 | 整改前 `TaskService`（现已删除，见[后续实施](runtime-decoupling.md)）：`submit`、`claim`、`fenced`、`checkPolicy`、`seal`、`finish`、`recoverExpired`、`change` | 任务用例、执行租约、策略、投影和副作用集中；所有工具依赖大服务 | 按受理/查询/执行/恢复拆用例；先保持事务语句和锁顺序 |
 | A02 / 高 | 同类 `governance()`、`releases()`（第 220、224 行），`MarketData`/`CapabilitySteps` 等经它访问 Mapper | 服务暴露内部持久化，形成 service locator；调用者能绕过用例边界 | 提供按能力命名的窄端口，关闭 Mapper getter |
-| A03 / 高 | [GovernanceService.answer](../../src/main/java/com/financeclaw/application/GovernanceService.java) 直接读 SDK 快照并分支处理紫微 | 通用审批服务随业务工具数量增长 | `AnswerInteractionService` + 领域回答规则 + SDK 快照读取端口 + 业务回答处理器 |
+| A03 / 高 | 整改前 `GovernanceService.answer` 直接读 SDK 快照并分支处理紫微（旧类已[移除](governance-decoupling.md)） | 通用审批服务随业务工具数量增长 | `AnswerInteractionService` + 领域回答规则 + SDK 快照读取端口 + 业务回答处理器 |
 | A04 / 高 | [GovernedTools](../../src/main/java/com/financeclaw/infrastructure/agentscope/execution/GovernedTools.java)：`business`、`resumeInput`、`pending`、`permissions` | 注册、权限、Schema、结果归档和恢复分支多点联动 | 按能力贡献 native Tool 与交互处理器；统一描述来源，禁止另造工具执行框架 |
 | A05 / 中 | [TaskAgentRuntime](../../src/main/java/com/financeclaw/infrastructure/agentscope/execution/TaskAgentRuntime.java)：模型、历史、快照、事件、取消、业务分类同类 | SDK 升级影响业务编排；结果解释散落 | 应用执行协调器 + 原生执行适配 + 快照解释器 + 历史策略 |
 | A06 / 中 | 整改前 `ResumeInputs.canonical`、`GovernanceService.parse/object/scopes/digest` 被大量调用；R1 已抽取 [PayloadJson](../../src/main/java/com/financeclaw/support/PayloadJson.java) 与 [PayloadDigest](../../src/main/java/com/financeclaw/support/PayloadDigest.java) | 纯数据处理依赖带 Spring/SDK 职责的类，构成多条反向依赖 | 抽取保持字节兼容的 JSON/摘要工具；不顺便更换序列化库 |
@@ -204,7 +208,9 @@ com.financeclaw
 │   ├── task                       SubmitTaskService / CancelTaskService
 │   │                              ExecuteCommandService / RecoverCommandService
 │   ├── interaction                AnswerInteractionService
-│   ├── artifact                   ArchiveArtifactService / ReadArtifactService
+│   ├── governance                 GrantService
+│   ├── artifact                   ArtifactService
+│   ├── report                     ReportService
 │   ├── memory                     RecallMemoryService / ForgetMemoryService
 │   ├── channel                    IngestMessageService / DeliverNoticeService
 │   ├── operations                 OperationsQueryService / AdmissionService
@@ -265,7 +271,7 @@ Agent 执行期间会回调业务工具，这是正常的运行时调用。可�
 | 当前入口 | 目标职责 | 必须保留的内容 |
 | --- | --- | --- |
 | `TaskService` | app.task 用例 + domain.execution + persistence/task gateways | 锁顺序、受理幂等、同事务完成/Outbox、fence 与 CAS |
-| `GovernanceService` | 授权、交互、Artifact 三组用例；JSON 工具另放 | action hash、回答版本、过期、归属、撤销和大小限制 |
+| `GovernanceService`（已移除） | GrantService、AnswerInteractionService、ArtifactService、ReportService；JSON 工具独立 | action hash、回答版本、过期、归属、撤销和大小限制 |
 | `ReleaseCatalog` / `BusinessCatalog` | domain 发布值对象 + infrastructure 资源/凭据加载 | 原有 hash 输入/排序/JSON 字节契约；凭据不能进入发布快照 |
 | `TaskAgentRuntime` / `IsolatedAgentFactory` | infrastructure.agentscope + app 执行协调 | 每 attempt 隔离、一次订阅、定向取消、SDK 原生状态 |
 | `GovernedTools` | 原生工具装配 + 每业务一个贡献者；调用 app 用例 | 同一个工具定义是 Schema/权限/恢复处理的来源；动态授权不能变成静态注册检查 |
@@ -369,6 +375,7 @@ public AnswerDecision answer(ReplyContext context, Answer answer, Instant now) {
 | R4 任务与原生执行分层 | 已拆受理/查询/取消/租约/完成/恢复；原生 runtime 实现 `AgentExecutionPort`；删除 Mapper/目录 getter | 实现与验证见 [R4 记录](r4-implementation.md)；沿用 SQL 和锁顺序 | 新 app 无 SDK/Mapper；9 项新增集成覆盖回滚、过期写入、事务外执行和不重放恢复 |
 | R5 业务对象和记忆分层 | [R5a](r5a-implementation.md) 已拆 Portfolio 与研究，[R5b](r5b-implementation.md) 已拆紫微 I/O，[R5c](r5c-implementation.md) 已拆记忆与发布配置 | 不与算法升级、数据格式迁移同时做 | 领域、子预算、发布幂等、紫微冻结样本与恢复回归通过；R5c 增加记忆事务回滚、旧回执重放、搜索遗忘竞态和发布字节兼容验证 |
 | R6 角色装配与可选模块化 | [已完成](r6-implementation.md)：显式角色导入、精确 Mapper 注册、独立 Outbox 投影；保留单 Maven 模块与原启动类 | Spring 原生装配组件，无新增生产依赖；数据库授权保持原样 | 实际 Bean/Mapper 负向加载、受限 Memory 身份、835 项完整回归、27 项隔离 Compose 检查通过 |
+| R6 后续职责收尾 | 已移除 TaskService 和 GovernanceService；原生调用者、HTTP 入口与角色装配直接使用窄用例，见[治理分层](governance-decoupling.md) | 最新两批尚未提交；保留原 Spring 事务、Mapper SQL、锁顺序和固定 SDK | 本批验证另行记录；数据库、角色启动、故障恢复和 Compose 待 Docker 恢复后验收，不沿用 R6 历史结果 |
 | R7 可选原生替换实验 | SubAgentTool、历史压缩分别实验；SDK 存储仅在提供外部事务模式后重评 | Spring 事务方案已确定，不阻塞 R1–R6 | 满足本节后的等价性矩阵且适配代码减少，才合入默认路径 |
 
 执行顺序以 R1 → R2 → R3 → R4 为主。R5 可以按业务逐项推进；R6 在职责稳定后实施。**不建议第一步全量搬包、同时改事务和升级 AgentScope。**
@@ -398,7 +405,7 @@ public AnswerDecision answer(ReplyContext context, Answer answer, Instant now) {
 
 ### 10.1 静态架构门禁
 
-ArchUnit 1.5.1 位于 test scope，[当前 16 项检查](../../src/test/java/com/financeclaw/architecture/ArchitectureTest.java)覆盖各已实施切片。R5b 已删除循环白名单，R6 将无环检查扩展到三个启动根并禁止生产宽泛扫描；真实装配另由 RoleAssemblyIT 验证。下面列出当前门禁及其范围，具体运行证据见各批实施记录。
+ArchUnit 1.5.1 位于 test scope，[架构检查](../../src/test/java/com/financeclaw/architecture/ArchitectureTest.java)覆盖各已实施切片。R5b 已删除循环白名单，R6 将无环检查扩展到三个启动根并禁止生产宽泛扫描；真实装配另由 RoleAssemblyIT 验证。下面列出当前门禁及其范围，具体运行证据见各批实施记录。
 
 | 规则 | 阶段目标 |
 | --- | --- |
@@ -454,4 +461,4 @@ python3 scripts/check-delivery.py
 - 已验证 ArchUnit 1.5.1 的构建/测试接入，并核查 COLA statemachine 5.0.0 源码；Bean Validation、状态机和 Modulith 尚未完成本项目业务接入，按对应切片实施。
 - 没有重新完成真实模型、远端 MCP、真实飞书、历史会话切换或生产验收。架构整改与 [迁移验收清单](../migration/acceptance-checklist.md) 是两条需要分别留证据的工作。
 
-R0–R6 的实现与验证见各批实施记录。后续继续按实际调用收缩遗留 TaskService，真实供应商与生产迁移按验收清单独立完成。Maven 模块暂不拆分；R7 原生替换保持可选，只有治理等价且确实减少适配成本后才进入默认路径。
+R0–R6 的实现与验证见各批实施记录。生产 TaskService 与 GovernanceService 已由后续切片移除，治理职责和各角色依赖见[治理用例分层](governance-decoupling.md)。最新两批尚未提交，数据库、角色启动与恢复验证仍待 Docker 恢复后完成；真实供应商与生产迁移按验收清单独立完成。Maven 模块暂不拆分；R7 原生替换保持可选，只有治理等价且确实减少适配成本后才进入默认路径。

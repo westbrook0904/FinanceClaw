@@ -5,13 +5,14 @@ import static org.assertj.core.api.Assertions.*;
 import com.financeclaw.app.memory.MemoryService;
 import com.financeclaw.app.release.ReleaseService;
 import com.financeclaw.app.ziwei.ZiweiService;
-import com.financeclaw.application.*;
 import com.financeclaw.bootstrap.FinanceClawApplication;
 import com.financeclaw.domain.Governance.*;
 import com.financeclaw.domain.Task.*;
 import com.financeclaw.domain.release.BusinessFeatures;
 import com.financeclaw.domain.release.ReleaseDefinition;
 import com.financeclaw.domain.release.ZiweiPolicy;
+import com.financeclaw.fixture.GovernanceFixture;
+import com.financeclaw.fixture.TaskFixture;
 import com.financeclaw.infrastructure.agentscope.execution.*;
 import com.financeclaw.infrastructure.agentscope.skills.PackagedSkills;
 import com.financeclaw.infrastructure.state.*;
@@ -31,11 +32,13 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.*;
 import org.testcontainers.containers.PostgreSQLContainer;
 import reactor.core.publisher.Flux;
 
+@Import({TaskFixture.class, GovernanceFixture.class})
 @SpringBootTest(
     classes = FinanceClawApplication.class,
     properties = {
@@ -63,9 +66,9 @@ class ZiweiToolsIT {
     r.add("spring.datasource.password", PG::getPassword);
   }
 
-  @Autowired TaskService tasks;
+  @Autowired TaskFixture tasks;
   @Autowired org.springframework.context.ApplicationContext taskContext;
-  @Autowired GovernanceService governance;
+  @Autowired GovernanceFixture governance;
   @Autowired MemoryService memory;
   @Autowired ReleaseService releases;
   @Autowired RuntimeMapper states;
@@ -366,7 +369,14 @@ class ZiweiToolsIT {
   }
 
   GovernedTools tools(Claim claim) {
-    var t = new GovernedTools(tasks, governance, claim);
+    var t =
+        new GovernedTools(
+            tasks.policy(),
+            tasks.releases(),
+            tasks.credentials(),
+            governance.artifacts(),
+            governance.reports(),
+            claim);
     t.business(
         null,
         taskContext.getBean(
@@ -494,8 +504,13 @@ class ZiweiToolsIT {
 
   TaskAgentRuntime runtime(Map<String, Object> input) {
     return new TaskAgentRuntime(
-        tasks,
-        governance,
+        tasks.policy(),
+        tasks.leases(),
+        tasks.releases(),
+        tasks.credentials(),
+        tasks.context(),
+        governance.artifacts(),
+        governance.reports(),
         states,
         taskContext.getBean(
             com.financeclaw.infrastructure.agentscope.capability.BusinessCapabilities.class),

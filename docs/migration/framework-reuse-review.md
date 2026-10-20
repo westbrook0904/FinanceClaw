@@ -40,7 +40,7 @@
 - 拒绝审批后，历史 ToolUseBlock 可仍为 `ASKING`，但已有 `DENIED` 结果。终态判定尊重拒绝结果，不重复发起审批。
 - 恢复输入来自原快照，复制到新 attempt 的状态槽；不覆盖旧执行槽，也不接受客户端提交的 ToolUseBlock。
 
-源码入口：[执行适配](../../src/main/java/com/financeclaw/infrastructure/agentscope/execution/TaskAgentRuntime.java)、[SSE](../../src/main/java/com/financeclaw/api/TaskEvents.java)、[工具边界](../../src/main/java/com/financeclaw/infrastructure/agentscope/execution/GovernedTools.java)、[治理事务](../../src/main/java/com/financeclaw/application/GovernanceService.java)。验证与尚未启用的范围见 [M2 使用与验证](m2-validation.md)。
+源码入口：[执行适配](../../src/main/java/com/financeclaw/infrastructure/agentscope/execution/TaskAgentRuntime.java)、[SSE](../../src/main/java/com/financeclaw/api/TaskEvents.java)、[工具边界](../../src/main/java/com/financeclaw/infrastructure/agentscope/execution/GovernedTools.java)、[治理用例与事务分层](../architecture/governance-decoupling.md)。验证与尚未启用的范围见 [M2 使用与验证](m2-validation.md)。
 
 ## M3 增量审查
 

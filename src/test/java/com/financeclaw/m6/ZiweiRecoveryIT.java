@@ -4,10 +4,11 @@ import static org.assertj.core.api.Assertions.*;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.financeclaw.app.memory.MemoryService;
-import com.financeclaw.application.*;
 import com.financeclaw.bootstrap.FinanceClawApplication;
 import com.financeclaw.domain.Governance.Answer;
 import com.financeclaw.domain.Task.*;
+import com.financeclaw.fixture.GovernanceFixture;
+import com.financeclaw.fixture.TaskFixture;
 import com.financeclaw.support.PayloadJson;
 import java.nio.file.*;
 import java.time.Duration;
@@ -21,6 +22,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.*;
 import org.testcontainers.DockerClientFactory;
@@ -28,6 +30,7 @@ import org.testcontainers.containers.*;
 import org.testcontainers.containers.startupcheck.OneShotStartupCheckStrategy;
 import org.testcontainers.utility.MountableFile;
 
+@Import({TaskFixture.class, GovernanceFixture.class})
 @SpringBootTest(
     classes = FinanceClawApplication.class,
     properties = {
@@ -58,8 +61,8 @@ class ZiweiRecoveryIT {
     r.add("spring.datasource.password", PG::getPassword);
   }
 
-  @Autowired TaskService tasks;
-  @Autowired GovernanceService governance;
+  @Autowired TaskFixture tasks;
+  @Autowired GovernanceFixture governance;
   @Autowired MemoryService memory;
   @Autowired DataSource source;
   @TempDir Path directory;

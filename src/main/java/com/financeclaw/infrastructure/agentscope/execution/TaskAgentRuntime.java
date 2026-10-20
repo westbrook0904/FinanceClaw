@@ -1,8 +1,13 @@
 package com.financeclaw.infrastructure.agentscope.execution;
 
+import com.financeclaw.app.artifact.ArtifactService;
+import com.financeclaw.app.execution.ExecutionLeaseService;
+import com.financeclaw.app.execution.ExecutionPolicyService;
+import com.financeclaw.app.execution.port.ExecutionContextGateway;
 import com.financeclaw.app.portfolio.PortfolioReviewService;
-import com.financeclaw.application.GovernanceService;
-import com.financeclaw.application.TaskService;
+import com.financeclaw.app.release.ReleaseService;
+import com.financeclaw.app.release.port.Credentials;
+import com.financeclaw.app.report.ReportService;
 import com.financeclaw.domain.Governance.*;
 import com.financeclaw.domain.Task.*;
 import com.financeclaw.infrastructure.agentscope.AgentStateInspector;
@@ -29,10 +34,15 @@ import reactor.core.publisher.Sinks;
 /** Native ReAct execution with release-bound tools, model adapters and isolated resume slots. */
 @Component
 public class TaskAgentRuntime implements com.financeclaw.app.execution.port.AgentExecutionPort {
-  private final TaskService tasks;
+  private final ExecutionPolicyService policy;
+  private final ExecutionLeaseService leases;
+  private final ReleaseService releases;
+  private final Credentials credentials;
+  private final ExecutionContextGateway context;
   private final RuntimeMapper states;
   private final Duration timeout;
-  private final GovernanceService governance;
+  private final ArtifactService artifacts;
+  private final ReportService reports;
   private final BusinessCapabilities capabilities;
 
   private record Active(ReActAgent agent, Sinks.Empty<Void> stop) {}
@@ -40,14 +50,24 @@ public class TaskAgentRuntime implements com.financeclaw.app.execution.port.Agen
   private final Map<String, Active> active = new ConcurrentHashMap<>();
 
   public TaskAgentRuntime(
-      TaskService tasks,
-      GovernanceService governance,
+      ExecutionPolicyService policy,
+      ExecutionLeaseService leases,
+      ReleaseService releases,
+      Credentials credentials,
+      ExecutionContextGateway context,
+      ArtifactService artifacts,
+      ReportService reports,
       RuntimeMapper states,
       BusinessCapabilities capabilities,
       @Value("${financeclaw.worker.model-timeout-ms:30000}") long timeoutMillis) {
     this.capabilities = capabilities;
-    this.governance = governance;
-    this.tasks = tasks;
+    this.artifacts = artifacts;
+    this.reports = reports;
+    this.policy = policy;
+    this.leases = leases;
+    this.releases = releases;
+    this.credentials = credentials;
+    this.context = context;
     this.states = states;
     this.timeout = Duration.ofMillis(timeoutMillis);
   }
@@ -64,7 +84,7 @@ public class TaskAgentRuntime implements com.financeclaw.app.execution.port.Agen
           List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
         return Flux.defer(
             () -> {
-              tasks.checkDispatch(claim);
+              policy.checkDispatch(claim);
               return Flux.just(
                   ChatResponse.builder()
                       .id(claim.command().attemptId())
@@ -78,28 +98,28 @@ public class TaskAgentRuntime implements com.financeclaw.app.execution.port.Agen
   }
 
   public Outcome execute(Claim claim) {
-    tasks.checkDispatch(claim);
-    var release = tasks.release(claim.turn().releaseHash());
+    policy.checkDispatch(claim);
+    var release = releases.require(claim.turn().releaseHash());
     var scope = claim.scope();
     var store =
         new MyBatisAgentStateStore(states, scope) {
           @Override
           public long saveIfVersion(
               String user, String session, String key, State state, long expected) {
-            return tasks.fenced(
+            return leases.fenced(
                 claim, () -> super.saveIfVersion(user, session, key, state, expected));
           }
         };
     var stop = Sinks.<Void>empty();
-    try (var tools = new GovernedTools(tasks, governance, claim);
+    try (var tools = new GovernedTools(policy, releases, credentials, artifacts, reports, claim);
         var provider =
             release.primary().name().equals("offline")
                 ? null
-                : ModelFactory.create(release.primary(), tasks.modelApiKey());
+                : ModelFactory.create(release.primary(), credentials.modelApiKey());
         var backup =
             release.fallback() == null
                 ? null
-                : ModelFactory.create(release.fallback(), tasks.modelApiKey())) {
+                : ModelFactory.create(release.fallback(), credentials.modelApiKey())) {
       Model delegate = release.primary().name().equals("offline") ? model(claim) : provider;
       tools.business(release.primary().name().equals("offline") ? null : provider, capabilities);
       boolean workflow = claim.turn().message().startsWith(PortfolioReviewService.COMMAND);
@@ -124,7 +144,7 @@ public class TaskAgentRuntime implements com.financeclaw.app.execution.port.Agen
                           io.agentscope.core.agent.RuntimeContext context,
                           String prompt) {
                         return reactor.core.publisher.Mono.fromSupplier(
-                            () -> prompt + tasks.memoryContext(claim));
+                            () -> prompt + policy.memoryContext(claim));
                       }
                     });
               })) {
@@ -134,7 +154,7 @@ public class TaskAgentRuntime implements com.financeclaw.app.execution.port.Agen
             .streamEvents(
                 inputs,
                 io.agentscope.core.agent.RuntimeContext.builder(IsolatedAgentFactory.context(scope))
-                    .put(ExecutionIdentity.class, tasks.identity(claim))
+                    .put(ExecutionIdentity.class, policy.identity(claim))
                     .build())
             .publishOn(reactor.core.scheduler.Schedulers.boundedElastic(), 1)
             .doOnNext(
@@ -142,13 +162,13 @@ public class TaskAgentRuntime implements com.financeclaw.app.execution.port.Agen
                   if (event instanceof TextBlockDeltaEvent text
                       && text.getDelta() != null
                       && !text.getDelta().isEmpty())
-                    tasks.progress(claim, "text_delta", text.getDelta(), null);
+                    policy.progress(claim, "text_delta", text.getDelta(), null);
                   else if (event instanceof ToolCallStartEvent tool
                       && agent.getToolkit().getToolNames().contains(tool.getToolCallName()))
-                    tasks.progress(claim, "tool_started", null, tool.getToolCallName());
+                    policy.progress(claim, "tool_started", null, tool.getToolCallName());
                   else if (event instanceof ToolResultEndEvent tool
                       && agent.getToolkit().getToolNames().contains(tool.getToolCallName()))
-                    tasks.progress(
+                    policy.progress(
                         claim,
                         tool.getState() == ToolResultState.SUCCESS
                             ? "tool_completed"
@@ -160,10 +180,10 @@ public class TaskAgentRuntime implements com.financeclaw.app.execution.port.Agen
         var saved =
             store.getVersioned(scope.userId(), scope.sessionId(), "agent_state", AgentState.class);
         // Policy failures inside SDK tools can become error results. Recheck before committing.
-        tasks.fenced(
+        leases.fenced(
             claim,
             () -> {
-              tasks.checkPolicy(claim);
+              policy.checkPolicy(claim);
               return null;
             });
         var outcome = classify(saved.value(), saved.version());
@@ -188,7 +208,7 @@ public class TaskAgentRuntime implements com.financeclaw.app.execution.port.Agen
           List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
         return Flux.defer(
                 () -> {
-                  if (countModel) tasks.consume(claim, true);
+                  if (countModel) policy.consume(claim, true);
                   return delegate.stream(messages, tools, options);
                 })
             .takeUntilOther(stop.asMono());
@@ -198,7 +218,7 @@ public class TaskAgentRuntime implements com.financeclaw.app.execution.port.Agen
 
   private List<Msg> inputs(Claim claim, MyBatisAgentStateStore store, GovernedTools tools) {
     if (claim.command().resumeId() == null) {
-      var profile = tasks.release(claim.turn().releaseHash()).primary();
+      var profile = releases.require(claim.turn().releaseHash()).primary();
       int budget =
           Math.min(
               8192,
@@ -209,7 +229,7 @@ public class TaskAgentRuntime implements com.financeclaw.app.execution.port.Agen
                       / 4));
       List<Msg> history = new ArrayList<>();
       int used = 0;
-      for (var previous : tasks.history(claim)) {
+      for (var previous : policy.history(claim)) {
         int bytes =
             PayloadJson.canonical(List.of(previous.message(), previous.result()))
                 .getBytes(java.nio.charset.StandardCharsets.UTF_8)
@@ -233,9 +253,9 @@ public class TaskAgentRuntime implements com.financeclaw.app.execution.port.Agen
               .build());
       return history;
     }
-    tasks.checkDispatch(claim);
+    policy.checkDispatch(claim);
     {
-      var anchor = tasks.interaction(claim.command().resumeId());
+      var anchor = context.interaction(claim.command().resumeId());
       if (anchor == null || !anchor.status().equals("answered") || !anchor.live())
         throw new Blocked("stale_interaction");
       var source =
@@ -257,7 +277,7 @@ public class TaskAgentRuntime implements com.financeclaw.app.execution.port.Agen
       if (!saved.isPresent() || saved.version() != anchor.stateVersion())
         throw new Blocked("checkpoint_mismatch");
       List<Msg> replies = new ArrayList<>();
-      for (var i : tasks.interactions(claim))
+      for (var i : context.interactions(claim.turn().id()))
         if (i.attemptId().equals(anchor.attemptId())) {
           if (!i.status().equals("answered")
               || !i.live()
@@ -289,7 +309,7 @@ public class TaskAgentRuntime implements com.financeclaw.app.execution.port.Agen
               .build();
       store.saveIfVersion(
           claim.scope().userId(), claim.scope().sessionId(), "agent_state", copied, 0);
-      tasks.checkDispatch(claim);
+      policy.checkDispatch(claim);
       return replies;
     }
   }

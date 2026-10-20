@@ -8,10 +8,11 @@ import com.financeclaw.app.execution.*;
 import com.financeclaw.app.execution.port.*;
 import com.financeclaw.app.task.*;
 import com.financeclaw.app.task.port.*;
-import com.financeclaw.application.TaskService;
 import com.financeclaw.bootstrap.FinanceClawApplication;
 import com.financeclaw.domain.Governance.Pending;
 import com.financeclaw.domain.Task.*;
+import com.financeclaw.fixture.GovernanceFixture;
+import com.financeclaw.fixture.TaskFixture;
 import com.financeclaw.infrastructure.agentscope.execution.TaskAgentRuntime;
 import com.financeclaw.infrastructure.governance.GovernanceMapper;
 import com.financeclaw.infrastructure.state.*;
@@ -29,12 +30,14 @@ import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.*;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.PostgreSQLContainer;
 import reactor.core.publisher.Flux;
 
+@Import({TaskFixture.class, GovernanceFixture.class})
 @SpringBootTest(
     classes = FinanceClawApplication.class,
     webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
@@ -63,9 +66,9 @@ class TaskLifecycleIT {
     r.add("spring.datasource.password", PG::getPassword);
   }
 
-  @Autowired TaskService tasks;
+  @Autowired TaskFixture tasks;
   @Autowired org.springframework.context.ApplicationContext taskContext;
-  @Autowired com.financeclaw.application.GovernanceService governance;
+  @Autowired GovernanceFixture governance;
   @Autowired TaskAgentRuntime runtime;
   @Autowired TaskWorker worker;
   @Autowired RuntimeMapper states;
@@ -148,8 +151,13 @@ class TaskLifecycleIT {
       CountDownLatch both = new CountDownLatch(2);
       TaskAgentRuntime concurrent =
           new TaskAgentRuntime(
-              tasks,
-              governance,
+              tasks.policy(),
+              tasks.leases(),
+              tasks.releases(),
+              tasks.credentials(),
+              tasks.context(),
+              governance.artifacts(),
+              governance.reports(),
               states,
               taskContext.getBean(
                   com.financeclaw.infrastructure.agentscope.capability.BusinessCapabilities.class),
@@ -316,8 +324,13 @@ class TaskLifecycleIT {
     CountDownLatch started = new CountDownLatch(1);
     TaskAgentRuntime slow =
         new TaskAgentRuntime(
-            tasks,
-            governance,
+            tasks.policy(),
+            tasks.leases(),
+            tasks.releases(),
+            tasks.credentials(),
+            tasks.context(),
+            governance.artifacts(),
+            governance.reports(),
             states,
             taskContext.getBean(
                 com.financeclaw.infrastructure.agentscope.capability.BusinessCapabilities.class),
@@ -378,8 +391,13 @@ class TaskLifecycleIT {
     var c = claim();
     TaskAgentRuntime broken =
         new TaskAgentRuntime(
-            tasks,
-            governance,
+            tasks.policy(),
+            tasks.leases(),
+            tasks.releases(),
+            tasks.credentials(),
+            tasks.context(),
+            governance.artifacts(),
+            governance.reports(),
             states,
             taskContext.getBean(
                 com.financeclaw.infrastructure.agentscope.capability.BusinessCapabilities.class),
@@ -438,7 +456,7 @@ class TaskLifecycleIT {
     assertThat(tasks.projectNext()).isFalse();
   }
 
-  void drain(TaskService service) {
+  void drain(TaskFixture service) {
     Claim c;
     while ((c = service.claim("replica", 60000)) != null) run(c);
   }
@@ -845,8 +863,13 @@ class TaskLifecycleIT {
     CountDownLatch started = new CountDownLatch(1);
     TaskAgentRuntime slow =
         new TaskAgentRuntime(
-            tasks,
-            governance,
+            tasks.policy(),
+            tasks.leases(),
+            tasks.releases(),
+            tasks.credentials(),
+            tasks.context(),
+            governance.artifacts(),
+            governance.reports(),
             states,
             taskContext.getBean(
                 com.financeclaw.infrastructure.agentscope.capability.BusinessCapabilities.class),
@@ -892,8 +915,13 @@ class TaskLifecycleIT {
     var c = claim();
     TaskAgentRuntime timeout =
         new TaskAgentRuntime(
-            tasks,
-            governance,
+            tasks.policy(),
+            tasks.leases(),
+            tasks.releases(),
+            tasks.credentials(),
+            tasks.context(),
+            governance.artifacts(),
+            governance.reports(),
             states,
             taskContext.getBean(
                 com.financeclaw.infrastructure.agentscope.capability.BusinessCapabilities.class),

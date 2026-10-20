@@ -4,11 +4,12 @@ import static org.assertj.core.api.Assertions.*;
 
 import com.fasterxml.jackson.databind.*;
 import com.financeclaw.app.operations.AdmissionService;
-import com.financeclaw.application.*;
 import com.financeclaw.bootstrap.FinanceClawApplication;
 import com.financeclaw.channel.*;
 import com.financeclaw.domain.Feishu.*;
 import com.financeclaw.domain.Task.Owner;
+import com.financeclaw.fixture.GovernanceFixture;
+import com.financeclaw.fixture.TaskFixture;
 import com.financeclaw.infrastructure.agentscope.execution.*;
 import com.financeclaw.infrastructure.channel.FeishuMapper;
 import com.financeclaw.infrastructure.state.RuntimeMapper;
@@ -26,10 +27,12 @@ import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.*;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.*;
 
+@Import({TaskFixture.class, GovernanceFixture.class})
 @SpringBootTest(
     classes = FinanceClawApplication.class,
     webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
@@ -58,10 +61,10 @@ class FeishuIT {
   @Autowired FeishuService service;
   @Autowired FeishuMapper db;
   @Autowired FeishuDelivery delivery;
-  @Autowired TaskService tasks;
+  @Autowired TaskFixture tasks;
   @Autowired org.springframework.context.ApplicationContext taskContext;
   @Autowired AdmissionService admissions;
-  @Autowired GovernanceService governance;
+  @Autowired GovernanceFixture governance;
   @Autowired RuntimeMapper states;
   @Autowired TaskAgentRuntime runtime;
   @Autowired TestRestTemplate http;

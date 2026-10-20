@@ -3,17 +3,19 @@ package com.financeclaw.m5;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-import com.financeclaw.application.TaskService;
 import com.financeclaw.bootstrap.FinanceClawApplication;
 import com.financeclaw.domain.Task.Owner;
+import com.financeclaw.fixture.TaskFixture;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.test.context.*;
 import org.springframework.test.web.servlet.MockMvc;
 import org.testcontainers.containers.PostgreSQLContainer;
 
+@Import(TaskFixture.class)
 @SpringBootTest(
     classes = FinanceClawApplication.class,
     properties = {
@@ -37,7 +39,7 @@ class OperationsIT {
   }
 
   @Autowired MockMvc http;
-  @Autowired TaskService tasks;
+  @Autowired TaskFixture tasks;
 
   @Test
   void operationsRequireAuthenticationAndOnlyCountTheCurrentOwnerWithoutContent() throws Exception {

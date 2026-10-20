@@ -1,7 +1,8 @@
 package com.financeclaw.m2;
 
-import com.financeclaw.application.TaskService;
 import com.financeclaw.domain.Task.*;
+import com.financeclaw.fixture.GovernanceFixture;
+import com.financeclaw.fixture.TaskFixture;
 import com.financeclaw.infrastructure.agentscope.execution.*;
 import com.financeclaw.infrastructure.state.RuntimeMapper;
 import com.financeclaw.support.PayloadJson;
@@ -12,11 +13,21 @@ import reactor.core.publisher.Flux;
 
 public final class ScriptedRuntime extends TaskAgentRuntime {
   public ScriptedRuntime(
-      TaskService tasks,
-      com.financeclaw.application.GovernanceService governance,
+      TaskFixture tasks,
+      GovernanceFixture governance,
       RuntimeMapper states,
       com.financeclaw.infrastructure.agentscope.capability.BusinessCapabilities capabilities) {
-    super(tasks, governance, states, capabilities, 15000);
+    super(
+        tasks.policy(),
+        tasks.leases(),
+        tasks.releases(),
+        tasks.credentials(),
+        tasks.context(),
+        governance.artifacts(),
+        governance.reports(),
+        states,
+        capabilities,
+        15000);
   }
 
   @Override

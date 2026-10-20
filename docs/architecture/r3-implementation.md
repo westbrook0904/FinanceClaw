@@ -1,10 +1,10 @@
 # R3：回答用例、SDK 快照与工具交互边界
 
-实施日期：2026-10-16。对应 [整改方案](agentscope-cola-remediation.md) 的 R3；此前 R0–R2 的结果保留在 [第一批实施记录](r0-r2-implementation.md)。**本批已完成并通过 729 项完整回归**，包括 556 项单元/HTTP 测试和 173 项集成测试，零失败、零错误、零跳过。机器可核对的测试清单、源码指纹和变更范围见 [R3 验证证据](evidence/r3-implementation.json)。本文保留 R3 完成时的结果；后续任务与执行拆分见 [R4 实施记录](r4-implementation.md)。
+实施日期：2026-10-16。对应 [整改方案](agentscope-cola-remediation.md) 的 R3；此前 R0–R2 的结果保留在 [第一批实施记录](r0-r2-implementation.md)。**本批已完成并通过 729 项完整回归**，包括 556 项单元/HTTP 测试和 173 项集成测试，零失败、零错误、零跳过。机器可核对的测试清单、源码指纹和变更范围见 [R3 验证证据](evidence/r3-implementation.json)。本文保留 R3 完成时的实现、调用图和验证结果；后续任务与执行拆分见 [R4 实施记录](r4-implementation.md)，旧 GovernanceService 删除、HTTP 直接调用回答用例及当前验证范围见[治理用例分层](governance-decoupling.md)。
 
-## 调用边界
+## R3 完成时的调用边界
 
-回答用例已从 `GovernanceService` 移入 [AnswerInteractionService](../../src/main/java/com/financeclaw/app/interaction/AnswerInteractionService.java)。HTTP 和飞书的旧入口仍通过 `GovernanceService` 委托，只有新用例会处理回答。用例依赖三个窄端口，签名不含 AgentScope、Mapper 或业务工具类型。
+回答用例已从 `GovernanceService` 移入 [AnswerInteractionService](../../src/main/java/com/financeclaw/app/interaction/AnswerInteractionService.java)。R3 完成时，HTTP 和飞书的旧入口仍通过 `GovernanceService` 委托，只有新用例会处理回答；下图描述这一历史状态。用例依赖三个窄端口，签名不含 AgentScope、Mapper 或业务工具类型。
 
 ```mermaid
 flowchart LR
@@ -22,7 +22,7 @@ flowchart LR
 
 [InteractionBinding](../../src/main/java/com/financeclaw/domain/InteractionBinding.java) 承担回答规则：幂等回放、等待状态与有效期、attempt/release/grant/revision 绑定、批准/拒绝内容，以及保存调用的 ID、工具名、动作摘要和 ASK 状态。它只依赖领域对象和 JDK；状态码暂沿用既有 `Task.Problem`，彻底分离错误与 HTTP 留到后续切片。
 
-[MyBatisInteractionGateway](../../src/main/java/com/financeclaw/infrastructure/interaction/MyBatisInteractionGateway.java) 继续使用原 `TaskMapper`、`GovernanceMapper` 和 `TaskService` 的策略/状态转换能力。R3 不拆任务租约与执行事务；这些依赖留待 R4。
+R3 完成时，[MyBatisInteractionGateway](../../src/main/java/com/financeclaw/infrastructure/interaction/MyBatisInteractionGateway.java) 使用原 `TaskMapper`、`GovernanceMapper` 和 `TaskService` 的策略/状态转换能力。R3 不拆任务租约与执行事务；这些依赖随后由 R4 及后续切片拆分。
 
 业务回答校验通过 `BusinessAnswerValidator` 注入。[ZiweiAnswerValidator](../../src/main/java/com/financeclaw/infrastructure/interaction/ZiweiAnswerValidator.java) 读取固定发布和请求时钟，再调用已有紫微输入修正规则。通用用例与通用 Schema 适配器均不识别紫微工具名，也不会在接受回答时执行工具。快照只读取一次，供动作绑定与业务回答核对共同使用。
 

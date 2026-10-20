@@ -2,7 +2,7 @@
 
 实施日期：2026-10-16。对应 [整改方案](agentscope-cola-remediation.md) 的 R4，承接 [R3](r3-implementation.md)。**本批已完成并通过 740 项完整回归**：558 项单元/HTTP 测试、182 项集成测试，零失败、零错误、零跳过。最终结果与源码指纹见 [R4 验证证据](evidence/r4-implementation.json)。本文保留 R4 完成时的结果；后续组合与研究拆分见 [R5a](r5a-implementation.md)。
 
-## 当前调用路径
+## R4 完成时的调用路径
 
 任务 HTTP 入口直接调用受理、查询、取消用例；SSE 只使用查询用例。Worker 保留并发上限、轮询、心跳、停止和线程池生命周期，执行结果的处理由应用层负责：
 
@@ -38,7 +38,7 @@ flowchart LR
 | 原生调用与成功/失败/取消结果协调 | [ExecuteTaskService](../../src/main/java/com/financeclaw/app/execution/ExecuteTaskService.java) → [AgentExecutionPort](../../src/main/java/com/financeclaw/app/execution/port/AgentExecutionPort.java) |
 | 本地确定性步骤的幂等记录 | [CapabilityStepService](../../src/main/java/com/financeclaw/app/execution/CapabilityStepService.java) |
 
-旧 [TaskService](../../src/main/java/com/financeclaw/application/TaskService.java) 从 473 行变为 190 行的兼容委托，供尚未迁移的业务工具、治理和渠道使用；它没有 Mapper、SDK 或事务管理依赖。HTTP、Worker、回答持久化适配已经直接使用新用例，不再经过该大入口。新用例单类最长 147 行，但验收依据是职责、依赖和事务行为，而不是行数。
+R4 将旧 `TaskService` 从 473 行改为 190 行的兼容委托，供尚未迁移的业务工具、治理和渠道使用；它没有 Mapper、SDK 或事务管理依赖。HTTP、Worker、回答持久化适配已经直接使用新用例，不再经过该大入口。新用例单类最长 147 行，但验收依据是职责、依赖和事务行为，而不是行数。后续[原生执行适配依赖收缩](runtime-decoupling.md)已删除生产 TaskService，旧委托仅保留于测试夹具；Worker 不再构造投影用例及网关，投影由 Integrations/Standalone 装配。本文图示与指标保留 R4 时点。
 
 ## 面向对象与端口边界
 

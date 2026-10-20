@@ -36,8 +36,13 @@ public final class ForkedBusiness {
         com.financeclaw.m1.TaskWorkerFixture.create(
             db,
             new TaskAgentRuntime(
-                db.service,
-                db.governance,
+                db.service.policy(),
+                db.service.leases(),
+                db.service.releases(),
+                db.service.credentials(),
+                db.service.context(),
+                db.governance.artifacts(),
+                db.governance.reports(),
                 db.session.getMapper(RuntimeMapper.class),
                 db.business,
                 20000),

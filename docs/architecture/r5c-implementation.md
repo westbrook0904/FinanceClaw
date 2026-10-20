@@ -1,6 +1,6 @@
 # R5c：记忆用例与发布配置分层
 
-实施日期：2026-10-16。承接 [R5b](r5b-implementation.md)，完成记忆规则、用例、持久化和 AgentScope 适配的分离，同时拆开发布值对象、配置资源与凭据读取。**完整回归 824 项通过**（627 项单元/HTTP、197 项集成），零失败、零错误、零跳过。本文保留 R5c 完成时的验证结果；R5b/R5c 已保存为本地检查点 `7e5a903`，未推送。后续角色装配与最新回归见 [R6](r6-implementation.md)。
+实施日期：2026-10-16。承接 [R5b](r5b-implementation.md)，完成记忆规则、用例、持久化和 AgentScope 适配的分离，同时拆开发布值对象、配置资源与凭据读取。**完整回归 824 项通过**（627 项单元/HTTP、197 项集成），零失败、零错误、零跳过。本文保留 R5c 完成时的验证结果；R5b/R5c 已保存为本地检查点 `7e5a903`，未推送。后续角色装配及该批完整回归见 [R6](r6-implementation.md)，最新职责拆分与验证范围见[治理用例分层](governance-decoupling.md)。
 
 ## 记忆职责与调用路径
 
@@ -116,6 +116,6 @@ python3 scripts/check-delivery.py
 
 ## 后续范围
 
-R5c 完成时，下一阶段是收紧各角色的 Bean 和 Mapper 装配，并决定是否拆 Maven；后续实现见 [R6](r6-implementation.md)。遗留 TaskService 的其他治理/原生工具调用者仍需逐步收敛，不能由包图无环推断这些职责已经消失。
+R5c 完成时，下一阶段是收紧各角色的 Bean 和 Mapper 装配，并决定是否拆 Maven；后续实现见 [R6](r6-implementation.md)。后续[入口依赖收缩](entrypoint-decoupling.md)已提交为 `0c549fa`；[原生执行适配依赖收缩](runtime-decoupling.md)已删除生产 TaskService，并将旧委托移入测试夹具。[治理用例分层](governance-decoupling.md)进一步删除生产 GovernanceService，将授权、Artifact 和报告发布拆成独立应用服务，旧 application 生产包已清空。最新两批尚未提交或推送；Docker API 仍返回 HTTP 500，数据库、角色启动、独立进程恢复和 Compose 未重跑，不沿用本篇历史结果作为其验收。
 
 本批不新增生产依赖，不升级 SDK，不修改算法或数据库格式。真实模型/MCP/飞书租户、M5e Compose 备份恢复重演、旧生产二进制切换、远程 CI 与生产交付不在本轮验证范围。

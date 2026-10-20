@@ -3,13 +3,14 @@ package com.financeclaw.m2;
 import static org.assertj.core.api.Assertions.*;
 
 import com.financeclaw.app.release.ReleaseService;
-import com.financeclaw.application.*;
 import com.financeclaw.bootstrap.FinanceClawApplication;
 import com.financeclaw.domain.Governance.*;
 import com.financeclaw.domain.Task.*;
 import com.financeclaw.domain.release.BusinessFeatures;
 import com.financeclaw.domain.release.ReleaseDefinition;
 import com.financeclaw.domain.release.RemoteEndpoint;
+import com.financeclaw.fixture.GovernanceFixture;
+import com.financeclaw.fixture.TaskFixture;
 import com.financeclaw.infrastructure.agentscope.execution.*;
 import com.financeclaw.infrastructure.agentscope.skills.PackagedSkills;
 import com.financeclaw.infrastructure.governance.GovernanceMapper;
@@ -24,12 +25,14 @@ import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.*;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.PostgreSQLContainer;
 
+@Import({TaskFixture.class, GovernanceFixture.class})
 @SpringBootTest(
     classes = FinanceClawApplication.class,
     webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
@@ -56,9 +59,9 @@ class GovernanceIT {
     r.add("spring.datasource.password", PG::getPassword);
   }
 
-  @Autowired TaskService tasks;
+  @Autowired TaskFixture tasks;
   @Autowired org.springframework.context.ApplicationContext taskContext;
-  @Autowired GovernanceService governance;
+  @Autowired GovernanceFixture governance;
   @Autowired GovernanceMapper db;
   @Autowired RuntimeMapper states;
   @Autowired ReleaseService releases;
@@ -538,7 +541,14 @@ class GovernanceIT {
   void nativeAndDirectToolDispatchValidateEffectiveInputBeforeBudgetOrArtifactWrites() {
     var t = submit("catalog");
     var claim = claim();
-    try (var tools = new GovernedTools(tasks, governance, claim)) {
+    try (var tools =
+        new GovernedTools(
+            tasks.policy(),
+            tasks.releases(),
+            tasks.credentials(),
+            governance.artifacts(),
+            governance.reports(),
+            claim)) {
       var malformed =
           io.agentscope.core.message.ToolUseBlock.builder()
               .id("raw-schema-check")
@@ -601,7 +611,14 @@ class GovernanceIT {
   void questionGenerationUsesTheSamePendingStatesAsOutcomeAndAnswerBinding() {
     var t = submit("report");
     var claim = claim();
-    try (var tools = new GovernedTools(tasks, governance, claim)) {
+    try (var tools =
+        new GovernedTools(
+            tasks.policy(),
+            tasks.releases(),
+            tasks.credentials(),
+            governance.artifacts(),
+            governance.reports(),
+            claim)) {
       var approval =
           io.agentscope.core.message.ToolUseBlock.builder()
               .id("approval")
@@ -737,7 +754,14 @@ class GovernanceIT {
   void delegatedToolsCanOnlyNarrowScopesAndConsumeTheRootBudget() {
     var t = submit("catalog");
     var c = claim();
-    try (var root = new GovernedTools(tasks, governance, c);
+    try (var root =
+            new GovernedTools(
+                tasks.policy(),
+                tasks.releases(),
+                tasks.credentials(),
+                governance.artifacts(),
+                governance.reports(),
+                c);
         var child = root.narrow(List.of("catalog:read"))) {
       assertThat(child.toolkit.getToolNames()).doesNotContain("create_report", "read_artifact");
       assertThatThrownBy(() -> child.narrow(List.of("report:write")))

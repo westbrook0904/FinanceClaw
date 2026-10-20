@@ -8,7 +8,6 @@ import com.tngtech.archunit.core.importer.ClassFileImporter;
 import com.tngtech.archunit.core.importer.ImportOption;
 import java.sql.Connection;
 import java.sql.Savepoint;
-import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 /** Executable COLA boundaries, including a zero-cycle production package graph. */
@@ -123,24 +122,20 @@ class ArchitectureTest {
   }
 
   @Test
-  void interactionUseCaseAndBusinessToolsDoNotDependOnLegacyAgentComposition() {
+  void governanceUseCasesDoNotDependOnLegacyCompositionOrPersistence() {
     noClasses()
         .that()
-        .resideInAnyPackage("com.financeclaw.application..", "com.financeclaw.tools..")
+        .resideInAnyPackage(
+            "com.financeclaw.app.interaction..",
+            "com.financeclaw.app.governance..",
+            "com.financeclaw.app.artifact..",
+            "com.financeclaw.app.report..")
         .should()
         .dependOnClassesThat()
-        .resideInAPackage("com.financeclaw.infrastructure.agentscope.execution..")
+        .resideInAnyPackage(
+            "com.financeclaw.application..", "com.financeclaw.infrastructure..", "io.agentscope..")
         .because(
-            "SDK helpers live in infrastructure; tools do not depend on their composition root")
-        .check(PRODUCTION);
-    noClasses()
-        .that()
-        .haveFullyQualifiedName("com.financeclaw.application.GovernanceService")
-        .should()
-        .dependOnClassesThat()
-        .resideInAnyPackage("io.agentscope..", "com.financeclaw.ziwei..")
-        .because(
-            "answer coordination delegates snapshot and business rules through application ports")
+            "governance operations use application ports; SQL and native execution stay outside")
         .check(PRODUCTION);
   }
 
@@ -172,8 +167,6 @@ class ArchitectureTest {
     noClasses()
         .that()
         .resideInAnyPackage("com.financeclaw.api..", "com.financeclaw.channel..")
-        .or()
-        .haveFullyQualifiedName("com.financeclaw.application.GovernanceService")
         .should()
         .dependOnClassesThat()
         .haveFullyQualifiedName("com.financeclaw.application.TaskService")
@@ -188,19 +181,19 @@ class ArchitectureTest {
   }
 
   @Test
-  void legacyTaskFacadeCannotExposePersistenceOrOwnTransactions() {
+  void productionCannotDependOnTheRemovedFacadeOrTestFixtures() {
+    assertThat(PRODUCTION.stream().map(c -> c.getName()))
+        .doesNotContain(
+            "com.financeclaw.application.TaskService",
+            "com.financeclaw.application.GovernanceService");
     noClasses()
-        .that()
-        .haveFullyQualifiedName("com.financeclaw.application.TaskService")
         .should()
         .dependOnClassesThat()
-        .resideInAnyPackage(
-            "com.financeclaw.infrastructure..",
-            "org.springframework.transaction..",
-            "io.agentscope..")
+        .resideInAPackage("com.financeclaw.application..")
+        .orShould()
+        .dependOnClassesThat()
+        .resideInAPackage("com.financeclaw.fixture..")
         .check(PRODUCTION);
-    assertThat(com.financeclaw.application.TaskService.class.getDeclaredMethods())
-        .noneMatch(method -> Set.of("governance", "releases").contains(method.getName()));
   }
 
   @Test

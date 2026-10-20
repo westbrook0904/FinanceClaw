@@ -14,7 +14,11 @@ M5d 已本地提交 `993e7ac`，未推送。**[M5e 旧备份隐私核对](docs/m
 
 M5e 与 R0–R5a 已保存为本地检查点 `bb58ea2`，[R5b 紫微边界拆分](docs/architecture/r5b-implementation.md) 与 [R5c 记忆与发布分层](docs/architecture/r5c-implementation.md) 已提交为本地检查点 `7e5a903`，未推送。后续 **[R6 角色装配](docs/architecture/r6-implementation.md)** 已完成：各角色显式加载组件与 Mapper，Outbox 投影独立运行；完整回归 835 项、隔离 Compose 27 项检查通过，三个启动根的包图无循环。R6 已提交为本地检查点 `43d0c53`，未推送；继续保留单 Maven 模块和既有启动入口。
 
-后续[治理与飞书入口依赖收缩](docs/architecture/entrypoint-decoupling.md)已实现，API 配置移除旧 TaskService 与投影、完成、恢复用例；630 项单元/HTTP/架构测试通过。新一轮数据库集成验证暂被本机 Docker API 500 阻断，尚未完成；本批改动未提交。
+[治理与飞书入口依赖收缩](docs/architecture/entrypoint-decoupling.md)已保存为本地检查点 `0c549fa`，未推送；该批通过 630 项单元/HTTP/架构测试，数据库集成被本机 Docker API 500 阻断。
+
+随后[原生执行适配依赖收缩](docs/architecture/runtime-decoupling.md)已移除生产 TaskService，原生 Runtime/Tools 直接使用现有服务与端口，Worker 不再构造投影用例及网关；测试委托移入显式导入的 TaskFixture。该批通过 630 项单元/HTTP/架构测试及 1 项不依赖 Docker 的产品打包检查，包含探针字节码依赖门禁；这些结果保留为该批历史证据。
+
+最新[治理用例分层](docs/architecture/governance-decoupling.md)已删除生产 GovernanceService，将授权、Artifact 和报告发布分别交给 GrantService、ArtifactService、ReportService，HTTP 回答直接调用 AnswerInteractionService。API 不装配报告发布服务，Worker 不装配授权变更服务，Integrations 不装配这两类服务；旧 application 生产包已清空。最新两批改动均未提交或推送，HEAD 仍为 `0c549fa`。本批 685 项单元/HTTP/架构测试及 1 项产品打包检查通过；Docker API 仍返回 HTTP 500，数据库、角色实际启动、独立进程恢复与 Compose 尚未重跑，不能沿用此前批次的测试结果作为本批验收。
 
 ## 固定工具链
 
@@ -98,6 +102,8 @@ scripts/mvn.sh spring-boot:run
 | [R5b 紫微执行与 I/O](docs/architecture/r5b-implementation.md) | 输入、资源、密钥、计算与原生工具分离；旧回执、事务回滚和零循环门禁 |
 | [R5c 记忆与发布分层](docs/architecture/r5c-implementation.md) | 记忆领域规则、模型/持久化端口、不可变发布值与凭据分离；真实回滚、旧回执和隐私竞态验证 |
 | [R6 角色装配](docs/architecture/r6-implementation.md) | 各角色 Bean/Mapper 清单、独立投影、真实启动与恢复验证、Maven 模块决定 |
+| [入口与原生执行依赖收缩](docs/architecture/runtime-decoupling.md) | 删除生产 TaskService、缩小 Worker 装配、隔离测试夹具与该批产品打包检查 |
+| [治理用例分层](docs/architecture/governance-decoupling.md) | 删除生产 GovernanceService，分离授权、Artifact、报告发布和 HTTP 回答，收窄各角色装配 |
 | [Spring 事务与组件复审](docs/architecture/spring-transactions-component-review.md) | Spring 统一事务、SDK 主动提交实验证据、已接入 ArchUnit 与组件复用清单 |
 | [M1 使用与验证](docs/migration/m1-validation.md) | API 示例、恢复边界、配置及验收证据 |
 | [M0 验证记录](docs/migration/m0-validation.md) | 实际版本、测试证据、状态保存边界与继续实施决策 |
@@ -107,6 +113,7 @@ scripts/mvn.sh spring-boot:run
 | [状态适配](src/main/java/com/financeclaw/infrastructure/state) | AgentState 版本 CAS、身份隔离与墓碑 |
 | [MyBatis 状态 Mapper](src/main/java/com/financeclaw/infrastructure/state/RuntimeMapper.java) | AgentState SQL；连接与事务由 Spring/MyBatis-Spring 管理 |
 | [任务用例](src/main/java/com/financeclaw/app/task) / [执行用例](src/main/java/com/financeclaw/app/execution) | 受理、查询、取消、租约、完成回执、恢复与 Outbox |
+| [授权用例](src/main/java/com/financeclaw/app/governance) / [Artifact 用例](src/main/java/com/financeclaw/app/artifact) / [报告用例](src/main/java/com/financeclaw/app/report) | 授权变更与重放、归档与访问核对、本地报告效果回执 |
 | [记忆用例](src/main/java/com/financeclaw/app/memory) / [发布用例](src/main/java/com/financeclaw/app/release) | 事实与隐私治理、事务外模型调用、固定发布版本与配置适配 |
 | [角色装配](src/main/java/com/financeclaw/bootstrap/RoleConfiguration.java) | Spring 显式导入各角色组件，精确注册 Mapper |
 | [后台执行](src/main/java/com/financeclaw/worker/TaskWorker.java) / [独立投影](src/main/java/com/financeclaw/worker/OutboxProjector.java) | Worker 有界执行与恢复；Integrations 消费 Outbox |

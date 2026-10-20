@@ -1,13 +1,19 @@
 package com.financeclaw.m1;
 
+import com.financeclaw.app.artifact.ArtifactService;
 import com.financeclaw.app.execution.*;
 import com.financeclaw.app.execution.port.*;
+import com.financeclaw.app.governance.GrantService;
 import com.financeclaw.app.interaction.AnswerInteractionService;
 import com.financeclaw.app.release.ReleaseService;
+import com.financeclaw.app.report.ReportService;
 import com.financeclaw.app.task.*;
-import com.financeclaw.application.TaskService;
+import com.financeclaw.fixture.GovernanceFixture;
+import com.financeclaw.fixture.TaskFixture;
 import com.financeclaw.infrastructure.agentscope.AgentScopeInteractionCheckpoint;
+import com.financeclaw.infrastructure.artifact.MyBatisArtifactGateway;
 import com.financeclaw.infrastructure.execution.CatalogExecutionRelease;
+import com.financeclaw.infrastructure.governance.*;
 import com.financeclaw.infrastructure.interaction.*;
 import com.financeclaw.infrastructure.release.EnvironmentCredentials;
 import com.financeclaw.infrastructure.release.EnvironmentReleaseSource;
@@ -22,8 +28,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 public final class LifecycleDatabase {
   public final SqlSessionTemplate session;
-  public final TaskService service;
-  public final com.financeclaw.application.GovernanceService governance;
+  public final TaskFixture service;
+  public final GovernanceFixture governance;
   public final ReleaseService releases =
       new ReleaseService(
           new EnvironmentReleaseSource(new org.springframework.mock.env.MockEnvironment()));
@@ -93,7 +99,7 @@ public final class LifecycleDatabase {
       var credentials =
           new EnvironmentCredentials(new org.springframework.mock.env.MockEnvironment());
       service =
-          new TaskService(
+          new TaskFixture(
               submission,
               queries,
               cancellation,
@@ -124,16 +130,12 @@ public final class LifecycleDatabase {
               new AgentScopeInteractionCheckpoint(session.getMapper(RuntimeMapper.class)),
               new AgentScopeAnswerRules(java.util.List.of(new ZiweiAnswerValidator(ziweiInputs))),
               tx);
-      governance =
-          new com.financeclaw.application.GovernanceService(
-              queries,
-              leases,
-              policies,
-              releases,
-              session.getMapper(TaskMapper.class),
-              session.getMapper(com.financeclaw.infrastructure.governance.GovernanceMapper.class),
-              answers,
-              tx);
+      var grants = new GrantService(queries, new MyBatisGrantGateway(gov), tx);
+      var artifacts =
+          new ArtifactService(
+              new MyBatisArtifactGateway(gov, tasks), leases, policies, releases, tx);
+      var reports = new ReportService(new MyBatisReportGateway(gov), leases, policies);
+      governance = new GovernanceFixture(grants, artifacts, answers, reports);
       var market =
           new com.financeclaw.app.market.MarketDataService(
               policies, new com.financeclaw.infrastructure.market.CatalogMarketData(releases));
@@ -142,8 +144,7 @@ public final class LifecycleDatabase {
               steps,
               policies,
               market,
-              new com.financeclaw.infrastructure.portfolio.GovernedPortfolioPublication(
-                  governance));
+              new com.financeclaw.infrastructure.portfolio.GovernedPortfolioPublication(artifacts));
       business =
           new com.financeclaw.infrastructure.agentscope.capability.BusinessCapabilities(
               market,
@@ -157,7 +158,7 @@ public final class LifecycleDatabase {
                   steps,
                   ziweiInputs,
                   ziweiConfiguration,
-                  new com.financeclaw.infrastructure.ziwei.GovernedZiweiPublication(governance)));
+                  new com.financeclaw.infrastructure.ziwei.GovernedZiweiPublication(artifacts)));
     } catch (Exception e) {
       throw new IllegalStateException(e);
     }
