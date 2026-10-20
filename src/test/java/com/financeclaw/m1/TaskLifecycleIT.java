@@ -338,8 +338,7 @@ class TaskLifecycleIT {
           }
         };
     try (var w =
-            com.financeclaw.m1.TaskWorkerFixture.create(
-                taskContext, slow, false, false, 1, 60000, 2000);
+            com.financeclaw.m1.TaskWorkerFixture.create(taskContext, slow, false, 1, 60000, 2000);
         var pool = Executors.newFixedThreadPool(1)) {
       var execution = pool.submit(() -> w.execute(c));
       assertThat(started.await(3, TimeUnit.SECONDS)).isTrue();
@@ -395,8 +394,7 @@ class TaskLifecycleIT {
           }
         };
     try (var w =
-        com.financeclaw.m1.TaskWorkerFixture.create(
-            taskContext, broken, false, false, 1, 60000, 2000)) {
+        com.financeclaw.m1.TaskWorkerFixture.create(taskContext, broken, false, 1, 60000, 2000)) {
       w.execute(c);
     } catch (InterruptedException e) {
       throw new RuntimeException(e);
@@ -773,8 +771,7 @@ class TaskLifecycleIT {
     tasks.seal(saved, runtime.execute(saved));
     probe.expire();
     var nativePort = mock(AgentExecutionPort.class);
-    try (var worker =
-        TaskWorkerFixture.create(taskContext, nativePort, true, false, 1, 60000, 2000)) {
+    try (var worker = TaskWorkerFixture.create(taskContext, nativePort, true, 1, 60000, 2000)) {
       worker.poll();
       worker.poll();
     }
@@ -870,8 +867,7 @@ class TaskLifecycleIT {
           }
         };
     try (var w =
-        com.financeclaw.m1.TaskWorkerFixture.create(
-            taskContext, slow, true, true, 1, 60000, 2000)) {
+        com.financeclaw.m1.TaskWorkerFixture.create(taskContext, slow, true, 1, 60000, 2000)) {
       w.poll();
       assertThat(started.await(3, TimeUnit.SECONDS)).isTrue();
       assertThat(turn(first).status()).isEqualTo("running");
@@ -883,6 +879,9 @@ class TaskLifecycleIT {
       assertThat(turn(first).status()).isEqualTo("cancelled");
       tasks.cancel(owner, second.conversationId(), second.turnId(), "stop");
       w.poll();
+      new com.financeclaw.worker.OutboxProjector(
+              taskContext.getBean(com.financeclaw.app.task.ProjectTaskService.class), true)
+          .poll();
       assertThat(probe.projections()).isEqualTo(2);
     }
   }
@@ -914,8 +913,7 @@ class TaskLifecycleIT {
           }
         };
     try (var w =
-        com.financeclaw.m1.TaskWorkerFixture.create(
-            taskContext, timeout, false, false, 1, 60000, 2000)) {
+        com.financeclaw.m1.TaskWorkerFixture.create(taskContext, timeout, false, 1, 60000, 2000)) {
       w.execute(c);
     }
     assertThat(turn(t).status()).isEqualTo("failed");

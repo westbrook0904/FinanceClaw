@@ -291,4 +291,41 @@ class ArchitectureTest {
         .because("memory model adapters receive only extraction text and an embedding profile port")
         .check(PRODUCTION);
   }
+
+  @Test
+  void roleAssemblyCannotFallBackToComponentOrMapperScanning() {
+    noClasses()
+        .should()
+        .beMetaAnnotatedWith(org.springframework.context.annotation.ComponentScan.class)
+        .orShould()
+        .beAnnotatedWith(org.springframework.context.annotation.ComponentScan.class)
+        .orShould()
+        .beAnnotatedWith(org.mybatis.spring.annotation.MapperScan.class)
+        .check(PRODUCTION);
+  }
+
+  @Test
+  void notificationDeliveryAndProjectionDoNotConstructAnAgentExecutor() {
+    noClasses()
+        .that()
+        .haveFullyQualifiedName("com.financeclaw.channel.FeishuDelivery")
+        .or()
+        .haveFullyQualifiedName("com.financeclaw.worker.OutboxProjector")
+        .should()
+        .dependOnClassesThat()
+        .resideInAnyPackage(
+            "com.financeclaw.application..",
+            "com.financeclaw.infrastructure.agentscope.execution..")
+        .check(PRODUCTION);
+    noClasses()
+        .that()
+        .haveFullyQualifiedName("com.financeclaw.api.FeishuController")
+        .should()
+        .dependOnClassesThat()
+        .haveFullyQualifiedName("com.financeclaw.channel.FeishuDelivery")
+        .orShould()
+        .dependOnClassesThat()
+        .haveFullyQualifiedName("com.financeclaw.channel.AgentScopeFeishu")
+        .check(PRODUCTION);
+  }
 }

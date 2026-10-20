@@ -1,6 +1,6 @@
 # Spring 事务与现成组件复审
 
-复审日期：2026-10-15；R5c 实施更新：2026-10-16。承接 [AgentScope 与 COLA 整改方案](agentscope-cola-remediation.md)，修正上一轮对事务接入和组件引入过于保守的判断。
+复审日期：2026-10-15；R6 实施更新：2026-10-16。承接 [AgentScope 与 COLA 整改方案](agentscope-cola-remediation.md)，修正上一轮对事务接入和组件引入过于保守的判断。
 
 ## 1. 更新后的决策
 
@@ -172,3 +172,5 @@ fi
 R0–R2 已完成第一批实现并通过回归：兼容样本、M0 隔离、共享 JSON/摘要、Operations 分层与移除 Controller 例外，详见 [实施记录](r0-r2-implementation.md)。Operations 继续直接复用 Spring 事务和 MyBatis 查询；严格 JsonNode 输入契约保持原样，不为这次结构调整更换校验方式。R3 已抽取回答用例并沿用 Spring 事务，SDK 校验入口的差异与真实回滚验证见 [R3 实施记录](r3-implementation.md)。R4 已完成任务用例与执行端口分层，继续直接使用 Spring 事务，新增 6 处实际回滚验证，见 [R4 实施记录](r4-implementation.md)。R5a 已拆分组合复盘与市场研究，报告归档和步骤回执继续共享 Spring 事务，子模型在事务外运行，见 [R5a 记录](r5a-implementation.md)。R5b 已将紫微用例接入相同的 Spring 步骤事务，新增真实归档回滚与旧步骤重放验证；原生 ToolValidator、JDK Mac 和 Spring ClassPathResource 各自负责既有能力，未新增生产依赖，见 [R5b 记录](r5b-implementation.md)。R5c 已拆分记忆领域规则、模型/存储端口和发布配置，事务继续由 Spring 管理；真实 PostgreSQL 验证确认/拒绝、遗忘、重建在回执失败时全量回滚，模型调用拒绝外层事务。结构化输出、embedding、技能发现继续使用 AgentScope，配置复用 Spring Environment，未新增生产依赖，见 [R5c 记录](r5c-implementation.md)。
 
 通用机制有合适组件就直接使用，新的业务端口只出现在真实边界。架构整改的目标是减少需要长期维护的机制和耦合，而不是增加一组带新名字的包装类。
+
+R6 已使用 Spring `@Import` / `@ConditionalOnProperty` 和 MyBatis-Spring `MapperFactoryBean` 完成显式角色装配，移除宽泛扫描；Outbox 投影与原生执行器分开，API 查询不再构造飞书发送客户端。未引入生产依赖、修改 SQL 或改写 Spring 事务边界。实际角色上下文、受限数据库身份、完整回归与隔离 Compose 恢复结果见 [R6 记录](r6-implementation.md)。

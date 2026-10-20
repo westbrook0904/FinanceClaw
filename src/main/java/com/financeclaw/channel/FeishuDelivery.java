@@ -1,6 +1,7 @@
 package com.financeclaw.channel;
 
-import com.financeclaw.application.*;
+import com.financeclaw.app.execution.port.ExecutionContextGateway;
+import com.financeclaw.app.task.TaskQueryService;
 import com.financeclaw.domain.Feishu.*;
 import com.financeclaw.domain.Task.Owner;
 import com.financeclaw.infrastructure.channel.FeishuMapper;
@@ -18,23 +19,23 @@ import org.springframework.transaction.support.TransactionTemplate;
 @Component
 public class FeishuDelivery {
   private final FeishuMapper db;
-  private final TaskService tasks;
-  private final GovernanceService governance;
+  private final TaskQueryService tasks;
+  private final ExecutionContextGateway interactions;
   private final TransactionTemplate tx;
   private final AgentScopeFeishu channel;
   private final boolean enabled;
 
   public FeishuDelivery(
       FeishuMapper db,
-      TaskService tasks,
-      GovernanceService governance,
+      TaskQueryService tasks,
+      ExecutionContextGateway interactions,
       TransactionTemplate tx,
       AgentScopeFeishu channel,
       FeishuSettings settings,
       @Value("${financeclaw.integrations.enabled:true}") boolean integrations) {
     this.db = db;
     this.tasks = tasks;
-    this.governance = governance;
+    this.interactions = interactions;
     this.tx = tx;
     this.channel = channel;
     enabled = settings.enabled && integrations;
@@ -68,9 +69,7 @@ public class FeishuDelivery {
           var turn = tasks.get(owner, b.conversationId(), b.activeTurn());
           if (!Set.of("waiting", "blocked", "completed", "failed", "cancelled")
               .contains(turn.status())) return;
-          String text =
-              FeishuText.render(
-                  b, turn, governance.interactions(owner, b.conversationId(), turn.id()));
+          String text = FeishuText.render(b, turn, interactions.interactions(turn.id()));
           if (text.isBlank()) return;
           String operation =
               UUID.nameUUIDFromBytes(

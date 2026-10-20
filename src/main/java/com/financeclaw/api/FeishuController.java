@@ -12,17 +12,15 @@ import org.springframework.web.bind.annotation.*;
 public class FeishuController {
   private final FeishuIngress ingress;
   private final FeishuService service;
-  private final FeishuDelivery delivery;
 
-  public FeishuController(FeishuIngress ingress, FeishuService service, FeishuDelivery delivery) {
+  public FeishuController(FeishuIngress ingress, FeishuService service) {
     this.ingress = ingress;
     this.service = service;
-    this.delivery = delivery;
   }
 
   @GetMapping("/v1/feishu/deliveries")
   public Object deliveries(HttpServletRequest r) {
-    return delivery.list(TaskController.owner(r));
+    return service.deliveries(TaskController.owner(r));
   }
 
   @PostMapping("/api/channels/feishu/financeclaw/callback")

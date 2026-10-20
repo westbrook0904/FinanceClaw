@@ -153,7 +153,6 @@ class FeishuIT {
                             .class))
                 : runtime,
             false,
-            false,
             1,
             60000,
             2000)) {

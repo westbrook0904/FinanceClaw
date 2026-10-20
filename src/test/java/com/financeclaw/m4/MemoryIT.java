@@ -93,8 +93,7 @@ class MemoryIT {
 
   void finish(Accepted t) throws Exception {
     try (var worker =
-        com.financeclaw.m1.TaskWorkerFixture.create(
-            taskContext, runtime, false, false, 1, 60000, 2000)) {
+        com.financeclaw.m1.TaskWorkerFixture.create(taskContext, runtime, false, 1, 60000, 2000)) {
       worker.execute(tasks.claim("memory-test", 60000));
     }
     assertThat(tasks.get(alice, t.conversationId(), t.turnId()).status()).isEqualTo("completed");

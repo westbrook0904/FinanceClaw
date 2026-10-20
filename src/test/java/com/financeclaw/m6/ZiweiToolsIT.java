@@ -531,8 +531,7 @@ class ZiweiToolsIT {
 
   void run(Claim claim, TaskAgentRuntime runtime) throws Exception {
     try (var worker =
-        com.financeclaw.m1.TaskWorkerFixture.create(
-            taskContext, runtime, false, false, 1, 120000, 2000)) {
+        com.financeclaw.m1.TaskWorkerFixture.create(taskContext, runtime, false, 1, 120000, 2000)) {
       worker.execute(claim);
     }
   }

@@ -43,6 +43,10 @@ public class FeishuService {
     return code;
   }
 
+  public List<Notice> deliveries(Owner owner) {
+    return db.notices(owner);
+  }
+
   private static String hash(String text) {
     return ExecutionScope.hash(List.of(text));
   }

@@ -228,7 +228,7 @@ class BusinessIT {
   void run(Claim c) {
     try (var worker =
         com.financeclaw.m1.TaskWorkerFixture.create(
-            taskContext, runtime(), false, false, 1, 60000, 2000)) {
+            taskContext, runtime(), false, 1, 60000, 2000)) {
       worker.execute(c);
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();

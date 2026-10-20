@@ -6,7 +6,6 @@ import com.financeclaw.infrastructure.agentscope.memory.AgentScopeMemoryModels;
 import com.financeclaw.infrastructure.memory.*;
 import com.financeclaw.infrastructure.memory.MemoryMapper;
 import java.util.*;
-import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.boot.*;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.context.annotation.*;
@@ -17,8 +16,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 /** Separate entrypoint: no TaskService, channel, tool registration or business mapper. */
 @SpringBootConfiguration
 @EnableAutoConfiguration
-@MapperScan("com.financeclaw.infrastructure.memory")
 @Import({
+  com.financeclaw.bootstrap.MapperConfiguration.Memory.class,
   AgentScopeMemoryModels.class,
   MyBatisMemoryRepository.class,
   MyBatisEmbeddingProfiles.class

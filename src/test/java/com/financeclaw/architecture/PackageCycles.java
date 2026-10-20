@@ -14,8 +14,8 @@ public final class PackageCycles {
     var dependencies =
         classes.stream()
             .flatMap(c -> c.getDirectDependenciesFromSelf().stream())
-            .filter(d -> d.getOriginClass().getPackageName().startsWith("com.financeclaw."))
-            .filter(d -> d.getTargetClass().getPackageName().startsWith("com.financeclaw."))
+            .filter(d -> production(d.getOriginClass().getPackageName()))
+            .filter(d -> production(d.getTargetClass().getPackageName()))
             .filter(
                 d ->
                     !d.getOriginClass()
@@ -37,6 +37,14 @@ public final class PackageCycles {
         result.add(d.getOriginClass().getName() + " -> " + d.getTargetClass().getName());
     }
     return result;
+  }
+
+  private static boolean production(String name) {
+    return name.startsWith("com.financeclaw.")
+        || name.equals("com.financeclawmemory")
+        || name.startsWith("com.financeclawmemory.")
+        || name.equals("com.financeclawmigrate")
+        || name.startsWith("com.financeclawmigrate.");
   }
 
   private static boolean reaches(

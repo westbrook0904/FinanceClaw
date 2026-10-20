@@ -105,7 +105,6 @@ class GovernanceIT {
                     com.financeclaw.infrastructure.agentscope.capability.BusinessCapabilities
                         .class)),
             false,
-            false,
             1,
             60000,
             2000)) {

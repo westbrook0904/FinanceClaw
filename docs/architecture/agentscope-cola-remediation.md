@@ -1,12 +1,12 @@
 # AgentScope 复用与 COLA 架构整改方案
 
-审查日期：2026-10-15；实施更新：2026-10-16。**R0–R4 与 R5a–R5c 已完成，最新完整回归 824 项通过**。固定契约、M0 隔离、编码边界与 Operations 切片见 [R0–R2 实施记录](r0-r2-implementation.md)；回答用例、工具交互、统一 SDK 快照与实际回归见 [R3 实施记录](r3-implementation.md)。任务用例、原生执行端口与事务回滚验证见 [R4 实施记录](r4-implementation.md)。组合复盘与市场研究的分层见 [R5a 实施记录](r5a-implementation.md)，紫微输入/资源/用例边界见 [R5b 实施记录](r5b-implementation.md)，记忆领域规则、模型/存储端口与发布配置见 [R5c 实施记录](r5c-implementation.md)。本地检查点 `bb58ea2` 已保存 M5e 与 R0–R5a；R5b/R5c 尚未提交。下一阶段为 R6 角色装配。组件选择依据见 [Spring 事务与组件复审](spring-transactions-component-review.md)。
+审查日期：2026-10-15；实施更新：2026-10-16。**R0–R6 已完成，最新完整回归 835 项通过，隔离 Compose 27 项检查通过**。固定契约、M0 隔离、编码边界与 Operations 切片见 [R0–R2 实施记录](r0-r2-implementation.md)；回答用例、工具交互、统一 SDK 快照与实际回归见 [R3 实施记录](r3-implementation.md)。任务用例、原生执行端口与事务回滚验证见 [R4 实施记录](r4-implementation.md)。组合复盘与市场研究的分层见 [R5a 实施记录](r5a-implementation.md)，紫微输入/资源/用例边界见 [R5b 实施记录](r5b-implementation.md)，记忆领域规则、模型/存储端口与发布配置见 [R5c 实施记录](r5c-implementation.md)。本地检查点 `bb58ea2` 保存 M5e 与 R0–R5a，`7e5a903` 保存 R5b/R5c，均未推送。[R6 实施记录](r6-implementation.md)说明显式角色装配、实际 Bean/Mapper 清单、恢复验证和保留单 Maven 模块的决定；R6 改动尚未提交。组件选择依据见 [Spring 事务与组件复审](spring-transactions-component-review.md)。
 
 ## 1. 结论与决策
 
 **存在局部重复和可收敛的适配代码，但没有证据支持把当前业务治理整体替换为 AgentScope Harness。建议采用 COLA 的分层和依赖倒置，先在单 Maven 工程内实施，再按实际需要拆模块。**
 
-整改前的主要成本来自职责和依赖交织：`application`、`agent`、`tools`、`ziwei` 形成循环依赖，增加工具需要修改多处业务分支。R0–R5b 已将参与循环的具体类依赖从 93 条降到 0 条，并删除循环白名单。R5c 已继续完成记忆与发布配置分层；角色装配和剩余旧 facade 调用者仍需收敛，包图无环不等于这些工作已经完成。
+整改前的主要成本来自职责和依赖交织：`application`、`agent`、`tools`、`ziwei` 形成循环依赖，增加工具需要修改多处业务分支。R0–R5b 已将参与循环的具体类依赖从 93 条降到 0 条，并删除循环白名单。R5c 已完成记忆与发布配置分层，R6 已完成角色装配，并将零循环门禁扩大到独立 Memory/Migrate 启动根；剩余旧 facade 调用者仍需逐步收敛，包图无环不等于这些职责已经消失。
 
 本次建议分为四类：
 
@@ -368,7 +368,7 @@ public AnswerDecision answer(ReplyContext context, Answer answer, Instant now) {
 | R3 交互与工具边界 | `AnswerInteractionService`、`InteractionBinding`、统一快照解释器；五类 ToolContribution 与交互处理器 | 实现及实际回归见 [R3 记录](r3-implementation.md)；Spring 事务与原 SQL 保留 | 通用审批不再识别紫微；三处快照判定统一；Schema 入口实证不等价，保留最终参数校验 |
 | R4 任务与原生执行分层 | 已拆受理/查询/取消/租约/完成/恢复；原生 runtime 实现 `AgentExecutionPort`；删除 Mapper/目录 getter | 实现与验证见 [R4 记录](r4-implementation.md)；沿用 SQL 和锁顺序 | 新 app 无 SDK/Mapper；9 项新增集成覆盖回滚、过期写入、事务外执行和不重放恢复 |
 | R5 业务对象和记忆分层 | [R5a](r5a-implementation.md) 已拆 Portfolio 与研究，[R5b](r5b-implementation.md) 已拆紫微 I/O，[R5c](r5c-implementation.md) 已拆记忆与发布配置 | 不与算法升级、数据格式迁移同时做 | 领域、子预算、发布幂等、紫微冻结样本与恢复回归通过；R5c 增加记忆事务回滚、旧回执重放、搜索遗忘竞态和发布字节兼容验证 |
-| R6 角色装配与可选模块化 | 先替换宽泛扫描为明确角色装配，再决定是否移动入口和拆 Maven | 需重验镜像、启动类、MapperScan、restricted role | memory/migrate 无业务 Controller/工具/TaskService；完整镜像和多进程恢复验收通过 |
+| R6 角色装配与可选模块化 | [已完成](r6-implementation.md)：显式角色导入、精确 Mapper 注册、独立 Outbox 投影；保留单 Maven 模块与原启动类 | Spring 原生装配组件，无新增生产依赖；数据库授权保持原样 | 实际 Bean/Mapper 负向加载、受限 Memory 身份、835 项完整回归、27 项隔离 Compose 检查通过 |
 | R7 可选原生替换实验 | SubAgentTool、历史压缩分别实验；SDK 存储仅在提供外部事务模式后重评 | Spring 事务方案已确定，不阻塞 R1–R6 | 满足本节后的等价性矩阵且适配代码减少，才合入默认路径 |
 
 执行顺序以 R1 → R2 → R3 → R4 为主。R5 可以按业务逐项推进；R6 在职责稳定后实施。**不建议第一步全量搬包、同时改事务和升级 AgentScope。**
@@ -398,17 +398,17 @@ public AnswerDecision answer(ReplyContext context, Answer answer, Instant now) {
 
 ### 10.1 静态架构门禁
 
-优先在改造完成的纵向切片启用严格规则，旧包采用只减不增的显式基线。ArchUnit 1.5.1 已加入 test scope，[当前 10 项检查](../../src/test/java/com/financeclaw/architecture/ArchitectureTest.java) 覆盖当前实施切片；下面列的是完整目标，具体运行结果见实施记录，不能把未实现的规则也算作已覆盖。
+ArchUnit 1.5.1 位于 test scope，[当前 16 项检查](../../src/test/java/com/financeclaw/architecture/ArchitectureTest.java)覆盖各已实施切片。R5b 已删除循环白名单，R6 将无环检查扩展到三个启动根并禁止生产宽泛扫描；真实装配另由 RoleAssemblyIT 验证。下面列出当前门禁及其范围，具体运行证据见各批实施记录。
 
 | 规则 | 阶段目标 |
 | --- | --- |
 | domain 不依赖框架、传输、持久化和外层包 | 新建/迁入的领域类立即满足 |
-| app 不依赖 infrastructure、AgentScope、具体 Mapper | 全部新 app/port 均启用；仅 app.ziwei 可引用受独立门禁保护的既有计算库；旧记忆等依赖留待后续 |
+| app 不依赖 infrastructure、AgentScope、具体 Mapper | 全部 app/port 均启用，含记忆/发布用例；仅 app.ziwei 可引用受独立门禁保护的既有计算库 |
 | adapter 不直接读写 Mapper | 已覆盖全部现有 api 包；Operations 例外已删除 |
-| 领域包之间及分层包之间没有循环 | R5b 已清零并删除白名单，com.financeclaw 主业务包编译依赖图强制无环 |
+| 领域包之间及分层包之间没有循环 | R5b 已清零并删除白名单；R6 纳入 com.financeclaw、com.financeclawmemory、com.financeclawmigrate 三个启动根 |
 | 生产 runtime 不引用 M0 probe | 已全量启用，另核查最终 Boot jar |
-| 原生 SDK 类型仅出现在 infrastructure 和必要的 bootstrap 装配 | 根执行及已迁移业务适配均位于 infrastructure；旧记忆模型中的 SDK 使用待后续处理；domain 已禁止 |
-| Memory/Migrate 角色没有加载业务 Bean 和宽泛 Mapper | R6 前先增加负向加载验证，再移动入口 |
+| 原生 SDK 类型限于技术适配与必要装配边界 | 根执行、业务和记忆模型适配位于 infrastructure；现有 channel 承担飞书 SDK 适配；domain/app/port 禁止引用 SDK |
+| Memory/Migrate 角色没有加载业务 Bean 和宽泛 Mapper | R6 使用真实上下文验证：Memory 仅 MemoryMapper；Migrate 无 MyBatis；保留原独立入口 |
 
 包重命名后的图看似无环并不代表通过：还要检查行内全限定名、方法签名、Spring 注入、异步回调和真实装配。当前审查中的 import 图只能作为起点。
 
@@ -454,4 +454,4 @@ python3 scripts/check-delivery.py
 - 已验证 ArchUnit 1.5.1 的构建/测试接入，并核查 COLA statemachine 5.0.0 源码；Bean Validation、状态机和 Modulith 尚未完成本项目业务接入，按对应切片实施。
 - 没有重新完成真实模型、远端 MCP、真实飞书、历史会话切换或生产验收。架构整改与 [迁移验收清单](../migration/acceptance-checklist.md) 是两条需要分别留证据的工作。
 
-这份文档是后续开发的整改依据。R0–R5b 的实现与验证见各批实施记录，下一步继续 R5 的记忆和发布配置分层；是否拆 Maven 模块、是否换用更多原生实现，依据前面各项验收结果决定。
+R0–R6 的实现与验证见各批实施记录。后续继续按实际调用收缩遗留 TaskService，真实供应商与生产迁移按验收清单独立完成。Maven 模块暂不拆分；R7 原生替换保持可选，只有治理等价且确实减少适配成本后才进入默认路径。

@@ -8,7 +8,8 @@ import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
 
 /** One-shot Flyway role. Runtime processes never need the schema owner's credential. */
 @SpringBootConfiguration
-@EnableAutoConfiguration
+@EnableAutoConfiguration(
+    exclude = org.mybatis.spring.boot.autoconfigure.MybatisAutoConfiguration.class)
 public class MigrationApplication {
   public static void main(String[] args) {
     var application = new SpringApplication(MigrationApplication.class);

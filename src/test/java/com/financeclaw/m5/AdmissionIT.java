@@ -77,8 +77,7 @@ class AdmissionIT {
 
   void run(TaskAgentRuntime agent) throws Exception {
     try (var worker =
-        com.financeclaw.m1.TaskWorkerFixture.create(
-            taskContext, agent, false, false, 1, 60000, 2000)) {
+        com.financeclaw.m1.TaskWorkerFixture.create(taskContext, agent, false, 1, 60000, 2000)) {
       worker.execute(Objects.requireNonNull(tasks.claim("m5b-test", 60000)));
     }
   }

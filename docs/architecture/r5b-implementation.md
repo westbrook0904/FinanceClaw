@@ -1,6 +1,6 @@
 # R5b：紫微输入、资源与执行边界
 
-实施日期：2026-10-16。承接 [R5a](r5a-implementation.md)，基于本地检查点 `bb58ea2` 开始本批开发。该检查点保存 M5e 与 R0–R5a，未推送。本批完成紫微 I/O、用例和计算边界拆分；**完整回归 797 项通过**（607 项单元/HTTP、190 项集成），零失败、零错误、零跳过。本文保留 R5b 完成时的验证结果；后续记忆与发布配置已在 [R5c](r5c-implementation.md) 完成，角色装配仍待 R6。
+实施日期：2026-10-16。承接 [R5a](r5a-implementation.md)，基于本地检查点 `bb58ea2` 开始本批开发。该检查点保存 M5e 与 R0–R5a，未推送。本批完成紫微 I/O、用例和计算边界拆分；**完整回归 797 项通过**（607 项单元/HTTP、190 项集成），零失败、零错误、零跳过。本文保留 R5b 完成时的验证结果；后续记忆与发布配置已在 [R5c](r5c-implementation.md) 完成；R5b/R5c 已保存为本地检查点 `7e5a903`，角色装配见 [R6](r6-implementation.md)。
 
 ## 当前调用路径
 
@@ -96,8 +96,8 @@ python3 scripts/check-delivery.py
 | 产品 jar SHA-256 | `eec0fa5c3b1bbefa27e1ec1474111e126ad7b1aea1926fee5340091122e51fb3` |
 | 静态交付 | 本地文档链接、脚本语法、凭据模式和空白检查通过 |
 
-本批未运行真实模型/MCP/飞书租户、远程 CI、生产切流或 M5e Compose 备份恢复演练。R5b 改动保留在工作区，尚未提交；当前本地检查点仍为 `bb58ea2`。
+本批未运行真实模型/MCP/飞书租户、远程 CI、生产切流或 M5e Compose 备份恢复演练。R5b 验证当时改动保留在工作区；后续已与 R5c 一起保存为本地检查点 `7e5a903`，未推送。
 
 ## 后续工作
 
-后续 [R5c](r5c-implementation.md) 已拆分记忆规则/用例/适配，以及发布对象、配置资源和凭据读取；本批历史结果和证据保留。随后 R6 验证 API、Worker、Integrations、Memory/Migrate 各角色的 Bean 和 Mapper 加载边界，再决定是否拆 Maven 模块。循环统计与门禁继续使用 `com.financeclaw.*` 主业务包的编译依赖图，独立 Memory/Migrate 启动根的装配门禁留待 R6。包图无环只是本批的结构结果，不能代替这些职责与部署验收。
+后续 [R5c](r5c-implementation.md) 已拆分记忆规则/用例/适配，以及发布对象、配置资源和凭据读取；本批历史结果和证据保留。后续角色装配、验证结果与 Maven 模块决定见 [R6](r6-implementation.md)。R5b 的循环统计范围为 `com.financeclaw.*` 主业务包；独立 Memory/Migrate 启动根的门禁扩展见 R6。包图无环只是本批的结构结果，不能代替这些职责与部署验收。
