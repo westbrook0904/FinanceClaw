@@ -12,7 +12,9 @@ M5c 已本地提交 `3736aac`。**[M5d 只读预检报告](docs/migration/m5d-pr
 
 M5d 已本地提交 `993e7ac`，未推送。**[M5e 旧备份隐私核对](docs/migration/m5e-restore-privacy.md)** 检查恢复库是否遗漏备份之后的遗忘事实，并在隔离容器中演练拦截旧备份；真实环境交付和线上切换仍待验收。
 
-M5e 与 R0–R5a 已保存为本地检查点 `bb58ea2`，[R5b 紫微边界拆分](docs/architecture/r5b-implementation.md) 与 [R5c 记忆与发布分层](docs/architecture/r5c-implementation.md) 已提交为本地检查点 `7e5a903`，未推送。后续 **[R6 角色装配](docs/architecture/r6-implementation.md)** 已完成：各角色显式加载组件与 Mapper，Outbox 投影独立运行；完整回归 835 项、隔离 Compose 27 项检查通过，三个启动根的包图无循环。R6 改动尚未提交；继续保留单 Maven 模块和既有启动入口。
+M5e 与 R0–R5a 已保存为本地检查点 `bb58ea2`，[R5b 紫微边界拆分](docs/architecture/r5b-implementation.md) 与 [R5c 记忆与发布分层](docs/architecture/r5c-implementation.md) 已提交为本地检查点 `7e5a903`，未推送。后续 **[R6 角色装配](docs/architecture/r6-implementation.md)** 已完成：各角色显式加载组件与 Mapper，Outbox 投影独立运行；完整回归 835 项、隔离 Compose 27 项检查通过，三个启动根的包图无循环。R6 已提交为本地检查点 `43d0c53`，未推送；继续保留单 Maven 模块和既有启动入口。
+
+后续[治理与飞书入口依赖收缩](docs/architecture/entrypoint-decoupling.md)已实现，API 配置移除旧 TaskService 与投影、完成、恢复用例；630 项单元/HTTP/架构测试通过。新一轮数据库集成验证暂被本机 Docker API 500 阻断，尚未完成；本批改动未提交。
 
 ## 固定工具链
 

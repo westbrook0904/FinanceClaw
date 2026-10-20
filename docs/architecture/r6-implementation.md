@@ -1,6 +1,6 @@
 # R6：按运行角色显式装配
 
-实施日期：2026-10-16。承接 [R5c](r5c-implementation.md)，基于本地检查点 `7e5a903` 开始开发。该检查点保存 R5b/R5c，未推送。**R6 已完成，完整回归 835 项通过**（629 项单元/HTTP、206 项集成），零失败、零错误、零跳过；隔离 Compose 的 27 项部署、故障、恢复与隐私检查通过。本批新增改动保留在工作区，尚未提交。
+实施日期：2026-10-16。承接 [R5c](r5c-implementation.md)，基于本地检查点 `7e5a903` 开始开发。该检查点保存 R5b/R5c，未推送。**R6 已完成，完整回归 835 项通过**（629 项单元/HTTP、206 项集成），零失败、零错误、零跳过；隔离 Compose 的 27 项部署、故障、恢复与隐私检查通过。本文保留 R6 完成时的结果；该批已保存为本地检查点 `43d0c53`，未推送。后续改动及验证状态见[入口依赖收缩](entrypoint-decoupling.md)。
 
 ## 这次解决的问题
 
@@ -91,6 +91,6 @@ Compose 演练使用真实隔离容器、离线模型和合成行情。数据库
 
 本阶段继续保留单 Maven 模块、一个产品 Jar 和三个独立启动根。实际 Bean/Mapper 边界已有静态与启动验证，当前没有独立发布版本或不同依赖集合的要求；此时拆 Maven 会扩大打包、外部 JVM 探针和启动路径的变更范围。将来确有独立依赖或发布要求时，再以现有端口和角色配置为界拆分。
 
-这次实现的是 Spring 装配边界，公共 Jar 仍包含所有角色代码。API、Worker、Integrations 仍使用原数据库授权，未新增各自独立的最小权限角色。TaskService 的剩余治理/原生工具调用者继续存在，API/Worker 因兼容 facade 仍构造部分共享用例，包括 ProjectTaskService；只有 Integrations/Standalone 装配定时 OutboxProjector，不能把“没有消费者”说成“没有全部写入用例”。
+以下保留 R6 完成时的范围；后续 API 依赖收缩见[实施记录](entrypoint-decoupling.md)。这次实现的是 Spring 装配边界，公共 Jar 仍包含所有角色代码。API、Worker、Integrations 仍使用原数据库授权，未新增各自独立的最小权限角色。TaskService 的剩余治理/原生工具调用者继续存在，API/Worker 因兼容 facade 仍构造部分共享用例，包括 ProjectTaskService；只有 Integrations/Standalone 装配定时 OutboxProjector，不能把“没有消费者”说成“没有全部写入用例”。
 
 后续可继续收缩旧 facade 的调用者。R7 的 SubAgentTool、历史压缩实验保持可选，只有证明治理语义等价且减少适配成本后才进入默认路径。真实模型、MCP、飞书租户、生产数据切流和旧生产二进制到新二进制的升级验收仍应独立进行；本地离线演练不能替代这些验收。

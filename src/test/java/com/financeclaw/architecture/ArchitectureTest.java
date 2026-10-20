@@ -168,6 +168,26 @@ class ArchitectureTest {
   }
 
   @Test
+  void governanceAndChannelEntrypointsCannotReintroduceTheLegacyTaskFacade() {
+    noClasses()
+        .that()
+        .resideInAnyPackage("com.financeclaw.api..", "com.financeclaw.channel..")
+        .or()
+        .haveFullyQualifiedName("com.financeclaw.application.GovernanceService")
+        .should()
+        .dependOnClassesThat()
+        .haveFullyQualifiedName("com.financeclaw.application.TaskService")
+        .check(PRODUCTION);
+    noClasses()
+        .that()
+        .haveFullyQualifiedName("com.financeclaw.channel.FeishuService")
+        .should()
+        .dependOnClassesThat()
+        .resideInAPackage("com.financeclaw.application..")
+        .check(PRODUCTION);
+  }
+
+  @Test
   void legacyTaskFacadeCannotExposePersistenceOrOwnTransactions() {
     noClasses()
         .that()

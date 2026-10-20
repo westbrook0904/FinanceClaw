@@ -1,7 +1,10 @@
 package com.financeclaw.channel;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.financeclaw.application.*;
+import com.financeclaw.app.interaction.AnswerInteractionService;
+import com.financeclaw.app.task.CancelTaskService;
+import com.financeclaw.app.task.SubmitTaskService;
+import com.financeclaw.app.task.TaskQueryService;
 import com.financeclaw.domain.ExecutionScope;
 import com.financeclaw.domain.Feishu.*;
 import com.financeclaw.domain.Governance.*;
@@ -16,20 +19,26 @@ import org.springframework.transaction.support.TransactionTemplate;
 /** Native inbound mapping followed by the existing business admission/interaction APIs. */
 @Service
 public class FeishuService {
-  private final TaskService tasks;
-  private final GovernanceService governance;
+  private final TaskQueryService queries;
+  private final SubmitTaskService submission;
+  private final CancelTaskService cancellation;
+  private final AnswerInteractionService answers;
   private final FeishuMapper db;
   private final TransactionTemplate tx;
   private final FeishuSettings settings;
 
   public FeishuService(
-      TaskService tasks,
-      GovernanceService governance,
+      TaskQueryService queries,
+      SubmitTaskService submission,
+      CancelTaskService cancellation,
+      AnswerInteractionService answers,
       FeishuMapper db,
       TransactionTemplate tx,
       FeishuSettings settings) {
-    this.tasks = tasks;
-    this.governance = governance;
+    this.queries = queries;
+    this.submission = submission;
+    this.cancellation = cancellation;
+    this.answers = answers;
     this.db = db;
     this.tx = tx;
     this.settings = settings;
@@ -37,7 +46,7 @@ public class FeishuService {
 
   public String link(Owner owner, String conversation) {
     if (!settings.enabled) throw new Problem(404, "not_found");
-    tasks.owned(owner, conversation);
+    queries.owned(owner, conversation);
     String code = UUID.randomUUID().toString().replace("-", "");
     db.createLink(hash(code), owner, conversation);
     return code;
@@ -116,19 +125,19 @@ public class FeishuService {
             if (text.equals("/mute") || text.equals("/unmute"))
               db.mute(binding.id(), text.equals("/mute"));
             else if (text.equals("/new"))
-              db.switchConversation(binding.id(), tasks.createConversation(owner));
+              db.switchConversation(binding.id(), submission.createConversation(owner));
             else if (text.equals("/cancel")) {
               if (binding.activeTurn() == null) throw new Problem(409, "no_active_turn");
-              tasks.cancel(
+              cancellation.cancel(
                   owner, binding.conversationId(), binding.activeTurn(), "feishu:" + event);
             } else if (text.startsWith("/approve ") || text.startsWith("/reject ")) {
               if (binding.muted() || binding.activeTurn() == null)
                 throw new Problem(409, "stale_approval");
-              var turn = tasks.get(owner, binding.conversationId(), binding.activeTurn());
+              var turn = queries.get(owner, binding.conversationId(), binding.activeTurn());
               String[] command = text.split(" ", 2);
               var current = binding;
               var interaction =
-                  governance.interactions(owner, binding.conversationId(), turn.id()).stream()
+                  answers.interactions(owner, binding.conversationId(), turn.id()).stream()
                       .filter(
                           i ->
                               i.kind().equals("approval")
@@ -137,7 +146,7 @@ public class FeishuService {
                                   && FeishuText.token(current, turn, i).equals(command[1]))
                       .findFirst()
                       .orElseThrow(() -> new Problem(409, "stale_approval"));
-              governance.answer(
+              answers.answer(
                   owner,
                   binding.conversationId(),
                   turn.id(),
@@ -153,14 +162,14 @@ public class FeishuService {
               var pending =
                   binding.activeTurn() == null
                       ? List.<Interaction>of()
-                      : governance
+                      : answers
                           .interactions(owner, binding.conversationId(), binding.activeTurn())
                           .stream()
                           .filter(i -> i.live() && i.status().equals("pending"))
                           .toList();
               if (pending.size() == 1 && pending.getFirst().kind().equals("input")) {
                 var i = pending.getFirst();
-                governance.answer(
+                answers.answer(
                     owner,
                     binding.conversationId(),
                     binding.activeTurn(),
@@ -169,7 +178,7 @@ public class FeishuService {
                     new Answer(i.kind(), i.revision(), null, null, FeishuText.answer(i, text)));
               } else {
                 var turn =
-                    tasks.submit(
+                    submission.submit(
                         owner,
                         binding.conversationId(),
                         "feishu:" + required(body.path("message"), "message_id"),

@@ -126,7 +126,10 @@ public final class LifecycleDatabase {
               tx);
       governance =
           new com.financeclaw.application.GovernanceService(
-              service,
+              queries,
+              leases,
+              policies,
+              releases,
               session.getMapper(TaskMapper.class),
               session.getMapper(com.financeclaw.infrastructure.governance.GovernanceMapper.class),
               answers,

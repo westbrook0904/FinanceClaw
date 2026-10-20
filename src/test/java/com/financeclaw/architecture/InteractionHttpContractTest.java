@@ -73,7 +73,7 @@ class InteractionHttpContractTest {
     var answers =
         new AnswerInteractionService(
             gateway, checkpoints, new AgentScopeAnswerRules(List.of()), tx);
-    var facade = new GovernanceService(null, null, null, answers, tx);
+    var facade = new GovernanceService(null, null, null, null, null, null, answers, tx);
     http =
         MockMvcBuilders.standaloneSetup(new GovernanceController(facade))
             .setMessageConverters(new MappingJackson2HttpMessageConverter(json))

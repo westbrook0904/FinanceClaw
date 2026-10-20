@@ -1,6 +1,6 @@
 # AgentScope 复用与 COLA 架构整改方案
 
-审查日期：2026-10-15；实施更新：2026-10-16。**R0–R6 已完成，最新完整回归 835 项通过，隔离 Compose 27 项检查通过**。固定契约、M0 隔离、编码边界与 Operations 切片见 [R0–R2 实施记录](r0-r2-implementation.md)；回答用例、工具交互、统一 SDK 快照与实际回归见 [R3 实施记录](r3-implementation.md)。任务用例、原生执行端口与事务回滚验证见 [R4 实施记录](r4-implementation.md)。组合复盘与市场研究的分层见 [R5a 实施记录](r5a-implementation.md)，紫微输入/资源/用例边界见 [R5b 实施记录](r5b-implementation.md)，记忆领域规则、模型/存储端口与发布配置见 [R5c 实施记录](r5c-implementation.md)。本地检查点 `bb58ea2` 保存 M5e 与 R0–R5a，`7e5a903` 保存 R5b/R5c，均未推送。[R6 实施记录](r6-implementation.md)说明显式角色装配、实际 Bean/Mapper 清单、恢复验证和保留单 Maven 模块的决定；R6 改动尚未提交。组件选择依据见 [Spring 事务与组件复审](spring-transactions-component-review.md)。
+审查日期：2026-10-15；实施更新：2026-10-16。**R0–R6 已完成，最新完整回归 835 项通过，隔离 Compose 27 项检查通过**。固定契约、M0 隔离、编码边界与 Operations 切片见 [R0–R2 实施记录](r0-r2-implementation.md)；回答用例、工具交互、统一 SDK 快照与实际回归见 [R3 实施记录](r3-implementation.md)。任务用例、原生执行端口与事务回滚验证见 [R4 实施记录](r4-implementation.md)。组合复盘与市场研究的分层见 [R5a 实施记录](r5a-implementation.md)，紫微输入/资源/用例边界见 [R5b 实施记录](r5b-implementation.md)，记忆领域规则、模型/存储端口与发布配置见 [R5c 实施记录](r5c-implementation.md)。本地检查点 `bb58ea2` 保存 M5e 与 R0–R5a，`7e5a903` 保存 R5b/R5c，均未推送。[R6 实施记录](r6-implementation.md)说明显式角色装配、实际 Bean/Mapper 清单、恢复验证和保留单 Maven 模块的决定；R6 已保存为本地检查点 `43d0c53`，未推送。后续[治理与飞书入口依赖收缩](entrypoint-decoupling.md)已实现并通过 630 项单元/HTTP/架构测试；数据库集成暂被 Docker API 500 阻断，本批新增改动未提交。组件选择依据见 [Spring 事务与组件复审](spring-transactions-component-review.md)。
 
 ## 1. 结论与决策
 

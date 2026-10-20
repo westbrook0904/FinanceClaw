@@ -1,7 +1,11 @@
 package com.financeclaw.application;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.financeclaw.app.execution.ExecutionLeaseService;
+import com.financeclaw.app.execution.ExecutionPolicyService;
 import com.financeclaw.app.interaction.AnswerInteractionService;
+import com.financeclaw.app.release.ReleaseService;
+import com.financeclaw.app.task.TaskQueryService;
 import com.financeclaw.domain.ExecutionScope;
 import com.financeclaw.domain.Governance.*;
 import com.financeclaw.domain.Task.*;
@@ -21,19 +25,28 @@ import org.springframework.transaction.support.TransactionTemplate;
 @Service
 public class GovernanceService {
   private static final ObjectMapper JSON = new ObjectMapper();
-  private final TaskService tasks;
+  private final TaskQueryService queries;
+  private final ExecutionLeaseService leases;
+  private final ExecutionPolicyService policy;
+  private final ReleaseService releases;
   private final TaskMapper turns;
   private final GovernanceMapper db;
   private final AnswerInteractionService answers;
   private final TransactionTemplate tx;
 
   public GovernanceService(
-      TaskService tasks,
+      TaskQueryService queries,
+      ExecutionLeaseService leases,
+      ExecutionPolicyService policy,
+      ReleaseService releases,
       TaskMapper turns,
       GovernanceMapper db,
       AnswerInteractionService answers,
       TransactionTemplate tx) {
-    this.tasks = tasks;
+    this.queries = queries;
+    this.leases = leases;
+    this.policy = policy;
+    this.releases = releases;
     this.turns = turns;
     this.db = db;
     this.answers = answers;
@@ -41,14 +54,14 @@ public class GovernanceService {
   }
 
   public Grant grant(Owner owner, String conversation) {
-    tasks.owned(owner, conversation);
+    queries.owned(owner, conversation);
     return db.grant(conversation);
   }
 
   public Grant changeGrant(
       Owner owner, String conversation, String key, long revision, List<String> scopes) {
     new com.financeclaw.domain.IdempotencyKey(key);
-    tasks.owned(owner, conversation);
+    queries.owned(owner, conversation);
     if (scopes == null || !ReleaseDefinition.SCOPES.containsAll(scopes))
       throw new Problem(422, "invalid_scopes");
     String json = PayloadJson.canonical(scopes.stream().distinct().sorted().toList());
@@ -89,10 +102,10 @@ public class GovernanceService {
     String json = PayloadJson.canonical(payload);
     int size = json.getBytes(StandardCharsets.UTF_8).length;
     if (size > 2097152) throw new Blocked("artifact_too_large");
-    return tasks.fenced(
+    return leases.fenced(
         claim,
         () -> {
-          tasks.checkPolicy(claim);
+          policy.checkPolicy(claim);
           var t = claim.turn();
           var a =
               new Artifact(
@@ -115,10 +128,10 @@ public class GovernanceService {
   }
 
   public Artifact archive(Claim claim, Object payload, String requiredScope) {
-    return tasks.fenced(
+    return leases.fenced(
         claim,
         () -> {
-          tasks.checkPolicy(claim);
+          policy.checkPolicy(claim);
           if (!PayloadJson.scopes(db.policy(claim.turn().id()).scopes()).contains(requiredScope))
             throw new Blocked("artifact_scope_denied");
           var artifact = archive(claim, payload);
@@ -136,14 +149,14 @@ public class GovernanceService {
               || !a.subject().equals(owner.subject())) throw new Problem(404, "not_found");
           // Match execution's owner-before-grant lock order when privacy governance is enabled.
           if ("ziwei:read".equals(db.artifactScope(id)))
-            tasks.checkArtifactPrivacy(turns.turn(a.turnId()));
+            policy.checkArtifactPrivacy(turns.turn(a.turnId()));
           var grant = db.lockGrant(a.conversationId());
           if (grant == null || !PayloadJson.scopes(grant.scopes()).contains("artifact:read"))
             throw new Problem(403, "artifact_denied");
           if (!PayloadJson.scopes(grant.scopes()).contains(db.artifactScope(id)))
             throw new Problem(403, "artifact_scope_denied");
           try {
-            tasks.release(a.releaseHash());
+            releases.require(a.releaseHash());
           } catch (Blocked e) {
             throw new Problem(409, e.getMessage());
           }
@@ -182,10 +195,10 @@ public class GovernanceService {
   }
 
   public String report(Claim claim, String call, String actionHash, String title) {
-    return tasks.fenced(
+    return leases.fenced(
         claim,
         () -> {
-          tasks.checkPolicy(claim);
+          policy.checkPolicy(claim);
           var old = db.effect(claim.turn().id(), call);
           if (old != null) {
             if (!old.actionHash().equals(actionHash)) throw new Blocked("effect_conflict");

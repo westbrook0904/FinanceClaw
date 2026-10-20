@@ -237,6 +237,15 @@ class RoleAssemblyIT {
         absent(context, TaskWorker.class, AgentExecutionPort.class, BusinessCapabilities.class);
       if (!combined && !role.equals("integrations"))
         absent(context, OutboxProjector.class, FeishuDelivery.class, AgentScopeFeishu.class);
+      if (role.equals("api"))
+        absent(
+            context,
+            TaskService.class,
+            com.financeclaw.app.task.ProjectTaskService.class,
+            com.financeclaw.infrastructure.task.MyBatisTaskProjectionGateway.class,
+            com.financeclaw.app.execution.RecoverTaskService.class,
+            com.financeclaw.app.execution.ExecutionCompletionService.class,
+            com.financeclaw.infrastructure.task.MyBatisExecutionReceiptGateway.class);
       if (role.equals("worker"))
         absent(
             context,
@@ -358,6 +367,69 @@ class RoleAssemblyIT {
   void invalidRoleStillFailsWhenNoRoleConfigurationMatches() {
     assertThatThrownBy(() -> role("unsupported", false, Map.of()))
         .hasRootCauseMessage("Unknown deployment role");
+  }
+
+  @Test
+  void apiWithoutLegacyFacadeKeepsGrantReplayOwnershipAndCancellation() throws Exception {
+    try (var api = role("api", true, Map.of())) {
+      var json = new ObjectMapper();
+      var created = request(api, "/v1/conversations", "POST", "{}", true);
+      assertThat(created.statusCode()).isEqualTo(201);
+      String conversation = json.readTree(created.body()).path("conversation_id").asText();
+      String base = "/v1/conversations/" + conversation;
+      var grant = request(api, base + "/grant", "GET", null, true);
+      assertThat(grant.statusCode()).isEqualTo(200);
+      long revision = json.readTree(grant.body()).path("revision").asLong();
+      String update = "{\"revision\":" + revision + ",\"scopes\":[\"artifact:read\"]}";
+      var changed = request(api, base + "/grant", "PUT", update, true);
+      assertThat(changed.statusCode()).isEqualTo(200);
+      assertThat(json.readTree(changed.body()).path("revision").asLong()).isEqualTo(revision + 1);
+      assertThat(request(api, base + "/grant", "PUT", update, true).body())
+          .isEqualTo(changed.body());
+      assertThat(
+              request(
+                      api,
+                      base + "/grant",
+                      "PUT",
+                      update.replace("artifact:read", "report:write"),
+                      true)
+                  .statusCode())
+          .isEqualTo(409);
+      String other =
+          api.getBean(com.financeclaw.app.task.SubmitTaskService.class)
+              .createConversation(
+                  new com.financeclaw.domain.Task.Owner("other-tenant", "other-owner"));
+      assertThat(
+              request(api, "/v1/conversations/" + other + "/grant", "GET", null, true).statusCode())
+          .isEqualTo(404);
+      var accepted =
+          request(api, base + "/turns", "POST", "{\"message\":\"queued cancellation\"}", true);
+      assertThat(accepted.statusCode()).isEqualTo(202);
+      String turn = json.readTree(accepted.body()).path("turn_id").asText();
+      String path = base + "/turns/" + turn;
+      var cancelled = request(api, path + "/cancel", "POST", "{}", true);
+      assertThat(cancelled.statusCode()).isEqualTo(202);
+      assertThat(
+              json.readTree(request(api, path, "GET", null, true).body()).path("status").asText())
+          .isEqualTo("cancelled");
+      var replay = request(api, path + "/cancel", "POST", "{}", true);
+      assertThat(replay.statusCode()).isEqualTo(202);
+      var replayBody = json.readTree(replay.body());
+      assertThat(replayBody.path("idempotent_replay").asBoolean()).isTrue();
+      assertThat(replayBody.path("revision"))
+          .isEqualTo(json.readTree(cancelled.body()).path("revision"));
+      assertThat(replayBody.path("turn_id").asText()).isEqualTo(turn);
+      assertThat(replayBody.path("status").asText()).isEqualTo("cancelled");
+      var deliveries = request(api, "/v1/feishu/deliveries", "GET", null, true);
+      assertThat(deliveries.statusCode()).isEqualTo(200);
+      assertThat(json.readTree(deliveries.body()).isEmpty()).isTrue();
+      assertThat(
+              sql.queryForObject(
+                  "SELECT count(*) FROM business.outbox WHERE NOT delivered", Integer.class))
+          .isPositive();
+      assertThat(sql.queryForObject("SELECT count(*) FROM business.projections", Integer.class))
+          .isZero();
+    }
   }
 
   @Test

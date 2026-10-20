@@ -64,11 +64,13 @@ public final class RoleConfiguration {
     MapperConfiguration.Tasks.class,
     RuntimeHealth.class,
     TaskQueryService.class,
-    MyBatisTaskQueryGateway.class,
-    ProjectTaskService.class,
-    MyBatisTaskProjectionGateway.class
+    MyBatisTaskQueryGateway.class
   })
   static class TaskReads {}
+
+  @Configuration(proxyBeanMethods = false)
+  @Import({ProjectTaskService.class, MyBatisTaskProjectionGateway.class})
+  static class Projection {}
 
   @Configuration(proxyBeanMethods = false)
   @Import({
@@ -87,16 +89,12 @@ public final class RoleConfiguration {
     MyBatisTaskMutationGateway.class,
     MyBatisCommandGateway.class,
     MyBatisExecutionPolicyGateway.class,
-    MyBatisExecutionReceiptGateway.class,
     MyBatisExecutionContextGateway.class,
     SubmitTaskService.class,
     CancelTaskService.class,
     TaskTransitionService.class,
     ExecutionLeaseService.class,
     ExecutionPolicyService.class,
-    ExecutionCompletionService.class,
-    RecoverTaskService.class,
-    TaskService.class,
     GovernanceService.class,
     AnswerInteractionService.class,
     MyBatisInteractionGateway.class,
@@ -138,6 +136,11 @@ public final class RoleConfiguration {
   @Configuration(proxyBeanMethods = false)
   @Import({
     GovernedTasks.class,
+    Projection.class,
+    TaskService.class,
+    MyBatisExecutionReceiptGateway.class,
+    ExecutionCompletionService.class,
+    RecoverTaskService.class,
     ExecuteTaskService.class,
     CapabilityStepService.class,
     MyBatisCapabilityStepGateway.class,
@@ -157,6 +160,7 @@ public final class RoleConfiguration {
   @Configuration(proxyBeanMethods = false)
   @Import({
     TaskReads.class,
+    Projection.class,
     MapperConfiguration.Governance.class,
     MapperConfiguration.Channel.class,
     MyBatisExecutionContextGateway.class,
