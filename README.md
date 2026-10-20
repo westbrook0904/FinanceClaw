@@ -2,6 +2,14 @@
 
 FinanceClaw 从 Python / LangChain / LangGraph 迁移到 **Java / AgentScope Java** 的目标项目。
 
+Java 工程维护在 [codex/java-agentscope 分支](https://github.com/westbrook0904/FinanceClaw/tree/codex/java-agentscope)，保留完整 Java 提交历史。可单独克隆：
+
+```bash
+git clone --branch codex/java-agentscope --single-branch https://github.com/westbrook0904/FinanceClaw.git FinanceClaw-java
+```
+
+下文和各批历史证据中的“未推送”“尚未提交”反映记录时的状态；当前交付包含这些 Java 改动，以及最新治理测试修复和 R7a 契约实验。
+
 当前已实现 **M0–M4 的本地能力及 M5 部署基础**：任务生命周期、原生事件与 SSE、授权与审批恢复、结果归档、请求预算，以及通过 AgentScope 原生 Toolkit / SkillRepository 接入的酒店/Taibu MCP、调酒 Skill、市场研究子 Agent 和固定投资组合 Workflow。M4 增加受治理长期记忆、独立受限 Worker，以及 AgentScope 原生飞书文本接入。M6a 已冻结紫微回归基准并迁移日期契约；M6b 已实现固定 Java 历法、本命与流运算法，并完成旧盘面逐字段比对；M6c 已通过 AgentScope 原生 Toolkit 接入五个紫微工具及出生资料澄清、归属、事实分段和结果预算，默认关闭，仅允许显式开发模式。M6d 已增加独立进程故障/竞争、无 Python 容器和真实模型验收入口，真实模型验收仍待配置。默认离线运行；真实供应商、飞书租户与生产交付仍待验收。SDK 暂不支持的卡片/表单和可靠投递回执没有自建实现。
 
 最新开发补充 **[M5b 受理暂停与排空检查](docs/migration/m5b-admission.md)**：暂停当前认证主体的新任务，保留已有任务的审批、取消和恢复；检查任务、通知、记忆及隐私积压，受理状态跨重启和备份恢复保留。M6d 已本地提交为 `72e0655`，未推送。
@@ -18,11 +26,13 @@ M5e 与 R0–R5a 已保存为本地检查点 `bb58ea2`，[R5b 紫微边界拆分
 
 随后[原生执行适配依赖收缩](docs/architecture/runtime-decoupling.md)已移除生产 TaskService，原生 Runtime/Tools 直接使用现有服务与端口，Worker 不再构造投影用例及网关；测试委托移入显式导入的 TaskFixture。该批通过 630 项单元/HTTP/架构测试及 1 项不依赖 Docker 的产品打包检查，包含探针字节码依赖门禁；这些结果保留为该批历史证据。
 
-最新[治理用例分层](docs/architecture/governance-decoupling.md)已删除生产 GovernanceService，将授权、Artifact 和报告发布分别交给 GrantService、ArtifactService、ReportService，HTTP 回答直接调用 AnswerInteractionService。API 不装配报告发布服务，Worker 不装配授权变更服务，Integrations 不装配这两类服务；旧 application 生产包已清空。最新两批改动已保存为本地检查点 `4f4f7b4`，未推送。本批 685 项单元/HTTP/架构测试及 1 项产品打包检查通过；Docker API 仍返回 HTTP 500，数据库、角色实际启动、独立进程恢复与 Compose 尚未重跑，不能沿用此前批次的测试结果作为本批验收。
+[治理用例分层](docs/architecture/governance-decoupling.md)已删除生产 GovernanceService，将授权、Artifact 和报告发布分别交给 GrantService、ArtifactService、ReportService，HTTP 回答直接调用 AnswerInteractionService。API 不装配报告发布服务，Worker 不装配授权变更服务，Integrations 不装配这两类服务；旧 application 生产包已清空。这两批改动已保存为本地检查点 `4f4f7b4`，未推送。该批 685 项单元/HTTP/架构测试及 1 项产品打包检查通过；当时受 Docker API 500 阻断的集成验证，已在后续批次补跑，详见下文。
 
-继续完成的[HTTP 请求类型化与 Bean Validation](docs/architecture/http-request-validation.md)已为任务提交和受理状态变更接入 Boot validation starter、类型化请求及严格 Jackson 映射，保留原错误码与幂等校验顺序。本批 821 项单元/HTTP/架构测试及 1 项产品打包检查通过，新增 136 项测试；改动尚未提交。Docker 相关集成验证仍待恢复后完成。
+继续完成的[HTTP 请求类型化与 Bean Validation](docs/architecture/http-request-validation.md)已为任务提交和受理状态变更接入 Boot validation starter、类型化请求及严格 Jackson 映射，保留原错误码与幂等校验顺序。本批 821 项单元/HTTP/架构测试及 1 项产品打包检查通过，新增 136 项测试；已与下一批记忆接口校验一同提交为 `431c07d`，未推送。该批未完成的 Docker 集成验证见后续补验记录。
 
-最新[记忆接口 Bean Validation](docs/architecture/memory-http-validation.md)已将确认/拒绝与遗忘请求的静态判断交给标准约束，保留原 Jackson 绑定、错误码、功能开关与幂等顺序。全量 906 项单元/HTTP/架构测试及 1 项产品打包检查通过，本批新增 85 项测试。两批 HTTP 校验改动均未提交，数据库与恢复验证仍受 Docker API 500 阻断。
+最新[记忆接口 Bean Validation](docs/architecture/memory-http-validation.md)已将确认/拒绝与遗忘请求的静态判断交给标准约束，保留原 Jackson 绑定、错误码、功能开关与幂等顺序。全量 906 项单元/HTTP/架构测试及 1 项产品打包检查通过，本批新增 85 项测试。两批 HTTP 校验改动已本地提交为 `431c07d`，未推送。上述批次数字与 Docker API 500 限制保留为历史证据。
+
+2026-10-21 已完成[整体验证补跑](docs/architecture/post-refactor-verification.md)：906 项既有单元/HTTP/架构通过，215 项集成中首次出现的 3 项治理夹具错误已修复，对应 7 项定向重跑通过；隔离 Compose 27 项检查通过。新增 [R7a SubAgentTool 契约实验](docs/architecture/r7a-subagent-evaluation.md)的 6 项探针通过，确认固定 SDK 不能直接替换现有研究入口。测试夹具修复、原型和本批记录随本分支交付；生产源码与依赖保持原样。
 
 ## 固定工具链
 
@@ -110,6 +120,8 @@ scripts/mvn.sh spring-boot:run
 | [治理用例分层](docs/architecture/governance-decoupling.md) | 删除生产 GovernanceService，分离授权、Artifact、报告发布和 HTTP 回答，收窄各角色装配 |
 | [HTTP 请求类型化与 Bean Validation](docs/architecture/http-request-validation.md) | 任务提交与受理变更的静态 DTO、严格 Jackson 映射、原错误顺序与兼容性验证 |
 | [记忆接口 Bean Validation](docs/architecture/memory-http-validation.md) | 确认/拒绝与遗忘请求的标准静态约束、既有错误码及隐私/幂等顺序 |
+| [职责拆分与 HTTP 完整补验](docs/architecture/post-refactor-verification.md) | Docker 恢复后的数据库/角色/进程/Compose 验证、首次夹具错误与修复重跑 |
+| [R7a SubAgentTool 契约实验](docs/architecture/r7a-subagent-evaluation.md) | 6 项固定 SDK 探针、不能直接替换研究入口的证据与验证边界 |
 | [Spring 事务与组件复审](docs/architecture/spring-transactions-component-review.md) | Spring 统一事务、SDK 主动提交实验证据、已接入 ArchUnit 与组件复用清单 |
 | [M1 使用与验证](docs/migration/m1-validation.md) | API 示例、恢复边界、配置及验收证据 |
 | [M0 验证记录](docs/migration/m0-validation.md) | 实际版本、测试证据、状态保存边界与继续实施决策 |

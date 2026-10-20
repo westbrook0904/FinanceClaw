@@ -1,6 +1,6 @@
 # HTTP 请求类型化与 Bean Validation
 
-实施日期：2026-10-20。前两批原生执行与治理用例拆分已保存为本地检查点 `4f4f7b4`，未推送。本批在该检查点上继续静态请求校验整改，改动尚未提交。
+实施日期：2026-10-20。前两批原生执行与治理用例拆分已保存为本地检查点 `4f4f7b4`，未推送。本批在该检查点上继续静态请求校验整改，已与后续记忆接口切片一同提交为本地检查点 `431c07d`，未推送。
 
 ## 接入范围
 
@@ -63,4 +63,4 @@ python3 scripts/check-delivery.py
 
 ## 后续工作
 
-当前优先事项仍是 Docker 恢复后的整体验证，命令见[治理用例分层记录](governance-decoupling.md)。后续[记忆接口校验切片](memory-http-validation.md)已将两个既有 typed 请求的静态判断迁到 Bean Validation，保留普通 Jackson 绑定与原错误码；本文的 821 项结果保留为上一批基线。其他接口须逐个固定错误顺序，再决定是否迁移。R7 原生替换实验、真实供应商、飞书租户与生产切换分别保留独立验收范围。
+2026-10-21 Docker 恢复后的整体验证及治理测试夹具修复，另见[完整集成补验记录](post-refactor-verification.md)。后续[记忆接口校验切片](memory-http-validation.md)已将两个既有 typed 请求的静态判断迁到 Bean Validation，保留普通 Jackson 绑定与原错误码；本文的 821 项结果保留为上一批基线。其他接口须逐个固定错误顺序，再决定是否迁移。[R7a SubAgentTool 实验](r7a-subagent-evaluation.md)、真实供应商、飞书租户与生产切换分别保留独立验收范围。

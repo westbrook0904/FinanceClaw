@@ -66,4 +66,4 @@ python3 scripts/check-delivery.py
 
 随后按 [R6 实施记录](r6-implementation.md) 重跑隔离 Compose 验证，并更新证据。真实供应商、飞书租户和生产切换继续按各自验收入口处理。
 
-旧任务 facade 的生产调用者已清零。后续[治理用例分层](governance-decoupling.md)也已删除 GovernanceService，授权、Artifact 和报告发布分别使用独立应用服务与持久化端口，HTTP 回答直接进入已有回答用例。两批改动已本地提交，仍待数据库、角色启动与恢复验证。R7 原生替换实验继续按等价性证据决定。
+旧任务 facade 的生产调用者已清零。后续[治理用例分层](governance-decoupling.md)也已删除 GovernanceService，授权、Artifact 和报告发布分别使用独立应用服务与持久化端口，HTTP 回答直接进入已有回答用例。两批改动已本地提交，2026-10-21 的数据库、角色启动、恢复与 Compose 补验见[最新运行记录](post-refactor-verification.md)，本文保留该批历史验证范围。R7 原生替换实验继续按等价性证据决定。

@@ -25,6 +25,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.util.AopTestUtils;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.containers.PostgreSQLContainer;
 
@@ -101,7 +102,8 @@ class GovernanceBoundariesIT {
   @Test
   void failureAfterGrantReceiptWriteRollsBackGrantAndReceipt() {
     String conversation = submissions.createConversation(owner);
-    var failing = spy(grantStore);
+    // Spy the target, not the repository proxy. Its Mapper still joins the real Spring transaction.
+    var failing = spy(AopTestUtils.<MyBatisGrantGateway>getUltimateTargetObject(grantStore));
     doAnswer(
             invocation -> {
               invocation.callRealMethod();
@@ -120,7 +122,7 @@ class GovernanceBoundariesIT {
   @Test
   void failureAfterScopeWriteRollsBackNestedArtifactInsert() {
     var claim = claim();
-    var failing = spy(artifactStore);
+    var failing = spy(AopTestUtils.<MyBatisArtifactGateway>getUltimateTargetObject(artifactStore));
     doAnswer(
             invocation -> {
               invocation.callRealMethod();
@@ -138,7 +140,7 @@ class GovernanceBoundariesIT {
   @Test
   void failureAfterEffectCompletionRollsBackReportAndEffect() {
     var claim = claim();
-    var failing = spy(reportStore);
+    var failing = spy(AopTestUtils.<MyBatisReportGateway>getUltimateTargetObject(reportStore));
     doAnswer(
             invocation -> {
               invocation.callRealMethod();

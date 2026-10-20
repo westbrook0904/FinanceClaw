@@ -1,6 +1,6 @@
 # 记忆接口接入 Bean Validation
 
-实施日期：2026-10-20。承接[任务提交与受理状态的 HTTP 校验切片](http-request-validation.md)，继续复用已引入的 Spring Boot validation starter。当前本地检查点为 `4f4f7b4`，两批 HTTP 校验改动尚未提交，未推送。
+实施日期：2026-10-20。承接[任务提交与受理状态的 HTTP 校验切片](http-request-validation.md)，继续复用已引入的 Spring Boot validation starter。本批基于 `4f4f7b4`，两批 HTTP 校验改动现已保存为本地检查点 `431c07d`，未推送。
 
 ## 本批改动
 
@@ -49,4 +49,4 @@ python3 scripts/check-delivery.py
 
 验证范围与证据见[机器记录](evidence/memory-http-validation.json)。HTTP 测试中的数据库端口或应用服务使用 mock，不能替代真实 PostgreSQL 事务、隐私竞态、角色完整启动与 Compose 恢复验收。Docker Engine 本轮只读检查仍返回 HTTP 500，数据库相关测试只完成编译，未重启或修改 Docker。
 
-后续优先补跑环境恢复后的完整集成验证，命令见[治理用例分层记录](governance-decoupling.md)。本批与上一批 HTTP 校验改动仍保留在工作区，历史测试证据不作覆盖。
+2026-10-21 Docker 恢复后的整体验证及治理测试夹具修复，另见[完整集成补验记录](post-refactor-verification.md)。本批与上一批 HTTP 校验改动已本地提交为 `431c07d`，未推送，历史测试证据不作覆盖。

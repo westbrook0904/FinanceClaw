@@ -1,16 +1,18 @@
 # AgentScope 复用与 COLA 架构整改方案
 
-审查日期：2026-10-15；实施更新：2026-10-20。**R0–R6 已完成；R6 批次完整回归 835 项通过，隔离 Compose 27 项检查通过**。固定契约、M0 隔离、编码边界与 Operations 切片见 [R0–R2 实施记录](r0-r2-implementation.md)；回答用例、工具交互、统一 SDK 快照与实际回归见 [R3 实施记录](r3-implementation.md)。任务用例、原生执行端口与事务回滚验证见 [R4 实施记录](r4-implementation.md)。组合复盘与市场研究的分层见 [R5a 实施记录](r5a-implementation.md)，紫微输入/资源/用例边界见 [R5b 实施记录](r5b-implementation.md)，记忆领域规则、模型/存储端口与发布配置见 [R5c 实施记录](r5c-implementation.md)。本地检查点 `bb58ea2` 保存 M5e 与 R0–R5a，`7e5a903` 保存 R5b/R5c，均未推送。[R6 实施记录](r6-implementation.md)说明显式角色装配、实际 Bean/Mapper 清单、恢复验证和保留单 Maven 模块的决定；R6 已保存为本地检查点 `43d0c53`，未推送。组件选择依据见 [Spring 事务与组件复审](spring-transactions-component-review.md)。
+审查日期：2026-10-15；实施更新：2026-10-21。**R0–R6 已完成；R6 批次完整回归 835 项通过，隔离 Compose 27 项检查通过**。固定契约、M0 隔离、编码边界与 Operations 切片见 [R0–R2 实施记录](r0-r2-implementation.md)；回答用例、工具交互、统一 SDK 快照与实际回归见 [R3 实施记录](r3-implementation.md)。任务用例、原生执行端口与事务回滚验证见 [R4 实施记录](r4-implementation.md)。组合复盘与市场研究的分层见 [R5a 实施记录](r5a-implementation.md)，紫微输入/资源/用例边界见 [R5b 实施记录](r5b-implementation.md)，记忆领域规则、模型/存储端口与发布配置见 [R5c 实施记录](r5c-implementation.md)。本地检查点 `bb58ea2` 保存 M5e 与 R0–R5a，`7e5a903` 保存 R5b/R5c，均未推送。[R6 实施记录](r6-implementation.md)说明显式角色装配、实际 Bean/Mapper 清单、恢复验证和保留单 Maven 模块的决定；R6 已保存为本地检查点 `43d0c53`，未推送。组件选择依据见 [Spring 事务与组件复审](spring-transactions-component-review.md)。
 
 后续[治理与飞书入口依赖收缩](entrypoint-decoupling.md)已本地提交 `0c549fa`，未推送，该批通过 630 项单元/HTTP/架构测试。[原生执行适配依赖收缩](runtime-decoupling.md)已删除生产 TaskService，Worker 不再构造投影用例及网关，测试委托移入 TaskFixture；该批通过 630 项单元/HTTP/架构测试及 1 项不依赖 Docker 的产品打包检查，包含探针字节码依赖门禁。
 
-最新[治理用例分层](governance-decoupling.md)已删除生产 GovernanceService，拆出 GrantService、ArtifactService、ReportService，HTTP 回答直接使用 AnswerInteractionService；旧 application 生产包已清空。API 不装配 ReportService，Worker 不装配 GrantService，Integrations 两者皆不装配。原生执行与治理分层这两批改动已保存为本地检查点 `4f4f7b4`，未推送；本批通过 685 项单元/HTTP/架构测试与 1 项产品打包检查，以上旧批次数字保留为历史证据。Docker API 再次检查仍返回 HTTP 500，数据库、角色实际启动、独立进程恢复与 Compose 未重跑，不能用历史结果代替当前验收。
+[治理用例分层](governance-decoupling.md)已删除生产 GovernanceService，拆出 GrantService、ArtifactService、ReportService，HTTP 回答直接使用 AnswerInteractionService；旧 application 生产包已清空。API 不装配 ReportService，Worker 不装配 GrantService，Integrations 两者皆不装配。原生执行与治理分层这两批改动已保存为本地检查点 `4f4f7b4`，未推送；该批通过 685 项单元/HTTP/架构测试与 1 项产品打包检查。以上旧批次数字及当时 Docker API 500 的限制保留为历史证据。
+
+任务/受理与记忆的两批 HTTP 校验已提交为 `431c07d`，未推送。2026-10-21 Docker 恢复后的[完整集成补验](post-refactor-verification.md)执行了 906 项既有单元/HTTP/架构与 215 项集成测试；其中三项治理故障注入夹具错误已修复，定向重跑 7 项通过，隔离 Compose 27 项通过。新增 [R7a SubAgentTool 契约实验](r7a-subagent-evaluation.md)的 6 项探针通过，决定不直接替换现有研究入口；原生历史压缩等后续 R7 实验仍为可选项。
 
 ## 1. 结论与决策
 
 **存在局部重复和可收敛的适配代码，但没有证据支持把当前业务治理整体替换为 AgentScope Harness。建议采用 COLA 的分层和依赖倒置，先在单 Maven 工程内实施，再按实际需要拆模块。**
 
-整改前的主要成本来自职责和依赖交织：`application`、`agent`、`tools`、`ziwei` 形成循环依赖，增加工具需要修改多处业务分支。R0–R5b 已将参与循环的具体类依赖从 93 条降到 0 条，并删除循环白名单。R5c 已完成记忆与发布配置分层，R6 已完成角色装配，并将零循环门禁扩大到独立 Memory/Migrate 启动根；后续已删除生产 TaskService 与 GovernanceService。授权、Artifact 和报告发布分别进入独立应用服务，通过窄端口访问持久化适配；HTTP 和飞书回答直接进入已有回答用例。最新职责拆分已落地，数据库事务与角色启动仍需补齐本批运行验证。
+整改前的主要成本来自职责和依赖交织：`application`、`agent`、`tools`、`ziwei` 形成循环依赖，增加工具需要修改多处业务分支。R0–R5b 已将参与循环的具体类依赖从 93 条降到 0 条，并删除循环白名单。R5c 已完成记忆与发布配置分层，R6 已完成角色装配，并将零循环门禁扩大到独立 Memory/Migrate 启动根；后续已删除生产 TaskService 与 GovernanceService。授权、Artifact 和报告发布分别进入独立应用服务，通过窄端口访问持久化适配；HTTP 和飞书回答直接进入已有回答用例。最新职责拆分的数据库事务与角色启动已补跑验证，准确结果和首次失败修复见[补验记录](post-refactor-verification.md)。
 
 本次建议分为四类：
 
@@ -375,8 +377,8 @@ public AnswerDecision answer(ReplyContext context, Answer answer, Instant now) {
 | R4 任务与原生执行分层 | 已拆受理/查询/取消/租约/完成/恢复；原生 runtime 实现 `AgentExecutionPort`；删除 Mapper/目录 getter | 实现与验证见 [R4 记录](r4-implementation.md)；沿用 SQL 和锁顺序 | 新 app 无 SDK/Mapper；9 项新增集成覆盖回滚、过期写入、事务外执行和不重放恢复 |
 | R5 业务对象和记忆分层 | [R5a](r5a-implementation.md) 已拆 Portfolio 与研究，[R5b](r5b-implementation.md) 已拆紫微 I/O，[R5c](r5c-implementation.md) 已拆记忆与发布配置 | 不与算法升级、数据格式迁移同时做 | 领域、子预算、发布幂等、紫微冻结样本与恢复回归通过；R5c 增加记忆事务回滚、旧回执重放、搜索遗忘竞态和发布字节兼容验证 |
 | R6 角色装配与可选模块化 | [已完成](r6-implementation.md)：显式角色导入、精确 Mapper 注册、独立 Outbox 投影；保留单 Maven 模块与原启动类 | Spring 原生装配组件，无新增生产依赖；数据库授权保持原样 | 实际 Bean/Mapper 负向加载、受限 Memory 身份、835 项完整回归、27 项隔离 Compose 检查通过 |
-| R6 后续职责收尾 | 已移除 TaskService 和 GovernanceService；原生调用者、HTTP 入口与角色装配直接使用窄用例，见[治理分层](governance-decoupling.md) | 已本地提交 `4f4f7b4`，未推送；保留原 Spring 事务、Mapper SQL、锁顺序和固定 SDK | 本批验证另行记录；数据库、角色启动、故障恢复和 Compose 待 Docker 恢复后验收，不沿用 R6 历史结果 |
-| R7 可选原生替换实验 | SubAgentTool、历史压缩分别实验；SDK 存储仅在提供外部事务模式后重评 | Spring 事务方案已确定，不阻塞 R1–R6 | 满足本节后的等价性矩阵且适配代码减少，才合入默认路径 |
+| R6 后续职责收尾 | 已移除 TaskService 和 GovernanceService；原生调用者、HTTP 入口与角色装配直接使用窄用例，见[治理分层](governance-decoupling.md) | 已本地提交 `4f4f7b4`，HTTP 校验已提交 `431c07d`，均未推送；保留 Spring 事务、Mapper SQL、锁顺序和固定 SDK | 最新数据库、角色启动、故障恢复和 Compose 的结果见[补验记录](post-refactor-verification.md)，含三项治理夹具错误及定向修复证据 |
+| R7 可选原生替换实验 | [R7a](r7a-subagent-evaluation.md) 已完成 6 项 SubAgentTool 入口探针，否决直接替换；历史压缩另行实验，SDK 存储仅在提供外部事务模式后重评 | Spring 事务方案已确定，不阻塞 R1–R6；本批没有实现受治理 SubAgentTool 包装层 | 满足本节后的等价性矩阵且适配代码减少，才合入默认路径 |
 
 执行顺序以 R1 → R2 → R3 → R4 为主。R5 可以按业务逐项推进；R6 在职责稳定后实施。**不建议第一步全量搬包、同时改事务和升级 AgentScope。**
 
@@ -457,8 +459,8 @@ python3 scripts/check-delivery.py
 ## 11. 仍未被本次分析证明的事项
 
 - 已验证 2.0.3 原生 JDBC store 单加事务感知代理不能保留外层原子性；没有完成其他 SDK 存储改造或 PostgreSQL 替换验收。Spring 是当前确定的事务所有者。
-- 未完成 SubAgentTool 等价原型，也没有测量 Schema 去重的延迟收益。
+- R7a 已完成 SubAgentTool 的固定版本入口探针并排除直接替换；未完成受治理替换实现的全矩阵，也没有测量 Schema 去重的延迟收益。
 - 已验证 ArchUnit 1.5.1 的构建/测试接入，并核查 COLA statemachine 5.0.0 源码；Bean Validation 已接入[任务提交与受理变更](http-request-validation.md)和[记忆接口](memory-http-validation.md)；状态机和 Modulith 尚未接入，按实际收益决定。
 - 没有重新完成真实模型、远端 MCP、真实飞书、历史会话切换或生产验收。架构整改与 [迁移验收清单](../migration/acceptance-checklist.md) 是两条需要分别留证据的工作。
 
-R0–R6 的实现与验证见各批实施记录。生产 TaskService 与 GovernanceService 已由后续切片移除，治理职责和各角色依赖见[治理用例分层](governance-decoupling.md)。上述两批已本地提交为 `4f4f7b4`，未推送；数据库、角色启动与恢复验证仍待 Docker 恢复后完成；真实供应商与生产迁移按验收清单独立完成。Maven 模块暂不拆分；R7 原生替换保持可选，只有治理等价且确实减少适配成本后才进入默认路径。
+R0–R6 的实现与验证见各批实施记录。生产 TaskService 与 GovernanceService 已由后续切片移除，治理职责和各角色依赖见[治理用例分层](governance-decoupling.md)。职责拆分已由 `4f4f7b4` 保存，HTTP 校验已由 `431c07d` 保存；这些提交与最新测试夹具修复、集成补验、R7a 原型一同纳入 `codex/java-agentscope` 分支交付。各批记录和机器证据保留当时的验证与提交状态。真实供应商与生产迁移按验收清单独立完成。Maven 模块暂不拆分；R7 原生替换保持可选，只有治理等价且确实减少适配成本后才进入默认路径。

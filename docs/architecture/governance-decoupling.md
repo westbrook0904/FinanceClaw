@@ -79,4 +79,4 @@ python3 scripts/validate-compose.py --ziwei --admission --preflight --restore-pr
 python3 scripts/check-delivery.py
 ```
 
-本批完成了原 GovernanceService 的职责拆分。当前优先剩余项是完整运行验证；真实供应商、飞书租户、生产身份与灾备继续按[迁移验收清单](../migration/acceptance-checklist.md)处理。Bean Validation/类型化 DTO 已进入后续[HTTP 请求校验切片](http-request-validation.md)；R7 原生替换继续独立评估，均不纳入本文完成声明。
+本批完成了原 GovernanceService 的职责拆分；上述编译范围与 Docker 故障保留为该批历史证据。2026-10-21 已补跑[完整集成验证](post-refactor-verification.md)，修复三个故障注入夹具错误后，7 项 GovernanceBoundariesIT 全部通过，另完成角色/恢复与 27 项 Compose 检查。真实供应商、飞书租户、生产身份与灾备继续按[迁移验收清单](../migration/acceptance-checklist.md)处理。Bean Validation/类型化 DTO 已进入后续[HTTP 请求校验切片](http-request-validation.md)，[R7a 入口探针](r7a-subagent-evaluation.md)单独记录。

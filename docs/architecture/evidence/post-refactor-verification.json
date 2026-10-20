@@ -1,0 +1,912 @@
+{
+  "milestone": "post-refactor-verification-and-R7a",
+  "collected_at_utc": "2026-10-20T16:32:36.338243+00:00",
+  "base_commit": "431c07d68e719520cc4968c42067b92934888342",
+  "delivery": "HTTP validation slices committed locally as 431c07d; this test repair, R7a probe and documentation are uncommitted; no push.",
+  "validation_summary": {
+    "status": "all_scenarios_passed_across_initial_run_and_focused_repair_plus_compose",
+    "single_successful_clean_verify": false,
+    "initial_unit_tests_passed": 906,
+    "initial_integration_tests": 215,
+    "initial_integration_errors": 3,
+    "repaired_integration_suite_tests_passed": 7,
+    "new_sdk_probe_tests_passed": 6,
+    "distinct_unit_and_integration_scenarios_covered": 1127,
+    "compose_checks_passed": 27,
+    "spotless": "passed in focused repair command",
+    "interpretation": "Initial full verify failed due to Mockito spying Spring repository proxies before rollback assertions. Unaffected suites passed. Only GovernanceBoundariesIT and the new SDK probe were rerun after repairing test setup; mixed report timestamps are not a second full successful build."
+  },
+  "initial_full_run": {
+    "command": "scripts/mvn.sh -B -ntp clean verify spotless:check",
+    "exit_code": 1,
+    "log_sha256": "fc3cc1932787909c54e8c7ebeb96d63f7ce9566b54cb1e199c38ee1e6b018de4",
+    "jar_sha256": "fbd647f4aa34b9774ca5ac82ea64fd1a5c69817afa3745516820e88b2c2228b1",
+    "reports": {
+      "surefire": {
+        "suites": 29,
+        "totals": {
+          "tests": 906,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "reports": [
+          {
+            "name": "com.financeclaw.architecture.AgentStateInspectorTest",
+            "tests": 18,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "sha256": "e5ecf551e7d771b1366dc2aad2c2ef80daff81c833d1e12ae1471c9902004637"
+          },
+          {
+            "name": "com.financeclaw.architecture.ArchitectureTest",
+            "tests": 17,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "sha256": "a93192161e60a5fb668648370d826906889a5ac46d30bcd3252d647cd34061ea"
+          },
+          {
+            "name": "com.financeclaw.architecture.ArtifactPayloadTest",
+            "tests": 20,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "sha256": "09ec0009c4e77457a85f8f698a463620ec324747ab99cc3c66f59c92c00441ad"
+          },
+          {
+            "name": "com.financeclaw.architecture.ArtifactServiceTest",
+            "tests": 12,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "sha256": "71a6b6f39dca59547f7d3f1d31f6af85744a2d41ba2617f715434f8f9095d74b"
+          },
+          {
+            "name": "com.financeclaw.architecture.GrantServiceTest",
+            "tests": 11,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "sha256": "aadca02a1de72bce91d75adf3a0cf1f92e0a09522b440453b0fde57b2be4149e"
+          },
+          {
+            "name": "com.financeclaw.architecture.HttpValidationWiringTest",
+            "tests": 8,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "sha256": "18b8eff7a8d8e577bc1daa4c300ef93899841547518e0057166e8dd40f8f4770"
+          },
+          {
+            "name": "com.financeclaw.architecture.InteractionHttpContractTest",
+            "tests": 17,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "sha256": "aeb38540b7a6891b30d7c8897361ce050dd9485a7419e95978d5883749a143aa"
+          },
+          {
+            "name": "com.financeclaw.architecture.MemoryHttpContractTest",
+            "tests": 82,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "sha256": "a80607c190bd7ac00da88ea3b9bf8b51515a3ddaf71febd108b5b88308c29a4a"
+          },
+          {
+            "name": "com.financeclaw.architecture.MemoryReleaseBoundariesTest",
+            "tests": 18,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "sha256": "457e9a3060908641d4787dcd18bee6dc89a611ec342c72df300374a01d33bc75"
+          },
+          {
+            "name": "com.financeclaw.architecture.OperationsHttpContractTest",
+            "tests": 63,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "sha256": "b2603433251c5e9c2855cb041704cf5deca93ec2c14716b2347a30d8704efc43"
+          },
+          {
+            "name": "com.financeclaw.architecture.OperationsRulesTest",
+            "tests": 10,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "sha256": "15279681e9eefc87e88402b9f5bd881964ae29c325fd44bf28d752195a52ca13"
+          },
+          {
+            "name": "com.financeclaw.architecture.PortfolioResearchRulesTest",
+            "tests": 17,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "sha256": "c52cfc92e3d1665c95ee930690dfe49782187c0a9b77d00aaad4a0a8be6a2ac1"
+          },
+          {
+            "name": "com.financeclaw.architecture.ReportServiceTest",
+            "tests": 12,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "sha256": "fbb46a6e817e837f268efac52a00898d1968ed1aaeb360e4786d2495b1ae6041"
+          },
+          {
+            "name": "com.financeclaw.architecture.SerializationCompatibilityTest",
+            "tests": 2,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "sha256": "af4b9a2edabfb586ec6936c0484974fc60341e2f91a28fb9ca598b820406e0e3"
+          },
+          {
+            "name": "com.financeclaw.architecture.TaskHttpContractTest",
+            "tests": 74,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "sha256": "2a91764d279752756bb70c0f45fad16cd576de6e6292a033fe25341605262a7d"
+          },
+          {
+            "name": "com.financeclaw.architecture.ZiweiBoundariesTest",
+            "tests": 30,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "sha256": "99d0af57e84cb78631ce101e2b2b2cb7a3fe41c7806d89f8cc4a75172d62816d"
+          },
+          {
+            "name": "com.financeclaw.m0.AgentFactoryTest",
+            "tests": 1,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "sha256": "bb27c384688c6832a09a239307033e7f68b476268094bdf23c764384076225ee"
+          },
+          {
+            "name": "com.financeclaw.m0.ExecutionScopeTest",
+            "tests": 2,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "sha256": "fed5501372446716dc4acabd78188fb8b2095469497b3a8c30078cf90895c42c"
+          },
+          {
+            "name": "com.financeclaw.m0.ModelPayloadTest",
+            "tests": 2,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "sha256": "76d64b1fd6e309cf99b53abfa3619f258ffe931bd9119813faa6fef5b64df710"
+          },
+          {
+            "name": "com.financeclaw.m0.SdkMiddlewareTest",
+            "tests": 1,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "sha256": "68fcbc5ea5581ef6c65ae1728bde4d228aba80d902ae2a8fe31677a8ed22b12e"
+          },
+          {
+            "name": "com.financeclaw.m1.OutcomeTest",
+            "tests": 6,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "sha256": "07de6670187f0f8db06e1b037b6eea40c74c2d6994d6353afb383a6f2003bbef"
+          },
+          {
+            "name": "com.financeclaw.m2.ModelPolicyTest",
+            "tests": 12,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "sha256": "1263d5c7f41412674891a24cfab9524c3a783283237aaeae4fa0b21f17ccef30"
+          },
+          {
+            "name": "com.financeclaw.m3.BusinessContractsTest",
+            "tests": 8,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "sha256": "2c2bc45a3c937eaae36c8cd67e1881c534d6898c215b04b95426d27f050a365b"
+          },
+          {
+            "name": "com.financeclaw.m4.NativeMemoryTest",
+            "tests": 3,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "sha256": "96f35da2ff5fe959c13b60ca7b249968a0a95e12e7134c807a21726b8ec38fea"
+          },
+          {
+            "name": "com.financeclaw.m5.DeploymentAccessTest",
+            "tests": 4,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "sha256": "4a1210b5bbdb60fc7782252eec36e5764461cf2ecd8317cd5642d081db9a8a15"
+          },
+          {
+            "name": "com.financeclaw.m6.ZiweiCalendarTest",
+            "tests": 236,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "sha256": "1c1008903fdf8069b800ce1fa1eb9f5639d5c821a01ddb47427045243de3c27c"
+          },
+          {
+            "name": "com.financeclaw.m6.ZiweiChartEngineTest",
+            "tests": 14,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "sha256": "74caac59a590e4462008d6440dbf70c12a4a3ca6f7ac5ebdfae5df12c6c82a4b"
+          },
+          {
+            "name": "com.financeclaw.m6.ZiweiDatesTest",
+            "tests": 150,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "sha256": "017f4725aa4d73a0c077d780b2e97c88e7280ca7ed6da312dd7e3b673412895c"
+          },
+          {
+            "name": "com.financeclaw.m6.ZiweiDomainTest",
+            "tests": 56,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "sha256": "b5a44705e6caab85bf48a835d359e519aa1635f107c38ad61c5d9ee667c1c2ab"
+          }
+        ]
+      },
+      "failsafe": {
+        "suites": 18,
+        "totals": {
+          "tests": 215,
+          "failures": 0,
+          "errors": 3,
+          "skipped": 0
+        },
+        "reports": [
+          {
+            "name": "com.financeclaw.architecture.RuntimePackagingIT",
+            "tests": 1,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "sha256": "be69e982d0f3d1ccbe9ac120665b578bd0c03c4cfb2586c8da575baa6a35225a"
+          },
+          {
+            "name": "com.financeclaw.m0.ApplicationIT",
+            "tests": 1,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "sha256": "b4d228e8f9919b121eecf02586f0a0a881ed062647ce0c2a9face601125fae45"
+          },
+          {
+            "name": "com.financeclaw.m0.RecoveryIT",
+            "tests": 13,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "sha256": "05784e51aa3c92fe9027f62396bee2237cf3a8f2a13e00d3fe8202798942e2a9"
+          },
+          {
+            "name": "com.financeclaw.m0.StateAndIsolationIT",
+            "tests": 8,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "sha256": "14d13fd80f5aacd021cf5bf21dad9c97524e4d0051ea9ce6003c0c52350063af"
+          },
+          {
+            "name": "com.financeclaw.m1.TaskLifecycleIT",
+            "tests": 26,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "sha256": "645b61f59886e0da1783cb0dfa7581f027f1b2091df16f4c84f41571edd07686"
+          },
+          {
+            "name": "com.financeclaw.m2.GovernanceBoundariesIT",
+            "tests": 7,
+            "failures": 0,
+            "errors": 3,
+            "skipped": 0,
+            "sha256": "a39caf516a63f8f3d54602b78c0974d47af219ebe4e248e5bedc82d0053bf6a1"
+          },
+          {
+            "name": "com.financeclaw.m2.GovernanceIT",
+            "tests": 26,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "sha256": "dd449f4be7575c0666260de0b236cce51dd651c38e3d30e5e460557c229ccb13"
+          },
+          {
+            "name": "com.financeclaw.m3.BusinessIT",
+            "tests": 24,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "sha256": "1ce820bf609db91f3ba93f9587d9a9ea1cde4a5c035b296a66ed93b5785aff93"
+          },
+          {
+            "name": "com.financeclaw.m3.NativeSkillsIT",
+            "tests": 2,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "sha256": "6727b05d8ef42c993193780fb4eb52b50593b85e0d26fe7000d4fab569c6778b"
+          },
+          {
+            "name": "com.financeclaw.m4.FeishuIT",
+            "tests": 12,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "sha256": "d479a8afa0c594eabc9079acd492bbe7015fe5465d08a875959f63ab30f3178f"
+          },
+          {
+            "name": "com.financeclaw.m4.MemoryIT",
+            "tests": 21,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "sha256": "112ff8e14a2c2f20fdd575f242ecad77b98d3133f986c4ea24412f9931911a8c"
+          },
+          {
+            "name": "com.financeclaw.m5.AdmissionIT",
+            "tests": 16,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "sha256": "965a634beeff4c286ea05e02407143092c9be47c2ca6689656686ec5815b3b23"
+          },
+          {
+            "name": "com.financeclaw.m5.BacklogIT",
+            "tests": 17,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "sha256": "ca0a6e29098c4d53413d573f6478dbb609c5049806078211d97596cb36e266c0"
+          },
+          {
+            "name": "com.financeclaw.m5.OperationsIT",
+            "tests": 1,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "sha256": "67bb9e5d7208ab7efa5374fc2a273a876f3e140579bfbd0ba2fcedb7c8dd8f0a"
+          },
+          {
+            "name": "com.financeclaw.m5.RoleAssemblyIT",
+            "tests": 10,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "sha256": "fca2163cfce4867e5eb5a3cbcd46dd16afcdd4d681aa4a6aba20ad917fe7f4aa"
+          },
+          {
+            "name": "com.financeclaw.m6.ZiweiPackagedIT",
+            "tests": 1,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "sha256": "31273d558d31602ef0c0dbe5641a285311db3ce3ea9edeed9a83ffef8831a2d9"
+          },
+          {
+            "name": "com.financeclaw.m6.ZiweiRecoveryIT",
+            "tests": 13,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "sha256": "6b0b99558e0997a4fc44437b9ca5bd2a1b332f43409637da97d4d8b96c5804b9"
+          },
+          {
+            "name": "com.financeclaw.m6.ZiweiToolsIT",
+            "tests": 16,
+            "failures": 0,
+            "errors": 0,
+            "skipped": 0,
+            "sha256": "69d71a8e7f60e368781019b84390645b27afd3a0e57215b394134ce19fe9c7e9"
+          }
+        ]
+      }
+    },
+    "finished_at": "2026-10-21T00:24:04+08:00"
+  },
+  "focused_repair_and_probe": {
+    "command": "scripts/mvn.sh -B -ntp spotless:apply test -Dtest=SubAgentToolCompatibilityTest failsafe:integration-test failsafe:verify -Dit.test=GovernanceBoundariesIT spotless:check",
+    "exit_code": 0,
+    "log_sha256": "a41503040d2bfb941244d4958086b7f0c9f03b853af42ebe36077e3e1c28e68c",
+    "reports": [
+      {
+        "name": "com.financeclaw.architecture.SubAgentToolCompatibilityTest",
+        "tests": 6,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "sha256": "c13375dd1fb1c3555ab796ab237d02249b4de5a22bebf68ed0095131579ab05b"
+      },
+      {
+        "name": "com.financeclaw.m2.GovernanceBoundariesIT",
+        "tests": 7,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "sha256": "a84256a74e900d86970000b9df6eda827b685b967deb2af6cd5c5a76cd7a4ed8"
+      }
+    ],
+    "changed_existing_build_inputs": [
+      "src/test/java/com/financeclaw/m2/GovernanceBoundariesIT.java"
+    ],
+    "production_build_inputs_and_packaged_jar_unchanged": true,
+    "finished_at": "2026-10-21T00:25:37+08:00"
+  },
+  "test_repair": {
+    "file": "src/test/java/com/financeclaw/m2/GovernanceBoundariesIT.java",
+    "cause": "SpringMockResolver tried to unwrap a Mockito spy of a repository CGLIB proxy during unfinished stubbing.",
+    "fix": "Use AopTestUtils.getUltimateTargetObject before spy. Keep callRealMethod then injected failure, real Mapper proxies, TransactionTemplate and leases.fenced.",
+    "production_transaction_changes": false
+  },
+  "compose": {
+    "command": "python3 scripts/validate-compose.py --ziwei --admission --preflight --restore-privacy",
+    "exit_code": 0,
+    "result_sha256": "80b7e7b2cd6d543b761d83422a7b7583ae12f5136ef337701ad1297d28461be6",
+    "console_log_sha256": "aa0e1853e44ab52775caba4e1932a55c348568fdb59f5ba76f64c911397bda40",
+    "deployment_log_sha256": "8ba8d334cbbecfd053c706df0d969fb7c0920b5415e8fee23b982436bbb21f52",
+    "result": {
+      "scope": "isolated real containers; offline model and synthetic market only",
+      "ziwei_development_policy": true,
+      "admission_control": true,
+      "read_only_preflight": true,
+      "restore_privacy": true,
+      "project": "financeclaw-m5e-41fb87a563",
+      "thresholds": {
+        "scope": "Local offline model, 12 independent conversations, 4 concurrent clients; not production capacity",
+        "requests": 12,
+        "concurrency": 4,
+        "success_ratio": 1.0,
+        "p95_turn_seconds": 15,
+        "recovery_seconds": 45,
+        "startup_seconds": 180,
+        "remaining_outbox": 0
+      },
+      "checks": {
+        "shared_ziwei_policy_and_role_scoped_secret_mounts": true,
+        "empty_database_and_four_healthy_roles": {
+          "startup_seconds": 51.83363551204093
+        },
+        "background_http_and_database_privilege_boundaries": true,
+        "offline_load_and_idempotency": {
+          "requests": 12,
+          "success_ratio": 1,
+          "p95_seconds": 1.553469902020879,
+          "provider_calls": 0,
+          "provider_cost": 0
+        },
+        "preflight_queued_and_memory_backlog": {
+          "assessment": "blocked",
+          "errors": [],
+          "observations_match": true,
+          "inventory_matches_counts": true,
+          "items": {
+            "turns": 1,
+            "notifications": 0,
+            "notification_bindings": 0,
+            "memory_jobs": 12
+          },
+          "report_sha256": "2e14ce79bd4ac695ad7ed03f8185d3b6f6f8bd3d509632890ca25e26f8a687d1"
+        },
+        "preflight_truncated_inventory": {
+          "assessment": "incomplete",
+          "errors": [
+            "page_limit_memory_jobs",
+            "inventory_count_mismatch"
+          ],
+          "observations_match": true,
+          "inventory_matches_counts": false,
+          "items": {
+            "turns": 1,
+            "notifications": 0,
+            "notification_bindings": 0,
+            "memory_jobs": 1
+          },
+          "report_sha256": "68b1b4073ca2f80f054b0883428c9da849b02eff2fbeeea1c1f5393bcd3f8b71"
+        },
+        "graceful_worker_stop_and_api_restart_keep_admission": true,
+        "durable_pause_rejects_new_turns_preserves_replay_and_drains_existing_work": {
+          "scope": "current_owner",
+          "admission": {
+            "paused": true,
+            "revision": 1
+          },
+          "counts": {
+            "active_commands": 0,
+            "blocked": 0,
+            "cancelling": 0,
+            "pending_forget": 0,
+            "pending_interactions": 0,
+            "pending_memory_jobs": 13,
+            "pending_notifications": 0,
+            "pending_outbox": 0,
+            "queued": 0,
+            "running": 0,
+            "uncertain_effects": 0,
+            "unprojected_notifications": 0,
+            "unverified_notifications": 0,
+            "waiting": 0
+          },
+          "drained": false
+        },
+        "sigkill_and_persisted_approval_execute_once": true,
+        "paused_admission_allows_persisted_approval_after_worker_sigkill": true,
+        "database_outage_fails_readiness_then_recovers": {
+          "recovery_seconds": 5.953383177053183,
+          "unavailable_http_statuses": [
+            503,
+            503
+          ]
+        },
+        "current_epoch_superseded_projection_is_not_a_forget_violation": {
+          "schema_version": 1,
+          "scope": "all_memory_owners",
+          "assessment": "privacy_matches_reference",
+          "errors": [],
+          "checks": {
+            "owner_sets_match": true,
+            "no_orphan_owners": true,
+            "epochs_match": true,
+            "privacy_events_match": true,
+            "no_pending_purge": true,
+            "no_unsafe_memory_rows": true,
+            "audit_history_complete": true
+          },
+          "consistency": "two_supplied_snapshots",
+          "checked_at": "2026-10-20T16:28:35.396489+00:00",
+          "owner_counts": {
+            "reference": 1,
+            "restored": 1
+          },
+          "input_sha256": {
+            "reference": "eb1d4e63af06ccfcab89c7c014d96f8ee74dfc033ae830722806ee34a168c7a5",
+            "restored": "eb1d4e63af06ccfcab89c7c014d96f8ee74dfc033ae830722806ee34a168c7a5"
+          },
+          "source_sha256": {
+            "check-restore-privacy.py": "77e9826411b6f27faf056beeb49d297555d5e31430b91a344c4fe143e2d40969",
+            "inspect-drain.py": "eaf7ec576bb976fd626b6f998f2b4c2a4706c524585b02d665640633bcefa61c"
+          }
+        },
+        "pre_forget_backup_captured_with_writers_stopped": {
+          "sha256": "624a26f312d01243ecc10dfdec437e7bebcd41d46bb624c175890fa32ed6b7ac"
+        },
+        "restricted_memory_worker_and_forgetting": true,
+        "owner_drain_requires_pause_and_all_task_channel_memory_counts_zero": {
+          "scope": "current_owner",
+          "admission": {
+            "paused": true,
+            "revision": 5
+          },
+          "counts": {
+            "active_commands": 0,
+            "blocked": 0,
+            "cancelling": 0,
+            "pending_forget": 0,
+            "pending_interactions": 0,
+            "pending_memory_jobs": 0,
+            "pending_notifications": 0,
+            "pending_outbox": 0,
+            "queued": 0,
+            "running": 0,
+            "uncertain_effects": 0,
+            "unprojected_notifications": 0,
+            "unverified_notifications": 0,
+            "waiting": 0
+          },
+          "drained": true
+        },
+        "preflight_paused_and_drained": {
+          "assessment": "ready_for_review",
+          "errors": [],
+          "observations_match": true,
+          "inventory_matches_counts": true,
+          "items": {
+            "turns": 0,
+            "notifications": 0,
+            "notification_bindings": 0,
+            "memory_jobs": 0
+          },
+          "report_sha256": "4496d2cc77bd2452cff6d7521dba57a11662457b78709bb00afc64c20f66b58b"
+        },
+        "consistent_backup_restore_all_tables_and_privacy_epoch": {
+          "tables": 35,
+          "sha256": "5cb2dc82715b9814b758543e819e4fe5d3c40db831f2749439953b52c42d251e",
+          "rows_and_hashes": {
+            "agent_runtime.states": "17:25abb8e1aa529ee7d645cf4a7b7ec50a",
+            "agent_runtime.tool_effects": "0:d41d8cd98f00b204e9800998ecf8427e",
+            "business.admission": "1:c58ee27daec89f6c5b502b6d5aee2f38",
+            "business.admission_changes": "5:b0ef106e2f3938c53e918d5f25e5bb5e",
+            "business.artifacts": "1:5c62752d041efbca9215b2712b8cfeaf",
+            "business.attempts": "17:8ba7767624c1e0e006ea57f1786b72a2",
+            "business.cancel_requests": "0:d41d8cd98f00b204e9800998ecf8427e",
+            "business.capability_steps": "7:21c71812b5755805af53263c0a98e705",
+            "business.commands": "16:72c811b8dde85e6b17fd7c27b2c7f418",
+            "business.conversations": "17:bd7d682cbc3b4e06a85723c4f1e57410",
+            "business.events": "71:b69e46b6d4f1168f840fefa84ea9a0ea",
+            "business.grant_changes": "0:d41d8cd98f00b204e9800998ecf8427e",
+            "business.grants": "17:564323c615ef792d170075a0c3109431",
+            "business.interactions": "1:705628b50d5d15f03ed630be0c80a929",
+            "business.journal": "32:18d198bcf0343b4b4a31f481d84ae331",
+            "business.outbox": "16:bd3823c47bda8b16ad92b1ba40c87f50",
+            "business.projections": "16:124495c4bfc42b96515fbc51482ad726",
+            "business.reports": "0:d41d8cd98f00b204e9800998ecf8427e",
+            "business.skill_refs": "0:d41d8cd98f00b204e9800998ecf8427e",
+            "business.tool_calls": "0:d41d8cd98f00b204e9800998ecf8427e",
+            "business.turn_policies": "16:299f3d5d9e59c34385278c33d564d842",
+            "business.turns": "16:1b48b7805eb65cc08b85551238b4bada",
+            "channel.bindings": "0:d41d8cd98f00b204e9800998ecf8427e",
+            "channel.inbox": "0:d41d8cd98f00b204e9800998ecf8427e",
+            "channel.link_codes": "0:d41d8cd98f00b204e9800998ecf8427e",
+            "channel.notices": "0:d41d8cd98f00b204e9800998ecf8427e",
+            "memory.audit": "3:373113f61a69421452556921bd445186",
+            "memory.embedding_profiles": "0:d41d8cd98f00b204e9800998ecf8427e",
+            "memory.facts": "2:6bc5ece507a3eedb528536c7c678df1f",
+            "memory.jobs": "17:bd89b7a581a601649409320e910ec343",
+            "memory.operations": "1:b583729b7d5604508abbd2b422abc548",
+            "memory.owners": "1:d8b4c4a180dd71041f70419048d81c48",
+            "memory.projections": "0:d41d8cd98f00b204e9800998ecf8427e",
+            "memory.recalls": "0:d41d8cd98f00b204e9800998ecf8427e",
+            "memory.sources": "16:c9d0c344246d4709fee03533fd4064dd"
+          }
+        },
+        "old_backup_missing_later_forget_is_blocked_and_isolated": {
+          "schema_version": 1,
+          "scope": "all_memory_owners",
+          "assessment": "blocked",
+          "errors": [
+            "epochs_match",
+            "privacy_events_match"
+          ],
+          "checks": {
+            "owner_sets_match": true,
+            "no_orphan_owners": true,
+            "epochs_match": false,
+            "privacy_events_match": false,
+            "no_pending_purge": true,
+            "no_unsafe_memory_rows": true,
+            "audit_history_complete": true
+          },
+          "consistency": "two_supplied_snapshots",
+          "checked_at": "2026-10-20T16:29:24.103268+00:00",
+          "owner_counts": {
+            "reference": 1,
+            "restored": 1
+          },
+          "input_sha256": {
+            "reference": "36548202bd4cab28e34d93aa2b074946da2d5446802225b8ad190accb010f089",
+            "restored": "afce65ca3a9efb3b09dff7d7cb9935586875dd10b4e7b590c22424989ee777e7"
+          },
+          "source_sha256": {
+            "check-restore-privacy.py": "77e9826411b6f27faf056beeb49d297555d5e31430b91a344c4fe143e2d40969",
+            "inspect-drain.py": "eaf7ec576bb976fd626b6f998f2b4c2a4706c524585b02d665640633bcefa61c"
+          }
+        },
+        "current_backup_matches_all_owner_privacy": {
+          "schema_version": 1,
+          "scope": "all_memory_owners",
+          "assessment": "privacy_matches_reference",
+          "errors": [],
+          "checks": {
+            "owner_sets_match": true,
+            "no_orphan_owners": true,
+            "epochs_match": true,
+            "privacy_events_match": true,
+            "no_pending_purge": true,
+            "no_unsafe_memory_rows": true,
+            "audit_history_complete": true
+          },
+          "consistency": "two_supplied_snapshots",
+          "checked_at": "2026-10-20T16:29:24.639770+00:00",
+          "owner_counts": {
+            "reference": 1,
+            "restored": 1
+          },
+          "input_sha256": {
+            "reference": "36548202bd4cab28e34d93aa2b074946da2d5446802225b8ad190accb010f089",
+            "restored": "f76b6af5034a4d44bea8ebc9e7a18b239f233408f07442bf1fe4b971b55b9d11"
+          },
+          "source_sha256": {
+            "check-restore-privacy.py": "77e9826411b6f27faf056beeb49d297555d5e31430b91a344c4fe143e2d40969",
+            "inspect-drain.py": "eaf7ec576bb976fd626b6f998f2b4c2a4706c524585b02d665640633bcefa61c"
+          }
+        },
+        "privacy_snapshot_and_comparison_are_read_only": true,
+        "epoch_only_repair_does_not_hide_missing_audit_or_old_content": {
+          "schema_version": 1,
+          "scope": "all_memory_owners",
+          "assessment": "blocked",
+          "errors": [
+            "privacy_events_match",
+            "no_unsafe_memory_rows",
+            "audit_history_complete"
+          ],
+          "checks": {
+            "owner_sets_match": true,
+            "no_orphan_owners": true,
+            "epochs_match": true,
+            "privacy_events_match": false,
+            "no_pending_purge": true,
+            "no_unsafe_memory_rows": false,
+            "audit_history_complete": false
+          },
+          "consistency": "two_supplied_snapshots",
+          "checked_at": "2026-10-20T16:29:28.984675+00:00",
+          "owner_counts": {
+            "reference": 1,
+            "restored": 1
+          },
+          "input_sha256": {
+            "reference": "36548202bd4cab28e34d93aa2b074946da2d5446802225b8ad190accb010f089",
+            "restored": "a0957681111d7ff38379c98c954a287bdbf099f3e9d93231392f8c5215ed05fe"
+          },
+          "source_sha256": {
+            "check-restore-privacy.py": "77e9826411b6f27faf056beeb49d297555d5e31430b91a344c4fe143e2d40969",
+            "inspect-drain.py": "eaf7ec576bb976fd626b6f998f2b4c2a4706c524585b02d665640633bcefa61c"
+          }
+        },
+        "sql_detects_residual_memory_and_orphan_owners": {
+          "unsafe_sources": 16,
+          "unsafe_facts": 2,
+          "unsafe_projections": 2,
+          "unsafe_recalls": 1,
+          "unsafe_jobs": 17,
+          "invalid_audit_targets": 1
+        },
+        "rejected_synthetic_restore_removed_before_runtime_start": true,
+        "preflight_restored_pause": {
+          "assessment": "ready_for_review",
+          "errors": [],
+          "observations_match": true,
+          "inventory_matches_counts": true,
+          "items": {
+            "turns": 0,
+            "notifications": 0,
+            "notification_bindings": 0,
+            "memory_jobs": 0
+          },
+          "report_sha256": "1be36d3d63b4ceb4eb473e30a0f0785157f69ebe2f47db4807ae76cec84875fc"
+        },
+        "restored_pause_and_audit_require_explicit_resume": true,
+        "preflight_reopened_admission": {
+          "assessment": "blocked",
+          "errors": [],
+          "observations_match": true,
+          "inventory_matches_counts": true,
+          "items": {
+            "turns": 0,
+            "notifications": 0,
+            "notification_bindings": 0,
+            "memory_jobs": 0
+          },
+          "report_sha256": "5a090b3e07116f74f1b35fc75c8e9788347328f685cd35514b8d8c5f0a8a5749"
+        },
+        "restored_runtime_keeps_results_privacy_and_accepts_new_turns": true
+      },
+      "started_at": "2026-10-20T16:26:02.877018+00:00",
+      "source_sha256": {
+        "Dockerfile": "6a37b4c767c87155dd0a934b4cb89c9c182012566ce0d5fc0f53dd4b9a910f0e",
+        ".dockerignore": "0cec955cfd44a78ab73ff26f5c251f80f6ed2932c889ec60559570d1624d398c",
+        "compose.yml": "51b9ce2834093dd768f73b6862bf77fff57a280b692132e8568a3ab72713977a",
+        "ops/postgres-init.sql": "c2cc009b2bafc6bc3ee8803885234ec03eddda7dac1e169c51759235cad93ee4",
+        "ops/container-entrypoint.sh": "dec140519e772a209c90a4ca5792688f9ceaa984751e523eca23cc334af8f02f",
+        "ops/m5-thresholds.json": "15ffff4f601287c8dbc38e6f0e1675171020208d92ebb7f7a089ada0d91a62de",
+        "scripts/validate-compose.py": "80c89273d5a4a4e50b0e2e7d91ccd4c2f414014beb77d6152209d5596bed38be",
+        "scripts/inspect-drain.py": "eaf7ec576bb976fd626b6f998f2b4c2a4706c524585b02d665640633bcefa61c",
+        "scripts/check-restore-privacy.py": "77e9826411b6f27faf056beeb49d297555d5e31430b91a344c4fe143e2d40969",
+        "ops/restore-privacy-snapshot.sql": "d08f193eb25c782991badddd5d3c030550225f724575ad3bef78abe74c39f191"
+      },
+      "operations": {
+        "provider_cost": "unavailable",
+        "outbox": {
+          "pending": 0
+        },
+        "tasks": {
+          "running": 0,
+          "blocked": 0,
+          "waiting": 0,
+          "queued": 0,
+          "completed": 16,
+          "failed": 0,
+          "oldest_queued_ms": 0,
+          "turns": 16
+        },
+        "notifications": {
+          "pending": 0,
+          "sending": 0,
+          "unknown": 0,
+          "submitted_unverified": 0
+        },
+        "calls": {
+          "model_calls": 15,
+          "tool_calls": 3
+        },
+        "provider_usage": "unavailable"
+      },
+      "jar_sha256": "fbd647f4aa34b9774ca5ac82ea64fd1a5c69817afa3745516820e88b2c2228b1",
+      "container_image": "47154fddffc385f223ab6cd54ed39c8ef0348ad9932e4e5c8657ff1d0d6a697c",
+      "success": true,
+      "finished_at": "2026-10-20T16:30:21.005677+00:00"
+    },
+    "cleanup": {
+      "containers": [],
+      "volumes": [],
+      "project": "financeclaw-m5e-41fb87a563",
+      "docker_server_version": "26.1.1"
+    }
+  },
+  "input_provenance": {
+    "initial_manifest": "docs/architecture/evidence/memory-http-validation.json",
+    "initial_manifest_sha256": "8e509e876ee3024329347c49790c1ec12b9e25cf8238d61c783d7ac034ae3c82",
+    "initial_manifest_field": "verified_build_input_fingerprints",
+    "initial_exact_matching_inputs": 332,
+    "all_initial_inputs_verified_unchanged_at_full_run_end": true,
+    "changes_after_full_run": {
+      "src/test/java/com/financeclaw/m2/GovernanceBoundariesIT.java": {
+        "before": "036d7fdd90a8e8239b7d47ead8094e050d44d962c30dc4b20f038b7c803f6c69",
+        "after": "97e39fb7e9b13e993a81d30f2e46ef2ebb6f477424eedc6c06ee958e9ed7af56"
+      }
+    },
+    "new_input_sha256": {
+      "src/test/java/com/financeclaw/architecture/SubAgentToolCompatibilityTest.java": "4adeceedf959c3c5d390fa827110d5df4b0fa2e5deca8c31dd92d7e18487a940"
+    },
+    "production_build_inputs_unchanged_from_commit": true,
+    "packaged_jar_unchanged_through_repair_and_compose": true
+  },
+  "r7a": {
+    "decision": "Do not directly replace the governed research entry with SubAgentTool 2.0.3. Keep current native ReAct production adapter.",
+    "sdk_version": "2.0.3",
+    "sdk_jar_sha256": "7f1ec0f9c5afd1388554275efc78f58cb05692b634453695cf404eb79f7cfda4",
+    "real_implementation": "io.agentscope.core.tool.subagent.SubAgentTool",
+    "doubles": [
+      "Mockito ReActAgent",
+      "Mockito AgentStateStore"
+    ],
+    "controlled_inputs": [
+      "synthetic tool input and RuntimeContext",
+      "completed, failed and never-completing Mono"
+    ],
+    "contracts": [
+      "constructor allocation and FinanceClaw ToolBase admission",
+      "tool schema session_id and outer null-user unversioned store addressing",
+      "store failures do not invalidate normal tool result",
+      "child exception text in tool result and outer save on ERROR result",
+      "event forwarding can be disabled, final text includes session",
+      "subscription cancellation calls interrupt and does not save a result; tested path does not close agent"
+    ],
+    "not_proven": [
+      "real ReAct reasoning and recovery",
+      "PostgreSQL fence/CAS via this tool",
+      "parallel same-call-id business isolation",
+      "shared root budgets",
+      "durable business completion receipts",
+      "remote effects cancellation",
+      "HTTP or Feishu exposure of internal tool errors",
+      "real resource leaks or performance gains"
+    ],
+    "complete_governed_replacement_equivalence": false
+  },
+  "remaining_live_acceptance": [
+    "real model and provider endpoints",
+    "remote MCP services",
+    "real Feishu tenant",
+    "historical session cutover and production deployment"
+  ]
+}
