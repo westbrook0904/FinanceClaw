@@ -4,6 +4,7 @@ import com.financeclaw.domain.Task.Problem;
 import java.util.Map;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
@@ -20,6 +21,15 @@ public class ApiErrors {
   })
   ResponseEntity<?> invalid(Exception e) {
     return ResponseEntity.unprocessableEntity().body(Map.of("error", "invalid_request"));
+  }
+
+  @ExceptionHandler(MethodArgumentNotValidException.class)
+  ResponseEntity<?> invalidBody(MethodArgumentNotValidException e) {
+    var type = e.getParameter().getParameterType();
+    String code = "invalid_body";
+    if (type == MemoryController.Decision.class) code = "invalid_memory_decision";
+    else if (type == MemoryController.Forget.class) code = "invalid_memory_epoch";
+    return ResponseEntity.unprocessableEntity().body(Map.of("error", code));
   }
 
   @ExceptionHandler(Exception.class)

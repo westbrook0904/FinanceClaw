@@ -18,7 +18,11 @@ M5e 与 R0–R5a 已保存为本地检查点 `bb58ea2`，[R5b 紫微边界拆分
 
 随后[原生执行适配依赖收缩](docs/architecture/runtime-decoupling.md)已移除生产 TaskService，原生 Runtime/Tools 直接使用现有服务与端口，Worker 不再构造投影用例及网关；测试委托移入显式导入的 TaskFixture。该批通过 630 项单元/HTTP/架构测试及 1 项不依赖 Docker 的产品打包检查，包含探针字节码依赖门禁；这些结果保留为该批历史证据。
 
-最新[治理用例分层](docs/architecture/governance-decoupling.md)已删除生产 GovernanceService，将授权、Artifact 和报告发布分别交给 GrantService、ArtifactService、ReportService，HTTP 回答直接调用 AnswerInteractionService。API 不装配报告发布服务，Worker 不装配授权变更服务，Integrations 不装配这两类服务；旧 application 生产包已清空。最新两批改动均未提交或推送，HEAD 仍为 `0c549fa`。本批 685 项单元/HTTP/架构测试及 1 项产品打包检查通过；Docker API 仍返回 HTTP 500，数据库、角色实际启动、独立进程恢复与 Compose 尚未重跑，不能沿用此前批次的测试结果作为本批验收。
+最新[治理用例分层](docs/architecture/governance-decoupling.md)已删除生产 GovernanceService，将授权、Artifact 和报告发布分别交给 GrantService、ArtifactService、ReportService，HTTP 回答直接调用 AnswerInteractionService。API 不装配报告发布服务，Worker 不装配授权变更服务，Integrations 不装配这两类服务；旧 application 生产包已清空。最新两批改动已保存为本地检查点 `4f4f7b4`，未推送。本批 685 项单元/HTTP/架构测试及 1 项产品打包检查通过；Docker API 仍返回 HTTP 500，数据库、角色实际启动、独立进程恢复与 Compose 尚未重跑，不能沿用此前批次的测试结果作为本批验收。
+
+继续完成的[HTTP 请求类型化与 Bean Validation](docs/architecture/http-request-validation.md)已为任务提交和受理状态变更接入 Boot validation starter、类型化请求及严格 Jackson 映射，保留原错误码与幂等校验顺序。本批 821 项单元/HTTP/架构测试及 1 项产品打包检查通过，新增 136 项测试；改动尚未提交。Docker 相关集成验证仍待恢复后完成。
+
+最新[记忆接口 Bean Validation](docs/architecture/memory-http-validation.md)已将确认/拒绝与遗忘请求的静态判断交给标准约束，保留原 Jackson 绑定、错误码、功能开关与幂等顺序。全量 906 项单元/HTTP/架构测试及 1 项产品打包检查通过，本批新增 85 项测试。两批 HTTP 校验改动均未提交，数据库与恢复验证仍受 Docker API 500 阻断。
 
 ## 固定工具链
 
@@ -104,6 +108,8 @@ scripts/mvn.sh spring-boot:run
 | [R6 角色装配](docs/architecture/r6-implementation.md) | 各角色 Bean/Mapper 清单、独立投影、真实启动与恢复验证、Maven 模块决定 |
 | [入口与原生执行依赖收缩](docs/architecture/runtime-decoupling.md) | 删除生产 TaskService、缩小 Worker 装配、隔离测试夹具与该批产品打包检查 |
 | [治理用例分层](docs/architecture/governance-decoupling.md) | 删除生产 GovernanceService，分离授权、Artifact、报告发布和 HTTP 回答，收窄各角色装配 |
+| [HTTP 请求类型化与 Bean Validation](docs/architecture/http-request-validation.md) | 任务提交与受理变更的静态 DTO、严格 Jackson 映射、原错误顺序与兼容性验证 |
+| [记忆接口 Bean Validation](docs/architecture/memory-http-validation.md) | 确认/拒绝与遗忘请求的标准静态约束、既有错误码及隐私/幂等顺序 |
 | [Spring 事务与组件复审](docs/architecture/spring-transactions-component-review.md) | Spring 统一事务、SDK 主动提交实验证据、已接入 ArchUnit 与组件复用清单 |
 | [M1 使用与验证](docs/migration/m1-validation.md) | API 示例、恢复边界、配置及验收证据 |
 | [M0 验证记录](docs/migration/m0-validation.md) | 实际版本、测试证据、状态保存边界与继续实施决策 |

@@ -2,8 +2,10 @@ package com.financeclaw.api;
 
 import com.financeclaw.app.memory.MemoryService;
 import com.financeclaw.domain.Memory.*;
-import com.financeclaw.domain.Task.Problem;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotNull;
 import java.util.*;
 import org.springframework.web.bind.annotation.*;
 
@@ -24,9 +26,9 @@ public class MemoryController {
     return search.search(TaskController.owner(r), query);
   }
 
-  public record Decision(long revision, Boolean accept) {}
+  public record Decision(@Min(1) long revision, @NotNull Boolean accept) {}
 
-  public record Forget(long epoch) {}
+  public record Forget(@Min(1) long epoch) {}
 
   @GetMapping
   public List<Fact> list(HttpServletRequest r) {
@@ -43,9 +45,7 @@ public class MemoryController {
       HttpServletRequest r,
       @PathVariable String id,
       @RequestHeader(value = "Idempotency-Key", required = false) String key,
-      @RequestBody Decision d) {
-    if (d == null || d.accept() == null || d.revision() < 1)
-      throw new Problem(422, "invalid_memory_decision");
+      @Valid @RequestBody Decision d) {
     return Map.of(
         "status", service.decide(TaskController.owner(r), id, d.revision(), d.accept(), key));
   }
@@ -54,8 +54,7 @@ public class MemoryController {
   public Map<String, Long> forget(
       HttpServletRequest r,
       @RequestHeader(value = "Idempotency-Key", required = false) String key,
-      @RequestBody Forget f) {
-    if (f == null || f.epoch() < 1) throw new Problem(422, "invalid_memory_epoch");
+      @Valid @RequestBody Forget f) {
     return Map.of("epoch", service.forget(TaskController.owner(r), f.epoch(), key));
   }
 

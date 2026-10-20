@@ -1,6 +1,6 @@
 # 治理用例分层：授权、Artifact 与报告发布
 
-实施日期：2026-10-20。承接[原生执行适配依赖收缩](runtime-decoupling.md)，当前本地 HEAD 为 `0c549fa`。本批及上一批原生执行改动均未提交，未推送。
+实施日期：2026-10-20。承接[原生执行适配依赖收缩](runtime-decoupling.md)，本批及上一批原生执行改动已保存为本地检查点 `4f4f7b4`，未推送。下文验证证据记录提交前的同一份构建输入，历史证据文件保持原样。
 
 生产 `GovernanceService` 已删除。授权、Artifact 和报告发布分别进入已有 COLA 分层中的应用服务；回答直接使用已拆出的 AnswerInteractionService。旧 `application` 生产包已清空，没有保留聚合兼容入口。
 
@@ -79,4 +79,4 @@ python3 scripts/validate-compose.py --ziwei --admission --preflight --restore-pr
 python3 scripts/check-delivery.py
 ```
 
-本批完成了原 GovernanceService 的职责拆分。当前优先剩余项是完整运行验证与本地提交收尾；真实供应商、飞书租户、生产身份与灾备继续按[迁移验收清单](../migration/acceptance-checklist.md)处理。Bean Validation/类型化 DTO 和 R7 原生替换是后续独立切片，不纳入本批完成声明。
+本批完成了原 GovernanceService 的职责拆分。当前优先剩余项是完整运行验证；真实供应商、飞书租户、生产身份与灾备继续按[迁移验收清单](../migration/acceptance-checklist.md)处理。Bean Validation/类型化 DTO 已进入后续[HTTP 请求校验切片](http-request-validation.md)；R7 原生替换继续独立评估，均不纳入本文完成声明。

@@ -1,11 +1,11 @@
 package com.financeclaw.api;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import com.financeclaw.api.request.ChangeAdmissionRequest;
 import com.financeclaw.app.operations.AdmissionService;
 import com.financeclaw.app.operations.OperationsQueryService;
 import com.financeclaw.domain.Operations.*;
-import com.financeclaw.domain.Task.Problem;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.Valid;
 import java.util.Map;
 import org.springframework.web.bind.annotation.*;
 
@@ -28,17 +28,8 @@ public class OperationsController {
   public Receipt change(
       HttpServletRequest request,
       @RequestHeader(value = "Idempotency-Key", required = false) String key,
-      @RequestBody JsonNode body) {
-    if (!body.isObject()
-        || body.size() != 2
-        || !body.path("paused").isBoolean()
-        || !body.path("revision").isIntegralNumber()
-        || !body.path("revision").canConvertToLong()) throw new Problem(422, "invalid_body");
-    return admissions.change(
-        TaskController.owner(request),
-        key,
-        body.get("paused").booleanValue(),
-        body.get("revision").longValue());
+      @Valid @RequestBody ChangeAdmissionRequest body) {
+    return admissions.change(TaskController.owner(request), key, body.paused(), body.revision());
   }
 
   @GetMapping("/v1/operations/drain")

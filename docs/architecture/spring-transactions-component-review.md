@@ -1,6 +1,6 @@
 # Spring 事务与现成组件复审
 
-复审日期：2026-10-15；R6 实施更新：2026-10-16。承接 [AgentScope 与 COLA 整改方案](agentscope-cola-remediation.md)，修正上一轮对事务接入和组件引入过于保守的判断。
+复审日期：2026-10-15；R6 实施更新：2026-10-16；HTTP 校验接入更新：2026-10-20。承接 [AgentScope 与 COLA 整改方案](agentscope-cola-remediation.md)，修正上一轮对事务接入和组件引入过于保守的判断。
 
 ## 1. 更新后的决策
 
@@ -96,7 +96,7 @@ Spring 的注解事务默认通过代理生效，类内部自调用不会自动�
 | MyBatis-Spring **3.0.5** | **直接复用** | 会话与事务连接管理、SQL 映射 | 不用 SDK 原生 JDBC 再管理一次提交 |
 | Spring `JdbcClient` | **当前依赖即可使用** | 新增少量 SQL 时的 JDBC 样板 | 不强制重写现有 Mapper；本轮已验证与 MyBatis 同事务 |
 | ArchUnit **1.5.1** | **本轮已引入，test scope** | 手工长期维护 import 检查脚本 | 现有循环依赖必须显式整改；不以通过局部规则宣称全架构无环 |
-| `spring-boot-starter-validation` | **静态 DTO 切片优先接入，版本交给 Boot BOM** | HTTP DTO 的空值、范围、长度等重复判断 | 保持未知字段拒绝和错误码；动态工具 Schema 继续用 SDK ToolValidator |
+| `spring-boot-starter-validation` | **已接入任务提交、受理变更及记忆接口，版本交给 Boot BOM** | HTTP DTO 必填等静态约束；本批保留业务范围/长度校验顺序 | 保持未知字段拒绝和错误码；动态工具 Schema 继续用 SDK ToolValidator |
 | Jackson `ObjectMapper/ObjectWriter` | **已有，直接复用** | 通用 JSON 编解码和重复 parser 包装 | 为 hash 固定专用 writer 与字节契约；SDK AgentState 继续使用 SDK codec |
 | COLA statemachine **5.0.0** | **R4 采用少量领域方法，当前不引入** | 后续需要声明式状态图时采用组件，不自建通用状态机引擎 | 只做转换决策；SQL 锁、事务、恢复、外部效果仍另行处理 |
 | Spring Modulith **1.4.x** | **领域边界清晰后评估持久应用事件** | 模块间可靠事件登记、失败记录/重投、模块检查 | 不直接替换受限跨进程 Worker、业务幂等和飞书送达回执 |
@@ -120,6 +120,8 @@ Spring 的注解事务默认通过代理生效，类内部自调用不会自动�
 当前很多 HTTP 入参是手工读取 `JsonNode`。在改为类型化 DTO 时，直接使用 `@Valid`、`@NotBlank`、`@Size` 等成熟机制，无需另建通用验证服务。Boot 的 validation starter 提供所需实现和集成。[Boot 3.5 Validation](https://docs.spring.io/spring-boot/3.5/reference/io/validation.html)。
 
 接入时特别保留：未知字段、字段类型、数值溢出、回答版本和现有 422/409 等错误契约。Bean Validation 只处理结构/静态约束；审批归属、最新授权和 checkpoint 绑定仍由用例/领域规则判断。动态 MCP/tool JSON Schema 继续复用 AgentScope 验证器。
+
+2026-10-20 的[HTTP 请求校验切片](http-request-validation.md)先迁移任务提交与受理变更，使用 `@Valid` / `@NotNull`。消息空白/长度与修订号范围继续在用例内、幂等键校验之后检查，以保留错误优先级与既有 Unicode 语义。Jackson 仅为这两种 DTO 配置严格映射。后续[记忆接口切片](memory-http-validation.md)将两个现有请求的 `@Min` / `@NotNull` 静态约束交给同一验证组件，保留原普通 Jackson 绑定、功能开关与幂等顺序。
 
 ### 5.3 COLA 与 Spring Modulith 可以用，但对应不同职责
 

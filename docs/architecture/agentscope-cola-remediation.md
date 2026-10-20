@@ -4,7 +4,7 @@
 
 后续[治理与飞书入口依赖收缩](entrypoint-decoupling.md)已本地提交 `0c549fa`，未推送，该批通过 630 项单元/HTTP/架构测试。[原生执行适配依赖收缩](runtime-decoupling.md)已删除生产 TaskService，Worker 不再构造投影用例及网关，测试委托移入 TaskFixture；该批通过 630 项单元/HTTP/架构测试及 1 项不依赖 Docker 的产品打包检查，包含探针字节码依赖门禁。
 
-最新[治理用例分层](governance-decoupling.md)已删除生产 GovernanceService，拆出 GrantService、ArtifactService、ReportService，HTTP 回答直接使用 AnswerInteractionService；旧 application 生产包已清空。API 不装配 ReportService，Worker 不装配 GrantService，Integrations 两者皆不装配。原生执行与治理分层这两批改动仍未提交或推送，HEAD 为 `0c549fa`；本批通过 685 项单元/HTTP/架构测试与 1 项产品打包检查，以上旧批次数字保留为历史证据。Docker API 再次检查仍返回 HTTP 500，数据库、角色实际启动、独立进程恢复与 Compose 未重跑，不能用历史结果代替当前验收。
+最新[治理用例分层](governance-decoupling.md)已删除生产 GovernanceService，拆出 GrantService、ArtifactService、ReportService，HTTP 回答直接使用 AnswerInteractionService；旧 application 生产包已清空。API 不装配 ReportService，Worker 不装配 GrantService，Integrations 两者皆不装配。原生执行与治理分层这两批改动已保存为本地检查点 `4f4f7b4`，未推送；本批通过 685 项单元/HTTP/架构测试与 1 项产品打包检查，以上旧批次数字保留为历史证据。Docker API 再次检查仍返回 HTTP 500，数据库、角色实际启动、独立进程恢复与 Compose 未重跑，不能用历史结果代替当前验收。
 
 ## 1. 结论与决策
 
@@ -375,7 +375,7 @@ public AnswerDecision answer(ReplyContext context, Answer answer, Instant now) {
 | R4 任务与原生执行分层 | 已拆受理/查询/取消/租约/完成/恢复；原生 runtime 实现 `AgentExecutionPort`；删除 Mapper/目录 getter | 实现与验证见 [R4 记录](r4-implementation.md)；沿用 SQL 和锁顺序 | 新 app 无 SDK/Mapper；9 项新增集成覆盖回滚、过期写入、事务外执行和不重放恢复 |
 | R5 业务对象和记忆分层 | [R5a](r5a-implementation.md) 已拆 Portfolio 与研究，[R5b](r5b-implementation.md) 已拆紫微 I/O，[R5c](r5c-implementation.md) 已拆记忆与发布配置 | 不与算法升级、数据格式迁移同时做 | 领域、子预算、发布幂等、紫微冻结样本与恢复回归通过；R5c 增加记忆事务回滚、旧回执重放、搜索遗忘竞态和发布字节兼容验证 |
 | R6 角色装配与可选模块化 | [已完成](r6-implementation.md)：显式角色导入、精确 Mapper 注册、独立 Outbox 投影；保留单 Maven 模块与原启动类 | Spring 原生装配组件，无新增生产依赖；数据库授权保持原样 | 实际 Bean/Mapper 负向加载、受限 Memory 身份、835 项完整回归、27 项隔离 Compose 检查通过 |
-| R6 后续职责收尾 | 已移除 TaskService 和 GovernanceService；原生调用者、HTTP 入口与角色装配直接使用窄用例，见[治理分层](governance-decoupling.md) | 最新两批尚未提交；保留原 Spring 事务、Mapper SQL、锁顺序和固定 SDK | 本批验证另行记录；数据库、角色启动、故障恢复和 Compose 待 Docker 恢复后验收，不沿用 R6 历史结果 |
+| R6 后续职责收尾 | 已移除 TaskService 和 GovernanceService；原生调用者、HTTP 入口与角色装配直接使用窄用例，见[治理分层](governance-decoupling.md) | 已本地提交 `4f4f7b4`，未推送；保留原 Spring 事务、Mapper SQL、锁顺序和固定 SDK | 本批验证另行记录；数据库、角色启动、故障恢复和 Compose 待 Docker 恢复后验收，不沿用 R6 历史结果 |
 | R7 可选原生替换实验 | SubAgentTool、历史压缩分别实验；SDK 存储仅在提供外部事务模式后重评 | Spring 事务方案已确定，不阻塞 R1–R6 | 满足本节后的等价性矩阵且适配代码减少，才合入默认路径 |
 
 执行顺序以 R1 → R2 → R3 → R4 为主。R5 可以按业务逐项推进；R6 在职责稳定后实施。**不建议第一步全量搬包、同时改事务和升级 AgentScope。**
@@ -458,7 +458,7 @@ python3 scripts/check-delivery.py
 
 - 已验证 2.0.3 原生 JDBC store 单加事务感知代理不能保留外层原子性；没有完成其他 SDK 存储改造或 PostgreSQL 替换验收。Spring 是当前确定的事务所有者。
 - 未完成 SubAgentTool 等价原型，也没有测量 Schema 去重的延迟收益。
-- 已验证 ArchUnit 1.5.1 的构建/测试接入，并核查 COLA statemachine 5.0.0 源码；Bean Validation、状态机和 Modulith 尚未完成本项目业务接入，按对应切片实施。
+- 已验证 ArchUnit 1.5.1 的构建/测试接入，并核查 COLA statemachine 5.0.0 源码；Bean Validation 已接入[任务提交与受理变更](http-request-validation.md)和[记忆接口](memory-http-validation.md)；状态机和 Modulith 尚未接入，按实际收益决定。
 - 没有重新完成真实模型、远端 MCP、真实飞书、历史会话切换或生产验收。架构整改与 [迁移验收清单](../migration/acceptance-checklist.md) 是两条需要分别留证据的工作。
 
-R0–R6 的实现与验证见各批实施记录。生产 TaskService 与 GovernanceService 已由后续切片移除，治理职责和各角色依赖见[治理用例分层](governance-decoupling.md)。最新两批尚未提交，数据库、角色启动与恢复验证仍待 Docker 恢复后完成；真实供应商与生产迁移按验收清单独立完成。Maven 模块暂不拆分；R7 原生替换保持可选，只有治理等价且确实减少适配成本后才进入默认路径。
+R0–R6 的实现与验证见各批实施记录。生产 TaskService 与 GovernanceService 已由后续切片移除，治理职责和各角色依赖见[治理用例分层](governance-decoupling.md)。上述两批已本地提交为 `4f4f7b4`，未推送；数据库、角色启动与恢复验证仍待 Docker 恢复后完成；真实供应商与生产迁移按验收清单独立完成。Maven 模块暂不拆分；R7 原生替换保持可选，只有治理等价且确实减少适配成本后才进入默认路径。

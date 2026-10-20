@@ -131,6 +131,7 @@ public final class RoleConfiguration {
     FeishuIngress.class,
     FeishuService.class,
     BearerIdentity.class,
+    HttpRequestConfiguration.class,
     ApiErrors.class,
     TaskController.class,
     TaskEvents.class,

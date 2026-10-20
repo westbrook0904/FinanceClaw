@@ -1,11 +1,13 @@
 package com.financeclaw.api;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.financeclaw.api.request.SubmitTurnRequest;
 import com.financeclaw.app.task.CancelTaskService;
 import com.financeclaw.app.task.SubmitTaskService;
 import com.financeclaw.app.task.TaskQueryService;
 import com.financeclaw.domain.Task.*;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.Valid;
 import java.util.List;
 import java.util.Map;
 import org.springframework.http.*;
@@ -48,12 +50,9 @@ public class TaskController {
       HttpServletRequest request,
       @PathVariable String conversation,
       @RequestHeader(value = "Idempotency-Key", required = false) String key,
-      @RequestBody JsonNode body) {
-    if (!body.isObject() || body.size() != 1 || !body.path("message").isTextual())
-      throw new Problem(422, "invalid_body");
+      @Valid @RequestBody SubmitTurnRequest body) {
     return ResponseEntity.accepted()
-        .body(
-            submission.submit(owner(request), conversation, key, body.get("message").textValue()));
+        .body(submission.submit(owner(request), conversation, key, body.message()));
   }
 
   public record Snapshot(
