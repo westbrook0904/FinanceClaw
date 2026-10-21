@@ -85,7 +85,6 @@ public final class RoleConfiguration {
     MapperConfiguration.Memory.class,
     MemoryConfiguration.class,
     MyBatisMemoryRepository.class,
-    MemoryService.class,
     ReleaseService.class,
     EnvironmentReleaseSource.class,
     EnvironmentCredentials.class,

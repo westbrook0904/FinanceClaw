@@ -107,7 +107,7 @@ docker compose exec -T postgres pg_restore -U postgres -d financeclaw_restore_ch
 
 核对每张业务表的行数/hash、owner、Flyway 版本、privacy epoch、待处理 Command、unknown 工具调用及渠道通知，再将隔离的四角色数据库 URL 指向恢复库验证。自动实验已实现该核对流程，源码见 [validate-compose.py](../../scripts/validate-compose.py)。数据库身份与 Flyway owner 也随备份恢复，不能用 `--no-owner` 随意改变权限归属。
 
-此模式的 RPO 是最后一次备份时点；尚未配置生产 WAL 归档/PITR。恢复旧备份前必须补齐备份之后的遗忘事实与 Java 新增业务事实，不能直接恢复旧库后恢复发送。[M5e 隐私核对](m5e-restore-privacy.md) 可以识别旧备份与权威最新隐私状态的差异；当前仅检查并保留隔离，不自动补齐遗忘或新增业务事实。Java 接受新任务后的回退保留当前完整备份和副作用账本，先隔离写入并人工核对；尚未交付向 Python 的反向导入或在线切换演练。
+此模式的 RPO 是最后一次备份时点；尚未配置生产 WAL 归档/PITR。恢复旧备份前必须补齐备份之后的遗忘事实与 Java 新增业务事实，不能直接恢复旧库后恢复发送。[M5e 隐私核对](m5e-restore-privacy.md) 可以识别旧备份与权威最新隐私状态的差异；该检查本身仅保留隔离；启用 [M5f 独立遗忘账本](m5f-forget-ledger.md) 后，可在隔离环境补回记忆遗忘。备份之后新增的业务事实仍需其他恢复方案。Java 接受新任务后的回退保留当前完整备份和副作用账本，先隔离写入并人工核对；尚未交付向 Python 的反向导入或在线切换演练。
 
 ## 自动验证与 CI
 
@@ -124,7 +124,7 @@ python3 scripts/validate-compose.py
 
 Compose 实验始终生成随机项目名和全新数据卷，强制关闭真实模型/MCP/飞书配置，使用独立的合成行情；结束后只删除自己创建的容器和卷。不要把该清理行为套用到业务部署。
 
-[CI](../../.github/workflows/ci.yml)分开执行静态检查、单元/原生 HTTP 契约、真实 PostgreSQL/独立 JVM 集成和 Compose 交付实验。证据分别上传；Compose 上传不包含数据库 dump 或 secret。M5 归档中的源文件指纹和测试列表原生成于 `target/m5/results.json`（当前收集器生成 `target/m5e/results.json`），历史容器故障/恢复与性能结果保存在 `target/m5/compose-results.json`。
+[CI](../../.github/workflows/ci.yml)分开执行静态检查、单元/原生 HTTP 契约、真实 PostgreSQL/独立 JVM 集成和 Compose 交付实验。证据分别上传；Compose 上传不包含数据库 dump 或 secret。M5 归档中的源文件指纹和测试列表原生成于 `target/m5/results.json`（当前收集器生成 `target/m5f/results.json`），历史容器故障/恢复与性能结果保存在 `target/m5/compose-results.json`。
 
 2026-10-15 本地最终结果：**144 项 Java 测试通过**（39 单元、105 集成，0 失败/错误/跳过），格式及静态交付检查通过；**9 项容器场景全部通过**。
 

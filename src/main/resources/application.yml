@@ -113,6 +113,11 @@ financeclaw:
   memory:
     enabled: ${FINANCECLAW_MEMORY_ENABLED:false}
     vector-search: ${FINANCECLAW_MEMORY_VECTOR_SEARCH:false}
+    forget-ledger:
+      enabled: ${FINANCECLAW_FORGET_LEDGER_ENABLED:false}
+      url: ${FINANCECLAW_FORGET_LEDGER_URL:}
+      username: ${FINANCECLAW_FORGET_LEDGER_USER:}
+      password: ${FINANCECLAW_FORGET_LEDGER_PASSWORD:}
     extractor:
       model: ${FINANCECLAW_MEMORY_MODEL:}
       base-url: ${FINANCECLAW_MEMORY_MODEL_BASE_URL:}

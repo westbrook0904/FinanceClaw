@@ -9,18 +9,26 @@ import com.financeclaw.domain.Task.*;
 import com.financeclaw.domain.memory.MemoryPolicy;
 import com.financeclaw.support.PayloadJson;
 import java.util.*;
-import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /** SQL owns facts and privacy; SDK state and the vector index are never memory evidence. */
-@Service
 public class MemoryService implements ExecutionMemory {
   private final MemoryRepository db;
   private final TransactionTemplate tx;
   private final MemoryPolicy settings;
   private final String modelRevision;
+  private final MemoryForgetService forgetting;
 
   public MemoryService(MemoryRepository db, TransactionTemplate tx, MemoryPolicy settings) {
+    this(db, tx, settings, new MemoryForgetService(db, tx));
+  }
+
+  public MemoryService(
+      MemoryRepository db,
+      TransactionTemplate tx,
+      MemoryPolicy settings,
+      MemoryForgetService forgetting) {
+    this.forgetting = forgetting;
     this.db = db;
     this.tx = tx;
     this.settings = settings;
@@ -141,24 +149,7 @@ public class MemoryService implements ExecutionMemory {
 
   public long forget(Owner o, long expectedEpoch, String key) {
     requireEnabled();
-    new com.financeclaw.domain.IdempotencyKey(key);
-    String hash = ExecutionScope.hash(List.of("forget", Long.toString(expectedEpoch)));
-    return tx.execute(
-        s -> {
-          var p = owner(o);
-          var replay = replay(o, key, hash);
-          if (replay != null) return Long.parseLong(replay);
-          p.requireEpoch(expectedEpoch);
-          db.forget(o);
-          db.eraseSources(o);
-          db.eraseFacts(o);
-          db.eraseRecalls(o);
-          db.eraseIndex(o);
-          db.eraseJobs(o);
-          db.audit(o, p.epoch() + 1, "forget", "all");
-          db.recordOperation(o, key, hash, Long.toString(p.epoch() + 1));
-          return p.epoch() + 1;
-        });
+    return forgetting.forget(o, expectedEpoch, key);
   }
 
   public int rebuild(Owner o, String key) {

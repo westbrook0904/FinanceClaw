@@ -36,7 +36,7 @@ if (summary.attrib.get("result") not in {"0", "null"}
 paths = sorted(set([root / "pom.xml", root / "toolchains.lock.json", root / "ziwei-dependencies.lock.json", root / "THIRD_PARTY_NOTICES.md", root / "mvnw",
                 *root.glob(".mvn/**/*properties"), *root.glob(".mvn/**/*.xml"), *root.glob("src/**/*.java"),
                 *[p for d in ("src/main/resources", "src/test/resources") for p in (root / d).rglob("*") if p.is_file()],
-                *root.glob("scripts/*.py"), *root.glob("scripts/*.sh"), *root.glob("scripts/*.java"), *root.glob("ops/*.sql"), *root.glob("ops/*.sh"), *root.glob("ops/*.json"), *root.glob(".github/workflows/*.yml"), root / "compose.yml", root / "Dockerfile", root / ".dockerignore", root / ".env.example"]))
+                *root.glob("scripts/*.py"), *root.glob("scripts/*.sh"), *root.glob("scripts/*.java"), *root.glob("ops/*.sql"), *root.glob("ops/*.sh"), *root.glob("ops/*.json"), *root.glob(".github/workflows/*.yml"), root / "compose.yml", root / "compose.forget-ledger.yml", root / "Dockerfile", root / ".dockerignore", root / ".env.example"]))
 # Delivery scripts have their own Compose evidence. Fingerprint them, but only Java build inputs
 # participate in the Java report freshness check; editing a deployment script does not rerun Java.
 test_inputs = [p for p in paths if p.relative_to(root).parts[0] in {"src", ".mvn"}
@@ -60,7 +60,7 @@ privacy = json.loads((root / "target/m5e/privacy-tests.json").read_text())
 if (privacy['tests'] != 13 or any(privacy[k] for k in ('failures', 'errors', 'skipped'))
         or any(manifest[name] != value for name, value in privacy['source_sha256'].items())):
     raise SystemExit('Restore privacy evidence is stale or failed; run scripts/test-restore-privacy.py')
-evidence = {"base_commit": "993e7acded5340ace65d02c9aad3f272db5fac2f", "milestone": "M5e-restore-privacy", "collected_at_utc": datetime.now(timezone.utc).isoformat(),
+evidence = {"base_commit": "daadbc3472e68e93c4a1d306006a806ac46ec977", "milestone": "M5f-forget-ledger", "collected_at_utc": datetime.now(timezone.utc).isoformat(),
             "application_jar_sha256": hashlib.sha256((root / "target/financeclaw-java-0.1.0-SNAPSHOT.jar").read_bytes()).hexdigest(),
             "toolchain": json.loads((root / "toolchains.lock.json").read_text()),
             "environment": json.loads((root / "target/m0/environment.json").read_text()),
@@ -79,9 +79,9 @@ evidence = {"base_commit": "993e7acded5340ace65d02c9aad3f272db5fac2f", "mileston
             "validation_scope": "Local PostgreSQL, pgvector and independent JVMs; native loopback model/MCP/Feishu adapters; M6 date contracts, calendar compatibility, 2524 full chart comparisons, domain facts and focus parity, native Toolkit suspension/resume, scoped artifacts, HMAC, budgets and privacy. M6d packaged process crash recovery, cancellation/privacy competition, deployment image with five native tools and no Python, offline live-validator contracts. Development gate retained: no real model Ziwei selection, real provider/MCP/Feishu tenant or remote CI execution. Compose validation is recorded separately."}
 evidence['validation_scope'] += ' M5b owner-scoped admission pause/resume, revision and idempotency receipts, PostgreSQL submission/pause races, existing approval/input/cancellation and Feishu continuity, drain counts including uncertain effects, notification and memory backlogs.'
 evidence['validation_scope'] += ' M5c read-only owner-scoped keyset pages for task, notification, unprojected binding and memory job blockers; terminal-turn residual facts, numeric job ordering, foreign-owner exclusion and content minimization.'
-evidence['validation_scope'] += ' M5d adds only delivery tooling: read-only operations API observations, inventory/count comparison, incomplete scan handling and private report files. The Java build inputs and jar retain their M5c full-suite validation. Preflight fixtures and loopback HTTP/CLI contracts ran separately; deployed CLI observations are in Compose evidence.'
-evidence['validation_scope'] += ' M5e adds offline all-owner privacy snapshot comparison and a read-only SQL snapshot query. Java inputs remain unchanged; SQL and pre-forget backup isolation are exercised separately in Compose. Matching supplied snapshots does not prove reference freshness or authorize production recovery.'
-destination = root / "target/m5e/results.json"
+evidence['validation_scope'] += ' M5d read-only operations observations, inventory/count comparison, incomplete scan handling and private report files remain covered by separate Python contracts and Compose evidence.'
+evidence['validation_scope'] += ' M5e offline all-owner privacy snapshot comparison and SQL snapshot queries remain separate from M5f replay. M5f adds independent PostgreSQL forget facts, durable pending barriers, idempotent epoch-scoped replay, bootstrap and isolated JVM recovery. Tests cover lost-source restoration of a real old pg_dump, unknown external commit outcomes, rollback and repeated replay retaining new memory. Independent storage availability, production IAM, latest-authority operations and global cutover are not certified by these local tests.'
+destination = root / "target/m5f/results.json"
 destination.parent.mkdir(parents=True, exist_ok=True)
 destination.write_text(json.dumps(evidence, ensure_ascii=False, indent=2) + "\n")
 print(f"{evidence['total_tests']} tests passed; evidence: {destination}")

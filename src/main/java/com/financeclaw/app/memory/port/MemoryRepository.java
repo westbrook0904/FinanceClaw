@@ -75,5 +75,5 @@ public interface MemoryRepository {
 
   Privacy purge();
 
-  void purged(Owner owner);
+  int purged(Owner owner);
 }

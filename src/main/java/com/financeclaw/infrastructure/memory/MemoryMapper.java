@@ -169,10 +169,10 @@ public interface MemoryMapper {
   void eraseJobs(Owner owner);
 
   @Select(
-      "SELECT tenant,subject,epoch,purge_pending FROM memory.owners WHERE purge_pending ORDER BY tenant,subject LIMIT 1 FOR UPDATE SKIP LOCKED")
+      "SELECT tenant,subject,epoch,purge_pending FROM memory.owners o WHERE purge_pending AND NOT EXISTS (SELECT 1 FROM memory.forget_requests r WHERE r.tenant=o.tenant AND r.subject=o.subject) ORDER BY tenant,subject LIMIT 1 FOR UPDATE SKIP LOCKED")
   Privacy purge();
 
   @Update(
-      "UPDATE memory.owners SET purge_pending=false WHERE tenant=#{tenant} AND subject=#{subject}")
-  void purged(Owner owner);
+      "UPDATE memory.owners o SET purge_pending=false WHERE tenant=#{tenant} AND subject=#{subject} AND purge_pending AND NOT EXISTS (SELECT 1 FROM memory.forget_requests r WHERE r.tenant=o.tenant AND r.subject=o.subject)")
+  int purged(Owner owner);
 }

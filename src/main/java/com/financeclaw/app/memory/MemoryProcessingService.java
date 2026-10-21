@@ -50,7 +50,7 @@ public final class MemoryProcessingService {
               var p = db.purge();
               if (p == null) return false;
               var o = new Owner(p.tenant(), p.subject());
-              db.purged(o);
+              if (db.purged(o) != 1) return false;
               db.audit(o, p.epoch(), "purge_complete", "all");
               return true;
             });

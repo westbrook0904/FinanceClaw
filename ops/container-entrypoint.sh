@@ -9,5 +9,7 @@ case "$role" in
     exec java -Dloader.main=com.financeclawmemory.MemoryWorkerApplication -cp /app/financeclaw.jar org.springframework.boot.loader.launch.PropertiesLauncher "$@" ;;
   migrate)
     exec java -Dloader.main=com.financeclawmigrate.MigrationApplication -cp /app/financeclaw.jar org.springframework.boot.loader.launch.PropertiesLauncher "$@" ;;
-  *) echo 'Expected api, worker, integrations, memory-worker or migrate' >&2; exit 2 ;;
+  privacy-recovery)
+    exec java -Dloader.main=com.financeclawprivacy.PrivacyRecoveryApplication -cp /app/financeclaw.jar org.springframework.boot.loader.launch.PropertiesLauncher "$@" ;;
+  *) echo 'Expected api, worker, integrations, memory-worker, migrate or privacy-recovery' >&2; exit 2 ;;
 esac

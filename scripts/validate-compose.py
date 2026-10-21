@@ -249,7 +249,8 @@ try:
     URL = 'http://' + compose('port', 'api', '8080').decode().strip()
     wait(lambda: request('/actuator/health/readiness', auth=False)[0] == 200)
     assert request('/v1/operations', auth=False)[0] == 401
-    assert sql('SELECT count(*) FROM public.flyway_schema_history WHERE success') == '6'
+    assert sql('SELECT count(*) FROM public.flyway_schema_history WHERE success') == str(
+        len(list((ROOT / 'src/main/resources/db/migration').glob('V*__*.sql'))))
     mark('empty_database_and_four_healthy_roles', {'startup_seconds': time.monotonic()-started})
     assert sql("SELECT has_schema_privilege('financeclaw_memory','business','USAGE')") == 'f'
     assert sql("SELECT has_schema_privilege('financeclaw_app','business','CREATE')") == 'f'

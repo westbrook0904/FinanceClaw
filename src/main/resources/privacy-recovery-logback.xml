@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Offline recovery emits its own bounded JSON. Never attach appenders to JDBC or boot loggers. -->
+<configuration>
+    <root level="OFF"/>
+</configuration>

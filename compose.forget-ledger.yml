@@ -1,0 +1,14 @@
+# Opt in only after offline bootstrap and a new baseline backup. The ledger is provisioned separately.
+services:
+  api:
+    environment:
+      FINANCECLAW_FORGET_LEDGER_ENABLED: 'true'
+      FINANCECLAW_FORGET_LEDGER_URL: ${FINANCECLAW_FORGET_LEDGER_URL:?Set an independent PostgreSQL ledger URL}
+      FINANCECLAW_FORGET_LEDGER_USER: ${FINANCECLAW_FORGET_LEDGER_USER:?Set the restricted ledger runtime user}
+    secrets:
+      - source: forget_ledger_password
+        target: financeclaw.memory.forget-ledger.password
+
+secrets:
+  forget_ledger_password:
+    file: .secrets/forget-ledger-password

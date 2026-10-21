@@ -151,7 +151,7 @@ public class MyBatisMemoryRepository implements MemoryRepository {
     return db.purge();
   }
 
-  public void purged(Owner owner) {
-    db.purged(owner);
+  public int purged(Owner owner) {
+    return db.purged(owner);
   }
 }

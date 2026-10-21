@@ -34,6 +34,8 @@ M5e 与 R0–R5a 已保存为本地检查点 `bb58ea2`，[R5b 紫微边界拆分
 
 2026-10-21 已完成[整体验证补跑](docs/architecture/post-refactor-verification.md)：906 项既有单元/HTTP/架构通过，215 项集成中首次出现的 3 项治理夹具错误已修复，对应 7 项定向重跑通过；隔离 Compose 27 项检查通过。新增 [R7a SubAgentTool 契约实验](docs/architecture/r7a-subagent-evaluation.md)的 6 项探针通过，确认固定 SDK 不能直接替换现有研究入口。测试夹具修复、原型和本批记录随本分支交付；生产源码与依赖保持原样。
 
+最新本地开发 **[M5f 遗忘事实独立保存与恢复重放](docs/migration/m5f-forget-ledger.md)**：使用独立 PostgreSQL 追加保存遗忘事实，通过本地隔离标记衔接两库 Spring 事务；旧主库备份恢复后，可离线补回遗忘并保留新 epoch 的记忆。默认关闭，首次启用需要停写、bootstrap 和新的基线备份；生产账本部署及线上切换仍需独立验收。
+
 ## 固定工具链
 
 | 组件 | 版本 |
@@ -66,7 +68,7 @@ python3 scripts/test-restore-privacy.py
 python3 scripts/collect-evidence.py
 ```
 
-成功时 Maven 输出 `BUILD SUCCESS`，可执行包位于 `target/financeclaw-java-0.1.0-SNAPSHOT.jar`，证据汇总位于 `target/m5e/results.json`。`scripts/mvn.sh test` 仅执行不依赖 PostgreSQL 的单元/HTTP 契约测试，不能代替包含 PostgreSQL 和业务 API 的完整验证。
+成功时 Maven 输出 `BUILD SUCCESS`，可执行包位于 `target/financeclaw-java-0.1.0-SNAPSHOT.jar`，证据汇总位于 `target/m5f/results.json`。`scripts/mvn.sh test` 仅执行不依赖 PostgreSQL 的单元/HTTP 契约测试，不能代替包含 PostgreSQL 和业务 API 的完整验证。
 
 ## 容器部署
 
@@ -103,6 +105,7 @@ scripts/mvn.sh spring-boot:run
 | [M5c 阻塞项定位](docs/migration/m5c-backlog.md) | 只读分页、原任务/通知定位、记忆作业和查询权限边界 |
 | [M5d 只读预检](docs/migration/m5d-preflight.md) | CLI 留档、前后观测核对、分页完整性与退出码 |
 | [M5e 旧备份隐私核对](docs/migration/m5e-restore-privacy.md) | 全主体隐私快照、遗忘审计与残留检查、旧库隔离演练 |
+| [M5f 独立遗忘账本](docs/migration/m5f-forget-ledger.md) | 独立保存、故障重试、历史初始化、旧备份离线重放与隔离边界 |
 | [M6 紫微迁移](docs/migration/m6-validation.md) | M6a 日期契约、[M6b 历法](docs/migration/m6b-calendar.md)与[完整排盘比对](docs/migration/m6b-charts.md)；[M6c 领域接入](docs/migration/m6c-domain.md)、[M6d 恢复与部署](docs/migration/m6d-recovery.md)，真实模型验收待完成 |
 | [M4 记忆与原生飞书](docs/migration/m4-validation.md) | 记忆 API、独立 Worker、pgvector、原生飞书配置及 SDK 能力边界 |
 | [M3 业务与验证](docs/migration/m3-validation.md) | 酒店/Taibu 配置、调酒 Skill、市场研究、固定 Workflow 及模拟验收 |

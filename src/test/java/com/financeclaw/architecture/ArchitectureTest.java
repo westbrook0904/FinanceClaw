@@ -15,7 +15,11 @@ class ArchitectureTest {
   private static final JavaClasses PRODUCTION =
       new ClassFileImporter()
           .withImportOption(ImportOption.Predefined.DO_NOT_INCLUDE_TESTS)
-          .importPackages("com.financeclaw", "com.financeclawmemory", "com.financeclawmigrate");
+          .importPackages(
+              "com.financeclaw",
+              "com.financeclawmemory",
+              "com.financeclawmigrate",
+              "com.financeclawprivacy");
 
   @Test
   void productionPackagesHaveNoCycles() {
