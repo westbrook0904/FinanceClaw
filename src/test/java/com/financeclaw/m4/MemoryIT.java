@@ -122,6 +122,28 @@ class MemoryIT {
   }
 
   @Test
+  void historyBatchChecksOwnerEpochAndMissingSourcesUsingOnlyIds() {
+    var first = submit(alice, "first private message");
+    var second = submit(alice, "second private message");
+    var other = submit(bob, "other private message");
+    var firstTurn = tasks.get(alice, first.conversationId(), first.turnId());
+    var secondTurn = tasks.get(alice, second.conversationId(), second.turnId());
+    var otherTurn = tasks.get(bob, other.conversationId(), other.turnId());
+    var candidates = List.of(secondTurn, otherTurn, firstTurn);
+
+    assertThat(memory.filterHistory(secondTurn, candidates)).containsExactly(secondTurn, firstTurn);
+    assertThat(repository.currentSources(alice, 1, List.of(other.turnId(), "missing"))).isEmpty();
+    assertThat(repository.currentSources(alice, 2, List.of(first.turnId(), second.turnId())))
+        .isEmpty();
+    assertThat(repository.currentSources(alice, 1, List.of())).isEmpty();
+
+    memory.forget(alice, 1, "history-forget");
+
+    assertThat(memory.filterHistory(secondTurn, candidates)).isEmpty();
+    assertThat(memory.filterHistory(otherTurn, List.of(otherTurn))).containsExactly(otherTurn);
+  }
+
+  @Test
   void completionRollbackCannotCreateMemoryIntent() throws Exception {
     var t = submit(alice, "/remember response_style=简洁");
     var claim = tasks.claim("atomic", 60000);

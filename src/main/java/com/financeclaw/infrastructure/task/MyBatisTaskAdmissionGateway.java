@@ -1,5 +1,6 @@
 package com.financeclaw.infrastructure.task;
 
+import com.financeclaw.app.task.TaskEventHub;
 import com.financeclaw.app.task.port.TaskAdmissionGateway;
 import com.financeclaw.domain.Governance.*;
 import com.financeclaw.domain.Task.*;
@@ -8,8 +9,10 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class MyBatisTaskAdmissionGateway implements TaskAdmissionGateway {
   private final TaskMapper db;
+  private final TaskEventHub events;
 
-  public MyBatisTaskAdmissionGateway(TaskMapper db) {
+  public MyBatisTaskAdmissionGateway(TaskMapper db, TaskEventHub events) {
+    this.events = events;
     this.db = db;
   }
 
@@ -44,6 +47,6 @@ public class MyBatisTaskAdmissionGateway implements TaskAdmissionGateway {
   public void recordAdmission(Turn turn, String command) {
     db.insertCommand(command, turn.id());
     db.journal(turn.conversationId(), turn.id(), "user", turn.message());
-    db.event(turn.id());
+    events.committed(db.event(turn.id()));
   }
 }

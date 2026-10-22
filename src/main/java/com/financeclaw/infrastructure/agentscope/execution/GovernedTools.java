@@ -49,7 +49,7 @@ public final class GovernedTools implements AutoCloseable {
       ArtifactService artifacts,
       ReportService reports,
       Claim claim) {
-    this(policy, releases, credentials, artifacts, reports, claim, policy.scopes(claim));
+    this(policy, releases, credentials, artifacts, reports, claim, null);
   }
 
   private GovernedTools(
@@ -68,6 +68,7 @@ public final class GovernedTools implements AutoCloseable {
     this.claim = claim;
     release = releases.require(claim.turn().releaseHash());
     var root = policy.scopes(claim);
+    if (allowed == null) allowed = root;
     if (!root.containsAll(allowed)) throw new Blocked("scope_expansion_denied");
     scopes = List.copyOf(allowed.stream().filter(release.scopes()::contains).toList());
     new LocalToolContribution(artifacts, reports, claim).contribute(this::register);
@@ -106,10 +107,7 @@ public final class GovernedTools implements AutoCloseable {
                 () -> {
                   for (var call : input.toolCalls()) {
                     if (call.getName().equals("load_skill_through_path")) {
-                      policy.checkDispatch(claim);
-                      if (!policy.scopes(claim).contains("skill:use"))
-                        throw new Blocked("tool_denied");
-                      policy.consume(claim, false);
+                      policy.consumeTool(claim, "skill:use");
                     }
                   }
                   return next.apply(input);
@@ -183,15 +181,12 @@ public final class GovernedTools implements AutoCloseable {
           public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
             return Mono.defer(
                     () -> {
-                      policy.checkDispatch(claim);
-                      if (scope != null && !policy.scopes(claim).contains(scope))
-                        throw new Blocked("tool_denied");
                       // SDK 2.0.3 validates raw content before merging input/presets. This is
                       // the effective-input boundary, also used by direct adapter calls.
                       if (ToolValidator.validateInput(
                               PayloadJson.canonical(param.getInput()), schema)
                           != null) throw new Blocked("invalid_tool_input");
-                      policy.consume(claim, false);
+                      policy.consumeTool(claim, scope);
                       return action.apply(param);
                     })
                 .onErrorMap(

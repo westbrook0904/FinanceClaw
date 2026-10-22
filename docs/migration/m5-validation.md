@@ -6,19 +6,17 @@
 
 后续的 [M5b 暂停与排空](m5b-admission.md) 补充新任务受理控制及恢复演练。本文件的 144 项 Java、9 项 Compose 和 33 张表数据是 M5 提交时的历史证据，最新代码与验证范围以 M5b 记录为准。
 
-同一 Java jar / 镜像启动四个运行角色，使用 Spring Boot profiles、Flyway、Actuator 和 Spring configtree。Agent、Skill、MCP、embedding 和飞书协议继续复用 AgentScope，没有新执行引擎或渠道协议客户端。
+当前同一 Java jar / 镜像默认以 `standalone` 合并 API、执行和投递，独立保留受限记忆进程，使用 Spring Boot profiles、Flyway、Actuator 和 Spring configtree。Agent、Skill、MCP、embedding 和飞书协议继续复用 AgentScope。拓扑和旧部署升级见 [同进程运行](../architecture/combined-runtime.md)；文末四角色实验数据保留为 M5 历史证据。
 
 | 服务 | 入口 / 工作 | 数据库身份与 HTTP |
 | --- | --- | --- |
 | `migrate` | 一次性 Flyway 迁移、运行权限与向量索引初始化，完成后退出 | schema owner `financeclaw`；无 HTTP |
-| `api` | 受理、查询、SSE、业务交互、飞书 webhook | DML 角色 `financeclaw_app`；仅绑定本机 `127.0.0.1:8080` |
-| `worker` | AgentScope 执行、任务租约与恢复 | `financeclaw_app`；容器内只开放健康检查 |
-| `integrations` | Outbox 投影和原生飞书文本通知 | `financeclaw_app`；容器内只开放健康检查 |
+| `api` (`standalone`) | 受理、查询、SSE、业务交互、AgentScope 执行、恢复、Outbox 投影及飞书入站/投递 | DML 角色 `financeclaw_app`；仅绑定本机 `127.0.0.1:8080` |
 | `memory-worker` | 记忆提取、索引和遗忘清理 | 独立 `financeclaw_memory`；只装配记忆模块和健康检查 |
 
-前三种业务角色共用业务 DML 权限，没有 schema CREATE 权限；Memory Worker 无 business / agent_runtime / channel 权限。角色配置与启用的消费者不一致时启动失败，后台角色不接受业务 API 或飞书回调。每个 JVM 有自己的连接池和健康检查。
+业务进程使用 DML 权限，没有 schema CREATE 权限；HTTP、执行和投递共用一个连接池。Memory Worker 无 business / agent_runtime / channel 权限，保持自己的连接池和健康检查，不接受业务 API 或飞书回调。旧拆分 profile 保留隔离测试用途，实时 SSE 不支持跨进程分发。
 
-[Dockerfile](../../Dockerfile)固定 Temurin **21.0.12+8** JRE 的镜像摘要；[Compose](../../compose.yml)固定 PostgreSQL 16.12 / pgvector 0.8.1 镜像摘要。应用容器以非 root 用户运行、只读根目录，临时文件写入独立 tmpfs。应用等待数据库健康及迁移成功，不在四个运行进程中并行执行 DDL。
+[Dockerfile](../../Dockerfile)固定 Temurin **21.0.12+8** JRE 的镜像摘要；[Compose](../../compose.yml)固定 PostgreSQL 16.12 / pgvector 0.8.1 镜像摘要。应用容器以非 root 用户运行、只读根目录，临时文件写入独立 tmpfs。应用等待数据库健康及迁移成功，运行进程不执行 DDL。
 
 ## 从空环境启动
 
@@ -34,7 +32,7 @@ docker compose ps
 curl --fail http://127.0.0.1:8080/actuator/health/readiness
 ```
 
-预期 `migrate` 成功退出，四个运行角色和 PostgreSQL 为 healthy，API 返回 `{"status":"UP"}`。默认模型为 `offline`；MCP、长期记忆和飞书默认关闭。Memory Worker 可启动等待，但没有模型配置时不伪造提取或 embedding 成功。
+预期 `migrate` 成功退出，`api`、`memory-worker` 和 PostgreSQL 为 healthy，API 返回 `{"status":"UP"}`。默认模型为 `offline`；MCP、长期记忆和飞书默认关闭。Memory Worker 可启动等待，但没有模型配置时不伪造提取或 embedding 成功。
 
 `init-local.py` 创建被 Git 忽略的 `.env` 和 `.secrets/`，不覆盖已有文件、不输出 secret 内容。数据库与 API 使用随机本地凭据，供应商凭据文件留空。`.secrets` 目录只允许当前用户访问；文件只读，以便 Compose 在非 root 容器中挂载读取。此方式是本地文件挂载，不是加密密钥管理服务。
 
@@ -42,12 +40,12 @@ curl --fail http://127.0.0.1:8080/actuator/health/readiness
 
 | secret 文件 | 使用方 |
 | --- | --- |
-| `db-admin` / `db-migrator` / `db-app` / `db-memory` | PostgreSQL 管理员 / 迁移 / 三个业务角色 / Memory Worker |
+| `db-admin` / `db-migrator` / `db-app` / `db-memory` | PostgreSQL 管理员 / 迁移 / 合并业务进程 / Memory Worker |
 | `api-token` | API Bearer 身份 |
-| `model-key` | 执行 Worker 的原生模型适配器 |
-| `hotel-token` / `taibu-token` | 执行 Worker；Spring 环境解析凭据引用，原生 MCP 客户端使用 |
+| `model-key` | `api` 内的原生模型适配器 |
+| `hotel-token` / `taibu-token` | `api` 内的执行组件；Spring 环境解析凭据引用，原生 MCP 客户端使用 |
 | `memory-model-key` / `embedding-key` | 独立 Memory Worker；API 的可选向量搜索另读取 embedding-key |
-| `feishu-secret` / `feishu-token` / `feishu-encrypt-key` | API 入站与 Integrations 出站 |
+| `feishu-secret` / `feishu-token` / `feishu-encrypt-key` | `api` 内的飞书入站与出站 |
 
 Spring 的 [configtree 配置](https://docs.spring.io/spring-boot/3.5/reference/features/external-config.html)将挂载文件名映射为配置属性。密钥不进入发布 hash 或持久 AgentState。数据库首次初始化后，直接改文件不会修改数据库密码；凭据轮换需先更新数据库角色，再替换挂载文件并重启相关角色。
 
@@ -61,11 +59,11 @@ curl --fail -H "Authorization: Bearer $FINANCECLAW_API_TOKEN" \
   http://127.0.0.1:8080/v1/operations
 ```
 
-模型/业务参数会形成固定发布 hash。API、Worker、Integrations 必须使用相同发布配置；更新模型、MCP 或行情快照之前先排空活动任务。旧版本发布当前只在原进程内保留，跨配置升级的旧任务恢复仍会 `release_unavailable`，不能靠改任务中的 hash 绕过。
+模型/业务参数会形成固定发布 hash。同进程的 HTTP、执行和投递读取同一发布配置；更新模型、MCP 或行情快照之前先排空活动任务。旧版本发布当前只在原进程内保留，跨配置升级的旧任务恢复仍会 `release_unavailable`，不能靠改任务中的 hash 绕过。
 
 ## 健康、容量与故障核对
 
-使用原生 `/actuator/health/liveness` 判断进程存活；`readiness` 加入数据库和本角色的数据访问检查。数据库断开时 readiness 返回 503，恢复后重新变为 UP。后台角色不在宿主机暴露端口，可执行 `docker compose exec worker curl -fsS http://localhost:8080/actuator/health/readiness`。
+使用原生 `/actuator/health/liveness` 判断进程存活；`readiness` 加入数据库和本角色的数据访问检查。数据库断开时 readiness 返回 503，恢复后重新变为 UP。Memory Worker 不在宿主机暴露端口，可执行 `docker compose exec memory-worker curl -fsS http://localhost:8080/actuator/health/readiness`。
 
 `GET /v1/operations` 需要 Bearer 认证，仅汇总当前主体的任务、排队任务年龄、累计模型/工具调用次数、Outbox 积压和飞书通知状态，不返回消息、参数或结果正文。`provider_usage` / `provider_cost` 明确返回 `unavailable`：业务调用次数不是供应商 token 账单，当前未采集真实计费数据。`oldest_queued_ms` 从 Turn 创建时刻计算；恢复任务包含之前等待审批的时间，不代表本次排队耗时。
 
@@ -73,9 +71,9 @@ curl --fail -H "Authorization: Bearer $FINANCECLAW_API_TOKEN" \
 
 | 故障 | 当前处理与运维动作 |
 | --- | --- |
-| API 重启 | 原幂等 key 重试，已有 Command 不丢失 |
-| Worker 正常关闭 | 停止领取并中断本机执行；持久状态按既有回执/租约规则核对 |
-| Worker 被强杀 | 依据原 attempt 与状态恢复；等待审批可以在新 JVM 回答；不自动重放不确定写操作 |
+| 业务进程重启 | API 暂时不可用，SSE 重连；原幂等 key 重试，已有 Command 不丢失 |
+| 业务进程正常关闭 | 停止领取并中断本机执行；持久状态按既有回执/租约规则核对 |
+| 业务进程被强杀 | 依据原 attempt 与状态恢复；等待审批可以在新 JVM 回答；不自动重放不确定写操作 |
 | 数据库暂时不可用 | API 503 / readiness DOWN；恢复后连接池重连，队列继续 |
 | 模型/MCP 超时 | M2/M3 有界超时及账本规则继续生效；写结果未知时 blocked，禁止换 key 重放 |
 | 飞书未知结果 | 保留 unknown / submitted_unverified，人工核查；SDK 不支持可靠查询，不能擅自重发 |
@@ -91,7 +89,7 @@ curl --fail -H "Authorization: Bearer $FINANCECLAW_API_TOKEN" \
 ```bash
 umask 077
 mkdir -p backups
-docker compose stop api worker integrations memory-worker
+docker compose stop api memory-worker
 docker compose exec -T postgres pg_dump -U postgres -d financeclaw_java -Fc > backups/financeclaw.dump
 shasum -a 256 backups/financeclaw.dump > backups/financeclaw.dump.sha256
 docker compose up -d --wait
@@ -105,7 +103,7 @@ docker compose exec -T postgres pg_restore -U postgres -d financeclaw_restore_ch
   --exit-on-error < backups/financeclaw.dump
 ```
 
-核对每张业务表的行数/hash、owner、Flyway 版本、privacy epoch、待处理 Command、unknown 工具调用及渠道通知，再将隔离的四角色数据库 URL 指向恢复库验证。自动实验已实现该核对流程，源码见 [validate-compose.py](../../scripts/validate-compose.py)。数据库身份与 Flyway owner 也随备份恢复，不能用 `--no-owner` 随意改变权限归属。
+核对每张业务表的行数/hash、owner、Flyway 版本、privacy epoch、待处理 Command、unknown 工具调用及渠道通知，再将隔离的业务进程与 Memory Worker 数据库 URL 指向恢复库验证。自动实验已实现该核对流程，源码见 [validate-compose.py](../../scripts/validate-compose.py)。数据库身份与 Flyway owner 也随备份恢复，不能用 `--no-owner` 随意改变权限归属。
 
 此模式的 RPO 是最后一次备份时点；尚未配置生产 WAL 归档/PITR。恢复旧备份前必须补齐备份之后的遗忘事实与 Java 新增业务事实，不能直接恢复旧库后恢复发送。[M5e 隐私核对](m5e-restore-privacy.md) 可以识别旧备份与权威最新隐私状态的差异；该检查本身仅保留隔离；启用 [M5f 独立遗忘账本](m5f-forget-ledger.md) 后，可在隔离环境补回记忆遗忘。备份之后新增的业务事实仍需其他恢复方案。Java 接受新任务后的回退保留当前完整备份和副作用账本，先隔离写入并人工核对；尚未交付向 Python 的反向导入或在线切换演练。
 

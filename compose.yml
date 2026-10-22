@@ -89,7 +89,8 @@ services:
 
   api:
     <<: *runtime
-    command: [api]
+    # HTTP, AgentScope execution and delivery share one event stream and connection pool.
+    command: [standalone]
     ports: ['127.0.0.1:${FINANCECLAW_HTTP_PORT:-8080}:8080']
     environment:
       <<: [*release, *feishu]
@@ -100,42 +101,14 @@ services:
         target: spring.datasource.password
       - source: api_token
         target: financeclaw.auth.token
-      - source: embedding_key
-        target: financeclaw.memory.embedding.api-key
-      - source: feishu_secret
-        target: financeclaw.feishu.app-secret
-      - source: feishu_token
-        target: financeclaw.feishu.verification-token
-      - source: feishu_encrypt_key
-        target: financeclaw.feishu.encrypt-key
-
-  worker:
-    <<: *runtime
-    command: [worker]
-    environment:
-      <<: *release
-    secrets:
-      - source: ziwei_key
-        target: ZIWEI_HMAC_KEY
-      - source: db_app_password
-        target: spring.datasource.password
       - source: model_key
         target: financeclaw.model.api-key
       - source: hotel_token
         target: ROLLINGGO_TOKEN
       - source: taibu_token
         target: TAIBU_TOKEN
-
-  integrations:
-    <<: *runtime
-    command: [integrations]
-    environment:
-      <<: [*release, *feishu]
-    secrets:
-      - source: ziwei_key
-        target: ZIWEI_HMAC_KEY
-      - source: db_app_password
-        target: spring.datasource.password
+      - source: embedding_key
+        target: financeclaw.memory.embedding.api-key
       - source: feishu_secret
         target: financeclaw.feishu.app-secret
       - source: feishu_token

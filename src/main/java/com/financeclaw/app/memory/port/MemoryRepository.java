@@ -15,6 +15,8 @@ public interface MemoryRepository {
 
   Source sourceById(String id);
 
+  List<String> currentSources(Owner owner, long epoch, List<String> ids);
+
   int ready(String id);
 
   void extractJob(String id);

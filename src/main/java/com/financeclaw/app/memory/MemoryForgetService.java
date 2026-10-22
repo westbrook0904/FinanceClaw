@@ -1,6 +1,7 @@
 package com.financeclaw.app.memory;
 
 import com.financeclaw.app.memory.port.*;
+import com.financeclaw.app.task.TaskEventHub;
 import com.financeclaw.domain.IdempotencyKey;
 import com.financeclaw.domain.Task.*;
 import com.financeclaw.domain.memory.ForgetFact;
@@ -14,16 +15,27 @@ public final class MemoryForgetService {
   private final TransactionTemplate tx;
   private final ForgetRecoveryRepository recovery;
   private final ForgetLedger ledger;
+  private final TaskEventHub events;
+
+  public MemoryForgetService(
+      MemoryRepository memory,
+      TransactionTemplate tx,
+      ForgetRecoveryRepository recovery,
+      ForgetLedger ledger,
+      TaskEventHub events) {
+    this.events = events;
+    this.memory = memory;
+    this.tx = tx;
+    this.recovery = recovery;
+    this.ledger = ledger;
+  }
 
   public MemoryForgetService(
       MemoryRepository memory,
       TransactionTemplate tx,
       ForgetRecoveryRepository recovery,
       ForgetLedger ledger) {
-    this.memory = memory;
-    this.tx = tx;
-    this.recovery = recovery;
-    this.ledger = ledger;
+    this(memory, tx, recovery, ledger, new TaskEventHub());
   }
 
   /** In-process legacy fixtures; production always supplies the durable binding repository. */
@@ -62,6 +74,7 @@ public final class MemoryForgetService {
                       key,
                       hash);
               recovery.prepare(fact);
+              events.invalidateOwner(owner);
               return new Prepared(fact, null);
             });
     if (prepared.receipt() != null) return prepared.receipt();
@@ -99,6 +112,7 @@ public final class MemoryForgetService {
           if (receipt != null) return Long.parseLong(receipt.replay(hash));
           privacy.requireEpoch(expectedEpoch);
           memory.forget(owner);
+          events.invalidateOwner(owner);
           memory.eraseSources(owner);
           memory.eraseFacts(owner);
           memory.eraseRecalls(owner);

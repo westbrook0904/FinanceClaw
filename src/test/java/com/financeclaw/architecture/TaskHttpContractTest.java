@@ -80,6 +80,7 @@ class TaskHttpContractTest {
             null,
             "cancel_requested");
     when(reads.turn("turn")).thenReturn(cancelled);
+    when(reads.ownedTurn(owner, "conversation", "turn")).thenReturn(cancelled);
     when(mutations.lockTurn("turn")).thenReturn(cancelled);
     var manager = mock(PlatformTransactionManager.class);
     when(manager.getTransaction(any())).thenAnswer(ignored -> new SimpleTransactionStatus());

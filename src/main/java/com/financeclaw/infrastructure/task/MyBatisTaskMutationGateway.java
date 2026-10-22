@@ -1,5 +1,6 @@
 package com.financeclaw.infrastructure.task;
 
+import com.financeclaw.app.task.TaskEventHub;
 import com.financeclaw.app.task.port.TaskMutationGateway;
 import com.financeclaw.domain.Governance.*;
 import com.financeclaw.domain.Task.*;
@@ -8,8 +9,10 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class MyBatisTaskMutationGateway implements TaskMutationGateway {
   private final TaskMapper db;
+  private final TaskEventHub events;
 
-  public MyBatisTaskMutationGateway(TaskMapper db) {
+  public MyBatisTaskMutationGateway(TaskMapper db, TaskEventHub events) {
+    this.events = events;
     this.db = db;
   }
 
@@ -30,7 +33,7 @@ public class MyBatisTaskMutationGateway implements TaskMutationGateway {
   }
 
   public void event(String turn) {
-    db.event(turn);
+    events.committed(db.event(turn));
   }
 
   public void journal(String conversation, String turn, String role, String content) {
@@ -39,13 +42,5 @@ public class MyBatisTaskMutationGateway implements TaskMutationGateway {
 
   public void outbox(String turn) {
     db.outbox(turn);
-  }
-
-  public void advance(String turn) {
-    db.advance(turn);
-  }
-
-  public void progress(String turn, String kind, String text, String tool) {
-    db.progress(turn, kind, text, tool);
   }
 }

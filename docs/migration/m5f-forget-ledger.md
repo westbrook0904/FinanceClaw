@@ -37,12 +37,12 @@
 
 ## 首次启用
 
-先停止所有 API、Worker、Integrations、Memory Worker，以及其他可能写入主库或发送渠道消息的进程。需要覆盖所有副本；单个 owner 的排空报告不能证明全局停写。隔离期间只允许迁移和恢复管理连接。
+先停止业务进程、Memory Worker，以及其他可能写入主库或发送渠道消息的进程。当前默认 `api` 合并 HTTP、执行和投递；旧部署中的独立 Worker / Integrations 也必须停止。需要覆盖所有副本；单个 owner 的排空报告不能证明全局停写。隔离期间只允许迁移和恢复管理连接。
 
 已有 Compose 部署可先执行：
 
 ```bash
-docker compose stop api worker integrations memory-worker
+docker compose stop api memory-worker
 ```
 
 这条命令只停止当前 Compose 项目中的对应服务，不会停止其他部署或手动启动的 JVM。隔离期间不要运行会启动全部角色的 `docker compose up`。

@@ -20,8 +20,7 @@ public class TaskQueryService {
   }
 
   public Turn get(Owner owner, String conversation, String turn) {
-    owned(owner, conversation);
-    Turn t = db.turn(turn);
+    Turn t = db.ownedTurn(owner, conversation, turn);
     if (t == null || !t.conversationId().equals(conversation)) throw new Problem(404, "not_found");
     return t;
   }
@@ -30,6 +29,11 @@ public class TaskQueryService {
     owned(owner, conversation);
     if (after < 0 || limit < 1 || limit > 500) throw new Problem(422, "invalid_pagination");
     return db.messages(conversation, after, limit);
+  }
+
+  /** Uses the already authorized immutable turn identity; each page is one bounded query. */
+  public List<Event> replay(Turn authorized, long after) {
+    return db.events(authorized.id(), after);
   }
 
   public List<Event> events(Owner owner, String conversation, String turn, long after) {

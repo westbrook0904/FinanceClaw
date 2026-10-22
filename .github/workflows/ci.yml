@@ -51,7 +51,7 @@ jobs:
           path: target/
       - name: Create local-only test credentials
         run: python3 scripts/init-local.py
-      - name: Four roles, admission drain, stale privacy rejection and backup restore
+      - name: Combined runtime, admission drain, stale privacy rejection and backup restore
         run: python3 scripts/validate-compose.py --ziwei --admission --preflight --restore-privacy
       - uses: actions/upload-artifact@v4
         if: always()

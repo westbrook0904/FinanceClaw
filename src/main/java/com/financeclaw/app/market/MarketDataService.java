@@ -21,9 +21,12 @@ public class MarketDataService {
   }
 
   public Map<String, Object> read(Claim claim, String symbol) {
-    policies.checkDispatch(claim);
-    if (!policies.scopes(claim).contains("market:read")) throw new Blocked("market_denied");
-    policies.consume(claim, false);
+    try {
+      policies.consumeTool(claim, "market:read");
+    } catch (Blocked blocked) {
+      if (blocked.getMessage().equals("tool_denied")) throw new Blocked("market_denied");
+      throw blocked;
+    }
     if (symbol == null || !symbol.matches("[A-Za-z0-9._-]{1,16}"))
       throw new Blocked("invalid_symbol");
     var found =

@@ -9,6 +9,8 @@ public interface TaskQueryGateway {
 
   Turn turn(String id);
 
+  Turn ownedTurn(Owner owner, String conversation, String turn);
+
   List<Journal> messages(String conversation, long after, int limit);
 
   List<Event> events(String turn, long after);

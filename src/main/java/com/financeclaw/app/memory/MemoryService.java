@@ -44,6 +44,8 @@ public class MemoryService implements ExecutionMemory {
   }
 
   private Privacy owner(Owner o) {
+    var existing = db.lock(o);
+    if (existing != null) return existing;
     db.ensure(o);
     return db.lock(o);
   }
@@ -81,6 +83,28 @@ public class MemoryService implements ExecutionMemory {
           var p = owner(new Owner(turn.tenant(), turn.subject()));
           var source = db.sourceById(turn.id());
           return p.permits(source);
+        });
+  }
+
+  /** Filter one conversation's history with one owner lock and one bounded source query. */
+  @Override
+  public List<Turn> filterHistory(Turn current, List<Turn> history) {
+    if (!settings.enabled() || history.isEmpty()) return List.copyOf(history);
+    Owner o = new Owner(current.tenant(), current.subject());
+    var candidates =
+        history.stream()
+            .filter(t -> t.tenant().equals(o.tenant()) && t.subject().equals(o.subject()))
+            .toList();
+    if (candidates.isEmpty()) return List.of();
+    return tx.execute(
+        s -> {
+          var privacy = owner(o);
+          if (privacy.purgePending()) return List.of();
+          var currentIds =
+              new HashSet<>(
+                  db.currentSources(
+                      o, privacy.epoch(), candidates.stream().map(Turn::id).toList()));
+          return candidates.stream().filter(t -> currentIds.contains(t.id())).toList();
         });
   }
 

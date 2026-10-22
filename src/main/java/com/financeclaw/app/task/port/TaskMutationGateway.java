@@ -17,8 +17,4 @@ public interface TaskMutationGateway {
   void journal(String conversation, String turn, String role, String content);
 
   void outbox(String turn);
-
-  void advance(String turn);
-
-  void progress(String turn, String kind, String text, String tool);
 }

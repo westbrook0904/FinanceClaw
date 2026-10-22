@@ -68,6 +68,7 @@ public final class RoleConfiguration {
   @Import({
     MapperConfiguration.Tasks.class,
     RuntimeHealth.class,
+    TaskEventHub.class,
     TaskQueryService.class,
     MyBatisTaskQueryGateway.class
   })

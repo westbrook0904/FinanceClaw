@@ -139,4 +139,5 @@ financeclaw:
   sse:
     max-connections: 32
     timeout-ms: 30000
-    poll-ms: 250
+    heartbeat-ms: 15000
+    buffer-capacity: 256

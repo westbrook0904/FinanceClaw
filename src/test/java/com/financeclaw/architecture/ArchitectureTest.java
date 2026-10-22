@@ -81,7 +81,11 @@ class ArchitectureTest {
             "com.financeclaw.support..",
             "java..",
             "org.springframework.stereotype..",
-            "org.springframework.transaction..")
+            "org.springframework.transaction..",
+            // Application event delivery uses Reactor; SQL and AgentScope stay behind adapters.
+            "reactor.core.publisher..",
+            "reactor.core.scheduler..",
+            "org.reactivestreams..")
         .because(
             "Spring manages application transactions; SQL and AgentScope remain behind gateways")
         .check(PRODUCTION);

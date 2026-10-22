@@ -8,4 +8,4 @@ ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=70 -XX:+ExitOnOutOfMemoryError"
 EXPOSE 8080
 HEALTHCHECK --interval=10s --timeout=8s --start-period=60s --retries=6 CMD curl --fail --silent http://127.0.0.1:8080/actuator/health/readiness || exit 1
 ENTRYPOINT ["/app/entrypoint.sh"]
-CMD ["api"]
+CMD ["standalone"]

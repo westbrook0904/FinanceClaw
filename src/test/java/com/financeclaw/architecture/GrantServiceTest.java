@@ -34,7 +34,12 @@ class GrantServiceTest {
   @BeforeEach
   void setup() {
     when(manager.getTransaction(any())).thenReturn(status);
-    grants = new GrantService(queries, db, new TransactionTemplate(manager));
+    grants =
+        new GrantService(
+            queries,
+            db,
+            new TransactionTemplate(manager),
+            new com.financeclaw.app.task.TaskEventHub());
   }
 
   @Test

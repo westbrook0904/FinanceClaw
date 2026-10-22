@@ -1,0 +1,36 @@
+{
+  "date": "2026-10-22",
+  "base_commit": "2407f30790755e85d23d1efc98b6124c22f4c6c9",
+  "scope": "Working tree changes; offline/local model, MCP, Feishu and embedding fixtures; PostgreSQL containers. No live provider or production load acceptance.",
+  "maven": {
+    "command": "./scripts/mvn.sh -q -DargLine=-javaagent:.cache/m2/org/mockito/mockito-core/5.17.0/mockito-core-5.17.0.jar verify spotless:check",
+    "exit_code": 0,
+    "unit_http_architecture": {
+      "tests": 950,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "integration": {
+      "tests": 275,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "packaging_and_format": "passed"
+  },
+  "compose": {
+    "command": "python3 scripts/validate-compose.py --ziwei --admission --preflight --restore-privacy",
+    "exit_code": 0,
+    "checks": 28,
+    "evidence": "combined-runtime-compose.json"
+  },
+  "static_delivery": "passed",
+  "source_manifest_sha256": "35bcfc94177b095ec7127f490c34753512e34024967fcfa1c426522df8857711",
+  "source_manifest_file_count": 329,
+  "limitations": [
+    "SSE live events are process-local; one standalone business JVM is required.",
+    "Transient text/tool progress has no durable SSE ID and is not replayed token by token.",
+    "SQL comparisons are call-path counts, not production throughput or latency claims."
+  ]
+}

@@ -65,6 +65,15 @@ public interface TaskMapper {
   @Select("SELECT " + TURN_COLUMNS + " FROM business.turns WHERE id=#{id}")
   Turn turn(String id);
 
+  @Select(
+      "SELECT "
+          + TURN_COLUMNS
+          + " FROM business.turns WHERE id=#{turn} AND conversation_id=#{conversation} AND tenant=#{owner.tenant} AND subject=#{owner.subject}")
+  Turn ownedTurn(
+      @Param("owner") Owner owner,
+      @Param("conversation") String conversation,
+      @Param("turn") String turn);
+
   @Select("SELECT " + TURN_COLUMNS + " FROM business.turns WHERE id=#{id} FOR UPDATE")
   Turn lockTurn(String id);
 
@@ -138,9 +147,12 @@ public interface TaskMapper {
       @Param("result") String result,
       @Param("reason") String reason);
 
-  @Insert(
-      "INSERT INTO business.events(turn_id,revision,status,reason) SELECT id,revision,status,reason FROM business.turns WHERE id=#{id}")
-  int event(String id);
+  @Select(
+      value =
+          "INSERT INTO business.events(turn_id,revision,status,reason) SELECT id,revision,status,reason FROM business.turns WHERE id=#{id} RETURNING turn_id,revision,status,reason,kind,text,tool",
+      affectData = true)
+  @Options(flushCache = Options.FlushCachePolicy.TRUE)
+  Event event(String id);
 
   @Select(
       "SELECT turn_id,revision,status,reason,kind,text,tool FROM business.events WHERE turn_id=#{id} AND revision>#{after} ORDER BY revision LIMIT 100")
@@ -204,17 +216,6 @@ public interface TaskMapper {
       @Param("conversation") String conversation,
       @Param("release") String release,
       @Param("revision") long revision);
-
-  @Update("UPDATE business.turns SET revision=revision+1 WHERE id=#{id}")
-  int advance(String id);
-
-  @Insert(
-      "INSERT INTO business.events(turn_id,revision,status,kind,text,tool) SELECT id,revision,status,#{kind},#{text},#{tool} FROM business.turns WHERE id=#{id}")
-  int progress(
-      @Param("id") String id,
-      @Param("kind") String kind,
-      @Param("text") String text,
-      @Param("tool") String tool);
 
   @Select(
       "SELECT EXISTS(SELECT 1 FROM business.artifacts LIMIT 1) OR NOT EXISTS(SELECT 1 FROM business.artifacts LIMIT 1)")

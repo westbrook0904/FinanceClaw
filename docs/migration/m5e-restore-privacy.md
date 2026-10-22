@@ -61,15 +61,15 @@ python3 scripts/test-inspect-drain.py
 python3 scripts/test-live-acceptance.py
 python3 scripts/collect-evidence.py
 
-# 随机隔离部署；四角色停止后导出，恢复到新库
+# 随机隔离部署；业务进程与 Memory Worker 停止后导出，恢复到新库
 python3 scripts/init-local.py
 python3 scripts/validate-compose.py --ziwei --admission --preflight --restore-privacy
 python3 scripts/check-delivery.py
 ```
 
-Compose 执行以下场景：通过业务 API 创建合成记忆偏好 → 停止四角色并备份 → 恢复源库服务并请求遗忘 → 清理完成并再次停写 → 同时恢复遗忘前/后的两份备份。旧库缺少后续遗忘而被阻断，当前备份隐私匹配；全表指纹验证 SQL 和比较均无写入。另在一次性旧库中构造仅改 epoch、旧索引/召回/作业及无 owner 记录，验证无法冒充修复完成。正常的同 epoch 旧索引使用合成 SQL 夹具验证。
+Compose 执行以下场景：通过业务 API 创建合成记忆偏好 → 停止全部业务与记忆进程并备份 → 恢复源库服务并请求遗忘 → 清理完成并再次停写 → 同时恢复遗忘前/后的两份备份。旧库缺少后续遗忘而被阻断，当前备份隐私匹配；全表指纹验证 SQL 和比较均无写入。另在一次性旧库中构造仅改 epoch、旧索引/召回/作业及无 owner 记录，验证无法冒充修复完成。正常的同 epoch 旧索引使用合成 SQL 夹具验证。
 
-脚本确认这些观察时点只有 PostgreSQL 容器运行、相关库无应用连接，旧库从未配置给运行角色。被拒绝的合成旧库删除后，只将核对通过的新库接入四角色，继续验证暂停保留和恢复受理。这个隔离由本次测试编排保证；比较 CLI 本身不会阻止其他管理员或部署工具绕过流程。
+脚本确认这些观察时点只有 PostgreSQL 容器运行、相关库无应用连接，旧库从未配置给运行角色。被拒绝的合成旧库删除后，只将核对通过的新库接入业务进程与 Memory Worker，继续验证暂停保留和恢复受理。这个隔离由本次测试编排保证；比较 CLI 本身不会阻止其他管理员或部署工具绕过流程。
 
 原始私有快照存于本次被 Git 忽略的 `.cache/financeclaw-m5e-<随机ID>/`，CI 仅归档脱敏报告、测试结果和部署日志，不上传快照或数据库 dump。Java 运行代码、依赖及数据库迁移未改动，沿用 M5c 的 659 项 Java 回归和同一份 JAR；新 Python 契约、SQL 与容器演练单独记录，不算作新增 Java 验证。
 

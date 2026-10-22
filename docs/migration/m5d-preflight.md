@@ -52,7 +52,7 @@ python3 scripts/test-inspect-drain.py
 python3 scripts/test-live-acceptance.py
 python3 scripts/collect-evidence.py
 
-# 随机隔离的四角色部署；使用离线模型和合成数据
+# 随机隔离的当前默认部署；使用离线模型和合成数据
 python3 scripts/init-local.py
 python3 scripts/validate-compose.py --ziwei --admission --preflight
 python3 scripts/check-delivery.py

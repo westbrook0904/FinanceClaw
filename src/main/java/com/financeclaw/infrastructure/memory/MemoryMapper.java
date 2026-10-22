@@ -35,6 +35,14 @@ public interface MemoryMapper {
   @Select("SELECT id,tenant,subject,epoch,content,status FROM memory.sources WHERE id=#{id}")
   Source sourceById(String id);
 
+  @Select({
+    "<script>SELECT id FROM memory.sources WHERE tenant=#{owner.tenant} AND subject=#{owner.subject} AND epoch=#{epoch} AND id IN",
+    "<foreach collection='ids' item='id' open='(' separator=',' close=')'>#{id}</foreach>",
+    "</script>"
+  })
+  List<String> currentSources(
+      @Param("owner") Owner owner, @Param("epoch") long epoch, @Param("ids") List<String> ids);
+
   @Update(
       "UPDATE memory.sources SET status='pending' WHERE id=#{id} AND status='admitted' AND epoch=(SELECT epoch FROM memory.owners WHERE tenant=memory.sources.tenant AND subject=memory.sources.subject)")
   int ready(String id);

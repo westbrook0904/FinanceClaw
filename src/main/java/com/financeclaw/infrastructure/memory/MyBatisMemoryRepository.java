@@ -31,6 +31,11 @@ public class MyBatisMemoryRepository implements MemoryRepository {
     return db.sourceById(id);
   }
 
+  public List<String> currentSources(Owner owner, long epoch, List<String> ids) {
+    if (ids.isEmpty()) return List.of();
+    return db.currentSources(owner, epoch, ids);
+  }
+
   public int ready(String id) {
     return db.ready(id);
   }

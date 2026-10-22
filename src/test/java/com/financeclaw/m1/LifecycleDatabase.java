@@ -56,8 +56,9 @@ public final class LifecycleDatabase {
       var tx = new TransactionTemplate(new DataSourceTransactionManager(source));
       var tasks = session.getMapper(TaskMapper.class);
       var gov = session.getMapper(com.financeclaw.infrastructure.governance.GovernanceMapper.class);
+      var events = new com.financeclaw.app.task.TaskEventHub();
       var reads = new MyBatisTaskQueryGateway(tasks);
-      var mutations = new MyBatisTaskMutationGateway(tasks);
+      var mutations = new MyBatisTaskMutationGateway(tasks, events);
       var commands = new MyBatisCommandGateway(tasks);
       var policy = new MyBatisExecutionPolicyGateway(gov);
       var receipts =
@@ -84,11 +85,11 @@ public final class LifecycleDatabase {
       var queries = new TaskQueryService(reads);
       var submission =
           new SubmitTaskService(
-              new MyBatisTaskAdmissionGateway(tasks), policy, release, memory, tx);
+              new MyBatisTaskAdmissionGateway(tasks, events), policy, release, memory, tx);
       var cancellation =
           new CancelTaskService(queries, reads, mutations, commands, policy, transitions, tx);
       leases = new ExecutionLeaseService(commands, mutations, reads, transitions, tx);
-      var policies = new ExecutionPolicyService(reads, mutations, policy, release, memory, leases);
+      var policies = new ExecutionPolicyService(reads, events, policy, release, memory, leases);
       completion =
           new ExecutionCompletionService(
               mutations, commands, receipts, leases, policies, transitions);
@@ -130,7 +131,7 @@ public final class LifecycleDatabase {
               new AgentScopeInteractionCheckpoint(session.getMapper(RuntimeMapper.class)),
               new AgentScopeAnswerRules(java.util.List.of(new ZiweiAnswerValidator(ziweiInputs))),
               tx);
-      var grants = new GrantService(queries, new MyBatisGrantGateway(gov), tx);
+      var grants = new GrantService(queries, new MyBatisGrantGateway(gov), tx, events);
       var artifacts =
           new ArtifactService(
               new MyBatisArtifactGateway(gov, tasks), leases, policies, releases, tx);

@@ -3,6 +3,7 @@ package com.financeclaw.m2;
 import static org.assertj.core.api.Assertions.*;
 
 import com.financeclaw.app.release.ReleaseService;
+import com.financeclaw.app.task.TaskEventHub;
 import com.financeclaw.bootstrap.FinanceClawApplication;
 import com.financeclaw.domain.Governance.*;
 import com.financeclaw.domain.Task.*;
@@ -60,6 +61,7 @@ class GovernanceIT {
   }
 
   @Autowired TaskFixture tasks;
+  @Autowired TaskEventHub events;
   @Autowired org.springframework.context.ApplicationContext taskContext;
   @Autowired GovernanceFixture governance;
   @Autowired GovernanceMapper db;
@@ -335,16 +337,22 @@ class GovernanceIT {
   @Test
   void toolProgressNeverContainsArgumentsResultsOrIntermediateReasoning() throws Exception {
     var t = submit("report");
-    run(claim());
-    var i = question(t);
-    answer(t, i, approve(i));
-    run(claim());
-    var events = tasks.events(owner, t.conversationId(), t.turnId(), 0);
-    assertThat(events).anyMatch(e -> e.kind().startsWith("tool_"));
-    assertThat(PayloadJson.canonical(events))
-        .doesNotContain("PRIVATE_REPORT_PARAMETER", "PRIVATE_INTERMEDIATE_TEXT", "report_id");
-    assertThat(events.stream().filter(e -> e.kind().startsWith("tool_")).toList())
-        .allMatch(e -> e.text() == null && GovernedTools.NAMES.contains(e.tool()));
+    try (var observer = events.subscribe(turn(t), 128)) {
+      var captured =
+          observer.events().takeUntil(e -> e.status().equals("completed")).collectList().toFuture();
+      run(claim());
+      var i = question(t);
+      answer(t, i, approve(i));
+      run(claim());
+      var liveEvents = captured.get(10, TimeUnit.SECONDS);
+      assertThat(liveEvents).anyMatch(e -> e.kind().startsWith("tool_"));
+      assertThat(PayloadJson.canonical(liveEvents))
+          .doesNotContain("PRIVATE_REPORT_PARAMETER", "PRIVATE_INTERMEDIATE_TEXT", "report_id");
+      assertThat(liveEvents.stream().filter(e -> e.kind().startsWith("tool_")).toList())
+          .allMatch(e -> e.text() == null && GovernedTools.NAMES.contains(e.tool()));
+      assertThat(tasks.events(owner, t.conversationId(), t.turnId(), 0))
+          .allMatch(e -> e.kind().equals("turn"));
+    }
   }
 
   @Test
@@ -417,7 +425,17 @@ class GovernanceIT {
                   PackagedSkills.hash(),
                   "{}")));
       var t = submit("mcp");
-      run(claim());
+      List<Event> liveEvents;
+      try (var observer = events.subscribe(turn(t), 128)) {
+        var captured =
+            observer
+                .events()
+                .takeUntil(e -> e.status().equals("completed"))
+                .collectList()
+                .toFuture();
+        run(claim());
+        liveEvents = captured.get(10, TimeUnit.SECONDS);
+      }
       assertThat(turn(t).status()).isEqualTo("completed");
       assertThat(server.calls).hasValue(1);
       String id =
@@ -425,7 +443,8 @@ class GovernanceIT {
               "SELECT id FROM business.artifacts WHERE turn_id=?", String.class, t.turnId());
       assertThat(governance.read(owner, id, 100, 1).data())
           .isEqualTo(Map.of("hotels", List.of(Map.of("city", "上海", "name", "fixture"))));
-      assertThat(PayloadJson.canonical(tasks.events(owner, t.conversationId(), t.turnId(), 0)))
+      assertThat(liveEvents).anyMatch(e -> e.kind().startsWith("tool_"));
+      assertThat(PayloadJson.canonical(liveEvents))
           .doesNotContain("PRIVATE_MCP_RAW_RESULT", "上海", "fixture");
       server.drift = true;
       var changed = submit("mcp");

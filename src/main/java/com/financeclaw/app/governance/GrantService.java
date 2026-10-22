@@ -1,6 +1,7 @@
 package com.financeclaw.app.governance;
 
 import com.financeclaw.app.governance.port.GrantGateway;
+import com.financeclaw.app.task.TaskEventHub;
 import com.financeclaw.app.task.TaskQueryService;
 import com.financeclaw.domain.ExecutionScope;
 import com.financeclaw.domain.Governance.Grant;
@@ -19,8 +20,11 @@ public class GrantService {
   private final TaskQueryService queries;
   private final GrantGateway db;
   private final TransactionTemplate tx;
+  private final TaskEventHub events;
 
-  public GrantService(TaskQueryService queries, GrantGateway db, TransactionTemplate tx) {
+  public GrantService(
+      TaskQueryService queries, GrantGateway db, TransactionTemplate tx, TaskEventHub events) {
+    this.events = events;
     this.queries = queries;
     this.db = db;
     this.tx = tx;
@@ -49,6 +53,7 @@ public class GrantService {
           }
           if (grant == null || grant.revision() != revision) throw new Problem(409, "stale_grant");
           db.updateGrant(conversation, json);
+          events.invalidateConversation(conversation);
           db.grantChange(conversation, key, hash);
           return db.grant(conversation);
         });

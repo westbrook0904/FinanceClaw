@@ -558,7 +558,10 @@ class TaskLifecycleIT {
   @Test
   void admissionFailureRollsBackTurnPolicyCommandJournalAndEvent() {
     String conversation = tasks.createConversation(owner);
-    var admission = spy(new MyBatisTaskAdmissionGateway(mapper));
+    var admission =
+        spy(
+            new MyBatisTaskAdmissionGateway(
+                mapper, bean(com.financeclaw.app.task.TaskEventHub.class)));
     doAnswer(
             call -> {
               call.callRealMethod();
@@ -667,7 +670,10 @@ class TaskLifecycleIT {
     tasks.seal(claim, runtime.execute(claim));
     long sealedRevision = turn(accepted).revision();
     int sealedEvents = count("events");
-    var mutations = spy(new MyBatisTaskMutationGateway(mapper));
+    var mutations =
+        spy(
+            new MyBatisTaskMutationGateway(
+                mapper, bean(com.financeclaw.app.task.TaskEventHub.class)));
     doAnswer(
             call -> {
               call.callRealMethod();
@@ -702,7 +708,10 @@ class TaskLifecycleIT {
   @Test
   void cancellationReceiptFailureRollsBackStateEventOutboxAndCommand() {
     var accepted = submit();
-    var mutations = spy(new MyBatisTaskMutationGateway(mapper));
+    var mutations =
+        spy(
+            new MyBatisTaskMutationGateway(
+                mapper, bean(com.financeclaw.app.task.TaskEventHub.class)));
     doAnswer(
             call -> {
               call.callRealMethod();

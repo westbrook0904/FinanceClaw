@@ -1,6 +1,7 @@
 package com.financeclaw.app.execution;
 
 import com.financeclaw.app.execution.port.*;
+import com.financeclaw.app.task.TaskEventHub;
 import com.financeclaw.app.task.port.*;
 import com.financeclaw.domain.Governance.*;
 import com.financeclaw.domain.Task.*;
@@ -11,7 +12,7 @@ import org.springframework.stereotype.Service;
 @Service
 public class ExecutionPolicyService {
   private final TaskQueryGateway db;
-  private final TaskMutationGateway mutations;
+  private final TaskEventHub events;
   private final ExecutionPolicyGateway governance;
   private final ExecutionRelease releases;
   private final ExecutionMemory memory;
@@ -19,13 +20,13 @@ public class ExecutionPolicyService {
 
   public ExecutionPolicyService(
       TaskQueryGateway db,
-      TaskMutationGateway mutations,
+      TaskEventHub events,
       ExecutionPolicyGateway governance,
       ExecutionRelease releases,
       ExecutionMemory memory,
       ExecutionLeaseService leases) {
     this.db = db;
-    this.mutations = mutations;
+    this.events = events;
     this.governance = governance;
     this.releases = releases;
     this.memory = memory;
@@ -63,11 +64,10 @@ public class ExecutionPolicyService {
         claim,
         () -> {
           var p = checkPolicy(claim);
-          return db
-              .history(claim.turn().conversationId(), claim.turn().releaseHash(), p.grantRevision())
-              .stream()
-              .filter(memory::sameEpoch)
-              .toList();
+          return memory.filterHistory(
+              claim.turn(),
+              db.history(
+                  claim.turn().conversationId(), claim.turn().releaseHash(), p.grantRevision()));
         });
   }
 
@@ -91,11 +91,22 @@ public class ExecutionPolicyService {
   }
 
   public void consume(Claim claim, boolean model) {
+    consume(claim, model, null);
+  }
+
+  /** Authorize the tool and reserve its budget under the same lease and grant locks. */
+  public void consumeTool(Claim claim, String scope) {
+    consume(claim, false, scope);
+  }
+
+  private void consume(Claim claim, boolean model, String scope) {
     leases.fenced(
         claim,
         () -> {
           if (!db.turn(claim.turn().id()).status().equals("running")) throw new Fenced();
-          checkPolicy(claim);
+          var p = checkPolicy(claim);
+          if (scope != null && !PayloadJson.scopes(p.scopes()).contains(scope))
+            throw new Blocked("tool_denied");
           var r = releases.require(claim.turn().releaseHash());
           int changed =
               model
@@ -106,19 +117,18 @@ public class ExecutionPolicyService {
         });
   }
 
+  public TaskEventHub.Progress beginProgress(Claim claim) {
+    return events.begin(claim);
+  }
+
   public void progress(Claim claim, String kind, String text, String tool) {
-    if (!Set.of("text_delta", "tool_started", "tool_completed", "tool_failed").contains(kind))
-      throw new IllegalArgumentException("Unknown public event");
-    leases.fenced(
-        claim,
-        () -> {
-          Turn t = mutations.lockTurn(claim.turn().id());
-          if (!t.status().equals("running")) return null;
-          checkPolicy(claim);
-          mutations.advance(t.id());
-          mutations.progress(t.id(), kind, text, tool);
-          return null;
-        });
+    try {
+      events.progress(claim, kind, text, tool);
+    } catch (Fenced invalidated) {
+      // Only rejected progress needs SQL: preserve an authoritative revocation/privacy reason.
+      checkDispatch(claim);
+      throw invalidated;
+    }
   }
 
   public List<String> scopes(Claim claim) {

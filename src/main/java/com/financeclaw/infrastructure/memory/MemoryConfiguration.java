@@ -2,6 +2,7 @@ package com.financeclaw.infrastructure.memory;
 
 import com.financeclaw.app.memory.*;
 import com.financeclaw.app.memory.port.*;
+import com.financeclaw.app.task.TaskEventHub;
 import com.financeclaw.domain.memory.MemoryPolicy;
 import javax.sql.DataSource;
 import org.springframework.context.annotation.*;
@@ -9,7 +10,7 @@ import org.springframework.core.env.Environment;
 import org.springframework.transaction.support.TransactionTemplate;
 
 @Configuration(proxyBeanMethods = false)
-@Import(ForgetLedgerConfiguration.class)
+@Import({ForgetLedgerConfiguration.class, TaskEventHub.class})
 public class MemoryConfiguration {
   @Bean
   ForgetRecoveryRepository forgetRecoveryRepository(DataSource source) {
@@ -21,8 +22,9 @@ public class MemoryConfiguration {
       MemoryRepository memory,
       TransactionTemplate tx,
       ForgetRecoveryRepository recovery,
-      ForgetLedger ledger) {
-    return new MemoryForgetService(memory, tx, recovery, ledger);
+      ForgetLedger ledger,
+      TaskEventHub events) {
+    return new MemoryForgetService(memory, tx, recovery, ledger, events);
   }
 
   @Bean

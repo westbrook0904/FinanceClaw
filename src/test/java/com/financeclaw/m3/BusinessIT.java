@@ -3,6 +3,7 @@ package com.financeclaw.m3;
 import static org.assertj.core.api.Assertions.*;
 
 import com.financeclaw.app.release.ReleaseService;
+import com.financeclaw.app.task.TaskEventHub;
 import com.financeclaw.bootstrap.FinanceClawApplication;
 import com.financeclaw.domain.Governance.*;
 import com.financeclaw.domain.Task.*;
@@ -60,6 +61,7 @@ class BusinessIT {
   }
 
   @Autowired TaskFixture tasks;
+  @Autowired TaskEventHub events;
   @Autowired org.springframework.context.ApplicationContext taskContext;
   @Autowired GovernanceFixture governance;
   @Autowired GovernanceMapper db;
@@ -487,7 +489,13 @@ class BusinessIT {
   void nativeSkillsLoadProgressivelyAndPersistToolResultsInAgentState() {
     var t = submit("/skill " + SKILL_NAME + " resource");
     var c = claim();
-    run(c);
+    List<Event> liveEvents;
+    try (var observer = events.subscribe(turn(t), 128)) {
+      var captured =
+          observer.events().takeUntil(e -> e.status().equals("completed")).collectList().toFuture();
+      run(c);
+      liveEvents = captured.orTimeout(10, TimeUnit.SECONDS).join();
+    }
     assertThat(turn(t).status()).isEqualTo("completed");
     String first = PayloadJson.canonical(requests.getFirst());
     assertThat(first)
@@ -504,7 +512,7 @@ class BusinessIT {
                 Integer.class,
                 t.turnId()))
         .isZero();
-    assertThat(PayloadJson.canonical(tasks.events(owner, t.conversationId(), t.turnId(), 0)))
+    assertThat(PayloadJson.canonical(liveEvents))
         .contains(SKILL_TOOL)
         .doesNotContain("## Framework: Build From The Shelf");
   }
@@ -564,7 +572,13 @@ class BusinessIT {
   void researchHasIndependentChildStateNarrowedToolsAndSharedRootBudget() {
     var t = submit("research");
     var c = claim();
-    run(c);
+    List<Event> liveEvents;
+    try (var observer = events.subscribe(turn(t), 128)) {
+      var captured =
+          observer.events().takeUntil(e -> e.status().equals("completed")).collectList().toFuture();
+      run(c);
+      liveEvents = captured.orTimeout(10, TimeUnit.SECONDS).join();
+    }
     assertThat(turn(t).status()).isEqualTo("completed");
     assertThat(turn(t).result()).contains("m3-synthetic-fixture", "as_of", "analysis_period");
     var scope = com.financeclaw.domain.research.ResearchRun.scope(c.scope(), "call-1");
@@ -579,10 +593,7 @@ class BusinessIT {
     assertThat(state.isPresent()).isTrue();
     assertThat(db.policy(t.turnId()).modelCalls()).isEqualTo(4);
     assertThat(db.step(t.turnId(), "child:call-1", "tool:call-1")).isNotNull();
-    assertThat(
-            tasks.events(owner, t.conversationId(), t.turnId(), 0).stream()
-                .filter(e -> e.kind().equals("tool_started"))
-                .map(Event::tool))
+    assertThat(liveEvents.stream().filter(e -> e.kind().equals("tool_started")).map(Event::tool))
         .contains("market_research")
         .doesNotContain("market_snapshot");
   }

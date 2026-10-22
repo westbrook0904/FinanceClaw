@@ -18,6 +18,10 @@ public class MyBatisTaskQueryGateway implements TaskQueryGateway {
     return db.ownedConversation(id, owner);
   }
 
+  public Turn ownedTurn(Owner owner, String conversation, String turn) {
+    return db.ownedTurn(owner, conversation, turn);
+  }
+
   public Turn turn(String id) {
     return db.turn(id);
   }

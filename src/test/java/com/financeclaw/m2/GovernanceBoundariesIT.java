@@ -111,7 +111,8 @@ class GovernanceBoundariesIT {
             })
         .when(failing)
         .grantChange(anyString(), anyString(), anyString());
-    var service = new GrantService(queries, failing, tx);
+    var service =
+        new GrantService(queries, failing, tx, new com.financeclaw.app.task.TaskEventHub());
     var before = rows();
     assertThatThrownBy(
             () -> service.changeGrant(owner, conversation, "change", 1, List.of("artifact:read")))

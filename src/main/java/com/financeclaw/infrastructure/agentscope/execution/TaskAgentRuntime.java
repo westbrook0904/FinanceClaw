@@ -98,6 +98,13 @@ public class TaskAgentRuntime implements com.financeclaw.app.execution.port.Agen
   }
 
   public Outcome execute(Claim claim) {
+    // Register before policy checks so a concurrent revocation also invalidates startup.
+    try (var progress = policy.beginProgress(claim)) {
+      return executeRegistered(claim);
+    }
+  }
+
+  private Outcome executeRegistered(Claim claim) {
     policy.checkDispatch(claim);
     var release = releases.require(claim.turn().releaseHash());
     var scope = claim.scope();

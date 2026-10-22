@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Isolated delivery/failure/backup experiment with optional Ziwei and admission checks."""
+"""Combined-runtime delivery/failure/backup experiment with optional governance checks."""
 import concurrent.futures
 import argparse
 import hashlib
@@ -55,7 +55,7 @@ market = {'AAPL': {'price': '100', 'currency': 'USD', 'provider': 'm5-fixture',
 override = {'services': {s: {
     'environment': {'FINANCECLAW_MARKET_FILE': '/app/market.json'},
     'volumes': [f'{TEMP / "market.json"}:/app/market.json:ro']}
-    for s in ('api', 'worker', 'integrations')}}
+    for s in ('api',)}}
 (TEMP / 'override.json').write_text(json.dumps(override))
 BASE = ['docker', 'compose', '--project-directory', str(ROOT), '--env-file', str(TEMP / 'empty.env'),
         '-p', PROJECT, '-f', str(ROOT / 'compose.yml'), '-f', str(TEMP / 'override.json')]
@@ -68,7 +68,8 @@ RESULT = {'scope': 'isolated real containers; offline model and synthetic market
           'project': PROJECT, 'thresholds': THRESHOLDS, 'checks': {},
           'started_at': datetime.now(timezone.utc).isoformat()}
 INPUTS = ('Dockerfile', '.dockerignore', 'compose.yml', 'ops/postgres-init.sql',
-          'ops/container-entrypoint.sh', 'ops/m5-thresholds.json', 'scripts/validate-compose.py')
+          'ops/container-entrypoint.sh', 'src/main/resources/application-standalone.yml',
+          'ops/m5-thresholds.json', 'scripts/validate-compose.py')
 if ARGS.preflight:
     INPUTS += ('scripts/inspect-drain.py',)
 if ARGS.restore_privacy:
@@ -92,6 +93,18 @@ def command(args, *, data=None, timeout=240, expected_exit=0):
 
 def compose(*args, **kw):
     return command(BASE + list(args), **kw)
+
+
+def restart_runtime(*, execute=True):
+    """Exercise queued recovery without adding a second application process."""
+    global URL
+    override['services']['api']['command'] = ['standalone']
+    if not execute:
+        override['services']['api']['command'].append('--financeclaw.worker.enabled=false')
+    (TEMP / 'override.json').write_text(json.dumps(override))
+    compose('up', '-d', '--no-deps', '--wait', 'api')
+    URL = 'http://' + compose('port', 'api', '8080').decode().strip()
+    wait(lambda: request('/actuator/health/readiness', auth=False)[0] == 200)
 
 
 def sql(statement, database='financeclaw_java'):
@@ -231,9 +244,14 @@ def require_no_runtime_connections(*databases):
 try:
     print('Starting isolated deployment validation:', PROJECT, flush=True)
     compose('config', '--quiet')
+    config = json.loads(compose('config', '--format', 'json'))
+    assert set(config['services']) == {'postgres', 'migrate', 'api', 'memory-worker'}
+    assert config['services']['api']['command'] == ['standalone']
+    runtime_secrets = {s['source'] for s in config['services']['api']['secrets']}
+    assert {'api_token', 'model_key', 'hotel_token', 'taibu_token', 'feishu_secret'} <= runtime_secrets
+    mark('single_combined_runtime_and_restricted_memory_topology')
     if ARGS.ziwei:
-        config = json.loads(compose('config', '--format', 'json'))
-        for role in ('api', 'worker', 'integrations'):
+        for role in ('api',):
             service = config['services'][role]
             assert service['environment']['FINANCECLAW_ZIWEI_ENABLED'] == 'true'
             assert service['environment']['FINANCECLAW_ZIWEI_DEVELOPMENT'] == 'true'
@@ -251,10 +269,10 @@ try:
     assert request('/v1/operations', auth=False)[0] == 401
     assert sql('SELECT count(*) FROM public.flyway_schema_history WHERE success') == str(
         len(list((ROOT / 'src/main/resources/db/migration').glob('V*__*.sql'))))
-    mark('empty_database_and_four_healthy_roles', {'startup_seconds': time.monotonic()-started})
+    mark('empty_database_and_healthy_combined_runtime', {'startup_seconds': time.monotonic()-started})
     assert sql("SELECT has_schema_privilege('financeclaw_memory','business','USAGE')") == 'f'
     assert sql("SELECT has_schema_privilege('financeclaw_app','business','CREATE')") == 'f'
-    for role in ('worker', 'integrations', 'memory-worker'):
+    for role in ('memory-worker',):
         code = compose('exec', '-T', role, 'curl', '-s', '-o', '/dev/null', '-w', '%{http_code}',
                        'http://localhost:8080/v1/conversations').decode()
         assert code == '404', (role, code)
@@ -275,7 +293,7 @@ try:
     mark('offline_load_and_idempotency', {'requests': len(durations), 'success_ratio': 1,
                                         'p95_seconds': p95, 'provider_calls': 0, 'provider_cost': 0})
 
-    compose('stop', 'worker')
+    restart_runtime(execute=False)
     c, receipt, path = turn('durable admission across API restart')
     assert api(path)['status'] == 'queued'
     if ARGS.admission:
@@ -294,9 +312,9 @@ try:
     if ARGS.admission:
         assert api('/v1/operations/admission') == {'paused': True, 'revision': pause['revision']}
         rejected_submission()
-    compose('up', '-d', '--no-deps', '--wait', 'worker')
+    restart_runtime()
     terminal(path)
-    mark('graceful_worker_stop_and_api_restart_keep_admission')
+    mark('combined_restart_keeps_admission_and_resumes_disabled_execution')
     if ARGS.admission:
         report = api('/v1/operations/drain')
         assert report['counts']['queued'] == 0 and report['counts']['active_commands'] == 0
@@ -316,8 +334,8 @@ try:
         report = api('/v1/operations/drain')
         assert not report['drained'] and report['counts']['waiting'] == 1
         assert report['counts']['pending_interactions'] == 1
-    compose('kill', '-s', 'SIGKILL', 'worker')
-    compose('up', '-d', '--no-deps', '--wait', 'worker')
+    compose('kill', '-s', 'SIGKILL', 'api')
+    restart_runtime()
     answer = {'kind': 'approval', 'revision': question['revision'], 'decision': 'approve',
               'action_hash': question['action_hash'], 'answer': None}
     api(wp + '/interactions/' + question['id'] + '/answer', answer, 'approval-once')
@@ -329,7 +347,7 @@ try:
     if ARGS.admission:
         assert api('/v1/operations/admission')['paused']
         admission(False, 'resume-after-approval')
-        mark('paused_admission_allows_persisted_approval_after_worker_sigkill')
+        mark('paused_admission_allows_persisted_approval_after_runtime_sigkill')
 
     compose('stop', 'postgres')
     # Existing pooled connections may be invalidated during the first probe. Require an actual
@@ -359,7 +377,7 @@ try:
     wait(lambda: any(f['status'] == 'active' for f in api('/v1/memory')))
     epoch = api('/v1/memory/privacy')['epoch']
     if ARGS.restore_privacy:
-        compose('stop', 'api', 'worker', 'integrations', 'memory-worker')
+        compose('stop', 'api', 'memory-worker')
         require_no_runtime_connections('financeclaw_java')
         # A superseded projection at the current epoch is legitimately retained and query-filtered.
         # Privacy checks must not mistake it for resurrection after forgetting.
@@ -375,7 +393,7 @@ try:
         old_backup = compose('exec', '-T', 'postgres', 'pg_dump', '-U', 'postgres', '-d', 'financeclaw_java', '-Fc')
         assert sql("SELECT count(*) FROM memory.facts WHERE status='active' AND content IS NOT NULL") == '1'
         mark('pre_forget_backup_captured_with_writers_stopped', {'sha256': hashlib.sha256(old_backup).hexdigest()})
-        compose('up', '-d', '--no-deps', '--wait', 'api', 'worker', 'integrations', 'memory-worker')
+        compose('up', '-d', '--no-deps', '--wait', 'api', 'memory-worker')
         URL = 'http://' + compose('port', 'api', '8080').decode().strip()
     assert api('/v1/memory/forget', {'epoch': epoch}, 'forget-once')['epoch'] == epoch + 1
     wait(lambda: not api('/v1/memory/privacy')['purge_pending'])
@@ -391,7 +409,7 @@ try:
         if ARGS.preflight:
             preflight('paused_and_drained', 'ready_for_review')
 
-    compose('stop', 'api', 'worker', 'integrations', 'memory-worker')
+    compose('stop', 'api', 'memory-worker')
     original = fingerprints('financeclaw_java')
     backup = compose('exec', '-T', 'postgres', 'pg_dump', '-U', 'postgres', '-d', 'financeclaw_java', '-Fc')
     dump = OUT / 'synthetic-restore.dump'
@@ -451,10 +469,10 @@ try:
         mark('rejected_synthetic_restore_removed_before_runtime_start')
     restore_override = {'services': {s: {'environment': {
         'FINANCECLAW_DATABASE_URL' if s != 'memory-worker' else 'FINANCECLAW_MEMORY_DATABASE_URL':
-        f'jdbc:postgresql://postgres:5432/{restored}'}} for s in ('api', 'worker', 'integrations', 'memory-worker')}}
+        f'jdbc:postgresql://postgres:5432/{restored}'}} for s in ('api', 'memory-worker')}}
     (TEMP / 'restore.json').write_text(json.dumps(restore_override))
     BASE.extend(['-f', str(TEMP / 'restore.json')])
-    compose('up', '-d', '--no-deps', '--wait', 'api', 'worker', 'integrations', 'memory-worker')
+    compose('up', '-d', '--no-deps', '--wait', 'api', 'memory-worker')
     URL = 'http://' + compose('port', 'api', '8080').decode().strip()
     assert api(wp)['status'] == 'completed'
     assert api('/v1/memory/privacy')['epoch'] == epoch + 1
