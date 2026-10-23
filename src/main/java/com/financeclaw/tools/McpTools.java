@@ -14,7 +14,7 @@ import java.util.function.Function;
 /**
  * MCP 客户端的请求内注册与释放边界。
  *
- * <p>连接前校验启用状态、租户和端点白名单，注册后的工具契约由发布身份组件核验； 生命周期结束统一关闭客户端，避免跨任务共享可变工具上下文。
+ * <p>连接前校验启用状态、租户和端点白名单，远端 Schema 由 SDK 实时发现，当前不进行指纹冻结或漂移比较； 生命周期结束统一关闭客户端，避免跨任务共享可变工具上下文。
  */
 public final class McpTools implements AutoCloseable {
     private final List<McpClientWrapper> clients = new ArrayList<>();

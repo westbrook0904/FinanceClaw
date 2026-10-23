@@ -3,7 +3,7 @@ package com.financeclaw.domain.release;
 import java.net.URI;
 import java.util.*;
 
-/** 远程工具端点配置：保存端点、凭据引用及工具契约摘要，实际凭据通过独立端口解析。 */
+/** 远程工具端点配置：保存端点、凭据引用及允许工具名，实际凭据通过独立端口解析；不包含远端 Schema 摘要。 */
 public record RemoteEndpoint(
         String service,
         String url,
