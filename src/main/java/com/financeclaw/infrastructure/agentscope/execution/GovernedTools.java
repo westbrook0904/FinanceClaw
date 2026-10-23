@@ -306,7 +306,13 @@ public final class GovernedTools implements AutoCloseable {
                                                     != null) {
                                                 throw new Blocked("invalid_tool_input");
                                             }
-                                            policy.consumeTool(claim, scope);
+                                            // 固定本地行情工具由 MarketDataService 在读取前核验授权并扣额。
+                                            // 子 Agent 和 Workflow 直接调用该服务，因此服务必须保留扣额；
+                                            // 主 Agent 不能再扣第二次。同名 MCP 仍走统一扣额边界。
+                                            if (!kind.equals("function")
+                                                    || !name.equals("market_snapshot")) {
+                                                policy.consumeTool(claim, scope);
+                                            }
                                             checkCompatibility();
                                             return action.apply(param);
                                         })

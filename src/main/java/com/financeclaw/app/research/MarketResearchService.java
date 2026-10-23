@@ -61,12 +61,21 @@ public class MarketResearchService {
         policies.consume(execution.claim(), true);
     }
 
+    @SuppressWarnings("unchecked")
     public Object snapshot(Execution execution, String call, Map<String, Object> input) {
+        // 子运行的十次上限约束调用尝试，回放也先校验证券范围；根额度仅在首次读取时扣减。
         String symbol = execution.run().reserveSnapshot(input.get("symbol"));
-        var snapshot = market.read(execution.claim(), symbol);
+        var snapshot =
+                (Map<String, Object>)
+                        steps.run(
+                                execution.claim(),
+                                execution.namespace(),
+                                "tool:" + call,
+                                input,
+                                () -> market.read(execution.claim(), symbol));
+        // 恢复运行时 evidence 起初为空，缓存回执同样必须补回证据，才能完整校验研究结果。
         execution.run().recordEvidence(symbol, snapshot);
-        return steps.run(
-                execution.claim(), execution.namespace(), "tool:" + call, input, () -> snapshot);
+        return snapshot;
     }
 
     public Object complete(Execution execution, boolean completedState, String summary) {

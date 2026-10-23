@@ -10,7 +10,10 @@ import java.math.BigDecimal;
 import java.util.*;
 import org.springframework.stereotype.Service;
 
-/** 受治理的行情查询：先校验工具范围和调用预算，再读取固定发布版本绑定的行情快照。 */
+/**
+ * 受治理的行情查询：先校验工具范围和调用预算，再读取固定发布版本绑定的行情快照。 主 Agent、研究子 Agent 及组合流程都在此预留一次根工具额度；调用此方法的外层工具不得重复扣额。
+ * 确定性步骤的回放应从已保存回执恢复，只有首次实际读取才调用本服务。
+ */
 @Service
 public class MarketDataService {
     private final ExecutionPolicyService policies;
