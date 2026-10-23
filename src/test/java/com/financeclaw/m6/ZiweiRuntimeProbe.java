@@ -8,6 +8,7 @@ import com.financeclaw.app.release.port.Credentials;
 import com.financeclaw.app.report.ReportService;
 import com.financeclaw.bootstrap.FinanceClawApplication;
 import com.financeclaw.domain.Task.*;
+import com.financeclaw.infrastructure.agentscope.context.WorkingContextSession;
 import com.financeclaw.infrastructure.agentscope.execution.*;
 import com.financeclaw.infrastructure.state.RuntimeMapper;
 import com.financeclaw.support.PayloadJson;
@@ -21,8 +22,9 @@ import reactor.core.publisher.Flux;
 /** Test-only fault driver. Production jar, native AgentScope and MyBatis perform all execution. */
 public final class ZiweiRuntimeProbe extends TaskAgentRuntime implements Model {
     private final Properties settings;
+    private final Set<String> observedReceipts = new HashSet<>();
 
-    private ZiweiRuntimeProbe(
+    ZiweiRuntimeProbe(
             ExecutionPolicyService policy,
             ExecutionLeaseService leases,
             ReleaseService releases,
@@ -120,16 +122,22 @@ public final class ZiweiRuntimeProbe extends TaskAgentRuntime implements Model {
     @Override
     public Flux<ChatResponse> stream(
             List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
-        long resolved =
-                messages.stream()
-                        .flatMap(m -> m.getContentBlocks(ToolResultBlock.class).stream())
-                        .filter(r -> !r.isSuspended())
-                        .count();
+        String[] names = settings.getProperty("probe.tools", "ziwei_yearly_chart").split(",");
+        var requestedTools = Set.of(names);
+        // 固定模型的进度不能依赖可见历史长度：已完成批次可能已被工作上下文压缩。
+        // 保存本进程已观察的 callId；恢复的首轮仍从 SDK 检查点中读取真实回执。
+        messages.stream()
+                .filter(message -> !WorkingContextSession.isHistorical(message))
+                .flatMap(m -> m.getContentBlocks(ToolResultBlock.class).stream())
+                .filter(r -> !r.isSuspended())
+                .filter(r -> requestedTools.contains(r.getName()))
+                .map(ToolResultBlock::getId)
+                .forEach(observedReceipts::add);
+        long resolved = observedReceipts.size();
         String mode = settings.getProperty("probe.mode");
         if (resolved > 0 && mode.equals("after-artifact")) Runtime.getRuntime().halt(73);
         if ((resolved == 0 && mode.equals("before-tool"))
                 || (resolved > 0 && mode.equals("after-tool"))) barrier();
-        String[] names = settings.getProperty("probe.tools", "ziwei_yearly_chart").split(",");
         var input = PayloadJson.object(settings.getProperty("probe.input"));
         if (resolved < names.length && names[(int) resolved].equals("ziwei_natal_chart")) {
             input = new TreeMap<>(input);

@@ -17,12 +17,15 @@ import com.financeclaw.infrastructure.agentscope.execution.*;
 import com.financeclaw.infrastructure.agentscope.skills.PackagedSkills;
 import com.financeclaw.infrastructure.state.*;
 import com.financeclaw.infrastructure.ziwei.ZiweiSchemas;
+import com.financeclaw.support.PayloadDigest;
 import com.financeclaw.support.PayloadJson;
 import com.financeclaw.tools.*;
 import com.financeclaw.ziwei.*;
 import io.agentscope.core.message.*;
 import io.agentscope.core.model.*;
 import io.agentscope.core.tool.*;
+import io.agentscope.core.util.JsonUtils;
+import java.nio.charset.StandardCharsets;
 import java.time.*;
 import java.util.*;
 import java.util.concurrent.*;
@@ -703,7 +706,7 @@ class ZiweiToolsIT {
                 .isEqualTo("completed");
         String payload =
                 sql.queryForObject(
-                        "SELECT payload FROM business.artifacts WHERE turn_id=?",
+                        "SELECT payload FROM business.artifacts WHERE turn_id=? AND required_scope='ziwei:read' AND NOT privacy_bound",
                         String.class,
                         accepted.turnId());
         assertThat(PayloadJson.object(payload).get("target"))
@@ -715,8 +718,47 @@ class ZiweiToolsIT {
                                 "2027-01-01",
                                 "timezone",
                                 "Asia/Shanghai"));
-        assertThat(sql.queryForObject("SELECT count(*) FROM business.artifacts", Integer.class))
+        assertThat(
+                        sql.queryForObject(
+                                "SELECT count(*) FROM business.artifacts WHERE turn_id=? AND required_scope='ziwei:read' AND NOT privacy_bound",
+                                Integer.class,
+                                accepted.turnId()))
                 .isEqualTo(1);
+        // 原生回执因超过模型阈值另存为文件，不得当成第二份业务盘面，也不能漏掉这个引用。
+        var files =
+                sql.queryForList(
+                        "SELECT id FROM business.artifacts WHERE turn_id=? AND required_scope='ziwei:read' AND privacy_bound",
+                        String.class,
+                        accepted.turnId());
+        assertThat(files).as("exactly one offloaded native receipt").hasSize(1);
+        String file = files.getFirst();
+        var document = governance.artifacts().download(alice, file);
+        String archived = new String(document.content(), StandardCharsets.UTF_8);
+        assertThat(document.hash()).isEqualTo(PayloadDigest.sha256(archived));
+        var result = JsonUtils.getJsonCodec().fromJson(archived, ToolResultBlock.class);
+        assertThat(result.getId()).isEqualTo("clarify");
+        assertThat(result.getName()).isEqualTo("ziwei_yearly_chart");
+        assertThat(result.getState()).isEqualTo(ToolResultState.SUCCESS);
+        var receipt = PayloadJson.object(((TextBlock) result.getOutput().getFirst()).getText());
+        String businessId =
+                sql.queryForObject(
+                        "SELECT id FROM business.artifacts WHERE turn_id=? AND required_scope='ziwei:read' AND NOT privacy_bound",
+                        String.class,
+                        accepted.turnId());
+        assertThat(PayloadJson.object(PayloadJson.canonical(receipt.get("artifact"))))
+                .containsEntry("artifact_id", businessId);
+        String context =
+                sql.queryForObject(
+                        "SELECT payload::text FROM agent_runtime.work_contexts WHERE turn_id=?",
+                        String.class,
+                        accepted.turnId());
+        assertThat(context).contains(file, "read_artifact_range", "download_url");
+        var range = governance.artifacts().readRange(alice, file, 0, 512);
+        assertThat(range.hash()).isEqualTo(document.hash());
+        assertThat(range.text().getBytes(StandardCharsets.UTF_8))
+                .isEqualTo(Arrays.copyOfRange(document.content(), 0, range.count()));
+        assertThatThrownBy(() -> governance.artifacts().download(bob, file))
+                .hasMessage("not_found");
         assertThat(sql.queryForObject("SELECT count(*) FROM memory.facts", Integer.class)).isZero();
     }
 }

@@ -9,7 +9,13 @@ import com.financeclaw.domain.Governance.Answer;
 import com.financeclaw.domain.Task.*;
 import com.financeclaw.fixture.GovernanceFixture;
 import com.financeclaw.fixture.TaskFixture;
+import com.financeclaw.infrastructure.agentscope.context.ContextBudgets;
+import com.financeclaw.support.ArtifactPayload;
+import com.financeclaw.support.PayloadDigest;
 import com.financeclaw.support.PayloadJson;
+import io.agentscope.core.message.*;
+import io.agentscope.core.util.JsonUtils;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.time.Duration;
 import java.util.*;
@@ -105,11 +111,117 @@ class ZiweiRecoveryIT {
     }
 
     int artifacts() {
-        return sql.queryForObject("SELECT count(*) FROM business.artifacts", Integer.class);
+        // 业务盘面与工具回执文件是两种记录，幂等性只对完整业务盘面计数。
+        return sql.queryForObject(
+                "SELECT count(*) FROM business.artifacts WHERE required_scope='ziwei:read' AND NOT privacy_bound",
+                Integer.class);
     }
 
     String artifact() {
-        return sql.queryForObject("SELECT id FROM business.artifacts", String.class);
+        return sql.queryForObject(
+                "SELECT id FROM business.artifacts WHERE required_scope='ziwei:read' AND NOT privacy_bound",
+                String.class);
+    }
+
+    List<String> toolFiles(Accepted turn) {
+        return sql.queryForList(
+                "SELECT id FROM business.artifacts WHERE turn_id=? AND required_scope='ziwei:read' AND privacy_bound ORDER BY id",
+                String.class,
+                turn.turnId());
+    }
+
+    /** 校验文件的真实读取边界、完整摘要以及文件内指向唯一业务盘面的链接。 */
+    ToolResultBlock readToolFile(String id, String businessId) {
+        var document = governance.artifacts().download(owner, id);
+        var bytes = document.content();
+        String json = new String(bytes, StandardCharsets.UTF_8);
+        assertThat(document.hash()).isEqualTo(PayloadDigest.sha256(json));
+        var stored =
+                sql.queryForMap(
+                        "SELECT hash,bytes,payload::text AS payload FROM business.artifacts WHERE id=?",
+                        id);
+        assertThat(document.hash()).isEqualTo(stored.get("hash"));
+        assertThat(bytes)
+                .hasSize(((Number) stored.get("bytes")).intValue())
+                .isEqualTo(((String) stored.get("payload")).getBytes(StandardCharsets.UTF_8));
+        var range = governance.artifacts().readRange(owner, id, 0, 512);
+        assertThat(range.hash()).isEqualTo(document.hash());
+        assertThat(range.text().getBytes(StandardCharsets.UTF_8))
+                .isEqualTo(Arrays.copyOfRange(bytes, 0, range.count()));
+        var result = JsonUtils.getJsonCodec().fromJson(json, ToolResultBlock.class);
+        assertThat(result.getState()).isEqualTo(ToolResultState.SUCCESS);
+        var response = PayloadJson.object(((TextBlock) result.getOutput().getFirst()).getText());
+        assertThat(PayloadJson.object(PayloadJson.canonical(response.get("artifact"))))
+                .containsEntry("artifact_id", businessId);
+        return result;
+    }
+
+    void assertSingleToolFile(Accepted turn, boolean contextSaved) {
+        var files = toolFiles(turn);
+        assertThat(files)
+                .as("one archived native tool result for turn %s", turn.turnId())
+                .hasSize(1);
+        var result = readToolFile(files.getFirst(), artifact());
+        assertThat(result.getId()).isEqualTo("fixed-0");
+        assertThat(result.getName()).isEqualTo("ziwei_yearly_chart");
+        if (contextSaved) {
+            String context =
+                    sql.queryForObject(
+                            "SELECT payload::text FROM agent_runtime.work_contexts WHERE turn_id=?",
+                            String.class,
+                            turn.turnId());
+            assertThat(context).contains(files.getFirst(), "download_url", "read_artifact_range");
+        }
+    }
+
+    /** 五个业务回执各自按真实 UTF-8 序列化大小判断是否需要归档，文件必须与这些调用一一对应。 */
+    void assertFiveToolFiles(Accepted turn) {
+        var names =
+                List.of(
+                        "ziwei_natal_chart",
+                        "ziwei_decadal_chart",
+                        "ziwei_yearly_chart",
+                        "ziwei_monthly_chart",
+                        "ziwei_daily_chart");
+        var expected = new LinkedHashMap<String, String>();
+        for (int index = 0; index < names.size(); index++) {
+            String call = "fixed-" + index;
+            String receipt =
+                    sql.queryForObject(
+                            "SELECT result FROM business.capability_steps WHERE turn_id=? AND namespace=? AND step='result'",
+                            String.class,
+                            turn.turnId(),
+                            "ziwei:" + call);
+            var block = ToolResultBlock.text(receipt).withIdAndName(call, names.get(index));
+            int size =
+                    ArtifactPayload.encode(
+                                    PayloadJson.parse(JsonUtils.getJsonCodec().toJson(block)))
+                            .bytes();
+            if (size > ContextBudgets.defaults().toolResultBytes()) {
+                expected.put(call, names.get(index));
+            }
+        }
+        var actual = new LinkedHashMap<String, String>();
+        for (String id : toolFiles(turn)) {
+            var document = governance.artifacts().download(owner, id);
+            String json = new String(document.content(), StandardCharsets.UTF_8);
+            var block = JsonUtils.getJsonCodec().fromJson(json, ToolResultBlock.class);
+            String receipt =
+                    sql.queryForObject(
+                            "SELECT result FROM business.capability_steps WHERE turn_id=? AND namespace=? AND step='result'",
+                            String.class,
+                            turn.turnId(),
+                            "ziwei:" + block.getId());
+            String businessId =
+                    (String)
+                            ((Map<?, ?>) PayloadJson.object(receipt).get("artifact"))
+                                    .get("artifact_id");
+            readToolFile(id, businessId);
+            assertThat(actual.put(block.getId(), block.getName()))
+                    .as("duplicate tool-result file for %s", block.getId())
+                    .isNull();
+        }
+        assertThat(actual).containsExactlyInAnyOrderEntriesOf(expected);
     }
 
     void expire() {
@@ -210,10 +322,12 @@ class ZiweiRecoveryIT {
         run("recover", true, 0);
         assertThat(turn(t).status()).isEqualTo("waiting");
         assertThat(artifacts()).isZero();
+        assertThat(toolFiles(t)).isEmpty();
         answer(t);
         run("normal", true, 0);
         assertThat(turn(t).status()).isEqualTo("completed");
         assertThat(artifacts()).isEqualTo(1);
+        assertSingleToolFile(t, true);
         assertThat(governance.read(owner, artifact(), 0, 1, "/target").data())
                 .isEqualTo(
                         Map.of(
@@ -233,6 +347,8 @@ class ZiweiRecoveryIT {
         var t = submit();
         run(mode, false, 73);
         assertThat(artifacts()).isEqualTo(1);
+        assertSingleToolFile(t, mode.equals("after-seal"));
+        var originalFiles = toolFiles(t);
         expire();
         run("recover", false, 0);
         run("recover", false, 0);
@@ -240,6 +356,7 @@ class ZiweiRecoveryIT {
         if (mode.equals("after-artifact"))
             assertThat(turn(t).reason()).isEqualTo("unconfirmed_execution");
         assertThat(artifacts()).isEqualTo(1);
+        assertThat(toolFiles(t)).containsExactlyElementsOf(originalFiles);
         assertThat(sql.queryForObject("SELECT count(*) FROM business.attempts", Integer.class))
                 .isEqualTo(1);
         assertThat(
@@ -286,6 +403,7 @@ class ZiweiRecoveryIT {
                             });
         }
         assertThat(artifacts()).isZero();
+        assertThat(toolFiles(t)).isEmpty();
     }
 
     @ParameterizedTest
@@ -310,6 +428,12 @@ class ZiweiRecoveryIT {
                             "Barrier: %s", Files.readString(directory.resolve("process.log")))
                     .isTrue();
             assertThat(artifacts()).isEqualTo(mode.equals("after-tool") ? 1 : 0);
+            if (mode.equals("after-tool")) {
+                assertSingleToolFile(t, false);
+            } else {
+                assertThat(toolFiles(t)).isEmpty();
+            }
+            var originalFiles = toolFiles(t);
             if (scenario.startsWith("cancel"))
                 tasks.cancel(owner, t.conversationId(), t.turnId(), "cancel");
             else memory.forget(owner, memory.privacy(owner).epoch(), "forget");
@@ -318,6 +442,7 @@ class ZiweiRecoveryIT {
             assertThat(turn(t).status())
                     .isEqualTo(scenario.startsWith("cancel") ? "cancelled" : "blocked");
             assertThat(artifacts()).isEqualTo(mode.equals("after-tool") ? 1 : 0);
+            assertThat(toolFiles(t)).containsExactlyElementsOf(originalFiles);
             assertThat(
                             sql.queryForObject(
                                     "SELECT count(*) FROM business.journal WHERE role='assistant'",
@@ -326,6 +451,12 @@ class ZiweiRecoveryIT {
             if (scenario.equals("privacy-after-tool")) {
                 String id = artifact();
                 assertThatThrownBy(() -> governance.read(owner, id, 0, 1, "/facts"))
+                        .hasMessage("privacy_epoch_changed");
+                assertThatThrownBy(
+                                () ->
+                                        governance
+                                                .artifacts()
+                                                .download(owner, originalFiles.getFirst()))
                         .hasMessage("privacy_epoch_changed");
             }
         } finally {
@@ -374,8 +505,13 @@ class ZiweiRecoveryIT {
                                         .withTimeout(Duration.ofSeconds(60)))) {
             container.start();
             assertThat(container.getLogs()).contains("M6D_PROBE_DONE");
-            assertThat(turn(t).status()).isEqualTo("completed");
+            assertThat(turn(t).status())
+                    .withFailMessage(
+                            "Deployment Turn reason=%s; logs=%s",
+                            turn(t).reason(), container.getLogs())
+                    .isEqualTo("completed");
             assertThat(artifacts()).isEqualTo(5);
+            assertFiveToolFiles(t);
             Path evidence = Path.of("target/m6/runtime-packaging.json");
             Files.createDirectories(evidence.getParent());
             new ObjectMapper()
