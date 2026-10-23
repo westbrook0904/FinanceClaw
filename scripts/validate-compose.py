@@ -331,10 +331,15 @@ try:
     for retired in ('business.skill_refs', 'agent_runtime.tool_effects',
                     'business.outbox', 'business.projections'):
         assert sql("SELECT to_regclass('" + retired + "') IS NULL") == 't', retired
+    assert sql("SELECT to_regclass('business.child_invocations') IS NOT NULL") == 't'
     mark('fresh_schema_has_only_current_application_tables')
     assert sql("SELECT has_schema_privilege('financeclaw_memory','business','USAGE')") == 'f'
     assert sql("SELECT has_schema_privilege('financeclaw_memory','control_plane','USAGE,CREATE')") == 'f'
     assert sql("SELECT has_schema_privilege('financeclaw_app','business','CREATE')") == 'f'
+    for privilege in ('SELECT', 'INSERT', 'UPDATE', 'DELETE'):
+        assert sql("SELECT has_table_privilege('financeclaw_app','business.child_invocations','"
+                   + privilege + "')") == 't'
+    assert sql("SELECT has_table_privilege('financeclaw_memory','business.child_invocations','SELECT')") == 'f'
     for role in ('memory-worker',):
         code = compose('exec', '-T', role, 'curl', '-s', '-o', '/dev/null', '-w', '%{http_code}',
                        'http://localhost:8080/v1/conversations').decode()
@@ -587,8 +592,9 @@ try:
 
     compose('stop', 'api', 'memory-worker')
     original = fingerprints('financeclaw_java')
-    assert len(original) == 40
-    assert {'control_plane.agents', 'control_plane.agent_draft_revisions'} <= original.keys()
+    assert len(original) == 41
+    assert {'control_plane.agents', 'control_plane.agent_draft_revisions',
+            'business.child_invocations'} <= original.keys()
     # 两个基础隔离用户 Agent，加上组合能力场景新建的第三个 Agent（含两版草稿）。
     assert original['control_plane.agents'].split(':', 1)[0] == '3'
     assert original['control_plane.agent_draft_revisions'].split(':', 1)[0] == '5'

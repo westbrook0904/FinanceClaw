@@ -1,6 +1,5 @@
 package com.financeclaw.infrastructure.agentscope.capability;
 
-import com.financeclaw.app.execution.ExecutionLeaseService;
 import com.financeclaw.app.research.MarketResearchService;
 import com.financeclaw.domain.Governance.*;
 import com.financeclaw.domain.Task.Claim;
@@ -24,19 +23,13 @@ import reactor.core.scheduler.Schedulers;
  */
 public final class MarketResearchAgent {
     private final MarketResearchService research;
-    private final ExecutionLeaseService leases;
     private final RuntimeMapper states;
     private final Claim claim;
     private final Model model;
 
     public MarketResearchAgent(
-            MarketResearchService research,
-            ExecutionLeaseService leases,
-            RuntimeMapper states,
-            Claim claim,
-            Model model) {
+            MarketResearchService research, RuntimeMapper states, Claim claim, Model model) {
         this.research = research;
-        this.leases = leases;
         this.states = states;
         this.claim = claim;
         this.model = model;
@@ -62,15 +55,29 @@ public final class MarketResearchAgent {
                             }
                             var scope = execution.run().scope();
                             var store =
-                                    new MyBatisAgentStateStore(states, scope) {
-                                        @Override
-                                        public long saveIfVersion(
-                                                String u, String s, String k, State state, long v) {
-                                            return leases.fenced(
-                                                    claim,
-                                                    () -> super.saveIfVersion(u, s, k, state, v));
-                                        }
-                                    };
+                                    new ChildResearchStateStore(states, scope, research, execution);
+                            var saved =
+                                    store.getVersioned(
+                                            scope.userId(),
+                                            scope.sessionId(),
+                                            "agent_state",
+                                            AgentState.class);
+                            if (saved.isPresent()) {
+                                var completed =
+                                        AgentStateInspector.classify(
+                                                saved.value(), saved.version());
+                                if (completed.status().equals("completed")) {
+                                    // SDK 最终检查点先于业务回执提交时，可据原始证据安全收尾。
+                                    // 不再发起第一个新模型请求，避免恢复过程突破已用尽的持久额度。
+                                    return Mono.just(
+                                            ToolResultBlock.text(
+                                                    PayloadJson.canonical(
+                                                            research.complete(
+                                                                    execution,
+                                                                    true,
+                                                                    completed.result()))));
+                                }
+                            }
                             Toolkit toolkit = new Toolkit();
                             toolkit.registerAgentTool(
                                     new ToolBase(

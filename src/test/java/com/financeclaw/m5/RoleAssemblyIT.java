@@ -5,8 +5,10 @@ import static org.assertj.core.api.Assertions.*;
 import com.fasterxml.jackson.databind.*;
 import com.financeclaw.api.TaskEvents;
 import com.financeclaw.app.artifact.ArtifactService;
+import com.financeclaw.app.execution.ChildInvocationService;
 import com.financeclaw.app.execution.ExecutionLeaseService;
 import com.financeclaw.app.execution.port.AgentExecutionPort;
+import com.financeclaw.app.execution.port.ChildInvocationGateway;
 import com.financeclaw.app.governance.GrantService;
 import com.financeclaw.app.memory.*;
 import com.financeclaw.app.release.ReleaseService;
@@ -71,7 +73,7 @@ class RoleAssemblyIT {
                         false,
                         Map.of("spring.flyway.enabled", "true"))) {
             assertThat(migration.getBean(Flyway.class).info().current().getVersion().toString())
-                    .isEqualTo("5");
+                    .isEqualTo("6");
         }
         sql.execute("CREATE ROLE financeclaw_memory LOGIN PASSWORD 'test-memory-only'");
         sql.execute(
@@ -238,6 +240,8 @@ class RoleAssemblyIT {
             assertThat(context.getBean(TaskWorker.class)).isNotNull();
             assertThat(context.getBean(AgentExecutionPort.class)).isNotNull();
             assertThat(context.getBean(BusinessCapabilities.class)).isNotNull();
+            assertThat(context.getBean(ChildInvocationService.class)).isNotNull();
+            assertThat(context.getBean(ChildInvocationGateway.class)).isNotNull();
             assertThat(context.getBean(FeishuDelivery.class)).isNotNull();
             assertThat(context.getBean(AgentScopeFeishu.class)).isNotNull();
             assertThat(
@@ -296,6 +300,8 @@ class RoleAssemblyIT {
                     ReleaseService.class,
                     TaskWorker.class,
                     AgentExecutionPort.class,
+                    ChildInvocationService.class,
+                    ChildInvocationGateway.class,
                     FeishuDelivery.class,
                     FeishuService.class,
                     FeishuSettings.class,
@@ -306,6 +312,11 @@ class RoleAssemblyIT {
                     OperationsMapper.class);
             assertThat(context.getBean(MemoryMapper.class).isMemoryWorkerRoleRestricted()).isTrue();
             var restricted = new JdbcTemplate(context.getBean(DataSource.class));
+            assertThatThrownBy(
+                            () ->
+                                    restricted.queryForList(
+                                            "SELECT * FROM business.child_invocations"))
+                    .isInstanceOf(org.springframework.dao.DataAccessException.class);
             for (String schema : List.of("business", "agent_runtime", "channel", "control_plane")) {
                 assertThat(
                                 restricted.queryForObject(
@@ -371,11 +382,13 @@ class RoleAssemblyIT {
                                 "financeclaw.feishu.enabled",
                                 "true"))) {
             assertThat(context.getBean(Flyway.class).info().current().getVersion().toString())
-                    .isEqualTo("5");
+                    .isEqualTo("6");
             assertThat(mappers(context)).isEmpty();
             absent(
                     context,
                     SqlSessionFactory.class,
+                    ChildInvocationService.class,
+                    ChildInvocationGateway.class,
                     GrantService.class,
                     ArtifactService.class,
                     ReportService.class,

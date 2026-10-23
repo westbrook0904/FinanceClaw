@@ -165,6 +165,8 @@ public final class RoleConfiguration {
         ExecuteTaskService.class,
         CapabilityStepService.class,
         MyBatisCapabilityStepGateway.class,
+        ChildInvocationService.class,
+        MyBatisChildInvocationGateway.class,
         MarketDataService.class,
         CatalogMarketData.class,
         PortfolioReviewService.class,

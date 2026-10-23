@@ -5,7 +5,7 @@ import com.financeclaw.app.market.MarketDataService;
 import com.financeclaw.domain.Governance.Blocked;
 import com.financeclaw.domain.Task.Claim;
 import com.financeclaw.domain.research.ResearchRun;
-import com.financeclaw.support.*;
+import com.financeclaw.support.PayloadJson;
 import java.util.*;
 import org.springframework.stereotype.Service;
 
@@ -13,15 +13,15 @@ import org.springframework.stereotype.Service;
 @Service
 public class MarketResearchService {
     private final ExecutionPolicyService policies;
-    private final CapabilityStepService steps;
+    private final ChildInvocationService children;
     private final MarketDataService market;
 
     public MarketResearchService(
             ExecutionPolicyService policies,
-            CapabilityStepService steps,
+            ChildInvocationService children,
             MarketDataService market) {
         this.policies = policies;
-        this.steps = steps;
+        this.children = children;
         this.market = market;
     }
 
@@ -30,47 +30,57 @@ public class MarketResearchService {
             String namespace,
             Map<String, Object> input,
             ResearchRun run,
-            String cachedResult) {}
+            String cachedResult,
+            ChildInvocationService.Invocation invocation) {}
 
     public Execution begin(Claim claim, String call, Map<String, Object> input) {
-        policies.checkDispatch(claim);
-        if (!policies.scopes(claim).containsAll(List.of("market:read", "research:run"))) {
-            throw new Blocked("research_denied");
+        var invocation = children.begin(claim, call, input);
+        if (invocation.cachedResult() != null) {
+            return new Execution(
+                    claim,
+                    invocation.namespace(),
+                    Map.copyOf(input),
+                    null,
+                    invocation.cachedResult(),
+                    invocation);
         }
-        var old = steps.find(claim, "child:" + call, "result");
-        if (old != null) {
-            if (!old.inputHash().equals(PayloadDigest.sha256(PayloadJson.canonical(input)))) {
-                throw new Blocked("child_input_conflict");
-            }
-            return new Execution(claim, "child:" + call, Map.copyOf(input), null, old.result());
-        }
-        return new Execution(
-                claim,
-                "child:" + call,
-                Map.copyOf(input),
+        var run =
                 new ResearchRun(
                         claim.scope(),
                         call,
                         policies.identity(claim),
-                        (List<?>) input.get("symbols")),
-                null);
+                        (List<?>) input.get("symbols"));
+        // SDK 可能已持久化工具结果或最终答复而业务 result 尚未提交。证据从唯一成功回执恢复，
+        // 不能依赖 SDK 再次执行工具，也不能从模型自己的文本重建证据。
+        for (String result : invocation.snapshotResults()) {
+            var snapshot = PayloadJson.object(result);
+            if (!(snapshot.get("symbol") instanceof String symbol)) {
+                throw new Blocked("child_invocation_invalid");
+            }
+            run.recordEvidence(symbol, snapshot);
+        }
+        return new Execution(
+                claim, invocation.namespace(), Map.copyOf(input), run, null, invocation);
     }
 
     public void modelCall(Execution execution) {
-        execution.run().reserveModelCall();
-        policies.consume(execution.claim(), true);
+        children.reserveModel(execution.invocation());
+    }
+
+    /** SDK 状态读取与保存复用同一个父调用栅栏，检查点本身不授予执行或读取权限。 */
+    public <T> T checkpoint(Execution execution, java.util.function.Supplier<T> operation) {
+        return children.checkpoint(execution.invocation(), operation);
     }
 
     @SuppressWarnings("unchecked")
     public Object snapshot(Execution execution, String call, Map<String, Object> input) {
-        // 子运行的十次上限约束调用尝试，回放也先校验证券范围；根额度仅在首次读取时扣减。
-        String symbol = execution.run().reserveSnapshot(input.get("symbol"));
+        // 先校验证券范围；持久子/根额度只在缓存未命中且实际读取时提交。
+        String symbol = execution.run().validateSnapshot(input.get("symbol"));
         var snapshot =
                 (Map<String, Object>)
-                        steps.run(
-                                execution.claim(),
-                                execution.namespace(),
-                                "tool:" + call,
+                        children.snapshot(
+                                execution.invocation(),
+                                call,
                                 input,
                                 () -> market.read(execution.claim(), symbol));
         // 恢复运行时 evidence 起初为空，缓存回执同样必须补回证据，才能完整校验研究结果。
@@ -79,13 +89,9 @@ public class MarketResearchService {
     }
 
     public Object complete(Execution execution, boolean completedState, String summary) {
-        policies.checkDispatch(execution.claim());
         var evidence = execution.run().completedEvidence(completedState, summary);
-        return steps.run(
-                execution.claim(),
-                execution.namespace(),
-                "result",
-                execution.input(),
+        return children.complete(
+                execution.invocation(),
                 () ->
                         Map.of(
                                 "outcome",

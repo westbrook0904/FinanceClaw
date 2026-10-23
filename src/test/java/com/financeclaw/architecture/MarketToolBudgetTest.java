@@ -26,11 +26,13 @@ import com.financeclaw.infrastructure.agentscope.NativeToolCalls;
 import com.financeclaw.infrastructure.agentscope.RuntimeArtifacts;
 import com.financeclaw.infrastructure.agentscope.capability.*;
 import com.financeclaw.infrastructure.agentscope.execution.GovernedTools;
+import com.financeclaw.support.PayloadDigest;
 import com.financeclaw.support.PayloadJson;
 import io.agentscope.core.message.*;
 import io.agentscope.core.tool.ToolCallParam;
 import java.time.Duration;
 import java.util.*;
+import java.util.function.Supplier;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -141,8 +143,7 @@ class MarketToolBudgetTest {
                         : null;
         try (var tools = tools(plan)) {
             tools.business(
-                    null,
-                    new BusinessCapabilities(market, null, null, policies, leases, null, null));
+                    null, new BusinessCapabilities(market, null, null, policies, null, null));
             var tool = tools.toolkit.getTool("market_snapshot");
             var result =
                     tool.callAsync(param("first", "market_snapshot", Map.of("symbol", "aapl")))
@@ -168,8 +169,7 @@ class MarketToolBudgetTest {
         when(releases.require("release")).thenReturn(definition(List.of("market:read"), List.of()));
         try (var tools = tools(null)) {
             tools.business(
-                    null,
-                    new BusinessCapabilities(market, null, null, policies, leases, null, null));
+                    null, new BusinessCapabilities(market, null, null, policies, null, null));
             var tool = tools.toolkit.getTool("market_snapshot");
             assertThatThrownBy(
                             () ->
@@ -197,12 +197,26 @@ class MarketToolBudgetTest {
     }
 
     @Test
-    void researchSnapshotReplayRestoresEvidenceWithoutAnotherReadOrRootReservation() {
-        var research = new MarketResearchService(policies, steps, market);
+    void researchSnapshotRestoresChildReceiptWithoutAnotherReadOrRootReservation() {
+        var children = mock(ChildInvocationService.class);
+        var research = new MarketResearchService(policies, children, market);
         var input = Map.<String, Object>of("symbols", List.of("AAPL"), "analysis_period", "frozen");
+        var invocation =
+                new ChildInvocationService.Invocation(
+                        CLAIM,
+                        "research",
+                        PayloadDigest.sha256(PayloadJson.canonical(input)),
+                        null,
+                        List.of());
+        when(children.begin(CLAIM, "research", input)).thenReturn(invocation);
+        when(children.snapshot(eq(invocation), eq("snapshot"), anyMap(), any()))
+                .thenAnswer(i -> ((Supplier<?>) i.getArgument(3)).get());
+        when(children.complete(eq(invocation), any()))
+                .thenAnswer(i -> ((Supplier<?>) i.getArgument(1)).get());
         var first = research.begin(CLAIM, "research", input);
         var snapshot = research.snapshot(first, "snapshot", Map.of("symbol", "AAPL"));
-        // 新运行对象模拟检查点恢复；它必须用已保存步骤恢复 evidence，而非再执行市场读取。
+        // 持久化服务是回放权威；此处只模拟其返回回执，不在测试内重建一套子预算计数。
+        doReturn(snapshot).when(children).snapshot(eq(invocation), eq("snapshot"), anyMap(), any());
         var resumed = research.begin(CLAIM, "research", input);
         assertThat(research.snapshot(resumed, "snapshot", Map.of("symbol", "AAPL")))
                 .isEqualTo(snapshot);
@@ -211,7 +225,9 @@ class MarketToolBudgetTest {
         verify(catalog).snapshots("release");
         verify(governance).toolCall("turn", 1);
 
-        when(governance.lockGrant("conversation")).thenReturn(new Grant("conversation", 5, "[]"));
+        doThrow(new Blocked("authorization_changed"))
+                .when(children)
+                .snapshot(eq(invocation), eq("snapshot"), anyMap(), any());
         assertThatThrownBy(() -> research.snapshot(resumed, "snapshot", Map.of("symbol", "AAPL")))
                 .hasMessage("authorization_changed");
         verify(catalog).snapshots("release");

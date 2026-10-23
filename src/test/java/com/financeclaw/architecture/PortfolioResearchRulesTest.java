@@ -276,19 +276,39 @@ class PortfolioResearchRulesTest {
     }
 
     @Test
-    void childBudgetAndIdentityCanOnlyNarrowTheRoot() {
+    void childIdentityAndSnapshotScopeCanOnlyNarrowTheRoot() {
         var run = research();
         assertThat(run.identity().scopes()).containsExactly("market:read");
         assertThat(run.identity().turnId()).isEqualTo(identity().turnId());
         assertThat(run.identity().grantRevision()).isEqualTo(identity().grantRevision());
         assertThat(run.symbols()).containsExactly("AAPL", "MSFT");
-        for (int i = 0; i < 4; i++) run.reserveModelCall();
-        assertThatThrownBy(run::reserveModelCall).hasMessage("child_model_budget_exceeded");
-        for (int i = 0; i < 10; i++) assertThat(run.reserveSnapshot("aapl")).isEqualTo("AAPL");
-        assertThatThrownBy(() -> run.reserveSnapshot("AAPL"))
-                .hasMessage("child_tool_budget_exceeded");
-        assertThatThrownBy(() -> research().reserveSnapshot("NVDA"))
+        assertThat(run.validateSnapshot("aapl")).isEqualTo("AAPL");
+        assertThat(run.validateSnapshot("MSFT")).isEqualTo("MSFT");
+        for (Object symbol : Arrays.asList(null, "", "NVDA", List.of("AAPL"))) {
+            assertThatThrownBy(() -> run.validateSnapshot(symbol))
+                    .hasMessage("child_scope_expansion");
+        }
+        assertThatThrownBy(() -> run.recordEvidence("NVDA", Map.of("symbol", "NVDA")))
                 .hasMessage("child_scope_expansion");
+    }
+
+    @Test
+    void childEvidenceCopiesSnapshotsAndRetainsTheRequestedSymbolOrder() {
+        var run = research();
+        var snapshot = new HashMap<String, Object>();
+        snapshot.put("symbol", "AAPL");
+        snapshot.put("provider", "original");
+        run.recordEvidence("MSFT", Map.of("symbol", "MSFT"));
+        run.recordEvidence("AAPL", snapshot);
+        snapshot.put("provider", "mutated");
+
+        var evidence = run.completedEvidence(true, "complete");
+        assertThat(evidence).extracting(s -> s.get("symbol")).containsExactly("AAPL", "MSFT");
+        assertThat(evidence.getFirst()).containsEntry("provider", "original");
+        assertThatThrownBy(() -> evidence.getFirst().put("provider", "changed"))
+                .isInstanceOf(UnsupportedOperationException.class);
+        assertThatThrownBy(() -> run.symbols().add("NVDA"))
+                .isInstanceOf(UnsupportedOperationException.class);
     }
 
     @Test

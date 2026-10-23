@@ -4,15 +4,12 @@ import com.financeclaw.domain.ExecutionScope;
 import com.financeclaw.domain.Governance.*;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicInteger;
 
 /** 研究运行记录：固定数据来源、请求及结果身份，研究流程的回放必须使用原始输入和步骤摘要。 */
 public final class ResearchRun {
     private final ExecutionScope scope;
     private final ExecutionIdentity identity;
     private final List<String> symbols;
-    private final AtomicInteger modelCalls = new AtomicInteger();
-    private final AtomicInteger toolCalls = new AtomicInteger();
     private final Map<String, Map<String, Object>> evidence = new ConcurrentHashMap<>();
 
     public ResearchRun(
@@ -63,16 +60,8 @@ public final class ResearchRun {
         return symbols;
     }
 
-    public void reserveModelCall() {
-        if (modelCalls.incrementAndGet() > 4) {
-            throw new Blocked("child_model_budget_exceeded");
-        }
-    }
-
-    public String reserveSnapshot(Object value) {
-        if (toolCalls.incrementAndGet() > 10) {
-            throw new Blocked("child_tool_budget_exceeded");
-        }
+    /** 只验证本次调用固定的证券范围；4/10 额度由持久调用表管理，不能随 ResearchRun 重建而重置。 */
+    public String validateSnapshot(Object value) {
         String symbol = Objects.toString(value, "").toUpperCase(Locale.ROOT);
         if (!symbols.contains(symbol)) {
             throw new Blocked("child_scope_expansion");

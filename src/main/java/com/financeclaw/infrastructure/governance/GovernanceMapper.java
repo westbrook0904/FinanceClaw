@@ -14,6 +14,98 @@ import org.apache.ibatis.annotations.*;
 public interface GovernanceMapper {
     record Step(String inputHash, String result) {}
 
+    record ChildInvocationRow(
+            String rootTurnId,
+            String callId,
+            String target,
+            String inputHash,
+            String scopes,
+            String status,
+            int modelCalls,
+            int toolCalls,
+            String tenant,
+            String subject,
+            String conversationId,
+            String releaseHash,
+            long epoch,
+            long grantRevision,
+            String resultHash,
+            String result) {}
+
+    /** 子调用只保存身份和计数；隐私来源必须与根 Turn 的 owner 相同，不能借错误关联派生身份。 */
+    @Select(
+            """
+            SELECT c.root_turn_id,c.call_id,c.target,c.input_hash,c.scopes::text AS scopes,c.status,
+                   c.model_calls,c.tool_calls,t.tenant,t.subject,t.conversation_id,t.release_hash,
+                   s.epoch,p.grant_revision,r.input_hash AS result_hash,r.result
+            FROM business.child_invocations c
+            JOIN business.turns t ON t.id=c.root_turn_id
+            JOIN memory.sources s ON s.id=t.id AND s.tenant=t.tenant AND s.subject=t.subject
+            JOIN business.turn_policies p ON p.turn_id=t.id
+            LEFT JOIN business.capability_steps r
+              ON r.turn_id=c.root_turn_id AND r.namespace='child:' || c.call_id AND r.step='result'
+            WHERE c.root_turn_id=#{root} AND c.call_id=#{call}
+            """)
+    ChildInvocationRow getChildInvocation(@Param("root") String root, @Param("call") String call);
+
+    /** 目标和子权限是本阶段固定常量，禁止调用者提供目标或扩大权限。 */
+    @Insert(
+            """
+            INSERT INTO business.child_invocations(root_turn_id,call_id,target,input_hash,scopes)
+            SELECT t.id,#{call},'market_research',#{hash},'["market:read"]'::jsonb
+            FROM business.turns t
+            JOIN memory.sources s ON s.id=t.id AND s.tenant=t.tenant AND s.subject=t.subject
+            JOIN business.turn_policies p ON p.turn_id=t.id
+            WHERE t.id=#{root}
+            ON CONFLICT(root_turn_id,call_id) DO NOTHING
+            """)
+    int insertChildInvocationIfAbsent(
+            @Param("root") String root, @Param("call") String call, @Param("hash") String hash);
+
+    @Update(
+            """
+            UPDATE business.child_invocations SET model_calls=model_calls+1
+            WHERE root_turn_id=#{root} AND call_id=#{call} AND input_hash=#{hash}
+              AND status='pending' AND model_calls<4
+            """)
+    int updatePendingChildModelCountWithinLimit(
+            @Param("root") String root, @Param("call") String call, @Param("hash") String hash);
+
+    @Update(
+            """
+            UPDATE business.child_invocations SET tool_calls=tool_calls+1
+            WHERE root_turn_id=#{root} AND call_id=#{call} AND input_hash=#{hash}
+              AND status='pending' AND tool_calls<10
+            """)
+    int updatePendingChildToolCountWithinLimit(
+            @Param("root") String root, @Param("call") String call, @Param("hash") String hash);
+
+    /** 与既有 result 步骤写入同事务调用；缺少回执或摘要不同不能把调用单独标为完成。 */
+    @Update(
+            """
+            UPDATE business.child_invocations c SET status='completed'
+            WHERE c.root_turn_id=#{root} AND c.call_id=#{call} AND c.input_hash=#{hash}
+              AND c.status='pending'
+              AND EXISTS (
+                SELECT 1 FROM business.capability_steps r
+                WHERE r.turn_id=c.root_turn_id AND r.namespace='child:' || c.call_id
+                  AND r.step='result' AND r.input_hash=c.input_hash)
+            """)
+    int updatePendingChildInvocationCompleted(
+            @Param("root") String root, @Param("call") String call, @Param("hash") String hash);
+
+    @Select(
+            "SELECT EXISTS(SELECT 1 FROM business.capability_steps WHERE turn_id=#{root} AND"
+                    + " namespace=#{namespace})")
+    boolean existsCapabilitySteps(@Param("root") String root, @Param("namespace") String namespace);
+
+    /** 最多十个已提交行情回执；多取一条用于识别损坏数据，不重新执行或从 SDK 文本推断证据。 */
+    @Select(
+            "SELECT result FROM business.capability_steps WHERE turn_id=#{root}"
+                    + " AND namespace=#{namespace} AND step LIKE 'tool:%' ORDER BY step LIMIT 11")
+    List<String> listChildSnapshotResults(
+            @Param("root") String root, @Param("namespace") String namespace);
+
     @Update("UPDATE business.artifacts SET required_scope=#{scope} WHERE id=#{id}")
     int updateArtifactScope(@Param("id") String id, @Param("scope") String scope);
 

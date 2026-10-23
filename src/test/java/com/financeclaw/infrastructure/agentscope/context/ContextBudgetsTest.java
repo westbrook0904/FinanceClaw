@@ -48,8 +48,7 @@ class ContextBudgetsTest {
                                 });
         new LocalToolContribution(null, null, null).contribute(registrar);
         var capabilities =
-                new BusinessCapabilities(
-                        null, null, null, null, null, null, mock(ZiweiService.class));
+                new BusinessCapabilities(null, null, null, null, null, mock(ZiweiService.class));
         capabilities.contribute(null, null, true, registrar);
         capabilities.ziwei(null, registrar);
         var captured = new AtomicReference<List<ToolSchema>>();

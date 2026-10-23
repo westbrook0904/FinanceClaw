@@ -192,9 +192,13 @@ public final class LifecycleDatabase {
                             market,
                             portfolio,
                             new com.financeclaw.app.research.MarketResearchService(
-                                    policies, steps, market),
+                                    policies,
+                                    new ChildInvocationService(
+                                            new MyBatisChildInvocationGateway(gov),
+                                            steps,
+                                            policies),
+                                    market),
                             policies,
-                            leases,
                             session.getMapper(RuntimeMapper.class),
                             new com.financeclaw.app.ziwei.ZiweiService(
                                     policies,

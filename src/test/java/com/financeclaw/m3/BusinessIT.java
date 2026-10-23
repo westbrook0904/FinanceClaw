@@ -972,11 +972,7 @@ class BusinessIT {
     com.financeclaw.infrastructure.agentscope.capability.MarketResearchAgent child(
             Claim claim, Model model) {
         return new com.financeclaw.infrastructure.agentscope.capability.MarketResearchAgent(
-                researchService(),
-                taskContext.getBean(com.financeclaw.app.execution.ExecutionLeaseService.class),
-                states,
-                claim,
-                model);
+                researchService(), states, claim, model);
     }
 
     static Map<String, Object> researchInput() {
@@ -1085,13 +1081,11 @@ class BusinessIT {
         var t = submit("cached child");
         var c = claim();
         var input = researchInput();
-        var steps = taskContext.getBean(com.financeclaw.app.execution.CapabilityStepService.class);
-        steps.run(
-                c,
-                "child:call-1",
-                "result",
-                input,
-                () -> Map.of("outcome", "success", "summary", "frozen child result"));
+        var execution = researchService().begin(c, "call-1", input);
+        for (Object symbol : (List<?>) input.get("symbols")) {
+            researchService().snapshot(execution, "seed-" + symbol, Map.of("symbol", symbol));
+        }
+        researchService().complete(execution, true, "frozen child result");
         var model = org.mockito.Mockito.mock(Model.class);
         assertThat(
                         child(c, model)
@@ -1110,6 +1104,24 @@ class BusinessIT {
         assertThatThrownBy(() -> child(c, model).run(param("market_research", input)).block())
                 .hasMessage("authorization_changed");
         org.mockito.Mockito.verifyNoInteractions(model);
+    }
+
+    @Test
+    void legacyChildResultCannotInventAFreshInvocationAndBudget() {
+        submit("unbound legacy child");
+        var c = claim();
+        var input = researchInput();
+        taskContext
+                .getBean(com.financeclaw.app.execution.CapabilityStepService.class)
+                .run(c, "child:call-1", "result", input, () -> Map.of("summary", "old result"));
+        var model = org.mockito.Mockito.mock(Model.class);
+        assertThatThrownBy(() -> child(c, model).run(param("market_research", input)).block())
+                .hasMessage("child_invocation_missing");
+        org.mockito.Mockito.verifyNoInteractions(model);
+        assertThat(
+                        sql.queryForObject(
+                                "SELECT count(*) FROM business.child_invocations", Integer.class))
+                .isZero();
     }
 
     @Test

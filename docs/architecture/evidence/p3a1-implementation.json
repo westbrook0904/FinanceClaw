@@ -1,0 +1,241 @@
+{
+  "milestone": "P3a.1 durable fixed market_research child invocations",
+  "collected_at_utc": "2026-10-23T16:08:33.776599+00:00",
+  "base_commit": "8e574046eedb5c3ad4487b8fa7cb23759d365076",
+  "recorded_before_commit": true,
+  "local_acceptance": {
+    "status": "P3a.1 scoped local acceptance completed",
+    "full_maven_verify_completed": false,
+    "unit": {
+      "coverage": "Complete unit/native-contract/architecture test run",
+      "suites": 75,
+      "tests": 1226,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "targeted_integration": {
+      "coverage": "Ten selected PostgreSQL integration suites, combining nine passing first-run suites with the final BusinessIT rerun",
+      "suites": 10,
+      "tests": 109,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "integration_rerun": {
+      "initial_run": {
+        "tests": 108,
+        "failures": 0,
+        "errors": 1,
+        "skipped": 0
+      },
+      "other_nine_suites_passed": 84,
+      "initial_error": "BusinessIT used a hand-built child result with no invocation binding; the new boundary correctly rejected that orphan cache.",
+      "correction": "Replaced the fixture with the real research flow and added an explicit orphan rejection case.",
+      "business_final": {
+        "tests": 25,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "production_changed_between_integration_runs": false,
+      "note": "The 109 passing integration cases are current suite results across these runs, not one complete successful Maven verify."
+    },
+    "report_summary_sha256": "ea2857079139be1f1492ce257275115bf837d1475f2dcbc9888834e1e198a628",
+    "log_sha256": {
+      "/tmp/financeclaw-p3a1-unit.log": "b3212bf9b217cf0d31690b5b183c806db8ce927c92b021d17699ab8f3502aebf",
+      "/tmp/financeclaw-p3a1-it.log": "1f170ac93f5869b90a01a908178dc547004b213e7c1bc36bd2603426c1ceba21",
+      "/tmp/financeclaw-p3a1-business-final.log": "52a4fd9aa938dfd02a5a2684f0b014ae52354d1460b88e704acb40844934c609"
+    }
+  },
+  "application_jar_sha256": "70bdf702f741c54510d2e2e4c276ccab3f43a9b5a0f9e5bbaf62f7a2a2ccbf7a",
+  "compose": {
+    "status": "completed",
+    "success": true,
+    "acceptance_completed": true,
+    "process_exit_code": 0,
+    "command": "python3 scripts/validate-compose.py --ziwei --admission --preflight --restore-privacy",
+    "project": "financeclaw-m5e-2a56da564b",
+    "checks": 39,
+    "check_names": [
+      "single_combined_runtime_and_restricted_memory_topology",
+      "shared_ziwei_policy_and_role_scoped_secret_mounts",
+      "empty_database_and_healthy_combined_runtime",
+      "fresh_schema_has_only_current_application_tables",
+      "background_http_and_database_privilege_boundaries",
+      "release_admin_container_prepares_without_overwriting_default_or_history",
+      "agent_admin_create_owner_isolation_and_targeted_http_execution",
+      "agent_draft_publish_cas_pins_existing_sessions_and_keeps_builtin_driver_separate",
+      "composed_agent_catalog_and_explicit_empty_plan_execute_in_packaged_runtime",
+      "composed_agent_dependencies_are_frozen_and_prior_session_keeps_empty_plan",
+      "offline_load_and_idempotency",
+      "preflight_queued_and_memory_backlog",
+      "preflight_truncated_inventory",
+      "agent_catalog_and_pinned_conversation_survive_runtime_restart",
+      "combined_restart_keeps_admission_and_resumes_disabled_execution",
+      "durable_pause_rejects_new_turns_preserves_replay_and_drains_existing_work",
+      "sigkill_and_persisted_approval_execute_once",
+      "paused_admission_allows_persisted_approval_after_runtime_sigkill",
+      "database_outage_fails_readiness_then_recovers",
+      "manual_markdown_profile_has_owner_version_and_restricted_worker_permissions",
+      "current_epoch_superseded_projection_is_not_a_forget_violation",
+      "pre_forget_backup_captured_with_writers_stopped",
+      "forget_deletes_profile_resets_revision_and_rejects_pre_forget_import",
+      "restricted_memory_worker_and_forgetting",
+      "owner_drain_requires_pause_and_all_task_channel_memory_counts_zero",
+      "preflight_paused_and_drained",
+      "consistent_backup_restore_all_tables_and_privacy_epoch",
+      "old_backup_missing_later_forget_is_blocked_and_isolated",
+      "current_backup_matches_all_owner_privacy",
+      "privacy_snapshot_and_comparison_are_read_only",
+      "epoch_only_repair_does_not_hide_missing_audit_or_old_content",
+      "sql_detects_residual_memory_and_orphan_owners",
+      "rejected_synthetic_restore_removed_before_runtime_start",
+      "preflight_restored_pause",
+      "restored_pause_and_audit_require_explicit_resume",
+      "preflight_reopened_admission",
+      "restored_agent_definitions_history_and_new_execution_keep_release_identity",
+      "restored_composed_agent_executes_frozen_plan_with_same_runtime_artifact",
+      "restored_runtime_keeps_results_privacy_and_accepts_new_turns"
+    ],
+    "started_at": "2026-10-23T15:45:31.444254+00:00",
+    "finished_at": "2026-10-23T16:07:17.354941+00:00",
+    "report_sha256": "db95449ebae8c2c0a954960e18cb3796f6feb9aecfca172bf52ac631da6a5549",
+    "jar_sha256": "70bdf702f741c54510d2e2e4c276ccab3f43a9b5a0f9e5bbaf62f7a2a2ccbf7a",
+    "same_jar_as_java_validation": true,
+    "restored_application_tables": 41,
+    "scope": "isolated real containers; offline model and synthetic market only",
+    "cleanup": "The isolated acceptance process exited successfully after cleanup."
+  },
+  "remote_baseline": {
+    "commit": "8e574046eedb5c3ad4487b8fa7cb23759d365076",
+    "workflow_url": "https://github.com/westbrook0904/FinanceClaw/actions/runs/39975391411",
+    "verify": "completed/success",
+    "unit_tests": 1214,
+    "integration_tests": 409,
+    "delivery": "completed/success",
+    "includes_p3a1": false,
+    "note": "These verified remote results belong only to the preceding baseline. This record does not certify P3a.1 remote CI."
+  },
+  "schema": {
+    "migration": 6,
+    "application_tables": 41,
+    "business_tables": 17,
+    "new_tables": [
+      "business.child_invocations"
+    ],
+    "result_storage": "Existing capability_steps rows; no copied result or child dispatch queue."
+  },
+  "scope": "Fixed market_research target, depth one, shared root authority, durable four-model/ten-read budgets, replay and guarded SDK checkpoints. This record does not certify all P3a delegation, RAG, Scheduler, complete physical child-data erasure, live external providers or production capacity.",
+  "relevant_unit_suites": [
+    {
+      "suite": "com.financeclaw.app.research.MarketResearchServiceTest",
+      "tests": 9,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "com.financeclaw.architecture.ArchitectureTest",
+      "tests": 16,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "com.financeclaw.architecture.MarketToolBudgetTest",
+      "tests": 6,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "com.financeclaw.architecture.PortfolioResearchRulesTest",
+      "tests": 18,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "com.financeclaw.infrastructure.agentscope.capability.ChildResearchStateStoreTest",
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  ],
+  "targeted_integration_suites": [
+    {
+      "suite": "com.financeclaw.p3.ChildInvocationIT",
+      "tests": 11,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "com.financeclaw.m3.BusinessIT",
+      "tests": 25,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "com.financeclaw.m5.SchemaInitializationIT",
+      "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "com.financeclaw.m5.RoleAssemblyIT",
+      "tests": 8,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "com.financeclaw.architecture.RuntimePackagingIT",
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "com.financeclaw.p1.ConversationReleaseMigrationIT",
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "com.financeclaw.m1.ExecutionHeartbeatIT",
+      "tests": 14,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "com.financeclaw.m1.TaskLifecycleIT",
+      "tests": 25,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "com.financeclaw.m2.GovernanceBoundariesIT",
+      "tests": 6,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "suite": "com.financeclaw.m0.RecoveryIT",
+      "tests": 13,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  ],
+  "local_acceptance_date": "2026-10-24",
+  "validation_scope_note": "Complete local unit run plus selected PostgreSQL suites and isolated Compose acceptance; not a complete Maven verify. Models were offline or loopback simulations and market data were synthetic. P3a.1 remote CI, real external providers and production capacity are not certified."
+}

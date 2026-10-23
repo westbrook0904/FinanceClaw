@@ -2,7 +2,7 @@
 
 本文是 FinanceClaw Java 的实施方案与阶段状态记录。面向四类使用方式：通用对话、定制 RAG Workflow、通过提示词与工具等配置组装 Agent，以及直接调用一个独立 Agent。本文中的目标模型不代表当前已经实现的能力。
 
-截至 2026-10-23，已完成现有代码与官方 AgentScope Service 的设计对比，并完成 **P1：持久发布与会话版本绑定** 的实现、本地隔离验收和推送。**P2a：Agent 身份、提示词草稿与目标会话** 已完成本地全量和隔离容器验收并推送；P2b 受控能力选择与依赖冻结已完成本地数据库与容器验收，并与服务器画像目录改动一起通过完整 Java 回归；两批分别交付，验证范围见第 10 节，不据此宣称 P2b 的独立全量构建或远程 CI 已通过；P3–P4 尚未实施。每阶段应形成可独立检查的代码、验证记录与交付范围，再推进下一阶段；P1 验证见第 7 节。
+截至 2026-10-24，已完成现有代码与官方 AgentScope Service 的设计对比，并完成 **P1：持久发布与会话版本绑定** 的实现、本地隔离验收和推送。**P2a：Agent 身份、提示词草稿与目标会话** 已完成本地全量和隔离容器验收并推送；P2b 受控能力选择与依赖冻结已推送，基线 `8e57404` 的远程 verify/delivery 均通过，本地历史证据见第 10 节。**P3a.1 固定研究子调用**已完成本地验收：1,226 项完整单元/契约测试、109 项定向 PostgreSQL 测试和 39 项 Compose 检查通过，未运行完整 Maven verify；P3a 整体、P3b 和 P4 尚未完成，不能把固定深度为一的研究执行器视为任意私有 Agent 委派。每阶段应形成可独立检查的代码、验证记录与交付范围，再推进下一阶段；P1 验证见第 7 节。
 
 ## 1. 实施前基线与改造目标
 
@@ -225,7 +225,7 @@ P2b 验收：Tool/Skill 白名单与 scope 交集实际控制装配；Schema/内
 
 ### P3：独立 Agent 调用与定制 RAG Workflow
 
-状态：**待实施**。分成可独立验收的 P3a 与 P3b，不要求同时交付。
+状态：**P3a.1 本地验收完成；P3a 整体与 P3b 尚未完成**。P3a.1 先为固定市场研究子 Agent 加入持久身份、累计额度、结果原子性和父门禁；不开放任意私有 Agent 委派。见[固定研究子调用](child-invocations.md)及第 11 节。P3a 与 P3b 仍分别验收，不要求同时交付。
 
 - P3a：建立统一调用入口及父子调用记录，支持直接调用已发布 Agent、受限同步子调用、父子预算与权限收敛；逐步将现有研究子 Agent 适配到同一契约。
 - P3b：建立知识库、摄取作业、索引发布和 RetrieverProfile；先实现固定 RAG Workflow，再决定是否需要通用流程 DSL。摄取/embedding 属于后台工作，知识查询属于受治理的执行步骤。
@@ -259,8 +259,9 @@ P2b 验收：Tool/Skill 白名单与 scope 交集实际控制装配；Schema/内
 | P1 会话发布绑定 | 已完成 | 新旧会话、V1→V3 回填、并发、幂等与缺失清单阻断通过 | 完整 AgentSession 与显式目标按后续阶段推进 |
 | P1 治理回归与文档同步 | 已完成 | 1,440 项 Java 测试、44 项脚本测试、32 项 Compose 检查；文档与静态检查通过 | 真实外部服务和生产环境不属于本轮验收 |
 | P2a Agent 定义与目标会话 | 已完成并推送 `851446f` | 1,516 项 Java 测试、44 项脚本测试、36 项 Compose 检查；[证据](evidence/p2a-implementation.json) | 真实外部服务不在本轮验收范围；能力装配按 P2b 推进 |
-| P2b 受控能力装配 | 已完成本地验收，交付前记录 | 联合工作区 1,208 项单元/契约/架构测试 + 407 项集成测试通过；44 项脚本测试、39 项 Compose 检查；[证据](evidence/p2b-implementation.json) | 完整 Java 回归包含服务器画像目录改动；真实外部服务与远程 CI 不在本记录范围 |
-| P3a 独立 Agent 与子调用 | 待实施 | 现有受限研究子 Agent 可作适配起点 | 持久调用模型与权限/预算验证 |
+| P2b 受控能力装配 | 已推送，远程基线已通过 | `8e57404` 远程 verify：1,214 单元 + 409 集成，delivery 成功；提交前[本地证据](evidence/p2b-implementation.json)单独保留 | 远程基线不覆盖后续 P3a.1；真实外部服务和生产容量未认证 |
+| P3a.1 固定研究子调用 | 已完成本地验收 | 1,226 项完整单元/契约/架构测试、109 项定向 PostgreSQL 测试、39 项 Compose 检查；[证据](evidence/p3a1-implementation.json) | 未运行完整 Maven verify；未认证本轮远程 CI、真实供应商或生产容量 |
+| P3a 独立 Agent 与子调用 | 部分实现，整体未完成 | P3a.1 仅覆盖固定深度为一的市场研究执行器 | 通用私有 Agent 委派、目标授权和完整调用模型 |
 | P3b 定制 RAG Workflow | 待实施 | 仅有现有记忆与固定 Workflow 基础 | 知识模型、索引发布、端到端引用验收 |
 | P4 Scheduler 与服务化 | 待实施 | 现有 TaskWorker/lease/fence | 触发模型、调度扩展与拆分前置设施 |
 
@@ -295,7 +296,7 @@ Compose 的 32 项检查包含容器内发布命令、受限角色、强制退�
 | 发布运维入口 | [ReleaseAdministrationApplication](../../src/main/java/com/financeclawrelease/ReleaseAdministrationApplication.java)、[容器入口](../../ops/container-entrypoint.sh) | [CLI 集成测试](../../src/test/java/com/financeclawrelease/ReleaseAdministrationCliIT.java)：真实打包进程、CAS/回滚、坏候选下查询、禁用自动迁移与错误脱敏 |
 | 暂停任务恢复与角色权限 | [角色装配](../../src/main/java/com/financeclaw/bootstrap/RoleConfiguration.java)、[角色授权](../../src/main/resources/deployment/grants.sql) | [ZiweiRecoveryIT](../../src/test/java/com/financeclaw/m6/ZiweiRecoveryIT.java)：配置变化后原版本继续；[RoleAssemblyIT](../../src/test/java/com/financeclaw/m5/RoleAssemblyIT.java)：Memory Worker 拒绝控制面权限 |
 
-P1 和 P2a 已推送。工程继续保持单业务 JVM；P2b 在工作区实施受控 Function/Skill/MCP 装配和依赖冻结，用户自助管理、RAG 知识库与触发 Scheduler 继续按后续阶段推进。
+P1、P2a 和 P2b 已推送。工程继续保持单业务 JVM；P3a.1 先完善固定研究调用的持久身份与预算，用户自助管理、任意私有 Agent 委派、RAG 知识库与触发 Scheduler 继续按后续阶段推进。
 
 
 ## 9. P2a 实现与验收记录
@@ -335,4 +336,19 @@ Compose 新增覆盖两个 owner 的目录隔离、未发布目标拒绝、草�
 
 完整运行的 Surefire/Failsafe 报告已冻结，持久证据保存其统计、报告摘要与日志 SHA-256。后续新增的市场工具预算修复、`MarketToolBudgetTest` 和 `ProfileDirectoryRecoveryIT` 未编译进本次构建，必须另行验证；本次结果不覆盖这些后续改动。通用 `target/` 路径可能被后续测试覆盖，不能以其未来内容替代本节记录。
 
-Docker 曾不可用的限制已经解除，不再是当前验收阻塞。真实供应商输出、外部 MCP/飞书服务、生产容量与远程 CI 仍未由本轮认证。P3a 独立 Agent 子调用和 P4 Scheduler 仍待实施。
+以上是 P2b 提交前的本地验证记录，原证据不随后续运行改写。P2b 后续交付基线 `8e57404` 的远程结果见第 11 节；真实供应商输出、外部 MCP/飞书服务和生产容量仍未认证。当前 P3a.1 已完成本地验收，P3a 整体、P3b 和 P4 尚未完成。
+
+
+## 11. P3a.1 固定研究子调用
+
+P3a.1 已于 2026-10-24 完成本地验收。范围为固定 `market_research`、深度为一的同步子调用；没有增加子队列或独立调度。调用身份为根 Turn 与稳定 call ID，子模型 4 次、首次实际行情读取 10 次的计数通过数据库 CAS 持久保存，并同时受根预算约束。结果继续使用 `capability_steps`，完成标记与结果原子提交，缓存命中恢复 evidence 且不重复读取或占用该次子/根行情额度。
+
+根 Turn、Command、租约、取消、隐私和授权仍是执行权威。子调用开始、预留、缓存和结果访问，以及 SDK 状态读取/CAS 写入，均经过父 running、fence 和隐私/授权门禁。V6 仅增加 `business.child_invocations` 一张窄表，主库现为 41 表、其中 business 17 表；不复制输入或结果，不增加 Mapper、心跳或轮询。
+
+本地已通过 **1,226 项完整单元/契约/架构测试**及 **109 项定向 PostgreSQL 测试**。首次定向运行 108 项中，其他 9 个 suite 的 84 项通过，BusinessIT 旧手写无调用绑定缓存 fixture 失败；修成真实 research 流程并增加孤立缓存拒绝用例后，BusinessIT 最后 25/25 通过。生产实现未因该 fixture 修正改变。109 项是 10 个 suite 的当前结果，未运行一次完整 Maven verify。
+
+同一 JAR 的 **39 项 Compose 检查**已成功并完成隔离环境清理，覆盖故障恢复、权限、遗忘、41 表备份恢复与恢复后的执行。模型为离线或本机模拟服务，行情为合成数据，不认证真实外部供应商或生产容量。[本轮证据](evidence/p3a1-implementation.json)保存冻结报告、运行日志、Compose 报告及 JAR 摘要。
+
+实现与测试入口、SQL 成本、跨 attempt 及物理删除的边界见[固定研究子调用](child-invocations.md)。P3a 整体、P3b RAG 和 P4 Scheduler 尚未完成，不使用 P2b 历史数字代替本轮验证。
+
+已确认的远程结果仅属于提交 [`8e57404`](https://github.com/westbrook0904/FinanceClaw/commit/8e574046eedb5c3ad4487b8fa7cb23759d365076)：[run 39975391411](https://github.com/westbrook0904/FinanceClaw/actions/runs/39975391411) 的 verify/delivery 均 completed/success，verify 为 1,214 单元 + 409 集成 = 1,623 项。该基线不包含 P3a.1，也不代表真实外部模型/MCP/飞书或生产容量验收。

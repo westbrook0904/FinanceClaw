@@ -66,8 +66,8 @@ class ConversationReleaseMigrationIT {
                         "SELECT id,conversation_id,release_hash,status FROM business.turns ORDER BY id");
 
         var migrations = Flyway.configure().dataSource(source).load();
-        assertThat(migrations.migrate().migrationsExecuted).isEqualTo(4);
-        assertThat(migrations.info().current().getVersion().toString()).isEqualTo("5");
+        assertThat(migrations.migrate().migrationsExecuted).isEqualTo(5);
+        assertThat(migrations.info().current().getVersion().toString()).isEqualTo("6");
         assertThat(
                         sql.queryForMap(
                                 "SELECT id,release_hash FROM business.conversations WHERE id='history'"))

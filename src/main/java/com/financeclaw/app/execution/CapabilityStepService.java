@@ -42,21 +42,25 @@ public class CapabilityStepService {
                 claim,
                 () -> {
                     policies.checkPolicy(claim);
-                    var old = steps.step(claim.turn().id(), namespace, step);
-                    if (old != null) {
-                        if (!old.inputHash().equals(hash)) {
-                            throw new Blocked("step_input_conflict");
-                        }
-                        return PayloadJson.parse(old.result());
-                    }
-                    Object result = localWork.get();
-                    steps.saveStep(
-                            claim.turn().id(),
-                            namespace,
-                            step,
-                            hash,
-                            PayloadJson.canonical(result));
-                    return result;
+                    return runHashedWithinDispatch(claim, namespace, step, hash, localWork);
                 });
+    }
+
+    /**
+     * 供同包子调用编排复用已有的父 dispatch 事务。这里不再获取第二套租约/授权锁， 调用者必须先通过 ExecutionPolicyService.dispatch；hash
+     * 只能来自可信用例的规范化输入。
+     */
+    Object runHashedWithinDispatch(
+            Claim claim, String namespace, String step, String hash, Supplier<Object> localWork) {
+        var old = steps.step(claim.turn().id(), namespace, step);
+        if (old != null) {
+            if (!old.inputHash().equals(hash)) {
+                throw new Blocked("step_input_conflict");
+            }
+            return PayloadJson.parse(old.result());
+        }
+        Object result = localWork.get();
+        steps.saveStep(claim.turn().id(), namespace, step, hash, PayloadJson.canonical(result));
+        return result;
     }
 }

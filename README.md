@@ -121,17 +121,17 @@ SSE 转发原生文本增量和工具状态，并回放持久任务事件。先�
 | --- | --- |
 | 基础工具 | 城市补充、示例目录检索、审批后创建本地报告、Artifact 分页读取 |
 | 市场快照 | 发布时固定的数据，携带 provider / as_of；默认数据为空，不是默认接入实时行情 |
-| 市场研究 | 独立 ReAct 子 Agent，工具缩至证券快照，使用服务端派生身份和根 Turn 预算 |
+| 市场研究 | 固定目标、深度为一的 ReAct 子 Agent；持久调用身份与 4 次模型 / 10 次实际行情读取上限，额度同时计入根 Turn |
 | 组合复盘 | `/workflow portfolio_review …` 固定步骤驱动，包含计算、数据新鲜度、敞口检查、人工批准和归档 |
 | 紫微 | 本命、大限、年、月、日五个受治理入口；默认关闭，仍需显式开发配置 |
 
-研究子 Agent 另有限定的模型/快照次数，完成的本地确定性步骤通过 `capability_steps` 回放。它不是生产 `SubAgentTool` 封装，也不承诺任意子 Agent 透明跨进程恢复；组合复盘是固定工作流，不是通用 Workflow DSL。
+P3a.1 用一张 `child_invocations` 窄表保存研究调用身份和累计额度，结果继续复用 `capability_steps`，更换 attempt 不重置计数。相同快照回执不重复执行行情读取或扣减该次子/根读取额度；缓存与 SDK 状态读写都先通过父 Turn 的运行状态、fence、隐私与授权门禁。P3a.1 已于 2026-10-24 完成本地验收：1,226 项完整单元/契约/架构测试、109 项定向 PostgreSQL 测试及 39 项 Compose 检查通过；未运行完整 Maven verify，模型为离线或本机模拟、行情为合成数据，详见[固定研究子调用](docs/architecture/child-invocations.md)。当前没有任意私有 Agent 委派、独立子调度或生产 `SubAgentTool` 封装；组合复盘仍是固定工作流。
 
 #### MCP
 
 使用 AgentScope 原生 **Streamable HTTP** 客户端和服务端 Schema，当前配置型接入酒店查询与内部太卜。约束包括 authority 白名单、租户和工具名白名单、工具重名检查、禁重定向和超时；外部端点要求 HTTPS，太卜禁止配置为外部服务。凭据通过引用解析，密钥值不进入发布定义。
 
-发布 hash 覆盖端点配置与允许工具名，**当前不包含远端实时 Schema 指纹，也没有 Schema 漂移比较**。不能用配置固定推导出远端契约已经冻结。
+P2b 显式组装的 `agent-release/3` 在发布时通过事务外发现，冻结所选 MCP 工具的 SDK 有效契约及摘要，规范化版本为 `mcp-sdk-effective/1`。有效契约包含名称、描述及 SDK 暴露的输入/输出 Schema；执行初始化和远端派发前比较契约，漂移时阻断执行或恢复，详见[能力组装与升级边界](docs/architecture/agent-composition.md)。旧格式和 `agent-release/2` 没有这份完整快照，不能事后补造历史指纹。该机制不固定远端业务实现，也不能消除发现与 `tools/call` 之间的服务端竞态。
 
 #### Skills
 
@@ -201,7 +201,7 @@ docker compose up -d --build --wait --wait-timeout 180
 curl --fail http://localhost:8080/actuator/health/readiness
 ```
 
-就绪预期返回 `{"status":"UP"}`。Compose 的 `init-db` 完成新库结构与授权后，启动统一业务服务 `api` 和受限 `memory-worker`；API 仅绑定本机 8080。主库由 V1 基线及 V2/V3/V4/V5 演进建立 40 张应用表，支持当前 Java V1 基线升级；不导入 Python 或历史实验库，详见[数据库初始化与升级](docs/architecture/fresh-schema.md)。
+就绪预期返回 `{"status":"UP"}`。Compose 的 `init-db` 完成新库结构与授权后，启动统一业务服务 `api` 和受限 `memory-worker`；API 仅绑定本机 8080。主库由 V1 基线及 V2–V6 演进建立 41 张应用表，支持当前 Java V1 基线升级；不导入 Python 或历史实验库，详见[数据库初始化与升级](docs/architecture/fresh-schema.md)。
 
 ### 跑通一次请求
 
@@ -268,7 +268,7 @@ python3 scripts/validate-compose.py --ziwei --admission --preflight --restore-pr
 
 历史上下文阶段曾记录 1,032 项 Java 单元/契约/架构测试及 59 项定向回归，并因当时 Docker 超时未完成数据库/Compose 实测。该限制描述的是当时的验证范围；后续 P1 全量验收已覆盖当前数据库集成与容器场景，真实摘要供应商输出仍需单独验收。
 
-代码基线 [`b5cf86b`](https://github.com/westbrook0904/FinanceClaw/commit/b5cf86b4474bdd84379d68ca69e5a6dcd00b4720) 的[远程验证](https://github.com/westbrook0904/FinanceClaw/actions/runs/39894283554)通过 **950 项单元/契约/架构测试、319 项集成测试、44 项脚本测试和 31 项 Compose 检查**。这是该代码基线的结果，不代表真实外部服务已验收，也不代替后续提交的 CI。Java 汇总写入 `target/verification/results.json`，Compose 单独记录部署证据。
+代码基线 [`8e57404`](https://github.com/westbrook0904/FinanceClaw/commit/8e574046eedb5c3ad4487b8fa7cb23759d365076) 的[远程验证](https://github.com/westbrook0904/FinanceClaw/actions/runs/39975391411)已完成：`verify` 通过 **1,214 项单元/契约/架构测试 + 409 项集成测试 = 1,623 项**，`delivery` 部署验收也成功。该基线不包含当前 P3a.1；本轮验证状态见[子调用说明](docs/architecture/child-invocations.md)，不能沿用基线结果宣称本轮 CI 通过。离线和本机模拟服务测试也不代表真实外部服务或生产容量验收。Java 汇总写入 `target/verification/results.json`，Compose 单独记录部署证据。
 
 | 文档 | 内容 |
 | --- | --- |
@@ -276,6 +276,7 @@ python3 scripts/validate-compose.py --ziwei --admission --preflight --restore-pr
 | [上下文生命周期与预算](docs/architecture/context-management.md) | Turn 快照、会话轨迹、结构化摘要、预算与文件读取 |
 | [Agent 定义与调用](docs/architecture/agent-definitions.md) | P2a 提示词草稿、发布 CLI 与指定 Agent 会话 |
 | [受控能力组装](docs/architecture/agent-composition.md) | P2b 模型 profile、Function/Skill/MCP 选择、固定契约与升级边界 |
+| [固定研究子调用](docs/architecture/child-invocations.md) | P3a.1 调用身份、持久预算、根门禁与步骤回放 |
 | [平台化实施方案](docs/architecture/platform-implementation-plan.md) | 控制面、数据面、Scheduler 边界与分阶段验收 |
 | [数据结构](docs/architecture/database-schema-review.md) / [数据库访问](docs/architecture/database-access-review.md) | 权威状态边界、锁与查询策略 |
 | [画像与证据记忆](docs/architecture/user-profile-memory.md) | Markdown、来源、确认、版本和隐私 |
@@ -283,4 +284,4 @@ python3 scripts/validate-compose.py --ziwei --admission --preflight --restore-pr
 | [运行维护](docs/operations.md) | 受理排空、配置、备份与隔离隐私恢复 |
 | [历史记录](docs/history/README.md) | 过去设计和验收证据，非当前迁移或兼容承诺 |
 
-后续可强化的 Harness 边界包括：历史运行工件管理、可信多用户认证、跨实例事件转发，以及统一观测和模型成本记录；这些仍属于 P2b 及后续范围。P2a 在 P1 基础上加入 Agent 身份、提示词草稿和目标版本绑定，验收状态见[实施方案](docs/architecture/platform-implementation-plan.md#7-实施状态与验证记录)。
+后续可强化的 Harness 边界包括：历史运行工件管理、可信多用户认证、跨实例事件转发，以及统一观测和模型成本记录；这些继续按后续阶段推进。P2a 在 P1 基础上加入 Agent 身份、提示词草稿和目标版本绑定，验收状态见[实施方案](docs/architecture/platform-implementation-plan.md#7-实施状态与验证记录)。

@@ -27,9 +27,11 @@ class SchemaInitializationIT {
         PG.start();
         var source =
                 new DriverManagerDataSource(PG.getJdbcUrl(), PG.getUsername(), PG.getPassword());
-        initialization = Flyway.configure().dataSource(source).load();
-        assertThat(initialization.migrate().migrationsExecuted).isEqualTo(5);
         sql = new JdbcTemplate(source);
+        // 增量迁移必须给已存在的应用角色授予新表权限，不能依赖旧 GRANT ON ALL TABLES。
+        sql.execute("CREATE ROLE financeclaw_app");
+        initialization = Flyway.configure().dataSource(source).load();
+        assertThat(initialization.migrate().migrationsExecuted).isEqualTo(6);
         initialRows = new LinkedHashMap<>();
         for (String table : tables()) {
             initialRows.put(table, sql.queryForObject("SELECT count(*) FROM " + table, Long.class));
@@ -53,6 +55,7 @@ class SchemaInitializationIT {
                         "business.attempts",
                         "business.cancel_requests",
                         "business.capability_steps",
+                        "business.child_invocations",
                         "business.commands",
                         "business.conversations",
                         "business.events",
@@ -85,15 +88,15 @@ class SchemaInitializationIT {
                         "memory.sources",
                         "memory.turn_snapshots",
                         "memory.user_profiles");
-        assertThat(initialization.info().applied()).hasSize(5);
-        assertThat(initialization.info().current().getVersion().toString()).isEqualTo("5");
+        assertThat(initialization.info().applied()).hasSize(6);
+        assertThat(initialization.info().current().getVersion().toString()).isEqualTo("6");
         assertThat(initialization.validateWithResult().validationSuccessful).isTrue();
         assertThat(initialization.migrate().migrationsExecuted).isZero();
     }
 
     @Test
     void startsWithoutUserDataAndLeavesTheIndependentLedgerOutsideTheBusinessDatabase() {
-        assertThat(initialRows).hasSize(40);
+        assertThat(initialRows).hasSize(41);
         initialRows.forEach(
                 (table, count) ->
                         assertThat(count)
@@ -143,6 +146,98 @@ class SchemaInitializationIT {
                                 "SELECT resume_id FROM business.attempts WHERE id='attempt'",
                                 String.class))
                 .isEqualTo("interaction");
+    }
+
+    @Test
+    void childInvocationStoresOnlyStableBindingAndBoundedCounters() {
+        assertThat(
+                        sql.queryForList(
+                                "SELECT column_name FROM information_schema.columns WHERE"
+                                        + " table_schema='business' AND table_name='child_invocations'"
+                                        + " ORDER BY ordinal_position",
+                                String.class))
+                .containsExactly(
+                        "root_turn_id",
+                        "call_id",
+                        "target",
+                        "input_hash",
+                        "scopes",
+                        "status",
+                        "model_calls",
+                        "tool_calls");
+        sql.update(
+                "INSERT INTO business.conversations(id,tenant,subject)"
+                        + " VALUES('child-conversation','tenant','owner')");
+        sql.update(
+                "INSERT INTO business.turns(id,conversation_id,tenant,subject,idempotency_key,request_hash,message,release_hash,status)"
+                        + " VALUES('child-turn','child-conversation','tenant','owner','key','hash','message','release','running')");
+        sql.update(
+                "INSERT INTO business.child_invocations(root_turn_id,call_id,input_hash)"
+                        + " VALUES('child-turn','call',?)",
+                "a".repeat(64));
+        assertThat(
+                        sql.queryForMap(
+                                "SELECT target,scopes::text,status,model_calls,tool_calls FROM"
+                                        + " business.child_invocations WHERE root_turn_id='child-turn'"))
+                .containsEntry("target", "market_research")
+                .containsEntry("scopes", "[\"market:read\"]")
+                .containsEntry("status", "pending")
+                .containsEntry("model_calls", 0)
+                .containsEntry("tool_calls", 0);
+        for (String assignment :
+                List.of(
+                        "target='other_agent'",
+                        "scopes='[\"report:write\"]'::jsonb",
+                        "scopes='[\"market:read\",\"report:write\"]'::jsonb",
+                        "status='queued'",
+                        "model_calls=-1",
+                        "model_calls=5",
+                        "tool_calls=-1",
+                        "tool_calls=11",
+                        "input_hash='not-a-sha256'",
+                        "call_id=' '")) {
+            assertThatThrownBy(
+                            () ->
+                                    sql.update(
+                                            "UPDATE business.child_invocations SET "
+                                                    + assignment
+                                                    + " WHERE root_turn_id='child-turn'"))
+                    .as(assignment)
+                    .isInstanceOf(DataIntegrityViolationException.class);
+        }
+        assertThatThrownBy(
+                        () ->
+                                sql.update(
+                                        "INSERT INTO business.child_invocations(root_turn_id,call_id,input_hash)"
+                                                + " VALUES('child-turn','call',?)",
+                                        "a".repeat(64)))
+                .isInstanceOf(DataIntegrityViolationException.class);
+        sql.update("DELETE FROM business.turns WHERE id='child-turn'");
+        assertThat(
+                        sql.queryForObject(
+                                "SELECT count(*) FROM business.child_invocations WHERE"
+                                        + " root_turn_id='child-turn'",
+                                Long.class))
+                .isZero();
+    }
+
+    @Test
+    void existingApplicationRoleReceivesNewChildTablePrivileges() {
+        for (String privilege : List.of("SELECT", "INSERT", "UPDATE", "DELETE")) {
+            assertThat(
+                            sql.queryForObject(
+                                    "SELECT has_table_privilege('financeclaw_app',"
+                                            + " 'business.child_invocations',?)",
+                                    Boolean.class,
+                                    privilege))
+                    .as(privilege)
+                    .isTrue();
+        }
+        assertThat(
+                        sql.queryForObject(
+                                "SELECT has_schema_privilege('financeclaw_app','business','CREATE')",
+                                Boolean.class))
+                .isFalse();
     }
 
     private static List<String> tables() {

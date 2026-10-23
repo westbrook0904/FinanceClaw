@@ -16,7 +16,6 @@ public class BusinessCapabilities {
     private final PortfolioReviewService portfolio;
     private final MarketResearchService research;
     private final ExecutionPolicyService policies;
-    private final ExecutionLeaseService leases;
     private final RuntimeMapper states;
     private final com.financeclaw.app.ziwei.ZiweiService ziwei;
 
@@ -25,14 +24,12 @@ public class BusinessCapabilities {
             PortfolioReviewService portfolio,
             MarketResearchService research,
             ExecutionPolicyService policies,
-            ExecutionLeaseService leases,
             RuntimeMapper states,
             com.financeclaw.app.ziwei.ZiweiService ziwei) {
         this.market = market;
         this.portfolio = portfolio;
         this.research = research;
         this.policies = policies;
-        this.leases = leases;
         this.states = states;
         this.ziwei = ziwei;
     }
@@ -42,7 +39,7 @@ public class BusinessCapabilities {
         new MarketToolContribution(
                         policies,
                         market,
-                        new MarketResearchAgent(research, leases, states, claim, model),
+                        new MarketResearchAgent(research, states, claim, model),
                         claim)
                 .contribute(registrar);
         new PortfolioToolContribution(portfolio, claim, workflow).contribute(registrar);
