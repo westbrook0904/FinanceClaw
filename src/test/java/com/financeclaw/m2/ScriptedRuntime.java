@@ -3,6 +3,7 @@ package com.financeclaw.m2;
 import com.financeclaw.domain.Task.*;
 import com.financeclaw.fixture.GovernanceFixture;
 import com.financeclaw.fixture.TaskFixture;
+import com.financeclaw.infrastructure.agentscope.context.WorkingContextSession;
 import com.financeclaw.infrastructure.agentscope.execution.*;
 import com.financeclaw.infrastructure.state.RuntimeMapper;
 import com.financeclaw.support.PayloadJson;
@@ -49,6 +50,8 @@ public final class ScriptedRuntime extends TaskAgentRuntime {
                         };
                 long resolvedCount =
                         messages.stream()
+                                // 工作投影跨 Turn 保留工具回执；历史背景不能充当本轮动作已完成的证据。
+                                .filter(message -> !WorkingContextSession.isHistorical(message))
                                 .flatMap(m -> m.getContentBlocks(ToolResultBlock.class).stream())
                                 .filter(r -> !r.isSuspended())
                                 .map(ToolResultBlock::getId)

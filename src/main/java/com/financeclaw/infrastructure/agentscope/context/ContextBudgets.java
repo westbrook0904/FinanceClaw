@@ -5,6 +5,7 @@ import com.financeclaw.domain.release.ModelProfile;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.model.ToolSchema;
 import io.agentscope.core.util.JsonUtils;
+import io.agentscope.extensions.model.openai.formatter.OpenAIChatFormatter;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import org.springframework.core.env.Environment;
@@ -42,7 +43,8 @@ public record ContextBudgets(
     }
 
     public static ContextBudgets defaults() {
-        return new ContextBudgets(8192, 16384, 24576, 8192, 16384, 8192, 2048, 80, 1);
+        // 当前内置工具含五项紫微 Schema，实际发送约 40 KiB；分区上限需容纳正常发布。
+        return new ContextBudgets(8192, 16384, 24576, 8192, 49152, 8192, 2048, 80, 1);
     }
 
     public static ContextBudgets from(Environment env) {
@@ -74,7 +76,11 @@ public record ContextBudgets(
             ModelProfile model, List<Msg> system, String memory, List<ToolSchema> tools) {
         int systemSize = bytes(system.stream().map(Msg::getTextContent).reduce("", String::concat));
         require(systemSize - bytes(memory) <= systemBytes, "system_context_budget_exceeded");
-        int schemas = bytes(JsonUtils.getJsonCodec().toJson(tools));
+        // 使用与 ModelFactory 相同的 SDK Formatter，避免把内部 outputSchema 等字段当作输入。
+        var formatter = new OpenAIChatFormatter();
+        var request = formatter.buildRequest(model.name(), List.of(), true);
+        formatter.applyTools(request, tools);
+        int schemas = bytes(JsonUtils.getJsonCodec().toJson(request.getTools()));
         require(schemas <= toolSchemaBytes, "tool_schema_budget_exceeded");
         // 额外为role/name/call-id及HTTP JSON字段留出余量。传输层在发送前还会独立验算。
         long available = capacity(model) - systemSize - schemas - 1024;

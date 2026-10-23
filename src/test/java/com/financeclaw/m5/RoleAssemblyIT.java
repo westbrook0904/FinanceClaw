@@ -214,6 +214,7 @@ class RoleAssemblyIT {
         try (var context = application(profile, true, Map.of())) {
             assertThat(controllers(context))
                     .containsExactlyInAnyOrder(
+                            "ArtifactContentController",
                             "TaskController",
                             "GovernanceController",
                             "MemoryController",

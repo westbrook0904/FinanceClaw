@@ -24,11 +24,13 @@
 | `long-memory-bytes` | 16 KiB | 本 Turn 完整画像与证据；不静默裁剪 |
 | `work-context-bytes` | 24 KiB | 摘要、近期问答、当前请求和工具消息合计 |
 | `current-input-bytes` | 8 KiB | 当前用户问题，属于工作上下文子预算 |
-| `tool-schema-bytes` | 16 KiB | 实际可用工具的定义和参数 Schema |
+| `tool-schema-bytes` | 48 KiB | SDK 实际发送的工具定义和参数 Schema |
 | `tool-result-bytes` | 8 KiB | 单个完整 ToolResultBlock，包含 metadata；超限生成文件 |
 | `summary-bytes` | 2 KiB | `goals/tools/evidence/nextSteps` JSON |
 | `compact-at-percent` | 80 | 工作上下文达到该比例才触发压缩 |
 | `retained-rounds` | 1 | 至少保留最近的完整问答或工具批次 |
+
+工具 Schema 按 SDK OpenAI Formatter 的实际 `tools` 字段计入预算。默认 48 KiB 覆盖当前内置工具集合，包含参数较多的五项紫微工具；配置更小的上限时仍明确拒绝超限工具集合。
 
 当前采用保守 UTF-8 字节估算，不声称等于供应商 tokenizer。实际模型窗口不足时会进一步收紧工作上下文容量；最终 `BudgetedTransport` 还会检查包含所有消息、工具、JSON 封装和输出预留的完整 HTTP 请求。必需内容无法容纳时明确失败，不截断当前请求或拆开工具配对。
 

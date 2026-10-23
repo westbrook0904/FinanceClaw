@@ -351,6 +351,12 @@ class FeishuIT {
         bind();
         send("city");
         run(true);
+        var clarificationTurn = tasks.get(owner, conversation, binding().activeTurn());
+        assertThat(clarificationTurn.status())
+                .as(
+                        "clarification Turn %s reason=%s",
+                        clarificationTurn.id(), clarificationTurn.reason())
+                .isEqualTo("waiting");
         delivery.poll();
         assertThat(REMOTE.writes.getFirst().path("content").asText()).contains("请输入城市");
         send("上海");
@@ -362,7 +368,13 @@ class FeishuIT {
         delivery.poll();
         var b = binding();
         var turn = tasks.get(owner, conversation, b.activeTurn());
-        var approval = governance.interactions(owner, conversation, turn.id()).getFirst();
+        assertThat(turn.status())
+                .as("approval Turn %s reason=%s", turn.id(), turn.reason())
+                .isEqualTo("waiting");
+        var pending = governance.interactions(owner, conversation, turn.id());
+        assertThat(pending).as("approval Turn %s reason=%s", turn.id(), turn.reason()).hasSize(1);
+        var approval = pending.getFirst();
+        assertThat(approval.kind()).isEqualTo("approval");
         String command = "/approve " + FeishuText.token(b, turn, approval);
         assertThat(REMOTE.writes.getLast().path("content").asText())
                 .contains(command)
