@@ -17,6 +17,7 @@ public final class MemoryForgetService {
     private final ForgetRecoveryRepository recovery;
     private final ForgetLedger ledger;
     private final TaskEventHub events;
+    private final ProfileDocuments documents;
 
     public MemoryForgetService(
             MemoryRepository memory,
@@ -24,11 +25,22 @@ public final class MemoryForgetService {
             ForgetRecoveryRepository recovery,
             ForgetLedger ledger,
             TaskEventHub events) {
+        this(memory, tx, recovery, ledger, events, ProfileDocuments.disabled());
+    }
+
+    public MemoryForgetService(
+            MemoryRepository memory,
+            TransactionTemplate tx,
+            ForgetRecoveryRepository recovery,
+            ForgetLedger ledger,
+            TaskEventHub events,
+            ProfileDocuments documents) {
         this.events = Objects.requireNonNull(events);
         this.memory = Objects.requireNonNull(memory);
         this.tx = Objects.requireNonNull(tx);
         this.recovery = Objects.requireNonNull(recovery);
         this.ledger = Objects.requireNonNull(ledger);
+        this.documents = Objects.requireNonNull(documents);
     }
 
     /** 执行遗忘。独立账本模式分为主库准备、账本追加、主库应用三阶段；任何未知结果都保留阻断屏障，并用同一事件重试。 */
@@ -51,7 +63,10 @@ public final class MemoryForgetService {
                             var privacy = memory.lock(owner);
                             var receipt = memory.operation(owner, key);
                             if (receipt != null) {
-                                return new Prepared(null, Long.parseLong(receipt.replay(hash)));
+                                // 幂等重放也擦除可能从旧磁盘备份恢复的历史 epoch 文件。
+                                long replay = Long.parseLong(receipt.replay(hash));
+                                documents.eraseThrough(owner, expectedEpoch);
+                                return new Prepared(null, replay);
                             }
                             var pending = recovery.pending(owner);
                             if (pending != null) {
@@ -96,12 +111,16 @@ public final class MemoryForgetService {
                     var privacy = memory.lock(owner);
                     var receipt = memory.operation(owner, key);
                     if (receipt != null) {
-                        return Long.parseLong(receipt.replay(hash));
+                        long replay = Long.parseLong(receipt.replay(hash));
+                        documents.eraseThrough(owner, fact.fromEpoch());
+                        return replay;
                     }
                     if (!fact.equals(recovery.pending(owner))) {
                         throw new Problem(409, "forget_pending_changed");
                     }
                     privacy.requireEpoch(fact.fromEpoch());
+                    // 文件先擦除，成功后才允许 SQL apply 删除持久 pending；失败继续保持屏障。
+                    documents.eraseThrough(owner, fact.fromEpoch());
                     recovery.apply(fact);
                     return fact.toEpoch();
                 });
@@ -118,9 +137,13 @@ public final class MemoryForgetService {
                     var privacy = memory.lock(owner);
                     var receipt = memory.operation(owner, key);
                     if (receipt != null) {
-                        return Long.parseLong(receipt.replay(hash));
+                        long replay = Long.parseLong(receipt.replay(hash));
+                        documents.eraseThrough(owner, expectedEpoch);
+                        return replay;
                     }
                     privacy.requireEpoch(expectedEpoch);
+                    // 文件系统不参加 SQL 回滚；先删后提交只会损失可用性，不能复活已遗忘资料。
+                    documents.eraseThrough(owner, expectedEpoch);
                     memory.forget(owner);
                     events.invalidateOwner(owner);
                     memory.eraseProfile(owner);

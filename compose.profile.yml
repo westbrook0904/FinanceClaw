@@ -1,0 +1,12 @@
+# 与 compose.yml 一起使用。挂载整个目录，支持编辑器以原子 rename 保存文档。
+# 预先创建目录，并让容器用户 10001:10001 可以读写；受限 memory-worker 不挂载画像。
+services:
+  api:
+    environment:
+      FINANCECLAW_PROFILE_DIRECTORY: /var/lib/financeclaw/profiles
+    volumes:
+      - type: bind
+        source: ${FINANCECLAW_PROFILE_HOST_DIRECTORY:-./server/profiles}
+        target: /var/lib/financeclaw/profiles
+        bind:
+          create_host_path: false

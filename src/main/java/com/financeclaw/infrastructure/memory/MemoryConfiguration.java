@@ -14,7 +14,7 @@ import org.springframework.transaction.support.TransactionTemplate;
  * TransactionTemplate，独立账本使用单独连接；事件中心参与提交后的失效通知。此配置不启动提取轮询，受限 Worker 有独立入口。
  */
 @Configuration(proxyBeanMethods = false)
-@Import({ForgetLedgerConfiguration.class, TaskEventHub.class})
+@Import({ForgetLedgerConfiguration.class, ProfileDocumentsConfiguration.class, TaskEventHub.class})
 public class MemoryConfiguration {
     @Bean
     ForgetRecoveryRepository forgetRecoveryRepository(DataSource source) {
@@ -27,8 +27,9 @@ public class MemoryConfiguration {
             TransactionTemplate tx,
             ForgetRecoveryRepository recovery,
             ForgetLedger ledger,
-            TaskEventHub events) {
-        return new MemoryForgetService(memory, tx, recovery, ledger, events);
+            TaskEventHub events,
+            ProfileDocuments documents) {
+        return new MemoryForgetService(memory, tx, recovery, ledger, events, documents);
     }
 
     @Bean
@@ -36,14 +37,18 @@ public class MemoryConfiguration {
             MemoryRepository memory,
             TransactionTemplate tx,
             MemoryPolicy policy,
-            MemoryForgetService forgetting) {
-        return new MemoryService(memory, tx, policy, forgetting);
+            MemoryForgetService forgetting,
+            UserProfileService profiles) {
+        return new MemoryService(memory, tx, policy, forgetting, profiles);
     }
 
     @Bean
     UserProfileService userProfileService(
-            MemoryRepository memory, TransactionTemplate tx, MemoryPolicy policy) {
-        return new UserProfileService(memory, tx, policy);
+            MemoryRepository memory,
+            TransactionTemplate tx,
+            MemoryPolicy policy,
+            ProfileDocuments documents) {
+        return new UserProfileService(memory, tx, policy, documents);
     }
 
     @Bean

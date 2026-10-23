@@ -14,16 +14,27 @@ public final class PrivacyRecoveryService {
     private final ForgetRecoveryRepository recovery;
     private final ForgetLedger ledger;
     private final TransactionTemplate tx;
+    private final ProfileDocuments documents;
 
     public PrivacyRecoveryService(
             MemoryRepository memory,
             ForgetRecoveryRepository recovery,
             ForgetLedger ledger,
             TransactionTemplate tx) {
+        this(memory, recovery, ledger, tx, ProfileDocuments.disabled());
+    }
+
+    public PrivacyRecoveryService(
+            MemoryRepository memory,
+            ForgetRecoveryRepository recovery,
+            ForgetLedger ledger,
+            TransactionTemplate tx,
+            ProfileDocuments documents) {
         this.memory = memory;
         this.recovery = recovery;
         this.ledger = ledger;
         this.tx = tx;
+        this.documents = Objects.requireNonNull(documents);
     }
 
     /** 在所有写入方停止的前提下初始化独立账本；必须先检查本地主库无残留冲突，再绑定账本并激活。 */
@@ -38,6 +49,9 @@ public final class PrivacyRecoveryService {
                     var history = recovery.history();
                     var epochs = epochs(binding.lineage(), history);
                     validateOwners(recovery.owners(), epochs, true);
+                    for (var fact : history) {
+                        documents.eraseThrough(fact.owner(), fact.fromEpoch());
+                    }
                     // 仅允许离线执行：持有账本绑定锁，防止读取历史到激活之间插入新的遗忘事实。
                     ledger.initialize(binding.lineage(), history);
                     if (!new HashSet<>(ledger.snapshot(binding.lineage()))
@@ -114,6 +128,7 @@ public final class PrivacyRecoveryService {
                     for (var fact : facts) {
                         memory.ensure(fact.owner());
                         memory.lock(fact.owner());
+                        documents.eraseThrough(fact.owner(), fact.fromEpoch());
                         recovery.apply(fact);
                     }
                     for (var owner : epochs.keySet()) {

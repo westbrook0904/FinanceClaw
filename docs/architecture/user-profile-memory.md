@@ -4,14 +4,49 @@
 
 | 层 | 内容与维护方式 | 执行时的用途 |
 | --- | --- | --- |
-| 用户画像 | 每个用户一个 UTF-8 `profile.md`；用户下载、手工编辑、上传；数据库保存当前权威版本 | 稳定背景、表达偏好、长期目标；人工画像的偏好优先于冲突证据 |
+| 用户画像 | 每个用户一个 UTF-8 `profile.md`；支持直接编辑服务器目录，新 Turn 自动采样；数据库保存已采样版本及 Turn 快照 | 稳定背景、表达偏好、长期目标；人工画像的偏好优先于冲突证据 |
 | 跨会话偏好证据 | 真实用户消息作为来源，保存原文片段、事实 revision、确认状态；提取 Worker 只能写这一层 | 召回已确认且来源有效的偏好，供回答参考 |
 
 当前证据层支持语言、回答风格、居住城市、旅行偏好、投资偏好五类 key。同 key 的旧事实会被 supersede；Turn 受理时选取最近最多 16 条 active facts 并冻结正文，后续事实变更只影响新 Turn。它还不是通用经历、事件或任意文档记忆，也没有在每轮执行时做向量搜索。候选不会进入模型上下文。
 
 画像是用户资料，不能改变系统规则、工具授权或审批要求。本次用户明确表达优先于长期偏好。Markdown 与证据按独立段落、带 provenance 的 JSON 数据注入；任意自由文本的语义冲突由模型解释，不能声称是确定性的字段合并。提取、确认事实和向量重建都不会覆盖人工画像。
 
-## 下载与手动维护
+## 直接维护服务器目录
+
+设置 `FINANCECLAW_PROFILE_DIRECTORY` 为服务器画像根目录即可开启目录模式。文件只在新 Turn 受理及人工 GET 查看时读取，没有目录轮询或定时数据库扫描。已有 Turn 的 ReAct 调用、重试、审批恢复继续使用原始长期记忆快照；编辑保存影响下一 Turn。
+
+直接启动 JVM 时，例如：
+
+```bash
+export FINANCECLAW_PROFILE_DIRECTORY=/srv/financeclaw/profiles
+```
+
+Compose 使用单独的目录挂载配置：
+
+```bash
+sudo install -d -m 0700 -o 10001 -g 10001 server/profiles
+docker compose -f compose.yml -f compose.profile.yml up -d --build
+```
+
+可以在 `.env` 设置 `FINANCECLAW_PROFILE_HOST_DIRECTORY` 改变宿主机目录。容器用户 `10001:10001` 必须有读写权限，用于初始化空文件及遗忘清理。挂载整个目录，因此编辑器通过原子重命名保存也会生效。受限 `memory-worker` 不挂载该目录。
+
+文件相对路径为 `<owner-hash>/epoch-<当前epoch>/profile.md`。先请求一次 `GET /v1/memory/profile.md` 或提交一个 Turn，服务会创建当前用户的空文档；从 `GET /v1/memory/privacy` 取得当前 epoch，再定位文件：
+
+```bash
+python3 scripts/profile-path.py --root server/profiles \
+  --tenant local --subject developer --epoch 1
+# 用编辑器打开输出的 profile.md；保存后，下个新 Turn 自动使用。
+```
+
+`tenant/subject` 必须与认证用户一致；示例使用默认本地配置，epoch 应替换为实际查询结果。路径脚本只计算与执行作用域一致的长度前缀 SHA-256，不读取正文或凭据。不能用用户名直接拼接目录。
+
+目录文件是人工内容入口，SQL 当前画像是带版本的已采样镜像。正文变化才推进 revision 并写库，稳定文件不产生更新；受理时复用本次读取结果，不重复查询画像。文件异常、超限或正在保存时返回明确错误，不退回旧镜像。建议先写临时文件再原子替换，避免对话恰好采样到人工编辑过程中尚未完成的内容。
+
+目录模式的 HTTP GET 仍可查看当前文档与 ETag；PUT 返回 `409 profile_managed_on_server`，统一由服务器文件维护。`FINANCECLAW_PROFILE_DIRECTORY` 为空时使用下面的 HTTP 编辑入口。
+
+遗忘在用户排他锁内先删除该用户旧 epoch 目录，再提交 SQL 擦除；删除失败不会解除遗忘屏障。新 epoch 使用新目录，旧备份中的旧路径不能自动重新绑定。隔离恢复入口也重放相同文件清理；使用目录模式恢复时必须挂载同一画像根目录。数据库备份不包含人工文件，需要同时备份画像目录，并在开放服务前完成遗忘重放。
+
+## 通过 HTTP 下载与编辑
 
 `FINANCECLAW_PROFILE_ENABLED=true` 默认开启手工画像；`FINANCECLAW_MEMORY_ENABLED` 仍控制自动证据提取，默认关闭。二者独立，画像不需要 embedding 或额外模型配置。
 
@@ -46,7 +81,7 @@ python3 scripts/user-profile.py push --file /tmp/financeclaw-profile/profile.md
 
 正文最大 **8192 个 UTF-8 字节**，不静默裁剪；中文通常占多个字节。空文档可以上传，用于清空当前画像；相同正文保存不增加 revision。若要求旧备份也不能复活资料，应使用受遗忘账本保护的 `forget`，单纯编辑文档不产生独立遗忘事实。服务端不执行 Markdown、链接、脚本，也不支持正文指定 owner 或文件路径。
 
-CLI 默认服务地址为 `http://localhost:8080`；其他地址用 `--url`，远程只接受 HTTPS，不跟随重定向。文件旁的 `.profile.md.version.json` 保存服务地址和版本，不是第二份画像，也没有 token。两份文件初建权限均为 `0600`。本地文件不被服务端监听，只有成功上传才会生效。
+以下 CLI 编辑适用于未配置服务器目录的模式。默认服务地址为 `http://localhost:8080`；其他地址用 `--url`，远程只接受 HTTPS，不跟随重定向。文件旁的 `.profile.md.version.json` 保存服务地址和版本，不是第二份画像，也没有 token。两份文件初建权限均为 `0600`。本地下载副本只有成功上传才会生效。
 
 下载默认拒绝覆盖已有文件。遇到 `http_409`（版本冲突）时，先另存本地编辑，用另一个 `--file` 下载最新版本，人工合并后再上传。`pull --force` 会显式覆盖本地内容。不要通过删除版本文件或自行替换 epoch 绕过冲突。上传结果不确定时先下载核对，不盲目重试覆盖。
 
@@ -65,7 +100,7 @@ ETag 绑定认证 owner、epoch 和 revision。另一个用户的导出版本不
 
 当前[新库初始化 SQL](../../src/main/resources/db/migration/V1__initialize_application.sql)创建 `memory.user_profiles` 保存当前人工画像；`memory.turn_snapshots` 保存每个 Turn 受理时已经格式化的长期记忆正文。快照包含 owner、epoch 和画像 revision，插入后不能被后续画像或证据替换。自动证据关闭时 source 不保存可供提取的正文，不产生提取作业；两层均关闭时仍保存空快照和隐私绑定。开关变化只影响新 Turn 的采样与编辑入口，已开始 Turn 沿用原快照。
 
-受理对已存在的 owner 持 `FOR SHARE` 共享锁，允许同一用户的独立会话并发；画像编辑、遗忘及执行策略检查持 `FOR UPDATE` 排他锁。共享锁持续到受理事务提交，因此变更不能越过快照冻结边界。普通画像编辑不会中断已经排队、运行或等待审批的 Turn；审批恢复和进程重建读取同一快照。遗忘提升 epoch，清理快照与会话工作上下文，并使旧执行失效；授权撤销仍有独立的执行门禁。
+未配置服务器目录时，受理对已存在的 owner 持 `FOR SHARE` 共享锁。目录模式为同步文件版本先取 `FOR UPDATE`，同一用户的受理短暂串行，不同用户互不阻塞；不会先取共享锁再升级。画像编辑、遗忘及执行策略检查也持排他锁，锁持续到事务提交。普通画像编辑不会中断已经排队、运行或等待审批的 Turn；审批恢复和进程重建读取同一快照。遗忘提升 epoch，清理快照与会话工作上下文，并使旧执行失效；授权撤销仍有独立的执行门禁。
 
 AgentScope `onSystemPrompt` 注入 Turn 快照，每个 attempt 只读取一次，不重新召回、不把画像追加到 `AgentState.context`。会话中期工作上下文另行保存问答和工具过程，接近预算时压缩为结构化摘要；每个 Turn 的完整轨迹仍保留。长期快照不能被压缩模型改写，最终主/备模型 HTTP 请求还会经过完整预算检查。详见[上下文管理](context-management.md)。
 
@@ -74,6 +109,7 @@ AgentScope `onSystemPrompt` 注入 Turn 快照，每个 attempt 只读取一次�
 | 路径 | 成本 |
 | --- | --- |
 | Turn 受理 | owner lock + source insert + snapshot insert，共 3 次；非空画像加 1 次读取 |
+| 目录模式受理 | owner 排他锁 + 一次镜像读取（已有画像时）+ source/snapshot 插入；文件变化额外 CAS、保存镜像和审计各 1 次 |
 | 画像与证据均启用的受理 | 在以上基础加 1 次有界事实查询 |
 | 执行策略的隐私检查 | owner lock + source，共 2 次；不读取画像正文或重复召回事实 |
 | 每 attempt 的长期上下文 | owner lock + source + snapshot，共 3 次，与画像/事实条数无关 |

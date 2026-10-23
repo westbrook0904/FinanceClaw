@@ -134,6 +134,8 @@ financeclaw:
   memory:
     enabled: ${FINANCECLAW_MEMORY_ENABLED:false}
     profile-enabled: ${FINANCECLAW_PROFILE_ENABLED:true}
+    # 指定服务器目录后，在新 Turn 受理时读取 profile.md；空值保留 HTTP 管理入口。
+    profile-directory: ${FINANCECLAW_PROFILE_DIRECTORY:}
     vector-search: ${FINANCECLAW_MEMORY_VECTOR_SEARCH:false}
     forget-ledger:
       enabled: ${FINANCECLAW_FORGET_LEDGER_ENABLED:false}

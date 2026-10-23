@@ -17,3 +17,4 @@ backups/
 # Default manual profile export contains private user data.
 /profile.md
 /.profile.md.version.json
+/server/profiles/

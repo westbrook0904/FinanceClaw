@@ -23,7 +23,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 @Import({
     com.financeclaw.bootstrap.MapperConfiguration.Memory.class,
     MyBatisMemoryRepository.class,
-    ForgetLedgerConfiguration.class
+    ForgetLedgerConfiguration.class,
+    ProfileDocumentsConfiguration.class
 })
 public class PrivacyRecoveryApplication {
     public static void main(String[] args) {
@@ -92,7 +93,9 @@ public class PrivacyRecoveryApplication {
                             context.getBean(MyBatisMemoryRepository.class),
                             new JdbcForgetRecoveryRepository(context.getBean(DataSource.class)),
                             context.getBean(ForgetLedger.class),
-                            context.getBean(TransactionTemplate.class));
+                            context.getBean(TransactionTemplate.class),
+                            context.getBean(
+                                    com.financeclaw.app.memory.port.ProfileDocuments.class));
             String action =
                     context.getEnvironment()
                             .getRequiredProperty("financeclaw.privacy-recovery.action");

@@ -1,0 +1,81 @@
+{
+  "feature": "server-profile-directory",
+  "validated_on": "2026-10-23",
+  "scope": "Local current worktree; preserves existing uncommitted agent-composition changes; not remote CI.",
+  "base_head": "851446f375585ddabae6d9982081de6f4f4c610d",
+  "delivery": {
+    "remote_branch": "origin/codex/java-agentscope",
+    "recorded_before_commit": true,
+    "remote_ci": "not part of this local verification record"
+  },
+  "validation": {
+    "unit_and_contract": {
+      "tests": 88,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "log": "/tmp/financeclaw-server-profile-unit.log"
+    },
+    "postgresql_integration": {
+      "tests": 61,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "log": "/tmp/financeclaw-server-profile-it.log"
+    },
+    "directory_compose": {
+      "result": "passed",
+      "checks": [
+        "server_directory_edit_is_loaded_without_restart_or_upload",
+        "atomic_save_affects_new_turn_and_preserves_existing_turn_snapshot",
+        "stable_file_keeps_version_and_http_cannot_overwrite_server_document",
+        "forget_deletes_old_profile_and_snapshots_and_starts_empty_next_epoch"
+      ]
+    },
+    "combined_compose": {
+      "checks": 39,
+      "command": "python3 scripts/validate-compose.py --ziwei --admission --preflight --restore-privacy",
+      "evidence": "target/m5e/deployment/compose-results.json"
+    },
+    "format_and_package": "passed; final formatting and comments only after functional tests",
+    "static_delivery": "passed"
+  },
+  "sha256": {
+    "src/main/java/com/financeclaw/app/memory/UserProfileService.java": "8a74c90c243c779330277c0c2725c897f867cbf4c118300ed2bf56a75cfab420",
+    "src/main/java/com/financeclaw/app/memory/MemoryService.java": "bc48d73c169e4d64fa07b9d267fb632d9b15607fd159e1779ebd9135e6915e77",
+    "src/main/java/com/financeclaw/app/memory/MemoryForgetService.java": "a041055d3689a705c7deffbb1e43e04ba68d9ed7da41379a4fbd297342a31590",
+    "src/main/java/com/financeclaw/app/memory/PrivacyRecoveryService.java": "8e311ad0bc34e7cda856b941ce93dbc5defa3b3c8be0295a7dd353c12ee0d3ed",
+    "src/main/java/com/financeclaw/app/memory/port/ProfileDocuments.java": "9f64ca2a987e5f5daedaecd3175bb9162dc466b355a5f1068f02d02bcc683ddc",
+    "src/main/java/com/financeclaw/infrastructure/memory/DirectoryProfileDocuments.java": "bc86abdd1f84480cbf881acebfc2811d46636a23c89c8409c0d8d407894fe3f9",
+    "src/main/java/com/financeclaw/infrastructure/memory/MemoryConfiguration.java": "4b4caea77089b7b7ebda8a261ee5abde74721c21216bbb4d0517c2c3e22da1a5",
+    "src/main/java/com/financeclaw/infrastructure/memory/ProfileDocumentsConfiguration.java": "070f9e681d75496e522cb03de6de5a9431443c3fbd7f92e420d72160f792899f",
+    "src/main/java/com/financeclawprivacy/PrivacyRecoveryApplication.java": "fe34afacaee074784ca92ed7952400d8f4c88f2af15f57d35acddc78401b153b",
+    "src/test/java/com/financeclaw/architecture/ServerProfileMemoryTest.java": "ab85db989c90bbcf2fc8f0073b294c6031513728f0fea7a4b76300e9f17f8691",
+    "src/test/java/com/financeclaw/infrastructure/memory/DirectoryProfileDocumentsTest.java": "2d7f59caf7a4846f30bb6fe49d46fea64f6ca4103ae114b914bb52295453f999",
+    "src/test/java/com/financeclaw/m4/ServerProfileDirectoryIT.java": "ebd638568b90d9a644452486678b82d9a9a6ec8583f00fb8fc8fdaff8887d6e9",
+    "compose.profile.yml": "f3a7a656e1f4dba636bffddd99e2ecd3061c82ccd30e0d24fd70f2e2cc886b49",
+    "scripts/profile-path.py": "9fe2566cc1b5e85341122e24682409ca89bf3fe930a76171e7baffbb20558178",
+    "src/main/resources/application.yml": "78e0a7e2e7fadc24c67835cec2bd152b06a66d1e0cbc32ff14ca70420ac7c114",
+    "docs/architecture/user-profile-memory.md": "c31ab3fba3f690dcb0d7f044105d724f393ab7356a273d34973616bf1e6b7bf9"
+  },
+  "independent_staged_snapshot": {
+    "base_head": "851446f375585ddabae6d9982081de6f4f4c610d",
+    "scope": "Profile-directory staged changes only; excludes P2b working-tree changes.",
+    "result": "passed",
+    "unit_and_contract": {
+      "tests": 88,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "postgresql_integration": {
+      "tests": 61,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "format_and_package": "passed",
+    "unit_log_sha256": "663ea9ea4380a5ce91b5b1af001e5f73ce5dcc4d683452066f7bfc083ce8d2f1",
+    "integration_log_sha256": "ed61de857c41b005aa8889b13d0dc0fa7df9d186efdff04e4b40fd5243eac61b"
+  }
+}

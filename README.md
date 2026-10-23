@@ -72,10 +72,10 @@ flowchart LR
 
 | 层 | 如何维护 | 执行时如何使用 |
 | --- | --- | --- |
-| 用户画像 | 每个逻辑用户一份 UTF-8 `profile.md`，下载、手工编辑、上传；SQL 保存当前权威正文 | 作为稳定背景和表达偏好；当前请求优先，人工画像优先于冲突证据 |
+| 用户画像 | 每个逻辑用户一份 UTF-8 `profile.md`，支持直接维护服务器目录；SQL 保存已采样版本与 Turn 快照 | 作为稳定背景和表达偏好；当前请求优先，人工画像优先于冲突证据 |
 | 跨会话证据 | 从已完成任务的可信用户消息提取，保留来源 Turn、原文引文、revision 和确认状态 | 受理时选取最多 16 条有效偏好并冻结正文，本 Turn 沿用；下一 Turn 才重新召回 |
 
-画像默认开启，正文上限 **8 KiB**。上传必须携带绑定主体、epoch 和 revision 的 ETag，防止并发覆盖和遗忘前文件回写。它不是服务器目录中被监听的文件，模型也不会自动改写画像。
+画像默认开启，正文上限 **8 KiB**。配置 `FINANCECLAW_PROFILE_DIRECTORY` 后可直接编辑服务器目录里的文件，新 Turn 受理时自动采样，无需上传或重启；进行中的 Turn 保持原快照。目录按用户和隐私 epoch 隔离，没有监听或轮询线程，模型不会自动改写文件。目录模式拒绝 HTTP PUT；未配置目录时，HTTP 编辑仍通过绑定主体、epoch 和 revision 的 ETag 防止并发覆盖。
 
 证据提取默认关闭。目前支持回答语言、回答风格、居住城市、旅行偏好和投资偏好五类持久偏好。普通提取结果先成为候选，由用户确认或拒绝；少量严格匹配的 `/remember` 明确指令可以自动确认。候选事实不会直接进入模型上下文。
 
@@ -83,7 +83,9 @@ flowchart LR
 
 遗忘会提升 epoch，清理画像与记忆正文、召回、投影和作业，并阻断旧版本执行。可选独立遗忘账本用于恢复旧备份后的核对和重放，默认关闭。该能力不等于物理删除业务 Journal、所有 AgentState 和全部产物。
 
-启动应用并配置 `FINANCECLAW_API_TOKEN` 后（见下方请求示例），可以维护画像：
+直接目录维护的路径、权限和 Compose 启动步骤见[画像目录配置](docs/architecture/user-profile-memory.md#直接维护服务器目录)，也可使用 `compose.profile.yml` 挂载服务器目录。
+
+未配置目录时，启动应用并配置 `FINANCECLAW_API_TOKEN` 后（见下方请求示例），可通过 HTTP 维护画像：
 
 ```bash
 python3 scripts/user-profile.py pull --file /tmp/financeclaw-profile.md
@@ -235,6 +237,7 @@ curl --fail -H "Authorization: Bearer $FINANCECLAW_API_TOKEN" \
 | 业务模型 | 离线 | `FINANCECLAW_MODEL` / `FINANCECLAW_MODEL_BASE_URL`；凭据挂载自 `.secrets/model-key` |
 | 工作上下文 / 大结果归档 | 开启 | `FINANCECLAW_CONTEXT_*`，默认阈值见上方预算表 |
 | 人工画像 | 开启 | `FINANCECLAW_PROFILE_ENABLED` |
+| 服务器画像目录 | 未配置；配置后新 Turn 自动读取 | `FINANCECLAW_PROFILE_DIRECTORY`；Compose 叠加 `compose.profile.yml` |
 | 证据提取 / 向量搜索 | 关闭 / 关闭 | `FINANCECLAW_MEMORY_ENABLED` / `FINANCECLAW_MEMORY_VECTOR_SEARCH`，另配提取与嵌入模型 |
 | 独立遗忘账本 | 关闭 | 独立库与凭据、离线 bootstrap、`compose.forget-ledger.yml` |
 | 酒店 / 太卜 MCP | 关闭 | `FINANCECLAW_HOTEL_*` / `FINANCECLAW_TAIBU_*` |
