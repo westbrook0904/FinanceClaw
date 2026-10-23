@@ -15,7 +15,7 @@ import urllib.request
 import uuid
 
 COUNTS = ('queued', 'running', 'waiting', 'cancelling', 'blocked', 'active_commands',
-          'pending_interactions', 'uncertain_effects', 'pending_outbox', 'pending_notifications',
+          'pending_interactions', 'pending_notifications',
           'unverified_notifications', 'unprojected_notifications', 'pending_memory_jobs', 'pending_forget')
 KINDS = ('turns', 'notifications', 'notification_bindings', 'memory_jobs')
 ACTIVE = ('queued', 'resuming', 'running', 'waiting', 'cancelling', 'blocked')
@@ -78,10 +78,10 @@ def item(raw, kind):
             require(clean['status'] in TURN_STATES)
             require(raw.get('command_status') in (None, 'queued', 'running', 'done'))
             clean.update(command_status=raw.get('command_status'), reason=code(raw.get('reason')))
-            for key in ('pending_interactions', 'uncertain_effects', 'pending_outbox'):
+            for key in ('pending_interactions',):
                 clean[key] = number(raw.get(key))
             require(clean['status'] in ACTIVE or clean['command_status'] in ('queued', 'running')
-                    or any(clean[k] for k in ('pending_interactions', 'uncertain_effects', 'pending_outbox')))
+                    or any(clean[k] for k in ('pending_interactions',)))
         else:
             clean['turn_id'] = identifier(raw.get('turn_id'))
             require(clean['status'] in (('pending', 'sending', 'unknown', 'submitted_unverified')
@@ -129,7 +129,7 @@ def inspect(get, page_size=50, max_pages=20):
             if state in ACTIVE:
                 observed[state] += 1
             observed['active_commands'] += row['command_status'] in ('queued', 'running')
-            for key in ('pending_interactions', 'uncertain_effects', 'pending_outbox'):
+            for key in ('pending_interactions',):
                 observed[key] += row[key]
         for row in report['items']['notifications']:
             observed['pending_notifications' if row['status'] in ('pending', 'sending')

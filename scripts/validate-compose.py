@@ -266,7 +266,7 @@ try:
     print('Starting isolated deployment validation:', PROJECT, flush=True)
     compose('config', '--quiet')
     config = json.loads(compose('config', '--format', 'json'))
-    assert set(config['services']) == {'postgres', 'migrate', 'api', 'memory-worker'}
+    assert set(config['services']) == {'postgres', 'init-db', 'api', 'memory-worker'}
     assert config['services']['api']['command'] == ['standalone']
     runtime_secrets = {s['source'] for s in config['services']['api']['secrets']}
     assert {'api_token', 'model_key', 'hotel_token', 'taibu_token', 'feishu_secret'} <= runtime_secrets
@@ -279,7 +279,7 @@ try:
             assert service['environment']['FINANCECLAW_ZIWEI_KEY_REF'] == 'ZIWEI_HMAC_KEY'
             assert any(s['source'] == 'ziwei_key' and s['target'] == 'ZIWEI_HMAC_KEY'
                        for s in service['secrets'])
-        for role in ('migrate', 'memory-worker'):
+        for role in ('init-db', 'memory-worker'):
             assert not any(s['source'] == 'ziwei_key' for s in config['services'][role]['secrets'])
         mark('shared_ziwei_policy_and_role_scoped_secret_mounts')
     compose('build', 'api')
@@ -294,7 +294,7 @@ try:
     for retired in ('business.skill_refs', 'agent_runtime.tool_effects',
                     'business.outbox', 'business.projections'):
         assert sql("SELECT to_regclass('" + retired + "') IS NULL") == 't', retired
-    mark('retired_experiment_tables_and_local_projection_absent')
+    mark('fresh_schema_has_only_current_application_tables')
     assert sql("SELECT has_schema_privilege('financeclaw_memory','business','USAGE')") == 'f'
     assert sql("SELECT has_schema_privilege('financeclaw_app','business','CREATE')") == 'f'
     for role in ('memory-worker',):
@@ -314,7 +314,6 @@ try:
         durations = list(pool.map(sample, range(THRESHOLDS['requests'])))
     p95 = sorted(durations)[math.ceil(.95*len(durations))-1]
     assert p95 < THRESHOLDS['p95_turn_seconds'], p95
-    assert api('/v1/operations')['outbox']['pending'] == THRESHOLDS['remaining_outbox']
     mark('offline_load_and_idempotency', {'requests': len(durations), 'success_ratio': 1,
                                         'p95_seconds': p95, 'provider_calls': 0, 'provider_cost': 0})
 
@@ -444,7 +443,6 @@ try:
     assert profile(PROFILE_TEXT, saved_version)[0] == 409
     mark('forget_deletes_profile_resets_revision_and_rejects_pre_forget_import')
     mark('restricted_memory_worker_and_forgetting')
-    assert api('/v1/operations')['outbox']['pending'] == 0
     RESULT['operations'] = api('/v1/operations')
     if ARGS.admission:
         pause = admission(True, 'pause-before-backup')

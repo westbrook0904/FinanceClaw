@@ -9,43 +9,47 @@ import com.financeclaw.domain.Governance.Blocked;
 import java.util.List;
 import java.util.Map;
 
-/** Persisted business JSON contract; SDK AgentState continues to use its own codec. */
+/**
+ * 内部 JSON 编码边界，统一稳定序列化、对象解析和权限列表读取。
+ *
+ * <p>规范化输出用于动作摘要与幂等身份；不要以 Map 的遍历顺序或普通对象 toString 代替协议编码。
+ */
 public final class PayloadJson {
-  private static final JsonMapper WRITER =
-      JsonMapper.builder().enable(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS).build();
-  private static final ObjectMapper READER = new ObjectMapper();
+    private static final JsonMapper WRITER =
+            JsonMapper.builder().enable(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS).build();
+    private static final ObjectMapper READER = new ObjectMapper();
 
-  private PayloadJson() {}
+    private PayloadJson() {}
 
-  public static String canonical(Object input) {
-    try {
-      return WRITER.writeValueAsString(input);
-    } catch (JsonProcessingException e) {
-      throw new IllegalArgumentException("Invalid action payload", e);
+    public static String canonical(Object input) {
+        try {
+            return WRITER.writeValueAsString(input);
+        } catch (JsonProcessingException e) {
+            throw new IllegalArgumentException("Invalid action payload", e);
+        }
     }
-  }
 
-  public static Object parse(String json) {
-    try {
-      return READER.readValue(json, Object.class);
-    } catch (Exception e) {
-      throw new Blocked("invalid_stored_json");
+    public static Object parse(String json) {
+        try {
+            return READER.readValue(json, Object.class);
+        } catch (Exception e) {
+            throw new Blocked("invalid_stored_json");
+        }
     }
-  }
 
-  public static Map<String, Object> object(String json) {
-    try {
-      return READER.readValue(json, new TypeReference<Map<String, Object>>() {});
-    } catch (Exception e) {
-      throw new Blocked("invalid_stored_schema");
+    public static Map<String, Object> object(String json) {
+        try {
+            return READER.readValue(json, new TypeReference<Map<String, Object>>() {});
+        } catch (Exception e) {
+            throw new Blocked("invalid_stored_schema");
+        }
     }
-  }
 
-  public static List<String> scopes(String json) {
-    try {
-      return READER.readValue(json, new TypeReference<List<String>>() {});
-    } catch (Exception e) {
-      throw new Blocked("invalid_stored_scopes");
+    public static List<String> scopes(String json) {
+        try {
+            return READER.readValue(json, new TypeReference<List<String>>() {});
+        } catch (Exception e) {
+            throw new Blocked("invalid_stored_scopes");
+        }
     }
-  }
 }

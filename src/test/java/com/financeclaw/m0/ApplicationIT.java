@@ -20,45 +20,45 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 
 @SpringBootTest(
-    classes = FinanceClawApplication.class,
-    webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+        classes = FinanceClawApplication.class,
+        webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @Import(ApplicationIT.ProbeConfiguration.class)
 class ApplicationIT extends PostgresSupport {
-  @Autowired TestRestTemplate client;
-  @Autowired RuntimeMapper runtimeMapper;
-  @Autowired SqlSessionFactory sessions;
-  @Autowired SqlSessionTemplate database;
+    @Autowired TestRestTemplate client;
+    @Autowired RuntimeMapper runtimeMapper;
+    @Autowired SqlSessionFactory sessions;
+    @Autowired SqlSessionTemplate database;
 
-  @TestConfiguration
-  static class ProbeConfiguration {
-    @Bean
-    ConfigurationCustomizer m0Mapper() {
-      return configuration -> configuration.addMapper(M0RuntimeMapper.class);
+    @TestConfiguration
+    static class ProbeConfiguration {
+        @Bean
+        ConfigurationCustomizer m0Mapper() {
+            return configuration -> configuration.addMapper(M0RuntimeMapper.class);
+        }
     }
-  }
 
-  @DynamicPropertySource
-  static void database(DynamicPropertyRegistry registry) {
-    registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
-    registry.add("spring.datasource.username", POSTGRES::getUsername);
-    registry.add("spring.datasource.password", POSTGRES::getPassword);
-  }
+    @DynamicPropertySource
+    static void database(DynamicPropertyRegistry registry) {
+        registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
+        registry.add("spring.datasource.username", POSTGRES::getUsername);
+        registry.add("spring.datasource.password", POSTGRES::getPassword);
+    }
 
-  @Test
-  void bootStartsAgainstMigratedPostgresAndExposesReadiness() {
-    var response = client.getForEntity("/actuator/health/readiness", String.class);
-    assertThat(response.getStatusCode().value()).isEqualTo(200);
-    assertThat(response.getBody()).contains("UP");
-    assertThat(database.getMapper(M0RuntimeMapper.class).hasPendingEffect("missing-scope"))
-        .isFalse();
-    var scope = scope();
-    try (var owned = ExecutionGate.acquire(sessions, scope)) {
-      assertThatThrownBy(() -> ExecutionGate.acquire(sessions, scope))
-          .isInstanceOf(IllegalStateException.class)
-          .hasMessageContaining("already active");
+    @Test
+    void bootStartsAgainstMigratedPostgresAndExposesReadiness() {
+        var response = client.getForEntity("/actuator/health/readiness", String.class);
+        assertThat(response.getStatusCode().value()).isEqualTo(200);
+        assertThat(response.getBody()).contains("UP");
+        assertThat(database.getMapper(M0RuntimeMapper.class).hasPendingEffect("missing-scope"))
+                .isFalse();
+        var scope = scope();
+        try (var owned = ExecutionGate.acquire(sessions, scope)) {
+            assertThatThrownBy(() -> ExecutionGate.acquire(sessions, scope))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("already active");
+        }
+        try (var released = ExecutionGate.acquire(sessions, scope)) {
+            assertThat(released).isNotNull();
+        }
     }
-    try (var released = ExecutionGate.acquire(sessions, scope)) {
-      assertThat(released).isNotNull();
-    }
-  }
 }

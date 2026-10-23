@@ -1,0 +1,14 @@
+{
+  "action_hash": "1434a8145b8dc79dd41c6f809491a041caca6cbb0b0c0b8a3f1639fd36a8a736",
+  "canonical": "{\"a\":{\"a\":[\"second\",\"first\"],\"z\":false},\"numbers\":[1,1.0,1.2300,9223372036854775807],\"z\":null,\"中文\":\"上海😀\\n\\\"quoted\\\"\\\\path\"}",
+  "minimal_release_hash": "1509468a284745e10687f498aaccfd2b882b2887e5894b6bc3de2f4873ce954d",
+  "minimal_release_json": "{\"version\":\"minimal-fixture\",\"agent\":\"finance_agent\",\"scopes\":[],\"primary\":{\"name\":\"offline\",\"baseUrl\":\"\",\"inputLimit\":65536,\"window\":131072,\"outputReserve\":2048,\"margin\":512,\"thinking\":false},\"fallback\":null,\"maxModelCalls\":1,\"maxToolCalls\":1,\"business\":{\"remotes\":[],\"skillHash\":\"fixed\",\"marketJson\":\"{}\",\"ziwei\":null}}",
+  "namespace": "29bf487511b0759c1825e39d7230bc4d463af59549bffe104347426572e01ca3",
+  "parsed_canonical": "{\"a\":{\"a\":[\"second\",\"first\"],\"z\":false},\"numbers\":[1,1.0,1.23,9223372036854775807],\"z\":null,\"中文\":\"上海😀\\n\\\"quoted\\\"\\\\path\"}",
+  "payload_digest": "7fa6e8f3e40ad3b52011c49f86ca4d79fd6585b7bea0c8e999cc928c7b394e87",
+  "release_hash": "00d7f0f0f64443bdce5e8bd391c9d8b055c381d55de1211dd0d38274839b07e3",
+  "release_json": "{\"version\":\"serialization-fixture\",\"agent\":\"finance_agent\",\"scopes\":[\"ziwei:read\",\"artifact:read\"],\"primary\":{\"name\":\"qwen-fixture\",\"baseUrl\":\"https://model.example/v1\",\"inputLimit\":65536,\"window\":131072,\"outputReserve\":2048,\"margin\":512,\"thinking\":true},\"fallback\":{\"name\":\"offline\",\"baseUrl\":\"\",\"inputLimit\":65536,\"window\":131072,\"outputReserve\":2048,\"margin\":512,\"thinking\":false},\"maxModelCalls\":12,\"maxToolCalls\":32,\"business\":{\"remotes\":[{\"service\":\"hotel\",\"url\":\"https://hotel.example/mcp\",\"allowedHosts\":[\"hotel.example\"],\"credentialRef\":\"FIXTURE_CREDENTIAL\",\"external\":true,\"tenants\":[\"tenant-b\",\"tenant-a\"],\"tools\":[\"searchHotels\",\"getHotelDetail\"],\"timeoutMillis\":5000}],\"skillHash\":\"frozen-skill-hash\",\"marketJson\":\"{\\\"z\\\":1,\\\"a\\\":2}\",\"ziwei\":{\"convention\":\"financeclaw-ziwei-java-civil@1.0.0\",\"engine\":\"financeclaw-java/x-iztro-fixed-0.4.0/1\",\"calendar\":\"native-lunar-1.7.7/1\",\"tzdb\":\"2026b\",\"schemaHash\":\"d1995d5fd1ee7af28111d04a4e818696f023679e43681180ce92d530817d2ef4\",\"keyVersion\":\"fixture-v1\",\"keyRef\":\"FIXTURE_ZIWEI_KEY\",\"queryTimezone\":\"Asia/Shanghai\",\"maxSegments\":32,\"projectionBytes\":14000,\"artifactBytes\":2097152}}}",
+  "scope_key": "f3a80f9f14c7b289008ed806f95aa951fe7e6b1ef32c29dbe3d258bcebf531f3",
+  "session_id": "8f6080a651e91f9d8dffef9b75c3c0ad9d96b33031c5c5db763487f72d97e085",
+  "user_id": "3e67083e937aa3c94f6db3c29ed47c23bba22058738a4c788937aad5fc0903c9"
+}

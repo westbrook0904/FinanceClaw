@@ -8,9 +8,6 @@
       "model_calls": 4,
       "tool_calls": 2
     },
-    "outbox": {
-      "pending": 0
-    },
     "notifications": {
       "pending": 0,
       "sending": 0,
@@ -36,8 +33,7 @@
       "revision": 2
     },
     "counts": {
-      "queued": 1,
-      "pending_outbox": 0
+      "queued": 1
     },
     "drained": false
   },
@@ -51,9 +47,7 @@
         "revision": 7,
         "reason": null,
         "command_status": "blocked",
-        "pending_interactions": 1,
-        "uncertain_effects": 1,
-        "pending_outbox": 0
+        "pending_interactions": 1
       }
     ],
     "next_after": "t-1"

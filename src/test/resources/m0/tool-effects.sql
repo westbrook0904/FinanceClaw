@@ -1,4 +1,4 @@
--- Isolated M0 experiment fixture. Production migrations retire this table in V10.
+-- Isolated M0 experiment fixture. This probe table is not part of the application schema.
 CREATE TABLE agent_runtime.tool_effects (
     scope_key VARCHAR(64) NOT NULL,
     operation_id VARCHAR(128) NOT NULL,

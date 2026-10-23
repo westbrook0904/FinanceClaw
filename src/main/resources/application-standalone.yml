@@ -2,8 +2,6 @@ spring:
   flyway:
     enabled: false
 financeclaw:
-  deployment:
-    role: standalone
   worker:
     enabled: true
   integrations:

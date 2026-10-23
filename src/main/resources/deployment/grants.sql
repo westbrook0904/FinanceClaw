@@ -1,4 +1,4 @@
--- Roles are provisioned by the operator before this one-shot migration job.
+-- Roles are provisioned by the operator before this one-shot schema initialization.
 REVOKE CREATE ON SCHEMA public FROM PUBLIC;
 GRANT USAGE ON SCHEMA agent_runtime, business, memory, channel TO financeclaw_app;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA agent_runtime, business, memory, channel TO financeclaw_app;

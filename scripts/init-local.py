@@ -7,7 +7,7 @@ from pathlib import Path
 root = Path(__file__).resolve().parents[1]
 directory = root / '.secrets'
 directory.mkdir(mode=0o700, exist_ok=True)
-for name in ('db-admin', 'db-migrator', 'db-app', 'db-memory', 'api-token',
+for name in ('db-admin', 'db-schema', 'db-app', 'db-memory', 'api-token',
              'model-key', 'memory-model-key', 'embedding-key', 'ziwei-key', 'hotel-token', 'taibu-token',
              'feishu-secret', 'feishu-token', 'feishu-encrypt-key'):
     path = directory / name

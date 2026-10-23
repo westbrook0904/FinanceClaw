@@ -1,4 +1,4 @@
-name: Java migration and admission recovery
+name: Java application verification
 on: [push, pull_request]
 permissions:
   contents: read
@@ -36,6 +36,7 @@ jobs:
             target/surefire-reports/
             target/failsafe-reports/
             target/m*/
+            target/verification/
       - uses: actions/upload-artifact@v4
         with:
           name: application-jar

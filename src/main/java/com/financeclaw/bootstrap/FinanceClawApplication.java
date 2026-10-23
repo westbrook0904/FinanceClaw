@@ -6,18 +6,13 @@ import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.context.annotation.Import;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
+/** 应用主入口：HTTP、AgentScope 执行、SSE 和渠道投递共用一个业务进程。 */
 @SpringBootConfiguration
 @EnableAutoConfiguration
-@Import({
-  DeploymentAccess.class,
-  RoleConfiguration.Api.class,
-  RoleConfiguration.Worker.class,
-  RoleConfiguration.Integrations.class,
-  RoleConfiguration.Standalone.class
-})
+@Import(RoleConfiguration.Standalone.class)
 @EnableScheduling
 public class FinanceClawApplication {
-  public static void main(String[] args) {
-    SpringApplication.run(FinanceClawApplication.class, args);
-  }
+    public static void main(String[] args) {
+        SpringApplication.run(FinanceClawApplication.class, args);
+    }
 }

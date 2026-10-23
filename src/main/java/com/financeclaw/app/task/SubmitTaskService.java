@@ -11,86 +11,104 @@ import java.util.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
+/** 任务受理入口：在同一短事务内提交 Turn、权限快照、用户记忆版本及执行命令。会话锁阻止同会话重入，共享受理锁允许不同会话并行提交。 */
 @Service
 public class SubmitTaskService {
-  private final TaskAdmissionGateway db;
-  private final ExecutionPolicyGateway governance;
-  private final ExecutionRelease releases;
-  private final ExecutionMemory memory;
-  private final TransactionTemplate tx;
+    private static final int MAX_MESSAGE_CHARS = 32_000;
+    private final TaskAdmissionGateway db;
+    private final ExecutionPolicyGateway governance;
+    private final ExecutionRelease releases;
+    private final ExecutionMemory memory;
+    private final TransactionTemplate tx;
 
-  public SubmitTaskService(
-      TaskAdmissionGateway db,
-      ExecutionPolicyGateway governance,
-      ExecutionRelease releases,
-      ExecutionMemory memory,
-      TransactionTemplate tx) {
-    this.db = db;
-    this.governance = governance;
-    this.releases = releases;
-    this.memory = memory;
-    this.tx = tx;
-  }
+    public SubmitTaskService(
+            TaskAdmissionGateway db,
+            ExecutionPolicyGateway governance,
+            ExecutionRelease releases,
+            ExecutionMemory memory,
+            TransactionTemplate tx) {
+        this.db = db;
+        this.governance = governance;
+        this.releases = releases;
+        this.memory = memory;
+        this.tx = tx;
+    }
 
-  private static String id() {
-    return UUID.randomUUID().toString();
-  }
+    private static String id() {
+        return UUID.randomUUID().toString();
+    }
 
-  public String createConversation(Owner owner) {
-    String id = id();
-    tx.executeWithoutResult(
-        s -> {
-          db.createConversation(id, owner);
-          governance.ensureGrant(
-              id, PayloadJson.canonical(releases.require(releases.currentHash()).scopes()));
-        });
-    return id;
-  }
+    /** 创建用户独占的会话并初始化授权，两项写入共同提交，避免会话缺少权限行。 */
+    public String createConversation(Owner owner) {
+        String id = id();
+        tx.executeWithoutResult(
+                s -> {
+                    db.createConversation(id, owner);
+                    governance.ensureGrant(
+                            id,
+                            PayloadJson.canonical(
+                                    releases.require(releases.currentHash()).scopes()));
+                });
+        return id;
+    }
 
-  public Accepted submit(Owner owner, String conversation, String key, String message) {
-    new IdempotencyKey(key);
-    if (message == null || message.isBlank() || message.length() > 32000)
-      throw new Problem(422, "invalid_message");
-    String hash = ExecutionScope.hash(List.of(message));
-    return tx.execute(
-        s -> {
-          if (db.lockConversation(conversation, owner) == null) throw new Problem(404, "not_found");
-          Turn old = db.replay(conversation, key);
-          if (old != null) {
-            return old.replayAdmission(hash);
-          }
-          // Keep this shared row lock until admission commits. A pause waits for admitted writes,
-          // while independent conversations can still submit concurrently. Replays stay available.
-          db.ensureAdmission(owner);
-          if (db.admissionPaused(owner)) throw new Problem(503, "admission_paused");
-          if (db.active(conversation)) throw new Problem(409, "conversation_busy");
-          Turn t =
-              new Turn(
-                  id(),
-                  conversation,
-                  owner.tenant(),
-                  owner.subject(),
-                  key,
-                  hash,
-                  message,
-                  releases.currentHash(),
-                  "queued",
-                  1,
-                  null,
-                  null);
-          db.insertTurn(t);
-          memory.admit(t);
-          var grant = governance.lockGrant(conversation);
-          if (grant == null) throw new Problem(409, "grant_unavailable");
-          governance.insertPolicy(
-              t.id(),
-              grant.revision(),
-              PayloadJson.canonical(
-                  PayloadJson.scopes(grant.scopes()).stream()
-                      .filter(releases.require(t.releaseHash()).scopes()::contains)
-                      .toList()));
-          db.recordAdmission(t, id());
-          return t.accepted(false);
-        });
-  }
+    /** 受理任务并冻结执行身份。幂等回放先于暂停检查；只有全套任务、授权和记忆元数据提交后才可被 Worker 领取。 */
+    public Accepted submit(Owner owner, String conversation, String key, String message) {
+        new IdempotencyKey(key);
+        if (message == null || message.isBlank() || message.length() > MAX_MESSAGE_CHARS) {
+            throw new Problem(422, "invalid_message");
+        }
+        String hash = ExecutionScope.hash(List.of(message));
+        return tx.execute(
+                s -> {
+                    if (db.lockConversation(conversation, owner) == null) {
+                        throw new Problem(404, "not_found");
+                    }
+                    // 阶段一：先验证资源归属和幂等身份，已受理的请求在暂停后仍可读取原回执。
+                    Turn old = db.replay(conversation, key);
+                    if (old != null) {
+                        return old.replayAdmission(hash);
+                    }
+                    // 受理共享锁持有到提交；暂停必须等待已经受理的写入，而不同会话可以并行提交。
+                    db.ensureAdmission(owner);
+                    if (db.admissionPaused(owner)) {
+                        throw new Problem(503, "admission_paused");
+                    }
+                    if (db.active(conversation)) {
+                        throw new Problem(409, "conversation_busy");
+                    }
+                    Turn t =
+                            new Turn(
+                                    id(),
+                                    conversation,
+                                    owner.tenant(),
+                                    owner.subject(),
+                                    key,
+                                    hash,
+                                    message,
+                                    releases.currentHash(),
+                                    "queued",
+                                    1,
+                                    null,
+                                    null);
+                    // 阶段二：冻结本次执行的发布、记忆和权限版本，随后才创建可领取命令。
+                    db.insertTurn(t);
+                    memory.admit(t);
+                    var grant = governance.lockGrant(conversation);
+                    if (grant == null) {
+                        throw new Problem(409, "grant_unavailable");
+                    }
+                    governance.insertPolicy(
+                            t.id(),
+                            grant.revision(),
+                            PayloadJson.canonical(
+                                    PayloadJson.scopes(grant.scopes()).stream()
+                                            .filter(
+                                                    releases.require(t.releaseHash()).scopes()
+                                                            ::contains)
+                                            .toList()));
+                    db.recordAdmission(t, id());
+                    return t.accepted(false);
+                });
+    }
 }

@@ -3,19 +3,19 @@ package com.financeclaw.app.artifact.port;
 import com.financeclaw.domain.Governance.*;
 import com.financeclaw.domain.Task.Turn;
 
-/** Persistence required to archive and authorize a stored Artifact. */
+/** 产物存储边界：保存完整载荷及身份、权限元数据，读取时仍由应用层进行隐私和授权检查。 */
 public interface ArtifactGateway {
-  Artifact artifact(String id);
+    Artifact artifact(String id);
 
-  int insertArtifact(Artifact artifact);
+    int insertArtifact(Artifact artifact);
 
-  String artifactScope(String id);
+    String artifactScope(String id);
 
-  int setArtifactScope(String id, String scope);
+    int setArtifactScope(String id, String scope);
 
-  Policy policy(String turn);
+    Policy policy(String turn);
 
-  Turn turn(String id);
+    Turn turn(String id);
 
-  Grant lockGrant(String conversation);
+    Grant lockGrant(String conversation);
 }

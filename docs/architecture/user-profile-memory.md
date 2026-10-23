@@ -63,9 +63,9 @@ ETag 绑定认证 owner、epoch 和 revision。另一个用户的导出版本不
 
 ## 执行、并发和查询成本
 
-V9 新建 `memory.user_profiles`，只保留当前正文；`memory.owners.profile_revision` 是版本边界，`memory.sources.profile_revision` 记录每个 Turn 受理时的版本。自动证据关闭时仅写无正文的 `profile_only` source，不产生提取作业。画像不被复制到 source 或额外文档历史表。两层功能都关闭时仍保留最小隐私绑定和执行检查；开关停止注入与编辑，不能成为恢复旧资料的绕过路径。
+当前[新库初始化 SQL](../../src/main/resources/db/migration/V1__initialize_application.sql)直接创建 `memory.user_profiles`，只保留当前正文；`memory.owners.profile_revision` 是版本边界，`memory.sources.profile_revision` 记录每个 Turn 受理时的版本。自动证据关闭时仅写无正文的 `profile_only` source，不产生提取作业。画像不被复制到 source 或额外文档历史表。两层功能都关闭时仍保留最小隐私绑定和执行检查；开关停止注入与编辑，不能成为恢复旧资料的绕过路径。
 
-画像编辑、受理、遗忘及执行策略检查使用相同 owner 行锁。已排队、运行或等待审批的旧版本 Turn 在下一个受治理执行边界被 `profile_changed` 阻止；旧 checkpoint 不继续执行。用户需要提交新 Turn，已发出的模型请求无法撤回，但后续工具调用与结果完成仍需版本检查。画像修改后，历史问答只纳入同 epoch、同画像版本的记录，避免旧回答带回旧资料；画像变更不撤销已经归档结果的既有读取权限。
+受理对已存在的 owner 持 `FOR SHARE` 共享锁，允许同一用户的独立会话并发；画像编辑、遗忘及执行策略检查持 `FOR UPDATE` 排他锁。共享锁持续到受理事务提交，因此变更不能越过尚未提交的版本绑定。首次创建 owner 可能在唯一键上等待，不属于稳定用户的并行受理路径。已排队、运行或等待审批的旧版本 Turn 在下一个受治理执行边界被 `profile_changed` 阻止；旧 checkpoint 不继续执行。用户需要提交新 Turn，已发出的模型请求无法撤回，但后续工具调用与结果完成仍需版本检查。画像修改后，历史问答只纳入同 epoch、同画像版本的记录，避免旧回答带回旧资料；画像变更不撤销已经归档结果的既有读取权限。
 
 AgentScope `onSystemPrompt` 使用每个 attempt 读取一次的上下文，不把完整画像追加到 `AgentState.context`。模型回答仍可能包含画像派生信息，因此旧历史和恢复检查不可省略。预算先为画像、证据和当前消息留空间，再限制历史；最终主/备模型完整 HTTP 请求仍经过已有预算检查。不能容纳时明确失败，不截断手工画像。
 
@@ -80,15 +80,15 @@ AgentScope `onSystemPrompt` 使用每个 attempt 读取一次的上下文，不�
 | 历史过滤 | 一次 owner lock + 一次批量来源查询，不逐 Turn 查询 |
 | 每个 SSE 事件 / token | 不查询画像数据库 |
 
-## 遗忘、恢复与升级
+## 遗忘与备份恢复
 
 两条遗忘路径都清除画像正文并推进 epoch：普通事务路径和启用独立遗忘账本的恢复路径。账本只保存遗忘事实，不保存 Markdown。恢复重放只删除遗忘之前的画像，保留后来 epoch 的新画像；同时检查旧/未来 epoch、画像版本不一致和缺失文档等残留。仅开启画像时，遗忘完成同步清理后会自行清除 pending 标记，不依赖记忆 Worker；证据层启用时保留原有 Worker 完成流程。受限 Memory Worker 对画像表无读写权限，不能把提取结果写入人工文档。
 
 画像单独启用时，清除 pending 是遗忘提交后的第二个事务。若进程在两次提交之间崩溃，屏障会保留；使用原 epoch 和原 Idempotency-Key 重试同一遗忘请求，或通过隔离恢复流程完成清理，不应直接修改数据库标记。
 
-隐私快照协议升为 v2，增加画像残留检查；旧 v1 快照缺少这一检查，不能作为当前恢复验证通过的证据。旧备份需要在隔离状态完成 schema 迁移和遗忘重放，再开放业务访问。
+当前隐私快照协议为 v2，包含画像正文、epoch 和版本残留检查。备份恢复时保持业务隔离，核对独立遗忘账本、完成重放和残留核验后再开放访问。检查点或任务缺少受理绑定时必须拒绝执行，不能补写当前 epoch 规避隐私边界。
 
-V9 为从未发生遗忘的旧用户（owner epoch=1、无 pending、画像 revision=0）补无正文的版本绑定，保留其已有任务和归档访问，不触发历史提取。已遗忘或处于 pending 的用户不会自动补绑定；缺少绑定的旧执行、历史和受隐私保护的紫微归档会被拦截。不要给旧任务补写当前新 epoch 来绕过隐私边界；升级前应排空在途执行，并在隔离恢复环境验证历史结果的访问范围。
+独立应用只支持当前 V1 结构的新库初始化，不执行旧应用数据回填或跨版本升级。每个新 Turn 都在受理事务中写入自己的隐私和画像版本绑定；数据库初始化、隔离恢复的现行步骤见[运行说明](../operations.md)。
 
 服务端遗忘无法删除用户已经下载的本地文件。旧版本文件携带旧 epoch，直接上传会冲突；如果用户重新下载并主动粘贴旧资料，这是新的人工输入。请自行管理本地导出副本。
 
@@ -98,6 +98,6 @@ V9 为从未发生遗忘的旧用户（owner epoch=1、无 pending、画像 revi
 - [执行记忆与证据](../../src/main/java/com/financeclaw/app/memory/MemoryService.java)、[AgentScope 注入](../../src/main/java/com/financeclaw/infrastructure/agentscope/execution/TaskAgentRuntime.java)。
 - [遗忘恢复](../../src/main/java/com/financeclaw/infrastructure/memory/JdbcForgetRecoveryRepository.java)、[恢复快照](../../ops/restore-privacy-snapshot.sql)。
 
-画像初始批次验证（历史记录）：1026 项单元/HTTP/架构测试、1 项产品打包检查、10 项画像文件工作流测试、14 项隐私快照脚本测试通过；Spotless 与静态交付检查通过。完整 verify 在 Testcontainers 启动时被本机 Docker API 无响应阻断，PostgreSQL 测试尚未执行完成；Compose 仅完成两个静态拓扑检查，不能当作部署通过。当时已停止阻塞的测试客户端。详见[验证记录](evidence/user-profile-verification.json)。
+当前验证入口包括[画像 HTTP 契约](../../src/test/java/com/financeclaw/architecture/UserProfileHttpTest.java)、[上下文与版本边界](../../src/test/java/com/financeclaw/architecture/UserProfileContextTest.java)、[真实 PostgreSQL 画像并发](../../src/test/java/com/financeclaw/m4/UserProfileIT.java)、[画像隐私恢复](../../src/test/java/com/financeclaw/m5/ProfilePrivacyRepositoryIT.java)和[新库结构](../../src/test/java/com/financeclaw/m5/SchemaInitializationIT.java)。这些是可运行的覆盖入口，本说明不据此宣称当前构建已经通过完整 CI。
 
-真实数据库并发、授权及备份恢复仍待补验；本地模拟模型测试也不能替代真实模型的偏好遵循验收。后续 V10/V11 和 Mapper 改名已包含本功能，最新本地及远程验证状态见[本轮交付记录](evidence/schema-refactor-verification.json)。
+[最初画像验证记录](evidence/user-profile-verification.json)与[后续结构整理验证记录](evidence/schema-refactor-verification.json)保留各自当时的代码和环境范围，不代表这次 V1 初始化收敛、入口清理及编码规范调整已经完成复验。模拟模型也不能替代真实模型的偏好遵循验收。

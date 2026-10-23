@@ -5,20 +5,26 @@ import com.financeclaw.app.release.ReleaseService;
 import com.financeclaw.domain.ExecutionPolicy;
 import org.springframework.stereotype.Component;
 
+/**
+ * 实现 ExecutionRelease，将发布目录投影为执行所需的权限与调用预算。 通过明确 hash 查找固定发布，而非直接读取当前环境；发布缺失或不可执行时由 ReleaseService
+ * 阻断。该适配器不解析模型凭据。
+ */
 @Component
 public class CatalogExecutionRelease implements ExecutionRelease {
-  private final ReleaseService catalog;
+    private final ReleaseService catalog;
 
-  public CatalogExecutionRelease(ReleaseService catalog) {
-    this.catalog = catalog;
-  }
+    public CatalogExecutionRelease(ReleaseService catalog) {
+        this.catalog = catalog;
+    }
 
-  public String currentHash() {
-    return catalog.currentHash();
-  }
+    @Override
+    public String currentHash() {
+        return catalog.currentHash();
+    }
 
-  public ExecutionPolicy require(String hash) {
-    var r = catalog.require(hash);
-    return new ExecutionPolicy(r.scopes(), r.maxModelCalls(), r.maxToolCalls());
-  }
+    @Override
+    public ExecutionPolicy require(String hash) {
+        var r = catalog.require(hash);
+        return new ExecutionPolicy(r.scopes(), r.maxModelCalls(), r.maxToolCalls());
+    }
 }

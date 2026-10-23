@@ -17,46 +17,49 @@ import org.testcontainers.containers.PostgreSQLContainer;
 
 @Import(TaskFixture.class)
 @SpringBootTest(
-    classes = FinanceClawApplication.class,
-    properties = {
-      "financeclaw.worker.enabled=false",
-      "financeclaw.integrations.enabled=false",
-      "financeclaw.auth.token=m5-test-only"
-    })
+        classes = FinanceClawApplication.class,
+        properties = {
+            "financeclaw.worker.enabled=false",
+            "financeclaw.integrations.enabled=false",
+            "financeclaw.auth.token=m5-test-only"
+        })
 @AutoConfigureMockMvc
 class OperationsIT {
-  static final PostgreSQLContainer<?> PG = new PostgreSQLContainer<>("postgres:16.10-alpine");
+    static final PostgreSQLContainer<?> PG = new PostgreSQLContainer<>("postgres:16.10-alpine");
 
-  static {
-    PG.start();
-  }
+    static {
+        PG.start();
+    }
 
-  @DynamicPropertySource
-  static void database(DynamicPropertyRegistry r) {
-    r.add("spring.datasource.url", PG::getJdbcUrl);
-    r.add("spring.datasource.username", PG::getUsername);
-    r.add("spring.datasource.password", PG::getPassword);
-  }
+    @DynamicPropertySource
+    static void database(DynamicPropertyRegistry r) {
+        r.add("spring.datasource.url", PG::getJdbcUrl);
+        r.add("spring.datasource.username", PG::getUsername);
+        r.add("spring.datasource.password", PG::getPassword);
+    }
 
-  @Autowired MockMvc http;
-  @Autowired TaskFixture tasks;
+    @Autowired MockMvc http;
+    @Autowired TaskFixture tasks;
 
-  @Test
-  void operationsRequireAuthenticationAndOnlyCountTheCurrentOwnerWithoutContent() throws Exception {
-    var owner = new Owner("local", "developer");
-    var other = new Owner("another-tenant", "developer");
-    tasks.submit(owner, tasks.createConversation(owner), "mine", "private-owner-text");
-    tasks.submit(other, tasks.createConversation(other), "theirs", "other-private-text");
-    http.perform(get("/v1/operations")).andExpect(status().isUnauthorized());
-    http.perform(get("/v1/operations").header("Authorization", "Bearer m5-test-only"))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.tasks.turns").value(1))
-        .andExpect(jsonPath("$.tasks.queued").value(1))
-        .andExpect(jsonPath("$.calls.model_calls").value(0))
-        .andExpect(jsonPath("$.provider_cost").value("unavailable"))
-        .andExpect(
-            content()
-                .string(
-                    org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("private"))));
-  }
+    @Test
+    void operationsRequireAuthenticationAndOnlyCountTheCurrentOwnerWithoutContent()
+            throws Exception {
+        var owner = new Owner("local", "developer");
+        var other = new Owner("another-tenant", "developer");
+        tasks.submit(owner, tasks.createConversation(owner), "mine", "private-owner-text");
+        tasks.submit(other, tasks.createConversation(other), "theirs", "other-private-text");
+        http.perform(get("/v1/operations")).andExpect(status().isUnauthorized());
+        http.perform(get("/v1/operations").header("Authorization", "Bearer m5-test-only"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.tasks.turns").value(1))
+                .andExpect(jsonPath("$.tasks.queued").value(1))
+                .andExpect(jsonPath("$.calls.model_calls").value(0))
+                .andExpect(jsonPath("$.outbox").doesNotExist())
+                .andExpect(jsonPath("$.provider_cost").value("unavailable"))
+                .andExpect(
+                        content()
+                                .string(
+                                        org.hamcrest.Matchers.not(
+                                                org.hamcrest.Matchers.containsString("private"))));
+    }
 }

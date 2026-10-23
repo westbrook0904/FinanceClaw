@@ -46,7 +46,7 @@ class Fixture:
                                     pending_memory_jobs=2, pending_forget=1)
         self.items['turns'] = [{'id': 'turn-1', 'conversation_id': 'conversation-1', 'status': 'waiting',
             'revision': 4, 'reason': None, 'command_status': 'done', 'pending_interactions': 1,
-            'uncertain_effects': 0, 'pending_outbox': 0, 'message': 'secret-message'}]
+            'message': 'secret-message'}]
         self.items['notifications'] = [{'id': 'notice-1', 'conversation_id': 'conversation-1',
             'turn_id': 'turn-1', 'status': 'submitted_unverified', 'revision': 4, 'payload': 'secret-notice'}]
         self.items['memory_jobs'] = [{'id': str(n), 'kind': 'extract', 'status': 'pending', 'revision': 1,
@@ -124,7 +124,7 @@ class PreflightTest(unittest.TestCase):
 
     def test_matching_counts_at_both_ends_do_not_hide_missing_inventory(self):
         fixture = Fixture()
-        fixture.state['counts']['uncertain_effects'] = 1
+        fixture.state['counts']['active_commands'] = 1
         fixture.state['drained'] = False
         report = preflight.inspect(fixture.get)
         self.assertEqual(report['assessment'], 'incomplete')

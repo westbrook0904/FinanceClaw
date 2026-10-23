@@ -8,97 +8,119 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
-/** Scope-bound AgentScope adapter; MyBatis owns SQL mapping and connection management. */
+/**
+ * 绑定单个执行 scope 的 AgentScope 状态适配器。
+ *
+ * <p>先验证 SDK 传入的 user/session 与 scope 完全相同，再访问数据库；只持久化完整
+ * AgentState，并强制版本写入。状态保存只证明运行检查点已提交，业务完成仍需应用层 授权、租约和结果回执共同确认。SDK 接口中的非版本写入和列表状态不受支持。
+ */
 public class MyBatisAgentStateStore implements AgentStateStore {
-  private final RuntimeMapper mapper;
-  private final ExecutionScope scope;
+    private final RuntimeMapper mapper;
+    private final ExecutionScope scope;
 
-  public MyBatisAgentStateStore(RuntimeMapper mapper, ExecutionScope scope) {
-    this.mapper = mapper;
-    this.scope = scope;
-  }
+    public MyBatisAgentStateStore(RuntimeMapper mapper, ExecutionScope scope) {
+        this.mapper = mapper;
+        this.scope = scope;
+    }
 
-  private StateKey key(String user, String session, String key) {
-    if (!scope.userId().equals(user) || !scope.sessionId().equals(session))
-      throw new SecurityException("State identity does not match the bound execution scope");
-    if (key == null || key.isBlank() || key.length() > 128)
-      throw new IllegalArgumentException("Invalid state key");
-    return new StateKey(scope.namespace(), user, session, key);
-  }
+    private StateKey key(String user, String session, String key) {
+        if (!scope.userId().equals(user) || !scope.sessionId().equals(session)) {
+            throw new SecurityException("State identity does not match the bound execution scope");
+        }
+        if (key == null || key.isBlank() || key.length() > 128) {
+            throw new IllegalArgumentException("Invalid state key");
+        }
+        return new StateKey(scope.namespace(), user, session, key);
+    }
 
-  @Override
-  public boolean supportsVersioning() {
-    return true;
-  }
+    @Override
+    public boolean supportsVersioning() {
+        return true;
+    }
 
-  @Override
-  public <T extends State> VersionedState<T> getVersioned(
-      String user, String session, String key, Class<T> type) {
-    var row = mapper.getState(key(user, session, key));
-    if (row == null) return new VersionedState<>(null, 0);
-    // SDK treats absence as a fresh execution, so tombstones must fail before tool dispatch.
-    if (row.deleted())
-      throw new IllegalStateException("Execution state was deleted; use a new scope");
-    return new VersionedState<>(
-        JsonUtils.getJsonCodec().fromJson(row.payload(), type), row.version());
-  }
+    @Override
+    public <T extends State> VersionedState<T> getVersioned(
+            String user, String session, String key, Class<T> type) {
+        var row = mapper.getState(key(user, session, key));
+        if (row == null) {
+            return new VersionedState<>(null, 0);
+        }
+        // SDK treats absence as a fresh execution, so tombstones must fail before tool dispatch.
+        if (row.deleted()) {
+            throw new IllegalStateException("Execution state was deleted; use a new scope");
+        }
+        return new VersionedState<>(
+                JsonUtils.getJsonCodec().fromJson(row.payload(), type), row.version());
+    }
 
-  @Override
-  public <T extends State> Optional<T> get(String user, String session, String key, Class<T> type) {
-    return Optional.ofNullable(getVersioned(user, session, key, type).value());
-  }
+    @Override
+    public <T extends State> Optional<T> get(
+            String user, String session, String key, Class<T> type) {
+        return Optional.ofNullable(getVersioned(user, session, key, type).value());
+    }
 
-  @Override
-  public long saveIfVersion(String user, String session, String key, State value, long expected) {
-    var id = key(user, session, key);
-    if (!"agent_state".equals(key) || !(value instanceof AgentState))
-      throw new IllegalArgumentException("M0 only stores complete AgentState snapshots");
-    if (expected < 0) throw new IllegalArgumentException("Unversioned runtime writes are disabled");
-    String json = JsonUtils.getJsonCodec().toJson(value);
-    int changed =
-        expected == 0
-            ? mapper.insertStateIfAbsent(id, json)
-            : mapper.updateStateByExpectedVersion(id, json, expected);
-    return changed == 1 ? expected + 1 : UNVERSIONED;
-  }
+    /**
+     * 只保存完整 AgentState；版本 0 使用唯一键创建，其余使用 expected version CAS。
+     *
+     * @return 新版本；未命中时返回 SDK UNVERSIONED 冲突标记，由 ConflictPolicy.FAIL 停止覆盖
+     */
+    @Override
+    public long saveIfVersion(String user, String session, String key, State value, long expected) {
+        var id = key(user, session, key);
+        if (!"agent_state".equals(key) || !(value instanceof AgentState)) {
+            throw new IllegalArgumentException("Runtime stores complete AgentState snapshots only");
+        }
+        if (expected < 0) {
+            throw new IllegalArgumentException("Unversioned runtime writes are disabled");
+        }
+        String json = JsonUtils.getJsonCodec().toJson(value);
+        int changed =
+                expected == 0
+                        ? mapper.insertStateIfAbsent(id, json)
+                        : mapper.updateStateByExpectedVersion(id, json, expected);
+        return changed == 1 ? expected + 1 : UNVERSIONED;
+    }
 
-  @Override
-  public void save(String user, String session, String key, State value) {
-    throw new UnsupportedOperationException("Use versioned writes and ConflictPolicy.FAIL");
-  }
+    @Override
+    public void save(String user, String session, String key, State value) {
+        throw new UnsupportedOperationException("Use versioned writes and ConflictPolicy.FAIL");
+    }
 
-  @Override
-  public void save(String user, String session, String key, List<? extends State> values) {
-    throw new UnsupportedOperationException(
-        "Legacy list state is not a FinanceClaw runtime format");
-  }
+    @Override
+    public void save(String user, String session, String key, List<? extends State> values) {
+        throw new UnsupportedOperationException(
+                "Runtime does not support list state; use a complete AgentState snapshot");
+    }
 
-  @Override
-  public <T extends State> List<T> getList(String user, String session, String key, Class<T> type) {
-    var row = mapper.getState(key(user, session, key));
-    if (row != null && !row.deleted())
-      throw new IllegalStateException("Legacy list state requires explicit migration");
-    return List.of();
-  }
+    @Override
+    public <T extends State> List<T> getList(
+            String user, String session, String key, Class<T> type) {
+        var row = mapper.getState(key(user, session, key));
+        if (row != null && !row.deleted()) {
+            throw new IllegalStateException(
+                    "Runtime stores a single AgentState snapshot, not list state");
+        }
+        return List.of();
+    }
 
-  @Override
-  public boolean exists(String user, String session) {
-    var row = mapper.getState(key(user, session, "agent_state"));
-    return row != null && !row.deleted();
-  }
+    @Override
+    public boolean exists(String user, String session) {
+        var row = mapper.getState(key(user, session, "agent_state"));
+        return row != null && !row.deleted();
+    }
 
-  @Override
-  public void delete(String user, String session, String key) {
-    mapper.insertOrUpdateStateTombstone(key(user, session, key));
-  }
+    @Override
+    public void delete(String user, String session, String key) {
+        mapper.insertOrUpdateStateTombstone(key(user, session, key));
+    }
 
-  @Override
-  public void delete(String user, String session) {
-    delete(user, session, "agent_state");
-  }
+    @Override
+    public void delete(String user, String session) {
+        delete(user, session, "agent_state");
+    }
 
-  @Override
-  public Set<String> listSessionIds(String user) {
-    return exists(user, scope.sessionId()) ? Set.of(scope.sessionId()) : Set.of();
-  }
+    @Override
+    public Set<String> listSessionIds(String user) {
+        return exists(user, scope.sessionId()) ? Set.of(scope.sessionId()) : Set.of();
+    }
 }

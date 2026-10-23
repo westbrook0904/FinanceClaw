@@ -10,66 +10,74 @@ import java.util.function.Supplier;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
-/** Command is always locked before Turn. The fence and each write share one Spring transaction. */
+/** 执行租约与 fencing 边界：命令锁决定当前执行尝试，短事务中的状态写入必须验证租约，过期执行不能续活或提交结果。 */
 @Service
 public class ExecutionLeaseService {
-  private final CommandGateway db;
-  private final TaskMutationGateway turns;
-  private final TaskQueryGateway reads;
-  private final TaskTransitionService transitions;
-  private final TransactionTemplate tx;
+    private final CommandGateway db;
+    private final TaskMutationGateway turns;
+    private final TaskQueryGateway reads;
+    private final TaskTransitionService transitions;
+    private final TransactionTemplate tx;
 
-  public ExecutionLeaseService(
-      CommandGateway db,
-      TaskMutationGateway turns,
-      TaskQueryGateway reads,
-      TaskTransitionService transitions,
-      TransactionTemplate tx) {
-    this.db = db;
-    this.turns = turns;
-    this.reads = reads;
-    this.transitions = transitions;
-    this.tx = tx;
-  }
+    public ExecutionLeaseService(
+            CommandGateway db,
+            TaskMutationGateway turns,
+            TaskQueryGateway reads,
+            TaskTransitionService transitions,
+            TransactionTemplate tx) {
+        this.db = db;
+        this.turns = turns;
+        this.reads = reads;
+        this.transitions = transitions;
+        this.tx = tx;
+    }
 
-  private static String id() {
-    return UUID.randomUUID().toString();
-  }
+    private static String id() {
+        return UUID.randomUUID().toString();
+    }
 
-  public Claim claim(String worker, long leaseMillis) {
-    return tx.execute(
-        s -> {
-          Command c = db.nextCommand();
-          if (c == null) return null;
-          Turn t = turns.lockTurn(c.turnId());
-          t.requireClaimable();
-          db.claim(c.id(), id(), worker, leaseMillis);
-          c = db.lockCommand(c.id());
-          db.insertAttempt(c);
-          transitions.change(t, "running", null, null);
-          return new Claim(c, reads.turn(t.id()));
-        });
-  }
+    public Claim claim(String worker, long leaseMillis) {
+        return tx.execute(
+                s -> {
+                    Command c = db.nextCommand();
+                    if (c == null) {
+                        return null;
+                    }
+                    Turn t = turns.lockTurn(c.turnId());
+                    t.requireClaimable();
+                    db.claim(c.id(), id(), worker, leaseMillis);
+                    c = db.lockCommand(c.id());
+                    db.insertAttempt(c);
+                    transitions.change(t, "running", null, null);
+                    return new Claim(c, reads.turn(t.id()));
+                });
+    }
 
-  private void current(Claim claim) {
-    claim.requireCurrent(db.lockCommand(claim.command().id()));
-  }
+    private void current(Claim claim) {
+        claim.requireCurrent(db.lockCommand(claim.command().id()));
+    }
 
-  public <T> T fenced(Claim claim, Supplier<T> action) {
-    return tx.execute(
-        s -> {
-          current(claim);
-          return action.get();
-        });
-  }
+    /** 建立执行栅栏短事务；动作执行前验证当前租约和尝试编号，禁止将模型或远程调用放入此事务。 */
+    public <T> T fenced(Claim claim, Supplier<T> action) {
+        return tx.execute(
+                s -> {
+                    current(claim);
+                    return action.get();
+                });
+    }
 
-  public boolean heartbeat(Claim claim, long leaseMillis) {
-    if (leaseMillis <= 0) throw new IllegalArgumentException("Invalid lease duration");
-    return tx.execute(
-        s -> {
-          Boolean cancelling = db.renew(claim, leaseMillis);
-          if (cancelling == null) throw new Fenced();
-          return cancelling;
-        });
-  }
+    /** 续期当前执行租约并返回取消状态；数据库在取得锁后判断租约有效性，不能复活已经过期的执行。 */
+    public boolean heartbeat(Claim claim, long leaseMillis) {
+        if (leaseMillis <= 0) {
+            throw new IllegalArgumentException("Invalid lease duration");
+        }
+        return tx.execute(
+                s -> {
+                    Boolean cancelling = db.renew(claim, leaseMillis);
+                    if (cancelling == null) {
+                        throw new Fenced();
+                    }
+                    return cancelling;
+                });
+    }
 }

@@ -1,0 +1,59 @@
+{
+  "recorded_at_utc": "2026-10-23T03:17:25.897474+00:00",
+  "record_type": "local pre-push snapshot; Actions records remote database and deployment verification for the final commit",
+  "application": "Standalone FinanceClaw Java / AgentScope",
+  "schema": {
+    "main_tables": 34,
+    "main_initialization_files": 1,
+    "independent_ledger_tables": 2,
+    "historical_upgrade_paths": false,
+    "report_publication": "complete entity and exact receipt in one atomic insert; no report status or partial rows"
+  },
+  "removed_compatibility": [
+    "historical SQL V1-V11 upgrade sequence and backfill tests",
+    "split API/Worker/Integrations deployment profiles and migrate entrypoint",
+    "Outbox and historical uncertain-report API fields",
+    "old field-default constructors and per-request-type JSON converter chain",
+    "old compiled-implementation byte-parity requirements",
+    "calendar month patches and external Python export scripts"
+  ],
+  "java_style": {
+    "reference": "https://alibaba.github.io/Alibaba-Java-Coding-Guidelines/",
+    "formatter": "Spotless google-java-format AOSP, four spaces, unused imports removed",
+    "documented_top_level_types": 202,
+    "missing_top_level_type_documentation": 0,
+    "control_flow": "AST-inserted braces",
+    "overrides": "compiler-resolved @Override annotations"
+  },
+  "current_contracts": {
+    "http": "strict types; duplicate keys and trailing values rejected",
+    "memory": "manual Markdown profile and evidence remain separate; shared admission lock preserves profile/forget writer barrier",
+    "runtime": "single business JVM, restricted memory worker, one-shot schema initialization and isolated privacy recovery"
+  },
+  "unit_http_architecture": {
+    "tests": 950,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "scripts": {
+    "live_acceptance": 8,
+    "drain": 12,
+    "privacy": 14,
+    "profile": 10,
+    "failures": 0
+  },
+  "local_postgres_compose": "not run; Docker API timed out after six seconds; remote CI used for isolated PostgreSQL/Compose",
+  "validation_limits": [
+    "No production schema or data was changed.",
+    "No real model, MCP vendor or Feishu tenant was certified.",
+    "Calendar now follows pinned lunar 1.7.7; 2394 unchanged independent full-chart samples remain, with native-date/round-trip and affected-boundary invariants replacing old compatibility corrections."
+  ],
+  "remote_ci": "pending push",
+  "runtime_packaging": {
+    "tests": 1,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  }
+}

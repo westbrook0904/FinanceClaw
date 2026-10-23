@@ -12,48 +12,56 @@ import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Mono;
 
 class AgentFactoryTest {
-  @Test
-  void rejectsLegacyToolsAndPoliciesThatBypassThePermissionEngine() {
-    var model = ProbeFixtures.scripted("legacy", "");
-    var toolkit = new Toolkit();
-    toolkit.registerAgentTool(
-        new AgentTool() {
-          public String getName() {
-            return "legacy";
-          }
+    @Test
+    void rejectsLegacyToolsAndPoliciesThatBypassThePermissionEngine() {
+        var model = ProbeFixtures.scripted("legacy", "");
+        var toolkit = new Toolkit();
+        toolkit.registerAgentTool(
+                new AgentTool() {
+                    public String getName() {
+                        return "legacy";
+                    }
 
-          public String getDescription() {
-            return "SDK legacy interface bypasses rule evaluation";
-          }
+                    public String getDescription() {
+                        return "SDK legacy interface bypasses rule evaluation";
+                    }
 
-          public Map<String, Object> getParameters() {
-            return Map.of("type", "object");
-          }
+                    public Map<String, Object> getParameters() {
+                        return Map.of("type", "object");
+                    }
 
-          public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
-            throw new AssertionError("Must never execute");
-          }
-        });
-    assertThatThrownBy(
-            () ->
-                IsolatedAgentFactory.create(
-                    model, toolkit, null, ProbeFixtures.permissions("legacy", true)))
-        .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageContaining("ToolBase");
-    assertThatThrownBy(
-            () ->
-                IsolatedAgentFactory.create(
-                    model, new Toolkit(), null, PermissionContextState.builder().build()))
-        .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageContaining("explicit non-bypass");
-    assertThatThrownBy(
-            () ->
-                IsolatedAgentFactory.create(
-                    model,
-                    new Toolkit(),
-                    null,
-                    PermissionContextState.builder().mode(PermissionMode.BYPASS).build()))
-        .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageContaining("explicit non-bypass");
-  }
+                    public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
+                        throw new AssertionError("Must never execute");
+                    }
+                });
+        assertThatThrownBy(
+                        () ->
+                                IsolatedAgentFactory.create(
+                                        model,
+                                        toolkit,
+                                        null,
+                                        ProbeFixtures.permissions("legacy", true)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("ToolBase");
+        assertThatThrownBy(
+                        () ->
+                                IsolatedAgentFactory.create(
+                                        model,
+                                        new Toolkit(),
+                                        null,
+                                        PermissionContextState.builder().build()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("explicit non-bypass");
+        assertThatThrownBy(
+                        () ->
+                                IsolatedAgentFactory.create(
+                                        model,
+                                        new Toolkit(),
+                                        null,
+                                        PermissionContextState.builder()
+                                                .mode(PermissionMode.BYPASS)
+                                                .build()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("explicit non-bypass");
+    }
 }

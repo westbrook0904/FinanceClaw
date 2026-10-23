@@ -12,47 +12,47 @@ import org.springframework.stereotype.Component;
 /** Assembly for the migrated market, portfolio and Ziwei capabilities. */
 @Component
 public class BusinessCapabilities {
-  private final MarketDataService market;
-  private final PortfolioReviewService portfolio;
-  private final MarketResearchService research;
-  private final ExecutionPolicyService policies;
-  private final ExecutionLeaseService leases;
-  private final RuntimeMapper states;
-  private final com.financeclaw.app.ziwei.ZiweiService ziwei;
+    private final MarketDataService market;
+    private final PortfolioReviewService portfolio;
+    private final MarketResearchService research;
+    private final ExecutionPolicyService policies;
+    private final ExecutionLeaseService leases;
+    private final RuntimeMapper states;
+    private final com.financeclaw.app.ziwei.ZiweiService ziwei;
 
-  public BusinessCapabilities(
-      MarketDataService market,
-      PortfolioReviewService portfolio,
-      MarketResearchService research,
-      ExecutionPolicyService policies,
-      ExecutionLeaseService leases,
-      RuntimeMapper states,
-      com.financeclaw.app.ziwei.ZiweiService ziwei) {
-    this.market = market;
-    this.portfolio = portfolio;
-    this.research = research;
-    this.policies = policies;
-    this.leases = leases;
-    this.states = states;
-    this.ziwei = ziwei;
-  }
+    public BusinessCapabilities(
+            MarketDataService market,
+            PortfolioReviewService portfolio,
+            MarketResearchService research,
+            ExecutionPolicyService policies,
+            ExecutionLeaseService leases,
+            RuntimeMapper states,
+            com.financeclaw.app.ziwei.ZiweiService ziwei) {
+        this.market = market;
+        this.portfolio = portfolio;
+        this.research = research;
+        this.policies = policies;
+        this.leases = leases;
+        this.states = states;
+        this.ziwei = ziwei;
+    }
 
-  public void contribute(
-      Claim claim, Model model, boolean workflow, ToolContribution.Registrar registrar) {
-    new MarketToolContribution(
-            policies,
-            market,
-            new MarketResearchAgent(research, leases, states, claim, model),
-            claim)
-        .contribute(registrar);
-    new PortfolioToolContribution(portfolio, claim, workflow).contribute(registrar);
-  }
+    public void contribute(
+            Claim claim, Model model, boolean workflow, ToolContribution.Registrar registrar) {
+        new MarketToolContribution(
+                        policies,
+                        market,
+                        new MarketResearchAgent(research, leases, states, claim, model),
+                        claim)
+                .contribute(registrar);
+        new PortfolioToolContribution(portfolio, claim, workflow).contribute(registrar);
+    }
 
-  public void ziwei(Claim claim, ToolContribution.Registrar registrar) {
-    new ZiweiToolContribution(ziwei, claim).contribute(registrar);
-  }
+    public void ziwei(Claim claim, ToolContribution.Registrar registrar) {
+        new ZiweiToolContribution(ziwei, claim).contribute(registrar);
+    }
 
-  public Model portfolioDriver(Claim claim) {
-    return new PortfolioDriver(portfolio, claim);
-  }
+    public Model portfolioDriver(Claim claim) {
+        return new PortfolioDriver(portfolio, claim);
+    }
 }

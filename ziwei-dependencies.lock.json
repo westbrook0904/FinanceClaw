@@ -15,8 +15,7 @@
     },
     "license_path": "src/main/resources/META-INF/licenses/lunar-1.7.7.txt",
     "license_sha256": "d9210caf1844dcf410095cea464b79800aad30dbd49df092076b9f0ddc015404",
-    "compatibility_rules": "x-iztro-0.4.0-calendar-compat/1",
-    "native_difference_days": 60
+    "calendar_rules": "native-lunar-1.7.7/1"
   },
   "algorithm_reference": {
     "repository": "https://github.com/x-haose/x-iztro",

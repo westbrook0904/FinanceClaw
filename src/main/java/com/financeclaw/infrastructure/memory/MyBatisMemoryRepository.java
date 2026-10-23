@@ -8,173 +8,219 @@ import com.financeclaw.domain.memory.UserProfile;
 import java.util.List;
 import org.springframework.stereotype.Component;
 
+/**
+ * 实现 MemoryRepository，把画像、证据和作业端口映射到 MemoryMapper。
+ * 受理共享锁与修改排他锁分别委托，事务由调用用例持有；空批量来源查询直接返回空列表。向量对象在此编码为数据库数组文本，不将可重建索引提升为记忆权威。
+ */
 @Component
 public class MyBatisMemoryRepository implements MemoryRepository {
-  private final MemoryMapper db;
+    private final MemoryMapper db;
 
-  public MyBatisMemoryRepository(MemoryMapper db) {
-    this.db = db;
-  }
+    public MyBatisMemoryRepository(MemoryMapper db) {
+        this.db = db;
+    }
 
-  public void ensure(Owner owner) {
-    db.insertOwnerIfAbsent(owner);
-  }
+    @Override
+    public void ensure(Owner owner) {
+        db.insertOwnerIfAbsent(owner);
+    }
 
-  public Privacy lock(Owner owner) {
-    return db.getOwnerPrivacyForUpdate(owner);
-  }
+    @Override
+    public Privacy lock(Owner owner) {
+        return db.getOwnerPrivacyForUpdate(owner);
+    }
 
-  public Privacy lockForAdmission(Owner owner) {
-    return db.getOwnerPrivacyForShare(owner);
-  }
+    @Override
+    public Privacy lockForAdmission(Owner owner) {
+        return db.getOwnerPrivacyForShare(owner);
+    }
 
-  public UserProfile userProfile(Owner owner) {
-    return db.getUserProfile(owner);
-  }
+    @Override
+    public UserProfile userProfile(Owner owner) {
+        return db.getUserProfile(owner);
+    }
 
-  public int advanceProfile(Owner owner, long epoch, long revision) {
-    return db.updateProfileRevisionByEpochAndExpectedRevision(owner, epoch, revision);
-  }
+    @Override
+    public int advanceProfile(Owner owner, long epoch, long revision) {
+        return db.updateProfileRevisionByEpochAndExpectedRevision(owner, epoch, revision);
+    }
 
-  public void saveUserProfile(Owner owner, UserProfile profile) {
-    db.insertOrUpdateUserProfile(owner, profile);
-  }
+    @Override
+    public void saveUserProfile(Owner owner, UserProfile profile) {
+        db.insertOrUpdateUserProfile(owner, profile);
+    }
 
-  public void eraseProfile(Owner owner) {
-    db.deleteUserProfile(owner);
-  }
+    @Override
+    public void eraseProfile(Owner owner) {
+        db.deleteUserProfile(owner);
+    }
 
-  public void source(Source source) {
-    db.insertSource(source);
-  }
+    @Override
+    public void source(Source source) {
+        db.insertSource(source);
+    }
 
-  public Source sourceById(String id) {
-    return db.getSourceById(id);
-  }
+    @Override
+    public Source sourceById(String id) {
+        return db.getSourceById(id);
+    }
 
-  public List<String> currentSources(
-      Owner owner, long epoch, long profileRevision, List<String> ids) {
-    if (ids.isEmpty()) return List.of();
-    return db.listCurrentSourceIds(owner, epoch, profileRevision, ids);
-  }
+    @Override
+    public List<String> currentSources(
+            Owner owner, long epoch, long profileRevision, List<String> ids) {
+        if (ids.isEmpty()) {
+            return List.of();
+        }
+        return db.listCurrentSourceIds(owner, epoch, profileRevision, ids);
+    }
 
-  public int ready(String id) {
-    return db.updateAdmittedSourcePending(id);
-  }
+    @Override
+    public int ready(String id) {
+        return db.updateAdmittedSourcePending(id);
+    }
 
-  public void extractJob(String id) {
-    db.insertExtractJobIfAbsent(id);
-  }
+    @Override
+    public void extractJob(String id) {
+        db.insertExtractJobIfAbsent(id);
+    }
 
-  public void freeze(String turn, Owner owner, long epoch) {
-    db.insertFrozenRecallFacts(turn, owner, epoch);
-  }
+    @Override
+    public void freeze(String turn, Owner owner, long epoch) {
+        db.insertFrozenRecallFacts(turn, owner, epoch);
+    }
 
-  public List<Fact> recall(String turn, Owner owner) {
-    return db.listFrozenRecallFacts(turn, owner);
-  }
+    @Override
+    public List<Fact> recall(String turn, Owner owner) {
+        return db.listFrozenRecallFacts(turn, owner);
+    }
 
-  public List<Fact> list(Owner owner) {
-    return db.listVisibleFacts(owner);
-  }
+    @Override
+    public List<Fact> list(Owner owner) {
+        return db.listVisibleFacts(owner);
+    }
 
-  public Fact fact(String id) {
-    return db.getFactById(id);
-  }
+    @Override
+    public Fact fact(String id) {
+        return db.getFactById(id);
+    }
 
-  public boolean newerActive(Fact fact) {
-    return db.existsNewerActiveFact(fact);
-  }
+    @Override
+    public boolean newerActive(Fact fact) {
+        return db.existsNewerActiveFact(fact);
+    }
 
-  public List<Fact> active(Owner owner) {
-    return db.listActiveFacts(owner);
-  }
+    @Override
+    public List<Fact> active(Owner owner) {
+        return db.listActiveFacts(owner);
+    }
 
-  public int insertFact(Fact fact) {
-    return db.insertFactIfAbsent(fact);
-  }
+    @Override
+    public int insertFact(Fact fact) {
+        return db.insertFactIfAbsent(fact);
+    }
 
-  public void supersede(Fact fact) {
-    db.updateActiveFactsSuperseded(fact);
-  }
+    @Override
+    public void supersede(Fact fact) {
+        db.updateActiveFactsSuperseded(fact);
+    }
 
-  public void status(String id, String status) {
-    db.updateFactStatus(id, status);
-  }
+    @Override
+    public void status(String id, String status) {
+        db.updateFactStatus(id, status);
+    }
 
-  public void indexJob(String id, String model) {
-    db.insertOrRequeueIndexJob(id, model);
-  }
+    @Override
+    public void indexJob(String id, String model) {
+        db.insertOrRequeueIndexJob(id, model);
+    }
 
-  public Job claimJob(String token) {
-    return db.updateNextJobLease(token);
-  }
+    @Override
+    public Job claimJob(String token) {
+        return db.updateNextJobLease(token);
+    }
 
-  public Job job(long id) {
-    return db.getJobForUpdate(id);
-  }
+    @Override
+    public Job job(long id) {
+        return db.getJobForUpdate(id);
+    }
 
-  public boolean hasLiveJobLease(Job job) {
-    return db.getJobLeaseLiveForUpdate(job);
-  }
+    @Override
+    public boolean hasLiveJobLease(Job job) {
+        return db.getJobLeaseLiveForUpdate(job);
+    }
 
-  public void finish(Job job, String status, String error) {
-    db.updateRunningJobOutcomeByLeaseToken(job, status, error);
-  }
+    @Override
+    public void finish(Job job, String status, String error) {
+        db.updateRunningJobOutcomeByLeaseToken(job, status, error);
+    }
 
-  public void extracted(String id) {
-    db.updatePendingSourceExtracted(id);
-  }
+    @Override
+    public void extracted(String id) {
+        db.updatePendingSourceExtracted(id);
+    }
 
-  public void project(Fact fact, String model, EmbeddingVector vector) {
-    db.insertOrUpdateFactProjection(fact, model, MemoryVectorCodec.array(vector));
-  }
+    @Override
+    public void project(Fact fact, String model, EmbeddingVector vector) {
+        db.insertOrUpdateFactProjection(fact, model, MemoryVectorCodec.array(vector));
+    }
 
-  public List<Fact> search(Owner owner, String model, EmbeddingVector vector) {
-    return db.listSimilarActiveFacts(owner, model, MemoryVectorCodec.query(vector));
-  }
+    @Override
+    public List<Fact> search(Owner owner, String model, EmbeddingVector vector) {
+        return db.listSimilarActiveFacts(owner, model, MemoryVectorCodec.query(vector));
+    }
 
-  public Operation operation(Owner owner, String key) {
-    return db.getOperationByIdempotencyKey(owner, key);
-  }
+    @Override
+    public Operation operation(Owner owner, String key) {
+        return db.getOperationByIdempotencyKey(owner, key);
+    }
 
-  public void recordOperation(Owner owner, String key, String hash, String result) {
-    db.insertOperationReceipt(owner, key, hash, result);
-  }
+    @Override
+    public void recordOperation(Owner owner, String key, String hash, String result) {
+        db.insertOperationReceipt(owner, key, hash, result);
+    }
 
-  public void audit(Owner owner, long epoch, String action, String target) {
-    db.insertAuditEntry(owner, epoch, action, target);
-  }
+    @Override
+    public void audit(Owner owner, long epoch, String action, String target) {
+        db.insertAuditEntry(owner, epoch, action, target);
+    }
 
-  public void forget(Owner owner) {
-    db.updateOwnerPrivacyForForget(owner);
-  }
+    @Override
+    public void forget(Owner owner) {
+        db.updateOwnerPrivacyForForget(owner);
+    }
 
-  public void eraseSources(Owner owner) {
-    db.updateSourcesForgotten(owner);
-  }
+    @Override
+    public void eraseSources(Owner owner) {
+        db.updateSourcesForgotten(owner);
+    }
 
-  public void eraseFacts(Owner owner) {
-    db.updateFactsForgotten(owner);
-  }
+    @Override
+    public void eraseFacts(Owner owner) {
+        db.updateFactsForgotten(owner);
+    }
 
-  public void eraseIndex(Owner owner) {
-    db.deleteFactProjections(owner);
-  }
+    @Override
+    public void eraseIndex(Owner owner) {
+        db.deleteFactProjections(owner);
+    }
 
-  public void eraseRecalls(Owner owner) {
-    db.deleteFrozenRecalls(owner);
-  }
+    @Override
+    public void eraseRecalls(Owner owner) {
+        db.deleteFrozenRecalls(owner);
+    }
 
-  public void eraseJobs(Owner owner) {
-    db.updateJobsForgotten(owner);
-  }
+    @Override
+    public void eraseJobs(Owner owner) {
+        db.updateJobsForgotten(owner);
+    }
 
-  public Privacy purge() {
-    return db.getNextPurgeOwnerForUpdateSkipLocked();
-  }
+    @Override
+    public Privacy purge() {
+        return db.getNextPurgeOwnerForUpdateSkipLocked();
+    }
 
-  public int purged(Owner owner) {
-    return db.updateOwnerPurgeCompleted(owner);
-  }
+    @Override
+    public int purged(Owner owner) {
+        return db.updateOwnerPurgeCompleted(owner);
+    }
 }

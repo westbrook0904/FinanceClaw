@@ -1,160 +1,72 @@
 # FinanceClaw Java
 
-FinanceClaw 从 Python / LangChain / LangGraph 迁移到 **Java / AgentScope Java** 的目标项目。
+基于 Java 21、Spring Boot 和 AgentScope Java 的独立 Agent 应用。它提供持久任务、受治理工具执行、人工确认、结果归档、手工用户画像和跨会话证据记忆。默认离线运行，不依赖 Python 应用或其历史数据。
 
-Java 工程维护在 [codex/java-agentscope 分支](https://github.com/westbrook0904/FinanceClaw/tree/codex/java-agentscope)，保留完整 Java 提交历史。可单独克隆：
+HTTP API、AgentScope 执行、SSE、恢复与飞书投递运行在一个 JVM。受限 Memory Worker、新库初始化和离线隐私恢复各有独立入口。工程使用单个 Maven 模块，当前部署保持一个业务副本。
+
+## 能力与边界
+
+- 任务受理具有幂等键、主体归属和持久命令；执行使用租约 token、检查点、取消与恢复围栏。
+- 工具调用保留授权版本、动作绑定和人工确认；报告与精确回执一次事务写入，归档结果按主体和权限读取。
+- SSE 使用同进程事件推送，重连按持久游标回放，空闲连接不轮询数据库。
+- 用户画像通过 `profile.md` 手工维护，带 ETag 和隐私版本；证据记忆独立保存来源、确认状态和向量投影。
+- 酒店/Taibu MCP、调酒 Skill、市场研究子 Agent、固定投资组合工作流和紫微工具通过原生 AgentScope 能力接入。真实供应商、飞书租户与生产容量需要另行验收；紫微继续保留开发启用门禁。
+- 备份恢复前核对独立遗忘事实，阻止旧备份重新引入已遗忘资料。该机制服务于当前应用恢复，不是历史系统迁移。
+
+数据库从[单一 V1](src/main/resources/db/migration/V1__initialize_application.sql)直接创建 34 张应用表。不提供历史库导入、版本升级回填或旧接口空值兼容。Flyway 仅记录当前初始化；详见[新库初始化](docs/architecture/fresh-schema.md)。
+
+## 本地启动
+
+需要 Docker、Python 3.12+（工具链安装和验收脚本）及 curl。运行镜像和业务逻辑不依赖 Python；构建脚本使用锁定的 Java 21 和 Maven 版本。
 
 ```bash
-git clone --branch codex/java-agentscope --single-branch https://github.com/westbrook0904/FinanceClaw.git FinanceClaw-java
+python3 scripts/bootstrap-jdk.py
+python3 scripts/init-local.py
+scripts/mvn.sh -B -ntp clean package -DskipTests
+docker compose up -d --build --wait --wait-timeout 180
+curl --fail http://localhost:8080/actuator/health/readiness
 ```
 
-下文和各批历史证据中的“未推送”“尚未提交”反映记录时的状态；当前交付包含这些 Java 改动，以及最新治理测试修复和 R7a 契约实验。
-
-当前已实现 **M0–M4 的本地能力及 M5 部署基础**：任务生命周期、原生事件与 SSE、授权与审批恢复、结果归档、请求预算，以及通过 AgentScope 原生 Toolkit / SkillRepository 接入的酒店/Taibu MCP、调酒 Skill、市场研究子 Agent 和固定投资组合 Workflow。M4 增加受治理长期记忆、独立受限 Worker，以及 AgentScope 原生飞书文本接入。M6a 已冻结紫微回归基准并迁移日期契约；M6b 已实现固定 Java 历法、本命与流运算法，并完成旧盘面逐字段比对；M6c 已通过 AgentScope 原生 Toolkit 接入五个紫微工具及出生资料澄清、归属、事实分段和结果预算，默认关闭，仅允许显式开发模式。M6d 已增加独立进程故障/竞争、无 Python 容器和真实模型验收入口，真实模型验收仍待配置。默认离线运行；真实供应商、飞书租户与生产交付仍待验收。SDK 暂不支持的卡片/表单和可靠投递回执没有自建实现。
-
-最新开发补充 **[M5b 受理暂停与排空检查](docs/migration/m5b-admission.md)**：暂停当前认证主体的新任务，保留已有任务的审批、取消和恢复；检查任务、通知、记忆及隐私积压，受理状态跨重启和备份恢复保留。M6d 已本地提交为 `72e0655`，未推送。
-
-M5b 已本地提交 `07a9bfb`。后续 **[M5c 排空阻塞项定位](docs/migration/m5c-backlog.md)** 增加按主体隔离的分页明细，可定位任务、通知、未投影绑定和记忆作业，查询不产生业务写入。
-
-M5c 已本地提交 `3736aac`。**[M5d 只读预检报告](docs/migration/m5d-preflight.md)** 将受理状态、计数与分页明细保存为本地证据，区分仍有阻塞、检查不完整和可供人工复核，不自动切换服务。
-
-M5d 已本地提交 `993e7ac`，未推送。**[M5e 旧备份隐私核对](docs/migration/m5e-restore-privacy.md)** 检查恢复库是否遗漏备份之后的遗忘事实，并在隔离容器中演练拦截旧备份；真实环境交付和线上切换仍待验收。
-
-M5e 与 R0–R5a 已保存为本地检查点 `bb58ea2`，[R5b 紫微边界拆分](docs/architecture/r5b-implementation.md) 与 [R5c 记忆与发布分层](docs/architecture/r5c-implementation.md) 已提交为本地检查点 `7e5a903`，未推送。后续 **[R6 角色装配](docs/architecture/r6-implementation.md)** 已完成：各角色显式加载组件与 Mapper，Outbox 投影独立运行；完整回归 835 项、隔离 Compose 27 项检查通过，三个启动根的包图无循环。R6 已提交为本地检查点 `43d0c53`，未推送；继续保留单 Maven 模块和既有启动入口。
-
-[治理与飞书入口依赖收缩](docs/architecture/entrypoint-decoupling.md)已保存为本地检查点 `0c549fa`，未推送；该批通过 630 项单元/HTTP/架构测试，数据库集成被本机 Docker API 500 阻断。
-
-随后[原生执行适配依赖收缩](docs/architecture/runtime-decoupling.md)已移除生产 TaskService，原生 Runtime/Tools 直接使用现有服务与端口，Worker 不再构造投影用例及网关；测试委托移入显式导入的 TaskFixture。该批通过 630 项单元/HTTP/架构测试及 1 项不依赖 Docker 的产品打包检查，包含探针字节码依赖门禁；这些结果保留为该批历史证据。
-
-[治理用例分层](docs/architecture/governance-decoupling.md)已删除生产 GovernanceService，将授权、Artifact 和报告发布分别交给 GrantService、ArtifactService、ReportService，HTTP 回答直接调用 AnswerInteractionService。API 不装配报告发布服务，Worker 不装配授权变更服务，Integrations 不装配这两类服务；旧 application 生产包已清空。这两批改动已保存为本地检查点 `4f4f7b4`，未推送。该批 685 项单元/HTTP/架构测试及 1 项产品打包检查通过；当时受 Docker API 500 阻断的集成验证，已在后续批次补跑，详见下文。
-
-继续完成的[HTTP 请求类型化与 Bean Validation](docs/architecture/http-request-validation.md)已为任务提交和受理状态变更接入 Boot validation starter、类型化请求及严格 Jackson 映射，保留原错误码与幂等校验顺序。本批 821 项单元/HTTP/架构测试及 1 项产品打包检查通过，新增 136 项测试；已与下一批记忆接口校验一同提交为 `431c07d`，未推送。该批未完成的 Docker 集成验证见后续补验记录。
-
-最新[记忆接口 Bean Validation](docs/architecture/memory-http-validation.md)已将确认/拒绝与遗忘请求的静态判断交给标准约束，保留原 Jackson 绑定、错误码、功能开关与幂等顺序。全量 906 项单元/HTTP/架构测试及 1 项产品打包检查通过，本批新增 85 项测试。两批 HTTP 校验改动已本地提交为 `431c07d`，未推送。上述批次数字与 Docker API 500 限制保留为历史证据。
-
-2026-10-21 已完成[整体验证补跑](docs/architecture/post-refactor-verification.md)：906 项既有单元/HTTP/架构通过，215 项集成中首次出现的 3 项治理夹具错误已修复，对应 7 项定向重跑通过；隔离 Compose 27 项检查通过。新增 [R7a SubAgentTool 契约实验](docs/architecture/r7a-subagent-evaluation.md)的 6 项探针通过，确认固定 SDK 不能直接替换现有研究入口。测试夹具修复、原型和本批记录随本分支交付；生产源码与依赖保持原样。
-
-最新本地开发 **[M5f 遗忘事实独立保存与恢复重放](docs/migration/m5f-forget-ledger.md)**：使用独立 PostgreSQL 追加保存遗忘事实，通过本地隔离标记衔接两库 Spring 事务；旧主库备份恢复后，可离线补回遗忘并保留新 epoch 的记忆。默认关闭，首次启用需要停写、bootstrap 和新的基线备份；生产账本部署及线上切换仍需独立验收。
-
-当前部署采用 **[同进程运行](docs/architecture/combined-runtime.md)**：HTTP API、AgentScope 执行和事件推送、飞书投递在同一个 JVM 中运行，共用业务数据库连接池。默认不再拆成 API、Worker、Integrations 三个进程；受限 Memory Worker 和离线隐私恢复入口继续隔离。实时 SSE 要求单个业务进程，可并行处理多用户请求；跨实例事件转发尚未实现。V10 退役历史实验表和无人读取的本地 Outbox 投影，升级前见[备份与退役操作](ops/retire-legacy-tables.md)。
-
-实时文本和工具进度直接消费 AgentScope 事件，不再逐条落库或由 SSE 轮询。历史隐私过滤和工具授权查询也已合并，调用数及恢复边界见[数据库访问优化说明](docs/architecture/database-access-review.md)。
-
-记忆现在分为[可手工维护的 `profile.md` 用户画像与跨会话偏好证据](docs/architecture/user-profile-memory.md)。画像通过下载、编辑、上传维护，自动提取不会覆盖；两层共用用户隔离、遗忘与恢复校验，关闭自动记忆仍可使用画像。
-
-## 固定工具链
-
-| 组件 | 版本 |
-| --- | --- |
-| JDK | Eclipse Temurin **21.0.12+8** |
-| Spring Boot | **3.5.16** |
-| AgentScope Java core / OpenAI / RAG / Feishu / Harness | **2.0.3** |
-| MyBatis Spring Boot Starter | **3.0.5** |
-| Maven / Wrapper | **3.9.11 / 3.3.4** |
-
-[版本锁](toolchains.lock.json)保存 JDK 分发包的 URL 和 SHA-256；Maven Wrapper 校验分发包，Enforcer 拒绝不符合要求的 JDK 补丁、build、vendor 和 Maven 版本。项目使用本地 `.tools/` 和 `.cache/`，不修改系统 JDK。
-
-构建脚本使用项目内 Maven Central 配置，避免依赖 POM 带入 snapshot/milestone 仓库；不修改用户的全局 Maven 设置。
-
-## 构建与验证
-
-需要 Python 3.12+（仅用于工具链安装及证据整理）、curl、网络，以及已运行的 Docker。默认测试不需要模型 API Key，仅访问本地模拟模型、embedding、MCP 和飞书端点，不访问真实服务。
+Compose 创建新库，`init-db` 完成结构和权限初始化后，启动统一业务服务 `api` 与受限 `memory-worker`。API 仅绑定本机 `8080`，配置在 `.env.example`，凭据由 `.secrets/` 经 configtree 挂载，不提交到仓库。
 
 ```bash
-# 首次安装；已安装到 .tools/jdk 时跳过
-python3 scripts/bootstrap-jdk.py
+export FINANCECLAW_API_TOKEN="$(cat .secrets/api-token)"
+curl --fail -H "Authorization: Bearer $FINANCECLAW_API_TOKEN" \
+  -H 'Content-Type: application/json' -d '{}' \
+  http://localhost:8080/v1/conversations
+```
 
-# 编译、单元测试、真实 PostgreSQL + 独立 JVM 实验、打包和格式检查
-scripts/mvn.sh -B -ntp verify spotless:check
+创建会话后，向 `/v1/conversations/{conversation}/turns` 提交 `{"message":"你好"}`，同时提供 `Idempotency-Key`。查询 `/turns/{turn}` 获取持久状态，`/turns/{turn}/events` 获取 SSE。默认离线回复为 `已收到：<消息>`。HTTP 请求遵循[统一严格类型校验](docs/architecture/http-request-validation.md)。
 
-# 整理本次测试结果及源码指纹
+默认认证 token 映射一个服务端主体。多用户生产环境应接入可信认证源，不能在请求正文中自行传入 tenant/subject。不要用多个独立业务副本扩展当前 SSE，跨实例事件转发尚未实现。
+
+## 验证
+
+```bash
+python3 scripts/check-delivery.py
 python3 scripts/test-live-acceptance.py
 python3 scripts/test-inspect-drain.py
 python3 scripts/test-restore-privacy.py
+python3 scripts/test-user-profile.py
+scripts/mvn.sh -B -ntp clean verify
 python3 scripts/collect-evidence.py
+python3 scripts/validate-compose.py --ziwei --admission --preflight --restore-privacy
 ```
 
-成功时 Maven 输出 `BUILD SUCCESS`，可执行包位于 `target/financeclaw-java-0.1.0-SNAPSHOT.jar`，证据汇总位于 `target/m5f/results.json`。`scripts/mvn.sh test` 仅执行不依赖 PostgreSQL 的单元/HTTP 契约测试，不能代替包含 PostgreSQL 和业务 API 的完整验证。
+数据库测试使用 Testcontainers 和独立数据库；模型、MCP、embedding 与飞书使用本地模拟服务。Compose 使用随机项目和新数据卷，覆盖进程故障、受理排空、画像隔离、备份恢复和隐私拦截。真实模型与第三方验收入口为 `scripts/validate-live.py`，它们不属于默认离线测试。
 
-## 容器部署
+验证汇总写入 `target/verification/results.json`，Compose 另有部署证据。测试源码、报告集合和源文件指纹均参与证据检查；历史测试数量不能代替当前提交的验证结果。
 
-```bash
-python3 scripts/init-local.py
-scripts/mvn.sh -B -ntp package -DskipTests
-docker compose build api
-docker compose up -d --wait --wait-timeout 180
-```
+## 阅读入口
 
-默认使用新数据库与离线模型，API 仅绑定本机；迁移完成后启动 `api`（`standalone`，同时负责执行和投递）及受限 `memory-worker`。凭据由 Spring configtree 读取本地挂载的 secret。原拆分部署升级前先停掉旧 `worker` / `integrations` 容器，步骤见 [同进程运行](docs/architecture/combined-runtime.md)。配置、备份恢复及验收边界见 [M5 交付说明](docs/migration/m5-validation.md)。
-
-## 启动与试用
-
-使用独立开发数据库，设置以下环境变量后启动；Flyway 会创建 `agent_runtime`、`business`、`memory` 和 `channel` schema：
-
-```bash
-export FINANCECLAW_DATABASE_URL=jdbc:postgresql://localhost:5432/financeclaw_java
-export FINANCECLAW_DATABASE_USER=financeclaw
-# FINANCECLAW_DATABASE_PASSWORD 和 FINANCECLAW_API_TOKEN 由本地环境或密钥管理注入
-export FINANCECLAW_TENANT=local
-export FINANCECLAW_SUBJECT=developer
-scripts/mvn.sh spring-boot:run
-```
-
-另一个终端执行 `curl --fail http://localhost:8080/actuator/health/readiness`，预期为 `{"status":"UP"}`。业务 API 使用 `Authorization: Bearer $FINANCECLAW_API_TOKEN`；未设置 token 时返回 401。创建会话、提交消息、观察 SSE 和取消的可复制示例见 [M1 使用与验证](docs/migration/m1-validation.md)。默认离线回复为 `已收到：<消息>`。
-
-## 阅读与开发入口
-
-| 入口 | 内容 |
+| 文档 | 内容 |
 | --- | --- |
-| [同进程运行](docs/architecture/combined-runtime.md) | 当前默认拓扑、SSE 单进程边界、旧部署升级、独立记忆和隐私恢复 |
-| [M5 部署与恢复](docs/migration/m5-validation.md) | 当前 Compose、secret 配置、CI、故障/备份实验与历史验收记录 |
-| [M5b 暂停与排空](docs/migration/m5b-admission.md) | 按认证主体暂停/恢复受理、并发边界、任务/渠道/记忆积压及恢复演练 |
-| [M5c 阻塞项定位](docs/migration/m5c-backlog.md) | 只读分页、原任务/通知定位、记忆作业和查询权限边界 |
-| [M5d 只读预检](docs/migration/m5d-preflight.md) | CLI 留档、前后观测核对、分页完整性与退出码 |
-| [M5e 旧备份隐私核对](docs/migration/m5e-restore-privacy.md) | 全主体隐私快照、遗忘审计与残留检查、旧库隔离演练 |
-| [M5f 独立遗忘账本](docs/migration/m5f-forget-ledger.md) | 独立保存、故障重试、历史初始化、旧备份离线重放与隔离边界 |
-| [M6 紫微迁移](docs/migration/m6-validation.md) | M6a 日期契约、[M6b 历法](docs/migration/m6b-calendar.md)与[完整排盘比对](docs/migration/m6b-charts.md)；[M6c 领域接入](docs/migration/m6c-domain.md)、[M6d 恢复与部署](docs/migration/m6d-recovery.md)，真实模型验收待完成 |
-| [M4 记忆与原生飞书](docs/migration/m4-validation.md) | 记忆 API、独立 Worker、pgvector、原生飞书配置及 SDK 能力边界 |
-| [用户画像与跨会话证据](docs/architecture/user-profile-memory.md) | `profile.md` 手工维护、版本冲突、两层记忆注入、遗忘和恢复 |
-| [M3 业务与验证](docs/migration/m3-validation.md) | 酒店/Taibu 配置、调酒 Skill、市场研究、固定 Workflow 及模拟验收 |
-| [M2 使用与验证](docs/migration/m2-validation.md) | 授权与交互 API、Artifact、模型配置、测试和限制 |
-| [框架复用审查](docs/migration/framework-reuse-review.md) | 原生能力的复用方式及保留业务适配的原因 |
-| [AgentScope 与 COLA 整改方案](docs/architecture/agentscope-cola-remediation.md) | 重复实现核查、依赖环、目标包结构、领域对象与 R0–R7 整改顺序 |
-| [R0–R2 实施记录](docs/architecture/r0-r2-implementation.md) | 固定契约、M0 测试隔离、Operations 分层、Spring 事务与实际回归结果 |
-| [R3 交互与工具边界](docs/architecture/r3-implementation.md) | 回答用例、领域绑定、统一 SDK 快照、业务工具贡献与事务回归 |
-| [R4 任务与执行分层](docs/architecture/r4-implementation.md) | 任务用例、原生执行端口、Spring 原子性、恢复与取消边界 |
-| [R5a 组合与市场研究](docs/architecture/r5a-implementation.md) | 领域规则、业务步骤、原生驱动分离；发布幂等、子预算与取消回归 |
-| [R5b 紫微执行与 I/O](docs/architecture/r5b-implementation.md) | 输入、资源、密钥、计算与原生工具分离；旧回执、事务回滚和零循环门禁 |
-| [R5c 记忆与发布分层](docs/architecture/r5c-implementation.md) | 记忆领域规则、模型/持久化端口、不可变发布值与凭据分离；真实回滚、旧回执和隐私竞态验证 |
-| [R6 角色装配](docs/architecture/r6-implementation.md) | 各角色 Bean/Mapper 清单、独立投影、真实启动与恢复验证、Maven 模块决定 |
-| [入口与原生执行依赖收缩](docs/architecture/runtime-decoupling.md) | 删除生产 TaskService、缩小 Worker 装配、隔离测试夹具与该批产品打包检查 |
-| [治理用例分层](docs/architecture/governance-decoupling.md) | 删除生产 GovernanceService，分离授权、Artifact、报告发布和 HTTP 回答，收窄各角色装配 |
-| [HTTP 请求类型化与 Bean Validation](docs/architecture/http-request-validation.md) | 任务提交与受理变更的静态 DTO、严格 Jackson 映射、原错误顺序与兼容性验证 |
-| [记忆接口 Bean Validation](docs/architecture/memory-http-validation.md) | 确认/拒绝与遗忘请求的标准静态约束、既有错误码及隐私/幂等顺序 |
-| [职责拆分与 HTTP 完整补验](docs/architecture/post-refactor-verification.md) | Docker 恢复后的数据库/角色/进程/Compose 验证、首次夹具错误与修复重跑 |
-| [R7a SubAgentTool 契约实验](docs/architecture/r7a-subagent-evaluation.md) | 6 项固定 SDK 探针、不能直接替换研究入口的证据与验证边界 |
-| [Spring 事务与组件复审](docs/architecture/spring-transactions-component-review.md) | Spring 统一事务、SDK 主动提交实验证据、已接入 ArchUnit 与组件复用清单 |
-| [M1 使用与验证](docs/migration/m1-validation.md) | API 示例、恢复边界、配置及验收证据 |
-| [M0 验证记录](docs/migration/m0-validation.md) | 实际版本、测试证据、状态保存边界与继续实施决策 |
-| [迁移方案](docs/migration/agentscope-java-migration.md) | 源系统、能力映射、目标架构及分阶段实施 |
-| [验收清单](docs/migration/acceptance-checklist.md) | 已完成范围与后续阶段的验收条件 |
-| [Agent 适配器](src/main/java/com/financeclaw/infrastructure/agentscope) | 原生执行、恢复、业务工具适配与发送前预算检查 |
-| [状态适配](src/main/java/com/financeclaw/infrastructure/state) | AgentState 版本 CAS、身份隔离与墓碑 |
-| [MyBatis 状态 Mapper](src/main/java/com/financeclaw/infrastructure/state/RuntimeMapper.java) | AgentState SQL；连接与事务由 Spring/MyBatis-Spring 管理 |
-| [任务用例](src/main/java/com/financeclaw/app/task) / [执行用例](src/main/java/com/financeclaw/app/execution) | 受理、查询、取消、租约、完成回执与恢复 |
-| [授权用例](src/main/java/com/financeclaw/app/governance) / [Artifact 用例](src/main/java/com/financeclaw/app/artifact) / [报告用例](src/main/java/com/financeclaw/app/report) | 授权变更与重放、归档与访问核对、本地报告效果回执 |
-| [记忆用例](src/main/java/com/financeclaw/app/memory) / [发布用例](src/main/java/com/financeclaw/app/release) | 事实与隐私治理、事务外模型调用、固定发布版本与配置适配 |
-| [角色装配](src/main/java/com/financeclaw/bootstrap/RoleConfiguration.java) | Spring 显式导入各角色组件，精确注册 Mapper |
-| [后台执行](src/main/java/com/financeclaw/worker/TaskWorker.java) / [飞书投递](src/main/java/com/financeclaw/channel/FeishuDelivery.java) | 同进程的有界执行、恢复与渠道投递 |
-| [M1 集成测试](src/test/java/com/financeclaw/m1/TaskLifecycleIT.java) | API、真实数据库竞争、独立 JVM 崩溃恢复 |
-| [M0 实验](src/test/java/com/financeclaw/m0) | SDK、PostgreSQL、子进程、故障及隔离场景 |
-| [数据库迁移](src/main/resources/db/migration) | AgentState、工具账本与任务生命周期结构 |
+| [运行结构](docs/architecture/combined-runtime.md) | 统一业务 JVM、受限入口、SSE 和后台调度 |
+| [数据结构](docs/architecture/database-schema-review.md) | 当前表职责与需要保留的权威边界 |
+| [数据库访问](docs/architecture/database-access-review.md) | 批量读取、轮询退避、续租和共享锁 |
+| [用户画像与证据记忆](docs/architecture/user-profile-memory.md) | Markdown 编辑、来源证据、版本和隐私约束 |
+| [Java 规范与逻辑注释](docs/architecture/java-coding-guidelines.md) | 阿里手册参考、项目约定和验证入口 |
+| [运行维护](docs/operations.md) | 配置、排空、备份及隔离隐私恢复 |
+| [历史记录](docs/history/README.md) | 过去设计与验收证据，仅供追溯 |
 
-常见问题：
-
-- **JDK 被拒绝**：检查显式 `JAVA_HOME` 是否指向 Temurin 21.0.12+8；未设置时脚本优先使用项目 JDK。
-- **Docker 环境不可用**：启动 Docker 并运行 `docker info`；集成测试会失败，不会跳过后冒充通过。
-- **数据库连接失败**：检查开发库地址、用户和密码；集成测试使用临时容器，不需要配置这些变量。
-- **格式检查失败**：运行 `scripts/mvn.sh spotless:apply` 后重试。
-
-原项目为 [westbrook0904/FinanceClaw](https://github.com/westbrook0904/FinanceClaw)。Python 源码和已有未提交修改保持不变；迁移基线与补丁保存在 [baseline](docs/migration/baseline/python-manifest.json)。
+代码入口为 `api` → `app` → `domain` 与应用端口；`infrastructure` 提供 MyBatis、AgentScope 和远程适配。`bootstrap` 显式装配业务上下文，`channel` 处理飞书，`worker` 负责执行调度。关键类、接口与复杂方法包含职责、锁顺序、事务和失败处理的中文注释。

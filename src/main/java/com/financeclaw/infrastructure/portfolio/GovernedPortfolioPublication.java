@@ -9,13 +9,14 @@ import org.springframework.stereotype.Component;
 /** Joins the step's existing Spring transaction; archive and receipt commit together. */
 @Component
 public class GovernedPortfolioPublication implements PortfolioPublication {
-  private final ArtifactService artifacts;
+    private final ArtifactService artifacts;
 
-  public GovernedPortfolioPublication(ArtifactService artifacts) {
-    this.artifacts = artifacts;
-  }
+    public GovernedPortfolioPublication(ArtifactService artifacts) {
+        this.artifacts = artifacts;
+    }
 
-  public Artifact archive(Claim claim, Object draft) {
-    return artifacts.archive(claim, draft, "workflow:run");
-  }
+    @Override
+    public Artifact archive(Claim claim, Object draft) {
+        return artifacts.archive(claim, draft, "workflow:run");
+    }
 }

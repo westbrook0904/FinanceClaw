@@ -2,6 +2,7 @@
 """Summarize actual Surefire/Failsafe results; refuse missing or failing evidence."""
 import hashlib
 import json
+import subprocess
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from pathlib import Path
@@ -60,7 +61,7 @@ privacy = json.loads((root / "target/m5e/privacy-tests.json").read_text())
 if (privacy['tests'] != 14 or any(privacy[k] for k in ('failures', 'errors', 'skipped'))
         or any(manifest[name] != value for name, value in privacy['source_sha256'].items())):
     raise SystemExit('Restore privacy evidence is stale or failed; run scripts/test-restore-privacy.py')
-evidence = {"base_commit": "daadbc3472e68e93c4a1d306006a806ac46ec977", "milestone": "M5f-forget-ledger", "collected_at_utc": datetime.now(timezone.utc).isoformat(),
+evidence = {"commit": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True).strip(), "application": "FinanceClaw Java", "collected_at_utc": datetime.now(timezone.utc).isoformat(),
             "application_jar_sha256": hashlib.sha256((root / "target/financeclaw-java-0.1.0-SNAPSHOT.jar").read_bytes()).hexdigest(),
             "toolchain": json.loads((root / "toolchains.lock.json").read_text()),
             "environment": json.loads((root / "target/m0/environment.json").read_text()),
@@ -76,13 +77,8 @@ evidence = {"base_commit": "daadbc3472e68e93c4a1d306006a806ac46ec977", "mileston
             "drain_preflight_contract_tests": preflight,
             "restore_privacy_contract_tests": privacy,
             "total_tests": sum(s["tests"] for s in suites), "suites": suites, "source_sha256": manifest,
-            "validation_scope": "Local PostgreSQL, pgvector and independent JVMs; native loopback model/MCP/Feishu adapters; M6 date contracts, calendar compatibility, 2524 full chart comparisons, domain facts and focus parity, native Toolkit suspension/resume, scoped artifacts, HMAC, budgets and privacy. M6d packaged process crash recovery, cancellation/privacy competition, deployment image with five native tools and no Python, offline live-validator contracts. Development gate retained: no real model Ziwei selection, real provider/MCP/Feishu tenant or remote CI execution. Compose validation is recorded separately."}
-evidence['validation_scope'] += ' M5b owner-scoped admission pause/resume, revision and idempotency receipts, PostgreSQL submission/pause races, existing approval/input/cancellation and Feishu continuity, drain counts including uncertain effects, notification and memory backlogs.'
-evidence['validation_scope'] += ' V10 retires inactive Skill/M0 tables and the unused local outbox/projection chain; upgrade tests preserve remaining data and reject unexpected dependent views without CASCADE. Outbox HTTP counters remain zero for compatibility.'
-evidence['validation_scope'] += ' M5c read-only owner-scoped keyset pages for task, notification, unprojected binding and memory job blockers; terminal-turn residual facts, numeric job ordering, foreign-owner exclusion and content minimization.'
-evidence['validation_scope'] += ' M5d read-only operations observations, inventory/count comparison, incomplete scan handling and private report files remain covered by separate Python contracts and Compose evidence.'
-evidence['validation_scope'] += ' M5e offline all-owner privacy snapshot comparison and SQL snapshot queries remain separate from M5f replay. M5f adds independent PostgreSQL forget facts, durable pending barriers, idempotent epoch-scoped replay, bootstrap and isolated JVM recovery. Tests cover lost-source restoration of a real old pg_dump, unknown external commit outcomes, rollback and repeated replay retaining new memory. Independent storage availability, production IAM, latest-authority operations and global cutover are not certified by these local tests.'
-destination = root / "target/m5f/results.json"
+            "validation_scope": "Standalone Java application: fresh schema initialization, owner-scoped admission, durable command leases, atomic report publication, governed memory and editable profiles, AgentScope checkpoints and bounded native tool calls. Tests use isolated PostgreSQL and loopback model/MCP/Feishu services; they do not certify real provider access or production capacity. Compose process and privacy restore evidence is recorded separately."}
+destination = root / "target/verification/results.json"
 destination.parent.mkdir(parents=True, exist_ok=True)
 destination.write_text(json.dumps(evidence, ensure_ascii=False, indent=2) + "\n")
 print(f"{evidence['total_tests']} tests passed; evidence: {destination}")

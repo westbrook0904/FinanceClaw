@@ -32,148 +32,133 @@ import com.financeclaw.infrastructure.release.*;
 import com.financeclaw.infrastructure.task.*;
 import com.financeclaw.infrastructure.ziwei.*;
 import com.financeclaw.worker.TaskWorker;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.*;
 
-/** Role composition uses Spring imports/conditions, with no application-wide component scan. */
+/**
+ * 显式装配统一业务上下文及其职责分组，避免全包扫描把离线或受限入口混入业务进程。
+ *
+ * <p>HTTP、执行和投递共享事件中心与连接池；分组只表达依赖关系，不再提供旧的分体部署 profile。
+ */
 public final class RoleConfiguration {
-  // Keep the holder unannotated: Spring discovers all nested configurations of a component.
-  private RoleConfiguration() {}
+    // Keep the holder unannotated: Spring discovers all nested configurations of a component.
+    private RoleConfiguration() {}
 
-  @Configuration(proxyBeanMethods = false)
-  @ConditionalOnProperty(name = "financeclaw.deployment.role", havingValue = "api")
-  @Import(Http.class)
-  static class Api {}
+    /** 统一业务上下文，事件发布与 SSE 订阅使用同一个进程内事件中心。 */
+    @Configuration(proxyBeanMethods = false)
+    @Import({Http.class, Execution.class, Delivery.class})
+    static class Standalone {}
 
-  @Configuration(proxyBeanMethods = false)
-  @ConditionalOnProperty(name = "financeclaw.deployment.role", havingValue = "worker")
-  @Import(Execution.class)
-  static class Worker {}
+    @Configuration(proxyBeanMethods = false)
+    @Import({
+        MapperConfiguration.Tasks.class,
+        RuntimeHealth.class,
+        TaskEventHub.class,
+        WorkSignals.class,
+        SchedulingConfiguration.class,
+        TaskQueryService.class,
+        MyBatisTaskQueryGateway.class
+    })
+    static class TaskReads {}
 
-  @Configuration(proxyBeanMethods = false)
-  @ConditionalOnProperty(name = "financeclaw.deployment.role", havingValue = "integrations")
-  @Import(Delivery.class)
-  static class Integrations {}
+    @Configuration(proxyBeanMethods = false)
+    @Import({
+        TaskReads.class,
+        MapperConfiguration.Governance.class,
+        MapperConfiguration.Runtime.class,
+        MapperConfiguration.Memory.class,
+        MemoryConfiguration.class,
+        MyBatisMemoryRepository.class,
+        ReleaseService.class,
+        EnvironmentReleaseSource.class,
+        EnvironmentCredentials.class,
+        CatalogExecutionRelease.class,
+        MyBatisTaskAdmissionGateway.class,
+        MyBatisTaskMutationGateway.class,
+        MyBatisCommandGateway.class,
+        MyBatisExecutionPolicyGateway.class,
+        MyBatisExecutionContextGateway.class,
+        SubmitTaskService.class,
+        CancelTaskService.class,
+        TaskTransitionService.class,
+        ExecutionLeaseService.class,
+        ExecutionPolicyService.class,
+        ArtifactService.class,
+        MyBatisArtifactGateway.class,
+        AnswerInteractionService.class,
+        MyBatisInteractionGateway.class,
+        AgentScopeInteractionCheckpoint.class,
+        AgentScopeAnswerRules.class,
+        ZiweiAnswerValidator.class,
+        ZiweiInputService.class,
+        CatalogZiweiConfiguration.class,
+        AgentScopeZiweiInputs.class
+    })
+    static class GovernedTasks {}
 
-  @Configuration(proxyBeanMethods = false)
-  @ConditionalOnProperty(
-      name = "financeclaw.deployment.role",
-      havingValue = "standalone",
-      matchIfMissing = true)
-  @Import({Http.class, Execution.class, Delivery.class})
-  static class Standalone {}
+    @Configuration(proxyBeanMethods = false)
+    @Import({
+        GovernedTasks.class,
+        GrantService.class,
+        MyBatisGrantGateway.class,
+        MapperConfiguration.Operations.class,
+        MapperConfiguration.Channel.class,
+        AdmissionService.class,
+        OperationsQueryService.class,
+        MyBatisAdmissionGateway.class,
+        MyBatisOperationsReadGateway.class,
+        MemorySearchService.class,
+        AgentScopeMemoryModels.class,
+        MyBatisEmbeddingProfiles.class,
+        FeishuSettings.class,
+        FeishuIngress.class,
+        FeishuService.class,
+        BearerIdentity.class,
+        HttpRequestConfiguration.class,
+        ApiErrors.class,
+        TaskController.class,
+        TaskEvents.class,
+        GovernanceController.class,
+        OperationsController.class,
+        MemoryController.class,
+        UserProfileController.class,
+        FeishuController.class
+    })
+    static class Http {}
 
-  @Configuration(proxyBeanMethods = false)
-  @Import({
-    MapperConfiguration.Tasks.class,
-    RuntimeHealth.class,
-    TaskEventHub.class,
-    WorkSignals.class,
-    SchedulingConfiguration.class,
-    TaskQueryService.class,
-    MyBatisTaskQueryGateway.class
-  })
-  static class TaskReads {}
+    @Configuration(proxyBeanMethods = false)
+    @Import({
+        GovernedTasks.class,
+        ReportService.class,
+        MyBatisReportGateway.class,
+        MyBatisExecutionReceiptGateway.class,
+        ExecutionCompletionService.class,
+        RecoverTaskService.class,
+        ExecuteTaskService.class,
+        CapabilityStepService.class,
+        MyBatisCapabilityStepGateway.class,
+        MarketDataService.class,
+        CatalogMarketData.class,
+        PortfolioReviewService.class,
+        GovernedPortfolioPublication.class,
+        MarketResearchService.class,
+        ZiweiService.class,
+        GovernedZiweiPublication.class,
+        BusinessCapabilities.class,
+        ExecutionSchedulingConfiguration.class,
+        TaskAgentRuntime.class,
+        TaskWorker.class
+    })
+    static class Execution {}
 
-  @Configuration(proxyBeanMethods = false)
-  @Import({
-    TaskReads.class,
-    MapperConfiguration.Governance.class,
-    MapperConfiguration.Runtime.class,
-    MapperConfiguration.Memory.class,
-    MemoryConfiguration.class,
-    MyBatisMemoryRepository.class,
-    ReleaseService.class,
-    EnvironmentReleaseSource.class,
-    EnvironmentCredentials.class,
-    CatalogExecutionRelease.class,
-    MyBatisTaskAdmissionGateway.class,
-    MyBatisTaskMutationGateway.class,
-    MyBatisCommandGateway.class,
-    MyBatisExecutionPolicyGateway.class,
-    MyBatisExecutionContextGateway.class,
-    SubmitTaskService.class,
-    CancelTaskService.class,
-    TaskTransitionService.class,
-    ExecutionLeaseService.class,
-    ExecutionPolicyService.class,
-    ArtifactService.class,
-    MyBatisArtifactGateway.class,
-    AnswerInteractionService.class,
-    MyBatisInteractionGateway.class,
-    AgentScopeInteractionCheckpoint.class,
-    AgentScopeAnswerRules.class,
-    ZiweiAnswerValidator.class,
-    ZiweiInputService.class,
-    CatalogZiweiConfiguration.class,
-    AgentScopeZiweiInputs.class
-  })
-  static class GovernedTasks {}
-
-  @Configuration(proxyBeanMethods = false)
-  @Import({
-    GovernedTasks.class,
-    GrantService.class,
-    MyBatisGrantGateway.class,
-    MapperConfiguration.Operations.class,
-    MapperConfiguration.Channel.class,
-    AdmissionService.class,
-    OperationsQueryService.class,
-    MyBatisAdmissionGateway.class,
-    MyBatisOperationsReadGateway.class,
-    MemorySearchService.class,
-    AgentScopeMemoryModels.class,
-    MyBatisEmbeddingProfiles.class,
-    FeishuSettings.class,
-    FeishuIngress.class,
-    FeishuService.class,
-    BearerIdentity.class,
-    HttpRequestConfiguration.class,
-    ApiErrors.class,
-    TaskController.class,
-    TaskEvents.class,
-    GovernanceController.class,
-    OperationsController.class,
-    MemoryController.class,
-    UserProfileController.class,
-    FeishuController.class
-  })
-  static class Http {}
-
-  @Configuration(proxyBeanMethods = false)
-  @Import({
-    GovernedTasks.class,
-    ReportService.class,
-    MyBatisReportGateway.class,
-    MyBatisExecutionReceiptGateway.class,
-    ExecutionCompletionService.class,
-    RecoverTaskService.class,
-    ExecuteTaskService.class,
-    CapabilityStepService.class,
-    MyBatisCapabilityStepGateway.class,
-    MarketDataService.class,
-    CatalogMarketData.class,
-    PortfolioReviewService.class,
-    GovernedPortfolioPublication.class,
-    MarketResearchService.class,
-    ZiweiService.class,
-    GovernedZiweiPublication.class,
-    BusinessCapabilities.class,
-    ExecutionSchedulingConfiguration.class,
-    TaskAgentRuntime.class,
-    TaskWorker.class
-  })
-  static class Execution {}
-
-  @Configuration(proxyBeanMethods = false)
-  @Import({
-    TaskReads.class,
-    MapperConfiguration.Governance.class,
-    MapperConfiguration.Channel.class,
-    MyBatisExecutionContextGateway.class,
-    FeishuSettings.class,
-    AgentScopeFeishu.class,
-    FeishuDelivery.class
-  })
-  static class Delivery {}
+    @Configuration(proxyBeanMethods = false)
+    @Import({
+        TaskReads.class,
+        MapperConfiguration.Governance.class,
+        MapperConfiguration.Channel.class,
+        MyBatisExecutionContextGateway.class,
+        FeishuSettings.class,
+        AgentScopeFeishu.class,
+        FeishuDelivery.class
+    })
+    static class Delivery {}
 }

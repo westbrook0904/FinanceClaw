@@ -5,6 +5,5 @@
   "success_ratio": 1.0,
   "p95_turn_seconds": 15,
   "recovery_seconds": 45,
-  "startup_seconds": 180,
-  "remaining_outbox": 0
+  "startup_seconds": 180
 }
