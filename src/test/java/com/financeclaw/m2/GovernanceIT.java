@@ -145,8 +145,14 @@ class GovernanceIT {
     run(first);
     var i = question(t);
     assertThat(reports()).isZero();
+    var signals = taskContext.getBean(com.financeclaw.app.task.WorkSignals.class);
+    long before = signals.generation(com.financeclaw.app.task.WorkSignals.Queue.COMMAND);
     assertThat(answer(t, i, approve(i)).idempotentReplay()).isFalse();
+    assertThat(signals.generation(com.financeclaw.app.task.WorkSignals.Queue.COMMAND))
+        .isEqualTo(before + 1);
     assertThat(answer(t, i, approve(i)).idempotentReplay()).isTrue();
+    assertThat(signals.generation(com.financeclaw.app.task.WorkSignals.Queue.COMMAND))
+        .isEqualTo(before + 1);
     var resumed = claim();
     assertThat(resumed.scope().key()).isNotEqualTo(first.scope().key());
     run(resumed);
@@ -328,7 +334,9 @@ class GovernanceIT {
   void unknownWriteOutcomeBlocksCancellationAndReplay() {
     var t = submit("report");
     var c = claim();
-    db.beginEffect(t.turnId(), "uncertain", "hash");
+    sql.update(
+        "INSERT INTO business.reports(turn_id,call_id,action_hash,status) VALUES(?,'uncertain','hash','pending')",
+        t.turnId());
     assertThatThrownBy(() -> tasks.checkDispatch(c)).hasMessage("reconciliation_required");
     assertThatThrownBy(() -> tasks.cancel(owner, t.conversationId(), t.turnId(), "cancel"))
         .hasMessage("reconciliation_required");
@@ -376,7 +384,7 @@ class GovernanceIT {
     var i = question(t);
     answer(t, i, approve(i));
     run(claim());
-    assertThat(db.policy(t.turnId()).modelCalls()).isEqualTo(1);
+    assertThat(db.getTurnPolicy(t.turnId()).modelCalls()).isEqualTo(1);
     assertThat(turn(t).status()).isIn("blocked", "failed");
     assertThat(reports()).isOne();
   }
@@ -518,8 +526,8 @@ class GovernanceIT {
     sql.update("UPDATE business.commands SET status='queued' WHERE id=?", question.commandId());
     assertThatThrownBy(() -> answer(t, question, approve(question)))
         .hasMessage("stale_interaction");
-    assertThat(db.interaction(question.id()).status()).isEqualTo("pending");
-    assertThat(db.interaction(question.id()).responseHash()).isNull();
+    assertThat(db.getInteractionById(question.id()).status()).isEqualTo("pending");
+    assertThat(db.getInteractionById(question.id()).responseHash()).isNull();
     assertThat(turn(t).status()).isEqualTo("waiting");
   }
 
@@ -531,7 +539,7 @@ class GovernanceIT {
     tx.executeWithoutResult(
         status -> {
           answer(t, question, approve(question));
-          assertThat(db.interaction(question.id()).status()).isEqualTo("answered");
+          assertThat(db.getInteractionById(question.id()).status()).isEqualTo("answered");
           assertThat(turn(t).status()).isEqualTo("resuming");
           status.setRollbackOnly();
         });
@@ -540,8 +548,8 @@ class GovernanceIT {
   }
 
   private void assertPendingAnswerAndDoneCommand(Interaction question) {
-    assertThat(db.interaction(question.id()).status()).isEqualTo("pending");
-    assertThat(db.interaction(question.id()).responseHash()).isNull();
+    assertThat(db.getInteractionById(question.id()).status()).isEqualTo("pending");
+    assertThat(db.getInteractionById(question.id()).responseHash()).isNull();
     assertThat(
             sql.queryForObject(
                 "SELECT status FROM business.commands WHERE id=?",
@@ -616,7 +624,7 @@ class GovernanceIT {
                   .block()
                   .getState())
           .isEqualTo(io.agentscope.core.message.ToolResultState.ERROR);
-      assertThat(db.policy(t.turnId()).toolCalls()).isZero();
+      assertThat(db.getTurnPolicy(t.turnId()).toolCalls()).isZero();
       assertThat(
               sql.queryForObject(
                   "SELECT count(*) FROM business.artifacts WHERE turn_id=?",
@@ -681,7 +689,7 @@ class GovernanceIT {
       assertThat(tools.pending(state))
           .extracting(Pending::callId)
           .containsExactly("approval", "city");
-      assertThat(db.policy(t.turnId()).toolCalls()).isZero();
+      assertThat(db.getTurnPolicy(t.turnId()).toolCalls()).isZero();
       assertThat(reports()).isZero();
     }
   }
@@ -802,7 +810,7 @@ class GovernanceIT {
                   .input(input)
                   .build())
           .block();
-      assertThat(db.policy(t.turnId()).toolCalls()).isOne();
+      assertThat(db.getTurnPolicy(t.turnId()).toolCalls()).isOne();
     }
   }
 

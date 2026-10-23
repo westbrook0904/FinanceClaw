@@ -16,18 +16,6 @@ public interface LifecycleProbeMapper {
   @Select("SELECT count(*) FROM business.journal WHERE role='assistant'")
   int answers();
 
-  @Select("SELECT count(*) FROM business.outbox")
-  int outbox();
-
-  @Select("SELECT count(*) FROM business.projections")
-  int projections();
-
   @Select("SELECT count(*) FROM business.attempts")
   int attempts();
-
-  @Select("SELECT count(*) FROM business.outbox WHERE NOT delivered")
-  int pending();
-
-  @Select("SELECT status FROM business.projections WHERE turn_id=#{id}")
-  String projection(String id);
 }

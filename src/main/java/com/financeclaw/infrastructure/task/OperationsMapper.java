@@ -23,8 +23,8 @@ public interface OperationsMapper {
       WITH facts AS (
         SELECT t.id,t.conversation_id,t.status,t.revision,t.reason,c.status AS command_status,
           (SELECT count(*) FROM business.interactions i WHERE i.turn_id=t.id AND i.status='pending') AS pending_interactions,
-          (SELECT count(*) FROM business.tool_calls e WHERE e.turn_id=t.id AND e.status='pending') AS uncertain_effects,
-          (SELECT count(*) FROM business.outbox o WHERE o.turn_id=t.id AND NOT o.delivered) AS pending_outbox
+          (SELECT count(*) FROM business.reports e WHERE e.turn_id=t.id AND (e.status<>'completed' OR e.result IS NULL)) AS uncertain_effects,
+          0::bigint AS pending_outbox
         FROM business.turns t LEFT JOIN business.commands c ON c.turn_id=t.id
         WHERE t.tenant=#{owner.tenant} AND t.subject=#{owner.subject} AND t.id>#{after}
       )
@@ -32,7 +32,7 @@ public interface OperationsMapper {
         OR pending_interactions>0 OR uncertain_effects>0 OR pending_outbox>0
       ORDER BY id LIMIT #{limit}
       """)
-  List<TurnBacklog> turnBacklog(
+  List<TurnBacklog> listTurnBacklog(
       @Param("owner") Owner owner, @Param("after") String after, @Param("limit") int limit);
 
   @Select(
@@ -45,7 +45,7 @@ public interface OperationsMapper {
         AND n.status IN ('pending','sending','unknown','submitted_unverified') AND n.id>#{after}
       ORDER BY n.id LIMIT #{limit}
       """)
-  List<NotificationBacklog> notificationBacklog(
+  List<NotificationBacklog> listNotificationBacklog(
       @Param("owner") Owner owner, @Param("after") String after, @Param("limit") int limit);
 
   @Select(
@@ -57,7 +57,7 @@ public interface OperationsMapper {
       """
           + UNPROJECTED
           + " ORDER BY b.id LIMIT #{limit}")
-  List<BindingBacklog> bindingBacklog(
+  List<BindingBacklog> listBindingBacklog(
       @Param("owner") Owner owner, @Param("after") String after, @Param("limit") int limit);
 
   @Select(
@@ -67,7 +67,7 @@ public interface OperationsMapper {
         AND status NOT IN ('done','obsolete','forgotten') AND id>#{after}
       ORDER BY memory.jobs.id LIMIT #{limit}
       """)
-  List<MemoryBacklog> memoryBacklog(
+  List<MemoryBacklog> listMemoryJobBacklog(
       @Param("owner") Owner owner, @Param("after") long after, @Param("limit") int limit);
 
   @Select(
@@ -85,8 +85,8 @@ public interface OperationsMapper {
       count(*) FILTER(WHERE status='blocked') AS blocked,
       (SELECT count(*) FROM business.commands WHERE turn_id IN (SELECT id FROM owned) AND status<>'done') AS active_commands,
       (SELECT count(*) FROM business.interactions WHERE turn_id IN (SELECT id FROM owned) AND status='pending') AS pending_interactions,
-      (SELECT count(*) FROM business.tool_calls WHERE turn_id IN (SELECT id FROM owned) AND status='pending') AS uncertain_effects,
-      (SELECT count(*) FROM business.outbox WHERE turn_id IN (SELECT id FROM owned) AND NOT delivered) AS pending_outbox,
+      (SELECT count(*) FROM business.reports WHERE turn_id IN (SELECT id FROM owned) AND (status<>'completed' OR result IS NULL)) AS uncertain_effects,
+      0::bigint AS pending_outbox,
       (SELECT count(*) FROM channel.notices n JOIN channel.bindings b ON b.id=n.binding_id
         JOIN owned t ON t.id=n.turn_id
         WHERE b.tenant=#{tenant} AND b.subject=#{subject} AND n.status IN ('pending','sending')) AS pending_notifications,
@@ -104,7 +104,7 @@ public interface OperationsMapper {
       (SELECT count(*) FROM memory.owners WHERE tenant=#{tenant} AND subject=#{subject} AND purge_pending) AS pending_forget
     FROM owned
     """)
-  Map<String, Object> drain(Owner owner);
+  Map<String, Object> getDrainSummary(Owner owner);
 
   @Select(
       """
@@ -119,7 +119,7 @@ public interface OperationsMapper {
         FILTER(WHERE status IN ('queued','resuming')),0) AS oldest_queued_ms
     FROM business.turns WHERE tenant=#{tenant} AND subject=#{subject}
     """)
-  Map<String, Object> tasks(Owner owner);
+  Map<String, Object> getTaskStatistics(Owner owner);
 
   @Select(
       """
@@ -127,14 +127,7 @@ public interface OperationsMapper {
     FROM business.turn_policies p JOIN business.turns t ON t.id=p.turn_id
     WHERE t.tenant=#{tenant} AND t.subject=#{subject}
     """)
-  Map<String, Object> calls(Owner owner);
-
-  @Select(
-      """
-    SELECT count(*) AS pending FROM business.outbox o JOIN business.turns t ON t.id=o.turn_id
-    WHERE NOT o.delivered AND t.tenant=#{tenant} AND t.subject=#{subject}
-    """)
-  Map<String, Object> outbox(Owner owner);
+  Map<String, Object> getCallStatistics(Owner owner);
 
   @Select(
       """
@@ -145,5 +138,5 @@ public interface OperationsMapper {
     FROM channel.notices n JOIN channel.bindings b ON b.id=n.binding_id
     WHERE b.tenant=#{tenant} AND b.subject=#{subject}
     """)
-  Map<String, Object> notifications(Owner owner);
+  Map<String, Object> getNotificationStatistics(Owner owner);
 }

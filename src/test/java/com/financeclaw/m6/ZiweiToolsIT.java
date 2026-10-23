@@ -148,8 +148,8 @@ class ZiweiToolsIT {
                 Integer.class,
                 accepted.turnId()))
         .isZero();
-    assertThat(db.step(accepted.turnId(), "ziwei:atomic", "result")).isNull();
-    assertThat(db.step(accepted.turnId(), "ziwei:key", "binding")).isNotNull();
+    assertThat(db.getCapabilityStep(accepted.turnId(), "ziwei:atomic", "result")).isNull();
+    assertThat(db.getCapabilityStep(accepted.turnId(), "ziwei:key", "binding")).isNotNull();
     var service = taskContext.getBean(ZiweiService.class);
     var first = service.run(claim, "ziwei_natal_chart", "atomic", ZiweiDomainTest.input());
     assertThat(service.run(claim, "ziwei_natal_chart", "atomic", ZiweiDomainTest.input()))
@@ -192,14 +192,14 @@ class ZiweiToolsIT {
       String binding =
           com.financeclaw.app.ziwei.ZiweiIdentity.binding(
               ZiweiPolicy.key(key), policy, accepted.turnId());
-      db.saveStep(
+      db.insertCapabilityStep(
           accepted.turnId(),
           "ziwei:key",
           "binding",
           com.financeclaw.support.PayloadDigest.sha256(PayloadJson.canonical(binding)),
           "{\"bound\":true}");
       String stored = "{\"legacy_receipt\":true,\"status\":\"success\"}";
-      db.saveStep(
+      db.insertCapabilityStep(
           accepted.turnId(),
           "ziwei:legacy",
           "result",
@@ -266,7 +266,7 @@ class ZiweiToolsIT {
       assertThat(
               taskContext
                   .getBean(com.financeclaw.infrastructure.governance.GovernanceMapper.class)
-                  .step(claim.turn().id(), "ziwei:budget", "result"))
+                  .getCapabilityStep(claim.turn().id(), "ziwei:budget", "result"))
           .isNull();
     }
   }
@@ -425,7 +425,7 @@ class ZiweiToolsIT {
       assertThat(
               taskContext
                   .getBean(com.financeclaw.infrastructure.governance.GovernanceMapper.class)
-                  .artifactScope(artifact(response)))
+                  .getArtifactScope(artifact(response)))
           .isEqualTo("ziwei:read");
       var changed = new TreeMap<>(input);
       changed.put("focus", "career");
@@ -582,7 +582,7 @@ class ZiweiToolsIT {
     assertThat(
             taskContext
                 .getBean(com.financeclaw.infrastructure.governance.GovernanceMapper.class)
-                .interaction(i.id())
+                .getInteractionById(i.id())
                 .status())
         .isEqualTo("pending");
     var answer =

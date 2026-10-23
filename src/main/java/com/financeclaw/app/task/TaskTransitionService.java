@@ -20,9 +20,7 @@ public class TaskTransitionService {
     this.memory = memory;
   }
 
-  /**
-   * Joins the caller's short transaction; transition, journal, memory and outbox commit together.
-   */
+  /** Joins the caller's short transaction; transition, journal and memory commit together. */
   public void change(Turn t, String status, String result, String reason) {
     if (!org.springframework.transaction.support.TransactionSynchronizationManager
         .isActualTransactionActive())
@@ -34,7 +32,6 @@ public class TaskTransitionService {
     if (transition.terminal()) {
       if (transition.completed()) db.journal(t.conversationId(), t.id(), "assistant", result);
       if (transition.completed()) memory.completed(t.id());
-      db.outbox(t.id());
     }
   }
 }

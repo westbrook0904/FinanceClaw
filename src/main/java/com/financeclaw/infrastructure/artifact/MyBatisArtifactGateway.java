@@ -18,7 +18,7 @@ public class MyBatisArtifactGateway implements ArtifactGateway {
   }
 
   public Artifact artifact(String id) {
-    return db.artifact(id);
+    return db.getArtifactById(id);
   }
 
   public int insertArtifact(Artifact artifact) {
@@ -26,22 +26,22 @@ public class MyBatisArtifactGateway implements ArtifactGateway {
   }
 
   public String artifactScope(String id) {
-    return db.artifactScope(id);
+    return db.getArtifactScope(id);
   }
 
   public int setArtifactScope(String id, String scope) {
-    return db.setArtifactScope(id, scope);
+    return db.updateArtifactScope(id, scope);
   }
 
   public Policy policy(String turn) {
-    return db.policy(turn);
+    return db.getTurnPolicy(turn);
   }
 
   public Turn turn(String id) {
-    return turns.turn(id);
+    return turns.getTurnById(id);
   }
 
   public Grant lockGrant(String conversation) {
-    return db.lockGrant(conversation);
+    return db.getGrantForUpdate(conversation);
   }
 }

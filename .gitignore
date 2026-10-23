@@ -13,3 +13,7 @@ __pycache__/
 *.pyc
 .secrets/
 backups/
+
+# Default manual profile export contains private user data.
+/profile.md
+/.profile.md.version.json

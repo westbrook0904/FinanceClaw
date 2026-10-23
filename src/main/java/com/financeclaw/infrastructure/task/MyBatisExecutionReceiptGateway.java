@@ -23,18 +23,18 @@ public class MyBatisExecutionReceiptGateway implements ExecutionReceiptGateway {
   public boolean matchesCheckpoint(Claim claim, long version) {
     var scope = claim.scope();
     var row =
-        states.findState(
+        states.getState(
             new RuntimeMapper.StateKey(
                 scope.namespace(), scope.userId(), scope.sessionId(), "agent_state"));
     return row != null && !row.deleted() && row.version() == version;
   }
 
   public int seal(String attempt, Outcome outcome) {
-    return db.seal(attempt, outcome);
+    return db.updateAttemptOutcomeIfUnsealed(attempt, outcome);
   }
 
   public Receipt receipt(String attempt) {
-    return db.receipt(attempt);
+    return db.getAttemptReceipt(attempt);
   }
 
   public void insertInteraction(Interaction interaction) {

@@ -18,6 +18,7 @@ jobs:
           python3 scripts/test-live-acceptance.py
           python3 scripts/test-inspect-drain.py
           python3 scripts/test-restore-privacy.py
+          python3 scripts/test-user-profile.py
           scripts/mvn.sh -B -ntp validate spotless:check
       - name: Unit and native HTTP contract tests (no database or real credentials)
         run: scripts/mvn.sh -B -ntp test

@@ -15,7 +15,8 @@ public interface CommandGateway {
 
   void insertAttempt(Command command);
 
-  void renew(String command, long lease);
+  /** Null means the command is fenced; otherwise return the locked Turn's cancellation state. */
+  Boolean renew(Claim claim, long lease);
 
   void finishCommand(String command);
 

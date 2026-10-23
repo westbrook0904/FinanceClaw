@@ -9,6 +9,7 @@ import com.financeclaw.app.task.TaskQueryService;
 import com.financeclaw.domain.Governance.Grant;
 import com.financeclaw.domain.Task.Owner;
 import com.financeclaw.domain.Task.Problem;
+import com.financeclaw.domain.governance.GrantReceipt;
 import java.util.Arrays;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
@@ -61,7 +62,7 @@ class GrantServiceTest {
     order.verify(queries).owned(OWNER, "conversation");
     order.verify(manager).getTransaction(any());
     order.verify(db).lockGrant("conversation");
-    order.verify(db).grantRequest("conversation", "request");
+    order.verify(db).grantReceipt("conversation", "request");
     order.verify(db).updateGrant("conversation", SCOPES);
     order.verify(db).grantChange("conversation", "request", REQUEST_HASH);
     order.verify(db).grant("conversation");
@@ -72,11 +73,13 @@ class GrantServiceTest {
   @Test
   void replayReturnsTheOriginalReceiptAfterAnotherGrantChange() {
     when(db.lockGrant("conversation")).thenReturn(new Grant("conversation", 15, "[]"));
-    when(db.grantRequest("conversation", "request")).thenReturn(REQUEST_HASH);
     Grant original = new Grant("conversation", 8, "[\"report:write\", \"artifact:read\"]");
-    when(db.grantReplay("conversation", "request")).thenReturn(original);
+    when(db.grantReceipt("conversation", "request"))
+        .thenReturn(
+            new GrantReceipt(
+                REQUEST_HASH, original.conversationId(), original.revision(), original.scopes()));
 
-    assertSame(
+    assertEquals(
         original,
         grants.changeGrant(
             OWNER, "conversation", "request", 7, List.of("artifact:read", "report:write")));
@@ -84,16 +87,16 @@ class GrantServiceTest {
     var order = inOrder(manager, db);
     order.verify(manager).getTransaction(any());
     order.verify(db).lockGrant("conversation");
-    order.verify(db).grantRequest("conversation", "request");
-    order.verify(db).grantReplay("conversation", "request");
+    order.verify(db).grantReceipt("conversation", "request");
     order.verify(manager).commit(status);
     order.verifyNoMoreInteractions();
   }
 
   @Test
   void replayConflictWinsOverTheCurrentRevisionAndDoesNotMutateAuthorization() {
+    when(db.grantReceipt("conversation", "request"))
+        .thenReturn(new GrantReceipt(REQUEST_HASH, "conversation", 8, SCOPES));
     when(db.lockGrant("conversation")).thenReturn(new Grant("conversation", 15, "[]"));
-    when(db.grantRequest("conversation", "request")).thenReturn(REQUEST_HASH);
 
     Problem problem =
         assertThrows(
@@ -103,7 +106,6 @@ class GrantServiceTest {
 
     assertEquals(409, problem.status());
     assertEquals("idempotency_conflict", problem.getMessage());
-    verify(db, never()).grantReplay(any(), any());
     verify(db, never()).updateGrant(any(), any());
     verify(db, never()).grantChange(any(), any(), any());
     verify(manager).rollback(status);
@@ -151,7 +153,7 @@ class GrantServiceTest {
     var order = inOrder(manager, db);
     order.verify(manager).getTransaction(any());
     order.verify(db).lockGrant("conversation");
-    order.verify(db).grantRequest("conversation", "request");
+    order.verify(db).grantReceipt("conversation", "request");
     order.verify(db).updateGrant("conversation", SCOPES);
     order.verify(db).grantChange("conversation", "request", REQUEST_HASH);
     order.verify(manager).rollback(status);

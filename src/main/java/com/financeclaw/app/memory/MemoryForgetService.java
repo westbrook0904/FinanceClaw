@@ -113,6 +113,7 @@ public final class MemoryForgetService {
           privacy.requireEpoch(expectedEpoch);
           memory.forget(owner);
           events.invalidateOwner(owner);
+          memory.eraseProfile(owner);
           memory.eraseSources(owner);
           memory.eraseFacts(owner);
           memory.eraseRecalls(owner);
@@ -121,6 +122,19 @@ public final class MemoryForgetService {
           memory.audit(owner, privacy.epoch() + 1, "forget", "all");
           memory.recordOperation(owner, key, hash, Long.toString(privacy.epoch() + 1));
           return privacy.epoch() + 1;
+        });
+  }
+
+  /** Profile-only deployments finish the already synchronous SQL erasure without a worker. */
+  public void completeLocalPurge(Owner owner, long expectedEpoch) {
+    tx.executeWithoutResult(
+        status -> {
+          var privacy = memory.lock(owner);
+          // An old idempotency receipt must never finish a newer owner's pending purge.
+          if (privacy == null || privacy.epoch() != expectedEpoch) return;
+          // A durable request awaiting the external ledger keeps its barrier even at this epoch.
+          if (memory.purged(owner) == 1)
+            memory.audit(owner, expectedEpoch, "purge_complete", "all");
         });
   }
 

@@ -15,34 +15,34 @@ public class MyBatisCommandGateway implements CommandGateway {
   }
 
   public Command nextCommand() {
-    return db.nextCommand();
+    return db.getNextQueuedCommandForUpdateSkipLocked();
   }
 
   public Command lockCommand(String id) {
-    return db.lockCommand(id);
+    return db.getCommandForUpdate(id);
   }
 
   public Command lockTurnCommand(String turn) {
-    return db.lockTurnCommand(turn);
+    return db.getCommandByTurnIdForUpdate(turn);
   }
 
   public void claim(String id, String attempt, String worker, long lease) {
-    db.claim(id, attempt, worker, lease);
+    db.updateCommandClaim(id, attempt, worker, lease);
   }
 
   public void insertAttempt(Command command) {
     db.insertAttempt(command);
   }
 
-  public void renew(String command, long lease) {
-    db.renew(command, lease);
+  public Boolean renew(Claim claim, long lease) {
+    return db.updateCommandLeaseAndGetCancellation(claim, lease);
   }
 
   public void finishCommand(String command) {
-    db.finishCommand(command);
+    db.updateCommandDone(command);
   }
 
   public List<String> expired() {
-    return db.expired();
+    return db.listExpiredCommandIds();
   }
 }

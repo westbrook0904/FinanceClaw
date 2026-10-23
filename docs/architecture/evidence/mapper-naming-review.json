@@ -1,0 +1,1512 @@
+{
+  "scope": "six infrastructure production Mappers only; application/domain port names intentionally excluded",
+  "naming": "get single, list collection, exists/is Boolean; insert/update/delete reflecting SQL; ForUpdate/ForShare/SkipLocked lock suffix; expected revision and affected rows retained",
+  "methodCount": 147,
+  "items": [
+    {
+      "mapper": "MemoryMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/memory/MemoryMapper.java",
+      "old": "restrictedWorker",
+      "recommended": "isMemoryWorkerRoleRestricted",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 16,
+      "currentLine": 16
+    },
+    {
+      "mapper": "MemoryMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/memory/MemoryMapper.java",
+      "old": "registerProfile",
+      "recommended": "insertEmbeddingProfileIfAbsent",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 21,
+      "currentLine": 21
+    },
+    {
+      "mapper": "MemoryMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/memory/MemoryMapper.java",
+      "old": "profile",
+      "recommended": "getEmbeddingProfileFingerprint",
+      "note": "Returns embedding model fingerprint, not user profile Markdown.",
+      "implementation": "renamed",
+      "lineAtReview": 27,
+      "currentLine": 27
+    },
+    {
+      "mapper": "MemoryMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/memory/MemoryMapper.java",
+      "old": "ensure",
+      "recommended": "insertOwnerIfAbsent",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 32,
+      "currentLine": 32
+    },
+    {
+      "mapper": "MemoryMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/memory/MemoryMapper.java",
+      "old": "lock",
+      "recommended": "getOwnerPrivacyForUpdate",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 44,
+      "currentLine": 44
+    },
+    {
+      "mapper": "MemoryMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/memory/MemoryMapper.java",
+      "old": "userProfile",
+      "recommended": "getUserProfile",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 49,
+      "currentLine": 49
+    },
+    {
+      "mapper": "MemoryMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/memory/MemoryMapper.java",
+      "old": "advanceProfile",
+      "recommended": "updateProfileRevisionByEpochAndExpectedRevision",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 55,
+      "currentLine": 55
+    },
+    {
+      "mapper": "MemoryMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/memory/MemoryMapper.java",
+      "old": "saveUserProfile",
+      "recommended": "insertOrUpdateUserProfile",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 63,
+      "currentLine": 63
+    },
+    {
+      "mapper": "MemoryMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/memory/MemoryMapper.java",
+      "old": "eraseProfile",
+      "recommended": "deleteUserProfile",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 66,
+      "currentLine": 67
+    },
+    {
+      "mapper": "MemoryMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/memory/MemoryMapper.java",
+      "old": "source",
+      "recommended": "insertSource",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 71,
+      "currentLine": 72
+    },
+    {
+      "mapper": "MemoryMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/memory/MemoryMapper.java",
+      "old": "sourceById",
+      "recommended": "getSourceById",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 85,
+      "currentLine": 86
+    },
+    {
+      "mapper": "MemoryMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/memory/MemoryMapper.java",
+      "old": "currentSources",
+      "recommended": "listCurrentSourceIds",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 93,
+      "currentLine": 94
+    },
+    {
+      "mapper": "MemoryMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/memory/MemoryMapper.java",
+      "old": "ready",
+      "recommended": "updateAdmittedSourcePending",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 103,
+      "currentLine": 104
+    },
+    {
+      "mapper": "MemoryMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/memory/MemoryMapper.java",
+      "old": "extractJob",
+      "recommended": "insertExtractJobIfAbsent",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 109,
+      "currentLine": 110
+    },
+    {
+      "mapper": "MemoryMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/memory/MemoryMapper.java",
+      "old": "freeze",
+      "recommended": "insertFrozenRecallFacts",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 115,
+      "currentLine": 116
+    },
+    {
+      "mapper": "MemoryMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/memory/MemoryMapper.java",
+      "old": "recall",
+      "recommended": "listFrozenRecallFacts",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 128,
+      "currentLine": 130
+    },
+    {
+      "mapper": "MemoryMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/memory/MemoryMapper.java",
+      "old": "list",
+      "recommended": "listVisibleFacts",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 136,
+      "currentLine": 138
+    },
+    {
+      "mapper": "MemoryMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/memory/MemoryMapper.java",
+      "old": "fact",
+      "recommended": "getFactById",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 139,
+      "currentLine": 141
+    },
+    {
+      "mapper": "MemoryMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/memory/MemoryMapper.java",
+      "old": "newerActive",
+      "recommended": "existsNewerActiveFact",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 146,
+      "currentLine": 148
+    },
+    {
+      "mapper": "MemoryMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/memory/MemoryMapper.java",
+      "old": "active",
+      "recommended": "listActiveFacts",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 154,
+      "currentLine": 156
+    },
+    {
+      "mapper": "MemoryMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/memory/MemoryMapper.java",
+      "old": "insertFact",
+      "recommended": "insertFactIfAbsent",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 160,
+      "currentLine": 162
+    },
+    {
+      "mapper": "MemoryMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/memory/MemoryMapper.java",
+      "old": "supersede",
+      "recommended": "updateActiveFactsSuperseded",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 165,
+      "currentLine": 167
+    },
+    {
+      "mapper": "MemoryMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/memory/MemoryMapper.java",
+      "old": "status",
+      "recommended": "updateFactStatus",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 168,
+      "currentLine": 170
+    },
+    {
+      "mapper": "MemoryMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/memory/MemoryMapper.java",
+      "old": "indexJob",
+      "recommended": "insertOrRequeueIndexJob",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 175,
+      "currentLine": 177
+    },
+    {
+      "mapper": "MemoryMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/memory/MemoryMapper.java",
+      "old": "next",
+      "recommended": "getNextRunnableJobForUpdateSkipLocked",
+      "note": "",
+      "implementation": "retired_or_replaced",
+      "lineAtReview": 183
+    },
+    {
+      "mapper": "MemoryMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/memory/MemoryMapper.java",
+      "old": "claim",
+      "recommended": "updateJobClaim",
+      "note": "",
+      "implementation": "retired_or_replaced",
+      "lineAtReview": 189
+    },
+    {
+      "mapper": "MemoryMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/memory/MemoryMapper.java",
+      "old": "job",
+      "recommended": "getJobForUpdate",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 195,
+      "currentLine": 203
+    },
+    {
+      "mapper": "MemoryMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/memory/MemoryMapper.java",
+      "old": "liveLease",
+      "recommended": "existsLiveJobLease",
+      "note": "",
+      "implementation": "retired_or_replaced",
+      "lineAtReview": 200
+    },
+    {
+      "mapper": "MemoryMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/memory/MemoryMapper.java",
+      "old": "finish",
+      "recommended": "updateRunningJobOutcomeByLeaseToken",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 207,
+      "currentLine": 226
+    },
+    {
+      "mapper": "MemoryMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/memory/MemoryMapper.java",
+      "old": "extracted",
+      "recommended": "updatePendingSourceExtracted",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 210,
+      "currentLine": 230
+    },
+    {
+      "mapper": "MemoryMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/memory/MemoryMapper.java",
+      "old": "project",
+      "recommended": "insertOrUpdateFactProjection",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 218,
+      "currentLine": 238
+    },
+    {
+      "mapper": "MemoryMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/memory/MemoryMapper.java",
+      "old": "search",
+      "recommended": "listSimilarActiveFacts",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 230,
+      "currentLine": 250
+    },
+    {
+      "mapper": "MemoryMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/memory/MemoryMapper.java",
+      "old": "operation",
+      "recommended": "getOperationByIdempotencyKey",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 236,
+      "currentLine": 256
+    },
+    {
+      "mapper": "MemoryMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/memory/MemoryMapper.java",
+      "old": "recordOperation",
+      "recommended": "insertOperationReceipt",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 241,
+      "currentLine": 261
+    },
+    {
+      "mapper": "MemoryMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/memory/MemoryMapper.java",
+      "old": "audit",
+      "recommended": "insertAuditEntry",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 250,
+      "currentLine": 270
+    },
+    {
+      "mapper": "MemoryMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/memory/MemoryMapper.java",
+      "old": "forget",
+      "recommended": "updateOwnerPrivacyForForget",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 259,
+      "currentLine": 279
+    },
+    {
+      "mapper": "MemoryMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/memory/MemoryMapper.java",
+      "old": "eraseSources",
+      "recommended": "updateSourcesForgotten",
+      "note": "UPDATE redacts content and marks forgotten; not DELETE.",
+      "implementation": "renamed",
+      "lineAtReview": 264,
+      "currentLine": 284
+    },
+    {
+      "mapper": "MemoryMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/memory/MemoryMapper.java",
+      "old": "eraseFacts",
+      "recommended": "updateFactsForgotten",
+      "note": "UPDATE redacts content/evidence, marks forgotten, increments revision; not DELETE.",
+      "implementation": "renamed",
+      "lineAtReview": 269,
+      "currentLine": 289
+    },
+    {
+      "mapper": "MemoryMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/memory/MemoryMapper.java",
+      "old": "eraseIndex",
+      "recommended": "deleteFactProjections",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 272,
+      "currentLine": 292
+    },
+    {
+      "mapper": "MemoryMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/memory/MemoryMapper.java",
+      "old": "eraseRecalls",
+      "recommended": "deleteFrozenRecalls",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 277,
+      "currentLine": 297
+    },
+    {
+      "mapper": "MemoryMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/memory/MemoryMapper.java",
+      "old": "eraseJobs",
+      "recommended": "updateJobsForgotten",
+      "note": "UPDATE marks forgotten and clears leases; not DELETE.",
+      "implementation": "renamed",
+      "lineAtReview": 282,
+      "currentLine": 302
+    },
+    {
+      "mapper": "MemoryMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/memory/MemoryMapper.java",
+      "old": "purge",
+      "recommended": "getNextPurgeOwnerForUpdateSkipLocked",
+      "note": "Reads and locks a purge owner, performs no purge write.",
+      "implementation": "renamed",
+      "lineAtReview": 296,
+      "currentLine": 316
+    },
+    {
+      "mapper": "MemoryMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/memory/MemoryMapper.java",
+      "old": "purged",
+      "recommended": "updateOwnerPurgeCompleted",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 302,
+      "currentLine": 322
+    },
+    {
+      "mapper": "RuntimeMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/state/RuntimeMapper.java",
+      "old": "findState",
+      "recommended": "getState",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 17,
+      "currentLine": 17
+    },
+    {
+      "mapper": "RuntimeMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/state/RuntimeMapper.java",
+      "old": "createState",
+      "recommended": "insertStateIfAbsent",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 25,
+      "currentLine": 25
+    },
+    {
+      "mapper": "RuntimeMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/state/RuntimeMapper.java",
+      "old": "compareAndSetState",
+      "recommended": "updateStateByExpectedVersion",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 33,
+      "currentLine": 33
+    },
+    {
+      "mapper": "RuntimeMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/state/RuntimeMapper.java",
+      "old": "tombstoneState",
+      "recommended": "insertOrUpdateStateTombstone",
+      "note": "An INSERT ON CONFLICT UPDATE retaining a deleted tombstone and incrementing version; not physical deletion.",
+      "implementation": "renamed",
+      "lineAtReview": 43,
+      "currentLine": 43
+    },
+    {
+      "mapper": "FeishuMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/channel/FeishuMapper.java",
+      "old": "createLink",
+      "recommended": "insertLinkCode",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 12,
+      "currentLine": 12
+    },
+    {
+      "mapper": "FeishuMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/channel/FeishuMapper.java",
+      "old": "link",
+      "recommended": "getLinkCodeForUpdate",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 19,
+      "currentLine": 19
+    },
+    {
+      "mapper": "FeishuMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/channel/FeishuMapper.java",
+      "old": "consumeLink",
+      "recommended": "updateLinkCodeUsed",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 22,
+      "currentLine": 22
+    },
+    {
+      "mapper": "FeishuMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/channel/FeishuMapper.java",
+      "old": "find",
+      "recommended": "getBindingByChannelIdentityForUpdate",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 26,
+      "currentLine": 26
+    },
+    {
+      "mapper": "FeishuMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/channel/FeishuMapper.java",
+      "old": "lock",
+      "recommended": "getBindingForUpdate",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 30,
+      "currentLine": 30
+    },
+    {
+      "mapper": "FeishuMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/channel/FeishuMapper.java",
+      "old": "bind",
+      "recommended": "insertBinding",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 34,
+      "currentLine": 34
+    },
+    {
+      "mapper": "FeishuMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/channel/FeishuMapper.java",
+      "old": "switchConversation",
+      "recommended": "updateBindingConversation",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 38,
+      "currentLine": 38
+    },
+    {
+      "mapper": "FeishuMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/channel/FeishuMapper.java",
+      "old": "mute",
+      "recommended": "updateBindingMuted",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 41,
+      "currentLine": 42
+    },
+    {
+      "mapper": "FeishuMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/channel/FeishuMapper.java",
+      "old": "active",
+      "recommended": "updateBindingActiveTurn",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 44,
+      "currentLine": 45
+    },
+    {
+      "mapper": "FeishuMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/channel/FeishuMapper.java",
+      "old": "inbox",
+      "recommended": "getInboxEventById",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 47,
+      "currentLine": 48
+    },
+    {
+      "mapper": "FeishuMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/channel/FeishuMapper.java",
+      "old": "recordInbox",
+      "recommended": "insertInboxReceipt",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 51,
+      "currentLine": 52
+    },
+    {
+      "mapper": "FeishuMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/channel/FeishuMapper.java",
+      "old": "dirty",
+      "recommended": "listBindingIdsRequiringProjection",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 59,
+      "currentLine": 60
+    },
+    {
+      "mapper": "FeishuMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/channel/FeishuMapper.java",
+      "old": "insertNotice",
+      "recommended": "insertOrReactivateNotice",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 63,
+      "currentLine": 64
+    },
+    {
+      "mapper": "FeishuMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/channel/FeishuMapper.java",
+      "old": "pending",
+      "recommended": "getNextPendingNotice",
+      "note": "Plain read, not a claim; delivery later re-locks notice and binding and performs guarded pending->sending update.",
+      "implementation": "renamed",
+      "lineAtReview": 67,
+      "currentLine": 68
+    },
+    {
+      "mapper": "FeishuMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/channel/FeishuMapper.java",
+      "old": "notice",
+      "recommended": "getNoticeForUpdate",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 71,
+      "currentLine": 72
+    },
+    {
+      "mapper": "FeishuMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/channel/FeishuMapper.java",
+      "old": "sending",
+      "recommended": "updatePendingNoticeSending",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 75,
+      "currentLine": 76
+    },
+    {
+      "mapper": "FeishuMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/channel/FeishuMapper.java",
+      "old": "outcome",
+      "recommended": "updateNoticeOutcome",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 79,
+      "currentLine": 80
+    },
+    {
+      "mapper": "FeishuMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/channel/FeishuMapper.java",
+      "old": "recover",
+      "recommended": "updateExpiredSendingNoticesUnknown",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 84,
+      "currentLine": 85
+    },
+    {
+      "mapper": "FeishuMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/channel/FeishuMapper.java",
+      "old": "notices",
+      "recommended": "listNoticesByOwner",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 88,
+      "currentLine": 89
+    },
+    {
+      "mapper": "TaskMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/task/TaskMapper.java",
+      "old": "ensureAdmission",
+      "recommended": "insertAdmissionIfAbsent",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 11,
+      "currentLine": 11
+    },
+    {
+      "mapper": "TaskMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/task/TaskMapper.java",
+      "old": "admissionPaused",
+      "recommended": "getAdmissionPausedForShare",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 15,
+      "currentLine": 15
+    },
+    {
+      "mapper": "TaskMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/task/TaskMapper.java",
+      "old": "admission",
+      "recommended": "getAdmission",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 19,
+      "currentLine": 19
+    },
+    {
+      "mapper": "TaskMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/task/TaskMapper.java",
+      "old": "lockAdmission",
+      "recommended": "getAdmissionForUpdate",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 23,
+      "currentLine": 23
+    },
+    {
+      "mapper": "TaskMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/task/TaskMapper.java",
+      "old": "admissionReplay",
+      "recommended": "getAdmissionChangeByIdempotencyKey",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 27,
+      "currentLine": 27
+    },
+    {
+      "mapper": "TaskMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/task/TaskMapper.java",
+      "old": "changeAdmission",
+      "recommended": "updateAdmissionByRevision",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 32,
+      "currentLine": 32
+    },
+    {
+      "mapper": "TaskMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/task/TaskMapper.java",
+      "old": "recordAdmission",
+      "recommended": "insertAdmissionChange",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 39,
+      "currentLine": 39
+    },
+    {
+      "mapper": "TaskMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/task/TaskMapper.java",
+      "old": "admissionReady",
+      "recommended": "isAdmissionTableReadable",
+      "note": "Boolean tautology intentionally probes read privileges/table availability, not whether data exists.",
+      "implementation": "renamed",
+      "lineAtReview": 48,
+      "currentLine": 48
+    },
+    {
+      "mapper": "TaskMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/task/TaskMapper.java",
+      "old": "createConversation",
+      "recommended": "insertConversation",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 52,
+      "currentLine": 52
+    },
+    {
+      "mapper": "TaskMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/task/TaskMapper.java",
+      "old": "lockConversation",
+      "recommended": "getOwnedConversationForUpdate",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 56,
+      "currentLine": 56
+    },
+    {
+      "mapper": "TaskMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/task/TaskMapper.java",
+      "old": "ownedConversation",
+      "recommended": "getOwnedConversation",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 60,
+      "currentLine": 60
+    },
+    {
+      "mapper": "TaskMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/task/TaskMapper.java",
+      "old": "turn",
+      "recommended": "getTurnById",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 66,
+      "currentLine": 66
+    },
+    {
+      "mapper": "TaskMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/task/TaskMapper.java",
+      "old": "ownedTurn",
+      "recommended": "getOwnedTurn",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 72,
+      "currentLine": 72
+    },
+    {
+      "mapper": "TaskMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/task/TaskMapper.java",
+      "old": "lockTurn",
+      "recommended": "getTurnForUpdate",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 78,
+      "currentLine": 78
+    },
+    {
+      "mapper": "TaskMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/task/TaskMapper.java",
+      "old": "replay",
+      "recommended": "getTurnByIdempotencyKey",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 84,
+      "currentLine": 84
+    },
+    {
+      "mapper": "TaskMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/task/TaskMapper.java",
+      "old": "active",
+      "recommended": "existsActiveTurnByConversation",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 88,
+      "currentLine": 89
+    },
+    {
+      "mapper": "TaskMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/task/TaskMapper.java",
+      "old": "insertTurn",
+      "recommended": "insertTurn",
+      "note": "",
+      "implementation": "unchanged",
+      "lineAtReview": 95,
+      "currentLine": 96
+    },
+    {
+      "mapper": "TaskMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/task/TaskMapper.java",
+      "old": "insertCommand",
+      "recommended": "insertCommand",
+      "note": "",
+      "implementation": "unchanged",
+      "lineAtReview": 98,
+      "currentLine": 99
+    },
+    {
+      "mapper": "TaskMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/task/TaskMapper.java",
+      "old": "nextCommand",
+      "recommended": "getNextQueuedCommandForUpdateSkipLocked",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 107,
+      "currentLine": 108
+    },
+    {
+      "mapper": "TaskMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/task/TaskMapper.java",
+      "old": "lockCommand",
+      "recommended": "getCommandForUpdate",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 110,
+      "currentLine": 111
+    },
+    {
+      "mapper": "TaskMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/task/TaskMapper.java",
+      "old": "lockTurnCommand",
+      "recommended": "getCommandByTurnIdForUpdate",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 113,
+      "currentLine": 114
+    },
+    {
+      "mapper": "TaskMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/task/TaskMapper.java",
+      "old": "expired",
+      "recommended": "listExpiredCommandIds",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 117,
+      "currentLine": 118
+    },
+    {
+      "mapper": "TaskMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/task/TaskMapper.java",
+      "old": "claim",
+      "recommended": "updateCommandClaim",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 124,
+      "currentLine": 125
+    },
+    {
+      "mapper": "TaskMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/task/TaskMapper.java",
+      "old": "insertAttempt",
+      "recommended": "insertAttempt",
+      "note": "",
+      "implementation": "unchanged",
+      "lineAtReview": 132,
+      "currentLine": 133
+    },
+    {
+      "mapper": "TaskMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/task/TaskMapper.java",
+      "old": "renew",
+      "recommended": "updateCommandLeaseAndGetCancellation",
+      "note": "SQL UPDATE RETURNING annotated @Select(affectData=true): nullable Boolean; null=no affected row/fenced; false=renewed, not cancelling; true=renewed, cancelling. Preserve tri-state and cache settings.",
+      "implementation": "renamed",
+      "lineAtReview": 158,
+      "currentLine": 159
+    },
+    {
+      "mapper": "TaskMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/task/TaskMapper.java",
+      "old": "finishCommand",
+      "recommended": "updateCommandDone",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 162,
+      "currentLine": 164
+    },
+    {
+      "mapper": "TaskMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/task/TaskMapper.java",
+      "old": "transition",
+      "recommended": "updateTurnState",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 166,
+      "currentLine": 168
+    },
+    {
+      "mapper": "TaskMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/task/TaskMapper.java",
+      "old": "event",
+      "recommended": "insertTurnEventAndReturn",
+      "note": "SQL INSERT RETURNING annotated @Select(affectData=true), not a read. Preserve annotation, return Event and flushCache.",
+      "implementation": "renamed",
+      "lineAtReview": 177,
+      "currentLine": 179
+    },
+    {
+      "mapper": "TaskMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/task/TaskMapper.java",
+      "old": "events",
+      "recommended": "listTurnEventsAfterRevision",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 181,
+      "currentLine": 183
+    },
+    {
+      "mapper": "TaskMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/task/TaskMapper.java",
+      "old": "journal",
+      "recommended": "insertJournalEntryIfAbsent",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 185,
+      "currentLine": 187
+    },
+    {
+      "mapper": "TaskMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/task/TaskMapper.java",
+      "old": "messages",
+      "recommended": "listJournalEntriesAfterSequence",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 193,
+      "currentLine": 195
+    },
+    {
+      "mapper": "TaskMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/task/TaskMapper.java",
+      "old": "seal",
+      "recommended": "updateAttemptOutcomeIfUnsealed",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 200,
+      "currentLine": 202
+    },
+    {
+      "mapper": "TaskMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/task/TaskMapper.java",
+      "old": "receipt",
+      "recommended": "getAttemptReceipt",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 204,
+      "currentLine": 206
+    },
+    {
+      "mapper": "TaskMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/task/TaskMapper.java",
+      "old": "outbox",
+      "recommended": "insertOutboxEventIfAbsent",
+      "note": "",
+      "implementation": "retired_or_replaced",
+      "lineAtReview": 208
+    },
+    {
+      "mapper": "TaskMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/task/TaskMapper.java",
+      "old": "projectBatch",
+      "recommended": "updateOutboxDeliveryBatchWithProjection",
+      "note": "Atomic CTE claims outbox, upserts one projection per distinct turn, marks outbox delivered; int is final UPDATE count of delivered outbox rows, not distinct projections.",
+      "implementation": "retired_or_replaced",
+      "lineAtReview": 234
+    },
+    {
+      "mapper": "TaskMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/task/TaskMapper.java",
+      "old": "cancelReplay",
+      "recommended": "getCancelReceiptByIdempotencyKey",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 238,
+      "currentLine": 210
+    },
+    {
+      "mapper": "TaskMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/task/TaskMapper.java",
+      "old": "recordCancel",
+      "recommended": "insertCancelReceipt",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 242,
+      "currentLine": 214
+    },
+    {
+      "mapper": "TaskMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/task/TaskMapper.java",
+      "old": "history",
+      "recommended": "listCompletedHistoryByReleaseAndGrant",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 252,
+      "currentLine": 224
+    },
+    {
+      "mapper": "TaskMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/task/TaskMapper.java",
+      "old": "artifactsReady",
+      "recommended": "isArtifactTableReadable",
+      "note": "Boolean tautology intentionally probes read privileges/table availability, not whether data exists.",
+      "implementation": "renamed",
+      "lineAtReview": 259,
+      "currentLine": 231
+    },
+    {
+      "mapper": "TaskMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/task/TaskMapper.java",
+      "old": "stateReady",
+      "recommended": "isRuntimeStateTableReadable",
+      "note": "Boolean tautology intentionally probes read privileges/table availability, not whether data exists.",
+      "implementation": "renamed",
+      "lineAtReview": 263,
+      "currentLine": 235
+    },
+    {
+      "mapper": "OperationsMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/task/OperationsMapper.java",
+      "old": "turnBacklog",
+      "recommended": "listTurnBacklog",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 35,
+      "currentLine": 35
+    },
+    {
+      "mapper": "OperationsMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/task/OperationsMapper.java",
+      "old": "notificationBacklog",
+      "recommended": "listNotificationBacklog",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 48,
+      "currentLine": 48
+    },
+    {
+      "mapper": "OperationsMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/task/OperationsMapper.java",
+      "old": "bindingBacklog",
+      "recommended": "listBindingBacklog",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 60,
+      "currentLine": 60
+    },
+    {
+      "mapper": "OperationsMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/task/OperationsMapper.java",
+      "old": "memoryBacklog",
+      "recommended": "listMemoryJobBacklog",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 70,
+      "currentLine": 70
+    },
+    {
+      "mapper": "OperationsMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/task/OperationsMapper.java",
+      "old": "drain",
+      "recommended": "getDrainSummary",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 107,
+      "currentLine": 107
+    },
+    {
+      "mapper": "OperationsMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/task/OperationsMapper.java",
+      "old": "tasks",
+      "recommended": "getTaskStatistics",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 122,
+      "currentLine": 122
+    },
+    {
+      "mapper": "OperationsMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/task/OperationsMapper.java",
+      "old": "calls",
+      "recommended": "getCallStatistics",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 130,
+      "currentLine": 130
+    },
+    {
+      "mapper": "OperationsMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/task/OperationsMapper.java",
+      "old": "outbox",
+      "recommended": "getOutboxStatistics",
+      "note": "",
+      "implementation": "retired_or_replaced",
+      "lineAtReview": 137
+    },
+    {
+      "mapper": "OperationsMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/task/OperationsMapper.java",
+      "old": "notifications",
+      "recommended": "getNotificationStatistics",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 148,
+      "currentLine": 141
+    },
+    {
+      "mapper": "GovernanceMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/governance/GovernanceMapper.java",
+      "old": "setArtifactScope",
+      "recommended": "updateArtifactScope",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 12,
+      "currentLine": 12
+    },
+    {
+      "mapper": "GovernanceMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/governance/GovernanceMapper.java",
+      "old": "artifactScope",
+      "recommended": "getArtifactScope",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 15,
+      "currentLine": 15
+    },
+    {
+      "mapper": "GovernanceMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/governance/GovernanceMapper.java",
+      "old": "step",
+      "recommended": "getCapabilityStep",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 19,
+      "currentLine": 19
+    },
+    {
+      "mapper": "GovernanceMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/governance/GovernanceMapper.java",
+      "old": "saveStep",
+      "recommended": "insertCapabilityStep",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 24,
+      "currentLine": 24
+    },
+    {
+      "mapper": "GovernanceMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/governance/GovernanceMapper.java",
+      "old": "ensureGrant",
+      "recommended": "insertGrantIfAbsent",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 33,
+      "currentLine": 33
+    },
+    {
+      "mapper": "GovernanceMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/governance/GovernanceMapper.java",
+      "old": "lockGrant",
+      "recommended": "getGrantForUpdate",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 37,
+      "currentLine": 37
+    },
+    {
+      "mapper": "GovernanceMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/governance/GovernanceMapper.java",
+      "old": "grant",
+      "recommended": "getGrant",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 41,
+      "currentLine": 41
+    },
+    {
+      "mapper": "GovernanceMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/governance/GovernanceMapper.java",
+      "old": "updateGrant",
+      "recommended": "updateGrant",
+      "note": "",
+      "implementation": "unchanged",
+      "lineAtReview": 45,
+      "currentLine": 45
+    },
+    {
+      "mapper": "GovernanceMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/governance/GovernanceMapper.java",
+      "old": "grantRequest",
+      "recommended": "getGrantChangeRequestHash",
+      "note": "",
+      "implementation": "retired_or_replaced",
+      "lineAtReview": 49
+    },
+    {
+      "mapper": "GovernanceMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/governance/GovernanceMapper.java",
+      "old": "grantReplay",
+      "recommended": "getGrantChangeByIdempotencyKey",
+      "note": "",
+      "implementation": "retired_or_replaced",
+      "lineAtReview": 53
+    },
+    {
+      "mapper": "GovernanceMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/governance/GovernanceMapper.java",
+      "old": "grantChange",
+      "recommended": "insertGrantChange",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 57,
+      "currentLine": 54
+    },
+    {
+      "mapper": "GovernanceMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/governance/GovernanceMapper.java",
+      "old": "insertPolicy",
+      "recommended": "insertTurnPolicy",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 61,
+      "currentLine": 59
+    },
+    {
+      "mapper": "GovernanceMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/governance/GovernanceMapper.java",
+      "old": "policy",
+      "recommended": "getTurnPolicy",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 66,
+      "currentLine": 64
+    },
+    {
+      "mapper": "GovernanceMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/governance/GovernanceMapper.java",
+      "old": "modelCall",
+      "recommended": "updateModelCallCountWithinLimit",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 70,
+      "currentLine": 68
+    },
+    {
+      "mapper": "GovernanceMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/governance/GovernanceMapper.java",
+      "old": "toolCall",
+      "recommended": "updateToolCallCountWithinLimit",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 74,
+      "currentLine": 72
+    },
+    {
+      "mapper": "GovernanceMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/governance/GovernanceMapper.java",
+      "old": "insertInteraction",
+      "recommended": "insertInteraction",
+      "note": "",
+      "implementation": "unchanged",
+      "lineAtReview": 81,
+      "currentLine": 79
+    },
+    {
+      "mapper": "GovernanceMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/governance/GovernanceMapper.java",
+      "old": "interaction",
+      "recommended": "getInteractionById",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 87,
+      "currentLine": 85
+    },
+    {
+      "mapper": "GovernanceMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/governance/GovernanceMapper.java",
+      "old": "lockInteraction",
+      "recommended": "getInteractionForUpdate",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 90,
+      "currentLine": 88
+    },
+    {
+      "mapper": "GovernanceMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/governance/GovernanceMapper.java",
+      "old": "interactions",
+      "recommended": "listInteractionsByTurnId",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 96,
+      "currentLine": 94
+    },
+    {
+      "mapper": "GovernanceMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/governance/GovernanceMapper.java",
+      "old": "answer",
+      "recommended": "updatePendingInteractionAnswer",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 100,
+      "currentLine": 98
+    },
+    {
+      "mapper": "GovernanceMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/governance/GovernanceMapper.java",
+      "old": "invalidate",
+      "recommended": "updatePendingInteractionsInvalid",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 104,
+      "currentLine": 103
+    },
+    {
+      "mapper": "GovernanceMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/governance/GovernanceMapper.java",
+      "old": "resume",
+      "recommended": "updateDoneCommandForResume",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 108,
+      "currentLine": 107
+    },
+    {
+      "mapper": "GovernanceMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/governance/GovernanceMapper.java",
+      "old": "insertArtifact",
+      "recommended": "insertArtifact",
+      "note": "",
+      "implementation": "unchanged",
+      "lineAtReview": 112,
+      "currentLine": 112
+    },
+    {
+      "mapper": "GovernanceMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/governance/GovernanceMapper.java",
+      "old": "artifact",
+      "recommended": "getArtifactById",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 116,
+      "currentLine": 116
+    },
+    {
+      "mapper": "GovernanceMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/governance/GovernanceMapper.java",
+      "old": "effect",
+      "recommended": "getToolCallEffect",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 120,
+      "currentLine": 120
+    },
+    {
+      "mapper": "GovernanceMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/governance/GovernanceMapper.java",
+      "old": "beginEffect",
+      "recommended": "insertPendingToolCall",
+      "note": "",
+      "implementation": "retired_or_replaced",
+      "lineAtReview": 124
+    },
+    {
+      "mapper": "GovernanceMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/governance/GovernanceMapper.java",
+      "old": "completeEffect",
+      "recommended": "updatePendingToolCallCompleted",
+      "note": "",
+      "implementation": "retired_or_replaced",
+      "lineAtReview": 129
+    },
+    {
+      "mapper": "GovernanceMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/governance/GovernanceMapper.java",
+      "old": "uncertain",
+      "recommended": "existsPendingToolCall",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 134,
+      "currentLine": 124
+    },
+    {
+      "mapper": "GovernanceMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/governance/GovernanceMapper.java",
+      "old": "report",
+      "recommended": "insertReport",
+      "note": "",
+      "implementation": "retired_or_replaced",
+      "lineAtReview": 138
+    },
+    {
+      "mapper": "GovernanceMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/governance/GovernanceMapper.java",
+      "old": "startedAt",
+      "recommended": "getAttemptStartedAt",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 145,
+      "currentLine": 137
+    },
+    {
+      "mapper": "GovernanceMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/governance/GovernanceMapper.java",
+      "old": "now",
+      "recommended": "getDatabaseTimestamp",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 148,
+      "currentLine": 140
+    },
+    {
+      "mapper": "GovernanceMapper",
+      "path": "src/main/java/com/financeclaw/infrastructure/governance/GovernanceMapper.java",
+      "old": "requestClock",
+      "recommended": "getTurnCreatedAt",
+      "note": "",
+      "implementation": "renamed",
+      "lineAtReview": 151,
+      "currentLine": 143
+    }
+  ],
+  "source": {
+    "url": "https://alibaba.github.io/Alibaba-Java-Coding-Guidelines/#naming-conventions",
+    "level": "For Reference",
+    "verifiedBy": "Official Alibaba documentation, naming conventions item 15 (For Reference); checked during repository review",
+    "rule": "get for a single object; list for collections; count for statistics; save/insert for insertion; remove/delete for deletion; update for changes"
+  },
+  "projectExtensions": [
+    "exists/is prefixes for Boolean SQL predicates and permission probes; these are not claimed as handbook prescriptions",
+    "ForUpdate/ForShare/SkipLocked suffixes describe locking SQL",
+    "IfAbsent/ByExpectedVersion/ByRevision suffixes describe deduplication and optimistic write guards",
+    "DML with RETURNING keeps write prefix even when MyBatis uses @Select(affectData=true)"
+  ],
+  "reviewOnly": false,
+  "exceptionNotes": [
+    {
+      "mapper": "TaskMapper",
+      "old": "renew",
+      "note": "A future API cleanup could replace nullable Boolean with a named result record; a pure rename must preserve existing null/false/true behavior."
+    },
+    {
+      "mapper": "TaskMapper",
+      "old": "projectBatch",
+      "note": "Suggested name is intentionally explicit about both writes; affected rows are delivered outbox records."
+    },
+    {
+      "mapper": "MemoryMapper",
+      "old": "advanceProfile",
+      "note": "Expected epoch and profile revision are both guards; recommended name includes both."
+    }
+  ],
+  "reviewScope": "Current uncommitted workspace with V1-V9; proposals only, no production signatures changed",
+  "implementationSummary": {
+    "renamed": 130,
+    "retired_or_replaced": 11,
+    "unchanged": 6
+  },
+  "currentMethodCount": 140,
+  "currentMapperCounts": {
+    "TaskMapper": 38,
+    "GovernanceMapper": 29,
+    "MemoryMapper": 42,
+    "FeishuMapper": 19,
+    "OperationsMapper": 8,
+    "RuntimeMapper": 4
+  },
+  "implementationScope": "V10/V11 and typed Mapper refactor applied; retired/replaced methods are not renamed back into existence"
+}

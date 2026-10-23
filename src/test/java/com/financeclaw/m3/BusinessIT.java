@@ -505,7 +505,7 @@ class BusinessIT {
     assertThat(later)
         .contains("## Framework: Build From The Shelf", "5a0326ce34b44c015fc26b5c28f6118092c806e4");
     assertThat(saved(c)).contains("## Framework: Build From The Shelf", "SOURCE.json");
-    assertThat(db.policy(t.turnId()).toolCalls()).isEqualTo(2);
+    assertThat(db.getTurnPolicy(t.turnId()).toolCalls()).isEqualTo(2);
     assertThat(
             sql.queryForObject(
                 "SELECT count(*) FROM business.artifacts WHERE turn_id=?",
@@ -529,7 +529,7 @@ class BusinessIT {
     var parallel = submit("/skill " + SKILL_NAME + " parallel");
     run(claim());
     assertThat(turn(parallel).status()).isEqualTo("completed");
-    assertThat(db.policy(parallel.turnId()).toolCalls()).isEqualTo(2);
+    assertThat(db.getTurnPolicy(parallel.turnId()).toolCalls()).isEqualTo(2);
     var traversal = submit("/skill " + SKILL_NAME + " traversal");
     var c = claim();
     run(c);
@@ -544,7 +544,7 @@ class BusinessIT {
     run(first);
     assertThat(turn(t).status()).isEqualTo("waiting");
     assertThat(saved(first)).contains("## Framework: Build From The Shelf");
-    var i = db.interactions(t.turnId()).getFirst();
+    var i = db.listInteractionsByTurnId(t.turnId()).getFirst();
     governance.answer(
         owner,
         i.id(),
@@ -554,7 +554,7 @@ class BusinessIT {
     run(resumed);
     assertThat(turn(t).status()).isEqualTo("completed");
     assertThat(saved(resumed)).contains("## Framework: Build From The Shelf");
-    assertThat(db.policy(t.turnId()).toolCalls()).isEqualTo(2);
+    assertThat(db.getTurnPolicy(t.turnId()).toolCalls()).isEqualTo(2);
     assertThat(resumed.scope().key()).isNotEqualTo(first.scope().key());
   }
 
@@ -591,8 +591,8 @@ class BusinessIT {
                 "agent_state",
                 io.agentscope.core.state.AgentState.class);
     assertThat(state.isPresent()).isTrue();
-    assertThat(db.policy(t.turnId()).modelCalls()).isEqualTo(4);
-    assertThat(db.step(t.turnId(), "child:call-1", "tool:call-1")).isNotNull();
+    assertThat(db.getTurnPolicy(t.turnId()).modelCalls()).isEqualTo(4);
+    assertThat(db.getCapabilityStep(t.turnId(), "child:call-1", "tool:call-1")).isNotNull();
     assertThat(liveEvents.stream().filter(e -> e.kind().equals("tool_started")).map(Event::tool))
         .contains("market_research")
         .doesNotContain("market_snapshot");
@@ -603,7 +603,7 @@ class BusinessIT {
     var t = submit("research missing");
     run(claim());
     assertThat(turn(t).status()).isEqualTo("waiting");
-    var i = db.interactions(t.turnId()).getFirst();
+    var i = db.listInteractionsByTurnId(t.turnId()).getFirst();
     assertThat(i.kind()).isEqualTo("input");
     governance.answer(
         owner,
@@ -626,7 +626,7 @@ class BusinessIT {
     var t = submit("research");
     run(claim());
     assertThat(turn(t).status()).isNotEqualTo("completed");
-    assertThat(db.policy(t.turnId()).modelCalls()).isEqualTo(2);
+    assertThat(db.getTurnPolicy(t.turnId()).modelCalls()).isEqualTo(2);
     publish(List.of(), 12, ReleaseDefinition.OFFLINE, "{}");
     var unavailable = submit("research");
     run(claim());
@@ -665,7 +665,7 @@ class BusinessIT {
       }
       for (String expected : List.of("waiting", "completed")) {
         if (expected.equals("completed")) {
-          var i = db.interactions(t.turnId()).getFirst();
+          var i = db.listInteractionsByTurnId(t.turnId()).getFirst();
           governance.answer(
               owner,
               i.id(),
@@ -702,7 +702,7 @@ class BusinessIT {
                 Integer.class,
                 t.turnId()))
         .isEqualTo(1);
-    assertThat(db.policy(t.turnId()).modelCalls()).isZero();
+    assertThat(db.getTurnPolicy(t.turnId()).modelCalls()).isZero();
   }
 
   @Test
@@ -724,8 +724,8 @@ class BusinessIT {
     assertThat(com.financeclaw.domain.research.ResearchRun.scope(one.scope(), "call-1").key())
         .isNotEqualTo(
             com.financeclaw.domain.research.ResearchRun.scope(two.scope(), "call-1").key());
-    assertThat(db.step(first.turnId(), "child:call-1", "result")).isNotNull();
-    assertThat(db.step(second.turnId(), "child:call-1", "result")).isNotNull();
+    assertThat(db.getCapabilityStep(first.turnId(), "child:call-1", "result")).isNotNull();
+    assertThat(db.getCapabilityStep(second.turnId(), "child:call-1", "result")).isNotNull();
   }
 
   @Test
@@ -733,7 +733,7 @@ class BusinessIT {
     var t = submit("/skill " + SKILL_NAME + " approval");
     var c = claim();
     run(c);
-    var i = db.interactions(t.turnId()).getFirst();
+    var i = db.listInteractionsByTurnId(t.turnId()).getFirst();
     governance.answer(
         owner,
         i.id(),
@@ -777,7 +777,7 @@ class BusinessIT {
       assertThatThrownBy(() -> transport.register(new Toolkit(), denied, c.turn().tenant()))
           .hasMessage("mcp_tenant_denied");
     }
-    assertThat(db.policy(t.turnId()).toolCalls()).isZero();
+    assertThat(db.getTurnPolicy(t.turnId()).toolCalls()).isZero();
   }
 
   @Test
@@ -786,7 +786,7 @@ class BusinessIT {
     var first = claim();
     run(first);
     assertThat(turn(t).status()).isEqualTo("waiting");
-    var i = db.interactions(t.turnId()).getFirst();
+    var i = db.listInteractionsByTurnId(t.turnId()).getFirst();
     assertThat(i.tool()).isEqualTo("publish_portfolio_report");
     assertThat(
             sql.queryForObject(
@@ -794,14 +794,16 @@ class BusinessIT {
                 Integer.class,
                 t.turnId()))
         .isZero();
-    assertThat(db.step(t.turnId(), "workflow:portfolio_review:1.1.0", "analyze_exposure").result())
+    assertThat(
+            db.getCapabilityStep(t.turnId(), "workflow:portfolio_review:1.1.0", "analyze_exposure")
+                .result())
         .contains("700.00", "0.8571");
     var answer = new Answer("approval", i.revision(), "approve", i.actionHash(), null);
     governance.answer(owner, i.id(), "one", answer);
     assertThat(governance.answer(owner, i.id(), "two", answer).idempotentReplay()).isTrue();
     run(claim());
     assertThat(turn(t).status()).isEqualTo("completed");
-    assertThat(db.policy(t.turnId()).modelCalls()).isZero();
+    assertThat(db.getTurnPolicy(t.turnId()).modelCalls()).isZero();
     assertThat(
             sql.queryForObject(
                 "SELECT count(*) FROM business.artifacts WHERE turn_id=?",
@@ -820,11 +822,11 @@ class BusinessIT {
     var stale = submit(portfolio());
     run(claim());
     assertThat(turn(stale).status()).isNotEqualTo("completed");
-    assertThat(db.interactions(stale.turnId())).isEmpty();
+    assertThat(db.listInteractionsByTurnId(stale.turnId())).isEmpty();
     publish(List.of(), 12, ReleaseDefinition.OFFLINE, snapshots(Instant.now()));
     var denied = submit(portfolio());
     run(claim());
-    var i = db.interactions(denied.turnId()).getFirst();
+    var i = db.listInteractionsByTurnId(denied.turnId()).getFirst();
     governance.answer(
         owner, i.id(), "no", new Answer("approval", i.revision(), "reject", i.actionHash(), null));
     run(claim());
@@ -890,7 +892,7 @@ class BusinessIT {
                 t.turnId()))
         .isZero();
     assertThat(
-            db.step(
+            db.getCapabilityStep(
                 t.turnId(),
                 com.financeclaw.app.portfolio.PortfolioReviewService.NAMESPACE,
                 "publish_report"))
@@ -923,7 +925,7 @@ class BusinessIT {
     var prepared = (Map<?, ?>) old.get("prepared");
     var steps = (Map<?, ?>) old.get("steps");
     var approval = (Map<?, ?>) steps.get("publication_approval");
-    db.saveStep(
+    db.insertCapabilityStep(
         t.turnId(),
         com.financeclaw.app.portfolio.PortfolioReviewService.NAMESPACE,
         "publication_approval",
@@ -933,7 +935,7 @@ class BusinessIT {
     assertThat(portfolioService().preparedHash(c)).isEqualTo(hash);
     var published = (Map<?, ?>) portfolioService().publish(c, hash);
     assertThat(portfolioService().publish(c, hash)).isEqualTo(published);
-    assertThat(db.policy(t.turnId()).toolCalls()).isZero();
+    assertThat(db.getTurnPolicy(t.turnId()).toolCalls()).isZero();
     assertThat(
             sql.queryForObject(
                 "SELECT payload::text FROM business.artifacts WHERE turn_id=?",
@@ -962,7 +964,7 @@ class BusinessIT {
                 .getOutput())
         .isNotEmpty();
     org.mockito.Mockito.verifyNoInteractions(model);
-    assertThat(db.policy(t.turnId()).modelCalls()).isZero();
+    assertThat(db.getTurnPolicy(t.turnId()).modelCalls()).isZero();
     var changed = new TreeMap<>(input);
     changed.put("analysis_period", "other");
     assertThatThrownBy(() -> child(c, model).run(param("market_research", changed)).block())
@@ -1008,8 +1010,8 @@ class BusinessIT {
                     .block(Duration.ofSeconds(20)))
         .isInstanceOf(Blocked.class);
     assertThat(calls.get()).isEqualTo(4);
-    assertThat(db.policy(t.turnId()).modelCalls()).isEqualTo(4);
-    assertThat(db.step(t.turnId(), "child:call-1", "result")).isNull();
+    assertThat(db.getTurnPolicy(t.turnId()).modelCalls()).isEqualTo(4);
+    assertThat(db.getCapabilityStep(t.turnId(), "child:call-1", "result")).isNull();
   }
 
   @Test
@@ -1020,7 +1022,7 @@ class BusinessIT {
     assertThatThrownBy(
             () -> researchService().snapshot(execution, "outside", Map.of("symbol", "NVDA")))
         .hasMessage("child_scope_expansion");
-    assertThat(db.policy(t.turnId()).toolCalls()).isZero();
+    assertThat(db.getTurnPolicy(t.turnId()).toolCalls()).isZero();
     var bounded = researchService().begin(c, "call-2", researchInput());
     for (int n = 0; n < 10; n++)
       researchService().snapshot(bounded, "snapshot-" + n, Map.of("symbol", "aapl"));
@@ -1028,10 +1030,10 @@ class BusinessIT {
     assertThatThrownBy(
             () -> researchService().snapshot(exhausted, "overflow", Map.of("symbol", "AAPL")))
         .hasMessage("child_tool_budget_exceeded");
-    assertThat(db.policy(t.turnId()).toolCalls()).isEqualTo(10);
+    assertThat(db.getTurnPolicy(t.turnId()).toolCalls()).isEqualTo(10);
     assertThatThrownBy(() -> researchService().complete(exhausted, false, "not complete"))
         .hasMessage("child_incomplete");
-    assertThat(db.step(t.turnId(), "child:call-2", "result")).isNull();
+    assertThat(db.getCapabilityStep(t.turnId(), "child:call-2", "result")).isNull();
   }
 
   @Test
@@ -1070,7 +1072,7 @@ class BusinessIT {
       execution.dispose();
       assertThat(cancelled.await(10, TimeUnit.SECONDS)).isTrue();
       assertThat(terminated.await(10, TimeUnit.SECONDS)).isTrue();
-      assertThat(db.step(t.turnId(), "child:call-1", "result")).isNull();
+      assertThat(db.getCapabilityStep(t.turnId(), "child:call-1", "result")).isNull();
       assertThat(turn(t).status()).isEqualTo("cancelling");
     } finally {
       execution.dispose();

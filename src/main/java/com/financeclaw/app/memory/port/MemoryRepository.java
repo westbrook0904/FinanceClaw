@@ -3,6 +3,7 @@ package com.financeclaw.app.memory.port;
 import com.financeclaw.domain.Memory.*;
 import com.financeclaw.domain.Task.Owner;
 import com.financeclaw.domain.memory.EmbeddingVector;
+import com.financeclaw.domain.memory.UserProfile;
 import java.util.List;
 
 /** Memory facts, privacy and durable jobs; implementations join the caller's Spring transaction. */
@@ -11,11 +12,19 @@ public interface MemoryRepository {
 
   Privacy lock(Owner owner);
 
+  UserProfile userProfile(Owner owner);
+
+  int advanceProfile(Owner owner, long epoch, long revision);
+
+  void saveUserProfile(Owner owner, UserProfile profile);
+
+  void eraseProfile(Owner owner);
+
   void source(Source source);
 
   Source sourceById(String id);
 
-  List<String> currentSources(Owner owner, long epoch, List<String> ids);
+  List<String> currentSources(Owner owner, long epoch, long profileRevision, List<String> ids);
 
   int ready(String id);
 
@@ -41,13 +50,11 @@ public interface MemoryRepository {
 
   void indexJob(String id, String model);
 
-  Job next();
-
-  void claim(long id, String token);
+  Job claimJob(String token);
 
   Job job(long id);
 
-  boolean liveLease(Job job);
+  boolean hasLiveJobLease(Job job);
 
   void finish(Job job, String status, String error);
 

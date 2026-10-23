@@ -64,11 +64,12 @@ public class ExecutionLeaseService {
   }
 
   public boolean heartbeat(Claim claim, long leaseMillis) {
-    return fenced(
-        claim,
-        () -> {
-          db.renew(claim.command().id(), leaseMillis);
-          return reads.turn(claim.turn().id()).status().equals("cancelling");
+    if (leaseMillis <= 0) throw new IllegalArgumentException("Invalid lease duration");
+    return tx.execute(
+        s -> {
+          Boolean cancelling = db.renew(claim, leaseMillis);
+          if (cancelling == null) throw new Fenced();
+          return cancelling;
         });
   }
 }

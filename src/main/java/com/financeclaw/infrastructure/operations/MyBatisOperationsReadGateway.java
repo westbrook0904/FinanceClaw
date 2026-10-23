@@ -20,17 +20,17 @@ public class MyBatisOperationsReadGateway implements OperationsReadGateway {
   @Override
   public Overview overview(Owner owner) {
     return new Overview(
-        operations.tasks(owner),
-        operations.calls(owner),
-        operations.outbox(owner),
-        operations.notifications(owner));
+        operations.getTaskStatistics(owner),
+        operations.getCallStatistics(owner),
+        java.util.Map.of("pending", 0L),
+        operations.getNotificationStatistics(owner));
   }
 
   @Override
   public DrainSnapshot drain(Owner owner) {
     // Keep this as one SQL statement so admission and all counts share one PostgreSQL MVCC
     // snapshot.
-    var row = operations.drain(owner);
+    var row = operations.getDrainSummary(owner);
     var state =
         new Admission((Boolean) row.get("paused"), ((Number) row.get("revision")).longValue());
     var counts = new TreeMap<String, Long>();
@@ -44,21 +44,21 @@ public class MyBatisOperationsReadGateway implements OperationsReadGateway {
 
   @Override
   public List<TurnBacklog> turns(Owner owner, String after, int limit) {
-    return operations.turnBacklog(owner, after, limit);
+    return operations.listTurnBacklog(owner, after, limit);
   }
 
   @Override
   public List<NotificationBacklog> notifications(Owner owner, String after, int limit) {
-    return operations.notificationBacklog(owner, after, limit);
+    return operations.listNotificationBacklog(owner, after, limit);
   }
 
   @Override
   public List<BindingBacklog> bindings(Owner owner, String after, int limit) {
-    return operations.bindingBacklog(owner, after, limit);
+    return operations.listBindingBacklog(owner, after, limit);
   }
 
   @Override
   public List<MemoryBacklog> memoryJobs(Owner owner, long after, int limit) {
-    return operations.memoryBacklog(owner, after, limit);
+    return operations.listMemoryJobBacklog(owner, after, limit);
   }
 }

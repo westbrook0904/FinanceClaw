@@ -85,10 +85,6 @@ class AdmissionIT {
     }
   }
 
-  void project() {
-    while (tasks.projectNext()) {}
-  }
-
   int count(String table) {
     return sql.queryForObject("SELECT count(*) FROM " + table, Integer.class);
   }
@@ -183,7 +179,6 @@ class AdmissionIT {
     tasks.cancel(owner, c, first.turnId(), "cancel");
     assertThat(tasks.submit(owner, c, "original", "same-message").idempotentReplay()).isTrue();
     assertThat(count("business.commands")).isEqualTo(1);
-    project();
     assertThat(operations.drain(owner).drained()).isTrue();
   }
 
@@ -201,7 +196,7 @@ class AdmissionIT {
   }
 
   @Test
-  void queuedWorkContinuesAndCompletionRequiresOutboxDrain() throws Exception {
+  void queuedWorkContinuesAndCompletionIsDrainedWithoutLocalProjection() throws Exception {
     var accepted = submit("offline-work");
     admissions.change(owner, "pause", true, 0);
     assertThat(operations.drain(owner).counts())
@@ -210,9 +205,7 @@ class AdmissionIT {
     run(runtime);
     assertThat(tasks.get(owner, accepted.conversationId(), accepted.turnId()).status())
         .isEqualTo("completed");
-    assertThat(operations.drain(owner).counts()).containsEntry("pending_outbox", 1L);
-    assertThat(operations.drain(owner).drained()).isFalse();
-    project();
+    assertThat(operations.drain(owner).counts()).containsEntry("pending_outbox", 0L);
     assertThat(operations.drain(owner).drained()).isTrue();
   }
 
@@ -246,7 +239,6 @@ class AdmissionIT {
         .isEqualTo("completed");
     assertThat(count("business.turns")).isEqualTo(1);
     if (message.equals("write")) assertThat(count("business.reports")).isEqualTo(1);
-    project();
     assertThat(operations.drain(owner).drained()).isTrue();
   }
 
@@ -260,10 +252,9 @@ class AdmissionIT {
         .containsEntry("cancelling", 1L)
         .containsEntry("active_commands", 1L);
     tasks.acknowledgeCancel(claim);
-    project();
     assertThat(operations.drain(owner).drained()).isTrue();
     sql.update(
-        "INSERT INTO business.tool_calls(turn_id,call_id,action_hash,status) VALUES(?,?,?,'pending')",
+        "INSERT INTO business.reports(turn_id,call_id,action_hash,status) VALUES(?,?,?,'pending')",
         t.turnId(),
         "uncertain",
         "synthetic");
@@ -276,7 +267,6 @@ class AdmissionIT {
     var t = submit("private-not-in-operating-report");
     admissions.change(owner, "pause", true, 0);
     tasks.cancel(owner, t.conversationId(), t.turnId(), "cancel");
-    project();
     sql.update(
         "INSERT INTO channel.bindings(id,tenant_key,open_id,chat_id,tenant,subject,conversation_id,active_turn) VALUES('binding','synthetic','user','chat',?,?,?,?)",
         owner.tenant(),

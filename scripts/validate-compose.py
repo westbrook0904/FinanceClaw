@@ -41,6 +41,7 @@ ENV.update(FINANCECLAW_HTTP_PORT='0', FINANCECLAW_MODEL='offline',
            FINANCECLAW_ZIWEI_ENABLED='false', FINANCECLAW_ZIWEI_DEVELOPMENT='false',
            FINANCECLAW_HOTEL_ENABLED='false', FINANCECLAW_TAIBU_ENABLED='false',
            FINANCECLAW_FEISHU_ENABLED='false', FINANCECLAW_MEMORY_ENABLED='true',
+           FINANCECLAW_PROFILE_ENABLED='true',
            FINANCECLAW_TENANT='local', FINANCECLAW_SUBJECT='developer',
            FINANCECLAW_EMBEDDING_REVISION='m5-no-embedding-v1')
 if ARGS.ziwei:
@@ -79,6 +80,7 @@ RESULT['source_sha256'] = {p: hashlib.sha256((ROOT / p).read_bytes()).hexdigest(
 URL = ''
 TOKEN = (ROOT / '.secrets/api-token').read_text()
 OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+PROFILE_TEXT = '# User profile\n\n- Preferred response: concise.\n- Marker: m5-profile-private-sentinel.\n'
 
 
 def command(args, *, data=None, timeout=240, expected_exit=0):
@@ -134,6 +136,22 @@ def api(path, body=None, key=None, method=None):
     status, result = request(path, body, key, method)
     assert status in (200, 201, 202), (path, status)
     return result
+
+
+def profile(markdown=None, version=None):
+    headers = {'Authorization': 'Bearer ' + TOKEN}
+    if markdown is not None:
+        headers.update({'Content-Type': 'text/markdown; charset=utf-8', 'If-Match': version})
+    req = urllib.request.Request(URL + '/v1/memory/profile.md',
+                                 data=None if markdown is None else markdown.encode('utf-8'),
+                                 method='GET' if markdown is None else 'PUT', headers=headers)
+    try:
+        with OPENER.open(req, timeout=12) as response:
+            assert response.headers.get('Cache-Control') == 'no-store'
+            assert response.headers.get_content_type() == 'text/markdown'
+            return response.status, response.read().decode('utf-8'), response.headers['ETag']
+    except urllib.error.HTTPError as error:
+        return error.code, None, None
 
 
 def wait(check, seconds=45):
@@ -210,6 +228,8 @@ def privacy_snapshot(database, name):
     raw = compose('exec', '-T', 'postgres', 'psql', '-X', '-qAt', '-U', 'postgres',
                   '-d', database, '-v', 'ON_ERROR_STOP=1',
                   data=(ROOT / 'ops/restore-privacy-snapshot.sql').read_bytes())
+    assert json.loads(raw)['schema_version'] == 2
+    assert PROFILE_TEXT.encode('utf-8') not in raw and b'm5-profile-private-sentinel' not in raw
     destination = TEMP / (name + '.json')
     with destination.open('xb') as out:
         os.chmod(destination, 0o600)
@@ -223,13 +243,14 @@ def privacy_check(reference, restored_snapshot, name, expected):
              '--reference', str(reference), '--restored', str(restored_snapshot), '--output', str(destination)],
             expected_exit={'privacy_matches_reference': 0, 'blocked': 2, 'incomplete': 3}[expected])
     report = json.loads(destination.read_text())
-    assert report['assessment'] == expected
+    assert report['assessment'] == expected and report['schema_version'] == 2
     assert destination.stat().st_mode & 0o777 == 0o600
     for path, label in ((reference, 'reference'), (restored_snapshot, 'restored')):
         assert report['input_sha256'][label] == hashlib.sha256(path.read_bytes()).hexdigest()
     for name in ('check-restore-privacy.py', 'inspect-drain.py'):
         assert report['source_sha256'][name] == RESULT['source_sha256']['scripts/' + name]
-    assert not any(value in destination.read_text() for value in (TOKEN, 'response_style', '简洁'))
+    assert not any(value in destination.read_text()
+                   for value in (TOKEN, 'response_style', '简洁', 'm5-profile-private-sentinel'))
     return report
 
 
@@ -270,6 +291,10 @@ try:
     assert sql('SELECT count(*) FROM public.flyway_schema_history WHERE success') == str(
         len(list((ROOT / 'src/main/resources/db/migration').glob('V*__*.sql'))))
     mark('empty_database_and_healthy_combined_runtime', {'startup_seconds': time.monotonic()-started})
+    for retired in ('business.skill_refs', 'agent_runtime.tool_effects',
+                    'business.outbox', 'business.projections'):
+        assert sql("SELECT to_regclass('" + retired + "') IS NULL") == 't', retired
+    mark('retired_experiment_tables_and_local_projection_absent')
     assert sql("SELECT has_schema_privilege('financeclaw_memory','business','USAGE')") == 'f'
     assert sql("SELECT has_schema_privilege('financeclaw_app','business','CREATE')") == 'f'
     for role in ('memory-worker',):
@@ -289,7 +314,7 @@ try:
         durations = list(pool.map(sample, range(THRESHOLDS['requests'])))
     p95 = sorted(durations)[math.ceil(.95*len(durations))-1]
     assert p95 < THRESHOLDS['p95_turn_seconds'], p95
-    wait(lambda: api('/v1/operations')['outbox']['pending'] == THRESHOLDS['remaining_outbox'])
+    assert api('/v1/operations')['outbox']['pending'] == THRESHOLDS['remaining_outbox']
     mark('offline_load_and_idempotency', {'requests': len(durations), 'success_ratio': 1,
                                         'p95_seconds': p95, 'provider_calls': 0, 'provider_cost': 0})
 
@@ -372,6 +397,18 @@ try:
     mark('database_outage_fails_readiness_then_recovers', {'recovery_seconds': elapsed,
                                                          'unavailable_http_statuses': down_statuses})
 
+    profile_status, empty_profile, original_version = profile()
+    assert profile_status == 200 and empty_profile == '' and original_version
+    profile_status, saved_profile, saved_version = profile(PROFILE_TEXT, original_version)
+    assert profile_status == 200 and saved_profile == PROFILE_TEXT and saved_version != original_version
+    assert profile()[1:] == (PROFILE_TEXT, saved_version)
+    assert profile('stale profile edit', original_version)[0] == 409
+    assert sql("SELECT count(*) FROM memory.user_profiles WHERE revision=1") == '1'
+    assert sql("SELECT bool_and(NOT has_table_privilege('financeclaw_memory',"
+               "'memory.user_profiles',p)) FROM unnest(ARRAY['SELECT','INSERT','UPDATE','DELETE']) p") == 't'
+    mark('manual_markdown_profile_has_owner_version_and_restricted_worker_permissions',
+         {'revision': 1, 'utf8_bytes': len(PROFILE_TEXT.encode('utf-8'))})
+
     mc, mr, mp = turn('/remember response_style=简洁')
     terminal(mp)
     wait(lambda: any(f['status'] == 'active' for f in api('/v1/memory')))
@@ -392,14 +429,22 @@ try:
         mark('current_epoch_superseded_projection_is_not_a_forget_violation', current_report)
         old_backup = compose('exec', '-T', 'postgres', 'pg_dump', '-U', 'postgres', '-d', 'financeclaw_java', '-Fc')
         assert sql("SELECT count(*) FROM memory.facts WHERE status='active' AND content IS NOT NULL") == '1'
+        assert sql("SELECT count(*) FROM memory.user_profiles WHERE markdown<>''") == '1'
         mark('pre_forget_backup_captured_with_writers_stopped', {'sha256': hashlib.sha256(old_backup).hexdigest()})
         compose('up', '-d', '--no-deps', '--wait', 'api', 'memory-worker')
         URL = 'http://' + compose('port', 'api', '8080').decode().strip()
     assert api('/v1/memory/forget', {'epoch': epoch}, 'forget-once')['epoch'] == epoch + 1
     wait(lambda: not api('/v1/memory/privacy')['purge_pending'])
     assert api('/v1/memory') == []
+    profile_status, forgotten_profile, forgotten_version = profile()
+    assert profile_status == 200 and forgotten_profile == ''
+    assert forgotten_version.startswith(f'"profile-{epoch + 1}-0-')
+    assert sql('SELECT count(*) FROM memory.user_profiles') == '0'
+    assert sql('SELECT max(profile_revision) FROM memory.owners') == '0'
+    assert profile(PROFILE_TEXT, saved_version)[0] == 409
+    mark('forget_deletes_profile_resets_revision_and_rejects_pre_forget_import')
     mark('restricted_memory_worker_and_forgetting')
-    wait(lambda: api('/v1/operations')['outbox']['pending'] == 0)
+    assert api('/v1/operations')['outbox']['pending'] == 0
     RESULT['operations'] = api('/v1/operations')
     if ARGS.admission:
         pause = admission(True, 'pause-before-backup')
@@ -421,6 +466,7 @@ try:
     assert fingerprints(restored) == original
     assert sql('SELECT max(epoch) FROM memory.owners', restored) == str(epoch + 1)
     assert sql("SELECT count(*) FROM memory.facts WHERE content<>''", restored) == '0'
+    assert sql('SELECT count(*) FROM memory.user_profiles', restored) == '0'
     mark('consistent_backup_restore_all_tables_and_privacy_epoch',
          {'tables': len(original), 'sha256': hashlib.sha256(backup).hexdigest(), 'rows_and_hashes': original})
     if ARGS.restore_privacy:
@@ -435,6 +481,7 @@ try:
         stale_report = privacy_check(reference, stale_snapshot, 'old_backup', 'blocked')
         assert 'epochs_match' in stale_report['errors'] and 'privacy_events_match' in stale_report['errors']
         assert sql("SELECT count(*) FROM memory.facts WHERE status='active' AND content IS NOT NULL", old_database) == '1'
+        assert sql("SELECT count(*) FROM memory.user_profiles WHERE markdown<>''", old_database) == '1'
         mark('old_backup_missing_later_forget_is_blocked_and_isolated', stale_report)
         clean_report = privacy_check(reference, clean_snapshot, 'current_backup', 'privacy_matches_reference')
         mark('current_backup_matches_all_owner_privacy', clean_report)
@@ -459,7 +506,8 @@ try:
         residual = privacy_snapshot(old_database, 'residual-privacy')
         residual_state = json.loads(residual.read_text())
         owner = next(o for o in residual_state['owners'] if o['tenant'] == 'local' and o['subject'] == 'developer')
-        counters = ('unsafe_sources', 'unsafe_facts', 'unsafe_projections', 'unsafe_recalls', 'unsafe_jobs', 'invalid_audit_targets')
+        counters = ('unsafe_profiles', 'unsafe_sources', 'unsafe_facts', 'unsafe_projections',
+                    'unsafe_recalls', 'unsafe_jobs', 'invalid_audit_targets')
         assert all(owner[k] > 0 for k in counters) and residual_state['orphan_owners'] > 0
         residual_report = privacy_check(reference, residual, 'residual_memory', 'blocked')
         assert 'no_orphan_owners' in residual_report['errors'] and 'no_unsafe_memory_rows' in residual_report['errors']
@@ -476,6 +524,7 @@ try:
     URL = 'http://' + compose('port', 'api', '8080').decode().strip()
     assert api(wp)['status'] == 'completed'
     assert api('/v1/memory/privacy')['epoch'] == epoch + 1
+    assert profile()[1] == ''
     if ARGS.admission:
         assert api('/v1/operations/admission') == {'paused': True, 'revision': pause['revision']}
         assert api('/v1/operations/drain')['drained']

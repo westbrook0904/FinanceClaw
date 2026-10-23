@@ -14,7 +14,7 @@ public interface RuntimeMapper {
       SELECT payload::text, version, deleted FROM agent_runtime.states
       WHERE namespace=#{namespace} AND user_id=#{user} AND session_id=#{session} AND state_key=#{key}
       """)
-  StateRow findState(StateKey id);
+  StateRow getState(StateKey id);
 
   @Insert(
       """
@@ -22,7 +22,7 @@ public interface RuntimeMapper {
       VALUES (#{id.namespace},#{id.user},#{id.session},#{id.key},1,CAST(#{json} AS jsonb))
       ON CONFLICT DO NOTHING
       """)
-  int createState(@Param("id") StateKey id, @Param("json") String json);
+  int insertStateIfAbsent(@Param("id") StateKey id, @Param("json") String json);
 
   @Update(
       """
@@ -30,7 +30,7 @@ public interface RuntimeMapper {
       WHERE namespace=#{id.namespace} AND user_id=#{id.user} AND session_id=#{id.session}
         AND state_key=#{id.key} AND version=#{expected} AND NOT deleted
       """)
-  int compareAndSetState(
+  int updateStateByExpectedVersion(
       @Param("id") StateKey id, @Param("json") String json, @Param("expected") long expected);
 
   @Insert(
@@ -40,5 +40,5 @@ public interface RuntimeMapper {
       ON CONFLICT(namespace,user_id,session_id,state_key)
       DO UPDATE SET payload=NULL,deleted=TRUE,version=agent_runtime.states.version+1
       """)
-  int tombstoneState(StateKey id);
+  int insertOrUpdateStateTombstone(StateKey id);
 }

@@ -9,7 +9,7 @@
       "tool_calls": 2
     },
     "outbox": {
-      "pending": 1
+      "pending": 0
     },
     "notifications": {
       "pending": 0,

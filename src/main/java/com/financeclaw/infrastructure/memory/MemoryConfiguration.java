@@ -37,10 +37,17 @@ public class MemoryConfiguration {
   }
 
   @Bean
+  UserProfileService userProfileService(
+      MemoryRepository memory, TransactionTemplate tx, MemoryPolicy policy, TaskEventHub events) {
+    return new UserProfileService(memory, tx, policy, events);
+  }
+
+  @Bean
   MemoryPolicy memoryPolicy(Environment env) {
     return new MemoryPolicy(
         env.getProperty("financeclaw.memory.enabled", Boolean.class, false),
         env.getProperty("financeclaw.memory.vector-search", Boolean.class, false),
-        env.getProperty("financeclaw.memory.embedding.revision", "disabled"));
+        env.getProperty("financeclaw.memory.embedding.revision", "disabled"),
+        env.getProperty("financeclaw.memory.profile-enabled", Boolean.class, true));
   }
 }

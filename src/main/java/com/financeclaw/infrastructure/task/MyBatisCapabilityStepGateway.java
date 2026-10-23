@@ -16,11 +16,11 @@ public class MyBatisCapabilityStepGateway implements CapabilityStepGateway {
   }
 
   public StepResult step(String turn, String namespace, String step) {
-    var saved = db.step(turn, namespace, step);
+    var saved = db.getCapabilityStep(turn, namespace, step);
     return saved == null ? null : new StepResult(saved.inputHash(), saved.result());
   }
 
   public void saveStep(String turn, String namespace, String step, String hash, String result) {
-    db.saveStep(turn, namespace, step, hash, result);
+    db.insertCapabilityStep(turn, namespace, step, hash, result);
   }
 }

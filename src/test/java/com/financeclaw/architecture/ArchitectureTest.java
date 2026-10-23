@@ -326,12 +326,10 @@ class ArchitectureTest {
   }
 
   @Test
-  void notificationDeliveryAndProjectionDoNotConstructAnAgentExecutor() {
+  void notificationDeliveryDoesNotConstructAnAgentExecutor() {
     noClasses()
         .that()
         .haveFullyQualifiedName("com.financeclaw.channel.FeishuDelivery")
-        .or()
-        .haveFullyQualifiedName("com.financeclaw.worker.OutboxProjector")
         .should()
         .dependOnClassesThat()
         .resideInAnyPackage(

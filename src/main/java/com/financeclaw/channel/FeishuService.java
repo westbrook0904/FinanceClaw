@@ -48,12 +48,12 @@ public class FeishuService {
     if (!settings.enabled) throw new Problem(404, "not_found");
     queries.owned(owner, conversation);
     String code = UUID.randomUUID().toString().replace("-", "");
-    db.createLink(hash(code), owner, conversation);
+    db.insertLinkCode(hash(code), owner, conversation);
     return code;
   }
 
   public List<Notice> deliveries(Owner owner) {
-    return db.notices(owner);
+    return db.listNoticesByOwner(owner);
   }
 
   private static String hash(String text) {
@@ -89,15 +89,15 @@ public class FeishuService {
     String text = inbound.messages().getFirst().getTextContent();
     return tx.execute(
         s -> {
-          var binding = db.find(settings.tenantKey, user, chat);
-          var old = db.inbox(event);
+          var binding = db.getBindingByChannelIdentityForUpdate(settings.tenantKey, user, chat);
+          var old = db.getInboxEventById(event);
           if (old != null) {
             if (!old.requestHash().equals(requestHash)) throw new Problem(409, "event_conflict");
             return PayloadJson.parse(old.receipt());
           }
           if (text.startsWith("/bind ")) {
             String code = text.substring(6).trim();
-            var link = db.link(hash(code));
+            var link = db.getLinkCodeForUpdate(hash(code));
             if (link == null || !link.live()) throw new Problem(403, "invalid_binding_code");
             if (binding != null
                 && (!binding.tenant().equals(link.tenant())
@@ -116,16 +116,16 @@ public class FeishuService {
                       1,
                       false,
                       null);
-              db.bind(binding);
-            } else db.switchConversation(binding.id(), link.conversationId());
-            db.consumeLink(hash(code));
+              db.insertBinding(binding);
+            } else db.updateBindingConversation(binding.id(), link.conversationId());
+            db.updateLinkCodeUsed(hash(code));
           } else {
             if (binding == null) throw new Problem(403, "identity_not_bound");
             Owner owner = new Owner(binding.tenant(), binding.subject());
             if (text.equals("/mute") || text.equals("/unmute"))
-              db.mute(binding.id(), text.equals("/mute"));
+              db.updateBindingMuted(binding.id(), text.equals("/mute"));
             else if (text.equals("/new"))
-              db.switchConversation(binding.id(), submission.createConversation(owner));
+              db.updateBindingConversation(binding.id(), submission.createConversation(owner));
             else if (text.equals("/cancel")) {
               if (binding.activeTurn() == null) throw new Problem(409, "no_active_turn");
               cancellation.cancel(
@@ -183,12 +183,12 @@ public class FeishuService {
                         binding.conversationId(),
                         "feishu:" + required(body.path("message"), "message_id"),
                         text);
-                db.active(binding.id(), turn.turnId());
+                db.updateBindingActiveTurn(binding.id(), turn.turnId());
               }
             }
           }
           Object result = Map.of("code", 0);
-          db.recordInbox(event, binding.id(), requestHash, PayloadJson.canonical(result));
+          db.insertInboxReceipt(event, binding.id(), requestHash, PayloadJson.canonical(result));
           return result;
         });
   }

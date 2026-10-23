@@ -67,7 +67,7 @@ class RoleAssemblyIT {
     try (var migration =
         start(MigrationApplication.class, false, Map.of("spring.flyway.enabled", "true"))) {
       assertThat(migration.getBean(Flyway.class).info().current().getVersion().toString())
-          .isEqualTo("7");
+          .isEqualTo("11");
     }
     sql.execute("CREATE ROLE financeclaw_memory LOGIN PASSWORD 'test-memory-only'");
     sql.execute(
@@ -226,6 +226,7 @@ class RoleAssemblyIT {
                       "TaskController",
                       "GovernanceController",
                       "MemoryController",
+                      "UserProfileController",
                       "OperationsController",
                       "FeishuController")
                   : Set.of());
@@ -245,7 +246,7 @@ class RoleAssemblyIT {
       if (!combined && !role.equals("worker"))
         absent(context, TaskWorker.class, AgentExecutionPort.class, BusinessCapabilities.class);
       if (!combined && !role.equals("integrations"))
-        absent(context, OutboxProjector.class, FeishuDelivery.class, AgentScopeFeishu.class);
+        absent(context, FeishuDelivery.class, AgentScopeFeishu.class);
       if (api) {
         assertThat(context.getBean(GrantService.class)).isNotNull();
         assertThat(context.getBean(ArtifactService.class)).isNotNull();
@@ -257,8 +258,6 @@ class RoleAssemblyIT {
       if (role.equals("api"))
         absent(
             context,
-            com.financeclaw.app.task.ProjectTaskService.class,
-            com.financeclaw.infrastructure.task.MyBatisTaskProjectionGateway.class,
             com.financeclaw.app.execution.RecoverTaskService.class,
             com.financeclaw.app.execution.ExecutionCompletionService.class,
             com.financeclaw.infrastructure.task.MyBatisExecutionReceiptGateway.class,
@@ -269,8 +268,6 @@ class RoleAssemblyIT {
             context,
             GrantService.class,
             MyBatisGrantGateway.class,
-            com.financeclaw.app.task.ProjectTaskService.class,
-            com.financeclaw.infrastructure.task.MyBatisTaskProjectionGateway.class,
             FeishuSettings.class,
             FeishuService.class,
             FeishuIngress.class,
@@ -287,14 +284,32 @@ class RoleAssemblyIT {
             AgentScopeMemoryModels.class,
             FeishuService.class,
             FeishuIngress.class);
-      int schedules = combined ? 4 : role.equals("api") ? 0 : 2;
+      var schedules = new HashSet<String>();
+      if (combined || role.equals("worker"))
+        schedules.addAll(
+            Set.of(
+                "com.financeclaw.worker.TaskWorker.poll",
+                "com.financeclaw.worker.TaskWorker.recover",
+                "com.financeclaw.worker.TaskWorker.heartbeat"));
+      if (combined || role.equals("integrations"))
+        schedules.addAll(
+            Set.of(
+                "com.financeclaw.channel.FeishuDelivery.scheduled",
+                "com.financeclaw.channel.FeishuDelivery.scheduledRecovery"));
       assertThat(context.getBean(ScheduledAnnotationBeanPostProcessor.class).getScheduledTasks())
-          .hasSize(schedules);
+          .extracting(task -> task.getTask().getRunnable().toString())
+          .containsExactlyInAnyOrderElementsOf(schedules);
+      assertThat(context.containsBean("executionHeartbeatScheduler"))
+          .isEqualTo(combined || role.equals("worker"));
       assertThat(request(context, "/actuator/health/readiness", "GET", null, false).statusCode())
           .isEqualTo(200);
       assertThat(request(context, "/v1/operations", "GET", null, false).statusCode())
           .isEqualTo(api ? 401 : 404);
       assertThat(request(context, "/v1/operations", "GET", null, true).statusCode())
+          .isEqualTo(api ? 200 : 404);
+      assertThat(request(context, "/v1/memory/profile.md", "GET", null, false).statusCode())
+          .isEqualTo(api ? 401 : 404);
+      assertThat(request(context, "/v1/memory/profile.md", "GET", null, true).statusCode())
           .isEqualTo(api ? 200 : 404);
       inventory(role, context);
     }
@@ -329,7 +344,6 @@ class RoleAssemblyIT {
           ReleaseService.class,
           TaskWorker.class,
           AgentExecutionPort.class,
-          OutboxProjector.class,
           FeishuDelivery.class,
           FeishuService.class,
           FeishuSettings.class,
@@ -338,7 +352,7 @@ class RoleAssemblyIT {
           RuntimeMapper.class,
           FeishuMapper.class,
           OperationsMapper.class);
-      assertThat(context.getBean(MemoryMapper.class).restrictedWorker()).isTrue();
+      assertThat(context.getBean(MemoryMapper.class).isMemoryWorkerRoleRestricted()).isTrue();
       var restricted = new JdbcTemplate(context.getBean(DataSource.class));
       for (String schema : List.of("business", "agent_runtime", "channel"))
         assertThat(
@@ -368,7 +382,7 @@ class RoleAssemblyIT {
                 "financeclaw.feishu.enabled",
                 "true"))) {
       assertThat(context.getBean(Flyway.class).info().current().getVersion().toString())
-          .isEqualTo("7");
+          .isEqualTo("11");
       assertThat(mappers(context)).isEmpty();
       absent(
           context,
@@ -379,7 +393,6 @@ class RoleAssemblyIT {
           ReleaseService.class,
           TaskWorker.class,
           AgentExecutionPort.class,
-          OutboxProjector.class,
           MemoryProcessingService.class,
           MemoryMapper.class,
           AgentScopeMemoryModels.class,
@@ -448,17 +461,16 @@ class RoleAssemblyIT {
       var deliveries = request(api, "/v1/feishu/deliveries", "GET", null, true);
       assertThat(deliveries.statusCode()).isEqualTo(200);
       assertThat(json.readTree(deliveries.body()).isEmpty()).isTrue();
-      assertThat(
-              sql.queryForObject(
-                  "SELECT count(*) FROM business.outbox WHERE NOT delivered", Integer.class))
-          .isPositive();
-      assertThat(sql.queryForObject("SELECT count(*) FROM business.projections", Integer.class))
-          .isZero();
+      var operations = json.readTree(request(api, "/v1/operations", "GET", null, true).body());
+      assertThat(operations.path("outbox").path("pending").asLong()).isZero();
+      assertThat(sql.queryForObject("SELECT to_regclass('business.outbox') IS NULL", Boolean.class))
+          .isTrue();
     }
   }
 
   @Test
-  void apiWorkerAndIntegrationsCompleteAndProjectThroughSeparateContexts() throws Exception {
+  void apiWorkerAndIntegrationsKeepSeparateResponsibilitiesWithoutLocalProjection()
+      throws Exception {
     try (var api = role("api", true, Map.of())) {
       var conversation = request(api, "/v1/conversations", "POST", "{}", true);
       assertThat(conversation.statusCode()).isEqualTo(201);
@@ -488,21 +500,20 @@ class RoleAssemblyIT {
                 json.readTree(request(api, path, "GET", null, true).body()).path("status").asText())
             .isEqualTo("completed");
         assertThat(
-                sql.queryForObject(
-                    "SELECT count(*) FROM business.outbox WHERE NOT delivered", Integer.class))
-            .isPositive();
+                sql.queryForObject("SELECT to_regclass('business.outbox') IS NULL", Boolean.class))
+            .isTrue();
         try (var integrations = role("integrations", false, Map.of())) {
-          deadline = System.nanoTime() + Duration.ofSeconds(10).toNanos();
-          while (sql.queryForObject(
-                      "SELECT count(*) FROM business.outbox WHERE NOT delivered", Integer.class)
-                  > 0
-              && System.nanoTime() < deadline) Thread.sleep(50);
+          assertThat(integrations.getBean(FeishuDelivery.class)).isNotNull();
           assertThat(
                   sql.queryForObject(
-                      "SELECT count(*) FROM business.outbox WHERE NOT delivered", Integer.class))
+                      "SELECT to_regclass('business.projections') IS NULL", Boolean.class))
+              .isTrue();
+          assertThat(
+                  json.readTree(request(api, "/v1/operations", "GET", null, true).body())
+                      .path("outbox")
+                      .path("pending")
+                      .asLong())
               .isZero();
-          assertThat(sql.queryForObject("SELECT count(*) FROM business.projections", Integer.class))
-              .isPositive();
         }
       }
     }

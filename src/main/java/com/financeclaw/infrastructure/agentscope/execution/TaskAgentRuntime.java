@@ -10,6 +10,7 @@ import com.financeclaw.app.release.port.Credentials;
 import com.financeclaw.app.report.ReportService;
 import com.financeclaw.domain.Governance.*;
 import com.financeclaw.domain.Task.*;
+import com.financeclaw.domain.release.ModelProfile;
 import com.financeclaw.infrastructure.agentscope.AgentStateInspector;
 import com.financeclaw.infrastructure.agentscope.IsolatedAgentFactory;
 import com.financeclaw.infrastructure.agentscope.ResumeInputs;
@@ -23,6 +24,7 @@ import io.agentscope.core.message.*;
 import io.agentscope.core.model.*;
 import io.agentscope.core.permission.*;
 import io.agentscope.core.state.*;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -107,6 +109,9 @@ public class TaskAgentRuntime implements com.financeclaw.app.execution.port.Agen
   private Outcome executeRegistered(Claim claim) {
     policy.checkDispatch(claim);
     var release = releases.require(claim.turn().releaseHash());
+    // Freeze request-only data once. Dispatch and completion still check its bound revision.
+    String userContext = policy.memoryContext(claim);
+    int historyBudget = historyBudget(release.primary(), userContext, claim.turn().message());
     var scope = claim.scope();
     var store =
         new MyBatisAgentStateStore(states, scope) {
@@ -150,13 +155,12 @@ public class TaskAgentRuntime implements com.financeclaw.app.execution.port.Agen
                           io.agentscope.core.agent.Agent agent,
                           io.agentscope.core.agent.RuntimeContext context,
                           String prompt) {
-                        return reactor.core.publisher.Mono.fromSupplier(
-                            () -> prompt + policy.memoryContext(claim));
+                        return reactor.core.publisher.Mono.just(prompt + userContext);
                       }
                     });
               })) {
         active.put(claim.command().attemptId(), new Active(agent, stop));
-        List<Msg> inputs = inputs(claim, store, tools);
+        List<Msg> inputs = inputs(claim, store, tools, historyBudget);
         agent
             .streamEvents(
                 inputs,
@@ -223,25 +227,29 @@ public class TaskAgentRuntime implements com.financeclaw.app.execution.port.Agen
     };
   }
 
-  private List<Msg> inputs(Claim claim, MyBatisAgentStateStore store, GovernedTools tools) {
+  private static int historyBudget(ModelProfile model, String userContext, String message) {
+    long capacity =
+        Math.min(model.inputLimit(), model.window() - model.outputReserve()) - model.margin();
+    long mandatory =
+        (long) userContext.getBytes(StandardCharsets.UTF_8).length
+            + message.getBytes(StandardCharsets.UTF_8).length;
+    if (mandatory > capacity) throw new Blocked("context_budget_exceeded");
+    // Preserve the complete profile and current message; history only consumes spare capacity.
+    // The final serialized request check also includes system text, tool schemas and JSON framing.
+    return (int) Math.min(8192, (capacity - mandatory) / 4);
+  }
+
+  private List<Msg> inputs(
+      Claim claim, MyBatisAgentStateStore store, GovernedTools tools, int historyBudget) {
     if (claim.command().resumeId() == null) {
-      var profile = releases.require(claim.turn().releaseHash()).primary();
-      int budget =
-          Math.min(
-              8192,
-              Math.max(
-                  0,
-                  (Math.min(profile.inputLimit(), profile.window() - profile.outputReserve())
-                          - profile.margin())
-                      / 4));
       List<Msg> history = new ArrayList<>();
       int used = 0;
       for (var previous : policy.history(claim)) {
         int bytes =
             PayloadJson.canonical(List.of(previous.message(), previous.result()))
-                .getBytes(java.nio.charset.StandardCharsets.UTF_8)
+                .getBytes(StandardCharsets.UTF_8)
                 .length;
-        if (used + bytes > budget) break;
+        if (used + bytes > historyBudget) break;
         history.addFirst(
             Msg.builder()
                 .name("assistant")

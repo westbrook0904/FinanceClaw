@@ -1,6 +1,7 @@
 package com.financeclaw.app.governance.port;
 
 import com.financeclaw.domain.Governance.Grant;
+import com.financeclaw.domain.governance.GrantReceipt;
 
 /** Durable authorization revisions and the original receipts for grant changes. */
 public interface GrantGateway {
@@ -8,9 +9,7 @@ public interface GrantGateway {
 
   Grant lockGrant(String conversation);
 
-  String grantRequest(String conversation, String key);
-
-  Grant grantReplay(String conversation, String key);
+  GrantReceipt grantReceipt(String conversation, String key);
 
   void updateGrant(String conversation, String scopes);
 

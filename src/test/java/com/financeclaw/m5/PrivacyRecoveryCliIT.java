@@ -127,9 +127,14 @@ class PrivacyRecoveryCliIT {
     String lineage =
         sql.queryForObject("SELECT lineage FROM memory.privacy_ledger_binding", String.class);
     sql.update(
-        "INSERT INTO memory.owners(tenant,subject,epoch,purge_pending) VALUES(?,?,1,true)",
+        "INSERT INTO memory.owners(tenant,subject,epoch,purge_pending,profile_revision) VALUES(?,?,1,true,3)",
         TENANT,
         OWNER);
+    sql.update(
+        "INSERT INTO memory.user_profiles(tenant,subject,epoch,revision,markdown) VALUES(?,?,1,3,?)",
+        TENANT,
+        OWNER,
+        CONTENT);
     sql.update(
         "INSERT INTO business.conversations(id,tenant,subject) VALUES(?,?,?)",
         conversation,
@@ -177,6 +182,9 @@ class PrivacyRecoveryCliIT {
                 "{\"logging\":{\"level\":{\"org.springframework.jdbc.core\":\"TRACE\",\"com.zaxxer.hikari\":\"DEBUG\"}}}"));
     report(first, "privacy_replayed", 1, 1);
     assertThat(sql.queryForObject("SELECT epoch FROM memory.owners", Long.class)).isEqualTo(2);
+    assertThat(sql.queryForObject("SELECT profile_revision FROM memory.owners", Long.class))
+        .isZero();
+    assertThat(count(sql, "memory.user_profiles")).isZero();
     assertThat(sql.queryForObject("SELECT purge_pending FROM memory.owners", Boolean.class))
         .isFalse();
     assertThat(sql.queryForObject("SELECT content FROM memory.sources", String.class)).isNull();

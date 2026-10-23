@@ -12,10 +12,10 @@ public class MyBatisEmbeddingProfiles implements EmbeddingProfiles {
   }
 
   public void registerProfile(String revision, String fingerprint, String model) {
-    db.registerProfile(revision, fingerprint, model);
+    db.insertEmbeddingProfileIfAbsent(revision, fingerprint, model);
   }
 
   public String profile(String revision) {
-    return db.profile(revision);
+    return db.getEmbeddingProfileFingerprint(revision);
   }
 }

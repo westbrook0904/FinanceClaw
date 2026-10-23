@@ -16,10 +16,10 @@ public class RuntimeHealth implements HealthIndicator {
   @Override
   public Health health() {
     try {
-      db.stateReady();
-      db.artifactsReady();
-      db.admissionReady();
-      db.expired();
+      db.isRuntimeStateTableReadable();
+      db.isArtifactTableReadable();
+      db.isAdmissionTableReadable();
+      db.listExpiredCommandIds();
       return Health.up().build();
     } catch (RuntimeException e) {
       return Health.down().build();

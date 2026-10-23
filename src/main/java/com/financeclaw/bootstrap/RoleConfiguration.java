@@ -31,7 +31,6 @@ import com.financeclaw.infrastructure.portfolio.GovernedPortfolioPublication;
 import com.financeclaw.infrastructure.release.*;
 import com.financeclaw.infrastructure.task.*;
 import com.financeclaw.infrastructure.ziwei.*;
-import com.financeclaw.worker.OutboxProjector;
 import com.financeclaw.worker.TaskWorker;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.*;
@@ -69,14 +68,12 @@ public final class RoleConfiguration {
     MapperConfiguration.Tasks.class,
     RuntimeHealth.class,
     TaskEventHub.class,
+    WorkSignals.class,
+    SchedulingConfiguration.class,
     TaskQueryService.class,
     MyBatisTaskQueryGateway.class
   })
   static class TaskReads {}
-
-  @Configuration(proxyBeanMethods = false)
-  @Import({ProjectTaskService.class, MyBatisTaskProjectionGateway.class})
-  static class Projection {}
 
   @Configuration(proxyBeanMethods = false)
   @Import({
@@ -138,6 +135,7 @@ public final class RoleConfiguration {
     GovernanceController.class,
     OperationsController.class,
     MemoryController.class,
+    UserProfileController.class,
     FeishuController.class
   })
   static class Http {}
@@ -161,6 +159,7 @@ public final class RoleConfiguration {
     ZiweiService.class,
     GovernedZiweiPublication.class,
     BusinessCapabilities.class,
+    ExecutionSchedulingConfiguration.class,
     TaskAgentRuntime.class,
     TaskWorker.class
   })
@@ -169,14 +168,12 @@ public final class RoleConfiguration {
   @Configuration(proxyBeanMethods = false)
   @Import({
     TaskReads.class,
-    Projection.class,
     MapperConfiguration.Governance.class,
     MapperConfiguration.Channel.class,
     MyBatisExecutionContextGateway.class,
     FeishuSettings.class,
     AgentScopeFeishu.class,
-    FeishuDelivery.class,
-    OutboxProjector.class
+    FeishuDelivery.class
   })
   static class Delivery {}
 }

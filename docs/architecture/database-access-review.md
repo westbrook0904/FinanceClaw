@@ -1,6 +1,8 @@
 # 数据库访问与实时事件优化
 
-核对日期：2026-10-22。本文描述当前工作区相对于本轮修改前 `2407f30` 的数据库访问变化；部署入口见[同进程运行与事件推送](combined-runtime.md)。
+核对日期：2026-10-23。首批事件与查询优化相对于 `2407f30`，后续 Worker、Outbox 与心跳优化相对于首批检查点 `ae16c36`；部署入口见[同进程运行与事件推送](combined-runtime.md)。
+
+V10 后续调整：当前已退役没有业务读取方的本地 Outbox/Projection 链路，下文该链路的批量优化和验证保留为历史记录；相关生产代码及专项测试已删除。当前空闲 Command 扫描与恢复合计约 0.7 次/秒/启用进程（不含健康检查、记忆或渠道），不再产生 Outbox 轮询。升级和归档要求见[表退役操作](../../ops/retire-legacy-tables.md)。
 
 这里的次数是沿调用链统计的 Mapper/SQL 入口调用数，以及针对调用次数、权限和隐私边界设计的单元测试约束。它们不包括事务开启/提交、连接建立、健康检查、数据库内部工作或查询执行时间；当前 MyBatis 使用 `STATEMENT` 本地缓存范围，不依赖跨 Mapper 调用的缓存来省略检查。本文不是并发压测报告，不能据此宣称生产 QPS、P99、最大用户数或容量提升比例。实际通过的测试批次以本次执行日志和交付说明为准。
 
@@ -58,16 +60,34 @@
 
 | 路径 | 当前固定开销 | 保留原因与可继续改善的方向 |
 | --- | --- | --- |
-| 执行 heartbeat | 每个活动执行 3 次；默认 2 秒一次，即约 `1.5 × 活动执行数` 次/秒 | command fence、续租、取消状态都需 authoritative state；可评估条件更新加 `RETURNING`，保留失效 fencing 和取消响应 |
-| Worker 空闲调度 | 每轮 expired 检查和 next-command 查询共 2 次；默认 250ms，约 8 次/秒/启用进程 | 崩溃恢复和持久队列仍由 SQL 负责；可增加本地唤醒与空闲退避，再保留较低频恢复扫描 |
-| Outbox 空闲扫描 | 每轮 1 次；默认 250ms，约 4 次/秒/启用进程 | 未投递意图需要重启后恢复；可增加提交后本地唤醒和退避，仍保留补偿扫描 |
+| 执行 heartbeat | 每个活动执行从 3 次降为 1 次；默认 2 秒一次，即约 `0.5 × 活动执行数` 次/秒 | 单条条件更新同时返回取消状态；保留 command、Turn 顺序锁定和等待后的过期检查 |
+| Worker 空闲调度 | 稳定空闲时队列约 0.2 次/秒，独立恢复扫描约 0.5 次/秒；原合计约 8 次/秒 | 提交后本地唤醒，空查退避至 5 秒；恢复扫描独立每 2 秒，满载时也执行 |
+| Outbox 扫描与投影 | 稳定空闲约 0.2 次/秒，原约 4 次/秒；50 条意图从 150 条 SQL / 50 个事务降为 1 条 SQL / 1 个事务 | 提交后唤醒、最多 5 秒兜底扫描；每批最多 50 条，投影与确认同事务 |
 | 记忆 Worker 空闲扫描 | purge 与 job 各 1 次；默认 1 秒，约 2 次/秒 | 使用独立受限身份完成提取、索引与隐私清理，可独立评估调度间隔 |
 | AgentScope checkpoint | 每次保存保留 command fencing 与版本 CAS | 不能用仅内存保存替代审批恢复、执行版本和提交证据 |
 | 业务结果与外部效果 | 回执、授权复核、状态转换、journal/outbox 等短事务 | 保存成功或流结束均不等于业务完成；不可因减少查询而删除这些边界 |
 
 以上周期速率忽略查询执行耗时，表示配置周期下的近似调用频率。调度器的延迟、业务处理耗时及是否启用对应角色都会影响真实速率，不能与并发用户数直接画等号。
 
-此外，[MarketResearchService](../../src/main/java/com/financeclaw/app/research/MarketResearchService.java) 的 `begin`、`complete` 与 [CapabilityStepService](../../src/main/java/com/financeclaw/app/execution/CapabilityStepService.java) 仍会分别复核治理状态。后续可在同一事务内复用已锁定的 Policy、合并 step 查询与回执操作；需要先验证工具预算、子任务重放及授权撤销，不能跨事务缓存授权结果。首次受理、审批、取消与完成路径的固定 SQL 也仍存在，本轮优先消除了随连接、文本增量和历史条数放大的访问。
+### Worker 与 Outbox 的本地唤醒和兜底扫描
+
+[WorkSignals](../../src/main/java/com/financeclaw/app/task/WorkSignals.java) 对 Command、Outbox 各保留一个内存计数器。新任务受理、审批回答后重新排队、新 Outbox 意图写入成功时，在事务提交后递增相应计数器；回滚和幂等重放不通知。这里没有额外 SQL，也不在提交线程执行任务。轮询仍以数据库为准，进程重启或外部进程写入都由兜底扫描发现。
+
+[TaskWorker](../../src/main/java/com/financeclaw/worker/TaskWorker.java) 和 原 OutboxProjector 默认每 250ms 执行一次本地调度检查。连续空查按 250、500、1000、2000、4000、5000ms 退避，只有到期或收到通知才访问数据库；新提交在下一个可执行的本地 tick 复扫。扫描开始前捕获通知代次，避免查询返回空到记录退避之间发生提交时丢失唤醒。执行槽位释放同样能唤醒 Worker；满载、关闭或禁用时不查待执行队列，查询失败也退避。
+
+恢复扫描从 Worker claim 循环分离，默认每 2 秒执行，不受空闲退避或槽位耗尽影响。稳定空闲时，队列、恢复、Outbox 三处合计从约 12 次/秒降到约 0.9 次/秒/启用进程；这是配置和调用路径推算，不含启动退避爬升、健康检查、记忆 Worker、处理任务和 SQL 执行时间。外部进程提交不会触发本地通知，需要等待最多 5 秒的退避间隔及调度/数据库耗时。实时 SSE 仍只支持单个 standalone 业务 JVM。
+
+[批量投影](../../src/main/java/com/financeclaw/infrastructure/task/TaskMapper.java) 用一条 CTE 领取最多 50 条 `FOR UPDATE SKIP LOCKED` 意图，按 Turn 取最高 revision、稳定顺序 UPSERT，然后确认这些意图。同批去重和保留已有较高 revision 防止旧状态覆盖新投影；UPSERT 直接返回有效 revision，避免并发提交后的快照遗漏。任何投影或确认错误均整批回滚。50 条记录减少的是往返与事务数，每个意图仍需持久确认；[V8 部分索引](../../src/main/resources/db/migration/V8__outbox_pending_index.sql) 只索引未确认记录。升级时由 migrate 先执行 V8；现有大表建索引仍需按部署维护窗口评估。
+
+### 心跳的一次往返与锁语义
+
+[ExecutionLeaseService.heartbeat](../../src/main/java/com/financeclaw/app/execution/ExecutionLeaseService.java) 保留短事务，但不再分别执行锁 command、续租、查 Turn 三条语句。[TaskMapper.renew](../../src/main/java/com/financeclaw/infrastructure/task/TaskMapper.java) 使用两个有依赖关系的 `MATERIALIZED` CTE，先锁 command，再锁对应 Turn，最后 `UPDATE ... RETURNING` 返回是否为 `cancelling`。`Boolean` 的 `null` 表示没有匹配的可续租命令，服务将其转为 `Fenced`；`false` 表示续租成功且未取消，二者不能混淆。
+
+命令必须匹配原 attempt、fence、Turn 身份并仍为 running。租约到期判断依赖已取得两行锁的 CTE 输出，使用 `clock_timestamp()`，避免把锁等待前尚有效、等待后已经过期的租约重新续活。Turn 使用锁定读取，是为了在语句等待取消事务释放 command 后取得最新取消状态；普通子查询可能仍读取该语句开始时的旧快照。代价是每次心跳也会短暂锁 Turn，减少的是 SQL 往返，并非取消行锁竞争。完成、换代或取消使用相同的 command→Turn 顺序，因此不会为了减少查询而改变锁顺序。
+
+[专用心跳调度器](../../src/main/java/com/financeclaw/bootstrap/ExecutionSchedulingConfiguration.java) 使用独立的一条线程；常规定时任务保留默认两条线程。显式保留 Spring 的 `applicationTaskExecutor`（8 线程、队列 256），避免自定义 scheduler 让 MVC/SSE 写出回退到无界默认执行器。Outbox/恢复/飞书处理占用默认线程时不会排队阻塞心跳调度。每次 tick 将活动执行交给独立心跳执行池，并发上限与执行槽位一致、队列容量为 0。同一 attempt 只允许一个续租在途，慢续租不会堆积历史心跳，也不串行拖住其他执行；线程满时留给下一次 tick 重试，关闭时停止提交并尝试中断在途任务；已进入 JDBC 的续租仍可能在 SQL/连接超时边界内完成，不能把 Java 线程中断当成事务已经回滚。业务连接池仍共享，连接池耗尽或数据库长锁等待仍可能导致租约失效，本轮未隔离这些资源，也不会因此复活过期租约。
+
+此外，[MarketResearchService](../../src/main/java/com/financeclaw/app/research/MarketResearchService.java) 的 `begin`、`complete` 与 [CapabilityStepService](../../src/main/java/com/financeclaw/app/execution/CapabilityStepService.java) 仍会分别复核治理状态。后续可在同一事务内复用已锁定的 Policy、合并 step 查询与回执操作；需要先验证工具预算、子任务重放及授权撤销，不能跨事务缓存授权结果。首次受理、审批、取消与完成路径的固定 SQL 也仍存在，前一轮消除了随连接、文本增量和历史条数放大的访问，本轮继续减少后台空转与固定续租往返。
 
 ## 验证范围
 
@@ -77,11 +97,26 @@
 - [TaskEventHubTest](../../src/test/java/com/financeclaw/architecture/TaskEventHubTest.java)：活动 attempt、身份隔离、失效时丢弃旧内容、提交后发布、有界缓冲和慢连接隔离。
 - [MemoryIT](../../src/test/java/com/financeclaw/m4/MemoryIT.java)：真实 PostgreSQL 批量 source 查询、owner/epoch 过滤、遗忘后过滤；需要可用 Docker Engine。
 - [TaskLifecycleIT](../../src/test/java/com/financeclaw/m1/TaskLifecycleIT.java)：HTTP SSE 重连、身份隔离、任务完成与恢复行为；需要真实数据库。
+- [ExecutionHeartbeatTest](../../src/test/java/com/financeclaw/architecture/ExecutionHeartbeatTest.java)：一次心跳只调用一个 Mapper 语句，成功的 `false` 与没有匹配行区分，失败不追加查询。
+- [ExecutionHeartbeatIT](../../src/test/java/com/financeclaw/m1/ExecutionHeartbeatIT.java)：真实 PostgreSQL 取消/完成/换代竞争、等待 command 或 Turn 锁期间过期不续租、command 先锁的冲突探针，以及事务回滚；需要可用 Docker Engine。
+
+- [IdlePollTest](../../src/test/java/com/financeclaw/worker/IdlePollTest.java)、[TaskWorkerPollingTest](../../src/test/java/com/financeclaw/worker/TaskWorkerPollingTest.java)、原 OutboxProjectorTest（V10 退役）：可控时钟验证退避、提交/容量释放竞态、独立恢复、失败退避与有界批次；一条心跳阻塞时其他执行仍续租，同一 attempt 不重入。
+- [WorkSignalsTest](../../src/test/java/com/financeclaw/architecture/WorkSignalsTest.java) 与生命周期、审批集成测试：事务提交后通知、回滚不通知、幂等重放不重复通知。
+- 原 OutboxProjectionIT（V10 退役）：真实 PostgreSQL 验证 50 条单语句、4 消费者 125 条记录、版本不回退、锁竞争和整批回滚。
+- [SchedulingConfigurationTest](../../src/test/java/com/financeclaw/bootstrap/SchedulingConfigurationTest.java)：占满默认调度器时，具名心跳定时任务仍在独立线程运行；加载实际 YAML，验证 HTTP 异步线程池仍被创建且有界。
 
 单元测试的调用次数断言不替代 JDBC/数据库层观测。部署验收应另行记录连接数、连接池等待、每请求 SQL 数、数据库事务/锁等待、SSE 缓冲溢出、模型与工具耗时，以及多 owner、多会话下的响应分位数。本文不预先声明这些指标已经达标。
 
-## 本次验证结果
+## 首批检查点验证结果
 
-2026-10-22 最终代码的一次完整 `verify spotless:check` 已通过：950 项单元/HTTP 契约/架构测试、275 项集成测试，失败、错误、跳过均为 0，打包与格式检查通过。该批在本地运行模拟模型、MCP、embedding 和飞书服务，数据库与打包实验使用真实 PostgreSQL/Docker。
+2026-10-22 首批检查点（后提交为 `ae16c36`）的一次完整 `verify spotless:check` 已通过：950 项单元/HTTP 契约/架构测试、275 项集成测试，失败、错误、跳过均为 0，打包与格式检查通过。该批在本地运行模拟模型、MCP、embedding 和飞书服务，数据库与打包实验使用真实 PostgreSQL/Docker。
 
 同一最终产物的隔离 Compose 验收通过 28 项，覆盖合并启动、12 会话/4 并发的离线样本、受理控制、SIGKILL 后审批恢复、数据库中断、受限记忆、备份恢复及旧隐私快照拦截；不代表生产容量。静态交付检查也通过。详细记录见[验证汇总](evidence/native-events-db-verification.json)与[容器证据](evidence/combined-runtime-compose.json)。
+
+## 后台访问优化验证结果
+
+2026-10-23 对本轮生产代码执行完整 Maven 回归。角色装配测试最初仍要求 V7，并使用拆分恢复调度之前的任务数；更新测试为 V8、逐个核对各角色允许的定时任务以及专用心跳调度器后，该组 10 项定向复测通过。另调整心跳测试的收尾同步并复跑 9 项，避免夹具关闭时产生额外中断日志。这些后续修改只涉及测试，生产源码与打包 JAR 均未变化。
+
+最终报告覆盖 981 项单元/HTTP 契约/架构测试和 298 项集成测试，失败、错误、跳过均为 0；最终定向复测的 Spotless 检查通过。这里是完整批次加受影响测试复跑的汇总，不宣称首次 `verify` 一次全绿。相同 JAR 的隔离 Compose 验收通过 28 项，包含 V8 启动、离线并发、暂停受理、SIGKILL 审批恢复、数据库中断、受限记忆和隐私备份恢复。
+
+详细命令、初始失败原因、复测结果、源码及 JAR 校验值见[后台优化验证记录](evidence/background-db-verification.json)，容器记录见[后台优化 Compose 证据](evidence/background-db-compose.json)。SQL 次数变化是调用路径和测试约束，不等于生产吞吐或延迟改善比例。

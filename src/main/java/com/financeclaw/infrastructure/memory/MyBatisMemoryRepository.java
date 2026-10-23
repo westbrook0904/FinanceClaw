@@ -4,6 +4,7 @@ import com.financeclaw.app.memory.port.MemoryRepository;
 import com.financeclaw.domain.Memory.*;
 import com.financeclaw.domain.Task.Owner;
 import com.financeclaw.domain.memory.EmbeddingVector;
+import com.financeclaw.domain.memory.UserProfile;
 import java.util.List;
 import org.springframework.stereotype.Component;
 
@@ -16,147 +17,160 @@ public class MyBatisMemoryRepository implements MemoryRepository {
   }
 
   public void ensure(Owner owner) {
-    db.ensure(owner);
+    db.insertOwnerIfAbsent(owner);
   }
 
   public Privacy lock(Owner owner) {
-    return db.lock(owner);
+    return db.getOwnerPrivacyForUpdate(owner);
+  }
+
+  public UserProfile userProfile(Owner owner) {
+    return db.getUserProfile(owner);
+  }
+
+  public int advanceProfile(Owner owner, long epoch, long revision) {
+    return db.updateProfileRevisionByEpochAndExpectedRevision(owner, epoch, revision);
+  }
+
+  public void saveUserProfile(Owner owner, UserProfile profile) {
+    db.insertOrUpdateUserProfile(owner, profile);
+  }
+
+  public void eraseProfile(Owner owner) {
+    db.deleteUserProfile(owner);
   }
 
   public void source(Source source) {
-    db.source(source);
+    db.insertSource(source);
   }
 
   public Source sourceById(String id) {
-    return db.sourceById(id);
+    return db.getSourceById(id);
   }
 
-  public List<String> currentSources(Owner owner, long epoch, List<String> ids) {
+  public List<String> currentSources(
+      Owner owner, long epoch, long profileRevision, List<String> ids) {
     if (ids.isEmpty()) return List.of();
-    return db.currentSources(owner, epoch, ids);
+    return db.listCurrentSourceIds(owner, epoch, profileRevision, ids);
   }
 
   public int ready(String id) {
-    return db.ready(id);
+    return db.updateAdmittedSourcePending(id);
   }
 
   public void extractJob(String id) {
-    db.extractJob(id);
+    db.insertExtractJobIfAbsent(id);
   }
 
   public void freeze(String turn, Owner owner, long epoch) {
-    db.freeze(turn, owner, epoch);
+    db.insertFrozenRecallFacts(turn, owner, epoch);
   }
 
   public List<Fact> recall(String turn, Owner owner) {
-    return db.recall(turn, owner);
+    return db.listFrozenRecallFacts(turn, owner);
   }
 
   public List<Fact> list(Owner owner) {
-    return db.list(owner);
+    return db.listVisibleFacts(owner);
   }
 
   public Fact fact(String id) {
-    return db.fact(id);
+    return db.getFactById(id);
   }
 
   public boolean newerActive(Fact fact) {
-    return db.newerActive(fact);
+    return db.existsNewerActiveFact(fact);
   }
 
   public List<Fact> active(Owner owner) {
-    return db.active(owner);
+    return db.listActiveFacts(owner);
   }
 
   public int insertFact(Fact fact) {
-    return db.insertFact(fact);
+    return db.insertFactIfAbsent(fact);
   }
 
   public void supersede(Fact fact) {
-    db.supersede(fact);
+    db.updateActiveFactsSuperseded(fact);
   }
 
   public void status(String id, String status) {
-    db.status(id, status);
+    db.updateFactStatus(id, status);
   }
 
   public void indexJob(String id, String model) {
-    db.indexJob(id, model);
+    db.insertOrRequeueIndexJob(id, model);
   }
 
-  public Job next() {
-    return db.next();
-  }
-
-  public void claim(long id, String token) {
-    db.claim(id, token);
+  public Job claimJob(String token) {
+    return db.updateNextJobLease(token);
   }
 
   public Job job(long id) {
-    return db.job(id);
+    return db.getJobForUpdate(id);
   }
 
-  public boolean liveLease(Job job) {
-    return db.liveLease(job);
+  public boolean hasLiveJobLease(Job job) {
+    return db.getJobLeaseLiveForUpdate(job);
   }
 
   public void finish(Job job, String status, String error) {
-    db.finish(job, status, error);
+    db.updateRunningJobOutcomeByLeaseToken(job, status, error);
   }
 
   public void extracted(String id) {
-    db.extracted(id);
+    db.updatePendingSourceExtracted(id);
   }
 
   public void project(Fact fact, String model, EmbeddingVector vector) {
-    db.project(fact, model, MemoryVectorCodec.array(vector));
+    db.insertOrUpdateFactProjection(fact, model, MemoryVectorCodec.array(vector));
   }
 
   public List<Fact> search(Owner owner, String model, EmbeddingVector vector) {
-    return db.search(owner, model, MemoryVectorCodec.query(vector));
+    return db.listSimilarActiveFacts(owner, model, MemoryVectorCodec.query(vector));
   }
 
   public Operation operation(Owner owner, String key) {
-    return db.operation(owner, key);
+    return db.getOperationByIdempotencyKey(owner, key);
   }
 
   public void recordOperation(Owner owner, String key, String hash, String result) {
-    db.recordOperation(owner, key, hash, result);
+    db.insertOperationReceipt(owner, key, hash, result);
   }
 
   public void audit(Owner owner, long epoch, String action, String target) {
-    db.audit(owner, epoch, action, target);
+    db.insertAuditEntry(owner, epoch, action, target);
   }
 
   public void forget(Owner owner) {
-    db.forget(owner);
+    db.updateOwnerPrivacyForForget(owner);
   }
 
   public void eraseSources(Owner owner) {
-    db.eraseSources(owner);
+    db.updateSourcesForgotten(owner);
   }
 
   public void eraseFacts(Owner owner) {
-    db.eraseFacts(owner);
+    db.updateFactsForgotten(owner);
   }
 
   public void eraseIndex(Owner owner) {
-    db.eraseIndex(owner);
+    db.deleteFactProjections(owner);
   }
 
   public void eraseRecalls(Owner owner) {
-    db.eraseRecalls(owner);
+    db.deleteFrozenRecalls(owner);
   }
 
   public void eraseJobs(Owner owner) {
-    db.eraseJobs(owner);
+    db.updateJobsForgotten(owner);
   }
 
   public Privacy purge() {
-    return db.purge();
+    return db.getNextPurgeOwnerForUpdateSkipLocked();
   }
 
   public int purged(Owner owner) {
-    return db.purged(owner);
+    return db.updateOwnerPurgeCompleted(owner);
   }
 }

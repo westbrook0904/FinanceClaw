@@ -23,12 +23,22 @@ def fixture(epoch=2):
     for n in range(2, epoch + 1):
         row['events'].extend([{'id': n * 2, 'epoch': n, 'action': 'forget', 'at': AT},
                               {'id': n * 2 + 1, 'epoch': n, 'action': 'purge_complete', 'at': AT}])
-    return {'schema_version': 1, 'scope': 'all_memory_owners',
+    return {'schema_version': 2, 'scope': 'all_memory_owners',
             'consistency': 'repeatable_read_read_only', 'captured_at': AT,
             'orphan_owners': 0, 'owners': [row]}
 
 
 class RestorePrivacyTest(unittest.TestCase):
+    def test_old_snapshots_cannot_prove_profile_erasure(self):
+        legacy = fixture()
+        legacy['schema_version'] = 1
+        for owner in legacy['owners']:
+            owner.pop('unsafe_profiles')
+        for left, right in ((legacy, legacy), (legacy, fixture()), (fixture(), legacy)):
+            report = privacy.compare(left, right)
+            self.assertEqual(report['assessment'], 'incomplete')
+            self.assertEqual(report['errors'], ['invalid_snapshot'])
+
     def test_matching_clean_privacy_and_empty_databases(self):
         for epoch in (1, 2, 3):
             source = fixture(epoch)
@@ -102,6 +112,7 @@ class RestorePrivacyTest(unittest.TestCase):
     def test_malformed_types_duplicate_identity_and_audit_ids_are_incomplete(self):
         mutations = (
             lambda d: d.update(schema_version=True), lambda d: d.update(owners={}),
+            lambda d: d.update(schema_version=1),
             lambda d: d.update(scope='current_owner'), lambda d: d.update(captured_at='yesterday'),
             lambda d: d['owners'][0].update(epoch=True), lambda d: d['owners'][0].update(unsafe_jobs=-1),
             lambda d: d['owners'].append(copy.deepcopy(d['owners'][0])),

@@ -47,6 +47,7 @@ class ForgetRecoveryRepositoryIT {
   @Test
   void repeatedReplayRetainsNewEpochDataAndRepairsMissingOperationReceipt() {
     seed("old", 1);
+    profile(1, 4, "old-profile-private");
     var fact = fact(1);
     commit(
         () -> {
@@ -54,7 +55,10 @@ class ForgetRecoveryRepositoryIT {
           recovery.apply(fact);
           recovery.complete(OWNER);
         });
+    assertThat(count("memory.user_profiles")).isZero();
+    assertThat(profileRevision()).isZero();
     seed("new", 2);
+    profile(2, 1, "new-profile-private");
     // A superseded projection from the current epoch is legal and must not block recovery.
     sql.update("UPDATE memory.facts SET status='superseded' WHERE id='new'");
     sql.update("DELETE FROM memory.operations WHERE key=?", fact.key());
@@ -102,12 +106,18 @@ class ForgetRecoveryRepositoryIT {
     assertThat(count("memory.audit WHERE action='forget'")).isEqualTo(1);
     assertThat(count("memory.audit WHERE action='purge_complete'")).isEqualTo(1);
     assertThat(recovery.history()).containsExactly(fact);
+    assertThat(sql.queryForMap("SELECT epoch,revision,markdown FROM memory.user_profiles"))
+        .containsEntry("epoch", 2L)
+        .containsEntry("revision", 1L)
+        .containsEntry("markdown", "new-profile-private");
+    assertThat(profileRevision()).isEqualTo(1);
     assertThat(recovery.unsafeRows()).isZero();
   }
 
   @Test
   void barriersAndReplayRollBackTogetherWithCallerTransaction() {
     seed("old", 1);
+    profile(1, 4, "old-profile-private");
     var fact = fact(1);
     assertThatThrownBy(
             () ->
@@ -139,6 +149,9 @@ class ForgetRecoveryRepositoryIT {
     assertThat(count("memory.forget_applied")).isZero();
     assertThat(count("memory.operations")).isZero();
     assertThat(count("memory.audit")).isZero();
+    assertThat(sql.queryForObject("SELECT markdown FROM memory.user_profiles", String.class))
+        .isEqualTo("old-profile-private");
+    assertThat(profileRevision()).isEqualTo(4);
     assertThat(recovery.unsafeRows()).isGreaterThanOrEqualTo(2);
   }
 
@@ -380,6 +393,7 @@ class ForgetRecoveryRepositoryIT {
   @Test
   void replayDoesNotEraseUnexpectedFutureDataAndSafetyCheckBlocksIt() {
     seed("future", 3);
+    profile(3, 4, "future-private-profile");
     var fact = fact(1);
 
     commit(
@@ -396,6 +410,8 @@ class ForgetRecoveryRepositoryIT {
             sql.queryForObject("SELECT content FROM memory.facts WHERE id='future'", String.class))
         .isEqualTo("private-future");
     assertThat(count("memory.projections")).isEqualTo(1);
+    assertThat(sql.queryForObject("SELECT markdown FROM memory.user_profiles", String.class))
+        .isEqualTo("future-private-profile");
     assertThat(recovery.unsafeRows()).isPositive();
   }
 
@@ -443,6 +459,29 @@ class ForgetRecoveryRepositoryIT {
         epoch,
         action,
         target);
+  }
+
+  private static long profileRevision() {
+    return sql.queryForObject(
+        "SELECT profile_revision FROM memory.owners WHERE tenant=? AND subject=?",
+        Long.class,
+        OWNER.tenant(),
+        OWNER.subject());
+  }
+
+  private static void profile(long epoch, long revision, String markdown) {
+    sql.update(
+        "UPDATE memory.owners SET profile_revision=? WHERE tenant=? AND subject=?",
+        revision,
+        OWNER.tenant(),
+        OWNER.subject());
+    sql.update(
+        "INSERT INTO memory.user_profiles(tenant,subject,epoch,revision,markdown) VALUES(?,?,?,?,?)",
+        OWNER.tenant(),
+        OWNER.subject(),
+        epoch,
+        revision,
+        markdown);
   }
 
   private static void seed(String id, long epoch) {

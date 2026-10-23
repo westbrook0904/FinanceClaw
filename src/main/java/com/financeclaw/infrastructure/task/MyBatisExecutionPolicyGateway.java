@@ -15,38 +15,38 @@ public class MyBatisExecutionPolicyGateway implements ExecutionPolicyGateway {
   }
 
   public void ensureGrant(String conversation, String scopes) {
-    db.ensureGrant(conversation, scopes);
+    db.insertGrantIfAbsent(conversation, scopes);
   }
 
   public Grant lockGrant(String conversation) {
-    return db.lockGrant(conversation);
+    return db.getGrantForUpdate(conversation);
   }
 
   public void insertPolicy(String turn, long revision, String scopes) {
-    db.insertPolicy(turn, revision, scopes);
+    db.insertTurnPolicy(turn, revision, scopes);
   }
 
   public Policy policy(String turn) {
-    return db.policy(turn);
+    return db.getTurnPolicy(turn);
   }
 
   public boolean uncertain(String turn) {
-    return db.uncertain(turn);
+    return db.existsPendingToolCall(turn);
   }
 
   public int modelCall(String turn, int max) {
-    return db.modelCall(turn, max);
+    return db.updateModelCallCountWithinLimit(turn, max);
   }
 
   public int toolCall(String turn, int max) {
-    return db.toolCall(turn, max);
+    return db.updateToolCallCountWithinLimit(turn, max);
   }
 
   public void invalidate(String turn) {
-    db.invalidate(turn);
+    db.updatePendingInteractionsInvalid(turn);
   }
 
   public String startedAt(String attempt) {
-    return db.startedAt(attempt);
+    return db.getAttemptStartedAt(attempt);
   }
 }

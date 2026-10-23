@@ -87,8 +87,7 @@ class GovernanceBoundariesIT {
 
   private Map<String, List<String>> rows() {
     var rows = new TreeMap<String, List<String>>();
-    for (String table :
-        List.of("grants", "grant_changes", "artifacts", "tool_calls", "reports", "turn_policies"))
+    for (String table : List.of("grants", "grant_changes", "artifacts", "reports", "turn_policies"))
       rows.put(
           table,
           sql.queryForList(
@@ -139,20 +138,21 @@ class GovernanceBoundariesIT {
   }
 
   @Test
-  void failureAfterEffectCompletionRollsBackReportAndEffect() {
+  void failureAfterPublicationRollsBackReportAndReceipt() {
     var claim = claim();
     var failing = spy(AopTestUtils.<MyBatisReportGateway>getUltimateTargetObject(reportStore));
     doAnswer(
             invocation -> {
               invocation.callRealMethod();
-              throw new IllegalStateException("effect-receipt-failed");
+              throw new IllegalStateException("report-publication-failed");
             })
         .when(failing)
-        .completeEffect(anyString(), anyString(), anyString());
+        .publishReport(
+            anyString(), anyString(), anyString(), anyString(), anyString(), anyString());
     var service = new ReportService(failing, leases, policy);
     var before = rows();
     assertThatThrownBy(() -> service.report(claim, "call", "action", "合成报告"))
-        .hasMessage("effect-receipt-failed");
+        .hasMessage("report-publication-failed");
     assertThat(rows()).isEqualTo(before);
   }
 
@@ -179,9 +179,9 @@ class GovernanceBoundariesIT {
     String oldHash = "1206dcff62b49927c8af8c3741c940a2d94cde6673adafc7c141e7ee50780c7a";
     tx.executeWithoutResult(
         status -> {
-          mapper.lockGrant(conversation);
+          mapper.getGrantForUpdate(conversation);
           mapper.updateGrant(conversation, "[\"artifact:read\"]");
-          mapper.grantChange(conversation, "old-request", oldHash);
+          mapper.insertGrantChange(conversation, "old-request", oldHash);
           mapper.updateGrant(conversation, "[]");
         });
     var before = rows();
@@ -199,8 +199,12 @@ class GovernanceBoundariesIT {
   void oldCompletedEffectReplaysWithoutPublishingAnotherReport() {
     var claim = claim();
     String oldResult = "{\"report_id\":\"previous-report\",\"status\":\"created\"}";
-    mapper.beginEffect(claim.turn().id(), "old-call", "old-action");
-    mapper.completeEffect(claim.turn().id(), "old-call", oldResult);
+    sql.update(
+        "INSERT INTO business.reports(turn_id,call_id,action_hash,status,result) VALUES(?,?,?,'completed',?)",
+        claim.turn().id(),
+        "old-call",
+        "old-action",
+        oldResult);
     var before = rows();
     assertThat(reports.report(claim, "old-call", "old-action", "ignored")).isEqualTo(oldResult);
     assertThatThrownBy(() -> reports.report(claim, "old-call", "new-action", "ignored"))
@@ -211,7 +215,11 @@ class GovernanceBoundariesIT {
   @Test
   void uncertainPersistedEffectBlocksReportAndArtifactWrites() {
     var claim = claim();
-    mapper.beginEffect(claim.turn().id(), "uncertain-call", "action");
+    sql.update(
+        "INSERT INTO business.reports(turn_id,call_id,action_hash,status) VALUES(?,?,?,'pending')",
+        claim.turn().id(),
+        "uncertain-call",
+        "action");
     var before = rows();
     assertThatThrownBy(() -> reports.report(claim, "uncertain-call", "action", "ignored"))
         .hasMessage("reconciliation_required");

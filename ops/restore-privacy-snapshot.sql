@@ -9,6 +9,11 @@ WITH owners AS (
       'at', to_char(a.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')) ORDER BY a.id)
       FROM memory.audit a WHERE a.tenant=o.tenant AND a.subject=o.subject
       AND a.action IN ('forget','purge_complete')), '[]'::jsonb) AS events,
+    (SELECT count(*) FROM memory.user_profiles p WHERE p.tenant=o.tenant AND p.subject=o.subject
+      AND (p.epoch<>o.epoch OR p.epoch<1 OR p.revision<1 OR p.revision<>o.profile_revision))
+      + CASE WHEN o.profile_revision<0 OR (o.profile_revision>0 AND NOT EXISTS
+        (SELECT 1 FROM memory.user_profiles p WHERE p.tenant=o.tenant AND p.subject=o.subject
+          AND p.epoch=o.epoch AND p.revision=o.profile_revision)) THEN 1 ELSE 0 END AS unsafe_profiles,
     (SELECT count(*) FROM memory.sources s WHERE s.tenant=o.tenant AND s.subject=o.subject
       AND (s.epoch>o.epoch OR s.epoch<1
         OR ((s.epoch<o.epoch OR s.status='forgotten')
@@ -35,9 +40,10 @@ WITH owners AS (
   SELECT tenant,subject FROM memory.sources UNION SELECT tenant,subject FROM memory.facts
   UNION SELECT tenant,subject FROM memory.projections UNION SELECT tenant,subject FROM memory.jobs
   UNION SELECT tenant,subject FROM memory.audit UNION SELECT tenant,subject FROM memory.operations
+  UNION SELECT tenant,subject FROM memory.user_profiles
 )
 SELECT jsonb_build_object(
-  'schema_version', 1, 'scope', 'all_memory_owners',
+  'schema_version', 2, 'scope', 'all_memory_owners',
   'consistency', 'repeatable_read_read_only',
   'captured_at', to_char(transaction_timestamp() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'),
   'orphan_owners', (SELECT count(*) FROM referenced_owners r WHERE NOT EXISTS

@@ -34,7 +34,7 @@ public class MyBatisAgentStateStore implements AgentStateStore {
   @Override
   public <T extends State> VersionedState<T> getVersioned(
       String user, String session, String key, Class<T> type) {
-    var row = mapper.findState(key(user, session, key));
+    var row = mapper.getState(key(user, session, key));
     if (row == null) return new VersionedState<>(null, 0);
     // SDK treats absence as a fresh execution, so tombstones must fail before tool dispatch.
     if (row.deleted())
@@ -57,8 +57,8 @@ public class MyBatisAgentStateStore implements AgentStateStore {
     String json = JsonUtils.getJsonCodec().toJson(value);
     int changed =
         expected == 0
-            ? mapper.createState(id, json)
-            : mapper.compareAndSetState(id, json, expected);
+            ? mapper.insertStateIfAbsent(id, json)
+            : mapper.updateStateByExpectedVersion(id, json, expected);
     return changed == 1 ? expected + 1 : UNVERSIONED;
   }
 
@@ -75,7 +75,7 @@ public class MyBatisAgentStateStore implements AgentStateStore {
 
   @Override
   public <T extends State> List<T> getList(String user, String session, String key, Class<T> type) {
-    var row = mapper.findState(key(user, session, key));
+    var row = mapper.getState(key(user, session, key));
     if (row != null && !row.deleted())
       throw new IllegalStateException("Legacy list state requires explicit migration");
     return List.of();
@@ -83,13 +83,13 @@ public class MyBatisAgentStateStore implements AgentStateStore {
 
   @Override
   public boolean exists(String user, String session) {
-    var row = mapper.findState(key(user, session, "agent_state"));
+    var row = mapper.getState(key(user, session, "agent_state"));
     return row != null && !row.deleted();
   }
 
   @Override
   public void delete(String user, String session, String key) {
-    mapper.tombstoneState(key(user, session, key));
+    mapper.insertOrUpdateStateTombstone(key(user, session, key));
   }
 
   @Override

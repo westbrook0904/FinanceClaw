@@ -132,10 +132,11 @@ class MemoryIT {
     var candidates = List.of(secondTurn, otherTurn, firstTurn);
 
     assertThat(memory.filterHistory(secondTurn, candidates)).containsExactly(secondTurn, firstTurn);
-    assertThat(repository.currentSources(alice, 1, List.of(other.turnId(), "missing"))).isEmpty();
-    assertThat(repository.currentSources(alice, 2, List.of(first.turnId(), second.turnId())))
+    assertThat(repository.currentSources(alice, 1, 0, List.of(other.turnId(), "missing")))
         .isEmpty();
-    assertThat(repository.currentSources(alice, 1, List.of())).isEmpty();
+    assertThat(repository.currentSources(alice, 2, 0, List.of(first.turnId(), second.turnId())))
+        .isEmpty();
+    assertThat(repository.currentSources(alice, 1, 0, List.of())).isEmpty();
 
     memory.forget(alice, 1, "history-forget");
 
@@ -158,7 +159,7 @@ class MemoryIT {
                     }))
         .hasMessage("rollback");
     assertThat(sql.queryForObject("SELECT count(*) FROM memory.jobs", Integer.class)).isZero();
-    assertThat(db.sourceById(t.turnId()).status()).isEqualTo("admitted");
+    assertThat(db.getSourceById(t.turnId()).status()).isEqualTo("admitted");
     tasks.finish(claim);
     assertThat(sql.queryForObject("SELECT count(*) FROM memory.jobs", Integer.class)).isEqualTo(1);
   }
@@ -285,7 +286,7 @@ class MemoryIT {
     memory.privacy(alice);
     var results = Map.of("confirm", "active", "reject", "rejected", "forget", "4", "rebuild", "7");
     results.forEach(
-        (key, result) -> db.recordOperation(alice, key, hashes.path(key).asText(), result));
+        (key, result) -> db.insertOperationReceipt(alice, key, hashes.path(key).asText(), result));
     var service = new MemoryService(repository, tx, new MemoryPolicy(true, false, "embedding-v1"));
     var before = memoryRows();
     assertThat(service.decide(alice, "fact", 2, true, "confirm")).isEqualTo("active");
@@ -349,7 +350,7 @@ class MemoryIT {
     assertThat(memoryRows()).isEqualTo(before);
     processing.process(job);
     assertThat(calls).hasValue(1);
-    assertThat(db.job(job.id()).status()).isEqualTo("done");
+    assertThat(db.getJobForUpdate(job.id()).status()).isEqualTo("done");
   }
 
   @Test
@@ -357,7 +358,7 @@ class MemoryIT {
     var t = submit(alice, "/remember response_language=中文");
     assertThat(sql.queryForObject("SELECT count(*) FROM memory.jobs", Integer.class)).isZero();
     finish(t);
-    assertThat(db.sourceById(t.turnId()).content()).isEqualTo("/remember response_language=中文");
+    assertThat(db.getSourceById(t.turnId()).content()).isEqualTo("/remember response_language=中文");
     var captured = new AtomicReference<String>();
     var worker =
         processor(
@@ -383,8 +384,8 @@ class MemoryIT {
     var second = worker.claim();
     worker.process(second);
     worker.process(first);
-    assertThat(db.active(alice)).hasSize(1);
-    assertThat(db.active(alice).getFirst().content()).isEqualTo("English");
+    assertThat(db.listActiveFacts(alice)).hasSize(1);
+    assertThat(db.listActiveFacts(alice).getFirst().content()).isEqualTo("English");
     assertThat(
             sql.queryForObject(
                 "SELECT count(*) FROM memory.facts WHERE status='superseded'", Integer.class))
@@ -400,8 +401,8 @@ class MemoryIT {
     var claim = tasks.claim("recall", 60000);
     assertThat(tasks.memoryContext(claim)).contains("中文", f.id());
     var another = submit(bob, "hello");
-    assertThat(db.recall(another.turnId(), bob)).isEmpty();
-    assertThat(db.recall(t.turnId(), bob)).isEmpty();
+    assertThat(db.listFrozenRecallFacts(another.turnId(), bob)).isEmpty();
+    assertThat(db.listFrozenRecallFacts(t.turnId(), bob)).isEmpty();
   }
 
   @Test
@@ -460,7 +461,7 @@ class MemoryIT {
         .andExpect(
             org.springframework.test.web.servlet.result.MockMvcResultMatchers.status()
                 .isNotFound());
-    assertThat(db.fact(fact.id()).status()).isEqualTo("candidate");
+    assertThat(db.getFactById(fact.id()).status()).isEqualTo("candidate");
   }
 
   @Test
@@ -488,7 +489,7 @@ class MemoryIT {
             text -> EmbeddingVector.of(new double[] {1}),
             "test-v1");
     broken.poll();
-    assertThat(db.fact(f.id()).status()).isEqualTo("active");
+    assertThat(db.getFactById(f.id()).status()).isEqualTo("active");
     assertThat(sql.queryForObject("SELECT count(*) FROM memory.projections", Integer.class))
         .isZero();
     sql.execute("UPDATE memory.jobs SET next_attempt_at=clock_timestamp() WHERE kind='index'");
@@ -504,7 +505,7 @@ class MemoryIT {
     finish(t); // Drain prior index before extraction claim.
     explicit().poll();
     var job = explicit().claim();
-    var original = db.sourceById(job.keyId());
+    var original = db.getSourceById(job.keyId());
     assertThat(memory.forget(alice, 1, "forget")).isEqualTo(2);
     assertThat(memory.forget(alice, 1, "forget")).isEqualTo(2);
     explicit()
@@ -513,8 +514,8 @@ class MemoryIT {
             original,
             new Extraction(List.of(new Proposal("response_style", "简洁", original.content()))));
     assertThat(memory.list(alice)).isEmpty();
-    assertThat(db.fact(f.id()).content()).isNull();
-    assertThat(db.sourceById(job.keyId()).content()).isNull();
+    assertThat(db.getFactById(f.id()).content()).isNull();
+    assertThat(db.getSourceById(job.keyId()).content()).isNull();
     assertThat(sql.queryForObject("SELECT count(*) FROM memory.projections", Integer.class))
         .isZero();
     assertThat(memory.privacy(alice).purgePending()).isTrue();
@@ -576,20 +577,156 @@ class MemoryIT {
   }
 
   @Test
+  void atomicClaimsSkipLockedRowsAndReturnTheUpdatedLease() throws Exception {
+    long first = queuedJob("locked-job");
+    long second = queuedJob("available-job");
+    var worker = explicit();
+    try (var connection = source.getConnection()) {
+      connection.setAutoCommit(false);
+      try (var statement =
+          connection.prepareStatement("SELECT id FROM memory.jobs WHERE id=? FOR UPDATE")) {
+        statement.setLong(1, first);
+        statement.executeQuery().close();
+      }
+      var claimed = worker.claim();
+      assertThat(claimed.id()).isEqualTo(second);
+      assertThat(claimed.status()).isEqualTo("running");
+      assertThat(claimed.attempts()).isEqualTo(1);
+      assertThat(claimed.leaseToken()).isNotBlank();
+      assertThat(worker.claim()).isNull();
+      connection.commit();
+    }
+    assertThat(worker.claim().id()).isEqualTo(first);
+    assertThat(worker.claim()).isNull();
+  }
+
+  @Test
+  void concurrentAtomicClaimsGiveEachJobToOneWorker() throws Exception {
+    Set<Long> expected = new HashSet<>();
+    for (int n = 0; n < 12; n++) expected.add(queuedJob("parallel-" + n));
+    try (var pool = Executors.newVirtualThreadPerTaskExecutor()) {
+      var futures = new ArrayList<Future<Job>>();
+      for (int n = 0; n < 12; n++) futures.add(pool.submit(() -> explicit().claim()));
+      var claimed = new ArrayList<Job>();
+      for (var future : futures) claimed.add(future.get(10, TimeUnit.SECONDS));
+      assertThat(claimed).extracting(Job::id).containsExactlyInAnyOrderElementsOf(expected);
+      assertThat(claimed).allSatisfy(job -> assertThat(job.attempts()).isEqualTo(1));
+      assertThat(claimed.stream().map(Job::leaseToken).distinct()).hasSize(12);
+      assertThat(explicit().claim()).isNull();
+    }
+  }
+
+  @Test
+  void lockedLeaseQueryRejectsForeignTokensAndChangedJobMetadata() {
+    queuedJob("lease-check");
+    var job = explicit().claim();
+    assertThat((Boolean) tx.execute(s -> repository.hasLiveJobLease(job))).isTrue();
+    var foreign =
+        new Job(
+            job.id(),
+            job.kind(),
+            job.keyId(),
+            job.tenant(),
+            "another-owner",
+            job.epoch(),
+            job.revision(),
+            job.modelRevision(),
+            job.status(),
+            job.attempts(),
+            job.leaseToken());
+    assertThat((Boolean) tx.execute(s -> repository.hasLiveJobLease(foreign))).isFalse();
+    sql.update("UPDATE memory.jobs SET lease_token='new-worker' WHERE id=?", job.id());
+    assertThat((Boolean) tx.execute(s -> repository.hasLiveJobLease(job))).isFalse();
+    sql.update(
+        "UPDATE memory.jobs SET lease_token=?,epoch=epoch+1 WHERE id=?",
+        job.leaseToken(),
+        job.id());
+    assertThat((Boolean) tx.execute(s -> repository.hasLiveJobLease(job))).isFalse();
+  }
+
+  @Test
+  void leaseExpiryDuringJobLockWaitIsCheckedAfterTheLockIsAcquired() throws Exception {
+    db.insertOwnerIfAbsent(alice);
+    queuedJob("expires-while-waiting");
+    var job = explicit().claim();
+    sql.update(
+        "UPDATE memory.jobs SET lease_until=clock_timestamp()+interval '2 seconds' WHERE id=?",
+        job.id());
+    var entered = new CountDownLatch(1);
+    try (var pool = Executors.newVirtualThreadPerTaskExecutor();
+        var connection = source.getConnection()) {
+      connection.setAutoCommit(false);
+      try (var statement =
+          connection.prepareStatement("SELECT id FROM memory.jobs WHERE id=? FOR UPDATE")) {
+        statement.setLong(1, job.id());
+        statement.executeQuery().close();
+      }
+      var checked =
+          pool.submit(
+              () ->
+                  tx.execute(
+                      s -> {
+                        db.getOwnerPrivacyForUpdate(alice);
+                        entered.countDown();
+                        return repository.hasLiveJobLease(job);
+                      }));
+      assertThat(entered.await(10, TimeUnit.SECONDS)).isTrue();
+      long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+      while (sql.queryForObject(
+                  "SELECT count(*) FROM pg_stat_activity WHERE pid<>pg_backend_pid()"
+                      + " AND wait_event_type='Lock' AND query LIKE '%WITH locked AS MATERIALIZED%'",
+                  Integer.class)
+              == 0
+          && System.nanoTime() < deadline) Thread.sleep(10);
+      assertThat(
+              sql.queryForObject(
+                  "SELECT count(*) FROM pg_stat_activity WHERE pid<>pg_backend_pid()"
+                      + " AND wait_event_type='Lock' AND query LIKE '%WITH locked AS MATERIALIZED%'",
+                  Integer.class))
+          .isPositive();
+      assertThat(checked.isDone()).isFalse();
+      while (!sql.queryForObject(
+              "SELECT lease_until<=clock_timestamp() FROM memory.jobs WHERE id=?",
+              Boolean.class,
+              job.id())
+          && System.nanoTime() < deadline) Thread.sleep(10);
+      assertThat(
+              sql.queryForObject(
+                  "SELECT lease_until<=clock_timestamp() FROM memory.jobs WHERE id=?",
+                  Boolean.class,
+                  job.id()))
+          .isTrue();
+      connection.commit();
+      assertThat(checked.get(10, TimeUnit.SECONDS)).isFalse();
+    }
+  }
+
+  private long queuedJob(String key) {
+    return sql.queryForObject(
+        "INSERT INTO memory.jobs(kind,key_id,tenant,subject,epoch) VALUES('extract',?,?,?,1) RETURNING id",
+        Long.class,
+        key,
+        alice.tenant(),
+        alice.subject());
+  }
+
+  @Test
   void vectorSearchChecksOwnerEpochRevisionAndPinnedModel() throws Exception {
     var f = preference();
     explicit().poll();
     String vector = MemoryVectorCodec.query(embedding());
-    assertThat(db.search(alice, "test-v1", vector)).extracting(Fact::id).containsExactly(f.id());
-    assertThat(db.search(bob, "test-v1", vector)).isEmpty();
-    assertThat(db.search(alice, "other-model", vector)).isEmpty();
+    assertThat(db.listSimilarActiveFacts(alice, "test-v1", vector))
+        .extracting(Fact::id)
+        .containsExactly(f.id());
+    assertThat(db.listSimilarActiveFacts(bob, "test-v1", vector)).isEmpty();
+    assertThat(db.listSimilarActiveFacts(alice, "other-model", vector)).isEmpty();
     sql.update("UPDATE memory.projections SET revision=revision+1");
-    assertThat(db.search(alice, "test-v1", vector)).isEmpty();
+    assertThat(db.listSimilarActiveFacts(alice, "test-v1", vector)).isEmpty();
     memory.rebuild(alice, "rebuild-1");
     explicit().poll();
-    assertThat(db.search(alice, "test-v1", vector)).hasSize(1);
+    assertThat(db.listSimilarActiveFacts(alice, "test-v1", vector)).hasSize(1);
     memory.forget(alice, 1, "erase");
-    assertThat(db.search(alice, "test-v1", vector)).isEmpty();
+    assertThat(db.listSimilarActiveFacts(alice, "test-v1", vector)).isEmpty();
   }
 
   @Test

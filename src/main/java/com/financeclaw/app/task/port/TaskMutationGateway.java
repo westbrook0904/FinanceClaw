@@ -15,6 +15,4 @@ public interface TaskMutationGateway {
   void event(String turn);
 
   void journal(String conversation, String turn, String role, String content);
-
-  void outbox(String turn);
 }

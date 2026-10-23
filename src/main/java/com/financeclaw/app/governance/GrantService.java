@@ -46,10 +46,10 @@ public class GrantService {
     return tx.execute(
         s -> {
           var grant = db.lockGrant(conversation);
-          String old = db.grantRequest(conversation, key);
+          var old = db.grantReceipt(conversation, key);
           if (old != null) {
-            if (!old.equals(hash)) throw new Problem(409, "idempotency_conflict");
-            return db.grantReplay(conversation, key);
+            if (!old.requestHash().equals(hash)) throw new Problem(409, "idempotency_conflict");
+            return old.grant();
           }
           if (grant == null || grant.revision() != revision) throw new Problem(409, "stale_grant");
           db.updateGrant(conversation, json);

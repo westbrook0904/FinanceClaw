@@ -1,0 +1,102 @@
+{
+  "date": "2026-10-23",
+  "base_commit": "ae16c361b8b0d1a84460c6adb8a185515ad14bdc",
+  "scope": "Worker idle backoff and commit signals, batched durable projections, single-statement conditional heartbeat, bounded concurrent renewal and scheduler/MVC executor isolation. Offline/local fixtures and real PostgreSQL containers; no production capacity claim.",
+  "maven": {
+    "verification_method": "Full suite followed by focused reruns after two test-only fixture updates; production sources and packaged jar remained unchanged.",
+    "full_command": "./scripts/mvn.sh -q -DargLine=-javaagent:.cache/m2/org/mockito/mockito-core/5.17.0/mockito-core-5.17.0.jar clean verify spotless:check",
+    "full_run_exit_code": 1,
+    "full_run_reports": {
+      "surefire-reports": {
+        "tests": 981,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "failsafe-reports": {
+        "tests": 289,
+        "failures": 1,
+        "errors": 0,
+        "skipped": 0
+      }
+    },
+    "full_run_failure": "RoleAssemblyIT setup still expected migration V7; actual schema correctly migrated to V8. Other completed tests passed.",
+    "followup": [
+      {
+        "command": "./scripts/mvn.sh -q -DargLine=-javaagent:.cache/m2/org/mockito/mockito-core/5.17.0/mockito-core-5.17.0.jar -Dtest=TaskWorkerPollingTest -Dit.test=RoleAssemblyIT test-compile surefire:test failsafe:integration-test failsafe:verify spotless:check",
+        "exit_code": 1,
+        "unit_tests": 9,
+        "unit_failures": 0,
+        "integration_tests": 10,
+        "integration_failures": 3,
+        "finding": "Role schedule-count expectations still omitted the newly separated recovery task; replaced with exact per-role scheduled method names and heartbeat-scheduler presence."
+      },
+      {
+        "command": "./scripts/mvn.sh -q -DargLine=-javaagent:.cache/m2/org/mockito/mockito-core/5.17.0/mockito-core-5.17.0.jar -Dit.test=RoleAssemblyIT test-compile failsafe:integration-test failsafe:verify spotless:check",
+        "exit_code": 0,
+        "integration_tests": 10,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      }
+    ],
+    "final_unit_http_architecture_reports": {
+      "tests": 981,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "final_integration_reports": {
+      "tests": 298,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "format": "passed in final focused run",
+    "test_only_changes_after_full_build": [
+      "src/test/java/com/financeclaw/m5/RoleAssemblyIT.java",
+      "src/test/java/com/financeclaw/worker/TaskWorkerPollingTest.java"
+    ],
+    "heartbeat_fixture_cleanup": "Await the released mocked heartbeat before closing its worker; avoids a teardown interruption diagnostic. The 9 worker polling/heartbeat tests were rerun successfully."
+  },
+  "compose": {
+    "command": "python3 scripts/validate-compose.py --ziwei --admission --preflight --restore-privacy",
+    "exit_code": 0,
+    "checks": 28,
+    "evidence": "background-db-compose.json",
+    "jar_sha256": "031ec3a808f10f9c1bccb0ce6150673ed45af5781c991144a465fe271497833c"
+  },
+  "source_manifest": {
+    "format": "SHA-256 of UTF-8 compact sorted JSON mapping each path to its SHA-256; src tree plus pom.xml, compose.yml, Dockerfile, ops/container-entrypoint.sh, scripts/validate-compose.py",
+    "file_count": 341,
+    "full_suite_sha256": "94fbdc1f308f1098aa94c718e79a5b73ea90daa9232e7571d48c2a6e54cdca0b",
+    "final_sha256": "8f4eb3c104142b9acbe4caaed2b1bf5cc6575138fd91370d793a3f6390af4cb7",
+    "production_files": 233,
+    "production_sha256": "13ec85087ed78ad8e9f950cb37d279a925e08e3376199a93739c929826f6666c",
+    "production_inputs_unchanged_during_all_runs": true
+  },
+  "sql_call_comparison": {
+    "idle_worker_and_outbox_per_second": {
+      "before": 12,
+      "steady_idle_after": 0.9,
+      "basis": "Configured periods and deterministic-clock call-count tests, excludes startup backoff ramp, health/memory scans and SQL/scheduler duration."
+    },
+    "heartbeat_per_active_attempt_per_tick": {
+      "before": 3,
+      "after": 1
+    },
+    "projection_50_intents": {
+      "sql_before": 150,
+      "sql_after": 1,
+      "transactions_before": 50,
+      "transactions_after": 1,
+      "note": "Necessary durable row writes remain; reduction is statement round trips and transaction count."
+    }
+  },
+  "limitations": [
+    "Live SSE and immediate queue wakeups are process-local; cross-process queue writes use bounded fallback scans.",
+    "Heartbeat scheduling is isolated, but database connections are shared; pool exhaustion and lock delays can still fence expired leases.",
+    "Java thread interruption cannot guarantee an already-running JDBC transaction is cancelled.",
+    "Offline fixture load and SQL call counts are not production throughput/latency acceptance."
+  ]
+}

@@ -24,6 +24,9 @@ abstract class PostgresSupport {
     POSTGRES.start();
     SOURCE = source(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
     Flyway.configure().dataSource(SOURCE).load().migrate();
+    new org.springframework.jdbc.datasource.init.ResourceDatabasePopulator(
+            new org.springframework.core.io.ClassPathResource("m0/tool-effects.sql"))
+        .execute(SOURCE);
     DATABASE = ProbeFixtures.database(SOURCE);
     MAPPER = DATABASE.getMapper(RuntimeMapper.class);
     EFFECTS = DATABASE.getMapper(M0RuntimeMapper.class);

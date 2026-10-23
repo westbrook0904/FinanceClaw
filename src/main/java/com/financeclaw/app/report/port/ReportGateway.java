@@ -6,9 +6,6 @@ import com.financeclaw.domain.Governance.Effect;
 public interface ReportGateway {
   Effect effect(String turn, String call);
 
-  void beginEffect(String turn, String call, String hash);
-
-  void report(String id, String turn, String call, String title);
-
-  void completeEffect(String turn, String call, String result);
+  /** Inserts the report and completed receipt together; callers hold the execution fence. */
+  void publishReport(String id, String turn, String call, String title, String hash, String result);
 }

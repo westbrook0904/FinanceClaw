@@ -1,0 +1,63 @@
+{
+  "recorded_at": "2026-10-23T02:14:30.868820+00:00",
+  "scope": "V8-V11, manual user profiles, background DB optimizations, redundant persistence retirement and Mapper contracts",
+  "migration": {
+    "main_application_tables_before": 39,
+    "main_application_tables_after": 34,
+    "independent_ledger_tables": 2,
+    "retired": [
+      "business.skill_refs",
+      "agent_runtime.tool_effects",
+      "business.outbox",
+      "business.projections"
+    ],
+    "merged": "business.tool_calls into business.reports",
+    "historical_migrations_preserved": "V1-V9"
+  },
+  "mapper_refactor": {
+    "implementation": {
+      "renamed": 130,
+      "retired_or_replaced": 11,
+      "unchanged": 6
+    },
+    "current_counts": {
+      "TaskMapper": 38,
+      "GovernanceMapper": 29,
+      "MemoryMapper": 42,
+      "FeishuMapper": 19,
+      "OperationsMapper": 8,
+      "RuntimeMapper": 4
+    },
+    "symbol_resolved_callsite_and_declaration_edits": 420,
+    "notes": "One subsequently removed constant SQL method is included in the original edit count."
+  },
+  "unit_http_architecture": {
+    "tests": 1026,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "scripts": {
+    "live_acceptance": 8,
+    "drain_preflight": 12,
+    "privacy_snapshot": 14,
+    "profile_workflow": 10,
+    "status": "all passed"
+  },
+  "format_and_static_checks": "passed",
+  "local_postgres_and_compose": "not run; Docker API does not respond; remote Actions will verify after push",
+  "remote_ci": {
+    "status": "pending_push"
+  },
+  "product_sha256": "29832c1dec5752f1657452650cb5dcf095e6c8f32dfac989034f33b0ffd6423c",
+  "notes": [
+    "Full local test execution passed; a first package invocation ended at formatting check after an IT schedule assertion was edited, then formatting and the complete unit run were rerun successfully.",
+    "SQL counts are static path counts, not load-test measurements."
+  ],
+  "product_packaging": {
+    "tests": 1,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  }
+}

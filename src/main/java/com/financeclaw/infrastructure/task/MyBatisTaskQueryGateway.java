@@ -15,26 +15,26 @@ public class MyBatisTaskQueryGateway implements TaskQueryGateway {
   }
 
   public String ownedConversation(String id, Owner owner) {
-    return db.ownedConversation(id, owner);
+    return db.getOwnedConversation(id, owner);
   }
 
   public Turn ownedTurn(Owner owner, String conversation, String turn) {
-    return db.ownedTurn(owner, conversation, turn);
+    return db.getOwnedTurn(owner, conversation, turn);
   }
 
   public Turn turn(String id) {
-    return db.turn(id);
+    return db.getTurnById(id);
   }
 
   public List<Journal> messages(String conversation, long after, int limit) {
-    return db.messages(conversation, after, limit);
+    return db.listJournalEntriesAfterSequence(conversation, after, limit);
   }
 
   public List<Event> events(String turn, long after) {
-    return db.events(turn, after);
+    return db.listTurnEventsAfterRevision(turn, after);
   }
 
   public List<Turn> history(String conversation, String release, long revision) {
-    return db.history(conversation, release, revision);
+    return db.listCompletedHistoryByReleaseAndGrant(conversation, release, revision);
   }
 }

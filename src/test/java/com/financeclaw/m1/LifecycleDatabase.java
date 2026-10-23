@@ -28,6 +28,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 public final class LifecycleDatabase {
   public final SqlSessionTemplate session;
+  public final WorkSignals signals = new WorkSignals();
   public final TaskFixture service;
   public final GovernanceFixture governance;
   public final ReleaseService releases =
@@ -36,7 +37,6 @@ public final class LifecycleDatabase {
   public final ExecutionLeaseService leases;
   public final ExecutionCompletionService completion;
   public final RecoverTaskService recovery;
-  public final ProjectTaskService projection;
   public final com.financeclaw.infrastructure.agentscope.capability.BusinessCapabilities business;
 
   public LifecycleDatabase(DataSource source) {
@@ -85,7 +85,7 @@ public final class LifecycleDatabase {
       var queries = new TaskQueryService(reads);
       var submission =
           new SubmitTaskService(
-              new MyBatisTaskAdmissionGateway(tasks, events), policy, release, memory, tx);
+              new MyBatisTaskAdmissionGateway(tasks, events, signals), policy, release, memory, tx);
       var cancellation =
           new CancelTaskService(queries, reads, mutations, commands, policy, transitions, tx);
       leases = new ExecutionLeaseService(commands, mutations, reads, transitions, tx);
@@ -94,7 +94,6 @@ public final class LifecycleDatabase {
           new ExecutionCompletionService(
               mutations, commands, receipts, leases, policies, transitions);
       recovery = new RecoverTaskService(commands, mutations, receipts, completion, transitions, tx);
-      projection = new ProjectTaskService(new MyBatisTaskProjectionGateway(tasks), tx);
       var steps =
           new CapabilityStepService(new MyBatisCapabilityStepGateway(gov), leases, policies);
       var credentials =
@@ -108,7 +107,6 @@ public final class LifecycleDatabase {
               policies,
               completion,
               recovery,
-              projection,
               new MyBatisExecutionContextGateway(gov),
               releases,
               credentials);
@@ -127,7 +125,8 @@ public final class LifecycleDatabase {
                   transitions,
                   session.getMapper(TaskMapper.class),
                   session.getMapper(
-                      com.financeclaw.infrastructure.governance.GovernanceMapper.class)),
+                      com.financeclaw.infrastructure.governance.GovernanceMapper.class),
+                  signals),
               new AgentScopeInteractionCheckpoint(session.getMapper(RuntimeMapper.class)),
               new AgentScopeAnswerRules(java.util.List.of(new ZiweiAnswerValidator(ziweiInputs))),
               tx);

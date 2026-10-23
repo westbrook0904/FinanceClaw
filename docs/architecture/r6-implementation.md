@@ -42,7 +42,7 @@ flowchart LR
     Delivery --> SDK[AgentScopeFeishu]
 ```
 
-[OutboxProjector](../../src/main/java/com/financeclaw/worker/OutboxProjector.java) 独立调用原 ProjectTaskService，沿用每轮最多 50 项、原轮询间隔和 `financeclaw.integrations.enabled`。TaskWorker 仅负责执行、恢复与心跳，Integrations 不再为本地投影构造执行线程池。投影事务和 SQL 不变。
+原 OutboxProjector（本节为历史实现，已在 [V10](../../ops/retire-legacy-tables.md) 退役） 独立调用原 ProjectTaskService，沿用每轮最多 50 项、原轮询间隔和 `financeclaw.integrations.enabled`。TaskWorker 仅负责执行、恢复与心跳，Integrations 不再为本地投影构造执行线程池。投影事务和 SQL 不变。
 
 飞书查询端点改由 FeishuService 读取原 owner-scoped 通知列表，因此 API 无需构造发送客户端。FeishuDelivery 使用 TaskQueryService 校验 owner/conversation/turn，然后通过 ExecutionContextGateway 读取交互记录。发送仍由 AgentScope 执行，`submitted_unverified` / `unknown` 等回执含义保持原样；没有添加自动重发或伪造可靠送达。
 

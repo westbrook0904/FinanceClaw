@@ -70,10 +70,6 @@ class BacklogIT {
         o, tasks.createConversation(o), UUID.randomUUID().toString(), "secret-user-message");
   }
 
-  void project() {
-    while (tasks.projectNext()) {}
-  }
-
   List<BacklogItem> all(Owner o, String kind, int size) {
     var result = new ArrayList<BacklogItem>();
     String after = "";
@@ -128,7 +124,6 @@ class BacklogIT {
         .extracting(BacklogItem::id)
         .containsExactly(mine.get(0).turnId(), mine.get(1).turnId());
     tasks.cancel(owner, mine.getFirst().conversationId(), mine.getFirst().turnId(), "cancel");
-    project();
     var second = operations.backlog(owner, "turns", first.nextAfter(), 2);
     assertThat(second.items())
         .extracting(BacklogItem::id)
@@ -163,13 +158,12 @@ class BacklogIT {
   }
 
   @ParameterizedTest
-  @ValueSource(strings = {"command", "interaction", "effect", "outbox"})
+  @ValueSource(strings = {"command", "interaction", "effect"})
   void terminalTurnsWithRemainingBusinessFactsAreNotHidden(String kind) {
     var t = submit(owner);
     var claim = tasks.claim("fixture", 60000);
     tasks.cancel(owner, t.conversationId(), t.turnId(), "cancel");
     tasks.acknowledgeCancel(claim);
-    project();
     assertThat(all(owner, "turns", 1)).isEmpty();
     switch (kind) {
       case "command" ->
@@ -186,9 +180,8 @@ class BacklogIT {
               claim.command().attemptId());
       case "effect" ->
           sql.update(
-              "INSERT INTO business.tool_calls VALUES(?,'call','hash','pending',NULL)", t.turnId());
-      case "outbox" ->
-          sql.update("UPDATE business.outbox SET delivered=false WHERE turn_id=?", t.turnId());
+              "INSERT INTO business.reports(turn_id,call_id,action_hash,status) VALUES(?,'call','hash','pending')",
+              t.turnId());
     }
     assertThat(all(owner, "turns", 1)).hasSize(1);
     String counter =
@@ -196,7 +189,7 @@ class BacklogIT {
           case "command" -> "active_commands";
           case "interaction" -> "pending_interactions";
           case "effect" -> "uncertain_effects";
-          default -> "pending_outbox";
+          default -> throw new IllegalArgumentException(kind);
         };
     assertThat(operations.drain(owner).counts()).containsEntry(counter, 1L);
   }
@@ -263,7 +256,6 @@ class BacklogIT {
   void unprojectedBindingRowsTrackCurrentRevisionMuteAndSuppression() {
     var t = submit(owner);
     tasks.cancel(owner, t.conversationId(), t.turnId(), "cancel");
-    project();
     String b = binding(owner, t);
     long rev = tasks.get(owner, t.conversationId(), t.turnId()).revision();
     assertThat(all(owner, "notification_bindings", 1))

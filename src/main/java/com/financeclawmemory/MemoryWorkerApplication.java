@@ -58,7 +58,7 @@ public class MemoryWorkerApplication {
       MemoryMapper db) {
     return () -> {
       try {
-        return db.restrictedWorker()
+        return db.isMemoryWorkerRoleRestricted()
             ? org.springframework.boot.actuate.health.Health.up().build()
             : org.springframework.boot.actuate.health.Health.down().build();
       } catch (RuntimeException e) {
@@ -74,7 +74,7 @@ public class MemoryWorkerApplication {
       TransactionTemplate tx,
       AgentScopeMemoryModels models,
       Environment env) {
-    if (!db.restrictedWorker())
+    if (!db.isMemoryWorkerRoleRestricted())
       throw new IllegalStateException("Memory worker requires a restricted database role");
     String revision = env.getProperty("financeclaw.memory.embedding.revision", "disabled");
     if (revision.equals("disabled") || revision.isBlank())

@@ -1,10 +1,10 @@
 # 同进程运行与事件推送
 
-当前 Java 部署把 HTTP API、AgentScope 执行、SSE、Outbox 投影和飞书投递放在一个 Spring Boot 进程。它们保留各自的业务职责，共用一个业务连接池，无需沿用 Python 的多个业务进程。工程仍为单个 Maven 模块。
+当前 Java 部署把 HTTP API、AgentScope 执行、SSE 和飞书投递放在一个 Spring Boot 进程。它们保留各自的业务职责，共用一个业务连接池，无需沿用 Python 的多个业务进程。工程仍为单个 Maven 模块。
 
 | Compose 服务 | 用途 |
 | --- | --- |
-| `api`，启动参数 `standalone` | HTTP、AgentScope 执行与实时事件、恢复、Outbox 投影和飞书投递 |
+| `api`，启动参数 `standalone` | HTTP、AgentScope 执行与实时事件、恢复和飞书投递 |
 | `memory-worker` | 记忆提取、索引与隐私清理；使用独立受限数据库身份 |
 | `migrate` | 一次性数据库迁移，成功退出后才启动运行进程 |
 | `postgres` | 持久任务、权限、执行状态、业务结果及记忆事实 |
@@ -45,8 +45,10 @@ docker compose stop api memory-worker
 
 ## 验证入口
 
-`python3 scripts/validate-compose.py --ziwei --admission --preflight --restore-privacy` 验证当前默认拓扑，包含同进程执行与投影、停用执行后的排队及重启恢复、整个业务 JVM 的 SIGKILL 后审批恢复、数据库中断、受限记忆、隔离备份和旧隐私快照拒绝。脚本始终使用随机项目、新数据卷、离线模型和合成数据。
+`python3 scripts/validate-compose.py --ziwei --admission --preflight --restore-privacy` 验证当前默认拓扑，包含同进程执行与飞书投递、停用执行后的排队及重启恢复、整个业务 JVM 的 SIGKILL 后审批恢复、数据库中断、受限记忆、隔离备份和旧隐私快照拒绝。脚本始终使用随机项目、新数据卷、离线模型和合成数据。
 
 旧 M5 / R6 文档中的“四角色健康”和独立 Worker 故障数据是各自批次的历史结果，不证明当前拓扑已经通过容器运行验收；本次实际检查结果以本次执行日志和交付说明为准。
 
-2026-10-22 当前默认拓扑的上述容器验收已通过 28 项；最终完整 Maven 验证通过 950 项单元/契约/架构测试和 275 项集成测试。见[本次验证结果](database-access-review.md#本次验证结果)及[隔离容器证据](evidence/combined-runtime-compose.json)。模型与外部工具均使用离线或本地模拟环境。
+2026-10-22 首批检查点（`ae16c36`）的默认拓扑的上述容器验收已通过 28 项；最终完整 Maven 验证通过 950 项单元/契约/架构测试和 275 项集成测试。见[本次验证结果](database-access-review.md#首批检查点验证结果)及[隔离容器证据](evidence/combined-runtime-compose.json)。模型与外部工具均使用离线或本地模拟环境。
+
+后台任务队列使用提交后进程内通知，并以最长 5 秒的空闲退避扫描兜底；过期执行每 2 秒独立恢复。心跳每 2 秒单 SQL 续租，使用专用调度线程，仍共享业务数据库连接池。V10 已退役没有业务读取方的本地 Outbox 投影链路及停用的 Skill/M0 表，升级前按[表退役操作](../../ops/retire-legacy-tables.md)停旧版本并备份。具体次数、并发边界及本轮验证见[数据库访问说明](database-access-review.md)。

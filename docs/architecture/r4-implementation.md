@@ -30,7 +30,7 @@ flowchart LR
 | owner 隔离、任务/消息/事件查询 | [TaskQueryService](../../src/main/java/com/financeclaw/app/task/TaskQueryService.java) |
 | 取消与取消回执 | [CancelTaskService](../../src/main/java/com/financeclaw/app/task/CancelTaskService.java) |
 | 状态变化、journal、记忆完成意图、Outbox | [TaskTransitionService](../../src/main/java/com/financeclaw/app/task/TaskTransitionService.java) |
-| 本地 Outbox 投影与确认 | [ProjectTaskService](../../src/main/java/com/financeclaw/app/task/ProjectTaskService.java) |
+| 本地 Outbox 投影与确认 | 原 ProjectTaskService（已在 [V10](../../ops/retire-legacy-tables.md) 退役） |
 | Command 领取、attempt/fence、续租与受保护写入 | [ExecutionLeaseService](../../src/main/java/com/financeclaw/app/execution/ExecutionLeaseService.java) |
 | 发布/授权/隐私核对、历史、身份、预算与进度事件 | [ExecutionPolicyService](../../src/main/java/com/financeclaw/app/execution/ExecutionPolicyService.java) |
 | 挂起/完成回执、业务完成、停止后的取消确认 | [ExecutionCompletionService](../../src/main/java/com/financeclaw/app/execution/ExecutionCompletionService.java) |

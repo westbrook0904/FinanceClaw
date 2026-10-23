@@ -5,8 +5,11 @@ import com.financeclaw.app.task.TaskQueryService;
 import com.financeclaw.domain.Feishu.*;
 import com.financeclaw.domain.Task.Owner;
 import com.financeclaw.infrastructure.channel.FeishuMapper;
+import com.financeclaw.worker.IdlePoll;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
+import java.util.concurrent.atomic.AtomicBoolean;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -24,6 +27,30 @@ public class FeishuDelivery {
   private final TransactionTemplate tx;
   private final AgentScopeFeishu channel;
   private final boolean enabled;
+  private final IdlePoll idle;
+  private final AtomicBoolean polling = new AtomicBoolean();
+  private final AtomicBoolean recovering = new AtomicBoolean();
+
+  @Autowired
+  public FeishuDelivery(
+      FeishuMapper db,
+      TaskQueryService tasks,
+      ExecutionContextGateway interactions,
+      TransactionTemplate tx,
+      AgentScopeFeishu channel,
+      FeishuSettings settings,
+      @Value("${financeclaw.integrations.enabled:true}") boolean integrations,
+      @Value("${financeclaw.feishu.poll-ms:1000}") long pollMillis,
+      @Value("${financeclaw.feishu.idle-max-ms:5000}") long idleMaxMillis) {
+    this(
+        db,
+        tasks,
+        interactions,
+        tx,
+        channel,
+        settings.enabled && integrations,
+        new IdlePoll(pollMillis, idleMaxMillis));
+  }
 
   public FeishuDelivery(
       FeishuMapper db,
@@ -32,38 +59,94 @@ public class FeishuDelivery {
       TransactionTemplate tx,
       AgentScopeFeishu channel,
       FeishuSettings settings,
-      @Value("${financeclaw.integrations.enabled:true}") boolean integrations) {
+      boolean integrations) {
+    this(
+        db,
+        tasks,
+        interactions,
+        tx,
+        channel,
+        settings.enabled && integrations,
+        new IdlePoll(1000, 5000));
+  }
+
+  FeishuDelivery(
+      FeishuMapper db,
+      TaskQueryService tasks,
+      ExecutionContextGateway interactions,
+      TransactionTemplate tx,
+      AgentScopeFeishu channel,
+      boolean enabled,
+      IdlePoll idle) {
     this.db = db;
     this.tasks = tasks;
     this.interactions = interactions;
     this.tx = tx;
     this.channel = channel;
-    enabled = settings.enabled && integrations;
+    this.enabled = enabled;
+    this.idle = Objects.requireNonNull(idle);
   }
 
   @Scheduled(fixedDelayString = "${financeclaw.feishu.poll-ms:1000}")
   public void scheduled() {
-    if (enabled) poll();
+    if (!enabled || !polling.compareAndSet(false, true)) return;
+    try {
+      var ticket = idle.acquire(0);
+      if (ticket == null) return;
+      try {
+        if (pollWork()) idle.worked();
+        else idle.empty(ticket);
+      } catch (RuntimeException failure) {
+        idle.empty(ticket);
+        throw failure;
+      }
+    } finally {
+      polling.set(false);
+    }
   }
 
+  /** Recovery remains independent of notification backoff and never requeues an uncertain send. */
+  @Scheduled(fixedDelayString = "${financeclaw.feishu.recovery-ms:5000}")
+  public void scheduledRecovery() {
+    if (enabled) recover();
+  }
+
+  private void recover() {
+    if (!recovering.compareAndSet(false, true)) return;
+    try {
+      db.updateExpiredSendingNoticesUnknown();
+    } finally {
+      recovering.set(false);
+    }
+  }
+
+  /**
+   * Explicit maintenance polling bypasses local backoff; normal scheduled ticks use scheduled().
+   */
   public void poll() {
-    db.recover();
-    for (String binding : db.dirty()) project(binding);
+    recover();
+    pollWork();
+  }
+
+  private boolean pollWork() {
+    var dirty = db.listBindingIdsRequiringProjection();
+    for (String binding : dirty) project(binding);
     var job = claim();
-    if (job == null) return;
-    var binding = tx.execute(s -> db.lock(job.bindingId()));
+    if (job == null) return !dirty.isEmpty();
+    var binding = tx.execute(s -> db.getBindingForUpdate(job.bindingId()));
     try {
       channel.send(binding.chatId(), job.payload());
-      db.outcome(job.id(), "submitted_unverified", "native_sdk_no_receipt");
+      db.updateNoticeOutcome(job.id(), "submitted_unverified", "native_sdk_no_receipt");
     } catch (RuntimeException e) {
-      db.outcome(job.id(), "unknown", "native_send_unconfirmed");
+      db.updateNoticeOutcome(job.id(), "unknown", "native_send_unconfirmed");
     }
+    return true;
   }
 
   public void project(String id) {
     tx.executeWithoutResult(
         s -> {
-          var b = db.lock(id);
+          var b = db.getBindingForUpdate(id);
           if (b == null || b.muted() || b.activeTurn() == null) return;
           Owner owner = new Owner(b.tenant(), b.subject());
           var turn = tasks.get(owner, b.conversationId(), b.activeTurn());
@@ -75,37 +158,37 @@ public class FeishuDelivery {
               UUID.nameUUIDFromBytes(
                       (turn.id() + ":" + turn.revision()).getBytes(StandardCharsets.UTF_8))
                   .toString();
-          db.insertNotice(
+          db.insertOrReactivateNotice(
               new Notice(
                   operation, turn.id(), id, b.revision(), turn.revision(), text, "pending", null));
         });
   }
 
   public Notice claim() {
-    var pending = db.pending();
+    var pending = db.getNextPendingNotice();
     if (pending == null) return null;
     return tx.execute(
         s -> {
-          var b = db.lock(pending.bindingId());
-          var notice = db.notice(pending.id());
+          var b = db.getBindingForUpdate(pending.bindingId());
+          var notice = db.getNoticeForUpdate(pending.id());
           if (!notice.status().equals("pending")) return null;
           if (b.muted()
               || !Objects.equals(b.activeTurn(), notice.turnId())
               || b.revision() != notice.bindingRevision()) {
-            db.outcome(notice.id(), "suppressed", "binding_changed");
+            db.updateNoticeOutcome(notice.id(), "suppressed", "binding_changed");
             return null;
           }
           var turn =
               tasks.get(new Owner(b.tenant(), b.subject()), b.conversationId(), notice.turnId());
           if (turn.revision() != notice.revision()) {
-            db.outcome(notice.id(), "suppressed", "revision_changed");
+            db.updateNoticeOutcome(notice.id(), "suppressed", "revision_changed");
             return null;
           }
-          return db.sending(notice.id()) == 1 ? notice : null;
+          return db.updatePendingNoticeSending(notice.id()) == 1 ? notice : null;
         });
   }
 
   public List<Notice> list(Owner owner) {
-    return db.notices(owner);
+    return db.listNoticesByOwner(owner);
   }
 }

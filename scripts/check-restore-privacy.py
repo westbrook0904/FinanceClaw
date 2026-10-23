@@ -13,7 +13,7 @@ spec = importlib.util.spec_from_file_location('drain_files', Path(__file__).with
 files = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(files)
 MAX_BYTES = 16 * 1024 * 1024
-COUNTERS = ('unsafe_sources', 'unsafe_facts', 'unsafe_projections', 'unsafe_recalls',
+COUNTERS = ('unsafe_profiles', 'unsafe_sources', 'unsafe_facts', 'unsafe_projections', 'unsafe_recalls',
             'unsafe_jobs', 'invalid_audit_targets')
 
 
@@ -31,7 +31,7 @@ def timestamp(value):
 def snapshot(raw):
     require(type(raw) is dict and set(raw) == {'schema_version', 'scope', 'consistency',
                                               'captured_at', 'orphan_owners', 'owners'})
-    require(type(raw['schema_version']) is int and raw['schema_version'] == 1
+    require(type(raw['schema_version']) is int and raw['schema_version'] == 2
             and raw['scope'] == 'all_memory_owners'
             and raw['consistency'] == 'repeatable_read_read_only')
     timestamp(raw['captured_at'])
@@ -65,7 +65,7 @@ def snapshot(raw):
 
 
 def compare(reference, restored):
-    report = {'schema_version': 1, 'scope': 'all_memory_owners',
+    report = {'schema_version': 2, 'scope': 'all_memory_owners',
               'assessment': 'incomplete', 'errors': [], 'checks': {},
               'consistency': 'two_supplied_snapshots',
               'checked_at': datetime.now(timezone.utc).isoformat()}
@@ -122,7 +122,7 @@ def main():
         report = compare(reference, restored)
         report['input_sha256'] = {'reference': ref_hash, 'restored': restored_hash}
     except (files.Invalid, ValueError, UnicodeError, RecursionError):
-        report = {'schema_version': 1, 'assessment': 'incomplete', 'errors': ['invalid_snapshot']}
+        report = {'schema_version': 2, 'assessment': 'incomplete', 'errors': ['invalid_snapshot']}
     except OSError:
         print('Privacy check failed: local_file_error', file=sys.stderr)
         return 1

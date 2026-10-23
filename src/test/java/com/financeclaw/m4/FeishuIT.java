@@ -125,7 +125,7 @@ class FeishuIT {
   }
 
   Binding binding() {
-    return db.find("tenant_test", "ou_alice", "oc_alice");
+    return db.getBindingByChannelIdentityForUpdate("tenant_test", "ou_alice", "oc_alice");
   }
 
   void bind() {
@@ -243,7 +243,7 @@ class FeishuIT {
         .isEqualTo("completed");
     var next = message("new", "om_new", "hello");
     assertThatThrownBy(() -> service.receive(next)).hasMessage("admission_paused");
-    assertThat(db.inbox("new")).isNull();
+    assertThat(db.getInboxEventById("new")).isNull();
     assertThat(sql.queryForObject("SELECT count(*) FROM business.turns", Integer.class))
         .isEqualTo(1);
     admissions.change(owner, "resume", false, 1);
@@ -251,7 +251,7 @@ class FeishuIT {
     service.receive(next);
     assertThat(sql.queryForObject("SELECT count(*) FROM business.turns", Integer.class))
         .isEqualTo(2);
-    assertThat(db.inbox("new")).isNotNull();
+    assertThat(db.getInboxEventById("new")).isNotNull();
   }
 
   @Test
@@ -320,7 +320,7 @@ class FeishuIT {
     sql.execute(
         "UPDATE channel.notices SET started_at=clock_timestamp()-interval '61 seconds' WHERE status='sending'");
     delivery.poll();
-    assertThat(db.notice(job.id()).status()).isEqualTo("unknown");
+    assertThat(db.getNoticeForUpdate(job.id()).status()).isEqualTo("unknown");
     assertThat(REMOTE.sends).hasValue(1);
   }
 

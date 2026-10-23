@@ -2,6 +2,7 @@ package com.financeclaw.infrastructure.governance;
 
 import com.financeclaw.app.governance.port.GrantGateway;
 import com.financeclaw.domain.Governance.Grant;
+import com.financeclaw.domain.governance.GrantReceipt;
 import org.springframework.stereotype.Repository;
 
 @Repository
@@ -13,19 +14,15 @@ public class MyBatisGrantGateway implements GrantGateway {
   }
 
   public Grant grant(String conversation) {
-    return db.grant(conversation);
+    return db.getGrant(conversation);
   }
 
   public Grant lockGrant(String conversation) {
-    return db.lockGrant(conversation);
+    return db.getGrantForUpdate(conversation);
   }
 
-  public String grantRequest(String conversation, String key) {
-    return db.grantRequest(conversation, key);
-  }
-
-  public Grant grantReplay(String conversation, String key) {
-    return db.grantReplay(conversation, key);
+  public GrantReceipt grantReceipt(String conversation, String key) {
+    return db.getGrantReceipt(conversation, key);
   }
 
   public void updateGrant(String conversation, String scopes) {
@@ -33,6 +30,6 @@ public class MyBatisGrantGateway implements GrantGateway {
   }
 
   public void grantChange(String conversation, String key, String hash) {
-    db.grantChange(conversation, key, hash);
+    db.insertGrantChange(conversation, key, hash);
   }
 }

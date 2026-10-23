@@ -181,8 +181,8 @@ class TaskLifecycleIT {
       var two = pool.submit(() -> execute(concurrent, c2));
       one.get();
       two.get();
-      assertThat(mapper.turn(c1.turn().id()).status()).isEqualTo("completed");
-      assertThat(mapper.turn(c2.turn().id()).status()).isEqualTo("completed");
+      assertThat(mapper.getTurnById(c1.turn().id()).status()).isEqualTo("completed");
+      assertThat(mapper.getTurnById(c2.turn().id()).status()).isEqualTo("completed");
       assertThat(c1.scope().sessionId()).isNotEqualTo(c2.scope().sessionId());
     }
   }
@@ -199,7 +199,7 @@ class TaskLifecycleIT {
   void T05_claimedCrashBlocksAndFencesLateSnapshotAndCompletion() throws Exception {
     var t = submit();
     fork("after-claim", 73);
-    var c = mapper.lockTurnCommand(t.turnId());
+    var c = mapper.getCommandByTurnIdForUpdate(t.turnId());
     var old = new Claim(c, turn(t));
     probe.expire();
     fork("recover", 0);
@@ -235,7 +235,6 @@ class TaskLifecycleIT {
     assertThat(turn(t).result()).isEqualTo("已收到：hello");
     assertThat(probe.attempts()).isEqualTo(1);
     assertThat(probe.answers()).isEqualTo(1);
-    assertThat(probe.outbox()).isEqualTo(1);
     assertThat(tasks.claim("other", 60000)).isNull();
   }
 
@@ -279,11 +278,10 @@ class TaskLifecycleIT {
     tasks.finish(c);
     assertThat(turn(t).status()).isEqualTo("waiting");
     assertThat(probe.answers()).isZero();
-    assertThat(probe.outbox()).isZero();
   }
 
   @Test
-  void T09_cancelAndCompletionRaceHasOneTerminalAndOneOutbox() throws Exception {
+  void T09_cancelAndCompletionRaceHasOneTerminal() throws Exception {
     for (int i = 0; i < 8; i++) {
       var t = submit();
       var c = claim();
@@ -314,7 +312,6 @@ class TaskLifecycleIT {
                   .count())
           .isEqualTo(1);
     }
-    assertThat(probe.outbox()).isEqualTo(8);
   }
 
   @Test
@@ -427,7 +424,7 @@ class TaskLifecycleIT {
   }
 
   @Test
-  void T11_twoIndependentServiceInstancesClaimAndProjectExactlyOnce() throws Exception {
+  void T11_twoIndependentServiceInstancesClaimExactlyOnce() throws Exception {
     for (int i = 0; i < 6; i++) submit();
     var second = new LifecycleDatabase(source).service;
     try (var pool = Executors.newFixedThreadPool(2)) {
@@ -435,25 +432,10 @@ class TaskLifecycleIT {
       var b = pool.submit(() -> drain(second));
       a.get();
       b.get();
-      var p1 =
-          pool.submit(
-              () -> {
-                while (tasks.projectNext()) {}
-              });
-      var p2 =
-          pool.submit(
-              () -> {
-                while (second.projectNext()) {}
-              });
-      p1.get();
-      p2.get();
     }
     assertThat(probe.commands()).isEqualTo(6);
     assertThat(probe.attempts()).isEqualTo(6);
     assertThat(probe.answers()).isEqualTo(6);
-    assertThat(probe.projections()).isEqualTo(6);
-    assertThat(probe.pending()).isZero();
-    assertThat(tasks.projectNext()).isFalse();
   }
 
   void drain(TaskFixture service) {
@@ -488,7 +470,7 @@ class TaskLifecycleIT {
     assertThat(response.getBody())
         .contains("conversation_id", "turn_id", "idempotent_replay")
         .doesNotContain("command_id", "thread_id", "attempt_id");
-    var t = mapper.replay(conversation, "x");
+    var t = mapper.getTurnByIdempotencyKey(conversation, "x");
     String turnPath = path + "/turns/" + t.id();
     // A finite observer disconnects while work remains queued, then reconnects after execution.
     var first = request(HttpMethod.GET, turnPath + "/events", null, null, "0");
@@ -548,7 +530,7 @@ class TaskLifecycleIT {
         .finish(c);
     new com.financeclaw.app.execution.ExecuteTaskService(failing, runtime).execute(c);
     assertThat(turn(t).status()).isEqualTo("running");
-    assertThat(mapper.receipt(c.command().attemptId()).outcome()).isEqualTo("completed");
+    assertThat(mapper.getAttemptReceipt(c.command().attemptId()).outcome()).isEqualTo("completed");
     probe.expire();
     tasks.recoverExpired();
     assertThat(turn(t).status()).isEqualTo("completed");
@@ -558,10 +540,12 @@ class TaskLifecycleIT {
   @Test
   void admissionFailureRollsBackTurnPolicyCommandJournalAndEvent() {
     String conversation = tasks.createConversation(owner);
+    var signals = bean(com.financeclaw.app.task.WorkSignals.class);
+    long before = signals.generation(com.financeclaw.app.task.WorkSignals.Queue.COMMAND);
     var admission =
         spy(
             new MyBatisTaskAdmissionGateway(
-                mapper, bean(com.financeclaw.app.task.TaskEventHub.class)));
+                mapper, bean(com.financeclaw.app.task.TaskEventHub.class), signals));
     doAnswer(
             call -> {
               call.callRealMethod();
@@ -581,8 +565,12 @@ class TaskLifecycleIT {
     for (String table : List.of("turns", "turn_policies", "commands", "journal", "events"))
       assertThat(count(table)).as(table).isZero();
     assertThat(count("conversations")).isEqualTo(1);
+    assertThat(signals.generation(com.financeclaw.app.task.WorkSignals.Queue.COMMAND))
+        .isEqualTo(before);
     assertThat(tasks.submit(owner, conversation, "atomic-admission", "hello").idempotentReplay())
         .isFalse();
+    assertThat(signals.generation(com.financeclaw.app.task.WorkSignals.Queue.COMMAND))
+        .isEqualTo(before + 1);
   }
 
   @Test
@@ -611,7 +599,7 @@ class TaskLifecycleIT {
     assertThatThrownBy(() -> leases.claim("fault", 60000)).hasMessage("after running event");
     assertThat(turn(accepted).status()).isEqualTo("queued");
     assertThat(turn(accepted).revision()).isEqualTo(1);
-    var command = mapper.lockTurnCommand(accepted.turnId());
+    var command = mapper.getCommandByTurnIdForUpdate(accepted.turnId());
     assertThat(command.status()).isEqualTo("queued");
     assertThat(command.attemptId()).isNull();
     assertThat(command.fence()).isZero();
@@ -653,18 +641,17 @@ class TaskLifecycleIT {
                         bean(TaskTransitionService.class))
                     .seal(claim, outcome))
         .hasMessage("after last question");
-    assertThat(mapper.receipt(claim.command().attemptId()).outcome()).isNull();
+    assertThat(mapper.getAttemptReceipt(claim.command().attemptId()).outcome()).isNull();
     assertThat(count("interactions")).isZero();
     assertThat(turn(accepted).status()).isEqualTo("running");
     tasks.seal(claim, outcome);
     tasks.finish(claim);
     assertThat(turn(accepted).status()).isEqualTo("waiting");
     assertThat(count("interactions")).isEqualTo(2);
-    assertThat(probe.outbox()).isZero();
   }
 
   @Test
-  void failureAfterOutboxRollsBackCompletionAndRecoveryUsesSealedReceiptOnce() {
+  void failureAfterFinalJournalRollsBackCompletionAndRecoveryUsesSealedReceiptOnce() {
     var accepted = submit();
     var claim = claim();
     tasks.seal(claim, runtime.execute(claim));
@@ -677,10 +664,10 @@ class TaskLifecycleIT {
     doAnswer(
             call -> {
               call.callRealMethod();
-              throw new IllegalStateException("after outbox");
+              throw new IllegalStateException("after final journal");
             })
         .when(mutations)
-        .outbox(anyString());
+        .journal(anyString(), anyString(), eq("assistant"), anyString());
     var transitions =
         new TaskTransitionService(
             mutations, bean(ExecutionPolicyGateway.class), bean(ExecutionMemory.class));
@@ -688,25 +675,25 @@ class TaskLifecycleIT {
             () ->
                 completion(mutations, bean(ExecutionReceiptGateway.class), transitions)
                     .finish(claim))
-        .hasMessage("after outbox");
+        .hasMessage("after final journal");
     assertThat(turn(accepted).status()).isEqualTo("running");
     assertThat(turn(accepted).revision()).isEqualTo(sealedRevision);
     assertThat(count("events")).isEqualTo(sealedEvents);
     assertThat(probe.answers()).isZero();
-    assertThat(probe.outbox()).isZero();
-    assertThat(mapper.lockCommand(claim.command().id()).fence()).isEqualTo(claim.command().fence());
-    assertThat(mapper.receipt(claim.command().attemptId()).outcome()).isEqualTo("completed");
+    assertThat(mapper.getCommandForUpdate(claim.command().id()).fence())
+        .isEqualTo(claim.command().fence());
+    assertThat(mapper.getAttemptReceipt(claim.command().attemptId()).outcome())
+        .isEqualTo("completed");
     probe.expire();
     assertThat(tasks.recoverExpired()).isEqualTo(1);
     assertThat(tasks.recoverExpired()).isZero();
     assertThat(turn(accepted).status()).isEqualTo("completed");
     assertThat(probe.answers()).isEqualTo(1);
-    assertThat(probe.outbox()).isEqualTo(1);
     assertThat(probe.attempts()).isEqualTo(1);
   }
 
   @Test
-  void cancellationReceiptFailureRollsBackStateEventOutboxAndCommand() {
+  void cancellationReceiptFailureRollsBackStateEventAndCommand() {
     var accepted = submit();
     var mutations =
         spy(
@@ -733,37 +720,14 @@ class TaskLifecycleIT {
         .hasMessage("after cancel receipt");
     assertThat(turn(accepted).status()).isEqualTo("queued");
     assertThat(turn(accepted).revision()).isEqualTo(1);
-    assertThat(mapper.lockTurnCommand(accepted.turnId()).status()).isEqualTo("queued");
+    assertThat(mapper.getCommandByTurnIdForUpdate(accepted.turnId()).status()).isEqualTo("queued");
     assertThat(count("cancel_requests")).isZero();
     assertThat(count("events")).isEqualTo(1);
-    assertThat(probe.outbox()).isZero();
     assertThat(
             tasks
                 .cancel(owner, accepted.conversationId(), accepted.turnId(), "stop")
                 .idempotentReplay())
         .isFalse();
-    assertThat(probe.outbox()).isEqualTo(1);
-  }
-
-  @Test
-  void projectionAndDeliveryAcknowledgementRollBackTogether() {
-    var accepted = submit();
-    run(claim());
-    var projection = spy(new MyBatisTaskProjectionGateway(mapper));
-    doAnswer(
-            call -> {
-              call.callRealMethod();
-              throw new IllegalStateException("after delivered");
-            })
-        .when(projection)
-        .delivered(anyLong());
-    assertThatThrownBy(() -> new ProjectTaskService(projection, transaction()).projectNext())
-        .hasMessage("after delivered");
-    assertThat(probe.projections()).isZero();
-    assertThat(probe.pending()).isEqualTo(1);
-    assertThat(tasks.projectNext()).isTrue();
-    assertThat(tasks.projectNext()).isFalse();
-    assertThat(probe.projection(accepted.turnId())).isEqualTo("completed");
   }
 
   @Test
@@ -799,6 +763,7 @@ class TaskLifecycleIT {
     probe.expire();
     var nativePort = mock(AgentExecutionPort.class);
     try (var worker = TaskWorkerFixture.create(taskContext, nativePort, true, 1, 60000, 2000)) {
+      worker.recover();
       worker.poll();
       worker.poll();
     }
@@ -833,7 +798,7 @@ class TaskLifecycleIT {
     assertThatThrownBy(() -> tasks.seal(claim, outcome)).isInstanceOf(Fenced.class);
     assertThatThrownBy(() -> tasks.progress(claim, "text_delta", "late", null))
         .isInstanceOf(Fenced.class);
-    assertThat(mapper.receipt(claim.command().attemptId()).outcome()).isNull();
+    assertThat(mapper.getAttemptReceipt(claim.command().attemptId()).outcome()).isNull();
     assertThat(turn(accepted).revision()).isEqualTo(beforeExpiry);
     assertThat(tasks.recoverExpired()).isEqualTo(1);
     assertThat(turn(accepted).reason()).isEqualTo("unconfirmed_execution");
@@ -911,10 +876,7 @@ class TaskLifecycleIT {
       assertThat(turn(first).status()).isEqualTo("cancelled");
       tasks.cancel(owner, second.conversationId(), second.turnId(), "stop");
       w.poll();
-      new com.financeclaw.worker.OutboxProjector(
-              taskContext.getBean(com.financeclaw.app.task.ProjectTaskService.class), true)
-          .poll();
-      assertThat(probe.projections()).isEqualTo(2);
+      assertThat(turn(second).status()).isEqualTo("cancelled");
     }
   }
 

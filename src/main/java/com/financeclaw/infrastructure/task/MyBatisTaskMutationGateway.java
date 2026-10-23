@@ -17,30 +17,26 @@ public class MyBatisTaskMutationGateway implements TaskMutationGateway {
   }
 
   public Turn lockTurn(String id) {
-    return db.lockTurn(id);
+    return db.getTurnForUpdate(id);
   }
 
   public Accepted cancelReplay(String turn, String key) {
-    return db.cancelReplay(turn, key);
+    return db.getCancelReceiptByIdempotencyKey(turn, key);
   }
 
   public void recordCancel(String turn, String key, String status, long revision) {
-    db.recordCancel(turn, key, status, revision);
+    db.insertCancelReceipt(turn, key, status, revision);
   }
 
   public void transition(String turn, String status, String result, String reason) {
-    db.transition(turn, status, result, reason);
+    db.updateTurnState(turn, status, result, reason);
   }
 
   public void event(String turn) {
-    events.committed(db.event(turn));
+    events.committed(db.insertTurnEventAndReturn(turn));
   }
 
   public void journal(String conversation, String turn, String role, String content) {
-    db.journal(conversation, turn, role, content);
-  }
-
-  public void outbox(String turn) {
-    db.outbox(turn);
+    db.insertJournalEntryIfAbsent(conversation, turn, role, content);
   }
 }

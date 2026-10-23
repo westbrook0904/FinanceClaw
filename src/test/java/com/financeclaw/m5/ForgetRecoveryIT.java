@@ -5,6 +5,7 @@ import static org.mockito.Mockito.*;
 
 import com.financeclaw.app.memory.*;
 import com.financeclaw.app.memory.port.*;
+import com.financeclaw.app.task.TaskEventHub;
 import com.financeclaw.bootstrap.FinanceClawApplication;
 import com.financeclaw.domain.Memory.*;
 import com.financeclaw.domain.Task.*;
@@ -16,6 +17,8 @@ import java.util.*;
 import java.util.concurrent.*;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.*;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
@@ -137,10 +140,150 @@ class ForgetRecoveryIT {
     return sql.queryForObject("SELECT count(*) FROM memory." + table, Long.class);
   }
 
+  void profile(Owner owner, long revision, String markdown) {
+    long epoch = memory.privacy(owner).epoch();
+    tx.executeWithoutResult(
+        status -> {
+          sql.update(
+              "UPDATE memory.owners SET profile_revision=? WHERE tenant=? AND subject=?",
+              revision,
+              owner.tenant(),
+              owner.subject());
+          sql.update(
+              "INSERT INTO memory.user_profiles(tenant,subject,epoch,revision,markdown) VALUES(?,?,?,?,?)",
+              owner.tenant(),
+              owner.subject(),
+              epoch,
+              revision,
+              markdown);
+        });
+  }
+
+  long profileRevision(Owner owner) {
+    return sql.queryForObject(
+        "SELECT profile_revision FROM memory.owners WHERE tenant=? AND subject=?",
+        Long.class,
+        owner.tenant(),
+        owner.subject());
+  }
+
+  String profileMarkdown(Owner owner) {
+    return sql.queryForObject(
+        "SELECT markdown FROM memory.user_profiles WHERE tenant=? AND subject=?",
+        String.class,
+        owner.tenant(),
+        owner.subject());
+  }
+
+  MemoryService profileOnly(MemoryForgetService forgetting) {
+    return new MemoryService(
+        repository, tx, new MemoryPolicy(false, false, "disabled", true), forgetting);
+  }
+
+  MemoryForgetService configuredForget(boolean independentLedger) {
+    if (independentLedger) {
+      offline().bootstrap();
+      return service(recovery, ledger);
+    }
+    return service(recovery, mock(ForgetLedger.class));
+  }
+
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  void profileOnlyForgetCompletesWithoutWorkerAndRemainsIdempotent(boolean independentLedger) {
+    var onlyProfiles = profileOnly(configuredForget(independentLedger));
+    var profiles =
+        new UserProfileService(
+            repository, tx, new MemoryPolicy(false, false, "disabled", true), new TaskEventHub());
+    profiles.update(alice, 1, 0, "alice-profile-before-forget");
+    profiles.update(bob, 1, 0, "bob-profile");
+
+    assertThat(onlyProfiles.forget(alice, 1, "profile-only")).isEqualTo(2);
+    assertThat(onlyProfiles.privacy(alice)).isEqualTo(new Privacy("local", "alice", 2, false));
+    assertThat(profiles.read(alice)).isEqualTo(new UserProfile(2, 0, ""));
+    assertThat(profiles.read(bob).markdown()).isEqualTo("bob-profile");
+    assertThat(profiles.update(alice, 2, 0, "new-profile"))
+        .isEqualTo(new UserProfile(2, 1, "new-profile"));
+
+    assertThat(onlyProfiles.forget(alice, 1, "profile-only")).isEqualTo(2);
+    assertThat(profiles.read(alice)).isEqualTo(new UserProfile(2, 1, "new-profile"));
+    assertThat(count("audit WHERE action='forget'")).isEqualTo(1);
+    assertThat(count("audit WHERE action='purge_complete'")).isEqualTo(1);
+    assertThat(recovery.unsafeRows()).isZero();
+    assertThat(tasks.submit(alice, tasks.createConversation(alice), "after-forget", "new turn"))
+        .isNotNull();
+  }
+
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  void replayedProfileOnlyReceiptCannotFinishNewerEpochPurge(boolean independentLedger) {
+    var forgetting = configuredForget(independentLedger);
+    var onlyProfiles = profileOnly(forgetting);
+    profile(alice, 1, "old-profile");
+    assertThat(onlyProfiles.forget(alice, 1, "first")).isEqualTo(2);
+    // Simulate a later request committed before its completion step or worker has run.
+    assertThat(forgetting.forget(alice, 2, "later")).isEqualTo(3);
+
+    assertThat(onlyProfiles.forget(alice, 1, "first")).isEqualTo(2);
+    assertThat(onlyProfiles.privacy(alice)).isEqualTo(new Privacy("local", "alice", 3, true));
+    assertThat(count("audit WHERE action='purge_complete'")).isEqualTo(1);
+
+    assertThat(onlyProfiles.forget(alice, 2, "later")).isEqualTo(3);
+    assertThat(onlyProfiles.privacy(alice)).isEqualTo(new Privacy("local", "alice", 3, false));
+    assertThat(count("audit WHERE action='purge_complete'")).isEqualTo(2);
+    assertThat(recovery.unsafeRows()).isZero();
+  }
+
+  @Test
+  void profileOnlyReceiptCannotFinishARequestAwaitingIndependentLedger() {
+    var onlyProfiles = profileOnly(configuredForget(true));
+    profile(alice, 1, "old-profile");
+    assertThat(onlyProfiles.forget(alice, 1, "first")).isEqualTo(2);
+    var unavailable = mock(ForgetLedger.class);
+    when(unavailable.enabled()).thenReturn(true);
+    doThrow(new IllegalStateException("offline")).when(unavailable).append(any());
+    assertThatThrownBy(() -> service(recovery, unavailable).forget(alice, 2, "pending"))
+        .hasMessage("forget_ledger_unavailable");
+    var pending = recovery.pending(alice);
+
+    assertThat(onlyProfiles.forget(alice, 1, "first")).isEqualTo(2);
+    assertThat(onlyProfiles.privacy(alice)).isEqualTo(new Privacy("local", "alice", 2, true));
+    assertThat(recovery.pending(alice)).isEqualTo(pending);
+    assertThat(count("audit WHERE action='purge_complete'")).isEqualTo(1);
+
+    assertThat(onlyProfiles.forget(alice, 2, "pending")).isEqualTo(3);
+    assertThat(onlyProfiles.privacy(alice)).isEqualTo(new Privacy("local", "alice", 3, false));
+    assertThat(recovery.pending(alice)).isNull();
+    assertThat(recovery.unsafeRows()).isZero();
+  }
+
+  @Test
+  void localPurgeAuditAndBarrierCompletionRollBackTogetherAndCanRetry() {
+    var forgetting = configuredForget(false);
+    profile(alice, 1, "old-profile");
+    assertThat(forgetting.forget(alice, 1, "first")).isEqualTo(2);
+    var failing = spy(repository);
+    doThrow(new IllegalStateException("audit-failed"))
+        .when(failing)
+        .audit(alice, 2, "purge_complete", "all");
+
+    assertThatThrownBy(() -> new MemoryForgetService(failing, tx).completeLocalPurge(alice, 2))
+        .hasMessage("audit-failed");
+    assertThat(memory.privacy(alice)).isEqualTo(new Privacy("local", "alice", 2, true));
+    assertThat(count("audit WHERE action='purge_complete'")).isZero();
+
+    forgetting.completeLocalPurge(alice, 2);
+    forgetting.completeLocalPurge(alice, 2);
+    assertThat(memory.privacy(alice)).isEqualTo(new Privacy("local", "alice", 2, false));
+    assertThat(count("audit WHERE action='purge_complete'")).isEqualTo(1);
+    assertThat(recovery.unsafeRows()).isZero();
+  }
+
   @Test
   void independentFailureKeepsBarrierAndRetryUsesTheSameFact() {
     offline().bootstrap();
     String id = seed(alice, "private-old-value");
+    profile(alice, 3, "private-old-profile");
     var unavailable = mock(ForgetLedger.class);
     when(unavailable.enabled()).thenReturn(true);
     doThrow(new IllegalStateException("transport-with-sensitive-detail"))
@@ -150,9 +293,11 @@ class ForgetRecoveryIT {
         .hasMessage("forget_ledger_unavailable");
     var pending = recovery.pending(alice);
     assertThat(pending).isNotNull();
-    assertThat(memory.privacy(alice)).isEqualTo(new Privacy("local", "alice", 1, true));
+    assertThat(memory.privacy(alice)).isEqualTo(new Privacy("local", "alice", 1, true, 3));
     assertThat(memory.list(alice)).isEmpty();
     assertThat(repository.fact(id).content()).isEqualTo("private-old-value");
+    assertThat(profileMarkdown(alice)).isEqualTo("private-old-profile");
+    assertThat(profileRevision(alice)).isEqualTo(3);
     assertThatThrownBy(() -> tasks.submit(alice, tasks.createConversation(alice), "blocked", "new"))
         .hasMessage("purge_pending");
     assertThatThrownBy(() -> memory.rebuild(alice, "rebuild")).hasMessage("purge_pending");
@@ -163,6 +308,8 @@ class ForgetRecoveryIT {
     assertThat(memory.forget(alice, 1, "forget-one")).isEqualTo(2);
     assertThat(ledger.snapshot(recovery.binding().lineage())).containsExactly(pending);
     assertThat(repository.fact(id).content()).isNull();
+    assertThat(count("user_profiles")).isZero();
+    assertThat(profileRevision(alice)).isZero();
     assertThat(recovery.pending(alice)).isNull();
     worker().poll();
     assertThat(memory.privacy(alice).purgePending()).isFalse();
@@ -241,6 +388,8 @@ class ForgetRecoveryIT {
     offline().bootstrap();
     String old = seed(alice, "private-before-backup");
     String other = seed(bob, "other-owner-memory");
+    profile(alice, 7, "private-profile-before-backup");
+    profile(bob, 2, "other-owner-profile");
     command(
         "pg_dump",
         "-U",
@@ -268,6 +417,8 @@ class ForgetRecoveryIT {
         "--if-exists",
         "/tmp/old.dump");
     assertThat(repository.fact(old).content()).isEqualTo("private-before-backup");
+    assertThat(profileMarkdown(alice)).isEqualTo("private-profile-before-backup");
+    assertThat(profileRevision(alice)).isEqualTo(7);
     assertThat(memory.privacy(alice).epoch()).isEqualTo(1);
     assertThat(ledger.snapshot(recovery.binding().lineage())).isEqualTo(authority);
     var report = offline().replay();
@@ -275,14 +426,21 @@ class ForgetRecoveryIT {
     assertThat(report.facts()).isEqualTo(2);
     assertThat(repository.fact(old).content()).isNull();
     assertThat(repository.fact(other).content()).isEqualTo("other-owner-memory");
+    assertThat(count("user_profiles")).isEqualTo(1);
+    assertThat(profileRevision(alice)).isZero();
+    assertThat(profileMarkdown(bob)).isEqualTo("other-owner-profile");
+    assertThat(profileRevision(bob)).isEqualTo(2);
     assertThat(memory.privacy(alice)).isEqualTo(new Privacy("local", "alice", 3, false));
     assertThat(recovery.unsafeRows()).isZero();
     assertThat(memory.forget(alice, 1, "after-backup-one")).isEqualTo(2);
     String newer = seed(alice, "new-epoch-memory");
+    profile(alice, 1, "new-epoch-profile");
     long auditCount = count("audit");
     long oldRevision = repository.fact(old).revision();
     assertThat(offline().replay()).isEqualTo(report);
     assertThat(repository.fact(newer).content()).isEqualTo("new-epoch-memory");
+    assertThat(profileMarkdown(alice)).isEqualTo("new-epoch-profile");
+    assertThat(profileRevision(alice)).isEqualTo(1);
     assertThat(repository.fact(old).revision()).isEqualTo(oldRevision);
     assertThat(count("audit")).isEqualTo(auditCount);
   }
@@ -299,6 +457,26 @@ class ForgetRecoveryIT {
     assertThat(offline().bootstrap().facts()).isEqualTo(1);
     sql.update("UPDATE memory.owners SET epoch=3 WHERE tenant='local' AND subject='alice'");
     assertThatThrownBy(() -> offline().replay()).hasMessage("privacy_owner_epoch_conflict");
+  }
+
+  @Test
+  void legacyForgetDeletesOnlyTheOwnersProfileAndRetryKeepsNewEpochProfile() {
+    var legacy = new MemoryForgetService(repository, tx);
+    profile(alice, 4, "alice-private-profile");
+    profile(bob, 2, "bob-private-profile");
+
+    assertThat(legacy.forget(alice, 1, "legacy-profile-key")).isEqualTo(2);
+    assertThat(count("user_profiles")).isEqualTo(1);
+    assertThat(profileRevision(alice)).isZero();
+    assertThat(profileMarkdown(bob)).isEqualTo("bob-private-profile");
+    assertThat(profileRevision(bob)).isEqualTo(2);
+    worker().poll();
+    profile(alice, 1, "new-alice-profile");
+
+    assertThat(legacy.forget(alice, 1, "legacy-profile-key")).isEqualTo(2);
+    assertThat(profileMarkdown(alice)).isEqualTo("new-alice-profile");
+    assertThat(profileRevision(alice)).isEqualTo(1);
+    assertThat(recovery.unsafeRows()).isZero();
   }
 
   @Test

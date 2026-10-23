@@ -6,6 +6,13 @@ spring:
     deserialization:
       fail-on-unknown-properties: true
   task:
+    execution:
+      # Custom schedulers must not disable MVC's applicationTaskExecutor.
+      mode: force
+      pool:
+        core-size: 8
+        max-size: 8
+        queue-capacity: 256
     scheduling:
       pool:
         size: 2
@@ -79,7 +86,10 @@ financeclaw:
   worker:
     enabled: ${FINANCECLAW_WORKER_ENABLED:true}
     parallelism: 4
+    # Local scheduling tick; idle database scans back off up to idle-max-ms.
     poll-ms: 250
+    idle-max-ms: 5000
+    recovery-ms: 2000
     lease-ms: 15000
     heartbeat-ms: 2000
     model-timeout-ms: 30000
@@ -112,6 +122,7 @@ financeclaw:
       query-timezone: ${FINANCECLAW_ZIWEI_QUERY_TIMEZONE:Asia/Shanghai}
   memory:
     enabled: ${FINANCECLAW_MEMORY_ENABLED:false}
+    profile-enabled: ${FINANCECLAW_PROFILE_ENABLED:true}
     vector-search: ${FINANCECLAW_MEMORY_VECTOR_SEARCH:false}
     forget-ledger:
       enabled: ${FINANCECLAW_FORGET_LEDGER_ENABLED:false}
@@ -130,6 +141,8 @@ financeclaw:
       dimensions: 1024
   feishu:
     enabled: ${FINANCECLAW_FEISHU_ENABLED:false}
+    idle-max-ms: 5000
+    recovery-ms: 5000
     app-id: ${FINANCECLAW_FEISHU_APP_ID:}
     app-secret: ${FINANCECLAW_FEISHU_APP_SECRET:}
     verification-token: ${FINANCECLAW_FEISHU_VERIFICATION_TOKEN:}

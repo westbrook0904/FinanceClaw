@@ -36,9 +36,11 @@ M5e 与 R0–R5a 已保存为本地检查点 `bb58ea2`，[R5b 紫微边界拆分
 
 最新本地开发 **[M5f 遗忘事实独立保存与恢复重放](docs/migration/m5f-forget-ledger.md)**：使用独立 PostgreSQL 追加保存遗忘事实，通过本地隔离标记衔接两库 Spring 事务；旧主库备份恢复后，可离线补回遗忘并保留新 epoch 的记忆。默认关闭，首次启用需要停写、bootstrap 和新的基线备份；生产账本部署及线上切换仍需独立验收。
 
-当前部署采用 **[同进程运行](docs/architecture/combined-runtime.md)**：HTTP API、AgentScope 执行和事件推送、Outbox 投影、飞书投递在同一个 JVM 中运行，共用业务数据库连接池。默认不再拆成 API、Worker、Integrations 三个进程；受限 Memory Worker 和离线隐私恢复入口继续隔离。实时 SSE 要求单个业务进程，可并行处理多用户请求；跨实例事件转发尚未实现。
+当前部署采用 **[同进程运行](docs/architecture/combined-runtime.md)**：HTTP API、AgentScope 执行和事件推送、飞书投递在同一个 JVM 中运行，共用业务数据库连接池。默认不再拆成 API、Worker、Integrations 三个进程；受限 Memory Worker 和离线隐私恢复入口继续隔离。实时 SSE 要求单个业务进程，可并行处理多用户请求；跨实例事件转发尚未实现。V10 退役历史实验表和无人读取的本地 Outbox 投影，升级前见[备份与退役操作](ops/retire-legacy-tables.md)。
 
 实时文本和工具进度直接消费 AgentScope 事件，不再逐条落库或由 SSE 轮询。历史隐私过滤和工具授权查询也已合并，调用数及恢复边界见[数据库访问优化说明](docs/architecture/database-access-review.md)。
+
+记忆现在分为[可手工维护的 `profile.md` 用户画像与跨会话偏好证据](docs/architecture/user-profile-memory.md)。画像通过下载、编辑、上传维护，自动提取不会覆盖；两层共用用户隔离、遗忘与恢复校验，关闭自动记忆仍可使用画像。
 
 ## 固定工具链
 
@@ -113,6 +115,7 @@ scripts/mvn.sh spring-boot:run
 | [M5f 独立遗忘账本](docs/migration/m5f-forget-ledger.md) | 独立保存、故障重试、历史初始化、旧备份离线重放与隔离边界 |
 | [M6 紫微迁移](docs/migration/m6-validation.md) | M6a 日期契约、[M6b 历法](docs/migration/m6b-calendar.md)与[完整排盘比对](docs/migration/m6b-charts.md)；[M6c 领域接入](docs/migration/m6c-domain.md)、[M6d 恢复与部署](docs/migration/m6d-recovery.md)，真实模型验收待完成 |
 | [M4 记忆与原生飞书](docs/migration/m4-validation.md) | 记忆 API、独立 Worker、pgvector、原生飞书配置及 SDK 能力边界 |
+| [用户画像与跨会话证据](docs/architecture/user-profile-memory.md) | `profile.md` 手工维护、版本冲突、两层记忆注入、遗忘和恢复 |
 | [M3 业务与验证](docs/migration/m3-validation.md) | 酒店/Taibu 配置、调酒 Skill、市场研究、固定 Workflow 及模拟验收 |
 | [M2 使用与验证](docs/migration/m2-validation.md) | 授权与交互 API、Artifact、模型配置、测试和限制 |
 | [框架复用审查](docs/migration/framework-reuse-review.md) | 原生能力的复用方式及保留业务适配的原因 |
@@ -138,11 +141,11 @@ scripts/mvn.sh spring-boot:run
 | [Agent 适配器](src/main/java/com/financeclaw/infrastructure/agentscope) | 原生执行、恢复、业务工具适配与发送前预算检查 |
 | [状态适配](src/main/java/com/financeclaw/infrastructure/state) | AgentState 版本 CAS、身份隔离与墓碑 |
 | [MyBatis 状态 Mapper](src/main/java/com/financeclaw/infrastructure/state/RuntimeMapper.java) | AgentState SQL；连接与事务由 Spring/MyBatis-Spring 管理 |
-| [任务用例](src/main/java/com/financeclaw/app/task) / [执行用例](src/main/java/com/financeclaw/app/execution) | 受理、查询、取消、租约、完成回执、恢复与 Outbox |
+| [任务用例](src/main/java/com/financeclaw/app/task) / [执行用例](src/main/java/com/financeclaw/app/execution) | 受理、查询、取消、租约、完成回执与恢复 |
 | [授权用例](src/main/java/com/financeclaw/app/governance) / [Artifact 用例](src/main/java/com/financeclaw/app/artifact) / [报告用例](src/main/java/com/financeclaw/app/report) | 授权变更与重放、归档与访问核对、本地报告效果回执 |
 | [记忆用例](src/main/java/com/financeclaw/app/memory) / [发布用例](src/main/java/com/financeclaw/app/release) | 事实与隐私治理、事务外模型调用、固定发布版本与配置适配 |
 | [角色装配](src/main/java/com/financeclaw/bootstrap/RoleConfiguration.java) | Spring 显式导入各角色组件，精确注册 Mapper |
-| [后台执行](src/main/java/com/financeclaw/worker/TaskWorker.java) / [Outbox 投影](src/main/java/com/financeclaw/worker/OutboxProjector.java) | 同进程的有界执行、恢复与持久事件投影 |
+| [后台执行](src/main/java/com/financeclaw/worker/TaskWorker.java) / [飞书投递](src/main/java/com/financeclaw/channel/FeishuDelivery.java) | 同进程的有界执行、恢复与渠道投递 |
 | [M1 集成测试](src/test/java/com/financeclaw/m1/TaskLifecycleIT.java) | API、真实数据库竞争、独立 JVM 崩溃恢复 |
 | [M0 实验](src/test/java/com/financeclaw/m0) | SDK、PostgreSQL、子进程、故障及隔离场景 |
 | [数据库迁移](src/main/resources/db/migration) | AgentState、工具账本与任务生命周期结构 |

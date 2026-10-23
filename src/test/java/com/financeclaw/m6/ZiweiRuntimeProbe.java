@@ -93,6 +93,7 @@ public final class ZiweiRuntimeProbe extends TaskAgentRuntime implements Model {
                 leases,
                 recovery,
                 new ExecuteTaskService(completion, runtime),
+                context.getBean(com.financeclaw.app.task.WorkSignals.class),
                 false,
                 1,
                 120000,

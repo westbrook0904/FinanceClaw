@@ -57,7 +57,7 @@ if (preflight['tests'] != 12 or any(preflight[k] for k in ('failures', 'errors',
         or any(manifest['scripts/' + name] != value for name, value in preflight['source_sha256'].items())):
     raise SystemExit('Drain preflight evidence is stale or failed; run scripts/test-inspect-drain.py')
 privacy = json.loads((root / "target/m5e/privacy-tests.json").read_text())
-if (privacy['tests'] != 13 or any(privacy[k] for k in ('failures', 'errors', 'skipped'))
+if (privacy['tests'] != 14 or any(privacy[k] for k in ('failures', 'errors', 'skipped'))
         or any(manifest[name] != value for name, value in privacy['source_sha256'].items())):
     raise SystemExit('Restore privacy evidence is stale or failed; run scripts/test-restore-privacy.py')
 evidence = {"base_commit": "daadbc3472e68e93c4a1d306006a806ac46ec977", "milestone": "M5f-forget-ledger", "collected_at_utc": datetime.now(timezone.utc).isoformat(),
@@ -78,6 +78,7 @@ evidence = {"base_commit": "daadbc3472e68e93c4a1d306006a806ac46ec977", "mileston
             "total_tests": sum(s["tests"] for s in suites), "suites": suites, "source_sha256": manifest,
             "validation_scope": "Local PostgreSQL, pgvector and independent JVMs; native loopback model/MCP/Feishu adapters; M6 date contracts, calendar compatibility, 2524 full chart comparisons, domain facts and focus parity, native Toolkit suspension/resume, scoped artifacts, HMAC, budgets and privacy. M6d packaged process crash recovery, cancellation/privacy competition, deployment image with five native tools and no Python, offline live-validator contracts. Development gate retained: no real model Ziwei selection, real provider/MCP/Feishu tenant or remote CI execution. Compose validation is recorded separately."}
 evidence['validation_scope'] += ' M5b owner-scoped admission pause/resume, revision and idempotency receipts, PostgreSQL submission/pause races, existing approval/input/cancellation and Feishu continuity, drain counts including uncertain effects, notification and memory backlogs.'
+evidence['validation_scope'] += ' V10 retires inactive Skill/M0 tables and the unused local outbox/projection chain; upgrade tests preserve remaining data and reject unexpected dependent views without CASCADE. Outbox HTTP counters remain zero for compatibility.'
 evidence['validation_scope'] += ' M5c read-only owner-scoped keyset pages for task, notification, unprojected binding and memory job blockers; terminal-turn residual facts, numeric job ordering, foreign-owner exclusion and content minimization.'
 evidence['validation_scope'] += ' M5d read-only operations observations, inventory/count comparison, incomplete scan handling and private report files remain covered by separate Python contracts and Compose evidence.'
 evidence['validation_scope'] += ' M5e offline all-owner privacy snapshot comparison and SQL snapshot queries remain separate from M5f replay. M5f adds independent PostgreSQL forget facts, durable pending barriers, idempotent epoch-scoped replay, bootstrap and isolated JVM recovery. Tests cover lost-source restoration of a real old pg_dump, unknown external commit outcomes, rollback and repeated replay retaining new memory. Independent storage availability, production IAM, latest-authority operations and global cutover are not certified by these local tests.'

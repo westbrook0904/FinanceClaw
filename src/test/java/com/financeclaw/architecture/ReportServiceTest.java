@@ -72,9 +72,7 @@ class ReportServiceTest {
     order.verify(commands).lockCommand("command");
     order.verify(policy).checkPolicy(CLAIM);
     order.verify(db).effect("turn", "call");
-    order.verify(db).beginEffect("turn", "call", "action-hash");
-    order.verify(db).report(id, "turn", "call", "Quarterly review");
-    order.verify(db).completeEffect("turn", "call", result);
+    order.verify(db).publishReport(id, "turn", "call", "Quarterly review", "action-hash", result);
     order.verify(manager).commit(status);
     order.verifyNoMoreInteractions();
   }
@@ -157,9 +155,11 @@ class ReportServiceTest {
   }
 
   @Test
-  void reportFailureRollsBackThePendingEffect() {
+  void publicationFailureRollsBackWithoutSeparateEffectWrites() {
     var failure = new IllegalStateException("report storage unavailable");
-    doThrow(failure).when(db).report(anyString(), eq("turn"), eq("call"), anyString());
+    doThrow(failure)
+        .when(db)
+        .publishReport(anyString(), eq("turn"), eq("call"), anyString(), anyString(), anyString());
 
     assertSame(
         failure,
@@ -170,30 +170,44 @@ class ReportServiceTest {
     var order = inOrder(db, manager);
     order.verify(manager).getTransaction(any());
     order.verify(db).effect("turn", "call");
-    order.verify(db).beginEffect("turn", "call", "action-hash");
-    order.verify(db).report(anyString(), eq("turn"), eq("call"), eq("Quarterly review"));
+    order
+        .verify(db)
+        .publishReport(
+            anyString(),
+            eq("turn"),
+            eq("call"),
+            eq("Quarterly review"),
+            eq("action-hash"),
+            anyString());
     order.verify(manager).rollback(status);
     order.verifyNoMoreInteractions();
   }
 
   @Test
-  void receiptFailureRollsBackTheReportAndEffectTogether() {
-    var failure = new IllegalStateException("effect storage unavailable");
-    doThrow(failure).when(db).completeEffect(eq("turn"), eq("call"), anyString());
+  void legacyReportWithoutActionIdentityRequiresReconciliation() {
+    when(db.effect("turn", "call")).thenReturn(new Effect(null, "legacy_untracked", null));
 
-    assertSame(
-        failure,
+    var blocked =
         assertThrows(
-            IllegalStateException.class,
-            () -> reports.report(CLAIM, "call", "action-hash", "Quarterly review")));
+            Blocked.class, () -> reports.report(CLAIM, "call", "action-hash", "Quarterly review"));
 
-    var order = inOrder(db, manager);
-    order.verify(manager).getTransaction(any());
-    order.verify(db).effect("turn", "call");
-    order.verify(db).beginEffect("turn", "call", "action-hash");
-    order.verify(db).report(anyString(), eq("turn"), eq("call"), eq("Quarterly review"));
-    order.verify(db).completeEffect(eq("turn"), eq("call"), anyString());
-    order.verify(manager).rollback(status);
-    order.verifyNoMoreInteractions();
+    assertEquals("reconciliation_required", blocked.getMessage());
+    verify(db).effect("turn", "call");
+    verifyNoMoreInteractions(db);
+    verify(manager).rollback(status);
+  }
+
+  @Test
+  void completedReceiptWithoutResultCannotBeReplayedAsSuccess() {
+    when(db.effect("turn", "call")).thenReturn(new Effect("action-hash", "completed", null));
+
+    var blocked =
+        assertThrows(
+            Blocked.class, () -> reports.report(CLAIM, "call", "action-hash", "Quarterly review"));
+
+    assertEquals("reconciliation_required", blocked.getMessage());
+    verify(db).effect("turn", "call");
+    verifyNoMoreInteractions(db);
+    verify(manager).rollback(status);
   }
 }

@@ -108,8 +108,6 @@ public final class Task {
   public record Journal(
       long sequence, String conversationId, String turnId, String role, String content) {}
 
-  public record Delivery(long id, String turnId, long revision, String status) {}
-
   public static final class Problem extends RuntimeException {
     private final int status;
 

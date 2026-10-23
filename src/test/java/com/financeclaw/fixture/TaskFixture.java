@@ -19,7 +19,6 @@ public final class TaskFixture {
   private final ExecutionPolicyService policy;
   private final ExecutionCompletionService completion;
   private final RecoverTaskService recovery;
-  private final ProjectTaskService projection;
   private final ExecutionContextGateway context;
   private final ReleaseService catalog;
   private final com.financeclaw.app.release.port.Credentials credentials;
@@ -32,7 +31,6 @@ public final class TaskFixture {
       ExecutionPolicyService policy,
       ExecutionCompletionService completion,
       RecoverTaskService recovery,
-      ProjectTaskService projection,
       ExecutionContextGateway context,
       ReleaseService catalog,
       com.financeclaw.app.release.port.Credentials credentials) {
@@ -43,7 +41,6 @@ public final class TaskFixture {
     this.policy = policy;
     this.completion = completion;
     this.recovery = recovery;
-    this.projection = projection;
     this.context = context;
     this.catalog = catalog;
     this.credentials = credentials;
@@ -163,10 +160,6 @@ public final class TaskFixture {
 
   public int recoverExpired() {
     return recovery.recoverExpired();
-  }
-
-  public boolean projectNext() {
-    return projection.projectNext();
   }
 
   public ReleaseDefinition release(String hash) {

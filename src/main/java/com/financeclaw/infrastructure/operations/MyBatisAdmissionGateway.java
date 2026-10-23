@@ -16,28 +16,28 @@ public class MyBatisAdmissionGateway implements AdmissionGateway {
 
   @Override
   public Admission current(Owner owner) {
-    return tasks.admission(owner);
+    return tasks.getAdmission(owner);
   }
 
   @Override
   public Admission lock(Owner owner) {
-    tasks.ensureAdmission(owner);
-    return tasks.lockAdmission(owner);
+    tasks.insertAdmissionIfAbsent(owner);
+    return tasks.getAdmissionForUpdate(owner);
   }
 
   @Override
   public Change findChange(Owner owner, String key) {
-    return tasks.admissionReplay(owner, key);
+    return tasks.getAdmissionChangeByIdempotencyKey(owner, key);
   }
 
   @Override
   public boolean update(Owner owner, Admission next, long expectedRevision) {
-    return tasks.changeAdmission(owner, next.paused(), expectedRevision) == 1;
+    return tasks.updateAdmissionByRevision(owner, next.paused(), expectedRevision) == 1;
   }
 
   @Override
   public void record(Owner owner, AdmissionChange request, Admission next) {
-    tasks.recordAdmission(
+    tasks.insertAdmissionChange(
         owner, request.key().value(), request.requestHash(), next.paused(), next.revision());
   }
 }

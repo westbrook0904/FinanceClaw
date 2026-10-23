@@ -7,7 +7,12 @@ import java.util.*;
 public final class Memory {
   private Memory() {}
 
-  public record Privacy(String tenant, String subject, long epoch, boolean purgePending) {
+  public record Privacy(
+      String tenant, String subject, long epoch, boolean purgePending, long profileRevision) {
+    public Privacy(String tenant, String subject, long epoch, boolean purgePending) {
+      this(tenant, subject, epoch, purgePending, 0);
+    }
+
     public void requireAvailable() {
       if (purgePending) throw new Problem(409, "purge_pending");
     }
@@ -26,7 +31,18 @@ public final class Memory {
   }
 
   public record Source(
-      String id, String tenant, String subject, long epoch, String content, String status) {
+      String id,
+      String tenant,
+      String subject,
+      long epoch,
+      String content,
+      String status,
+      long profileRevision) {
+    public Source(
+        String id, String tenant, String subject, long epoch, String content, String status) {
+      this(id, tenant, subject, epoch, content, status, 0);
+    }
+
     public boolean extractable(Job job) {
       return content != null && status.equals("pending") && epoch == job.epoch();
     }
@@ -73,14 +89,8 @@ public final class Memory {
       String status,
       int attempts,
       String leaseToken) {
-    public boolean live(Privacy privacy, Job current, boolean leaseLive) {
-      return leaseLive
-          && privacy != null
-          && !privacy.purgePending()
-          && privacy.epoch() == epoch
-          && current != null
-          && current.status().equals("running")
-          && Objects.equals(current.leaseToken(), leaseToken);
+    public boolean live(Privacy privacy, boolean leaseLive) {
+      return leaseLive && privacy != null && !privacy.purgePending() && privacy.epoch() == epoch;
     }
   }
 

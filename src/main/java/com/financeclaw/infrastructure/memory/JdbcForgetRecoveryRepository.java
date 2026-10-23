@@ -134,6 +134,11 @@ public final class JdbcForgetRecoveryRepository implements ForgetRecoveryReposit
     var audits = forgetAudits(o, fact.toEpoch());
 
     db.update(
+        "DELETE FROM memory.user_profiles WHERE tenant=? AND subject=? AND epoch<?",
+        o.tenant(),
+        o.subject(),
+        fact.toEpoch());
+    db.update(
         "UPDATE memory.sources SET content=NULL,status='forgotten' WHERE tenant=? AND subject=? AND epoch<? AND (content IS NOT NULL OR status<>'forgotten')",
         o.tenant(),
         o.subject(),
@@ -160,7 +165,8 @@ public final class JdbcForgetRecoveryRepository implements ForgetRecoveryReposit
         o.subject(),
         fact.toEpoch());
     db.update(
-        "UPDATE memory.owners SET epoch=GREATEST(epoch,?),purge_pending=true WHERE tenant=? AND subject=?",
+        "UPDATE memory.owners SET profile_revision=CASE WHEN epoch<? THEN 0 ELSE profile_revision END,epoch=GREATEST(epoch,?),purge_pending=true WHERE tenant=? AND subject=?",
+        fact.toEpoch(),
         fact.toEpoch(),
         o.tenant(),
         o.subject());
@@ -292,7 +298,7 @@ public final class JdbcForgetRecoveryRepository implements ForgetRecoveryReposit
     return db.queryForObject(
         """
         SELECT
-          (SELECT count(*) FROM memory.owners WHERE epoch<1 OR purge_pending)
+          (SELECT count(*) FROM memory.owners WHERE epoch<1 OR profile_revision<0 OR purge_pending)
           + (SELECT count(*) FROM memory.owners o WHERE o.epoch>1 AND NOT o.purge_pending
              AND NOT EXISTS(SELECT 1 FROM memory.audit f JOIN memory.audit p
                ON p.tenant=f.tenant AND p.subject=f.subject AND p.epoch=f.epoch
@@ -301,6 +307,12 @@ public final class JdbcForgetRecoveryRepository implements ForgetRecoveryReposit
                WHERE f.tenant=o.tenant AND f.subject=o.subject AND f.epoch=o.epoch
                  AND f.action='forget' AND f.target='all'))
           + (SELECT count(*) FROM memory.forget_requests)
+          + (SELECT count(*) FROM memory.user_profiles p LEFT JOIN memory.owners o USING(tenant,subject)
+             WHERE o.tenant IS NULL OR p.epoch<>o.epoch OR p.epoch<1
+               OR p.revision<1 OR p.revision<>o.profile_revision)
+          + (SELECT count(*) FROM memory.owners o WHERE o.profile_revision>0 AND NOT EXISTS
+             (SELECT 1 FROM memory.user_profiles p WHERE p.tenant=o.tenant AND p.subject=o.subject
+               AND p.epoch=o.epoch AND p.revision=o.profile_revision))
           + (SELECT count(*) FROM memory.sources s LEFT JOIN memory.owners o USING(tenant,subject)
              WHERE o.tenant IS NULL OR s.epoch>o.epoch OR s.epoch<1
                OR ((s.epoch<o.epoch OR s.status='forgotten') AND (s.content IS NOT NULL OR s.status<>'forgotten')))

@@ -50,31 +50,31 @@ class OperationsHttpContractTest {
     }
     tasks = mock(TaskMapper.class);
     var operations = mock(OperationsMapper.class);
-    when(tasks.admission(owner)).thenReturn(new Admission(true, 2));
-    when(tasks.lockAdmission(owner)).thenReturn(new Admission(true, 2));
-    when(tasks.changeAdmission(owner, false, 2)).thenReturn(1);
-    when(operations.tasks(owner))
+    when(tasks.getAdmission(owner)).thenReturn(new Admission(true, 2));
+    when(tasks.getAdmissionForUpdate(owner)).thenReturn(new Admission(true, 2));
+    when(tasks.updateAdmissionByRevision(owner, false, 2)).thenReturn(1);
+    when(operations.getTaskStatistics(owner))
         .thenReturn(Map.of("turns", 3L, "oldest_queued_ms", new BigDecimal("12.5")));
-    when(operations.calls(owner)).thenReturn(Map.of("model_calls", 4L, "tool_calls", 2L));
-    when(operations.outbox(owner)).thenReturn(Map.of("pending", 1L));
-    when(operations.notifications(owner))
+    when(operations.getCallStatistics(owner))
+        .thenReturn(Map.of("model_calls", 4L, "tool_calls", 2L));
+    when(operations.getNotificationStatistics(owner))
         .thenReturn(
             Map.of("pending", 0L, "sending", 0L, "unknown", 1L, "submitted_unverified", 0L));
-    when(operations.drain(owner))
+    when(operations.getDrainSummary(owner))
         .thenAnswer(
             ignored ->
                 new HashMap<>(
                     Map.of("paused", true, "revision", 2L, "queued", 1L, "pending_outbox", 0L)));
-    when(operations.turnBacklog(owner, "", 2))
+    when(operations.listTurnBacklog(owner, "", 2))
         .thenReturn(
             List.of(
                 new TurnBacklog("t-1", "c-1", "blocked", 7, null, "blocked", 1, 1, 0),
                 new TurnBacklog("t-2", "c-2", "queued", 1, null, "ready", 0, 0, 0)));
-    when(operations.notificationBacklog(owner, "", 2))
+    when(operations.listNotificationBacklog(owner, "", 2))
         .thenReturn(List.of(new NotificationBacklog("n-1", "c-1", "t-1", "unknown", 7)));
-    when(operations.bindingBacklog(owner, "", 2))
+    when(operations.listBindingBacklog(owner, "", 2))
         .thenReturn(List.of(new BindingBacklog("b-1", "c-1", "t-1", "blocked", 7)));
-    when(operations.memoryBacklog(owner, 0, 2))
+    when(operations.listMemoryJobBacklog(owner, 0, 2))
         .thenReturn(List.of(new MemoryBacklog("10", "purge", "pending", 3, 8, 2, null)));
     var manager = mock(PlatformTransactionManager.class);
     when(manager.getTransaction(any())).thenReturn(new SimpleTransactionStatus());
@@ -256,15 +256,16 @@ class OperationsHttpContractTest {
     http.perform(request(body, "resume"))
         .andExpect(status().isOk())
         .andExpect(content().json(expected.get("receipt").toString(), JsonCompareMode.STRICT));
-    verify(tasks).changeAdmission(owner, false, 2);
+    verify(tasks).updateAdmissionByRevision(owner, false, 2);
   }
 
   @ParameterizedTest
   @MethodSource("acceptedKeys")
   void admissionPreservesOpaqueIdempotencyKey(String key) throws Exception {
     http.perform(request("{\"paused\":false,\"revision\":2}", key)).andExpect(status().isOk());
-    verify(tasks).admissionReplay(owner, key);
-    verify(tasks).recordAdmission(owner, key, ExecutionScope.hash(List.of("false", "2")), false, 3);
+    verify(tasks).getAdmissionChangeByIdempotencyKey(owner, key);
+    verify(tasks)
+        .insertAdmissionChange(owner, key, ExecutionScope.hash(List.of("false", "2")), false, 3);
   }
 
   static Stream<String> acceptedKeys() {
@@ -273,8 +274,8 @@ class OperationsHttpContractTest {
 
   @Test
   void replayPrecedesCurrentRevisionAndDoesNotReapplyChange() throws Exception {
-    when(tasks.lockAdmission(owner)).thenReturn(new Admission(true, 9));
-    when(tasks.admissionReplay(owner, "resume"))
+    when(tasks.getAdmissionForUpdate(owner)).thenReturn(new Admission(true, 9));
+    when(tasks.getAdmissionChangeByIdempotencyKey(owner, "resume"))
         .thenReturn(new Change(ExecutionScope.hash(List.of("false", "2")), false, 3));
     http.perform(request("{\"paused\":false,\"revision\":2}", "resume"))
         .andExpect(status().isOk())
@@ -283,8 +284,8 @@ class OperationsHttpContractTest {
                 .json(
                     "{\"paused\":false,\"revision\":3,\"idempotent_replay\":true}",
                     JsonCompareMode.STRICT));
-    verify(tasks, never()).changeAdmission(any(), anyBoolean(), anyLong());
-    verify(tasks, never()).recordAdmission(any(), any(), any(), anyBoolean(), anyLong());
+    verify(tasks, never()).updateAdmissionByRevision(any(), anyBoolean(), anyLong());
+    verify(tasks, never()).insertAdmissionChange(any(), any(), any(), anyBoolean(), anyLong());
   }
 
   private MockHttpServletRequestBuilder request(String body, String key) {

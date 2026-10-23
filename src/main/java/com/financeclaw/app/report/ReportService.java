@@ -31,15 +31,16 @@ public class ReportService {
           policy.checkPolicy(claim);
           var old = db.effect(claim.turn().id(), call);
           if (old != null) {
+            // A legacy report without a receipt cannot be replayed with invented action identity.
+            if (old.actionHash() == null) throw new Blocked("reconciliation_required");
             if (!old.actionHash().equals(actionHash)) throw new Blocked("effect_conflict");
-            if (!old.status().equals("completed")) throw new Blocked("reconciliation_required");
+            if (!old.status().equals("completed") || old.result() == null)
+              throw new Blocked("reconciliation_required");
             return old.result();
           }
-          db.beginEffect(claim.turn().id(), call, actionHash);
           String id = UUID.randomUUID().toString();
-          db.report(id, claim.turn().id(), call, title);
           String result = PayloadJson.canonical(Map.of("report_id", id, "status", "created"));
-          db.completeEffect(claim.turn().id(), call, result);
+          db.publishReport(id, claim.turn().id(), call, title, actionHash, result);
           return result;
         });
   }

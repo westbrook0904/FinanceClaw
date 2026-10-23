@@ -29,18 +29,11 @@ public final class MemoryProcessingService {
   }
 
   public Job claim() {
-    return tx.execute(
-        s -> {
-          var job = db.next();
-          if (job == null) return null;
-          db.claim(job.id(), UUID.randomUUID().toString());
-          return db.job(job.id());
-        });
+    return tx.execute(s -> db.claimJob(UUID.randomUUID().toString()));
   }
 
   private boolean live(Job job, Privacy p) {
-    var now = db.job(job.id());
-    return job.live(p, now, db.liveLease(job));
+    return job.live(p, db.hasLiveJobLease(job));
   }
 
   public boolean poll() {

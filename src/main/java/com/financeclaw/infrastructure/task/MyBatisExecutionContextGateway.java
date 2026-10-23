@@ -16,14 +16,14 @@ public class MyBatisExecutionContextGateway implements ExecutionContextGateway {
   }
 
   public Interaction interaction(String id) {
-    return db.interaction(id);
+    return db.getInteractionById(id);
   }
 
   public List<Interaction> interactions(String turn) {
-    return db.interactions(turn);
+    return db.listInteractionsByTurnId(turn);
   }
 
   public java.time.Instant requestClock(String turn) {
-    return db.requestClock(turn);
+    return db.getTurnCreatedAt(turn);
   }
 }

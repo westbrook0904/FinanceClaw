@@ -13,18 +13,12 @@ public class MyBatisReportGateway implements ReportGateway {
   }
 
   public Effect effect(String turn, String call) {
-    return db.effect(turn, call);
+    return db.getToolCallEffect(turn, call);
   }
 
-  public void beginEffect(String turn, String call, String hash) {
-    db.beginEffect(turn, call, hash);
-  }
-
-  public void report(String id, String turn, String call, String title) {
-    db.report(id, turn, call, title);
-  }
-
-  public void completeEffect(String turn, String call, String result) {
-    db.completeEffect(turn, call, result);
+  public void publishReport(
+      String id, String turn, String call, String title, String hash, String result) {
+    if (db.insertReportPublication(id, turn, call, title, hash, result) != 1)
+      throw new IllegalStateException("Report publication did not insert exactly one row");
   }
 }
