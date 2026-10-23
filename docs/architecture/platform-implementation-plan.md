@@ -2,7 +2,7 @@
 
 本文是 FinanceClaw Java 的实施方案与阶段状态记录。面向四类使用方式：通用对话、定制 RAG Workflow、通过提示词与工具等配置组装 Agent，以及直接调用一个独立 Agent。本文中的目标模型不代表当前已经实现的能力。
 
-截至 2026-10-23，已完成现有代码与官方 AgentScope Service 的设计对比，并完成 **P1：持久发布与会话版本绑定** 的实现、本地隔离验收和推送。**P2a：Agent 身份、提示词草稿与目标会话** 已完成本地全量和隔离容器验收，代码保留在工作区；P2b–P4 尚未实施。每阶段应形成可独立检查的代码、验证记录与交付范围，再推进下一阶段；P1 验证见第 7 节。
+截至 2026-10-23，已完成现有代码与官方 AgentScope Service 的设计对比，并完成 **P1：持久发布与会话版本绑定** 的实现、本地隔离验收和推送。**P2a：Agent 身份、提示词草稿与目标会话** 已完成本地全量和隔离容器验收并推送；P2b 受控能力选择与依赖冻结已完成本地数据库与容器验收，并与服务器画像目录改动一起通过完整 Java 回归；两批分别交付，验证范围见第 10 节，不据此宣称 P2b 的独立全量构建或远程 CI 已通过；P3–P4 尚未实施。每阶段应形成可独立检查的代码、验证记录与交付范围，再推进下一阶段；P1 验证见第 7 节。
 
 ## 1. 实施前基线与改造目标
 
@@ -209,7 +209,7 @@ release-admin history --after-revision 0 --limit 20
 
 ### P2：通用 Agent 定义与按发布装配
 
-P2 拆成两个独立模块。P1 发布库与会话绑定已通过验收；P2a **已完成本地验收，尚未提交**，P2b 待实施。
+P2 拆成两个独立模块。P1 发布库与会话绑定已通过验收；P2a **已完成并推送**，P2b 的实现与验证按下述约束推进。
 
 **P2a：Agent 身份、提示词草稿与目标会话。** 内置 `finance_agent` 保留为只读兼容入口；自定义 Agent 使用显式 UUID、owner 和不可变草稿 revision。首次创建固定当时内置默认发布作为基础能力版本，只开放 `displayName` 与 `systemPrompt`，不让客户端选择模型 URL、凭据、Function、MCP 或 Skill。发布固定 Agent 身份、提示词与基础发布，并以独立部署指针 CAS 生效。新会话显式选择已发布且归属当前 owner 的 Agent，后续 Turn 和恢复保持同一 Agent/release。
 
@@ -258,8 +258,8 @@ P2b 验收：Tool/Skill 白名单与 scope 交集实际控制装配；Schema/内
 | P1 发布持久化 | 已完成 | PostgreSQL 目录、并发 CAS、不可变历史、真实 CLI 与跨进程恢复通过 | 完整依赖冻结与工件兼容按 P2+ 推进 |
 | P1 会话发布绑定 | 已完成 | 新旧会话、V1→V3 回填、并发、幂等与缺失清单阻断通过 | 完整 AgentSession 与显式目标按后续阶段推进 |
 | P1 治理回归与文档同步 | 已完成 | 1,440 项 Java 测试、44 项脚本测试、32 项 Compose 检查；文档与静态检查通过 | 真实外部服务和生产环境不属于本轮验收 |
-| P2a Agent 定义与目标会话 | 已完成本地验收，尚未提交 | 1,516 项 Java 测试、44 项脚本测试、36 项 Compose 检查；[证据](evidence/p2a-implementation.json) | 真实外部服务不在本轮验收范围；能力装配按 P2b 推进 |
-| P2b 受控能力装配 | 待实施 | 设计约束 | Tool/Skill/模型资源目录、依赖冻结和契约漂移检查 |
+| P2a Agent 定义与目标会话 | 已完成并推送 `851446f` | 1,516 项 Java 测试、44 项脚本测试、36 项 Compose 检查；[证据](evidence/p2a-implementation.json) | 真实外部服务不在本轮验收范围；能力装配按 P2b 推进 |
+| P2b 受控能力装配 | 已完成本地验收，交付前记录 | 联合工作区 1,208 项单元/契约/架构测试 + 407 项集成测试通过；44 项脚本测试、39 项 Compose 检查；[证据](evidence/p2b-implementation.json) | 完整 Java 回归包含服务器画像目录改动；真实外部服务与远程 CI 不在本记录范围 |
 | P3a 独立 Agent 与子调用 | 待实施 | 现有受限研究子 Agent 可作适配起点 | 持久调用模型与权限/预算验证 |
 | P3b 定制 RAG Workflow | 待实施 | 仅有现有记忆与固定 Workflow 基础 | 知识模型、索引发布、端到端引用验收 |
 | P4 Scheduler 与服务化 | 待实施 | 现有 TaskWorker/lease/fence | 触发模型、调度扩展与拆分前置设施 |
@@ -295,7 +295,7 @@ Compose 的 32 项检查包含容器内发布命令、受限角色、强制退�
 | 发布运维入口 | [ReleaseAdministrationApplication](../../src/main/java/com/financeclawrelease/ReleaseAdministrationApplication.java)、[容器入口](../../ops/container-entrypoint.sh) | [CLI 集成测试](../../src/test/java/com/financeclawrelease/ReleaseAdministrationCliIT.java)：真实打包进程、CAS/回滚、坏候选下查询、禁用自动迁移与错误脱敏 |
 | 暂停任务恢复与角色权限 | [角色装配](../../src/main/java/com/financeclaw/bootstrap/RoleConfiguration.java)、[角色授权](../../src/main/resources/deployment/grants.sql) | [ZiweiRecoveryIT](../../src/test/java/com/financeclaw/m6/ZiweiRecoveryIT.java)：配置变化后原版本继续；[RoleAssemblyIT](../../src/test/java/com/financeclaw/m5/RoleAssemblyIT.java)：Memory Worker 拒绝控制面权限 |
 
-P1 已推送；P2a 已完成本地验收，当前保持未提交工作区状态。工程继续保持单业务 JVM；完整 Function/Skill/MCP 依赖冻结、用户自助管理、RAG 知识库与触发 Scheduler 按 P2b–P4 推进。
+P1 和 P2a 已推送。工程继续保持单业务 JVM；P2b 在工作区实施受控 Function/Skill/MCP 装配和依赖冻结，用户自助管理、RAG 知识库与触发 Scheduler 继续按后续阶段推进。
 
 
 ## 9. P2a 实现与验收记录
@@ -313,4 +313,26 @@ P1 已推送；P2a 已完成本地验收，当前保持未提交工作区状态�
 
 Compose 新增覆盖两个 owner 的目录隔离、未发布目标拒绝、草稿/发布 CAS、旧会话继续使用原发布、新会话使用新发布、运行进程重启保留目录，以及恢复后继续执行已发布 Agent。恢复覆盖全部 **40 张主库应用表**，同时保留已有审批围栏和隐私恢复检查。模型为离线模式，外部协议使用本机模拟服务；这些结果不证明真实模型/MCP/飞书或生产容量，也不是远程 CI 结果。
 
-持久摘要见 [P2a 验证记录](evidence/p2a-implementation.json)。当前完整报告为 `target/verification/results.json` 与 `target/m5e/deployment/compose-results.json`；后续运行可能覆盖通用路径。P2a 尚未提交或推送，下一模块为 P2b 的受控能力选择和依赖冻结。
+持久摘要见 [P2a 验证记录](evidence/p2a-implementation.json)。当前完整报告为 `target/verification/results.json` 与 `target/m5e/deployment/compose-results.json`；后续运行可能覆盖通用路径。P2a 已由 [851446f](https://github.com/westbrook0904/FinanceClaw/commit/851446f375585ddabae6d9982081de6f4f4c610d) 推送到 `origin/codex/java-agentscope`，推送后远端 SHA 核对一致；默认分支未改变，未将远程 CI 记为成功。证据文件保留验证发生时的工作区状态。下一模块为 P2b 的受控能力选择和依赖冻结。
+
+
+## 10. P2b 实现与当前验证状态
+
+2026-10-23 已完成受控模型 profile、Function/Skill/MCP 选择和 `agent-release/3` 固定执行计划的实现与本地验收。本节及[持久证据](evidence/p2b-implementation.json)在 P2b 提交前记录；服务器画像目录改动已作为独立提交 `334b020` 保存。本次完整 Java 回归基于同时包含两批改动的工作区，不能将其表述为 P2b 单独构建的结果。操作文件、目录、兼容与升级约束见 [Agent 能力组装](agent-composition.md)。
+
+| 内容 | 实现与验证边界 |
+| --- | --- |
+| 目录和选择 | `agent-admin catalog` 只读受控元数据；composition 严格解析，显式空列表是零工具 Agent；模型只能选择固定基础的 primary/fallback |
+| 原子发布 | 事务外探测 MCP，短事务重锁草稿并核对 revision，再原子写清单/指针/历史；真实 PostgreSQL 验证发现失败、草稿变更、并发 CAS 和审计写入失败不留下半次发布 |
+| 执行限制 | 依赖闭包、scope 交集与 Function/MCP 来源共同控制注册；未选同名本地工具不能覆盖 MCP；Skill repository 和 loader 都限制访问 |
+| 冻结和恢复 | 真实生产 class 摘要、本地 Function/Skill 契约、SDK 有效 MCP Schema；实际 SDK 测试覆盖 MCP 漂移在审批恢复前阻断，以及调用中漂移不能被误记为完成 |
+| Artifact 权限 | 当前 Claim、固定发布和执行收窄 scopes 必须同时覆盖产物权限，防止支持工具跨同 owner 的高权限会话越权读取；HTTP/旧格式保持原契约 |
+| 数据库演进 | V5 新增 composition 列及 v3 格式标记；保持 V1–V4 文件，仍为 40 张应用表；初始化、发布持久化与备份恢复已通过数据库及容器验收 |
+
+实际通过的完整命令为 `scripts/mvn.sh -B -ntp -o validate spotless:check verify`：**1,208 项单元/契约/架构测试 + 407 项集成测试 = 1,615 项**，零失败、零错误、零跳过。该次构建包含真实 PostgreSQL、CLI 子进程、AgentScope 2.0.3、打包和恢复检查；模型与 MCP 使用离线或本机模拟服务。另重新运行 4 组 Python 脚本，共 **44 项**；其中 HTTP 排空检查在允许本机回环监听的环境通过。
+
+`python3 scripts/validate-compose.py --ziwei --admission --preflight --restore-privacy` 已通过 **39 项检查**，覆盖零工具发布、依赖闭包、新旧会话保持原计划及备份恢复后的组合 Agent 执行。Compose 报告和本次完整构建记录的 JAR SHA-256 均为 `75956008dffe45e2c378029da6ab897d212943f1997889cd37d3ae7e41599d6e`。服务器画像目录另有 **4 项真实容器专项检查**，覆盖直接编辑、原子保存与旧 Turn 快照、稳定版本与 HTTP 只读、遗忘后清除；这 4 项不计入 39 项 P2b Compose 数量。
+
+完整运行的 Surefire/Failsafe 报告已冻结，持久证据保存其统计、报告摘要与日志 SHA-256。后续新增的市场工具预算修复、`MarketToolBudgetTest` 和 `ProfileDirectoryRecoveryIT` 未编译进本次构建，必须另行验证；本次结果不覆盖这些后续改动。通用 `target/` 路径可能被后续测试覆盖，不能以其未来内容替代本节记录。
+
+Docker 曾不可用的限制已经解除，不再是当前验收阻塞。真实供应商输出、外部 MCP/飞书服务、生产容量与远程 CI 仍未由本轮认证。P3a 独立 Agent 子调用和 P4 Scheduler 仍待实施。

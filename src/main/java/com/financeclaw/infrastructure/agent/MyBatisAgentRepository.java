@@ -1,15 +1,21 @@
 package com.financeclaw.infrastructure.agent;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.json.JsonMapper;
 import com.financeclaw.app.agent.port.AgentRepository;
+import com.financeclaw.domain.Governance.Blocked;
 import com.financeclaw.domain.Task.Owner;
+import com.financeclaw.domain.agent.AgentComposition;
 import com.financeclaw.domain.agent.AgentDefinition;
 import com.financeclaw.domain.agent.AgentDraft;
+import com.financeclaw.support.PayloadJson;
 import java.util.List;
 import org.springframework.stereotype.Repository;
 
 /** Agent 持久化适配器；事务和 owner 行锁顺序由 AgentService 协调。 */
 @Repository
 public class MyBatisAgentRepository implements AgentRepository {
+    private static final JsonMapper READER = JsonMapper.builder().build();
     private final AgentMapper mapper;
 
     public MyBatisAgentRepository(AgentMapper mapper) {
@@ -33,12 +39,32 @@ public class MyBatisAgentRepository implements AgentRepository {
 
     @Override
     public AgentDraft draft(Owner owner, String id, long revision) {
-        return mapper.getOwnedDraft(owner, id, revision);
+        var row = mapper.getOwnedDraft(owner, id, revision);
+        if (row == null) {
+            return null;
+        }
+        try {
+            var composition =
+                    row.compositionJson() == null
+                            ? null
+                            : READER.readValue(row.compositionJson(), AgentComposition.class);
+            return new AgentDraft(
+                    row.agentId(),
+                    row.revision(),
+                    row.displayName(),
+                    row.systemPrompt(),
+                    row.baseReleaseHash(),
+                    composition);
+        } catch (JsonProcessingException | IllegalArgumentException invalid) {
+            throw new Blocked("agent_draft_invalid");
+        }
     }
 
     @Override
     public void insertDraft(AgentDraft draft) {
-        if (mapper.insertDraft(draft) != 1) {
+        String composition =
+                draft.composition() == null ? null : PayloadJson.canonical(draft.composition());
+        if (mapper.insertDraft(draft, composition) != 1) {
             throw new IllegalStateException("Agent draft was not persisted");
         }
     }

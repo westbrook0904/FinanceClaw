@@ -30,6 +30,19 @@ public interface ReleaseMapper {
             "SELECT manifest::text FROM control_plane.release_manifests WHERE release_hash=#{hash} AND manifest_format='agent-v2'")
     String getAgentManifest(String hash);
 
+    @Insert(
+            """
+            INSERT INTO control_plane.release_manifests(release_hash,manifest,manifest_format)
+            VALUES(#{hash},CAST(#{manifest} AS jsonb),'agent-v3')
+            ON CONFLICT(release_hash) DO NOTHING
+            """)
+    int insertComposedAgentManifestIfAbsent(
+            @Param("hash") String hash, @Param("manifest") String manifest);
+
+    @Select(
+            "SELECT manifest::text FROM control_plane.release_manifests WHERE release_hash=#{hash} AND manifest_format='agent-v3'")
+    String getComposedAgentManifest(String hash);
+
     @Select("SELECT name,release_hash,revision FROM control_plane.deployments WHERE name=#{name}")
     Deployment getDeployment(String name);
 

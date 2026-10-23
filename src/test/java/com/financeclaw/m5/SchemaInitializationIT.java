@@ -28,7 +28,7 @@ class SchemaInitializationIT {
         var source =
                 new DriverManagerDataSource(PG.getJdbcUrl(), PG.getUsername(), PG.getPassword());
         initialization = Flyway.configure().dataSource(source).load();
-        assertThat(initialization.migrate().migrationsExecuted).isEqualTo(4);
+        assertThat(initialization.migrate().migrationsExecuted).isEqualTo(5);
         sql = new JdbcTemplate(source);
         initialRows = new LinkedHashMap<>();
         for (String table : tables()) {
@@ -85,8 +85,8 @@ class SchemaInitializationIT {
                         "memory.sources",
                         "memory.turn_snapshots",
                         "memory.user_profiles");
-        assertThat(initialization.info().applied()).hasSize(4);
-        assertThat(initialization.info().current().getVersion().toString()).isEqualTo("4");
+        assertThat(initialization.info().applied()).hasSize(5);
+        assertThat(initialization.info().current().getVersion().toString()).isEqualTo("5");
         assertThat(initialization.validateWithResult().validationSuccessful).isTrue();
         assertThat(initialization.migrate().migrationsExecuted).isZero();
     }

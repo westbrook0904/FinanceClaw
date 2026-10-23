@@ -64,4 +64,34 @@ class AgentFactoryTest {
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("explicit non-bypass");
     }
+
+    @Test
+    void explicitNoToolsModeKeepsToolkitEmptyAndStillRejectsBypass() {
+        var model = ProbeFixtures.scripted("empty", "");
+        try (var agent =
+                IsolatedAgentFactory.create(
+                        model,
+                        null,
+                        new Toolkit(),
+                        null,
+                        PermissionContextState.builder().mode(PermissionMode.DEFAULT).build(),
+                        builder -> {},
+                        true)) {
+            assertThat(agent.getToolkit().getToolNames()).isEmpty();
+        }
+        assertThatThrownBy(
+                        () ->
+                                IsolatedAgentFactory.create(
+                                        model,
+                                        null,
+                                        new Toolkit(),
+                                        null,
+                                        PermissionContextState.builder()
+                                                .mode(PermissionMode.BYPASS)
+                                                .build(),
+                                        builder -> {},
+                                        true))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("non-bypass");
+    }
 }

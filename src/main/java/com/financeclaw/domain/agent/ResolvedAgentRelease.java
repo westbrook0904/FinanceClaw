@@ -10,7 +10,17 @@ public record ResolvedAgentRelease(
         String systemPrompt,
         ReleaseDefinition definition,
         String tenant,
-        String subject) {
+        String subject,
+        AgentExecutionPlan plan) {
+    public ResolvedAgentRelease(
+            String agentId,
+            String systemPrompt,
+            ReleaseDefinition definition,
+            String tenant,
+            String subject) {
+        this(agentId, systemPrompt, definition, tenant, subject, null);
+    }
+
     public void requireIdentity(Owner owner, String expectedAgentId) {
         if (owner == null
                 || !agentId.equals(expectedAgentId)

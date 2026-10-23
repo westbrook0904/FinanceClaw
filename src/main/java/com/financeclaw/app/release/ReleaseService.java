@@ -6,6 +6,7 @@ import com.financeclaw.domain.Governance.Blocked;
 import com.financeclaw.domain.Task.Problem;
 import com.financeclaw.domain.agent.AgentDraft;
 import com.financeclaw.domain.agent.AgentReleaseManifest;
+import com.financeclaw.domain.agent.ComposedAgentReleaseManifest;
 import com.financeclaw.domain.agent.ResolvedAgentRelease;
 import com.financeclaw.domain.release.Deployment;
 import com.financeclaw.domain.release.DeploymentChange;
@@ -87,6 +88,20 @@ public class ReleaseService {
                     if (!stored.agentId().equals(manifest.agentId())) {
                         throw new Blocked("agent_identity_mismatch");
                     }
+                    return hash;
+                });
+    }
+
+    /** 组合发布先验证固定基础与执行投影，再登记独立 v3 正文；目录不负责外部能力发现。 */
+    public String registerComposedAgent(ComposedAgentReleaseManifest manifest) {
+        return tx.execute(
+                status -> {
+                    manifest.validate();
+                    var base = requireLegacy(manifest.baseReleaseHash());
+                    AgentPlanValidator.validate(manifest.plan(), base, manifest.tenant());
+                    String hash = ComposedAgentReleaseIdentity.hash(manifest);
+                    repository.insertComposedAgentManifestIfAbsent(hash, manifest);
+                    resolve(hash);
                     return hash;
                 });
     }
@@ -191,17 +206,33 @@ public class ReleaseService {
                     AgentDraft.BUILTIN_AGENT, AgentDraft.BUILTIN_PROMPT, legacy, null, null);
         }
         var manifest = repository.findAgentManifest(hash);
-        if (manifest == null || !AgentReleaseIdentity.hash(manifest).equals(hash)) {
+        if (manifest != null) {
+            if (!AgentReleaseIdentity.hash(manifest).equals(hash)) {
+                throw new Blocked("release_unavailable");
+            }
+            manifest.validate();
+            var base = requireLegacy(manifest.baseReleaseHash());
+            return new ResolvedAgentRelease(
+                    manifest.agentId(),
+                    manifest.systemPrompt(),
+                    base,
+                    manifest.tenant(),
+                    manifest.subject());
+        }
+        var composed = repository.findComposedAgentManifest(hash);
+        if (composed == null || !ComposedAgentReleaseIdentity.hash(composed).equals(hash)) {
             throw new Blocked("release_unavailable");
         }
-        manifest.validate();
-        var base = requireLegacy(manifest.baseReleaseHash());
+        composed.validate();
+        var base = requireLegacy(composed.baseReleaseHash());
+        AgentPlanValidator.validate(composed.plan(), base, composed.tenant());
         return new ResolvedAgentRelease(
-                manifest.agentId(),
-                manifest.systemPrompt(),
-                base,
-                manifest.tenant(),
-                manifest.subject());
+                composed.agentId(),
+                composed.systemPrompt(),
+                composed.plan().definition(),
+                composed.tenant(),
+                composed.subject(),
+                composed.plan());
     }
 
     private ReleaseDefinition requireLegacy(String hash) {

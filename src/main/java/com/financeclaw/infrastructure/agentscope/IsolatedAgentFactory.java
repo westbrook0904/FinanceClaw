@@ -45,8 +45,23 @@ public final class IsolatedAgentFactory {
             AgentStateStore store,
             PermissionContextState permissions,
             java.util.function.Consumer<ReActAgent.Builder> configure) {
+        return create(model, fallback, toolkit, store, permissions, configure, false);
+    }
+
+    /** An explicit empty published plan may use DEFAULT permissions with no registered tools. */
+    public static ReActAgent create(
+            Model model,
+            Model fallback,
+            Toolkit toolkit,
+            AgentStateStore store,
+            PermissionContextState permissions,
+            java.util.function.Consumer<ReActAgent.Builder> configure,
+            boolean explicitNoTools) {
+        if (explicitNoTools && !toolkit.getToolNames().isEmpty()) {
+            throw new IllegalArgumentException("Empty plan cannot register tools");
+        }
         if (permissions == null
-                || permissions.isTrivial()
+                || (permissions.isTrivial() && !explicitNoTools)
                 || permissions.getMode() == PermissionMode.BYPASS) {
             throw new IllegalArgumentException(
                     "An explicit non-bypass permission policy is required");
@@ -79,7 +94,12 @@ public final class IsolatedAgentFactory {
             builder.fallbackModel(fallback);
         }
         configure.accept(builder);
-        return builder.build();
+        var agent = builder.build();
+        if (explicitNoTools && !agent.getToolkit().getToolNames().isEmpty()) {
+            agent.close();
+            throw new IllegalArgumentException("Empty plan cannot register tools");
+        }
+        return agent;
     }
 
     public static RuntimeContext context(ExecutionScope scope) {

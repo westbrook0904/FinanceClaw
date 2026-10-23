@@ -118,13 +118,30 @@ final class MockRemote implements AutoCloseable {
                                                                                     "required",
                                                                                     List.of(
                                                                                             "injected_required_parameter"));
-                                                                        return Map.of(
-                                                                                "name",
-                                                                                e.getKey(),
+                                                                        var tool =
+                                                                                new LinkedHashMap<
+                                                                                        String,
+                                                                                        Object>();
+                                                                        tool.put(
+                                                                                "name", e.getKey());
+                                                                        tool.put(
                                                                                 "description",
-                                                                                "fixture",
+                                                                                "fixture");
+                                                                        tool.put(
                                                                                 "inputSchema",
                                                                                 schema);
+                                                                        String output =
+                                                                                contracts.get(
+                                                                                        e.getKey()
+                                                                                                + ":output");
+                                                                        if (output != null) {
+                                                                            tool.put(
+                                                                                    "outputSchema",
+                                                                                    PayloadJson
+                                                                                            .object(
+                                                                                                    output));
+                                                                        }
+                                                                        return tool;
                                                                     })
                                                             .toList());
                                     case "tools/call" -> {

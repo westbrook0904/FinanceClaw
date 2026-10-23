@@ -218,6 +218,78 @@ class AgentAdministrationCliIT {
     }
 
     @Test
+    void packagedCompositionPublishAndFreshProcessReadKeepFrozenPlan() throws Exception {
+        String defaultHash = bootstrap();
+        Path file = definition(PROMPT);
+        Files.writeString(
+                file,
+                PayloadJson.canonical(
+                        Map.of(
+                                "displayName",
+                                NAME,
+                                "systemPrompt",
+                                PROMPT,
+                                "composition",
+                                Map.of(
+                                        "modelProfile",
+                                        "primary",
+                                        "capabilities",
+                                        List.of("function:request_city")))));
+        var created = launch(options("create", ID, "--file", file.toString()), Map.of());
+        assertThat(created.exit()).isZero();
+        var catalog = launch(options("catalog", ID), Map.of());
+        assertThat(catalog.exit()).isZero();
+        assertThat(catalog.json().path("catalog").path("capabilities").toString())
+                .contains("function:request_city");
+        var published =
+                launch(
+                        options("publish", ID, "--draft-revision", "1", "--expected-revision", "0"),
+                        Map.of());
+        assertThat(published.exit()).isZero();
+        String hash = published.json().path("releaseHash").asText();
+        var record =
+                sql.queryForMap(
+                        "SELECT manifest_format, manifest::text AS body FROM control_plane.release_manifests WHERE release_hash=?",
+                        hash);
+        assertThat(record.get("manifest_format")).isEqualTo("agent-v3");
+        var body = new ObjectMapper().readTree((String) record.get("body"));
+        assertThat(body.path("plan").path("runtimeArtifactHash").asText())
+                .isEqualTo(com.financeclaw.infrastructure.agentscope.RuntimeArtifacts.hash());
+        assertThat(body.path("plan").path("capabilities").size()).isEqualTo(2);
+        assertThat(body.path("plan").path("requestedCapabilities").get(0).asText())
+                .isEqualTo("function:request_city");
+        // A legacy two-field edit retains the existing composition; it cannot broaden to
+        // inheritance.
+        definition(PROMPT + " revised");
+        var updated =
+                launch(
+                        options(
+                                "update",
+                                ID,
+                                "--file",
+                                file.toString(),
+                                "--expected-revision",
+                                "1"),
+                        Map.of());
+        assertThat(updated.exit()).isZero();
+        assertThat(
+                        sql.queryForObject(
+                                "SELECT composition->>'modelProfile' FROM control_plane.agent_draft_revisions WHERE agent_id=? AND revision=2",
+                                String.class,
+                                ID))
+                .isEqualTo("primary");
+        assertThat(
+                        launch(options("history", ID), Map.of())
+                                .json()
+                                .path("items")
+                                .get(0)
+                                .path("releaseHash")
+                                .asText())
+                .isEqualTo(hash);
+        assertDefault(defaultHash);
+    }
+
+    @Test
     void invalidDefinitionAndFrameworkOverridesNeverInitializeDatabase() throws Exception {
         Path file = directory.resolve("invalid-definition.json");
         Files.writeString(

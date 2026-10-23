@@ -5,7 +5,9 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 import com.financeclaw.app.agent.AgentService;
+import com.financeclaw.app.agent.port.AgentCapabilityResolver;
 import com.financeclaw.app.release.AgentReleaseIdentity;
+import com.financeclaw.app.release.ComposedAgentReleaseIdentity;
 import com.financeclaw.app.release.ReleaseIdentity;
 import com.financeclaw.app.release.ReleaseService;
 import com.financeclaw.domain.Task.Owner;
@@ -29,6 +31,7 @@ import org.mybatis.spring.SqlSessionTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.containers.PostgreSQLContainer;
 
@@ -373,6 +376,221 @@ class AgentCatalogIT {
         assertThat(restarted.resolveTarget(owner, id))
                 .isEqualTo(new ResolvedTarget(id, published.releaseHash()));
         assertThat(reopened.require(reopened.currentHash())).isEqualTo(definition("legacy-v1"));
+    }
+
+    @Test
+    void explicitEmptyCompositionSurvivesStoragePublishingRestartAndPromptOnlyUpdate()
+            throws Exception {
+        var resolver = mock(AgentCapabilityResolver.class);
+        when(resolver.resolve(any(), any())).thenAnswer(call -> emptyPlan(call.getArgument(1)));
+        var service = new AgentService(repository, releases, tx, resolver);
+        String id = id();
+        var composition = new AgentComposition("primary", List.of());
+        var initial = service.create(owner, id, "Agent", "first", composition);
+        assertThat(service.get(owner, id)).isEqualTo(initial);
+        assertThat(service.create(owner, id, "Agent", "first", composition)).isEqualTo(initial);
+        assertThatThrownBy(() -> service.create(owner, id, "Agent", "first"))
+                .hasMessage("agent_id_conflict");
+        var published = service.publish(owner, id, 1, 0);
+        var resolved = releases.resolve(published.releaseHash());
+        assertThat(resolved.plan()).isEqualTo(emptyPlan(initial));
+        assertThat(resolved.definition().scopes()).isEmpty();
+        assertThat(resolved.plan().capabilities()).isEmpty();
+        assertThat(
+                        sql.queryForObject(
+                                "SELECT manifest_format FROM control_plane.release_manifests WHERE release_hash=?",
+                                String.class,
+                                published.releaseHash()))
+                .isEqualTo("agent-v3");
+        var updated = service.update(owner, id, 1, "Agent", "second");
+        assertThat(updated.composition()).isEqualTo(composition);
+        assertThat(releases.resolve(published.releaseHash()).systemPrompt()).isEqualTo("first");
+        var reopened =
+                ReleaseService.open(
+                        new MyBatisReleaseRepository(session().getMapper(ReleaseMapper.class)), tx);
+        assertThat(reopened.resolve(published.releaseHash())).isEqualTo(resolved);
+        assertThat(reopened.resolve(reopened.currentHash()).plan()).isNull();
+    }
+
+    @Test
+    void capabilityProbeRunsWithoutDatabaseTransactionOrAgentLockAndConcurrentEditWins()
+            throws Exception {
+        var entered = new CountDownLatch(1);
+        var continueProbe = new CountDownLatch(1);
+        var resolver = mock(AgentCapabilityResolver.class);
+        when(resolver.resolve(any(), any()))
+                .thenAnswer(
+                        call -> {
+                            assertThat(
+                                            TransactionSynchronizationManager
+                                                    .isActualTransactionActive())
+                                    .isFalse();
+                            AgentDraft draft = call.getArgument(1);
+                            entered.countDown();
+                            assertThat(continueProbe.await(10, TimeUnit.SECONDS)).isTrue();
+                            return emptyPlan(draft);
+                        });
+        var service = new AgentService(repository, releases, tx, resolver);
+        String id = id();
+        service.create(owner, id, "Agent", "prompt", new AgentComposition("primary", List.of()));
+        try (var pool = Executors.newSingleThreadExecutor()) {
+            var publishing = pool.submit(() -> service.publish(owner, id, 1, 0));
+            try {
+                assertThat(entered.await(10, TimeUnit.SECONDS)).isTrue();
+                tx.executeWithoutResult(
+                        status ->
+                                sql.queryForList(
+                                        "SELECT id FROM control_plane.agents WHERE id=? FOR UPDATE NOWAIT",
+                                        id));
+                service.update(owner, id, 1, "Edited", "changed");
+            } finally {
+                continueProbe.countDown();
+            }
+            assertThatThrownBy(() -> publishing.get(10, TimeUnit.SECONDS))
+                    .hasRootCauseMessage("agent_draft_revision_changed");
+        }
+        assertThat(count("control_plane.release_manifests")).isEqualTo(1);
+        assertThat(releases.currentForAgent(id)).isNull();
+        assertThat(service.get(owner, id).revision()).isEqualTo(2);
+    }
+
+    @Test
+    void composedPublishRejectsCallerTransactionBeforeAnyExternalProbe() {
+        var resolver = mock(AgentCapabilityResolver.class);
+        var service = new AgentService(repository, releases, tx, resolver);
+        String id = id();
+        service.create(owner, id, "Agent", "prompt", new AgentComposition("primary", List.of()));
+        assertThatThrownBy(() -> tx.execute(status -> service.publish(owner, id, 1, 0)))
+                .hasMessage("agent_publish_transaction_active");
+        verify(resolver, never()).resolve(any(), any());
+        assertThat(count("control_plane.release_manifests")).isEqualTo(1);
+    }
+
+    @Test
+    void failedDiscoveryAndStaleDeploymentDoNotPersistCandidateManifests() {
+        var resolver = mock(AgentCapabilityResolver.class);
+        when(resolver.resolve(any(), any())).thenThrow(new IllegalStateException("probe_failed"));
+        var service = new AgentService(repository, releases, tx, resolver);
+        String id = id();
+        service.create(owner, id, "Agent", "prompt", new AgentComposition("primary", List.of()));
+        assertThatThrownBy(() -> service.publish(owner, id, 1, 0)).hasMessage("probe_failed");
+        doAnswer(call -> emptyPlan(call.getArgument(1))).when(resolver).resolve(any(), any());
+        assertThatThrownBy(() -> service.publish(owner, id, 1, 7))
+                .hasMessage("release_revision_changed");
+        assertThat(count("control_plane.release_manifests")).isEqualTo(1);
+        assertThat(releases.currentForAgent(id)).isNull();
+        assertThat(service.history(owner, id, 0, 20)).isEmpty();
+    }
+
+    @Test
+    void composedPublicationAuditFailureRollsBackManifestAndPointer() {
+        var resolver = mock(AgentCapabilityResolver.class);
+        when(resolver.resolve(any(), any())).thenAnswer(call -> emptyPlan(call.getArgument(1)));
+        var failing = spy(releaseRepository);
+        doThrow(new IllegalStateException("audit_failed"))
+                .when(failing)
+                .insertChange(argThat(change -> change.deployment().startsWith("agent:")));
+        var service = new AgentService(repository, ReleaseService.open(failing, tx), tx, resolver);
+        String id = id();
+        service.create(owner, id, "Agent", "prompt", new AgentComposition("primary", List.of()));
+        assertThatThrownBy(() -> service.publish(owner, id, 1, 0)).hasMessage("audit_failed");
+        assertThat(count("control_plane.release_manifests")).isEqualTo(1);
+        assertThat(releases.currentForAgent(id)).isNull();
+    }
+
+    @Test
+    void catalogIsOwnerScopedAndNoResolverCannotAcceptComposedRequests() {
+        var resolver = mock(AgentCapabilityResolver.class);
+        var service = new AgentService(repository, releases, tx, resolver);
+        String id = id();
+        var draft = service.create(owner, id, "Agent", "prompt");
+        var catalog = new AgentCapabilityCatalog(List.of("primary"), List.of());
+        when(resolver.catalog(owner, draft.baseReleaseHash())).thenReturn(catalog);
+        assertThat(service.catalog(owner, id)).isEqualTo(catalog);
+        assertThatThrownBy(() -> service.catalog(new Owner("tenant", "other"), id))
+                .hasMessage("not_found");
+        verify(resolver, times(1)).catalog(any(), anyString());
+        var composition = new AgentComposition("primary", List.of());
+        assertThatThrownBy(() -> agents.create(owner, id(), "Agent", "prompt", composition))
+                .hasMessage("agent_capabilities_unavailable");
+        service.update(owner, id, 1, "Agent", "prompt", composition);
+        assertThatThrownBy(() -> agents.publish(owner, id, 2, 0))
+                .hasMessage("agent_capabilities_unavailable");
+        assertThat(count("control_plane.agents")).isEqualTo(1);
+    }
+
+    @Test
+    void resolverCannotReturnDifferentSelectionsOrExpandedExecutionPolicy() {
+        var resolver = mock(AgentCapabilityResolver.class);
+        var service = new AgentService(repository, releases, tx, resolver);
+        String id = id();
+        var draft =
+                service.create(
+                        owner, id, "Agent", "prompt", new AgentComposition("primary", List.of()));
+        var empty = emptyPlan(draft);
+        when(resolver.resolve(any(), any()))
+                .thenReturn(
+                        new AgentExecutionPlan(
+                                "fallback",
+                                empty.runtimeArtifactHash(),
+                                List.of(),
+                                List.of(),
+                                empty.definition()));
+        assertThatThrownBy(() -> service.publish(owner, id, 1, 0)).hasMessage("agent_plan_invalid");
+        when(resolver.resolve(any(), any()))
+                .thenReturn(
+                        new AgentExecutionPlan(
+                                "primary",
+                                empty.runtimeArtifactHash(),
+                                List.of(),
+                                List.of(),
+                                releases.require(draft.baseReleaseHash())));
+        assertThatThrownBy(() -> service.publish(owner, id, 1, 0)).hasMessage("agent_plan_invalid");
+        assertThat(count("control_plane.release_manifests")).isEqualTo(1);
+    }
+
+    @Test
+    void storedV3PlanIsRevalidatedEvenWhenItsOuterHashMatches() {
+        String id = id();
+        var draft = agents.create(owner, id, "Agent", "prompt");
+        var empty = emptyPlan(draft);
+        var expanded =
+                new AgentExecutionPlan(
+                        "primary",
+                        empty.runtimeArtifactHash(),
+                        List.of(),
+                        List.of(),
+                        releases.require(draft.baseReleaseHash()));
+        var manifest =
+                ComposedAgentReleaseManifest.from(
+                        new AgentDefinition(id, owner.tenant(), owner.subject(), 1),
+                        draft,
+                        expanded);
+        String hash = ComposedAgentReleaseIdentity.hash(manifest);
+        releaseRepository.insertComposedAgentManifestIfAbsent(hash, manifest);
+        assertThatThrownBy(() -> releases.resolve(hash)).hasMessage("agent_plan_invalid");
+        assertThatThrownBy(() -> releases.activateForAgent(id, hash, 0))
+                .hasMessage("agent_plan_invalid");
+        assertThat(releases.currentForAgent(id)).isNull();
+    }
+
+    private AgentExecutionPlan emptyPlan(AgentDraft draft) {
+        var base = releases.require(draft.baseReleaseHash());
+        var projection =
+                new ReleaseDefinition(
+                        base.version(),
+                        base.agent(),
+                        List.of(),
+                        base.primary(),
+                        base.fallback(),
+                        base.maxModelCalls(),
+                        base.maxToolCalls(),
+                        new BusinessFeatures(
+                                List.of(),
+                                base.business().skillHash(),
+                                base.business().marketJson(),
+                                base.business().ziwei()));
+        return new AgentExecutionPlan("primary", "a".repeat(64), List.of(), List.of(), projection);
     }
 
     private void assertConcurrentOutcomes(Callable<?> first, Callable<?> second, String conflict)

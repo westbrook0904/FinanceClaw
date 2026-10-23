@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.financeclaw.app.agent.AgentService;
+import com.financeclaw.app.agent.port.AgentCapabilityResolver;
 import com.financeclaw.app.agent.port.AgentRepository;
 import com.financeclaw.app.release.ReleaseService;
 import com.financeclaw.app.release.port.ReleaseRepository;
@@ -11,8 +12,11 @@ import com.financeclaw.bootstrap.MapperConfiguration;
 import com.financeclaw.domain.Governance.Blocked;
 import com.financeclaw.domain.Task.Owner;
 import com.financeclaw.domain.Task.Problem;
+import com.financeclaw.domain.agent.AgentComposition;
 import com.financeclaw.domain.agent.AgentDraft;
+import com.financeclaw.infrastructure.agent.CatalogAgentCapabilityResolver;
 import com.financeclaw.infrastructure.agent.MyBatisAgentRepository;
+import com.financeclaw.infrastructure.release.EnvironmentCredentials;
 import com.financeclaw.infrastructure.release.MyBatisReleaseRepository;
 import com.financeclaw.support.PayloadJson;
 import java.io.IOException;
@@ -40,7 +44,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * 本机 operator 的一次性 Agent 管理入口。仅接受名称和提示词，不把普通调用 token 解释为平台管理权。
+ * 本机 operator 的一次性 Agent 管理入口。接受提示词和受控能力引用，不把普通调用 token 解释为平台管理权。
  *
  * <p>不扫描业务组件，不启动 HTTP、Worker、Flyway 或环境发布候选。输出不包含 owner、提示词、manifest、凭据或原始异常。
  */
@@ -50,7 +54,9 @@ import org.springframework.transaction.support.TransactionTemplate;
     MapperConfiguration.Agents.class,
     MapperConfiguration.Releases.class,
     MyBatisAgentRepository.class,
-    MyBatisReleaseRepository.class
+    MyBatisReleaseRepository.class,
+    EnvironmentCredentials.class,
+    CatalogAgentCapabilityResolver.class
 })
 public class AgentAdministrationApplication {
     static final int MAX_FILE_BYTES = 128 * 1024;
@@ -69,6 +75,24 @@ public class AgentAdministrationApplication {
                     "agent_manifest_invalid",
                     "agent_runtime_incompatible",
                     "agent_identity_mismatch",
+                    "invalid_agent_composition",
+                    "agent_capability_unavailable",
+                    "agent_model_unavailable",
+                    "agent_plan_invalid",
+                    "agent_capability_resolver_unavailable",
+                    "agent_capabilities_unavailable",
+                    "agent_draft_invalid",
+                    "agent_publish_transaction_active",
+                    "mcp_contract_changed",
+                    "mcp_contract_invalid",
+                    "mcp_discovery_limit_exceeded",
+                    "mcp_discovery_timeout",
+                    "mcp_discovery_in_transaction",
+                    "mcp_unavailable",
+                    "mcp_tool_unavailable",
+                    "mcp_tool_name_collision",
+                    "mcp_credentials_unavailable",
+                    "mcp_tenant_denied",
                     "release_unavailable",
                     "release_revision_changed",
                     "invalid_release_revision",
@@ -81,8 +105,11 @@ public class AgentAdministrationApplication {
 
     @Bean
     AgentService agents(
-            AgentRepository repository, ReleaseService releases, TransactionTemplate transactions) {
-        return new AgentService(repository, releases, transactions);
+            AgentRepository repository,
+            ReleaseService releases,
+            TransactionTemplate transactions,
+            AgentCapabilityResolver capabilities) {
+        return new AgentService(repository, releases, transactions, capabilities);
     }
 
     public static void main(String[] args) {
@@ -153,23 +180,46 @@ public class AgentAdministrationApplication {
                     case "create" ->
                             draftResult(
                                     "created",
-                                    agents.create(
-                                            owner,
-                                            agentId,
-                                            input.displayName(),
-                                            input.systemPrompt()),
+                                    input.composition() == null
+                                            ? agents.create(
+                                                    owner,
+                                                    agentId,
+                                                    input.displayName(),
+                                                    input.systemPrompt())
+                                            : agents.create(
+                                                    owner,
+                                                    agentId,
+                                                    input.displayName(),
+                                                    input.systemPrompt(),
+                                                    input.composition()),
                                     input);
                     case "update" ->
                             draftResult(
                                     "updated",
-                                    agents.update(
-                                            owner,
-                                            agentId,
-                                            arguments.expectedRevision(),
-                                            input.displayName(),
-                                            input.systemPrompt()),
+                                    input.composition() == null
+                                            ? agents.update(
+                                                    owner,
+                                                    agentId,
+                                                    arguments.expectedRevision(),
+                                                    input.displayName(),
+                                                    input.systemPrompt())
+                                            : agents.update(
+                                                    owner,
+                                                    agentId,
+                                                    arguments.expectedRevision(),
+                                                    input.displayName(),
+                                                    input.systemPrompt(),
+                                                    input.composition()),
                                     input);
                     case "get" -> draftResult("draft", agents.get(owner, agentId), null);
+                    case "catalog" ->
+                            Map.of(
+                                    "result",
+                                    "catalog",
+                                    "agentId",
+                                    agentId,
+                                    "catalog",
+                                    agents.catalog(owner, agentId));
                     case "publish" -> {
                         var deployment =
                                 agents.publish(
@@ -240,14 +290,13 @@ public class AgentAdministrationApplication {
         report.put("agentId", draft.agentId());
         report.put("draftRevision", draft.revision());
         report.put("baseReleaseHash", draft.baseReleaseHash());
+        var content = new LinkedHashMap<String, Object>();
+        content.put("displayName", draft.displayName());
+        content.put("systemPrompt", draft.systemPrompt());
+        if (draft.composition() != null) content.put("composition", draft.composition());
         report.put(
                 "contentHash",
-                sha256(
-                        PayloadJson.canonical(
-                                        Map.of(
-                                                "displayName", draft.displayName(),
-                                                "systemPrompt", draft.systemPrompt()))
-                                .getBytes(StandardCharsets.UTF_8)));
+                sha256(PayloadJson.canonical(content).getBytes(StandardCharsets.UTF_8)));
         if (input != null) {
             report.put("inputSha256", input.inputSha256());
         }
@@ -276,7 +325,8 @@ public class AgentAdministrationApplication {
                                     "--agent-id",
                                     "--draft-revision",
                                     "--expected-revision");
-                    case "get", "history" -> Set.of("--tenant", "--subject", "--agent-id");
+                    case "get", "history", "catalog" ->
+                            Set.of("--tenant", "--subject", "--agent-id");
                     case "list" -> Set.of("--tenant", "--subject");
                     default -> throw invalidArguments();
                 };
@@ -351,7 +401,8 @@ public class AgentAdministrationApplication {
             var json = reader.readTree(raw);
             if (json == null
                     || !json.isObject()
-                    || json.size() != 2
+                    || (json.size() != 2 && json.size() != 3)
+                    || (json.size() == 3 && !json.has("composition"))
                     || !json.path("displayName").isTextual()
                     || !json.path("systemPrompt").isTextual()) {
                 throw new IllegalArgumentException("invalid_agent_definition");
@@ -361,7 +412,29 @@ public class AgentAdministrationApplication {
             if (!AgentDraft.validContent(name, prompt)) {
                 throw new IllegalArgumentException("invalid_agent_definition");
             }
-            return new DraftInput(name, prompt, sha256(bytes));
+            AgentComposition composition = null;
+            if (json.has("composition")) {
+                var selected = json.path("composition");
+                if (!selected.isObject()
+                        || selected.size() != 2
+                        || !selected.path("modelProfile").isTextual()
+                        || !selected.path("capabilities").isArray()) {
+                    throw new IllegalArgumentException("invalid_agent_definition");
+                }
+                var ids = new java.util.ArrayList<String>();
+                for (var id : selected.path("capabilities")) {
+                    if (!id.isTextual())
+                        throw new IllegalArgumentException("invalid_agent_definition");
+                    ids.add(id.textValue());
+                }
+                try {
+                    composition =
+                            new AgentComposition(selected.path("modelProfile").textValue(), ids);
+                } catch (Problem invalid) {
+                    throw new IllegalArgumentException("invalid_agent_definition");
+                }
+            }
+            return new DraftInput(name, prompt, sha256(bytes), composition);
         } catch (IOException | SecurityException invalid) {
             throw new IllegalArgumentException("invalid_agent_definition");
         }
@@ -432,7 +505,15 @@ public class AgentAdministrationApplication {
             long afterRevision,
             int limit) {}
 
-    record DraftInput(String displayName, String systemPrompt, String inputSha256) {}
+    record DraftInput(
+            String displayName,
+            String systemPrompt,
+            String inputSha256,
+            AgentComposition composition) {
+        DraftInput(String displayName, String systemPrompt, String inputSha256) {
+            this(displayName, systemPrompt, inputSha256, null);
+        }
+    }
 
     record Outcome(int status, String json) {}
 }

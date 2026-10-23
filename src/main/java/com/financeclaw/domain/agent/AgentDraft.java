@@ -10,11 +10,21 @@ public record AgentDraft(
         long revision,
         String displayName,
         String systemPrompt,
-        String baseReleaseHash) {
+        String baseReleaseHash,
+        AgentComposition composition) {
     public static final String BUILTIN_AGENT = "finance_agent";
     public static final String BUILTIN_PROMPT = "Use only the tools authorized for this task.";
     public static final int MAX_NAME_CHARS = 200;
     public static final int MAX_PROMPT_BYTES = 16 * 1024;
+
+    public AgentDraft(
+            String agentId,
+            long revision,
+            String displayName,
+            String systemPrompt,
+            String baseReleaseHash) {
+        this(agentId, revision, displayName, systemPrompt, baseReleaseHash, null);
+    }
 
     public static boolean isCustomId(String id) {
         if (id == null) {

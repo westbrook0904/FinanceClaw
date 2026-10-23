@@ -5,12 +5,17 @@ import com.financeclaw.app.execution.ExecutionPolicyService;
 import com.financeclaw.app.release.port.Credentials;
 import com.financeclaw.domain.Governance.*;
 import com.financeclaw.domain.Task.Claim;
+import com.financeclaw.domain.agent.AgentExecutionPlan;
+import com.financeclaw.domain.agent.CapabilityBinding;
 import com.financeclaw.domain.release.ReleaseDefinition;
+import com.financeclaw.domain.release.RemoteEndpoint;
 import com.financeclaw.support.PayloadJson;
 import com.financeclaw.tools.*;
 import io.agentscope.core.message.*;
+import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.Toolkit;
 import java.util.*;
+import reactor.core.publisher.Mono;
 
 /**
  * Keep native MCP transport and schemas; add only dispatch policy and governed artifact storage.
@@ -23,6 +28,7 @@ public final class McpToolContribution implements ToolContribution, AutoCloseabl
     private final ReleaseDefinition release;
     private final List<String> scopes;
     private final Toolkit toolkit;
+    private final AgentExecutionPlan plan;
     private final McpTools mcp = new McpTools();
 
     public McpToolContribution(
@@ -33,6 +39,19 @@ public final class McpToolContribution implements ToolContribution, AutoCloseabl
             ReleaseDefinition release,
             List<String> scopes,
             Toolkit toolkit) {
+        this(policy, credentials, artifacts, claim, release, scopes, toolkit, null);
+    }
+
+    public McpToolContribution(
+            ExecutionPolicyService policy,
+            Credentials credentials,
+            ArtifactService artifacts,
+            Claim claim,
+            ReleaseDefinition release,
+            List<String> scopes,
+            Toolkit toolkit,
+            AgentExecutionPlan plan) {
+        this.plan = plan;
         this.policy = policy;
         this.credentials = credentials;
         this.artifacts = artifacts;
@@ -44,63 +63,179 @@ public final class McpToolContribution implements ToolContribution, AutoCloseabl
 
     @Override
     public void contribute(Registrar registrar) {
+        if (plan != null) {
+            contributeFrozen(registrar);
+            return;
+        }
         for (var service : release.business().remotes()) {
-            String scope = service.service().equals("taibu") ? "taibu:read" : "travel:read";
+            String scope = McpContracts.scope(service.service());
             if (!scopes.contains(scope)) {
                 continue;
             }
             policy.checkDispatch(claim);
             mcp.register(toolkit, service, claim.turn().tenant(), credentials::resolve);
             for (String name : service.tools()) {
-                var nativeTool = toolkit.getTool(name);
-                // Keep the native name/schema/call implementation. This adapter only enforces
-                // product
-                // policy and archives results before they enter model context.
-                registrar.tool(
-                        name,
-                        nativeTool.getDescription(),
-                        nativeTool.getParameters(),
-                        scope,
-                        p -> {
-                            if (service.service().equals("taibu")) {
-                                TaibuInputs.validate(name, p.getInput());
-                            }
-                            return nativeTool
-                                    .callAsync(p)
-                                    .map(
-                                            result -> {
-                                                if (result.getState() == ToolResultState.ERROR) {
-                                                    throw new Blocked("mcp_service_error");
-                                                }
-                                                String text =
-                                                        result.getOutput().stream()
-                                                                .filter(TextBlock.class::isInstance)
-                                                                .map(TextBlock.class::cast)
-                                                                .map(TextBlock::getText)
-                                                                .collect(
-                                                                        java.util.stream.Collectors
-                                                                                .joining("\n"));
-                                                Object data;
-                                                try {
-                                                    data = PayloadJson.parse(text);
-                                                } catch (Blocked e) {
-                                                    throw new Blocked("mcp_invalid_result");
-                                                }
-                                                if (data instanceof Map<?, ?> map
-                                                        && (Boolean.FALSE.equals(map.get("success"))
-                                                                || map.containsKey("error"))) {
-                                                    throw new Blocked("mcp_service_error");
-                                                }
-                                                if (service.service().equals("taibu")) {
-                                                    TaibuInputs.validateResult(
-                                                            name, data, p.getInput());
-                                                }
-                                                return archived(data, scope);
-                                            });
-                        },
-                        null);
+                register(registrar, service, toolkit.getTool(name), null, List.of());
             }
         }
+    }
+
+    private void contributeFrozen(Registrar registrar) {
+        var selected = new TreeMap<String, List<CapabilityBinding>>();
+        var ids = new HashSet<String>();
+        var names = new HashSet<String>();
+        for (var binding : plan.capabilities()) {
+            if (!"mcp".equals(binding.kind())) {
+                continue;
+            }
+            int slash = binding.id().indexOf('/');
+            if (!binding.id().startsWith("mcp:")
+                    || slash < 5
+                    || !binding.id().substring(slash + 1).equals(binding.name())
+                    || !ids.add(binding.id())
+                    || !names.add(binding.name())) {
+                throw new Blocked("mcp_contract_changed");
+            }
+            selected.computeIfAbsent(binding.id().substring(4, slash), ignored -> new ArrayList<>())
+                    .add(binding);
+        }
+        if (!Collections.disjoint(toolkit.getToolNames(), names)) {
+            throw new Blocked("mcp_tool_name_collision");
+        }
+        var services = new HashMap<String, RemoteEndpoint>();
+        for (var service : release.business().remotes()) {
+            if (selected.containsKey(service.service())
+                    && services.putIfAbsent(service.service(), service) != null) {
+                throw new Blocked("mcp_contract_changed");
+            }
+        }
+        for (var entry : selected.entrySet()) {
+            var service = services.get(entry.getKey());
+            if (service == null
+                    || !service.tools()
+                            .containsAll(
+                                    entry.getValue().stream()
+                                            .map(CapabilityBinding::name)
+                                            .toList())) {
+                throw new Blocked("mcp_contract_changed");
+            }
+        }
+        long deadline = McpTools.DiscoveryLimits.defaults().deadline();
+        for (var entry : selected.entrySet()) {
+            var service = services.get(entry.getKey());
+            String scope = McpContracts.scope(service.service());
+            if (!scopes.contains(scope)) {
+                continue;
+            }
+            policy.checkDispatch(claim);
+            var temporary = new Toolkit();
+            McpTools.SelectedSession session;
+            try {
+                session =
+                        mcp.registerSelected(
+                                temporary,
+                                service,
+                                claim.turn().tenant(),
+                                credentials::resolve,
+                                entry.getValue().stream().map(CapabilityBinding::name).toList(),
+                                deadline);
+            } catch (Blocked failure) {
+                if (Set.of("mcp_contract_invalid", "mcp_tool_unavailable")
+                        .contains(failure.getMessage())) {
+                    throw new Blocked("mcp_contract_changed");
+                }
+                throw failure;
+            }
+            // Compare the actual native objects before exposing any selected tool to the model.
+            for (var binding : entry.getValue()) {
+                McpContracts.requireMatch(
+                        binding, service.service(), temporary.getTool(binding.name()));
+            }
+            for (var binding : entry.getValue()) {
+                register(
+                        registrar,
+                        service,
+                        temporary.getTool(binding.name()),
+                        session,
+                        entry.getValue());
+            }
+        }
+    }
+
+    private void register(
+            Registrar registrar,
+            RemoteEndpoint service,
+            AgentTool nativeTool,
+            McpTools.SelectedSession session,
+            List<CapabilityBinding> frozen) {
+        String name = nativeTool.getName();
+        String scope = McpContracts.scope(service.service());
+        registrar.tool(
+                name,
+                nativeTool.getDescription(),
+                nativeTool.getParameters(),
+                scope,
+                p -> {
+                    Mono<Void> ready = session == null ? Mono.empty() : session.verify(frozen);
+                    return ready.then(
+                            Mono.defer(
+                                    () -> {
+                                        // This must run after fresh discovery, immediately before
+                                        // native dispatch.
+                                        if (session != null) {
+                                            policy.checkDispatch(claim);
+                                        }
+                                        if (service.service().equals("taibu")) {
+                                            TaibuInputs.validate(name, p.getInput());
+                                        }
+                                        return nativeTool
+                                                .callAsync(p)
+                                                .map(
+                                                        result -> {
+                                                            if (result.getState()
+                                                                    == ToolResultState.ERROR) {
+                                                                throw new Blocked(
+                                                                        "mcp_service_error");
+                                                            }
+                                                            String text =
+                                                                    result.getOutput().stream()
+                                                                            .filter(
+                                                                                    TextBlock.class
+                                                                                            ::isInstance)
+                                                                            .map(
+                                                                                    TextBlock.class
+                                                                                            ::cast)
+                                                                            .map(TextBlock::getText)
+                                                                            .collect(
+                                                                                    java.util.stream
+                                                                                            .Collectors
+                                                                                            .joining(
+                                                                                                    "\n"));
+                                                            Object data;
+                                                            try {
+                                                                data = PayloadJson.parse(text);
+                                                            } catch (Blocked e) {
+                                                                throw new Blocked(
+                                                                        "mcp_invalid_result");
+                                                            }
+                                                            if (data instanceof Map<?, ?> map
+                                                                    && (Boolean.FALSE.equals(
+                                                                                    map.get(
+                                                                                            "success"))
+                                                                            || map.containsKey(
+                                                                                    "error"))) {
+                                                                throw new Blocked(
+                                                                        "mcp_service_error");
+                                                            }
+                                                            if (service.service().equals("taibu")) {
+                                                                TaibuInputs.validateResult(
+                                                                        name, data, p.getInput());
+                                                            }
+                                                            return archived(data, scope);
+                                                        });
+                                    }));
+                },
+                null);
     }
 
     private ToolResultBlock archived(Object result, String scope) {

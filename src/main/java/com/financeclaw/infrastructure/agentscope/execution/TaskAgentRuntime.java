@@ -15,6 +15,7 @@ import com.financeclaw.infrastructure.agentscope.AgentStateInspector;
 import com.financeclaw.infrastructure.agentscope.IsolatedAgentFactory;
 import com.financeclaw.infrastructure.agentscope.ResumeInputs;
 import com.financeclaw.infrastructure.agentscope.capability.BusinessCapabilities;
+import com.financeclaw.infrastructure.agentscope.capability.LocalCapabilityCatalog;
 import com.financeclaw.infrastructure.agentscope.context.*;
 import com.financeclaw.infrastructure.state.MyBatisAgentStateStore;
 import com.financeclaw.infrastructure.state.RuntimeMapper;
@@ -132,6 +133,7 @@ public class TaskAgentRuntime implements com.financeclaw.app.execution.port.Agen
         resolved.requireIdentity(
                 new Owner(claim.turn().tenant(), claim.turn().subject()), claim.turn().agentId());
         var release = resolved.definition();
+        LocalCapabilityCatalog.requireCompatible(resolved.plan());
         // 本 attempt 只读既有 Turn 快照，不重新召回或替换长期记忆；恢复也使用同一正文。
         String userContext = policy.memoryContext(claim);
         var budgetProfile =
@@ -167,7 +169,13 @@ public class TaskAgentRuntime implements com.financeclaw.app.execution.port.Agen
         var stop = Sinks.<Void>empty();
         try (var tools =
                         new GovernedTools(
-                                policy, releases, credentials, artifacts, reports, claim);
+                                policy,
+                                releases,
+                                credentials,
+                                artifacts,
+                                reports,
+                                claim,
+                                resolved.plan());
                 var provider =
                         release.primary().name().equals("offline")
                                 ? null
@@ -187,11 +195,11 @@ public class TaskAgentRuntime implements com.financeclaw.app.execution.port.Agen
             if (workflow) {
                 delegate = capabilities.portfolioDriver(claim);
             }
-            Model primary = guarded(claim, delegate, stop, !workflow);
+            Model primary = guarded(claim, delegate, stop, !workflow, tools);
             Model fallback =
                     release.fallback() == null || workflow
                             ? null
-                            : guarded(claim, backup, stop, true);
+                            : guarded(claim, backup, stop, true, tools);
             var contextMiddleware =
                     new WorkingContextMiddleware(
                             claim,
@@ -203,7 +211,7 @@ public class TaskAgentRuntime implements com.financeclaw.app.execution.port.Agen
                             tools::requiredScope,
                             new ModelWorkContextSummarizer(
                                     workflow && provider != null
-                                            ? guarded(claim, provider, stop, true)
+                                            ? guarded(claim, provider, stop, true, tools)
                                             : primary,
                                     release.primary().outputReserve(),
                                     timeout,
@@ -232,7 +240,8 @@ public class TaskAgentRuntime implements com.financeclaw.app.execution.port.Agen
                                                         prompt + userContext);
                                             }
                                         });
-                            })) {
+                            },
+                            resolved.plan() != null && resolved.plan().capabilities().isEmpty())) {
                 active.put(claim.command().attemptId(), new Active(agent, stop));
                 List<Msg> inputs = inputs(claim, store, tools, workContext);
                 agent.streamEvents(
@@ -271,6 +280,7 @@ public class TaskAgentRuntime implements com.financeclaw.app.execution.port.Agen
                                     }
                                 })
                         .blockLast(timeout);
+                tools.checkCompatibility();
                 var saved =
                         store.getVersioned(
                                 scope.userId(), scope.sessionId(), "agent_state", AgentState.class);
@@ -292,7 +302,12 @@ public class TaskAgentRuntime implements com.financeclaw.app.execution.port.Agen
         }
     }
 
-    private Model guarded(Claim claim, Model delegate, Sinks.Empty<Void> stop, boolean countModel) {
+    private Model guarded(
+            Claim claim,
+            Model delegate,
+            Sinks.Empty<Void> stop,
+            boolean countModel,
+            GovernedTools governedTools) {
         return new Model() {
             @Override
             public String getModelName() {
@@ -304,6 +319,7 @@ public class TaskAgentRuntime implements com.financeclaw.app.execution.port.Agen
                     List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
                 return Flux.defer(
                                 () -> {
+                                    governedTools.checkCompatibility();
                                     if (countModel) {
                                         policy.consume(claim, true);
                                     }

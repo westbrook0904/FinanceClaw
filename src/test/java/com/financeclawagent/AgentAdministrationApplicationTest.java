@@ -7,8 +7,11 @@ import com.financeclaw.app.agent.AgentService;
 import com.financeclaw.domain.Governance.Blocked;
 import com.financeclaw.domain.Task.Owner;
 import com.financeclaw.domain.Task.Problem;
+import com.financeclaw.domain.agent.AgentCapabilityCatalog;
+import com.financeclaw.domain.agent.AgentComposition;
 import com.financeclaw.domain.agent.AgentDefinition;
 import com.financeclaw.domain.agent.AgentDraft;
+import com.financeclaw.domain.agent.CapabilityOption;
 import com.financeclaw.domain.release.Deployment;
 import com.financeclaw.domain.release.DeploymentChange;
 import com.financeclaw.support.PayloadJson;
@@ -126,6 +129,104 @@ class AgentAdministrationApplicationTest {
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessage("invalid_agent_definition");
         }
+    }
+
+    @Test
+    void acceptsOnlyControlledCompositionAndDistinguishesOmittedFromExplicitEmpty()
+            throws Exception {
+        Path path = directory.resolve("composition.json");
+        Files.writeString(
+                path,
+                PayloadJson.canonical(
+                        Map.of(
+                                "displayName",
+                                "name",
+                                "systemPrompt",
+                                "prompt",
+                                "composition",
+                                Map.of("modelProfile", "primary", "capabilities", List.of()))));
+        assertThat(AgentAdministrationApplication.readDraft(path).composition())
+                .isEqualTo(new AgentComposition("primary", List.of()));
+        for (Object composition :
+                List.of(
+                        Map.of("modelProfile", "arbitrary", "capabilities", List.of()),
+                        Map.of(
+                                "modelProfile",
+                                "primary",
+                                "capabilities",
+                                List.of("function:request_city", "function:request_city")),
+                        Map.of(
+                                "modelProfile",
+                                "primary",
+                                "capabilities",
+                                List.of("https://example.com")),
+                        Map.of("modelProfile", "primary", "capabilities", List.of(1)),
+                        Map.of(
+                                "modelProfile",
+                                "primary",
+                                "capabilities",
+                                List.of(),
+                                "url",
+                                "https://example.com"),
+                        Map.of("capabilities", List.of()),
+                        "not-an-object")) {
+            Files.writeString(
+                    path,
+                    PayloadJson.canonical(
+                            Map.of(
+                                    "displayName",
+                                    "name",
+                                    "systemPrompt",
+                                    "prompt",
+                                    "composition",
+                                    composition)));
+            assertThatThrownBy(() -> AgentAdministrationApplication.readDraft(path))
+                    .hasMessage("invalid_agent_definition");
+        }
+        Files.writeString(
+                path,
+                "{\"displayName\":\"name\",\"systemPrompt\":\"prompt\",\"composition\":null}");
+        assertThatThrownBy(() -> AgentAdministrationApplication.readDraft(path))
+                .hasMessage("invalid_agent_definition");
+    }
+
+    @Test
+    void compositionChangesContentDigestAndCatalogExposesOnlyControlledMetadata() {
+        var agents = mock(AgentService.class);
+        var composition = new AgentComposition("primary", List.of("function:request_city"));
+        var draft = new AgentDraft(ID, 1, "name", "prompt", HASH, composition);
+        when(agents.get(OWNER, ID)).thenReturn(draft);
+        var selected =
+                AgentAdministrationApplication.dispatch(
+                        AgentAdministrationApplication.parse(options("get")), agents, null);
+        when(agents.get(OWNER, ID)).thenReturn(new AgentDraft(ID, 1, "name", "prompt", HASH));
+        var inherited =
+                AgentAdministrationApplication.dispatch(
+                        AgentAdministrationApplication.parse(options("get")), agents, null);
+        assertThat(PayloadJson.object(selected.json()).get("contentHash"))
+                .isNotEqualTo(PayloadJson.object(inherited.json()).get("contentHash"));
+        when(agents.catalog(OWNER, ID))
+                .thenReturn(
+                        new AgentCapabilityCatalog(
+                                List.of("primary"),
+                                List.of(
+                                        new CapabilityOption(
+                                                "function:request_city",
+                                                "function",
+                                                "request_city",
+                                                List.of(),
+                                                List.of("function:read_artifact_range")))));
+        var catalog =
+                AgentAdministrationApplication.dispatch(
+                        AgentAdministrationApplication.parse(options("catalog")), agents, null);
+        assertThat(catalog.json())
+                .contains("function:request_city", "primary")
+                .doesNotContain(
+                        "credential",
+                        "systemPrompt",
+                        "contractJson",
+                        OWNER.tenant(),
+                        OWNER.subject());
     }
 
     @Test

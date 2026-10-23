@@ -62,6 +62,12 @@ for index, prompt in enumerate(AGENT_PROMPTS, 1):
     # Synthetic fixture only; readable by the container user and mounted read-only per command.
     definition.chmod(0o644)
     AGENT_FILES.append(definition)
+for index, capabilities in enumerate(([], ['function:search_catalog']), 3):
+    definition = TEMP / f'agent-definition-{index}.json'
+    definition.write_text(json.dumps({'displayName': AGENT_NAME, 'systemPrompt': AGENT_PROMPTS[0],
+                                     'composition': {'modelProfile': 'primary', 'capabilities': capabilities}}), encoding='utf-8')
+    definition.chmod(0o644)
+    AGENT_FILES.append(definition)
 override = {'services': {s: {
     'environment': {'FINANCECLAW_MARKET_FILE': '/app/market.json'},
     'volumes': [f'{TEMP / "market.json"}:/app/market.json:ro']}
@@ -402,6 +408,29 @@ try:
     assert sql("SELECT release_hash || ':' || revision FROM control_plane.deployments WHERE name='default'") == release_before
     mark('agent_draft_publish_cas_pins_existing_sessions_and_keeps_builtin_driver_separate')
 
+    composed_agent = str(uuid.uuid4())
+    agent_admin('create', composed_agent, definition=AGENT_FILES[2])
+    catalog = agent_admin('catalog', composed_agent)['catalog']
+    assert 'primary' in catalog['modelProfiles']
+    assert 'function:search_catalog' in {item['id'] for item in catalog['capabilities']}
+    empty_release = agent_admin('publish', composed_agent, '--draft-revision', '1', '--expected-revision', '0')['releaseHash']
+    manifest = json.loads(sql(f"SELECT manifest FROM control_plane.release_manifests WHERE release_hash='{empty_release}'"))
+    assert manifest['format'] == 'agent-release/3' and manifest['plan']['capabilities'] == []
+    assert manifest['plan']['definition']['scopes'] == []
+    pure_conversation, pure_receipt, pure_path = turn('P2b pure conversation', composed_agent)
+    terminal(pure_path)
+    mark('composed_agent_catalog_and_explicit_empty_plan_execute_in_packaged_runtime')
+    agent_admin('update', composed_agent, '--expected-revision', '1', definition=AGENT_FILES[3])
+    function_release = agent_admin('publish', composed_agent, '--draft-revision', '2', '--expected-revision', '1')['releaseHash']
+    selected_manifest = json.loads(sql(f"SELECT manifest FROM control_plane.release_manifests WHERE release_hash='{function_release}'"))
+    assert {item['id'] for item in selected_manifest['plan']['capabilities']} == {'function:search_catalog', 'function:read_artifact_range'}
+    assert selected_manifest['plan']['runtimeArtifactHash'] == manifest['plan']['runtimeArtifactHash']
+    terminal(turn('P2b selected functions', composed_agent)[2])
+    pinned = api(f'/v1/conversations/{pure_conversation}/turns', {'message': 'P2b prior session'}, 'p2b-pinned')
+    terminal(f'/v1/conversations/{pure_conversation}/turns/{pinned["turn_id"]}')
+    assert sql(f"SELECT release_hash FROM business.turns WHERE id='{pinned['turn_id']}'") == empty_release
+    mark('composed_agent_dependencies_are_frozen_and_prior_session_keeps_empty_plan')
+
     def sample(_):
         start = time.monotonic()
         c, receipt, path = turn()
@@ -560,8 +589,9 @@ try:
     original = fingerprints('financeclaw_java')
     assert len(original) == 40
     assert {'control_plane.agents', 'control_plane.agent_draft_revisions'} <= original.keys()
-    assert original['control_plane.agents'].split(':', 1)[0] == '2'
-    assert original['control_plane.agent_draft_revisions'].split(':', 1)[0] == '3'
+    # 两个基础隔离用户 Agent，加上组合能力场景新建的第三个 Agent（含两版草稿）。
+    assert original['control_plane.agents'].split(':', 1)[0] == '3'
+    assert original['control_plane.agent_draft_revisions'].split(':', 1)[0] == '5'
     backup = compose('exec', '-T', 'postgres', 'pg_dump', '-U', 'postgres', '-d', 'financeclaw_java', '-Fc')
     dump = OUT / 'synthetic-restore.dump'
     dump.write_bytes(backup)
@@ -658,6 +688,12 @@ try:
     assert sql(f"SELECT agent_id||':'||release_hash FROM business.conversations WHERE id='{old_agent_conversation}'", restored) == agent_id + ':' + agent_release_one
     assert sql(f"SELECT release_hash FROM business.turns WHERE id='{old_agent_receipt['turn_id']}'", restored) == agent_release_one
     mark('restored_agent_definitions_history_and_new_execution_keep_release_identity', {'application_tables': len(original)})
+    assert agent_admin('history', composed_agent)['nextAfterRevision'] == 2
+    _, restored_composed_receipt, restored_composed_path = turn('P2b restored composed agent', composed_agent)
+    terminal(restored_composed_path)
+    assert sql(f"SELECT release_hash FROM business.turns WHERE id='{restored_composed_receipt['turn_id']}'", restored) == function_release
+    assert sql(f"SELECT release_hash FROM business.conversations WHERE id='{pure_conversation}'", restored) == empty_release
+    mark('restored_composed_agent_executes_frozen_plan_with_same_runtime_artifact')
     assert sql("SELECT count(*) FROM business.capability_steps WHERE step='publish_report'", restored) == '1'
     assert sql("SELECT count(*) FROM business.artifacts WHERE required_scope='workflow:run'", restored) == '1'
     mark('restored_runtime_keeps_results_privacy_and_accepts_new_turns')

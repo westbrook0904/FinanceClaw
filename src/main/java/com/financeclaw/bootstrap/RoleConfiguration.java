@@ -2,6 +2,8 @@ package com.financeclaw.bootstrap;
 
 import com.financeclaw.api.*;
 import com.financeclaw.app.agent.AgentService;
+import com.financeclaw.app.agent.port.AgentCapabilityResolver;
+import com.financeclaw.app.agent.port.AgentRepository;
 import com.financeclaw.app.artifact.ArtifactService;
 import com.financeclaw.app.execution.*;
 import com.financeclaw.app.governance.GrantService;
@@ -18,6 +20,7 @@ import com.financeclaw.app.research.MarketResearchService;
 import com.financeclaw.app.task.*;
 import com.financeclaw.app.ziwei.*;
 import com.financeclaw.channel.*;
+import com.financeclaw.infrastructure.agent.CatalogAgentCapabilityResolver;
 import com.financeclaw.infrastructure.agent.MyBatisAgentRepository;
 import com.financeclaw.infrastructure.agentscope.AgentScopeInteractionCheckpoint;
 import com.financeclaw.infrastructure.agentscope.capability.*;
@@ -76,7 +79,7 @@ public final class RoleConfiguration {
         MapperConfiguration.Releases.class,
         MapperConfiguration.Agents.class,
         MyBatisAgentRepository.class,
-        AgentService.class,
+        CatalogAgentCapabilityResolver.class,
         MyBatisReleaseRepository.class,
         EnvironmentReleaseSource.class,
         EnvironmentCredentials.class,
@@ -103,6 +106,15 @@ public final class RoleConfiguration {
         AgentScopeZiweiInputs.class
     })
     static class GovernedTasks {
+        @Bean
+        AgentService agentService(
+                AgentRepository repository,
+                ReleaseService releases,
+                TransactionTemplate tx,
+                AgentCapabilityResolver capabilities) {
+            return new AgentService(repository, releases, tx, capabilities);
+        }
+
         @Bean
         ReleaseService releaseService(
                 ReleaseSource source, ReleaseRepository repository, TransactionTemplate tx) {

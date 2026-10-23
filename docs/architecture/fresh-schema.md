@@ -2,7 +2,7 @@
 
 FinanceClaw Java 是独立应用，支持全新数据库初始化，以及当前 Java V1 基线之后的前向升级；不导入 Python 数据或升级过去的实验结构。
 
-主库保留 [V1 初始化 SQL](../../src/main/resources/db/migration/V1__initialize_application.sql) 的原内容和校验值。V1 创建 35 张应用表；[V2](../../src/main/resources/db/migration/V2__release_catalog.sql) 增加三张持久发布表；[V3](../../src/main/resources/db/migration/V3__conversation_release_binding.sql) 增加会话发布绑定；[V4](../../src/main/resources/db/migration/V4__agent_definitions.sql) 增加 Agent 身份、不可变草稿修订及会话/Turn 的 Agent 绑定。Flyway 按序执行并验证历史校验值，最终共 40 张表。独立遗忘账本仍使用自己的两张表和凭据，不混入主库初始化。
+主库保留 [V1 初始化 SQL](../../src/main/resources/db/migration/V1__initialize_application.sql) 的原内容和校验值。V1 创建 35 张应用表；[V2](../../src/main/resources/db/migration/V2__release_catalog.sql) 增加三张持久发布表；[V3](../../src/main/resources/db/migration/V3__conversation_release_binding.sql) 增加会话发布绑定；[V4](../../src/main/resources/db/migration/V4__agent_definitions.sql) 增加 Agent 身份、不可变草稿修订及会话/Turn 的 Agent 绑定。[V5](../../src/main/resources/db/migration/V5__agent_compositions.sql) 增加可空能力选择和 v3 发布格式标记，不改写旧正文。Flyway 按序执行并验证历史校验值，最终共 40 张表。独立遗忘账本仍使用自己的两张表和凭据，不混入主库初始化。
 
 | 结构 | 表数 | 责任 |
 | --- | ---: | --- |
@@ -28,7 +28,7 @@ docker compose up -d --build --wait --wait-timeout 180
 
 ## 从当前 Java V1–V3 升级
 
-先保留数据库备份和旧启动配置，停止旧业务进程，再以新版 `init-db` 执行尚未应用的 V2/V3/V4 和角色授权，最后统一启动新版业务进程。本次升级不支持新旧二进制混跑；旧进程不知道自定义 Agent 目标和新发布格式。Compose 中应明确重新运行初始化服务，不能仅重启旧的成功退出容器：
+先保留数据库备份和旧启动配置，停止旧业务进程，再以新版 `init-db` 执行尚未应用的 V2/V3/V4/V5 和角色授权，最后统一启动新版业务进程。本次升级不支持新旧二进制混跑；旧进程不知道自定义 Agent 目标和新发布格式。Compose 中应明确重新运行初始化服务，不能仅重启旧的成功退出容器：
 
 ```bash
 scripts/mvn.sh -B -ntp clean package -DskipTests
@@ -42,4 +42,4 @@ docker compose up -d --force-recreate api memory-worker
 
 旧库只有 hash，无法凭空还原发布正文。新进程只登记它能从启动配置生成的准确清单；若历史清单缺失，新的执行或恢复会得到 `release_unavailable`。应使用当时准确的配置重新登记并核对 hash；无法还原时保持阻断，不能替换成当前版本。已受理请求的幂等重放仍可读取原回执。
 
-发布指针初始化后，重启或环境配置变化不会自动切换默认发布；见[发布版本管理](../operations.md#发布版本管理)。P2a 用 `agent-release/2` 清单固定自定义 Agent 的提示词、owner 和基础发布，旧格式继续独立解码且不能作为私有 Agent 的别名。本阶段不迁移旧检查点格式；Function 实现、MCP 实时 Schema 和完整依赖工件冻结属于 P2b，见 [Agent 管理说明](agent-definitions.md)。
+发布指针初始化后，重启或环境配置变化不会自动切换默认发布；见[发布版本管理](../operations.md#发布版本管理)。P2a 用 `agent-release/2` 清单固定自定义 Agent 的提示词、owner 和基础发布，旧格式继续独立解码且不能作为私有 Agent 的别名。本阶段不迁移旧检查点格式；P2b 新增 `agent-release/3`，冻结受控能力、SDK 有效 MCP 契约和生产运行工件摘要，旧格式不会获得补造快照，见 [能力组装与升级限制](agent-composition.md#冻结的范围与升级行为)。

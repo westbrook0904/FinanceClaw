@@ -5,6 +5,8 @@ import static org.mockito.Mockito.*;
 
 import com.financeclaw.app.artifact.ArtifactService;
 import com.financeclaw.domain.Governance.Artifact;
+import com.financeclaw.domain.Governance.Blocked;
+import com.financeclaw.domain.Governance.Page;
 import com.financeclaw.domain.Task.*;
 import com.financeclaw.infrastructure.agentscope.capability.LocalToolContribution;
 import com.financeclaw.infrastructure.agentscope.context.ToolResultOffloader;
@@ -15,12 +17,53 @@ import io.agentscope.core.tool.ToolValidator;
 import io.agentscope.core.util.JsonUtils;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Mono;
 
 class ArtifactRangeToolTest {
+    @Test
+    void composedArtifactToolsUseCurrentClaimAndTheNarrowedScopesForBothReadShapes() {
+        var claim =
+                new Claim(
+                        new Command("command", "turn", "running", "attempt", 1, true, null),
+                        new Turn(
+                                "turn",
+                                "conversation",
+                                "tenant",
+                                "subject",
+                                "key",
+                                "hash",
+                                "input",
+                                "release",
+                                "running",
+                                1,
+                                null,
+                                null));
+        var artifacts = mock(ArtifactService.class);
+        var scopes = List.of("artifact:read", "skill:use");
+        var actions = new HashMap<String, Function<ToolCallParam, Mono<ToolResultBlock>>>();
+        new LocalToolContribution(artifacts, null, claim, scopes)
+                .contribute(
+                        (name, description, schema, scope, action, interaction) ->
+                                actions.put(name, action));
+        when(artifacts.readForExecution(claim, scopes, "artifact", 0, 20, ""))
+                .thenReturn(new Page("artifact", "hash", 1, 0, 1, List.of("result")));
+        var input = ToolCallParam.builder().input(Map.of("artifact_id", "artifact")).build();
+        assertThat(actions.get("read_artifact").apply(input).block()).isNotNull();
+        when(artifacts.readRangeForExecution(claim, scopes, "artifact", 0, 512))
+                .thenThrow(new Blocked("artifact_scope_denied"));
+        assertThatThrownBy(() -> actions.get("read_artifact_range").apply(input).block())
+                .hasMessage("artifact_scope_denied");
+        verify(artifacts).readForExecution(claim, scopes, "artifact", 0, 20, "");
+        verify(artifacts).readRangeForExecution(claim, scopes, "artifact", 0, 512);
+        verify(artifacts, never())
+                .read(any(Owner.class), anyString(), anyInt(), anyInt(), anyString());
+        verify(artifacts, never()).readRange(any(Owner.class), anyString(), anyInt(), anyInt());
+    }
+
     @Test
     void rangeToolDelegatesAuthorizationAndKeepsEscapedContentBelowTheOffloadThreshold() {
         var claim =

@@ -8,7 +8,7 @@ import com.financeclaw.domain.Governance.*;
 import com.financeclaw.domain.Task.*;
 import com.financeclaw.support.ArtifactPayload;
 import com.financeclaw.support.PayloadJson;
-import java.util.UUID;
+import java.util.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -114,6 +114,72 @@ public class ArtifactService {
                 status -> ArtifactPayload.readRange(authorized(owner, id), start, maxBytes));
     }
 
+    /** 组合 Agent 的读取还受当前执行计划和授权限制；HTTP owner 读取继续使用原有入口。 */
+    public Page readForExecution(
+            Claim claim,
+            List<String> effectiveScopes,
+            String id,
+            int start,
+            int limit,
+            String path) {
+        return leases.fenced(
+                claim,
+                () ->
+                        ArtifactPayload.read(
+                                authorizedForExecution(claim, effectiveScopes, id),
+                                start,
+                                limit,
+                                path));
+    }
+
+    public ArtifactPayload.Range readRangeForExecution(
+            Claim claim, List<String> effectiveScopes, String id, int start, int maxBytes) {
+        return leases.fenced(
+                claim,
+                () ->
+                        ArtifactPayload.readRange(
+                                authorizedForExecution(claim, effectiveScopes, id),
+                                start,
+                                maxBytes));
+    }
+
+    private Artifact authorizedForExecution(Claim claim, List<String> effectiveScopes, String id) {
+        var owner = new Owner(claim.turn().tenant(), claim.turn().subject());
+        var artifact = owned(owner, id);
+        var access = access(artifact);
+        // 同 owner 隐私锁先于两个会话授权锁；按 ID 排序避免 A 读 B、B 读 A 时锁反序。
+        policy.checkArtifactPrivacy(claim.turn());
+        checkPrivacy(artifact, access);
+        var conversations =
+                new TreeSet<>(List.of(claim.turn().conversationId(), artifact.conversationId()));
+        var grants = new HashMap<String, Grant>();
+        for (String conversation : conversations) {
+            grants.put(conversation, db.lockGrant(conversation));
+        }
+        var current = policy.checkPolicy(claim);
+        var resolved = releases.resolve(claim.turn().releaseHash());
+        resolved.requireIdentity(owner, claim.turn().agentId());
+        var fixedScopes = resolved.definition().scopes();
+        var currentScopes = PayloadJson.scopes(current.scopes());
+        requireExecutionScope(access.requiredScope(), effectiveScopes, fixedScopes, currentScopes);
+        if (!access.privacyBound()) {
+            requireExecutionScope("artifact:read", effectiveScopes, fixedScopes, currentScopes);
+        }
+        checkGrant(access, grants.get(artifact.conversationId()));
+        checkRelease(artifact);
+        return artifact;
+    }
+
+    private static void requireExecutionScope(
+            String scope, List<String> effective, List<String> fixed, List<String> current) {
+        if (effective == null
+                || !effective.contains(scope)
+                || !fixed.contains(scope)
+                || !current.contains(scope)) {
+            throw new Blocked("artifact_scope_denied");
+        }
+    }
+
     /** 返回经授权和完整性校验的完整 JSON 文件；控制器负责 attachment 响应，数据库始终是正文权威。 */
     public ArtifactPayload.Document download(Owner owner, String id) {
         return tx.execute(status -> ArtifactPayload.document(authorized(owner, id)));
@@ -121,24 +187,46 @@ public class ArtifactService {
 
     /** 必须在读取事务内调用：用户隐私锁先于授权锁，与执行及遗忘路径保持相同顺序。 */
     private Artifact authorized(Owner owner, String id) {
+        var artifact = owned(owner, id);
+        var access = access(artifact);
+        checkPrivacy(artifact, access);
+        var grant = db.lockGrant(artifact.conversationId());
+        checkGrant(access, grant);
+        checkRelease(artifact);
+        return artifact;
+    }
+
+    private Artifact owned(Owner owner, String id) {
         var artifact = db.artifact(id);
         if (artifact == null
                 || !artifact.tenant().equals(owner.tenant())
                 || !artifact.subject().equals(owner.subject())) {
             throw new Problem(404, "not_found");
         }
-        var access = db.artifactAccess(id);
+        return artifact;
+    }
+
+    private ArtifactGateway.Access access(Artifact artifact) {
+        var access = db.artifactAccess(artifact.id());
         if (access == null || access.requiredScope() == null) {
             throw new Problem(409, "artifact_corrupt");
         }
+        return access;
+    }
+
+    private void checkPrivacy(Artifact artifact, ArtifactGateway.Access access) {
         if (access.privacyBound() || "ziwei:read".equals(access.requiredScope())) {
             var turn = db.turn(artifact.turnId());
-            if (turn == null) {
+            if (turn == null
+                    || !turn.tenant().equals(artifact.tenant())
+                    || !turn.subject().equals(artifact.subject())) {
                 throw new Problem(409, "artifact_corrupt");
             }
             policy.checkArtifactPrivacy(turn);
         }
-        var grant = db.lockGrant(artifact.conversationId());
+    }
+
+    private static void checkGrant(ArtifactGateway.Access access, Grant grant) {
         // 工具文件只是原工具回执的另一种载体，不能额外要求 artifact:read 把 skill-only 等合法调用截断。
         // 普通业务产物继续要求 artifact:read 和其自身 required scope，范围接口不改变这条权限边界。
         if (grant == null
@@ -149,11 +237,13 @@ public class ArtifactService {
         if (!PayloadJson.scopes(grant.scopes()).contains(access.requiredScope())) {
             throw new Problem(403, "artifact_scope_denied");
         }
+    }
+
+    private void checkRelease(Artifact artifact) {
         try {
             releases.require(artifact.releaseHash());
         } catch (Blocked error) {
             throw new Problem(409, error.getMessage());
         }
-        return artifact;
     }
 }

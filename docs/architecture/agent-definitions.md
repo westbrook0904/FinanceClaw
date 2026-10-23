@@ -1,12 +1,12 @@
 # Agent 定义、发布与调用：P2a 操作说明
 
-本文描述 P2a 的实现契约。截至 2026-10-23，P2a 已完成本地全量测试和隔离 Compose 验收，当前代码尚未提交。验证范围包括 1,516 项 Java 测试、44 项脚本测试和 36 项 Compose 检查，见 [P2a 验证记录](evidence/p2a-implementation.json)；阶段状态见[平台化实施方案](platform-implementation-plan.md#7-实施状态与验证记录)。
+本文描述 P2a 的实现契约。截至 2026-10-23，P2a 已完成本地全量测试和隔离 Compose 验收，已推送提交 `851446f`。验证范围包括 1,516 项 Java 测试、44 项脚本测试和 36 项 Compose 检查，见 [P2a 验证记录](evidence/p2a-implementation.json)；阶段状态见[平台化实施方案](platform-implementation-plan.md#7-实施状态与验证记录)。
 
 ## 这一阶段可以配置什么
 
 P2a 允许 operator 创建独立 Agent，修改名称和提示词，并发布到该 Agent 自己的默认指针。每个 Agent 有稳定 UUID 和明确 owner；草稿更新不会进入执行。发布后，新会话绑定 Agent 与发布 hash，旧会话、后续 Turn 和审批恢复继续使用既有绑定。
 
-自定义 Agent 创建时固定内置默认发布作为 `baseReleaseHash`，继续使用这份发布中的 finance 受控能力集及预算、权限约束。改变基础环境默认版本不会悄悄改变已创建 Agent 的基础能力。当前没有切换基础版本、任意上传 Java Function、配置模型 URL/凭据、选择 MCP/Skill 的入口；这些属于 P2b。自定义 Agent 不因输入包含 `/workflow` 前缀就自动切换内置业务 Workflow 驱动。
+自定义 Agent 创建时固定内置默认发布作为 `baseReleaseHash`，继续使用这份发布中的 finance 受控能力集及预算、权限约束。改变基础环境默认版本不会悄悄改变已创建 Agent 的基础能力。P2a 本身没有切换基础版本、任意上传 Java Function、配置模型 URL/凭据或选择 MCP/Skill 的入口；新增选择方式见 [P2b 能力组装](agent-composition.md)。自定义 Agent 不因输入包含 `/workflow` 前缀就自动切换内置业务 Workflow 驱动。
 
 `finance_agent` 是保留的内置只读 Agent，草稿 revision 为 `0`；可读取元数据和历史，不可经 `agent-admin` 创建、编辑或发布。它的默认版本仍由 P1 的 `release-admin` 管理。
 

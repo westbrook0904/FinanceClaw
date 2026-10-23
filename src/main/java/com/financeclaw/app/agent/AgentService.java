@@ -1,7 +1,9 @@
 package com.financeclaw.app.agent;
 
+import com.financeclaw.app.agent.port.AgentCapabilityResolver;
 import com.financeclaw.app.agent.port.AgentRepository;
 import com.financeclaw.app.release.ReleaseService;
+import com.financeclaw.domain.Governance.Blocked;
 import com.financeclaw.domain.Task.Owner;
 import com.financeclaw.domain.Task.Problem;
 import com.financeclaw.domain.agent.*;
@@ -9,7 +11,9 @@ import com.financeclaw.domain.release.Deployment;
 import com.financeclaw.domain.release.DeploymentChange;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /** Agent 管理与调用目标解析：草稿不进入执行，发布在同一 owner 锁事务中登记清单并切换指针。 */
@@ -18,18 +22,40 @@ public class AgentService {
     private final AgentRepository repository;
     private final ReleaseService releases;
     private final TransactionTemplate tx;
+    private final AgentCapabilityResolver resolver;
 
     public AgentService(
             AgentRepository repository, ReleaseService releases, TransactionTemplate tx) {
+        this(repository, releases, tx, null);
+    }
+
+    public AgentService(
+            AgentRepository repository,
+            ReleaseService releases,
+            TransactionTemplate tx,
+            AgentCapabilityResolver resolver) {
         this.repository = repository;
         this.releases = releases;
         this.tx = tx;
+        this.resolver = resolver;
     }
 
     /** operator 指定 UUID 是创建幂等身份；重放只能返回最初修订，不能重新选基础发布。 */
     public AgentDraft create(Owner owner, String agentId, String displayName, String systemPrompt) {
+        return create(owner, agentId, displayName, systemPrompt, null);
+    }
+
+    public AgentDraft create(
+            Owner owner,
+            String agentId,
+            String displayName,
+            String systemPrompt,
+            AgentComposition composition) {
         AgentDraft.requireCustomId(agentId);
         AgentDraft.requireContent(displayName, systemPrompt);
+        if (composition != null) {
+            requireResolver();
+        }
         return tx.execute(
                 status -> {
                     boolean created =
@@ -40,13 +66,16 @@ public class AgentService {
                     if (!created) {
                         var initial = requireDraft(repository.draft(owner, agentId, 1));
                         if (!initial.displayName().equals(displayName)
-                                || !initial.systemPrompt().equals(systemPrompt)) {
+                                || !initial.systemPrompt().equals(systemPrompt)
+                                || !Objects.equals(initial.composition(), composition)) {
                             throw new Problem(409, "agent_id_conflict");
                         }
                         return initial;
                     }
                     String base = releases.currentHash();
-                    var draft = new AgentDraft(agentId, 1, displayName, systemPrompt, base);
+                    var draft =
+                            new AgentDraft(
+                                    agentId, 1, displayName, systemPrompt, base, composition);
                     repository.insertDraft(draft);
                     return draft;
                 });
@@ -71,9 +100,33 @@ public class AgentService {
 
     public AgentDraft update(
             Owner owner, String id, long expectedDraftRevision, String displayName, String prompt) {
+        return update(owner, id, expectedDraftRevision, displayName, prompt, null, true);
+    }
+
+    public AgentDraft update(
+            Owner owner,
+            String id,
+            long expectedDraftRevision,
+            String displayName,
+            String prompt,
+            AgentComposition composition) {
+        return update(owner, id, expectedDraftRevision, displayName, prompt, composition, false);
+    }
+
+    private AgentDraft update(
+            Owner owner,
+            String id,
+            long expectedDraftRevision,
+            String displayName,
+            String prompt,
+            AgentComposition composition,
+            boolean preserveComposition) {
         AgentDraft.requireCustomId(id);
         AgentDraft.requireContent(displayName, prompt);
         requireRevision(expectedDraftRevision);
+        if (composition != null) {
+            requireResolver();
+        }
         return tx.execute(
                 status -> {
                     var agent = requireOwned(repository.lockOwned(owner, id));
@@ -88,7 +141,8 @@ public class AgentService {
                                     expectedDraftRevision + 1,
                                     displayName,
                                     prompt,
-                                    previous.baseReleaseHash());
+                                    previous.baseReleaseHash(),
+                                    preserveComposition ? previous.composition() : composition);
                     repository.insertDraft(next);
                     return next;
                 });
@@ -98,6 +152,38 @@ public class AgentService {
             Owner owner, String id, long expectedDraftRevision, long expectedDeploymentRevision) {
         AgentDraft.requireCustomId(id);
         requireRevision(expectedDraftRevision);
+        var initialAgent = requireOwned(repository.owned(owner, id));
+        requireCurrentDraft(initialAgent, expectedDraftRevision);
+        var initialDraft = requireDraft(repository.draft(owner, id, expectedDraftRevision));
+        if (initialDraft.composition() != null) {
+            // 不能通过加入调用方事务隐藏远程发现；发现完成后重新锁行并验证精确修订。
+            if (TransactionSynchronizationManager.isActualTransactionActive()) {
+                throw new Problem(409, "agent_publish_transaction_active");
+            }
+            var plan = requireResolver().resolve(owner, initialDraft);
+            if (plan == null
+                    || !initialDraft.composition().modelProfile().equals(plan.modelProfile())
+                    || !initialDraft
+                            .composition()
+                            .capabilities()
+                            .equals(plan.requestedCapabilities())) {
+                throw new Blocked("agent_plan_invalid");
+            }
+            return tx.execute(
+                    status -> {
+                        var agent = requireOwned(repository.lockOwned(owner, id));
+                        requireCurrentDraft(agent, expectedDraftRevision);
+                        var draft =
+                                requireDraft(repository.draft(owner, id, expectedDraftRevision));
+                        if (!draft.equals(initialDraft)) {
+                            throw new Problem(409, "agent_draft_revision_changed");
+                        }
+                        String hash =
+                                releases.registerComposedAgent(
+                                        ComposedAgentReleaseManifest.from(agent, draft, plan));
+                        return releases.activateForAgent(id, hash, expectedDeploymentRevision);
+                    });
+        }
         return tx.execute(
                 status -> {
                     var agent = requireOwned(repository.lockOwned(owner, id));
@@ -107,6 +193,18 @@ public class AgentService {
                     // 与清单注册共享外层事务；CAS 或回执写入失败时不能留下半次发布。
                     return releases.activateForAgent(id, hash, expectedDeploymentRevision);
                 });
+    }
+
+    public AgentCapabilityCatalog catalog(Owner owner, String id) {
+        var draft = get(owner, id);
+        return requireResolver().catalog(owner, draft.baseReleaseHash());
+    }
+
+    private AgentCapabilityResolver requireResolver() {
+        if (resolver == null) {
+            throw new Problem(409, "agent_capabilities_unavailable");
+        }
+        return resolver;
     }
 
     public ResolvedTarget resolveTarget(Owner owner, String id) {

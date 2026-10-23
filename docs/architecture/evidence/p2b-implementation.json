@@ -1,0 +1,223 @@
+{
+  "milestone": "P2b controlled Agent composition and frozen execution contracts",
+  "collected_at_utc": "2026-10-23T14:47:32.045803+00:00",
+  "base_commit": "851446f375585ddabae6d9982081de6f4f4c610d",
+  "recorded_before_commit": true,
+  "delivery": {
+    "p2a_commit": "851446f375585ddabae6d9982081de6f4f4c610d",
+    "server_profile_commit": "334b020",
+    "remote_branch": "origin/codex/java-agentscope",
+    "remote_ci": "not certified by this local validation record"
+  },
+  "validation": {
+    "command": "scripts/mvn.sh -B -ntp -o validate spotless:check verify",
+    "success": true,
+    "full_verify_completed": true,
+    "unit_tests": 1208,
+    "integration_tests": 407,
+    "total_tests": 1615,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "unit_suites": 72,
+    "integration_suites": 36,
+    "completed_at": "2026-10-23T22:44:13+08:00",
+    "log_sha256": "033e082b8a9351e1693102a876c0e09c6af81ffdcde73bf4016e78ba21504036",
+    "frozen_report_summary_sha256": "95b108b16758ce48e3b379b10c3d25d05fa3e855c90998dfb4b7e6d111473cf2",
+    "failsafe_summary_sha256": "c0e57d87d5834d007b3e5d0d24c065acd12496abc06a7ef8699df7db94d37bef",
+    "scope": "Server profile directory and P2b only; next-step MarketToolBudgetTest and ProfileDirectoryRecoveryIT were not compiled into this run.",
+    "p2b_only_full_verify": false,
+    "excluded_follow_up_changes": [
+      "market tool budget production fix",
+      "MarketToolBudgetTest",
+      "ProfileDirectoryRecoveryIT"
+    ],
+    "next_step_classes_absent": true
+  },
+  "script_tests": {
+    "total": 44,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "commands": [
+      {
+        "command": "python3 scripts/test-live-acceptance.py",
+        "tests": 8,
+        "report": "target/m6/live-validator-tests.json",
+        "report_sha256": "820422880c3e74df4fc6c4495334f2def097a79bc8ed10d4e38f3b437582ed73"
+      },
+      {
+        "command": "python3 scripts/test-inspect-drain.py",
+        "tests": 12,
+        "report": "target/m5d/preflight-tests.json",
+        "report_sha256": "3f319a99bc59cbb06049fce069d6890bb16d3dea3460db473067ba8c7e02b05f"
+      },
+      {
+        "command": "python3 scripts/test-restore-privacy.py",
+        "tests": 14,
+        "report": "target/m5e/privacy-tests.json",
+        "report_sha256": "e9ed88f2db2276ea613dd61572fb15acdfdb9ea2c8a3ce1bb6eb0232ed7cad86"
+      },
+      {
+        "command": "python3 scripts/test-user-profile.py",
+        "tests": 10
+      }
+    ],
+    "environment_note": "inspect-drain initially could not bind a loopback server inside the sandbox; all 12 tests passed after authorized execution outside the sandbox. Other three groups passed normally."
+  },
+  "compose": {
+    "command": "python3 scripts/validate-compose.py --ziwei --admission --preflight --restore-privacy",
+    "success": true,
+    "checks": 39,
+    "check_names": [
+      "single_combined_runtime_and_restricted_memory_topology",
+      "shared_ziwei_policy_and_role_scoped_secret_mounts",
+      "empty_database_and_healthy_combined_runtime",
+      "fresh_schema_has_only_current_application_tables",
+      "background_http_and_database_privilege_boundaries",
+      "release_admin_container_prepares_without_overwriting_default_or_history",
+      "agent_admin_create_owner_isolation_and_targeted_http_execution",
+      "agent_draft_publish_cas_pins_existing_sessions_and_keeps_builtin_driver_separate",
+      "composed_agent_catalog_and_explicit_empty_plan_execute_in_packaged_runtime",
+      "composed_agent_dependencies_are_frozen_and_prior_session_keeps_empty_plan",
+      "offline_load_and_idempotency",
+      "preflight_queued_and_memory_backlog",
+      "preflight_truncated_inventory",
+      "agent_catalog_and_pinned_conversation_survive_runtime_restart",
+      "combined_restart_keeps_admission_and_resumes_disabled_execution",
+      "durable_pause_rejects_new_turns_preserves_replay_and_drains_existing_work",
+      "sigkill_and_persisted_approval_execute_once",
+      "paused_admission_allows_persisted_approval_after_runtime_sigkill",
+      "database_outage_fails_readiness_then_recovers",
+      "manual_markdown_profile_has_owner_version_and_restricted_worker_permissions",
+      "current_epoch_superseded_projection_is_not_a_forget_violation",
+      "pre_forget_backup_captured_with_writers_stopped",
+      "forget_deletes_profile_resets_revision_and_rejects_pre_forget_import",
+      "restricted_memory_worker_and_forgetting",
+      "owner_drain_requires_pause_and_all_task_channel_memory_counts_zero",
+      "preflight_paused_and_drained",
+      "consistent_backup_restore_all_tables_and_privacy_epoch",
+      "old_backup_missing_later_forget_is_blocked_and_isolated",
+      "current_backup_matches_all_owner_privacy",
+      "privacy_snapshot_and_comparison_are_read_only",
+      "epoch_only_repair_does_not_hide_missing_audit_or_old_content",
+      "sql_detects_residual_memory_and_orphan_owners",
+      "rejected_synthetic_restore_removed_before_runtime_start",
+      "preflight_restored_pause",
+      "restored_pause_and_audit_require_explicit_resume",
+      "preflight_reopened_admission",
+      "restored_agent_definitions_history_and_new_execution_keep_release_identity",
+      "restored_composed_agent_executes_frozen_plan_with_same_runtime_artifact",
+      "restored_runtime_keeps_results_privacy_and_accepts_new_turns"
+    ],
+    "scope": "isolated real containers; offline model and synthetic market only",
+    "started_at": "2026-10-23T14:18:29.123803+00:00",
+    "finished_at": "2026-10-23T14:24:51.121185+00:00",
+    "report_sha256": "7d5b671be3c3e60c5199701b48aeb92a4a997799160c92404b9854ba51263048",
+    "jar_sha256": "75956008dffe45e2c378029da6ab897d212943f1997889cd37d3ae7e41599d6e",
+    "same_jar_as_full_verify": true,
+    "restored_application_tables": 40
+  },
+  "server_profile_directory_acceptance": {
+    "result": "passed",
+    "checks": 4,
+    "check_names": [
+      "server_directory_edit_is_loaded_without_restart_or_upload",
+      "atomic_save_affects_new_turn_and_preserves_existing_turn_snapshot",
+      "stable_file_keeps_version_and_http_cannot_overwrite_server_document",
+      "forget_deletes_old_profile_and_snapshots_and_starts_empty_next_epoch"
+    ],
+    "report_sha256": "bf0f5dd6ba5b84bae90fa4f9270f45eb62d540c04c5b2fa0df04c951669d1aae",
+    "scope": "Separate real Compose acceptance for the server profile directory; these four checks are not counted in the 39 P2b Compose checks."
+  },
+  "application_jar_sha256": "75956008dffe45e2c378029da6ab897d212943f1997889cd37d3ae7e41599d6e",
+  "migration": {
+    "target_version": 5,
+    "application_tables": 40,
+    "database_migration_executed": true,
+    "validation": "SchemaInitializationIT and the isolated Compose initialization and backup/restore checks passed."
+  },
+  "scope": "Combined local working-tree validation for P2b and the independently delivered server profile directory. Real AgentScope 2.0.3, isolated PostgreSQL, real CLI processes, packaged runtime and isolated Compose were exercised; models and external services were offline or loopback simulations. This record does not certify a separate P2b-only full build, subsequent market budget changes, live external providers, production capacity or remote CI.",
+  "relevant_suites": [
+    {
+      "kind": "unit",
+      "suite": "com.financeclaw.agent.CatalogAgentCapabilityResolverTest",
+      "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "kind": "unit",
+      "suite": "com.financeclaw.app.release.AgentPlanValidatorTest",
+      "tests": 8,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "kind": "unit",
+      "suite": "com.financeclaw.infrastructure.agentscope.capability.McpFrozenContributionTest",
+      "tests": 8,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "kind": "unit",
+      "suite": "com.financeclaw.infrastructure.agentscope.execution.TaskAgentRuntimeContextTest",
+      "tests": 32,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "kind": "integration",
+      "suite": "com.financeclaw.agent.AgentCatalogIT",
+      "tests": 22,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "kind": "integration",
+      "suite": "com.financeclaw.architecture.RuntimePackagingIT",
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "kind": "integration",
+      "suite": "com.financeclaw.m4.ServerProfileDirectoryIT",
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "kind": "integration",
+      "suite": "com.financeclaw.m5.SchemaInitializationIT",
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "kind": "integration",
+      "suite": "com.financeclaw.p2.AgentAdmissionIT",
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "kind": "integration",
+      "suite": "com.financeclawagent.AgentAdministrationCliIT",
+      "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  ]
+}

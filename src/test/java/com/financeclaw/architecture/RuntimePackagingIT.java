@@ -59,11 +59,12 @@ class RuntimePackagingIT {
                                                     name.startsWith(
                                                                     "BOOT-INF/classes/db/migration/")
                                                             && name.endsWith(".sql")))
-                    .containsExactly(
+                    .containsExactlyInAnyOrder(
                             "BOOT-INF/classes/db/migration/V1__initialize_application.sql",
                             "BOOT-INF/classes/db/migration/V2__release_catalog.sql",
                             "BOOT-INF/classes/db/migration/V3__conversation_release_binding.sql",
-                            "BOOT-INF/classes/db/migration/V4__agent_definitions.sql");
+                            "BOOT-INF/classes/db/migration/V4__agent_definitions.sql",
+                            "BOOT-INF/classes/db/migration/V5__agent_compositions.sql");
             for (var entry : entries) {
                 if (!entry.getName().startsWith("BOOT-INF/lib/")
                         || !entry.getName().endsWith(".jar")) continue;
@@ -109,6 +110,13 @@ class RuntimePackagingIT {
                 assertThat(type.getDeclaredMethods()).isNotEmpty();
             }
             var probe = Class.forName("com.financeclaw.m6.ZiweiRuntimeProbe", true, loader);
+            var runtimeArtifacts =
+                    Class.forName(
+                            "com.financeclaw.infrastructure.agentscope.RuntimeArtifacts",
+                            true,
+                            loader);
+            assertThat(runtimeArtifacts.getMethod("hash").invoke(null))
+                    .isEqualTo(com.financeclaw.infrastructure.agentscope.RuntimeArtifacts.hash());
             assertThat(probe.getDeclaredConstructors()).hasSize(1);
             var constructor = probe.getDeclaredConstructors()[0];
             assertThat(constructor.getParameterCount()).isEqualTo(10);

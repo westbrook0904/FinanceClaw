@@ -7,6 +7,7 @@ import com.financeclaw.app.release.port.Credentials;
 import com.financeclaw.app.report.ReportService;
 import com.financeclaw.domain.Governance.*;
 import com.financeclaw.domain.Task.*;
+import com.financeclaw.domain.agent.*;
 import com.financeclaw.domain.release.ReleaseDefinition;
 import com.financeclaw.infrastructure.agentscope.AgentStateInspector;
 import com.financeclaw.infrastructure.agentscope.ResumeInputs;
@@ -37,8 +38,13 @@ public final class GovernedTools implements AutoCloseable {
     private final Claim claim;
     private final ReleaseDefinition release;
     private final List<String> scopes;
+    private final AgentExecutionPlan plan;
+    private final Map<String, CapabilityBinding> selectedTools = new HashMap<>();
+    private Set<String> selectedSkillIds = Set.of();
+    private final java.util.concurrent.atomic.AtomicReference<Blocked> compatibilityFailure =
+            new java.util.concurrent.atomic.AtomicReference<>();
     private final McpToolContribution mcp;
-    private io.agentscope.core.skill.repository.ClasspathSkillRepository skills;
+    private io.agentscope.core.skill.repository.AgentSkillRepository skills;
     private final Map<String, InteractionHandler> interactions = new HashMap<>();
     private final Map<String, String> requiredScopes = new HashMap<>();
     public final Toolkit toolkit = new Toolkit();
@@ -50,7 +56,18 @@ public final class GovernedTools implements AutoCloseable {
             ArtifactService artifacts,
             ReportService reports,
             Claim claim) {
-        this(policy, releases, credentials, artifacts, reports, claim, null);
+        this(policy, releases, credentials, artifacts, reports, claim, null, null);
+    }
+
+    public GovernedTools(
+            ExecutionPolicyService policy,
+            ReleaseService releases,
+            Credentials credentials,
+            ArtifactService artifacts,
+            ReportService reports,
+            Claim claim,
+            AgentExecutionPlan plan) {
+        this(policy, releases, credentials, artifacts, reports, claim, null, plan);
     }
 
     private GovernedTools(
@@ -60,14 +77,22 @@ public final class GovernedTools implements AutoCloseable {
             ArtifactService artifacts,
             ReportService reports,
             Claim claim,
-            List<String> allowed) {
+            List<String> allowed,
+            AgentExecutionPlan plan) {
         this.policy = policy;
         this.releases = releases;
         this.credentials = credentials;
         this.artifacts = artifacts;
         this.reports = reports;
         this.claim = claim;
-        release = releases.require(claim.turn().releaseHash());
+        this.plan = plan;
+        LocalCapabilityCatalog.requireCompatible(plan);
+        release = plan == null ? releases.require(claim.turn().releaseHash()) : plan.definition();
+        if (plan != null) {
+            plan.capabilities().stream()
+                    .filter(binding -> !binding.kind().equals("skill"))
+                    .forEach(binding -> selectedTools.put(binding.name(), binding));
+        }
         var root = policy.scopes(claim);
         if (allowed == null) {
             allowed = root;
@@ -76,19 +101,32 @@ public final class GovernedTools implements AutoCloseable {
             throw new Blocked("scope_expansion_denied");
         }
         scopes = List.copyOf(allowed.stream().filter(release.scopes()::contains).toList());
-        new LocalToolContribution(artifacts, reports, claim).contribute(this::register);
+        new LocalToolContribution(artifacts, reports, claim, plan == null ? null : scopes)
+                .contribute(this::register);
         mcp =
                 new McpToolContribution(
-                        policy, credentials, artifacts, claim, release, scopes, toolkit);
+                        policy, credentials, artifacts, claim, release, scopes, toolkit, plan);
         try {
-            mcp.contribute(this::register);
+            mcp.contribute(
+                    (name, description, schema, scope, action, interaction) ->
+                            register("mcp", name, description, schema, scope, action, interaction));
             if (scopes.contains("skill:use")) {
-                if (!release.business().skillHash().equals(PackagedSkills.hash())) {
-                    throw new Blocked("skill_release_changed");
+                if (plan == null) {
+                    if (!release.business().skillHash().equals(PackagedSkills.hash())) {
+                        throw new Blocked("skill_release_changed");
+                    }
+                    skills =
+                            new io.agentscope.core.skill.repository.ClasspathSkillRepository(
+                                    PackagedSkills.SKILLS);
+                } else if (plan.capabilities().stream()
+                        .anyMatch(binding -> binding.kind().equals("skill"))) {
+                    skills = PackagedSkills.selected(plan.capabilities());
+                    selectedSkillIds =
+                            Set.copyOf(
+                                    skills.getAllSkills().stream()
+                                            .map(io.agentscope.core.skill.AgentSkill::getSkillId)
+                                            .toList());
                 }
-                skills =
-                        new io.agentscope.core.skill.repository.ClasspathSkillRepository(
-                                PackagedSkills.SKILLS);
             }
         } catch (java.io.IOException | RuntimeException e) {
             close();
@@ -120,6 +158,11 @@ public final class GovernedTools implements AutoCloseable {
                                 () -> {
                                     for (var call : input.toolCalls()) {
                                         if (call.getName().equals("load_skill_through_path")) {
+                                            if (plan != null
+                                                    && !selectedSkillIds.contains(
+                                                            call.getInput().get("skillId"))) {
+                                                throw new Blocked("skill_denied");
+                                            }
                                             policy.consumeTool(claim, "skill:use");
                                         }
                                     }
@@ -134,6 +177,12 @@ public final class GovernedTools implements AutoCloseable {
             capabilities.ziwei(claim, this::register);
         }
         capabilities.contribute(claim, model, scopes.contains("workflow:run"), this::register);
+        if (plan != null
+                && selectedTools.values().stream()
+                        .filter(binding -> scopes.containsAll(binding.scopes()))
+                        .anyMatch(binding -> !toolkit.getToolNames().contains(binding.name()))) {
+            throw new Blocked("capability_unavailable");
+        }
     }
 
     public Msg resumeInput(
@@ -164,7 +213,14 @@ public final class GovernedTools implements AutoCloseable {
             throw new Blocked("scope_expansion_denied");
         }
         return new GovernedTools(
-                policy, releases, credentials, artifacts, reports, claim, List.copyOf(requested));
+                policy,
+                releases,
+                credentials,
+                artifacts,
+                reports,
+                claim,
+                List.copyOf(requested),
+                plan);
     }
 
     public static Map<String, Object> schema(String key, Map<String, Object> property) {
@@ -198,6 +254,34 @@ public final class GovernedTools implements AutoCloseable {
             String scope,
             Function<ToolCallParam, Mono<ToolResultBlock>> action,
             InteractionHandler interaction) {
+        register("function", name, description, schema, scope, action, interaction);
+    }
+
+    private void register(
+            String kind,
+            String name,
+            String description,
+            Map<String, Object> schema,
+            String scope,
+            Function<ToolCallParam, Mono<ToolResultBlock>> action,
+            InteractionHandler interaction) {
+        if (plan != null) {
+            var binding = selectedTools.get(name);
+            if (binding == null
+                    || !binding.kind().equals(kind)
+                    || !scopes.containsAll(binding.scopes())) return;
+            if (binding.kind().equals("function")) {
+                var frozen = PayloadJson.object(binding.contractJson());
+                if (!Objects.equals(frozen.get("description"), description)
+                        || !PayloadJson.canonical(frozen.get("inputSchema"))
+                                .equals(PayloadJson.canonical(schema))
+                        || !Objects.equals(
+                                frozen.get("approval"),
+                                interaction != null && interaction.approval())) {
+                    throw new Blocked("capability_release_changed");
+                }
+            }
+        }
         if (scope != null && (!scopes.contains(scope) || !release.scopes().contains(scope))) {
             return;
         }
@@ -223,7 +307,20 @@ public final class GovernedTools implements AutoCloseable {
                                                 throw new Blocked("invalid_tool_input");
                                             }
                                             policy.consumeTool(claim, scope);
+                                            checkCompatibility();
                                             return action.apply(param);
+                                        })
+                                .doOnError(
+                                        error -> {
+                                            // SDK may translate exceptions into ordinary tool
+                                            // results. A
+                                            // frozen MCP contract failure must still block the
+                                            // attempt.
+                                            if (plan != null
+                                                    && error instanceof Blocked blocked
+                                                    && blocked.getMessage().startsWith("mcp_")) {
+                                                compatibilityFailure.compareAndSet(null, blocked);
+                                            }
                                         })
                                 .onErrorMap(
                                         error ->
@@ -236,6 +333,11 @@ public final class GovernedTools implements AutoCloseable {
         if (interaction != null) {
             interactions.put(name, interaction);
         }
+    }
+
+    public void checkCompatibility() {
+        var failure = compatibilityFailure.get();
+        if (failure != null) throw failure;
     }
 
     /** 大结果归档沿用产生它的工具权限，原生 Skill loader 不经过本地注册函数。 */

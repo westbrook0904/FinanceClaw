@@ -35,11 +35,21 @@ public final class LocalToolContribution implements ToolContribution {
     private final ArtifactService artifacts;
     private final ReportService reports;
     private final Claim claim;
+    private final List<String> effectiveScopes;
 
     public LocalToolContribution(ArtifactService artifacts, ReportService reports, Claim claim) {
+        this(artifacts, reports, claim, null);
+    }
+
+    public LocalToolContribution(
+            ArtifactService artifacts,
+            ReportService reports,
+            Claim claim,
+            List<String> effectiveScopes) {
         this.artifacts = artifacts;
         this.reports = reports;
         this.claim = claim;
+        this.effectiveScopes = effectiveScopes == null ? null : List.copyOf(effectiveScopes);
     }
 
     @Override
@@ -107,10 +117,7 @@ public final class LocalToolContribution implements ToolContribution {
                                 () ->
                                         ToolResultBlock.text(
                                                 PayloadJson.canonical(
-                                                        artifacts.read(
-                                                                new Owner(
-                                                                        claim.turn().tenant(),
-                                                                        claim.turn().subject()),
+                                                        readArtifact(
                                                                 (String)
                                                                         p.getInput()
                                                                                 .get("artifact_id"),
@@ -154,10 +161,7 @@ public final class LocalToolContribution implements ToolContribution {
                                 () ->
                                         ToolResultBlock.text(
                                                 PayloadJson.canonical(
-                                                        artifacts.readRange(
-                                                                new Owner(
-                                                                        claim.turn().tenant(),
-                                                                        claim.turn().subject()),
+                                                        readArtifactRange(
                                                                 (String)
                                                                         p.getInput()
                                                                                 .get("artifact_id"),
@@ -174,6 +178,28 @@ public final class LocalToolContribution implements ToolContribution {
                                                                                                 512))
                                                                         .intValue())))),
                 null);
+    }
+
+    private Page readArtifact(String id, int start, int limit, String path) {
+        return effectiveScopes == null
+                ? artifacts.read(
+                        new Owner(claim.turn().tenant(), claim.turn().subject()),
+                        id,
+                        start,
+                        limit,
+                        path)
+                : artifacts.readForExecution(claim, effectiveScopes, id, start, limit, path);
+    }
+
+    private com.financeclaw.support.ArtifactPayload.Range readArtifactRange(
+            String id, int start, int maxBytes) {
+        return effectiveScopes == null
+                ? artifacts.readRange(
+                        new Owner(claim.turn().tenant(), claim.turn().subject()),
+                        id,
+                        start,
+                        maxBytes)
+                : artifacts.readRangeForExecution(claim, effectiveScopes, id, start, maxBytes);
     }
 
     private static final class CityInteraction implements InteractionHandler {

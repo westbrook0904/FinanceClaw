@@ -8,6 +8,14 @@ import org.apache.ibatis.annotations.*;
 
 /** Agent 目录 SQL：所有管理读取带 owner，写修订先锁身份行；不存在与跨 owner 使用相同空结果。 */
 public interface AgentMapper {
+    record DraftRow(
+            String agentId,
+            long revision,
+            String displayName,
+            String systemPrompt,
+            String baseReleaseHash,
+            String compositionJson) {}
+
     @Insert(
             """
             INSERT INTO control_plane.agents(id,tenant,subject,draft_revision)
@@ -31,21 +39,22 @@ public interface AgentMapper {
 
     @Select(
             """
-            SELECT d.agent_id,d.revision,d.display_name,d.system_prompt,d.base_release_hash
+            SELECT d.agent_id,d.revision,d.display_name,d.system_prompt,d.base_release_hash,
+              d.composition::text AS composition_json
             FROM control_plane.agent_draft_revisions d JOIN control_plane.agents a ON a.id=d.agent_id
             WHERE a.id=#{id} AND a.tenant=#{owner.tenant} AND a.subject=#{owner.subject}
               AND d.revision=#{revision}
             """)
-    AgentDraft getOwnedDraft(
+    DraftRow getOwnedDraft(
             @Param("owner") Owner owner, @Param("id") String id, @Param("revision") long revision);
 
     @Insert(
             """
             INSERT INTO control_plane.agent_draft_revisions
-              (agent_id,revision,display_name,system_prompt,base_release_hash)
-            VALUES(#{agentId},#{revision},#{displayName},#{systemPrompt},#{baseReleaseHash})
+              (agent_id,revision,display_name,system_prompt,base_release_hash,composition)
+            VALUES(#{draft.agentId},#{draft.revision},#{draft.displayName},#{draft.systemPrompt},#{draft.baseReleaseHash},CAST(#{composition} AS jsonb))
             """)
-    int insertDraft(AgentDraft draft);
+    int insertDraft(@Param("draft") AgentDraft draft, @Param("composition") String composition);
 
     @Update(
             """

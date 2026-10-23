@@ -10,6 +10,9 @@ import com.financeclaw.app.execution.ExecutionPolicyService;
 import com.financeclaw.app.release.ReleaseService;
 import com.financeclaw.domain.Governance.*;
 import com.financeclaw.domain.Task.*;
+import com.financeclaw.domain.agent.ResolvedAgentRelease;
+import com.financeclaw.domain.release.BusinessFeatures;
+import com.financeclaw.domain.release.ReleaseDefinition;
 import com.financeclaw.support.ArtifactPayload;
 import java.util.List;
 import java.util.Map;
@@ -330,6 +333,127 @@ class ArtifactServiceTest {
         when(gateway.artifactAccess("artifact"))
                 .thenReturn(new ArtifactGateway.Access("skill:use", false));
         problem(() -> fileRead(operation), 403, "artifact_denied");
+    }
+
+    @Test
+    void composedHelperCannotBorrowTheSourceConversationsBroaderGrant() {
+        executionScopes(List.of(), List.of("ziwei:read", "artifact:read"));
+        assertThatThrownBy(
+                        () -> service.readRangeForExecution(claim, List.of(), "artifact", 0, 512))
+                .isInstanceOf(Blocked.class)
+                .hasMessage("artifact_scope_denied");
+        verify(releases, never()).require(any());
+        // 既有 HTTP/owner 读取保持原来的来源会话授权语义。
+        assertThat(service.readRange(owner, "artifact", 0, 512).text()).isEqualTo("[1,2]");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"plan", "current", "narrow"})
+    void executionReadRequiresTheSourceScopeInAllThreeAuthoritativeBoundaries(String missing) {
+        var full = List.of("artifact:read", "ziwei:read");
+        executionScopes(
+                missing.equals("plan") ? List.of() : full,
+                missing.equals("current") ? List.of() : full);
+        var effective = missing.equals("narrow") ? List.<String>of() : full;
+        assertThatThrownBy(() -> service.readForExecution(claim, effective, "artifact", 0, 1, ""))
+                .hasMessage("artifact_scope_denied");
+        verify(releases, never()).require(any());
+    }
+
+    @Test
+    void executionSkillToolArtifactNeedsItsOriginalScopeButOrdinaryArtifactAlsoNeedsReadScope() {
+        executionScopes(List.of("skill:use"), List.of("skill:use"));
+        when(gateway.artifactAccess("artifact"))
+                .thenReturn(new ArtifactGateway.Access("skill:use", true));
+        when(gateway.lockGrant("conversation"))
+                .thenReturn(new Grant("conversation", 1, "[\"skill:use\"]"));
+        assertThat(
+                        service.readRangeForExecution(
+                                        claim, List.of("skill:use"), "artifact", 0, 512)
+                                .text())
+                .isEqualTo("[1,2]");
+        when(gateway.artifactAccess("artifact"))
+                .thenReturn(new ArtifactGateway.Access("skill:use", false));
+        assertThatThrownBy(
+                        () ->
+                                service.readRangeForExecution(
+                                        claim, List.of("skill:use"), "artifact", 0, 512))
+                .hasMessage("artifact_scope_denied");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"a-source", "z-source"})
+    void executionReadsLockBothConversationGrantsInStableOrderAfterOwnerPrivacy(String source) {
+        var full = List.of("artifact:read", "ziwei:read");
+        executionScopes(full, full);
+        var original = artifact("tenant", "subject");
+        when(gateway.artifact("artifact"))
+                .thenReturn(
+                        new Artifact(
+                                original.id(),
+                                original.turnId(),
+                                source,
+                                original.tenant(),
+                                original.subject(),
+                                original.releaseHash(),
+                                original.hash(),
+                                original.payload(),
+                                original.bytes()));
+        when(gateway.lockGrant(source))
+                .thenReturn(new Grant(source, 1, "[\"artifact:read\",\"ziwei:read\"]"));
+        service.readRangeForExecution(claim, full, "artifact", 0, 512);
+        var order = inOrder(policy, gateway, releases);
+        order.verify(policy, times(2)).checkArtifactPrivacy(turn);
+        for (String conversation : List.of("conversation", source).stream().sorted().toList()) {
+            order.verify(gateway).lockGrant(conversation);
+        }
+        order.verify(policy).checkPolicy(claim);
+        order.verify(releases).resolve("release");
+        order.verify(releases).require("release");
+        verify(leases).fenced(eq(claim), any());
+    }
+
+    @Test
+    void executionReadKeepsFenceAndRevocationChecksBeforeReturningPayload() {
+        executionScopes(
+                List.of("artifact:read", "ziwei:read"), List.of("artifact:read", "ziwei:read"));
+        doThrow(new Blocked("authorization_changed")).when(policy).checkPolicy(claim);
+        assertThatThrownBy(
+                        () ->
+                                service.readRangeForExecution(
+                                        claim,
+                                        List.of("artifact:read", "ziwei:read"),
+                                        "artifact",
+                                        0,
+                                        512))
+                .hasMessage("authorization_changed");
+        verify(releases, never()).resolve(any());
+        verify(releases, never()).require(any());
+    }
+
+    private void executionScopes(List<String> fixed, List<String> current) {
+        var definition =
+                new ReleaseDefinition(
+                        "v1",
+                        "finance_agent",
+                        fixed,
+                        ReleaseDefinition.OFFLINE,
+                        null,
+                        12,
+                        32,
+                        new BusinessFeatures(List.of(), "skills", "{}", null));
+        when(releases.resolve("release"))
+                .thenReturn(
+                        new ResolvedAgentRelease(
+                                "finance_agent", "prompt", definition, null, null));
+        when(policy.checkPolicy(claim))
+                .thenReturn(
+                        new Policy(
+                                "turn",
+                                1,
+                                com.financeclaw.support.PayloadJson.canonical(current),
+                                0,
+                                0));
     }
 
     private void fileRead(String operation) {

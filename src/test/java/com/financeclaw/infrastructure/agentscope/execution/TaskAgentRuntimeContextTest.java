@@ -15,18 +15,23 @@ import com.financeclaw.app.report.ReportService;
 import com.financeclaw.app.task.TaskEventHub;
 import com.financeclaw.domain.Governance.*;
 import com.financeclaw.domain.Task.*;
-import com.financeclaw.domain.agent.AgentDraft;
-import com.financeclaw.domain.agent.ResolvedAgentRelease;
+import com.financeclaw.domain.agent.*;
 import com.financeclaw.domain.release.*;
+import com.financeclaw.infrastructure.agentscope.RuntimeArtifacts;
 import com.financeclaw.infrastructure.agentscope.capability.BusinessCapabilities;
+import com.financeclaw.infrastructure.agentscope.capability.LocalCapabilityCatalog;
+import com.financeclaw.infrastructure.agentscope.capability.McpCapabilityDiscovery;
+import com.financeclaw.infrastructure.agentscope.capability.McpContractFixture;
 import com.financeclaw.infrastructure.agentscope.capability.ToolContribution;
 import com.financeclaw.infrastructure.agentscope.context.WorkingContextCompactor;
 import com.financeclaw.infrastructure.agentscope.context.WorkingContextSession;
+import com.financeclaw.infrastructure.agentscope.skills.PackagedSkills;
 import com.financeclaw.infrastructure.state.RuntimeMapper;
 import com.financeclaw.infrastructure.state.RuntimeMapper.StateKey;
 import com.financeclaw.infrastructure.state.RuntimeMapper.StateRow;
 import com.financeclaw.infrastructure.state.RuntimeMapper.WorkRow;
 import com.financeclaw.support.ArtifactPayload;
+import com.financeclaw.support.PayloadDigest;
 import com.financeclaw.support.PayloadJson;
 import io.agentscope.core.message.*;
 import io.agentscope.core.model.*;
@@ -54,6 +59,7 @@ class TaskAgentRuntimeContextTest {
     private final BusinessCapabilities capabilities = mock(BusinessCapabilities.class);
     private final ArtifactService artifacts = mock(ArtifactService.class);
     private final ReportService reports = mock(ReportService.class);
+    private final Credentials credentials = mock(Credentials.class);
     private final Map<StateKey, StateRow> snapshots = new ConcurrentHashMap<>();
     private final Map<String, WorkWrite> work = new ConcurrentHashMap<>();
     private final Set<String> completed = ConcurrentHashMap.newKeySet();
@@ -69,6 +75,7 @@ class TaskAgentRuntimeContextTest {
 
     @BeforeEach
     void setup() {
+        when(credentials.resolve(anyString())).thenReturn("");
         when(releases.require("release")).thenReturn(release(ReleaseDefinition.OFFLINE));
         when(releases.resolve("release"))
                 .thenAnswer(
@@ -202,6 +209,526 @@ class TaskAgentRuntimeContextTest {
                                     encoded.json(),
                                     encoded.bytes());
                         });
+    }
+
+    @Test
+    void liveMcpDriftBlocksActualApprovalResumeBeforeAnyCheckpointCloneOrEffect() throws Exception {
+        try (var remote = new McpContractFixture()) {
+            var first = claim("mcp-approval", "mcp-old", null, "report with lookup");
+            var plan = mcpPlan(remote, "search", List.of("function:create_report"));
+            composedRelease(first, plan);
+            when(policy.scopes(any())).thenReturn(plan.definition().scopes());
+            var waiting =
+                    runtime(
+                                    (c, round, messages) ->
+                                            toolCall(
+                                                    "pinned-report",
+                                                    "create_report",
+                                                    Map.of("title", "approved title")))
+                            .execute(first);
+            assertThat(waiting.status()).isEqualTo("waiting");
+            var pending = waiting.pending().getFirst();
+            var answered =
+                    new Interaction(
+                            "mcp-approved",
+                            first.turn().id(),
+                            first.command().id(),
+                            first.command().attemptId(),
+                            waiting.stateVersion(),
+                            1,
+                            first.turn().releaseHash(),
+                            pending.kind(),
+                            pending.callId(),
+                            pending.tool(),
+                            pending.actionHash(),
+                            pending.schema(),
+                            pending.question(),
+                            2,
+                            "answered",
+                            true,
+                            "response-hash",
+                            PayloadJson.canonical(Map.of("decision", "approve")));
+            when(interactions.interaction(answered.id())).thenReturn(answered);
+            when(interactions.interactions(first.turn().id())).thenReturn(List.of(answered));
+            var saved = Map.copyOf(snapshots);
+            clearInvocations(states, interactions, reports, capabilities);
+            // Existing city inputs still validate; output-only changes must also stop restore.
+            remote.tools = List.of(McpContractFixture.tool("search", 100, "integer"));
+            var resumed =
+                    claim(first.turn().id(), "mcp-new", answered.id(), first.turn().message());
+            assertThatThrownBy(
+                            () ->
+                                    runtime((c, round, messages) -> text("must not run"))
+                                            .execute(resumed))
+                    .isInstanceOf(Blocked.class)
+                    .hasMessage("mcp_contract_changed");
+            assertThat(snapshots).isEqualTo(saved);
+            assertThat(work.get(first.turn().id()).claim().command().attemptId())
+                    .isEqualTo("mcp-old");
+            assertThat(remote.calls.get()).isZero();
+            verifyNoInteractions(states, interactions, reports, capabilities);
+            assertThat(modelRequests).hasSize(1);
+        }
+    }
+
+    @Test
+    void perCallMcpDriftCannotBecomeACompletedTurnOrReachAnotherModelRequest() throws Exception {
+        try (var remote = new McpContractFixture()) {
+            var plan = mcpPlan(remote, "search", List.of());
+            composedRelease(claim, plan);
+            when(policy.scopes(any())).thenReturn(plan.definition().scopes());
+            var execution =
+                    runtime(
+                            (c, round, messages) -> {
+                                remote.tools =
+                                        List.of(McpContractFixture.tool("search", 200, "string"));
+                                return toolCall(
+                                        "changed-contract", "search", Map.of("city", "Paris"));
+                            });
+            assertThatThrownBy(() -> execution.execute(claim))
+                    .isInstanceOf(Blocked.class)
+                    .hasMessage("mcp_contract_changed");
+            assertThat(remote.calls.get()).isZero();
+            assertThat(modelRequests).hasSize(1);
+            verifyNoInteractions(artifacts, reports);
+        }
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"request_city", "portfolio_review"})
+    void selectedMcpNameCannotBeReplacedByUnselectedLocalFunction(String name) throws Exception {
+        try (var remote = new McpContractFixture()) {
+            remote.tools = List.of(McpContractFixture.tool(name, 100, "string"));
+            var plan = mcpPlan(remote, name, List.of());
+            composedRelease(claim, plan);
+            when(policy.scopes(any())).thenReturn(plan.definition().scopes());
+            doAnswer(
+                            i -> {
+                                ToolContribution.Registrar registrar = i.getArgument(3);
+                                new com.financeclaw.infrastructure.agentscope.capability
+                                                .PortfolioToolContribution(null, claim, false)
+                                        .contribute(registrar);
+                                return null;
+                            })
+                    .when(capabilities)
+                    .contribute(any(), isNull(), eq(false), any());
+            var outcome =
+                    runtime(
+                                    (c, round, messages) ->
+                                            round == 0
+                                                    ? toolCall(
+                                                            "remote-same-name",
+                                                            name,
+                                                            Map.of("city", "Paris"))
+                                                    : text("completed remote lookup"))
+                            .execute(claim);
+            assertThat(outcome.status()).isEqualTo("completed");
+            assertThat(outcome.pending()).isEmpty();
+            assertThat(remote.calls.get()).isEqualTo(1);
+            assertThat(requestFor(claim).tools())
+                    .extracting(ToolSchema::getName)
+                    .containsExactlyInAnyOrder(name, "read_artifact_range");
+            verify(artifacts).archiveToolResult(eq(claim), any(), eq("travel:read"));
+            verifyNoInteractions(reports);
+        }
+    }
+
+    private AgentExecutionPlan mcpPlan(
+            McpContractFixture fixture, String name, List<String> functions) {
+        var remote = fixture.remote("hotel", "");
+        var endpoint =
+                new RemoteEndpoint(
+                        remote.service(),
+                        remote.url(),
+                        remote.allowedHosts(),
+                        remote.credentialRef(),
+                        remote.external(),
+                        remote.tenants(),
+                        List.of(name),
+                        remote.timeoutMillis());
+        var scopes =
+                functions.contains("function:create_report")
+                        ? List.of("report:write", "travel:read")
+                        : List.of("travel:read");
+        var definition =
+                new ReleaseDefinition(
+                        "test",
+                        "finance_agent",
+                        scopes,
+                        ReleaseDefinition.OFFLINE,
+                        null,
+                        12,
+                        12,
+                        new BusinessFeatures(List.of(endpoint), "", "{}", null));
+        var requested = new TreeSet<>(functions);
+        requested.add("mcp:hotel/" + name);
+        var local = new TreeSet<>(functions);
+        local.add(LocalCapabilityCatalog.ARTIFACT_READER);
+        var bindings =
+                new ArrayList<>(
+                        LocalCapabilityCatalog.bindings(definition).stream()
+                                .filter(binding -> local.contains(binding.id()))
+                                .toList());
+        bindings.addAll(
+                new McpCapabilityDiscovery(credentials)
+                        .discover(
+                                new Owner("tenant", "alice"),
+                                definition,
+                                List.of("mcp:hotel/" + name)));
+        bindings.sort(Comparator.comparing(CapabilityBinding::id));
+        return new AgentExecutionPlan(
+                "primary",
+                RuntimeArtifacts.hash(),
+                requested.stream().toList(),
+                bindings,
+                definition);
+    }
+
+    @Test
+    void composedEmptyPlanSendsNoToolsToTheActualSdkModel() {
+        composedRelease(claim, plan(release(ReleaseDefinition.OFFLINE), List.of()));
+        var result = runtime((c, round, messages) -> text("plain answer")).execute(claim);
+        assertThat(result.status()).isEqualTo("completed");
+        assertThat(requestFor(claim).tools()).isEmpty();
+        verifyNoInteractions(reports, artifacts);
+        verify(policy, never()).consumeTool(any(), any());
+    }
+
+    @Test
+    void composedPlanExposesOnlySelectedFunctionAndExplicitReaderDependency() {
+        var plan = plan(release(ReleaseDefinition.OFFLINE), List.of("function:request_city"));
+        composedRelease(claim, plan);
+        runtime((c, round, messages) -> text("answer")).execute(claim);
+        assertThat(requestFor(claim).tools())
+                .extracting(ToolSchema::getName)
+                .containsExactlyInAnyOrder("request_city", "read_artifact_range");
+        verifyNoInteractions(reports, artifacts);
+    }
+
+    @Test
+    void selectingPortfolioPublicationExposesItsPreparationAndMarketDependencies() {
+        var base = release(ReleaseDefinition.OFFLINE);
+        var definition =
+                new ReleaseDefinition(
+                        base.version(),
+                        base.agent(),
+                        List.of("artifact:read", "report:write", "market:read", "workflow:run"),
+                        base.primary(),
+                        null,
+                        base.maxModelCalls(),
+                        base.maxToolCalls(),
+                        base.business());
+        composedRelease(claim, plan(definition, List.of("function:publish_portfolio_report")));
+        when(policy.scopes(any())).thenReturn(definition.scopes());
+        doAnswer(
+                        i -> {
+                            ToolContribution.Registrar registrar = i.getArgument(3);
+                            new com.financeclaw.infrastructure.agentscope.capability
+                                            .PortfolioToolContribution(null, claim, true)
+                                    .contribute(registrar);
+                            registrar.tool(
+                                    "market_snapshot",
+                                    com.financeclaw.infrastructure.agentscope.capability
+                                            .MarketToolSchemas.SNAPSHOT,
+                                    "market:read",
+                                    p -> Mono.error(new AssertionError("No execution expected")));
+                            return null;
+                        })
+                .when(capabilities)
+                .contribute(any(), isNull(), eq(true), any());
+        runtime((c, round, messages) -> text("ready")).execute(claim);
+        assertThat(requestFor(claim).tools())
+                .extracting(ToolSchema::getName)
+                .containsExactlyInAnyOrder(
+                        "read_artifact_range",
+                        "market_snapshot",
+                        "portfolio_review",
+                        "publish_portfolio_report");
+        verifyNoInteractions(reports, artifacts);
+    }
+
+    @Test
+    void composedApprovalResumeUsesPinnedAllowlistAndExecutesExactlyTheApprovedAction() {
+        var first = claim("composed-report", "composed-old", null, "publish report");
+        var base = release(ReleaseDefinition.OFFLINE);
+        var definition =
+                new ReleaseDefinition(
+                        base.version(),
+                        base.agent(),
+                        List.of("report:write"),
+                        base.primary(),
+                        null,
+                        base.maxModelCalls(),
+                        base.maxToolCalls(),
+                        base.business());
+        var plan = plan(definition, List.of("function:create_report"));
+        composedRelease(first, plan);
+        when(policy.scopes(any())).thenReturn(definition.scopes());
+        var waiting =
+                runtime(
+                                (c, round, messages) ->
+                                        toolCall(
+                                                "approved-call",
+                                                "create_report",
+                                                Map.of("title", "pinned action")))
+                        .execute(first);
+        assertThat(waiting.status()).isEqualTo("waiting");
+        var pending = waiting.pending().getFirst();
+        var answered =
+                new Interaction(
+                        "composed-answer",
+                        first.turn().id(),
+                        first.command().id(),
+                        first.command().attemptId(),
+                        waiting.stateVersion(),
+                        1,
+                        first.turn().releaseHash(),
+                        pending.kind(),
+                        pending.callId(),
+                        pending.tool(),
+                        pending.actionHash(),
+                        pending.schema(),
+                        pending.question(),
+                        2,
+                        "answered",
+                        true,
+                        "response-hash",
+                        PayloadJson.canonical(Map.of("decision", "approve")));
+        when(interactions.interaction(answered.id())).thenReturn(answered);
+        when(interactions.interactions(first.turn().id())).thenReturn(List.of(answered));
+        when(reports.report(any(), anyString(), anyString(), anyString())).thenReturn("created");
+        var resumed =
+                claim(first.turn().id(), "composed-resume", answered.id(), first.turn().message());
+        var outcome = runtime((c, round, messages) -> text("done")).execute(resumed);
+        assertThat(outcome.status()).isEqualTo("completed");
+        assertThat(requestFor(resumed).tools())
+                .extracting(ToolSchema::getName)
+                .containsExactlyInAnyOrder("create_report", "read_artifact_range");
+        verify(reports, times(1))
+                .report(resumed, pending.callId(), pending.actionHash(), "pinned action");
+        verify(policy).consumeTool(resumed, "report:write");
+        verify(releases, never()).currentHash();
+    }
+
+    @Test
+    void composedPlanDoesNotExecuteAnUnselectedFunctionEvenWhenTheModelGuessesItsName() {
+        composedRelease(claim, plan(release(ReleaseDefinition.OFFLINE), List.of()));
+        var outcome =
+                runtime(
+                                (c, round, messages) ->
+                                        round == 0
+                                                ? toolCall(
+                                                        "guessed",
+                                                        "create_report",
+                                                        Map.of("title", "forbidden"))
+                                                : text("no tool available"))
+                        .execute(claim);
+        assertThat(outcome.pending()).isEmpty();
+        assertThat(modelRequests).allSatisfy(request -> assertThat(request.tools()).isEmpty());
+        verifyNoInteractions(reports, artifacts);
+        verify(policy, never()).consumeTool(any(), any());
+    }
+
+    @Test
+    void runtimeAndLocalContractDriftRejectResumeBeforeCheckpointOrHumanAnswerHandling() {
+        var resumed = claim("waiting", "attempt-resume", "answered-city", "original");
+        var original = plan(release(ReleaseDefinition.OFFLINE), List.of("function:request_city"));
+        composedRelease(
+                resumed,
+                new AgentExecutionPlan(
+                        original.modelProfile(),
+                        "0".repeat(64),
+                        original.requestedCapabilities(),
+                        original.capabilities(),
+                        original.definition()));
+        assertThatThrownBy(
+                        () ->
+                                runtime((c, round, messages) -> text("must not run"))
+                                        .execute(resumed))
+                .isInstanceOf(Blocked.class)
+                .hasMessage("runtime_release_changed");
+        var altered =
+                original.capabilities().stream()
+                        .map(
+                                binding -> {
+                                    if (!binding.name().equals("request_city")) return binding;
+                                    var contract =
+                                            new TreeMap<>(
+                                                    PayloadJson.object(binding.contractJson()));
+                                    contract.put("humanAnswerSchema", Map.of("type", "object"));
+                                    String json = PayloadJson.canonical(contract);
+                                    return new CapabilityBinding(
+                                            binding.id(),
+                                            binding.kind(),
+                                            binding.name(),
+                                            binding.scopes(),
+                                            binding.dependencies(),
+                                            json,
+                                            PayloadDigest.sha256(json));
+                                })
+                        .toList();
+        composedRelease(
+                resumed,
+                new AgentExecutionPlan(
+                        original.modelProfile(),
+                        original.runtimeArtifactHash(),
+                        original.requestedCapabilities(),
+                        altered,
+                        original.definition()));
+        assertThatThrownBy(
+                        () ->
+                                runtime((c, round, messages) -> text("must not run"))
+                                        .execute(resumed))
+                .isInstanceOf(Blocked.class)
+                .hasMessage("capability_release_changed");
+        verifyNoInteractions(states, interactions, artifacts, reports, capabilities);
+        verify(policy, never()).memoryContext(any());
+        verify(policy, never()).consume(any(), anyBoolean());
+        assertThat(modelRequests).isEmpty();
+    }
+
+    @Test
+    void selectedSkillUsesFrozenRepositoryAndItsNativeLoader() {
+        var definition = skillRelease();
+        var selected = plan(definition, List.of("skill:cocktail-from-what-i-have"));
+        composedRelease(claim, selected);
+        when(policy.scopes(any())).thenReturn(List.of("skill:use"));
+        String skillId;
+        try (var repository = PackagedSkills.selected(selected.capabilities())) {
+            skillId = repository.getSkill("cocktail-from-what-i-have").getSkillId();
+        }
+        var outcome =
+                runtime(
+                                (c, round, messages) ->
+                                        round == 0
+                                                ? toolCall(
+                                                        "skill-load",
+                                                        "load_skill_through_path",
+                                                        Map.of(
+                                                                "skillId",
+                                                                skillId,
+                                                                "path",
+                                                                "SKILL.md"))
+                                                : text("cocktail answer"))
+                        .execute(claim);
+        assertThat(outcome.status()).isEqualTo("completed");
+        assertThat(requestFor(claim).tools())
+                .extracting(ToolSchema::getName)
+                .containsExactlyInAnyOrder("read_artifact_range", "load_skill_through_path");
+        assertThat(serialized(modelRequests.getLast().messages()))
+                .contains("Cocktail From What I Have");
+        verify(policy).consumeTool(claim, "skill:use");
+    }
+
+    @Test
+    void nativeSkillLoaderRejectsGuessedUnselectedSkillIdBeforeConsumingBudget() {
+        composedRelease(claim, plan(skillRelease(), List.of("skill:cocktail-from-what-i-have")));
+        when(policy.scopes(any())).thenReturn(List.of("skill:use"));
+        assertThatThrownBy(
+                        () ->
+                                runtime(
+                                                (c, round, messages) ->
+                                                        toolCall(
+                                                                "skill-guessed",
+                                                                "load_skill_through_path",
+                                                                Map.of(
+                                                                        "skillId",
+                                                                        "another-skill_classpath-skills",
+                                                                        "path",
+                                                                        "SKILL.md")))
+                                        .execute(claim))
+                .isInstanceOf(Blocked.class)
+                .hasMessage("skill_denied");
+        verify(policy, never()).consumeTool(any(), any());
+        verifyNoInteractions(reports, artifacts);
+    }
+
+    @Test
+    void changedSkillContentRejectsResumeBeforeCheckpointReads() {
+        var resumed = claim("skill-waiting", "skill-resume", "answer", "original");
+        var original = plan(skillRelease(), List.of("skill:cocktail-from-what-i-have"));
+        var altered =
+                original.capabilities().stream()
+                        .map(
+                                binding -> {
+                                    if (!binding.kind().equals("skill")) return binding;
+                                    var contract =
+                                            new TreeMap<>(
+                                                    PayloadJson.object(binding.contractJson()));
+                                    contract.put("content", "changed content");
+                                    String json = PayloadJson.canonical(contract);
+                                    return new CapabilityBinding(
+                                            binding.id(),
+                                            binding.kind(),
+                                            binding.name(),
+                                            binding.scopes(),
+                                            binding.dependencies(),
+                                            json,
+                                            PayloadDigest.sha256(json));
+                                })
+                        .toList();
+        composedRelease(
+                resumed,
+                new AgentExecutionPlan(
+                        original.modelProfile(),
+                        original.runtimeArtifactHash(),
+                        original.requestedCapabilities(),
+                        altered,
+                        original.definition()));
+        assertThatThrownBy(
+                        () ->
+                                runtime((c, round, messages) -> text("must not run"))
+                                        .execute(resumed))
+                .isInstanceOf(Blocked.class)
+                .hasMessage("capability_release_changed");
+        verifyNoInteractions(states, interactions, reports, artifacts, capabilities);
+        assertThat(modelRequests).isEmpty();
+    }
+
+    private static ReleaseDefinition skillRelease() {
+        var base = release(ReleaseDefinition.OFFLINE);
+        return new ReleaseDefinition(
+                base.version(),
+                base.agent(),
+                List.of("skill:use"),
+                base.primary(),
+                base.fallback(),
+                base.maxModelCalls(),
+                base.maxToolCalls(),
+                new BusinessFeatures(List.of(), PackagedSkills.hash(), "{}", null));
+    }
+
+    private static AgentExecutionPlan plan(ReleaseDefinition definition, List<String> requested) {
+        var selected = new TreeSet<>(requested);
+        var available = LocalCapabilityCatalog.bindings(definition);
+        boolean expanded;
+        do {
+            expanded = false;
+            for (var binding : available) {
+                if (selected.contains(binding.id()))
+                    expanded |= selected.addAll(binding.dependencies());
+            }
+        } while (expanded);
+        var bindings =
+                available.stream().filter(binding -> selected.contains(binding.id())).toList();
+        assertThat(bindings).hasSize(selected.size());
+        return new AgentExecutionPlan(
+                "primary", RuntimeArtifacts.hash(), requested, bindings, definition);
+    }
+
+    private void composedRelease(Claim target, AgentExecutionPlan plan) {
+        String hash = target.turn().releaseHash();
+        doReturn(plan.definition()).when(releases).require(hash);
+        doReturn(
+                        new ResolvedAgentRelease(
+                                target.turn().agentId(),
+                                "FIXED_COMPOSED_PROMPT",
+                                plan.definition(),
+                                target.turn().tenant(),
+                                target.turn().subject(),
+                                plan))
+                .when(releases)
+                .resolve(hash);
     }
 
     @Test
@@ -884,7 +1411,7 @@ class TaskAgentRuntimeContextTest {
                 policy,
                 leases,
                 releases,
-                mock(Credentials.class),
+                credentials,
                 interactions,
                 artifacts,
                 reports,

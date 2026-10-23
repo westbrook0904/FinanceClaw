@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.json.JsonMapper;
 import com.financeclaw.app.release.port.ReleaseRepository;
 import com.financeclaw.domain.Governance.Blocked;
 import com.financeclaw.domain.agent.AgentReleaseManifest;
+import com.financeclaw.domain.agent.ComposedAgentReleaseManifest;
 import com.financeclaw.domain.release.Deployment;
 import com.financeclaw.domain.release.DeploymentChange;
 import com.financeclaw.domain.release.ReleaseDefinition;
@@ -55,6 +56,25 @@ public class MyBatisReleaseRepository implements ReleaseRepository {
         }
         try {
             return READER.readValue(json, AgentReleaseManifest.class);
+        } catch (JsonProcessingException | IllegalArgumentException invalid) {
+            throw new Blocked("release_unavailable");
+        }
+    }
+
+    @Override
+    public void insertComposedAgentManifestIfAbsent(
+            String hash, ComposedAgentReleaseManifest manifest) {
+        mapper.insertComposedAgentManifestIfAbsent(hash, PayloadJson.canonical(manifest));
+    }
+
+    @Override
+    public ComposedAgentReleaseManifest findComposedAgentManifest(String hash) {
+        String json = mapper.getComposedAgentManifest(hash);
+        if (json == null) {
+            return null;
+        }
+        try {
+            return READER.readValue(json, ComposedAgentReleaseManifest.class);
         } catch (JsonProcessingException | IllegalArgumentException invalid) {
             throw new Blocked("release_unavailable");
         }
