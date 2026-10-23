@@ -126,7 +126,8 @@ public final class MemoryForgetService {
                     memory.eraseProfile(owner);
                     memory.eraseSources(owner);
                     memory.eraseFacts(owner);
-                    memory.eraseRecalls(owner);
+                    memory.eraseSnapshots(owner);
+                    memory.eraseWorkContexts(owner);
                     memory.eraseIndex(owner);
                     memory.eraseJobs(owner);
                     memory.audit(owner, privacy.epoch() + 1, "forget", "all");

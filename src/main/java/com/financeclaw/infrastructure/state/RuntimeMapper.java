@@ -14,6 +14,64 @@ public interface RuntimeMapper {
 
     record StateRow(String payload, long version, boolean deleted) {}
 
+    record WorkRow(String payload, String transcript) {}
+
+    /** 只读取同 owner/隐私 epoch/发布/授权的已封存完成上下文，不从活动 attempt 猜测会话结果。 */
+    @Select(
+            """
+            SELECT w.payload::text,w.transcript::text FROM agent_runtime.work_contexts w
+            JOIN business.turns t ON t.id=w.turn_id AND t.status='completed'
+            JOIN business.attempts a ON a.id=w.attempt_id AND a.outcome='completed'
+              AND a.state_version=w.state_version
+            JOIN business.commands c ON c.id=a.command_id AND c.turn_id=t.id
+            JOIN memory.sources s ON s.id=w.turn_id AND s.tenant=w.tenant AND s.subject=w.subject
+              AND s.epoch=w.epoch AND s.status<>'forgotten'
+            WHERE w.conversation_id=#{claim.turn.conversationId}
+              AND w.tenant=#{claim.turn.tenant} AND w.subject=#{claim.turn.subject}
+              AND t.conversation_id=w.conversation_id AND t.tenant=w.tenant AND t.subject=w.subject
+              AND t.release_hash=w.release_hash
+              AND w.release_hash=#{claim.turn.releaseHash} AND w.grant_revision=#{grantRevision}
+              AND w.epoch=COALESCE((SELECT epoch FROM memory.sources WHERE id=#{claim.turn.id}),0)
+            ORDER BY t.created_at DESC,t.id DESC LIMIT 1
+            """)
+    WorkRow getLatestCompletedWorkContext(
+            @Param("claim") com.financeclaw.domain.Task.Claim claim,
+            @Param("grantRevision") long grantRevision);
+
+    /** 恢复同一 Turn 的未压缩执行轨迹；调用方已经验证真实交互及原生检查点。 */
+    @Select(
+            """
+            SELECT payload::text,transcript::text FROM agent_runtime.work_contexts
+            WHERE turn_id=#{turn.id} AND tenant=#{turn.tenant} AND subject=#{turn.subject}
+              AND attempt_id=#{attempt} AND state_version=#{version}
+              AND epoch=COALESCE((SELECT epoch FROM memory.sources WHERE id=#{turn.id}),0)
+            """)
+    WorkRow getTurnWorkContext(
+            @Param("turn") com.financeclaw.domain.Task.Turn turn,
+            @Param("attempt") String attempt,
+            @Param("version") long version);
+
+    /** 和 SDK CAS 写入共用执行栅栏事务；每个 Turn 只维护一份投影，轨迹只包含该 Turn 的消息。 */
+    @Insert(
+            """
+            INSERT INTO agent_runtime.work_contexts
+              (turn_id,conversation_id,tenant,subject,epoch,release_hash,grant_revision,
+               attempt_id,state_version,payload,transcript)
+            VALUES(#{claim.turn.id},#{claim.turn.conversationId},#{claim.turn.tenant},
+              #{claim.turn.subject},COALESCE((SELECT epoch FROM memory.sources WHERE id=#{claim.turn.id}),0),
+              #{claim.turn.releaseHash},#{grantRevision},#{claim.command.attemptId},#{version},
+              CAST(#{payload} AS jsonb),CAST(#{transcript} AS jsonb))
+            ON CONFLICT(turn_id) DO UPDATE SET attempt_id=EXCLUDED.attempt_id,
+              state_version=EXCLUDED.state_version,payload=EXCLUDED.payload,
+              transcript=EXCLUDED.transcript,updated_at=clock_timestamp()
+            """)
+    void saveTurnWorkContext(
+            @Param("claim") com.financeclaw.domain.Task.Claim claim,
+            @Param("grantRevision") long grantRevision,
+            @Param("version") long version,
+            @Param("payload") String payload,
+            @Param("transcript") String transcript);
+
     /** 按完整 scope 键读取快照及墓碑；deleted 不能被解释为普通不存在，否则会复活删除的执行。 */
     @Select(
             """

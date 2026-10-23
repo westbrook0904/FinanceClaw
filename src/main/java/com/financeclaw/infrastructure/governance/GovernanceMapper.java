@@ -20,6 +20,9 @@ public interface GovernanceMapper {
     @Select("SELECT required_scope FROM business.artifacts WHERE id=#{id}")
     String getArtifactScope(String id);
 
+    @Select("SELECT required_scope,privacy_bound FROM business.artifacts WHERE id=#{id}")
+    com.financeclaw.app.artifact.port.ArtifactGateway.Access getArtifactAccess(String id);
+
     @Select(
             "SELECT input_hash,result FROM business.capability_steps WHERE turn_id=#{turn} AND"
                     + " namespace=#{namespace} AND step=#{step}")
@@ -152,6 +155,13 @@ VALUES(#{id},#{turnId},#{commandId},#{attemptId},#{stateVersion},#{grantRevision
                     + " business.artifacts(id,turn_id,conversation_id,tenant,subject,release_hash,hash,payload,bytes)"
                     + " VALUES(#{id},#{turnId},#{conversationId},#{tenant},#{subject},#{releaseHash},#{hash},#{payload},#{bytes})")
     int insertArtifact(Artifact artifact);
+
+    /** 调用方持执行栅栏、隐私和授权锁；工具正文与其读取边界必须同一条语句提交。 */
+    @Insert(
+            "INSERT INTO business.artifacts(id,turn_id,conversation_id,tenant,subject,release_hash,hash,payload,bytes,required_scope,privacy_bound)"
+                    + " VALUES(#{artifact.id},#{artifact.turnId},#{artifact.conversationId},#{artifact.tenant},#{artifact.subject},#{artifact.releaseHash},#{artifact.hash},#{artifact.payload},#{artifact.bytes},#{scope},true)")
+    int insertToolResultArtifact(
+            @Param("artifact") Artifact artifact, @Param("scope") String requiredScope);
 
     @Select(
             "SELECT id,turn_id,conversation_id,tenant,subject,release_hash,hash,payload,bytes FROM"

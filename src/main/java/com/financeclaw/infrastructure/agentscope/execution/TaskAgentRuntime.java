@@ -10,11 +10,11 @@ import com.financeclaw.app.release.port.Credentials;
 import com.financeclaw.app.report.ReportService;
 import com.financeclaw.domain.Governance.*;
 import com.financeclaw.domain.Task.*;
-import com.financeclaw.domain.release.ModelProfile;
 import com.financeclaw.infrastructure.agentscope.AgentStateInspector;
 import com.financeclaw.infrastructure.agentscope.IsolatedAgentFactory;
 import com.financeclaw.infrastructure.agentscope.ResumeInputs;
 import com.financeclaw.infrastructure.agentscope.capability.BusinessCapabilities;
+import com.financeclaw.infrastructure.agentscope.context.*;
 import com.financeclaw.infrastructure.state.MyBatisAgentStateStore;
 import com.financeclaw.infrastructure.state.RuntimeMapper;
 import com.financeclaw.support.PayloadJson;
@@ -24,11 +24,12 @@ import io.agentscope.core.message.*;
 import io.agentscope.core.model.*;
 import io.agentscope.core.permission.*;
 import io.agentscope.core.state.*;
-import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Sinks;
@@ -36,13 +37,12 @@ import reactor.core.publisher.Sinks;
 /**
  * 将持久业务执行绑定到 AgentScope ReAct 运行时。
  *
- * <p>每个 attempt 有独立 Agent、工具、状态 scope 和停止信号。人工画像与证据上下文 每次尝试读取一次，作为请求数据注入 prompt，不写入 SDK
- * 检查点；每次模型/工具派发 仍检查授权和版本。检查点写入、恢复和最终业务提交分别经过 fence，流结束不代表业务完成。
+ * <p>每个 attempt 有独立 Agent、工具、状态 scope 和停止信号。长期记忆只在 Turn 受理时冻结， 恢复沿用同一正文；工作上下文跨 Turn
+ * 延续，接近预算时压缩，过大工具结果先归档成文件引用。 SDK 检查点与会话投影共用执行栅栏事务，业务完成仍以封存回执为准。
  */
 @Component
 public class TaskAgentRuntime implements com.financeclaw.app.execution.port.AgentExecutionPort {
-    private static final int MAX_HISTORY_BYTES = 8192;
-    private static final int HISTORY_SPARE_CAPACITY_DIVISOR = 4;
+    private ContextBudgets budgets = ContextBudgets.defaults();
     private final ExecutionPolicyService policy;
     private final ExecutionLeaseService leases;
     private final ReleaseService releases;
@@ -57,6 +57,11 @@ public class TaskAgentRuntime implements com.financeclaw.app.execution.port.Agen
     private record Active(ReActAgent agent, Sinks.Empty<Void> stop) {}
 
     private final Map<String, Active> active = new ConcurrentHashMap<>();
+
+    @Autowired
+    void configureContext(Environment environment) {
+        budgets = ContextBudgets.from(environment);
+    }
 
     public TaskAgentRuntime(
             ExecutionPolicyService policy,
@@ -123,9 +128,17 @@ public class TaskAgentRuntime implements com.financeclaw.app.execution.port.Agen
     private Outcome executeRegistered(Claim claim) {
         policy.checkDispatch(claim);
         var release = releases.require(claim.turn().releaseHash());
-        // 请求级记忆只读一次，避免逐 token 查询；之后每次派发和最终提交仍验证绑定版本。
+        // 本 attempt 只读既有 Turn 快照，不重新召回或替换长期记忆；恢复也使用同一正文。
         String userContext = policy.memoryContext(claim);
-        int historyBudget = historyBudget(release.primary(), userContext, claim.turn().message());
+        var budgetProfile =
+                release.fallback() != null
+                                && ContextBudgets.capacity(release.fallback())
+                                        < ContextBudgets.capacity(release.primary())
+                        ? release.fallback()
+                        : release.primary();
+        budgets.checkAdmission(budgetProfile, userContext, claim.turn().message());
+        var identity = policy.identity(claim);
+        var workContext = new WorkingContextSession(states, claim, identity.grantRevision());
         var scope = claim.scope();
         var store =
                 new MyBatisAgentStateStore(states, scope) {
@@ -134,7 +147,17 @@ public class TaskAgentRuntime implements com.financeclaw.app.execution.port.Agen
                             String user, String session, String key, State state, long expected) {
                         return leases.fenced(
                                 claim,
-                                () -> super.saveIfVersion(user, session, key, state, expected));
+                                () -> {
+                                    // 与遗忘/撤权持有相同 owner/grant 锁，禁止删除后旧回调重新写回上下文。
+                                    policy.checkPolicy(claim);
+                                    long version =
+                                            super.saveIfVersion(
+                                                    user, session, key, state, expected);
+                                    if (version != UNVERSIONED) {
+                                        workContext.persist((AgentState) state, version);
+                                    }
+                                    return version;
+                                });
                     }
                 };
         var stop = Sinks.<Void>empty();
@@ -163,6 +186,22 @@ public class TaskAgentRuntime implements com.financeclaw.app.execution.port.Agen
                     release.fallback() == null || workflow
                             ? null
                             : guarded(claim, backup, stop, true);
+            var contextMiddleware =
+                    new WorkingContextMiddleware(
+                            claim,
+                            budgetProfile,
+                            budgets,
+                            userContext,
+                            workContext,
+                            new ToolResultOffloader(artifacts, budgets.toolResultBytes()),
+                            tools::requiredScope,
+                            new ModelWorkContextSummarizer(
+                                    workflow && provider != null
+                                            ? guarded(claim, provider, stop, true)
+                                            : primary,
+                                    release.primary().outputReserve(),
+                                    timeout,
+                                    provider == null));
             try (var agent =
                     IsolatedAgentFactory.create(
                             primary,
@@ -172,6 +211,7 @@ public class TaskAgentRuntime implements com.financeclaw.app.execution.port.Agen
                             tools.permissions(),
                             builder -> {
                                 tools.configure(builder);
+                                builder.middleware(contextMiddleware).hook(contextMiddleware);
                                 builder.middleware(
                                         new io.agentscope.core.middleware.MiddlewareBase() {
                                             @Override
@@ -187,12 +227,12 @@ public class TaskAgentRuntime implements com.financeclaw.app.execution.port.Agen
                                         });
                             })) {
                 active.put(claim.command().attemptId(), new Active(agent, stop));
-                List<Msg> inputs = inputs(claim, store, tools, historyBudget);
+                List<Msg> inputs = inputs(claim, store, tools, workContext);
                 agent.streamEvents(
                                 inputs,
                                 io.agentscope.core.agent.RuntimeContext.builder(
                                                 IsolatedAgentFactory.context(scope))
-                                        .put(ExecutionIdentity.class, policy.identity(claim))
+                                        .put(ExecutionIdentity.class, identity)
                                         .build())
                         .publishOn(reactor.core.scheduler.Schedulers.boundedElastic(), 1)
                         .doOnNext(
@@ -260,66 +300,41 @@ public class TaskAgentRuntime implements com.financeclaw.app.execution.port.Agen
                                     if (countModel) {
                                         policy.consume(claim, true);
                                     }
-                                    return delegate.stream(messages, tools, options);
+                                    // 供应商/固定Driver可能在多次调用中复用响应ID（例如workflow）。
+                                    // 每次模型派发生成服务端消息ID，同一流的所有chunk沿用，防止轨迹覆盖。
+                                    String responseId = UUID.randomUUID().toString();
+                                    return delegate.stream(messages, tools, options)
+                                            .map(response -> response.withId(responseId));
                                 })
                         .takeUntilOther(stop.asMono());
             }
         };
     }
 
-    /** 先为完整画像和当前请求预留容量，再计算历史上限；必需内容超过预算时显式阻断。 */
-    private static int historyBudget(ModelProfile model, String userContext, String message) {
-        long capacity =
-                Math.min(model.inputLimit(), model.window() - model.outputReserve())
-                        - model.margin();
-        long mandatory =
-                (long) userContext.getBytes(StandardCharsets.UTF_8).length
-                        + message.getBytes(StandardCharsets.UTF_8).length;
-        if (mandatory > capacity) {
-            throw new Blocked("context_budget_exceeded");
-        }
-        // 完整画像和当前请求优先保留，历史只使用剩余预算的一部分。
-        // 最终传输预算还会计算 system、工具 schema 和 JSON 封装，不能只检查用户消息。
-        return (int)
-                Math.min(
-                        MAX_HISTORY_BYTES, (capacity - mandatory) / HISTORY_SPARE_CAPACITY_DIVISOR);
-    }
-
     /** 为新执行构造受限历史，或从真实检查点生成批准/补充输入。 恢复会重新绑定到新 attempt scope，并通过 CAS 克隆；旧 scope 不继续承担新执行。 */
     private List<Msg> inputs(
-            Claim claim, MyBatisAgentStateStore store, GovernedTools tools, int historyBudget) {
-        // 新尝试只读取通过 release/grant/记忆版本过滤的已完成对话。
+            Claim claim,
+            MyBatisAgentStateStore store,
+            GovernedTools tools,
+            WorkingContextSession workContext) {
+        // 新 Turn 延续完整工作投影（其中可有结构化摘要），不再只拼接最近问答对。
         if (claim.command().resumeId() == null) {
-            List<Msg> history = new ArrayList<>();
-            int used = 0;
-            for (var previous : policy.history(claim)) {
-                int bytes =
-                        PayloadJson.canonical(List.of(previous.message(), previous.result()))
-                                .getBytes(StandardCharsets.UTF_8)
-                                .length;
-                if (used + bytes > historyBudget) {
-                    break;
-                }
-                history.addFirst(
-                        Msg.builder()
-                                .name("assistant")
-                                .role(MsgRole.ASSISTANT)
-                                .textContent(previous.result())
-                                .build());
-                history.addFirst(
-                        Msg.builder()
-                                .name("user")
-                                .role(MsgRole.USER)
-                                .textContent(previous.message())
-                                .build());
-                used += bytes;
-            }
+            List<Msg> history =
+                    new ArrayList<>(
+                            leases.fenced(
+                                    claim,
+                                    () -> {
+                                        policy.checkPolicy(claim);
+                                        return workContext.previous();
+                                    }));
             history.add(
                     Msg.builder()
+                            .id(workContext.inputId())
                             .name("user")
                             .role(MsgRole.USER)
                             .textContent(claim.turn().message())
                             .build());
+            workContext.record(history);
             return history;
         }
         // 恢复时从已回答交互定位旧 attempt，禁止使用客户端拼出的工具调用或状态。
@@ -370,6 +385,7 @@ public class TaskAgentRuntime implements com.financeclaw.app.execution.port.Agen
                 }
             }
             var state = saved.value();
+            workContext.resume(state.getContext(), anchor.attemptId(), anchor.stateVersion());
             var copied =
                     AgentState.builder()
                             .userId(claim.scope().userId())

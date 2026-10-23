@@ -4,6 +4,7 @@ import com.financeclaw.app.memory.port.MemoryRepository;
 import com.financeclaw.domain.Memory.*;
 import com.financeclaw.domain.Task.Owner;
 import com.financeclaw.domain.memory.EmbeddingVector;
+import com.financeclaw.domain.memory.TurnMemorySnapshot;
 import com.financeclaw.domain.memory.UserProfile;
 import java.util.List;
 import org.springframework.stereotype.Component;
@@ -66,12 +67,11 @@ public class MyBatisMemoryRepository implements MemoryRepository {
     }
 
     @Override
-    public List<String> currentSources(
-            Owner owner, long epoch, long profileRevision, List<String> ids) {
+    public List<String> currentSources(Owner owner, long epoch, List<String> ids) {
         if (ids.isEmpty()) {
             return List.of();
         }
-        return db.listCurrentSourceIds(owner, epoch, profileRevision, ids);
+        return db.listCurrentSourceIds(owner, epoch, ids);
     }
 
     @Override
@@ -85,13 +85,18 @@ public class MyBatisMemoryRepository implements MemoryRepository {
     }
 
     @Override
-    public void freeze(String turn, Owner owner, long epoch) {
-        db.insertFrozenRecallFacts(turn, owner, epoch);
+    public List<Fact> snapshotFacts(Owner owner, long epoch) {
+        return db.listFactsForTurnSnapshot(owner, epoch);
     }
 
     @Override
-    public List<Fact> recall(String turn, Owner owner) {
-        return db.listFrozenRecallFacts(turn, owner);
+    public void insertTurnSnapshot(TurnMemorySnapshot snapshot) {
+        db.insertTurnMemorySnapshot(snapshot);
+    }
+
+    @Override
+    public TurnMemorySnapshot turnSnapshot(String turn, Owner owner) {
+        return db.getTurnMemorySnapshot(turn, owner);
     }
 
     @Override
@@ -205,8 +210,13 @@ public class MyBatisMemoryRepository implements MemoryRepository {
     }
 
     @Override
-    public void eraseRecalls(Owner owner) {
-        db.deleteFrozenRecalls(owner);
+    public void eraseSnapshots(Owner owner) {
+        db.deleteTurnSnapshotsByOwner(owner);
+    }
+
+    @Override
+    public void eraseWorkContexts(Owner owner) {
+        db.deleteWorkContextsByOwner(owner);
     }
 
     @Override

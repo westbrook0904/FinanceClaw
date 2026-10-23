@@ -7,7 +7,7 @@
 | 用户画像 | 每个用户一个 UTF-8 `profile.md`；用户下载、手工编辑、上传；数据库保存当前权威版本 | 稳定背景、表达偏好、长期目标；人工画像的偏好优先于冲突证据 |
 | 跨会话偏好证据 | 真实用户消息作为来源，保存原文片段、事实 revision、确认状态；提取 Worker 只能写这一层 | 召回已确认且来源有效的偏好，供回答参考 |
 
-当前证据层支持语言、回答风格、居住城市、旅行偏好、投资偏好五类 key。同 key 的旧事实会被 supersede；执行时冻结最近最多 16 条 active facts。它还不是通用经历、事件或任意文档记忆，也没有在每轮执行时做向量搜索。候选不会进入模型上下文。
+当前证据层支持语言、回答风格、居住城市、旅行偏好、投资偏好五类 key。同 key 的旧事实会被 supersede；Turn 受理时选取最近最多 16 条 active facts 并冻结正文，后续事实变更只影响新 Turn。它还不是通用经历、事件或任意文档记忆，也没有在每轮执行时做向量搜索。候选不会进入模型上下文。
 
 画像是用户资料，不能改变系统规则、工具授权或审批要求。本次用户明确表达优先于长期偏好。Markdown 与证据按独立段落、带 provenance 的 JSON 数据注入；任意自由文本的语义冲突由模型解释，不能声称是确定性的字段合并。提取、确认事实和向量重建都不会覆盖人工画像。
 
@@ -63,20 +63,20 @@ ETag 绑定认证 owner、epoch 和 revision。另一个用户的导出版本不
 
 ## 执行、并发和查询成本
 
-当前[新库初始化 SQL](../../src/main/resources/db/migration/V1__initialize_application.sql)直接创建 `memory.user_profiles`，只保留当前正文；`memory.owners.profile_revision` 是版本边界，`memory.sources.profile_revision` 记录每个 Turn 受理时的版本。自动证据关闭时仅写无正文的 `profile_only` source，不产生提取作业。画像不被复制到 source 或额外文档历史表。两层功能都关闭时仍保留最小隐私绑定和执行检查；开关停止注入与编辑，不能成为恢复旧资料的绕过路径。
+当前[新库初始化 SQL](../../src/main/resources/db/migration/V1__initialize_application.sql)创建 `memory.user_profiles` 保存当前人工画像；`memory.turn_snapshots` 保存每个 Turn 受理时已经格式化的长期记忆正文。快照包含 owner、epoch 和画像 revision，插入后不能被后续画像或证据替换。自动证据关闭时 source 不保存可供提取的正文，不产生提取作业；两层均关闭时仍保存空快照和隐私绑定。开关变化只影响新 Turn 的采样与编辑入口，已开始 Turn 沿用原快照。
 
-受理对已存在的 owner 持 `FOR SHARE` 共享锁，允许同一用户的独立会话并发；画像编辑、遗忘及执行策略检查持 `FOR UPDATE` 排他锁。共享锁持续到受理事务提交，因此变更不能越过尚未提交的版本绑定。首次创建 owner 可能在唯一键上等待，不属于稳定用户的并行受理路径。已排队、运行或等待审批的旧版本 Turn 在下一个受治理执行边界被 `profile_changed` 阻止；旧 checkpoint 不继续执行。用户需要提交新 Turn，已发出的模型请求无法撤回，但后续工具调用与结果完成仍需版本检查。画像修改后，历史问答只纳入同 epoch、同画像版本的记录，避免旧回答带回旧资料；画像变更不撤销已经归档结果的既有读取权限。
+受理对已存在的 owner 持 `FOR SHARE` 共享锁，允许同一用户的独立会话并发；画像编辑、遗忘及执行策略检查持 `FOR UPDATE` 排他锁。共享锁持续到受理事务提交，因此变更不能越过快照冻结边界。普通画像编辑不会中断已经排队、运行或等待审批的 Turn；审批恢复和进程重建读取同一快照。遗忘提升 epoch，清理快照与会话工作上下文，并使旧执行失效；授权撤销仍有独立的执行门禁。
 
-AgentScope `onSystemPrompt` 使用每个 attempt 读取一次的上下文，不把完整画像追加到 `AgentState.context`。模型回答仍可能包含画像派生信息，因此旧历史和恢复检查不可省略。预算先为画像、证据和当前消息留空间，再限制历史；最终主/备模型完整 HTTP 请求仍经过已有预算检查。不能容纳时明确失败，不截断手工画像。
+AgentScope `onSystemPrompt` 注入 Turn 快照，每个 attempt 只读取一次，不重新召回、不把画像追加到 `AgentState.context`。会话中期工作上下文另行保存问答和工具过程，接近预算时压缩为结构化摘要；每个 Turn 的完整轨迹仍保留。长期快照不能被压缩模型改写，最终主/备模型 HTTP 请求还会经过完整预算检查。详见[上下文管理](context-management.md)。
 
 稳定 owner 的静态 SQL 调用数（不是压测结果）：
 
 | 路径 | 成本 |
 | --- | --- |
-| 仅画像的 Turn 受理 | owner lock + source insert，共 2 次 |
-| 画像与证据均启用的受理 | 再加冻结事实，共 3 次 |
-| 执行策略的隐私/画像检查 | owner lock + source，共 2 次；画像版本合并在现有两次查询中 |
-| 每 attempt 的上下文 | 仅画像时空文档 2 次、已有画像 3 次；同时启用证据且已有画像 4 次 |
+| Turn 受理 | owner lock + source insert + snapshot insert，共 3 次；非空画像加 1 次读取 |
+| 画像与证据均启用的受理 | 在以上基础加 1 次有界事实查询 |
+| 执行策略的隐私检查 | owner lock + source，共 2 次；不读取画像正文或重复召回事实 |
+| 每 attempt 的长期上下文 | owner lock + source + snapshot，共 3 次，与画像/事实条数无关 |
 | 历史过滤 | 一次 owner lock + 一次批量来源查询，不逐 Turn 查询 |
 | 每个 SSE 事件 / token | 不查询画像数据库 |
 

@@ -47,6 +47,7 @@ class ProfilePrivacyRepositoryIT {
 
     @BeforeEach
     void reset() {
+        sql.execute("TRUNCATE business.conversations CASCADE");
         sql.execute("TRUNCATE memory.owners,memory.user_profiles CASCADE");
         sql.update("INSERT INTO memory.owners(tenant,subject) VALUES('profile-test','owner')");
     }
@@ -146,6 +147,16 @@ class ProfilePrivacyRepositoryIT {
         }
         assertThat(sql.queryForObject("SELECT markdown FROM memory.user_profiles", String.class))
                 .isEqualTo("private-authoritative-profile");
+        for (String statement :
+                new String[] {
+                    "SELECT context FROM memory.turn_snapshots",
+                    "INSERT INTO memory.turn_snapshots(turn_id,tenant,subject,epoch,profile_revision,context) VALUES('turn','profile-test','owner',1,1,'automated')",
+                    "UPDATE memory.turn_snapshots SET context='automated'",
+                    "DELETE FROM memory.turn_snapshots"
+                }) {
+            assertThatThrownBy(() -> worker.execute(statement))
+                    .hasRootCauseMessage("ERROR: permission denied for table turn_snapshots");
+        }
         if (path.startsWith("src/"))
             for (String privilege : new String[] {"SELECT", "INSERT", "UPDATE", "DELETE"})
                 assertThat(
@@ -154,6 +165,54 @@ class ProfilePrivacyRepositoryIT {
                                         Boolean.class,
                                         privilege))
                         .isTrue();
+    }
+
+    @Test
+    void snapshotMayKeepAnOlderProfileRevisionWithoutLeakingItsBodyIntoPrivacyExport()
+            throws Exception {
+        snapshotRow();
+        profile(1, 2, "current profile");
+        assertThat(recovery.unsafeRows()).isZero();
+        var exported = snapshot();
+        assertThat(ownerSnapshot(exported).path("unsafe_snapshots").asLong()).isZero();
+        assertThat(exported.toString()).doesNotContain("frozen-private-profile", "current profile");
+    }
+
+    @ParameterizedTest
+    @ValueSource(
+            strings = {
+                "old-epoch",
+                "future-epoch",
+                "wrong-owner",
+                "source-version",
+                "forgotten-source",
+                "missing-source"
+            })
+    void restoredSnapshotsRequireTheOriginalOwnerEpochAndSourceVersion(String corruption)
+            throws Exception {
+        snapshotRow();
+        switch (corruption) {
+            case "old-epoch" -> sql.update("UPDATE memory.owners SET epoch=2");
+            case "future-epoch" -> sql.update("UPDATE memory.turn_snapshots SET epoch=2");
+            case "wrong-owner" -> sql.update("UPDATE memory.sources SET subject='different-owner'");
+            case "source-version" -> sql.update("UPDATE memory.sources SET profile_revision=2");
+            case "forgotten-source" -> sql.update("UPDATE memory.sources SET status='forgotten'");
+            case "missing-source" -> sql.update("DELETE FROM memory.sources");
+            default -> throw new AssertionError();
+        }
+        assertThat(recovery.unsafeRows()).isPositive();
+        assertThat(ownerSnapshot(snapshot()).path("unsafe_snapshots").asLong()).isPositive();
+    }
+
+    private static void snapshotRow() {
+        sql.update(
+                "INSERT INTO business.conversations(id,tenant,subject) VALUES('turn','profile-test','owner')");
+        sql.update(
+                "INSERT INTO business.turns(id,conversation_id,tenant,subject,idempotency_key,request_hash,message,release_hash,status) VALUES('turn','turn','profile-test','owner','key','hash','message','release','completed')");
+        sql.update(
+                "INSERT INTO memory.sources(id,tenant,subject,epoch,status,profile_revision) VALUES('turn','profile-test','owner',1,'profile_only',1)");
+        sql.update(
+                "INSERT INTO memory.turn_snapshots(turn_id,tenant,subject,epoch,profile_revision,context) VALUES('turn','profile-test','owner',1,1,'frozen-private-profile')");
     }
 
     private static void profile(long epoch, long revision, String markdown) {

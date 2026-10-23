@@ -2,12 +2,12 @@
 
 FinanceClaw Java 是独立应用，只为全新数据库创建当前结构，不导入 Python 数据或升级过去的实验结构。
 
-主库使用一份 [V1 初始化 SQL](../../src/main/resources/db/migration/V1__initialize_application.sql)，直接创建 34 张应用表。Flyway 只负责记录初始化与校验文件完整性；`db/migration` 是 Flyway 的默认资源路径，不表示项目提供历史版本迁移。独立遗忘账本使用自己的两张表和凭据，不混入主库初始化。
+主库使用一份 [V1 初始化 SQL](../../src/main/resources/db/migration/V1__initialize_application.sql)，直接创建 35 张应用表。Flyway 只负责记录初始化与校验文件完整性；`db/migration` 是 Flyway 的默认资源路径，不表示项目提供历史版本迁移。独立遗忘账本使用自己的两张表和凭据，不混入主库初始化。
 
 | 结构 | 表数 | 责任 |
 | --- | ---: | --- |
 | `business` | 16 | 会话、任务、命令、执行尝试、授权、交互、业务结果、归档和运行受理状态 |
-| `agent_runtime` | 1 | AgentScope 原生状态的版本化保存与墓碑 |
+| `agent_runtime` | 2 | AgentScope 原生检查点、会话工作投影和逐 Turn 完整执行轨迹 |
 | `memory` | 13 | 用户画像、跨会话证据、隐私版本、提取和索引作业、恢复事实 |
 | `channel` | 4 | 飞书入站去重、会话绑定与持久通知 |
 

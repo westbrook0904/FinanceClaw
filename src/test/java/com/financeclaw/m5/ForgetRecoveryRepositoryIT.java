@@ -91,7 +91,11 @@ class ForgetRecoveryRepositoryIT {
                 .containsEntry("revision", 1L);
         assertThat(sql.queryForList("SELECT fact_id FROM memory.projections", String.class))
                 .containsExactly("new");
-        assertThat(sql.queryForList("SELECT fact_id FROM memory.recalls", String.class))
+        assertThat(sql.queryForList("SELECT turn_id FROM memory.turn_snapshots", String.class))
+                .containsExactly("new");
+        assertThat(
+                        sql.queryForList(
+                                "SELECT turn_id FROM agent_runtime.work_contexts", String.class))
                 .containsExactly("new");
         assertThat(
                         sql.queryForMap(
@@ -381,7 +385,8 @@ class ForgetRecoveryRepositoryIT {
                 "source",
                 "fact",
                 "projection",
-                "recall",
+                "snapshot",
+                "work-context",
                 "job",
                 "audit-target",
                 "audit-owner",
@@ -393,7 +398,8 @@ class ForgetRecoveryRepositoryIT {
             case "source" -> sql.update("UPDATE memory.sources SET epoch=2");
             case "fact" -> sql.update("UPDATE memory.facts SET epoch=2");
             case "projection" -> sql.update("UPDATE memory.projections SET epoch=2");
-            case "recall" -> sql.update("UPDATE memory.recalls SET epoch=2");
+            case "snapshot" -> sql.update("UPDATE memory.turn_snapshots SET epoch=2");
+            case "work-context" -> sql.update("UPDATE agent_runtime.work_contexts SET epoch=2");
             case "job" -> sql.update("UPDATE memory.jobs SET epoch=2");
             case "audit-target" -> audit(1, "forget", "partial");
             case "audit-owner" ->
@@ -543,10 +549,23 @@ class ForgetRecoveryRepositoryIT {
                 OWNER.subject(),
                 epoch);
         sql.update(
-                "INSERT INTO memory.recalls(turn_id,fact_id,revision,epoch) VALUES(?,?,1,?)",
+                "INSERT INTO memory.turn_snapshots(turn_id,tenant,subject,epoch,profile_revision,context) VALUES(?,?,?,?,0,?)",
+                id,
+                OWNER.tenant(),
+                OWNER.subject(),
+                epoch,
+                "private-snapshot-" + id);
+        sql.update("INSERT INTO business.commands(id,turn_id,status) VALUES(?,?,'done')", id, id);
+        sql.update("INSERT INTO business.attempts(id,command_id,fence) VALUES(?,?,1)", id, id);
+        sql.update(
+                "INSERT INTO agent_runtime.work_contexts(turn_id,conversation_id,tenant,subject,epoch,release_hash,grant_revision,attempt_id,state_version,payload,transcript)"
+                        + " VALUES(?,?,?,?,?,'release',1,?,1,'{}','[]')",
                 id,
                 id,
-                epoch);
+                OWNER.tenant(),
+                OWNER.subject(),
+                epoch,
+                id);
         sql.update(
                 "INSERT INTO memory.jobs(kind,key_id,tenant,subject,epoch,status,lease_token,lease_until) VALUES('index',?,?,?,?,'running','test-lease',clock_timestamp()+interval '1 hour')",
                 id,

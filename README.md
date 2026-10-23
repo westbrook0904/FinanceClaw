@@ -1,6 +1,6 @@
 # FinanceClaw Java
 
-一个基于 **Java 21、Spring Boot 3.5.16 和 AgentScope Java 2.0.3** 的独立 Agent 应用。它围绕模型的 ReAct 循环，提供上下文预算、双层记忆、工具治理、人工审批、持久执行、取消与恢复能力。
+一个基于 **Java 21、Spring Boot 3.5.16 和 AgentScope Java 2.0.3** 的独立 Agent 应用。它围绕模型的 ReAct 循环，提供双层长期记忆、会话工作上下文、预算与压缩、工具治理、人工审批、持久执行、取消与恢复能力。
 
 本文中的 **Harness** 指这些能力组成的应用运行与治理层。当前主执行器使用原生 `ReActAgent`，并未直接使用 SDK 的 `HarnessAgent`；依赖中存在的功能不等于已经接入。默认使用离线模型，可以在没有模型 Key 的情况下启动和验证任务链路。
 
@@ -8,13 +8,13 @@
 
 | 模块 | 当前实现 |
 | --- | --- |
-| 上下文管理 | 当前请求、受限会话历史、人工画像与确认事实；按版本过滤；最终模型请求预算检查 |
+| 上下文管理 | Turn 长期记忆快照、跨轮工作上下文与完整工具轨迹；分区预算、结构化压缩、大结果文件引用 |
 | 记忆系统 | 用户手工维护的 Markdown 画像 + 有来源和确认状态的跨会话证据；可选向量搜索、独立遗忘账本 |
 | ReAct 运行时 | 每个执行尝试独立 Agent / Toolkit / 状态 scope；持久命令、租约、检查点、审批恢复、取消和 SSE |
 | 工具 | 本地 `ToolBase`、原生 MCP、Classpath Skills，以及受限研究子 Agent 和固定组合工作流 |
 | 权限 | 服务端主体、会话授权版本、工具 scopes、原生 ASK 审批、执行围栏、受限数据库身份 |
 | 模型管理 | 离线模型、OpenAI 兼容协议、主备模型、请求与调用次数预算、固定发布身份、凭据分离 |
-| 中间件 | 原生最终答复过滤、请求级记忆注入、Skill 派发检查，以及模型、传输和 HTTP 边界的校验 |
+| 中间件 | 最终答复过滤、Turn 记忆注入、工作上下文压缩、大结果归档、Skill 派发检查与传输校验 |
 
 ## 运行结构
 
@@ -40,15 +40,29 @@ flowchart LR
 
 ### 1. 上下文管理
 
-上下文由系统提示、当前用户请求、符合条件的会话历史，以及当前用户的画像和确认事实构成。
+上下文分为 Turn 级长期记忆快照、conversation 级工作上下文，以及当前用户输入和本轮 ReAct 消息。
 
-- **历史有边界**：最多读取同会话最近 8 个已完成 Turn，要求发布 hash、授权 revision 和隐私/画像版本一致；在剩余预算内按完整问答对截选，历史正文上限为 8 KiB。
-- **当前请求与记忆优先**：先为完整当前请求和用户记忆预留容量，再计算历史容量；必需内容超预算时显式阻断，不静默截断画像。
+- **长期记忆固定一轮**：受理 Turn 时冻结画像与确认事实的完整正文，后续 ReAct、重试和审批恢复沿用同一快照；普通画像编辑在下一 Turn 生效。遗忘和撤权仍立即阻断后续执行。
+- **工作上下文跨轮延续**：从同会话最新已完成 Turn 的投影接续，保留用户问题、回答、工具调用参数与结果；每轮独立轨迹保留被压缩前的消息。发布、授权和隐私 epoch 必须一致。
+- **接近预算才压缩**：每次模型派发前，工作消息默认上限 24 KiB，达到 80% 时把较早的完整问答和已完成工具批次压缩成 `goals/tools/evidence/nextSteps`。保护当前问题、最近一轮和未完成工具配对；摘要是背景数据，不授予权限。最终回答追加后由输出预留承接，下次派发前再收紧输入。
 - **检查最终请求**：`BudgetedTransport` 在 SDK 完成序列化后检查整个 HTTP 请求，计入 system、历史、工具 Schema、输出 Schema 和 JSON 封装，同时检查输出预留。当前使用保守 UTF-8 字节估算，不是精确 tokenizer 或成本计费。
-- **记忆按 attempt 注入**：每次执行尝试读取一次用户记忆，经 `onSystemPrompt` 注入请求；画像和事实上下文不复制进 SDK 检查点。派发和提交时仍检查绑定版本。
-- **大结果有界读取**：MCP 等结果先归档为 Artifact，模型先获得 ID、hash 和大小，再通过受权限控制的分页工具读取。
+- **分区预算**：固定系统内容、长期记忆、工作上下文、当前输入、工具 Schema、工具结果和摘要分别配置上限；最终模型窗口不足时进一步收紧工作上下文，不能裁剪当前请求或长期快照。
+- **大结果变成文件**：本地工具、MCP、Skill 的完整回执默认超过 8 KiB 时生成受治理的 JSON 文件，后续上下文只保留描述、ID、hash、大小与读取引用；`read_artifact_range` 支持大字符串按 UTF-8 字节范围读取，也可通过下载接口获取完整文件。
 
-当前没有接入 `HarnessAgent` 侧按 token 压力触发的自动摘要/压缩、Memory Flush 或上下文 offload。SDK 在达到迭代上限时仍会做最终总结收尾；类型化结构输出也会清理内部响应工具消息，这两者都不是通用历史压缩。未配置模态预算的图片、音频、视频和文件输入会被发送前检查拒绝。
+工作上下文通过原生 ReAct 中间件管理，SDK CAS 检查点和会话投影在同一执行栅栏事务中写入。压缩模型不接收主对话 system 或长期记忆，也没有工具；其调用占用本 Turn 模型次数预算。离线模式只做确定性的原文摘录。未启用通用 Memory Flush 或任意文件系统 offload；未配置模态预算的多模态输入仍拒绝。
+
+| 预算项 | 默认值 | 环境变量 |
+| --- | ---: | --- |
+| 固定系统内容 / 长期记忆 | 8 / 16 KiB | `FINANCECLAW_CONTEXT_SYSTEM_BYTES` / `FINANCECLAW_CONTEXT_LONG_MEMORY_BYTES` |
+| 会话工作上下文 | 24 KiB | `FINANCECLAW_CONTEXT_WORK_CONTEXT_BYTES` |
+| 当前用户输入 | 8 KiB | `FINANCECLAW_CONTEXT_CURRENT_INPUT_BYTES` |
+| 工具 Schema / 单个回执 | 16 / 8 KiB | `FINANCECLAW_CONTEXT_TOOL_SCHEMA_BYTES` / `FINANCECLAW_CONTEXT_TOOL_RESULT_BYTES` |
+| 结构化摘要 | 2 KiB | `FINANCECLAW_CONTEXT_SUMMARY_BYTES` |
+| 压缩触发比例 / 最近保留轮数 | 80% / 1 | `FINANCECLAW_CONTEXT_COMPACT_AT_PERCENT` / `FINANCECLAW_CONTEXT_RETAINED_ROUNDS` |
+
+当前输入与工具回执属于工作上下文的子预算，各项上限不能简单相加当作模型窗口。Compose 会将这些非密钥配置传入业务进程，可在 `.env` 中调整；直接运行 JVM 时设置同名环境变量。具体保留规则和错误边界见[上下文生命周期与预算](docs/architecture/context-management.md)。
+
+大结果文件的完整 JSON 保存在 SQL Artifact 归档中，单文件上限 **2 MiB**，超过时明确拒绝。模型通过 `read_artifact_range` 每次读取最多 512 个 UTF-8 字节；HTTP 提供 `GET /v1/artifacts/{id}/range?start=0&maxBytes=4096` 和 `GET /v1/artifacts/{id}/download`，均使用正常 Bearer 认证，重新核验 owner、隐私和原工具权限。
 
 源码：[TaskAgentRuntime](src/main/java/com/financeclaw/infrastructure/agentscope/execution/TaskAgentRuntime.java)、[BudgetedTransport](src/main/java/com/financeclaw/infrastructure/agentscope/execution/BudgetedTransport.java)、[ExecutionPolicyService](src/main/java/com/financeclaw/app/execution/ExecutionPolicyService.java)。
 
@@ -59,7 +73,7 @@ flowchart LR
 | 层 | 如何维护 | 执行时如何使用 |
 | --- | --- | --- |
 | 用户画像 | 每个逻辑用户一份 UTF-8 `profile.md`，下载、手工编辑、上传；SQL 保存当前权威正文 | 作为稳定背景和表达偏好；当前请求优先，人工画像优先于冲突证据 |
-| 跨会话证据 | 从已完成任务的可信用户消息提取，保留来源 Turn、原文引文、revision 和确认状态 | 受理时冻结最多 16 条有效偏好，执行时重新核验后注入 |
+| 跨会话证据 | 从已完成任务的可信用户消息提取，保留来源 Turn、原文引文、revision 和确认状态 | 受理时选取最多 16 条有效偏好并冻结正文，本 Turn 沿用；下一 Turn 才重新召回 |
 
 画像默认开启，正文上限 **8 KiB**。上传必须携带绑定主体、epoch 和 revision 的 ETag，防止并发覆盖和遗忘前文件回写。它不是服务器目录中被监听的文件，模型也不会自动改写画像。
 
@@ -146,7 +160,7 @@ SSE 转发原生文本增量和工具状态，并回放持久任务事件。先�
 | 自动重试 | 主任务 ReAct 的模型和工具总尝试次数设为 1；不因超时自动重放工具 |
 | 调用次数 | 主备调用分别经过根 Turn 授权和预算检查；固定组合驱动及研究子 Agent 不配置同样的备用链 |
 | 请求预算 | 检查最终序列化请求和输出预留；有 usage 时验证其合法性，不提供精确计费或统一成本账本 |
-| Qwen thinking | 显式设置 `enable_thinking`，默认关闭；非 Qwen 配置不能启用 |
+| Qwen thinking | 主对话显式设置 `enable_thinking`，默认关闭；工作摘要请求单独关闭；非 Qwen 配置不能启用 |
 | 记忆模型 | 提取、embedding 单独配置和凭据；提取使用 SDK 类型化结构输出，不承诺供应商原生 JSON Schema 模式 |
 | 发布身份 | AgentScope 版本、模型配置、预算、scopes、打包 Skill 和业务配置参与摘要；任务绑定受理时版本 |
 
@@ -161,7 +175,8 @@ SSE 转发原生文本增量和工具状态，并回放持久任务事件。先�
 | 层次 | 当前落点 | 作用 |
 | --- | --- | --- |
 | SDK Middleware | `FinalAnswerFilterMiddleware.onReasoning` | 过滤工具调用轮文本；无工具调用的文本在模型轮结束后放出 |
-| SDK Middleware | `onSystemPrompt` | 将本 attempt 的画像和证据作为请求数据注入 |
+| SDK Middleware | `onSystemPrompt` | 注入 Turn 开始时冻结的长期记忆正文，恢复沿用同一快照 |
+| SDK Middleware / Hook | `onReasoning`、`onModelCall`、`PostActingEvent` | 分区预算、结构化工作摘要、大结果文件引用 |
 | SDK Middleware | `onActing` | 原生 Skill 加载前检查 `skill:use` 并扣减预算 |
 | SDK 技能装配 | `DynamicSkillMiddleware` | 启用原生 Skill Repository 后，由 SDK 管理技能上下文与激活 |
 | SDK 运行时 | `GracefulShutdownMiddleware` | 固定版本 ReActAgent 自带的优雅停止处理，配合应用取消/中断 |
@@ -184,7 +199,7 @@ docker compose up -d --build --wait --wait-timeout 180
 curl --fail http://localhost:8080/actuator/health/readiness
 ```
 
-就绪预期返回 `{"status":"UP"}`。Compose 的 `init-db` 完成新库结构与授权后，启动统一业务服务 `api` 和受限 `memory-worker`；API 仅绑定本机 8080。主库由单一 V1 创建 34 张应用表，不提供历史库迁移或回填，详见[新库初始化](docs/architecture/fresh-schema.md)。
+就绪预期返回 `{"status":"UP"}`。Compose 的 `init-db` 完成新库结构与授权后，启动统一业务服务 `api` 和受限 `memory-worker`；API 仅绑定本机 8080。主库由单一 V1 创建 35 张应用表，不提供历史库迁移或回填，详见[新库初始化](docs/architecture/fresh-schema.md)。
 
 ### 跑通一次请求
 
@@ -218,6 +233,7 @@ curl --fail -H "Authorization: Bearer $FINANCECLAW_API_TOKEN" \
 | 能力 | 默认状态 | 配置入口 |
 | --- | --- | --- |
 | 业务模型 | 离线 | `FINANCECLAW_MODEL` / `FINANCECLAW_MODEL_BASE_URL`；凭据挂载自 `.secrets/model-key` |
+| 工作上下文 / 大结果归档 | 开启 | `FINANCECLAW_CONTEXT_*`，默认阈值见上方预算表 |
 | 人工画像 | 开启 | `FINANCECLAW_PROFILE_ENABLED` |
 | 证据提取 / 向量搜索 | 关闭 / 关闭 | `FINANCECLAW_MEMORY_ENABLED` / `FINANCECLAW_MEMORY_VECTOR_SEARCH`，另配提取与嵌入模型 |
 | 独立遗忘账本 | 关闭 | 独立库与凭据、离线 bootstrap、`compose.forget-ledger.yml` |
@@ -245,15 +261,18 @@ python3 scripts/validate-compose.py --ziwei --admission --preflight --restore-pr
 
 数据库测试使用 Testcontainers 和独立数据库；模型、MCP、embedding 和飞书使用本地模拟服务。Compose 使用随机项目和新数据卷，覆盖进程故障、审批恢复、受理排空、画像隔离、备份恢复及隐私拦截。真实服务验收入口为 `scripts/validate-live.py`，不属于默认离线测试。
 
+本次上下文改造的本地记录：**1032 项 Java 单元/契约/架构测试通过**，提交前的响应 ID 与摘要 thinking 隔离修复又通过 59 项定向回归；44 项 Python 脚本测试、格式与静态交付检查通过。已补充 PostgreSQL 工作上下文及记忆快照测试并完成测试源码编译，但本机 Docker 守护进程超时，**尚未实测本次数据库集成与 Compose 场景；真实摘要供应商输出仍需单独验收**。下面的历史基线不能替代本次提交的远程 CI。
+
 代码基线 [`b5cf86b`](https://github.com/westbrook0904/FinanceClaw/commit/b5cf86b4474bdd84379d68ca69e5a6dcd00b4720) 的[远程验证](https://github.com/westbrook0904/FinanceClaw/actions/runs/39894283554)通过 **950 项单元/契约/架构测试、319 项集成测试、44 项脚本测试和 31 项 Compose 检查**。这是该代码基线的结果，不代表真实外部服务已验收，也不代替后续提交的 CI。Java 汇总写入 `target/verification/results.json`，Compose 单独记录部署证据。
 
 | 文档 | 内容 |
 | --- | --- |
 | [运行结构](docs/architecture/combined-runtime.md) | 统一 JVM、受限入口、SSE 与调度 |
+| [上下文生命周期与预算](docs/architecture/context-management.md) | Turn 快照、会话轨迹、结构化摘要、预算与文件读取 |
 | [数据结构](docs/architecture/database-schema-review.md) / [数据库访问](docs/architecture/database-access-review.md) | 权威状态边界、锁与查询策略 |
 | [画像与证据记忆](docs/architecture/user-profile-memory.md) | Markdown、来源、确认、版本和隐私 |
 | [HTTP 校验](docs/architecture/http-request-validation.md) / [Java 规范](docs/architecture/java-coding-guidelines.md) | 输入边界与关键逻辑注释约定 |
 | [运行维护](docs/operations.md) | 受理排空、配置、备份与隔离隐私恢复 |
 | [历史记录](docs/history/README.md) | 过去设计和验收证据，非当前迁移或兼容承诺 |
 
-后续可强化的 Harness 边界包括：持久化发布定义与版本目录、远端 MCP Schema 指纹锁定、受治理的上下文压缩、可信多用户认证、跨实例事件转发，以及统一观测和模型成本记录；这些均不作为当前已交付能力。
+后续可强化的 Harness 边界包括：持久化发布定义与版本目录、远端 MCP Schema 指纹锁定、可信多用户认证、跨实例事件转发，以及统一观测和模型成本记录；这些均不作为当前已交付能力。

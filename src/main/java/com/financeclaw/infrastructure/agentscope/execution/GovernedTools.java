@@ -40,6 +40,7 @@ public final class GovernedTools implements AutoCloseable {
     private final McpToolContribution mcp;
     private io.agentscope.core.skill.repository.ClasspathSkillRepository skills;
     private final Map<String, InteractionHandler> interactions = new HashMap<>();
+    private final Map<String, String> requiredScopes = new HashMap<>();
     public final Toolkit toolkit = new Toolkit();
 
     public GovernedTools(
@@ -200,6 +201,7 @@ public final class GovernedTools implements AutoCloseable {
         if (scope != null && (!scopes.contains(scope) || !release.scopes().contains(scope))) {
             return;
         }
+        if (scope != null) requiredScopes.put(name, scope);
         toolkit.registerAgentTool(
                 new ToolBase(
                         ToolBase.builder()
@@ -234,6 +236,13 @@ public final class GovernedTools implements AutoCloseable {
         if (interaction != null) {
             interactions.put(name, interaction);
         }
+    }
+
+    /** 大结果归档沿用产生它的工具权限，原生 Skill loader 不经过本地注册函数。 */
+    public String requiredScope(String toolName) {
+        return "load_skill_through_path".equals(toolName)
+                ? "skill:use"
+                : requiredScopes.get(toolName);
     }
 
     public List<Pending> pending(io.agentscope.core.state.AgentState state) {

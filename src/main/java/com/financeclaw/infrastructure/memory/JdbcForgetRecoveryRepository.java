@@ -190,11 +190,15 @@ public final class JdbcForgetRecoveryRepository implements ForgetRecoveryReposit
                 o.subject(),
                 fact.toEpoch());
         db.update(
-                "DELETE FROM memory.recalls r USING memory.facts f WHERE r.fact_id=f.id AND"
-                        + " f.tenant=? AND f.subject=? AND (r.epoch<? OR f.epoch<?)",
+                "DELETE FROM memory.turn_snapshots WHERE tenant=? AND subject=? AND epoch<?",
                 o.tenant(),
                 o.subject(),
-                fact.toEpoch(),
+                fact.toEpoch());
+        // 工作上下文含当次问答和工具过程，与长期记忆正文一起跨越遗忘边界清除。
+        db.update(
+                "DELETE FROM agent_runtime.work_contexts WHERE tenant=? AND subject=? AND epoch<?",
+                o.tenant(),
+                o.subject(),
                 fact.toEpoch());
         db.update(
                 "UPDATE memory.jobs SET status='forgotten',lease_token=NULL,lease_until=NULL WHERE"
@@ -413,9 +417,15 @@ SELECT
      LEFT JOIN memory.facts f ON f.id=p.fact_id
      WHERE o.tenant IS NULL OR p.epoch<>o.epoch OR f.id IS NULL
        OR f.tenant<>p.tenant OR f.subject<>p.subject OR f.epoch<>p.epoch OR f.status='forgotten')
-  + (SELECT count(*) FROM memory.recalls r LEFT JOIN memory.facts f ON f.id=r.fact_id
-     LEFT JOIN memory.owners o ON o.tenant=f.tenant AND o.subject=f.subject
-     WHERE f.id IS NULL OR o.tenant IS NULL OR r.epoch<>o.epoch OR f.epoch<>o.epoch OR f.status='forgotten')
+  + (SELECT count(*) FROM memory.turn_snapshots p LEFT JOIN memory.owners o USING(tenant,subject)
+     LEFT JOIN memory.sources s ON s.id=p.turn_id
+     WHERE o.tenant IS NULL OR p.epoch<>o.epoch OR s.id IS NULL
+       OR s.tenant<>p.tenant OR s.subject<>p.subject OR s.epoch<>p.epoch
+       OR s.profile_revision<>p.profile_revision OR s.status='forgotten')
+  + (SELECT count(*) FROM agent_runtime.work_contexts w LEFT JOIN memory.owners o USING(tenant,subject)
+     LEFT JOIN memory.sources s ON s.id=w.turn_id
+     WHERE o.tenant IS NULL OR w.epoch<>o.epoch OR s.id IS NULL
+       OR s.tenant<>w.tenant OR s.subject<>w.subject OR s.epoch<>w.epoch OR s.status='forgotten')
   + (SELECT count(*) FROM memory.jobs j LEFT JOIN memory.owners o USING(tenant,subject)
      WHERE o.tenant IS NULL OR j.epoch>o.epoch OR j.epoch<1
        OR (j.epoch<o.epoch AND (j.status NOT IN ('forgotten','obsolete') OR j.lease_token IS NOT NULL OR j.lease_until IS NOT NULL)))

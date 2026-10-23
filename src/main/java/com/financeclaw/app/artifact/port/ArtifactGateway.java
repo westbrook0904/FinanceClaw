@@ -9,7 +9,13 @@ public interface ArtifactGateway {
 
     int insertArtifact(Artifact artifact);
 
-    String artifactScope(String id);
+    /** 读取权限和隐私标记共享一次查询，避免每种产物读取方式分别增加数据库往返。 */
+    record Access(String requiredScope, boolean privacyBound) {}
+
+    Access artifactAccess(String id);
+
+    /** 工具结果的正文、原始工具权限和隐私绑定一次原子插入。 */
+    int insertToolResultArtifact(Artifact artifact, String requiredScope);
 
     int setArtifactScope(String id, String scope);
 

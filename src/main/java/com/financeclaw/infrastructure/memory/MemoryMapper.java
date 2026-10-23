@@ -2,6 +2,7 @@ package com.financeclaw.infrastructure.memory;
 
 import com.financeclaw.domain.Memory.*;
 import com.financeclaw.domain.Task.Owner;
+import com.financeclaw.domain.memory.TurnMemorySnapshot;
 import com.financeclaw.domain.memory.UserProfile;
 import java.util.List;
 import org.apache.ibatis.annotations.*;
@@ -9,7 +10,7 @@ import org.apache.ibatis.annotations.*;
 /**
  * 用户画像、跨会话证据及异步记忆任务的持久化映射。
  *
- * <p>owner 的 epoch 是遗忘隔离边界，profile_revision 是人工画像的执行版本边界。 受理持共享锁，画像修改、遗忘和记忆提交持排他锁；异步结果按 owner → job
+ * <p>owner 的 epoch 是遗忘隔离边界，profile_revision 记录受理时选择的画像版本。 受理持共享锁，画像修改、遗忘和记忆提交持排他锁；异步结果按 owner → job
  * 顺序重验。 所有正文读取必须由应用层校验 owner、epoch、purge_pending 和对应 revision。 投影可重建，不能把向量命中或 SDK 状态作为事实证据。
  */
 @Mapper
@@ -19,7 +20,9 @@ public interface MemoryMapper {
             "SELECT NOT has_schema_privilege(current_user,'business','USAGE') AND NOT"
                     + " has_schema_privilege(current_user,'agent_runtime','USAGE') AND NOT"
                     + " has_schema_privilege(current_user,'channel','USAGE') AND NOT"
-                    + " has_schema_privilege(current_user,'memory','CREATE')")
+                    + " has_schema_privilege(current_user,'memory','CREATE') AND NOT"
+                    + " has_table_privilege(current_user,'memory.user_profiles','SELECT,INSERT,UPDATE,DELETE') AND NOT"
+                    + " has_table_privilege(current_user,'memory.turn_snapshots','SELECT,INSERT,UPDATE,DELETE')")
     boolean isMemoryWorkerRoleRestricted();
 
     @Insert(
@@ -111,7 +114,7 @@ public interface MemoryMapper {
 
     @Select({
         "<script>SELECT id FROM memory.sources WHERE tenant=#{owner.tenant} AND"
-                + " subject=#{owner.subject} AND epoch=#{epoch} AND profile_revision=#{profileRevision}"
+                + " subject=#{owner.subject} AND epoch=#{epoch} AND status!='forgotten'"
                 + " AND id IN",
         "<foreach collection='ids' item='id' open='(' separator=',' close=')'>#{id}</foreach>",
         "</script>"
@@ -119,7 +122,6 @@ public interface MemoryMapper {
     List<String> listCurrentSourceIds(
             @Param("owner") Owner owner,
             @Param("epoch") long epoch,
-            @Param("profileRevision") long profileRevision,
             @Param("ids") List<String> ids);
 
     @Update(
@@ -134,28 +136,37 @@ public interface MemoryMapper {
                     + " status='pending' ON CONFLICT DO NOTHING")
     void insertExtractJobIfAbsent(String id);
 
-    /** 受理时冻结当前可见事实的 ID、revision 和 epoch；不复制正文，执行时仍验证事实未被替代或遗忘。 */
+    /** 仅受理时选择一次当前有效证据；已受理 Turn 的正文不再跟随事实替代或画像编辑变化。 */
+    @Select(
+            "SELECT id,source_id,tenant,subject,epoch,key,content,evidence,revision,status"
+                    + " FROM memory.facts WHERE tenant=#{owner.tenant} AND subject=#{owner.subject}"
+                    + " AND epoch=#{epoch} AND status='active' ORDER BY created_at DESC,id LIMIT 16")
+    List<Fact> listFactsForTurnSnapshot(@Param("owner") Owner owner, @Param("epoch") long epoch);
+
     @Insert(
-            "INSERT INTO memory.recalls(turn_id,fact_id,revision,epoch) SELECT"
-                    + " #{turn},id,revision,epoch FROM memory.facts WHERE tenant=#{owner.tenant} AND"
-                    + " subject=#{owner.subject} AND status='active' AND epoch=#{epoch} ORDER BY"
-                    + " created_at DESC,id LIMIT 16")
-    void insertFrozenRecallFacts(
-            @Param("turn") String turn, @Param("owner") Owner owner, @Param("epoch") long epoch);
+            "INSERT INTO memory.turn_snapshots(turn_id,tenant,subject,epoch,profile_revision,context)"
+                    + " VALUES(#{turnId},#{tenant},#{subject},#{epoch},#{profileRevision},#{context})")
+    void insertTurnMemorySnapshot(TurnMemorySnapshot snapshot);
+
+    @ConstructorArgs({
+        @Arg(column = "turn_id", javaType = String.class),
+        @Arg(column = "tenant", javaType = String.class),
+        @Arg(column = "subject", javaType = String.class),
+        @Arg(column = "epoch", javaType = long.class),
+        @Arg(column = "profile_revision", javaType = long.class),
+        @Arg(column = "context", javaType = String.class)
+    })
+    @Select(
+            "SELECT p.turn_id,p.tenant,p.subject,p.epoch,p.profile_revision,p.context"
+                    + " FROM memory.turn_snapshots p JOIN memory.sources s ON s.id=p.turn_id"
+                    + " AND s.tenant=p.tenant AND s.subject=p.subject AND s.epoch=p.epoch"
+                    + " AND s.profile_revision=p.profile_revision"
+                    + " WHERE p.turn_id=#{turn} AND p.tenant=#{owner.tenant} AND p.subject=#{owner.subject}")
+    TurnMemorySnapshot getTurnMemorySnapshot(
+            @Param("turn") String turn, @Param("owner") Owner owner);
 
     String COLUMNS =
             "f.id,f.source_id,f.tenant,f.subject,f.epoch,f.key,f.content,f.evidence,f.revision,f.status";
-
-    @Select(
-            "SELECT "
-                    + COLUMNS
-                    + " FROM memory.recalls r JOIN memory.facts f ON f.id=r.fact_id AND"
-                    + " f.revision=r.revision AND f.epoch=r.epoch JOIN memory.owners o ON"
-                    + " o.tenant=f.tenant AND o.subject=f.subject AND o.epoch=f.epoch WHERE"
-                    + " r.turn_id=#{turn} AND f.tenant=#{owner.tenant} AND"
-                    + " f.subject=#{owner.subject} AND f.status='active' AND NOT o.purge_pending"
-                    + " ORDER BY f.id")
-    List<Fact> listFrozenRecallFacts(@Param("turn") String turn, @Param("owner") Owner owner);
 
     @Select(
             "SELECT "
@@ -337,10 +348,11 @@ SELECT EXISTS(SELECT 1 FROM locked
     @Delete("DELETE FROM memory.projections WHERE tenant=#{tenant} AND subject=#{subject}")
     void deleteFactProjections(Owner owner);
 
-    @Delete(
-            "DELETE FROM memory.recalls WHERE fact_id IN (SELECT id FROM memory.facts WHERE"
-                    + " tenant=#{tenant} AND subject=#{subject})")
-    void deleteFrozenRecalls(Owner owner);
+    @Delete("DELETE FROM memory.turn_snapshots WHERE tenant=#{tenant} AND subject=#{subject}")
+    void deleteTurnSnapshotsByOwner(Owner owner);
+
+    @Delete("DELETE FROM agent_runtime.work_contexts WHERE tenant=#{tenant} AND subject=#{subject}")
+    void deleteWorkContextsByOwner(Owner owner);
 
     @Update(
             "UPDATE memory.jobs SET status='forgotten',lease_token=NULL,lease_until=NULL WHERE"

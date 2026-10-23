@@ -41,7 +41,7 @@ class MemoryHistoryQueryTest {
     void eightHistoryRowsUseOneOwnerLockAndOneBatchReadInOriginalOrder() {
         var history = IntStream.range(0, 8).mapToObj(i -> turn("history-" + i, "alice")).toList();
         var ids = history.stream().map(Turn::id).toList();
-        when(db.currentSources(OWNER, 2, 0, ids)).thenReturn(List.of("history-7", "history-1"));
+        when(db.currentSources(OWNER, 2, ids)).thenReturn(List.of("history-7", "history-1"));
 
         assertEquals(
                 List.of(history.get(1), history.get(7)),
@@ -49,20 +49,20 @@ class MemoryHistoryQueryTest {
 
         var order = inOrder(db);
         order.verify(db).lock(OWNER);
-        order.verify(db).currentSources(OWNER, 2, 0, ids);
+        order.verify(db).currentSources(OWNER, 2, ids);
         order.verifyNoMoreInteractions();
     }
 
     @Test
     void anotherOwnersRowsNeverReachTheBatchQuery() {
         var own = turn("own", "alice");
-        when(db.currentSources(OWNER, 2, 0, List.of("own"))).thenReturn(List.of("own"));
+        when(db.currentSources(OWNER, 2, List.of("own"))).thenReturn(List.of("own"));
 
         assertEquals(
                 List.of(own),
                 memory.filterHistory(turn("now", "alice"), List.of(own, turn("foreign", "bob"))));
 
-        verify(db).currentSources(OWNER, 2, 0, List.of("own"));
+        verify(db).currentSources(OWNER, 2, List.of("own"));
     }
 
     @Test
@@ -80,14 +80,14 @@ class MemoryHistoryQueryTest {
     @Test
     void privacyIsReadAgainOnTheNextHistoryCallWithoutCrossRequestCaching() {
         var old = turn("old", "alice");
-        when(db.currentSources(OWNER, 2, 0, List.of("old"))).thenReturn(List.of("old"));
+        when(db.currentSources(OWNER, 2, List.of("old"))).thenReturn(List.of("old"));
         assertEquals(List.of(old), memory.filterHistory(turn("now", "alice"), List.of(old)));
         when(db.lock(OWNER)).thenReturn(new Privacy("tenant", "alice", 3, false, 0L));
 
         assertEquals(List.of(), memory.filterHistory(turn("next", "alice"), List.of(old)));
 
         verify(db, times(2)).lock(OWNER);
-        verify(db).currentSources(OWNER, 3, 0, List.of("old"));
+        verify(db).currentSources(OWNER, 3, List.of("old"));
     }
 
     @Test
@@ -134,7 +134,7 @@ class MemoryHistoryQueryTest {
         var history = List.of(turn("old", "alice"));
         assertEquals(List.of(), disabled.filterHistory(turn("now", "alice"), history));
         verify(db).lock(OWNER);
-        verify(db).currentSources(OWNER, 2, 0, List.of("old"));
+        verify(db).currentSources(OWNER, 2, List.of("old"));
         verifyNoMoreInteractions(db);
     }
 

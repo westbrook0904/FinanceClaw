@@ -3,6 +3,7 @@ package com.financeclaw.app.memory.port;
 import com.financeclaw.domain.Memory.*;
 import com.financeclaw.domain.Task.Owner;
 import com.financeclaw.domain.memory.EmbeddingVector;
+import com.financeclaw.domain.memory.TurnMemorySnapshot;
 import com.financeclaw.domain.memory.UserProfile;
 import java.util.List;
 
@@ -27,15 +28,17 @@ public interface MemoryRepository {
 
     Source sourceById(String id);
 
-    List<String> currentSources(Owner owner, long epoch, long profileRevision, List<String> ids);
+    List<String> currentSources(Owner owner, long epoch, List<String> ids);
 
     int ready(String id);
 
     void extractJob(String id);
 
-    void freeze(String turn, Owner owner, long epoch);
+    List<Fact> snapshotFacts(Owner owner, long epoch);
 
-    List<Fact> recall(String turn, Owner owner);
+    void insertTurnSnapshot(TurnMemorySnapshot snapshot);
+
+    TurnMemorySnapshot turnSnapshot(String turn, Owner owner);
 
     List<Fact> list(Owner owner);
 
@@ -81,7 +84,9 @@ public interface MemoryRepository {
 
     void eraseIndex(Owner owner);
 
-    void eraseRecalls(Owner owner);
+    void eraseSnapshots(Owner owner);
+
+    void eraseWorkContexts(Owner owner);
 
     void eraseJobs(Owner owner);
 

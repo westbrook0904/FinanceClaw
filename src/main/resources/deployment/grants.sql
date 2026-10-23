@@ -8,6 +8,6 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA memory TO financecl
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA memory TO financeclaw_memory;
 REVOKE INSERT, UPDATE, DELETE ON memory.privacy_ledger_binding, memory.forget_requests, memory.forget_applied FROM financeclaw_memory;
 -- Human-maintained profiles are read and changed only by authenticated API/isolated recovery.
-REVOKE ALL ON memory.user_profiles FROM financeclaw_memory;
+REVOKE ALL ON memory.user_profiles, memory.turn_snapshots FROM financeclaw_memory;
 CREATE INDEX IF NOT EXISTS memory_projection_cosine ON memory.projections
   USING hnsw ((embedding::vector(1024)) vector_cosine_ops);

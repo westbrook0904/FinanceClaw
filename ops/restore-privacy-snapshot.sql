@@ -26,9 +26,14 @@ WITH owners AS (
       WHERE p.tenant=o.tenant AND p.subject=o.subject
       AND (p.epoch<>o.epoch OR f.id IS NULL OR f.tenant<>p.tenant OR f.subject<>p.subject
         OR f.epoch<>p.epoch OR f.status='forgotten')) AS unsafe_projections,
-    (SELECT count(*) FROM memory.recalls r JOIN memory.facts f ON f.id=r.fact_id
-      WHERE f.tenant=o.tenant AND f.subject=o.subject
-      AND (r.epoch<>o.epoch OR f.epoch<>o.epoch OR f.status='forgotten')) AS unsafe_recalls,
+    (SELECT count(*) FROM memory.turn_snapshots p LEFT JOIN memory.sources s ON s.id=p.turn_id
+      WHERE p.tenant=o.tenant AND p.subject=o.subject
+      AND (p.epoch<>o.epoch OR s.id IS NULL OR s.tenant<>p.tenant OR s.subject<>p.subject
+        OR s.epoch<>p.epoch OR s.profile_revision<>p.profile_revision OR s.status='forgotten')) AS unsafe_snapshots,
+    (SELECT count(*) FROM agent_runtime.work_contexts w LEFT JOIN memory.sources s ON s.id=w.turn_id
+      WHERE w.tenant=o.tenant AND w.subject=o.subject
+      AND (w.epoch<>o.epoch OR s.id IS NULL OR s.tenant<>w.tenant OR s.subject<>w.subject
+        OR s.epoch<>w.epoch OR s.status='forgotten')) AS unsafe_work_contexts,
     (SELECT count(*) FROM memory.jobs j WHERE j.tenant=o.tenant AND j.subject=o.subject
       AND (j.epoch>o.epoch OR j.epoch<1
         OR (j.epoch<o.epoch AND (j.status NOT IN ('forgotten','obsolete')
@@ -41,6 +46,8 @@ WITH owners AS (
   UNION SELECT tenant,subject FROM memory.projections UNION SELECT tenant,subject FROM memory.jobs
   UNION SELECT tenant,subject FROM memory.audit UNION SELECT tenant,subject FROM memory.operations
   UNION SELECT tenant,subject FROM memory.user_profiles
+  UNION SELECT tenant,subject FROM memory.turn_snapshots
+  UNION SELECT tenant,subject FROM agent_runtime.work_contexts
 )
 SELECT jsonb_build_object(
   'schema_version', 2, 'scope', 'all_memory_owners',

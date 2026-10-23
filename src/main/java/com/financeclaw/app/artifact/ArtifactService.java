@@ -60,22 +60,43 @@ public class ArtifactService {
                 });
     }
 
+    /** 在当前执行栅栏中归档完整工具结果；后续每次读取均检查该 Turn 的遗忘状态和原工具权限。 正文和权限标记一次插入，只有事务成功后调用方才能用引用替换模型上下文中的原文。 */
+    public Artifact archiveToolResult(Claim claim, Object payload, String requiredScope) {
+        return leases.fenced(
+                claim,
+                () -> {
+                    var checked = policy.checkPolicy(claim);
+                    var scope = requiredScope == null ? "artifact:read" : requiredScope;
+                    if (!PayloadJson.scopes(checked.scopes()).contains(scope)) {
+                        throw new Blocked("artifact_scope_denied");
+                    }
+                    var artifact = artifact(claim, ArtifactPayload.encode(payload));
+                    if (db.insertToolResultArtifact(artifact, scope) != 1) {
+                        throw new Blocked("artifact_archive_failed");
+                    }
+                    return artifact;
+                });
+    }
+
     /** 仅由已持有执行栅栏且通过授权的入口调用，不自行开启事务或重复读取权限。 */
     private Artifact persistArtifact(Claim claim, ArtifactPayload encoded) {
-        var turn = claim.turn();
-        var artifact =
-                new Artifact(
-                        UUID.randomUUID().toString(),
-                        turn.id(),
-                        turn.conversationId(),
-                        turn.tenant(),
-                        turn.subject(),
-                        turn.releaseHash(),
-                        encoded.hash(),
-                        encoded.json(),
-                        encoded.bytes());
+        var artifact = artifact(claim, encoded);
         db.insertArtifact(artifact);
         return artifact;
+    }
+
+    private Artifact artifact(Claim claim, ArtifactPayload encoded) {
+        var turn = claim.turn();
+        return new Artifact(
+                UUID.randomUUID().toString(),
+                turn.id(),
+                turn.conversationId(),
+                turn.tenant(),
+                turn.subject(),
+                turn.releaseHash(),
+                encoded.hash(),
+                encoded.json(),
+                encoded.bytes());
     }
 
     public Page read(Owner owner, String id, int start, int limit) {
@@ -84,31 +105,55 @@ public class ArtifactService {
 
     public Page read(Owner owner, String id, int start, int limit, String path) {
         return tx.execute(
-                status -> {
-                    var artifact = db.artifact(id);
-                    if (artifact == null
-                            || !artifact.tenant().equals(owner.tenant())
-                            || !artifact.subject().equals(owner.subject())) {
-                        throw new Problem(404, "not_found");
-                    }
-                    // 先取隐私用户锁、后取授权锁，与执行端顺序一致，避免遗忘和读取形成反向等待。
-                    if ("ziwei:read".equals(db.artifactScope(id))) {
-                        policy.checkArtifactPrivacy(db.turn(artifact.turnId()));
-                    }
-                    var grant = db.lockGrant(artifact.conversationId());
-                    if (grant == null
-                            || !PayloadJson.scopes(grant.scopes()).contains("artifact:read")) {
-                        throw new Problem(403, "artifact_denied");
-                    }
-                    if (!PayloadJson.scopes(grant.scopes()).contains(db.artifactScope(id))) {
-                        throw new Problem(403, "artifact_scope_denied");
-                    }
-                    try {
-                        releases.require(artifact.releaseHash());
-                    } catch (Blocked error) {
-                        throw new Problem(409, error.getMessage());
-                    }
-                    return ArtifactPayload.read(artifact, start, limit, path);
-                });
+                status -> ArtifactPayload.read(authorized(owner, id), start, limit, path));
+    }
+
+    /** start/maxBytes 均是归档 JSON 的 UTF-8 字节偏移，不接受服务器路径或任意文件名。 */
+    public ArtifactPayload.Range readRange(Owner owner, String id, int start, int maxBytes) {
+        return tx.execute(
+                status -> ArtifactPayload.readRange(authorized(owner, id), start, maxBytes));
+    }
+
+    /** 返回经授权和完整性校验的完整 JSON 文件；控制器负责 attachment 响应，数据库始终是正文权威。 */
+    public ArtifactPayload.Document download(Owner owner, String id) {
+        return tx.execute(status -> ArtifactPayload.document(authorized(owner, id)));
+    }
+
+    /** 必须在读取事务内调用：用户隐私锁先于授权锁，与执行及遗忘路径保持相同顺序。 */
+    private Artifact authorized(Owner owner, String id) {
+        var artifact = db.artifact(id);
+        if (artifact == null
+                || !artifact.tenant().equals(owner.tenant())
+                || !artifact.subject().equals(owner.subject())) {
+            throw new Problem(404, "not_found");
+        }
+        var access = db.artifactAccess(id);
+        if (access == null || access.requiredScope() == null) {
+            throw new Problem(409, "artifact_corrupt");
+        }
+        if (access.privacyBound() || "ziwei:read".equals(access.requiredScope())) {
+            var turn = db.turn(artifact.turnId());
+            if (turn == null) {
+                throw new Problem(409, "artifact_corrupt");
+            }
+            policy.checkArtifactPrivacy(turn);
+        }
+        var grant = db.lockGrant(artifact.conversationId());
+        // 工具文件只是原工具回执的另一种载体，不能额外要求 artifact:read 把 skill-only 等合法调用截断。
+        // 普通业务产物继续要求 artifact:read 和其自身 required scope，范围接口不改变这条权限边界。
+        if (grant == null
+                || (!access.privacyBound()
+                        && !PayloadJson.scopes(grant.scopes()).contains("artifact:read"))) {
+            throw new Problem(403, "artifact_denied");
+        }
+        if (!PayloadJson.scopes(grant.scopes()).contains(access.requiredScope())) {
+            throw new Problem(403, "artifact_scope_denied");
+        }
+        try {
+            releases.require(artifact.releaseHash());
+        } catch (Blocked error) {
+            throw new Problem(409, error.getMessage());
+        }
+        return artifact;
     }
 }

@@ -42,11 +42,8 @@ public class MemoryConfiguration {
 
     @Bean
     UserProfileService userProfileService(
-            MemoryRepository memory,
-            TransactionTemplate tx,
-            MemoryPolicy policy,
-            TaskEventHub events) {
-        return new UserProfileService(memory, tx, policy, events);
+            MemoryRepository memory, TransactionTemplate tx, MemoryPolicy policy) {
+        return new UserProfileService(memory, tx, policy);
     }
 
     @Bean

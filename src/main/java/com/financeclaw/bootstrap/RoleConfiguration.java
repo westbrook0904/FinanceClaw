@@ -118,6 +118,7 @@ public final class RoleConfiguration {
         TaskController.class,
         TaskEvents.class,
         GovernanceController.class,
+        ArtifactContentController.class,
         OperationsController.class,
         MemoryController.class,
         UserProfileController.class,

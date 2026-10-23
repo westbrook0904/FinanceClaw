@@ -1,6 +1,6 @@
 -- FinanceClaw 独立应用的新库初始化。
 -- 本文件直接定义当前数据模型，由 Flyway 在空库执行一次；不存在旧应用数据回填或历史表升级。
--- 主库共 34 张应用表：business 16、agent_runtime 1、memory 13、channel 4。
+-- 主库共 35 张应用表：business 16、agent_runtime 2、memory 13、channel 4。
 -- 独立遗忘账本使用 privacy-ledger 下的初始化文件，不在本业务库创建。
 
 -- 一、职责隔离：业务权威、框架检查点、跨会话记忆、渠道接入分别使用独立 schema。
@@ -77,6 +77,8 @@ CREATE TABLE business.turns (
 CREATE UNIQUE INDEX one_active_turn ON business.turns(conversation_id)
   WHERE status IN ('queued','resuming','running','waiting','cancelling','blocked');
 CREATE INDEX turn_owner_status ON business.turns(tenant,subject,status);
+CREATE INDEX turn_completed_history ON business.turns(conversation_id,created_at DESC,id DESC)
+  WHERE status='completed';
 
 CREATE TABLE business.commands (
   id text PRIMARY KEY,
@@ -183,6 +185,7 @@ CREATE TABLE business.artifacts (
   payload text NOT NULL,
   bytes int NOT NULL CHECK(bytes BETWEEN 1 AND 2097152),
   required_scope text NOT NULL DEFAULT 'artifact:read',
+  privacy_bound boolean NOT NULL DEFAULT false,
   CHECK(octet_length(payload)=bytes)
 );
 CREATE TABLE business.reports (
@@ -220,6 +223,26 @@ CREATE TABLE agent_runtime.states (
   PRIMARY KEY(namespace,user_id,session_id,state_key),
   CHECK(deleted=(payload IS NULL))
 );
+
+-- 每个 Turn 保存一份有界工作上下文和本轮完整执行轨迹。下一轮只读取最新已完成
+-- Turn 的工作投影；transcript 保留本轮问答、调用参数与结果引用，不重复复制整段会话。
+-- 与 SDK 检查点在同一执行栅栏事务中写入，未完成/失败尝试不能冒充已提交的会话历史。
+CREATE TABLE agent_runtime.work_contexts (
+  turn_id text PRIMARY KEY REFERENCES business.turns(id) ON DELETE CASCADE,
+  conversation_id text NOT NULL REFERENCES business.conversations(id),
+  tenant text NOT NULL,
+  subject text NOT NULL,
+  epoch bigint NOT NULL CHECK(epoch >= 0),
+  release_hash text NOT NULL,
+  grant_revision bigint NOT NULL,
+  attempt_id text NOT NULL REFERENCES business.attempts(id),
+  state_version bigint NOT NULL CHECK(state_version > 0),
+  payload jsonb NOT NULL,
+  transcript jsonb NOT NULL,
+  updated_at timestamptz NOT NULL DEFAULT clock_timestamp()
+);
+CREATE INDEX work_context_conversation ON agent_runtime.work_contexts(conversation_id);
+CREATE INDEX work_context_owner ON agent_runtime.work_contexts(tenant,subject,epoch);
 
 -- 七、两层跨会话记忆。
 -- owners 为高频加锁的隐私/画像版本窄行；Markdown 画像仅由用户手工维护，证据提取不覆盖画像。
@@ -270,14 +293,19 @@ CREATE TABLE memory.facts (
 );
 CREATE UNIQUE INDEX memory_active_key ON memory.facts(tenant,subject,key) WHERE status='active';
 
--- Recall 冻结受理时选中的证据版本；发送模型前仍核对当前 epoch、事实 revision 与 active 状态。
-CREATE TABLE memory.recalls (
-  turn_id text NOT NULL REFERENCES business.turns(id) ON DELETE CASCADE,
-  fact_id text NOT NULL REFERENCES memory.facts(id) ON DELETE CASCADE,
-  revision bigint NOT NULL,
-  epoch bigint NOT NULL,
-  PRIMARY KEY(turn_id,fact_id)
+-- 长期记忆正文按 Turn 仅冻结一次；普通画像编辑不改写，遗忘按 epoch 清理。
+-- 包含人工画像，受限记忆 Worker 无权读取或写入此表。
+CREATE TABLE memory.turn_snapshots (
+  turn_id text PRIMARY KEY REFERENCES business.turns(id) ON DELETE CASCADE,
+  tenant text NOT NULL,
+  subject text NOT NULL,
+  epoch bigint NOT NULL CHECK(epoch>=1),
+  profile_revision bigint NOT NULL CHECK(profile_revision>=0),
+  context text NOT NULL CHECK(octet_length(context)<=262144),
+  created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+  FOREIGN KEY(tenant,subject) REFERENCES memory.owners(tenant,subject) ON DELETE CASCADE
 );
+CREATE INDEX memory_snapshot_owner ON memory.turn_snapshots(tenant,subject,epoch);
 CREATE TABLE memory.jobs (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   kind text NOT NULL CHECK(kind IN ('extract','index')),

@@ -138,11 +138,11 @@ class MemoryIT {
 
         assertThat(memory.filterHistory(secondTurn, candidates))
                 .containsExactly(secondTurn, firstTurn);
-        assertThat(repository.currentSources(alice, 1, 0, List.of(other.turnId(), "missing")))
+        assertThat(repository.currentSources(alice, 1, List.of(other.turnId(), "missing")))
                 .isEmpty();
-        assertThat(repository.currentSources(alice, 2, 0, List.of(first.turnId(), second.turnId())))
+        assertThat(repository.currentSources(alice, 2, List.of(first.turnId(), second.turnId())))
                 .isEmpty();
-        assertThat(repository.currentSources(alice, 1, 0, List.of())).isEmpty();
+        assertThat(repository.currentSources(alice, 1, List.of())).isEmpty();
 
         memory.forget(alice, 1, "history-forget");
 
@@ -239,7 +239,7 @@ class MemoryIT {
                         "owners",
                         "sources",
                         "facts",
-                        "recalls",
+                        "turn_snapshots",
                         "jobs",
                         "projections",
                         "audit",
@@ -468,8 +468,8 @@ class MemoryIT {
         var claim = tasks.claim("recall", 60000);
         assertThat(tasks.memoryContext(claim)).contains("中文", f.id());
         var another = submit(bob, "hello");
-        assertThat(db.listFrozenRecallFacts(another.turnId(), bob)).isEmpty();
-        assertThat(db.listFrozenRecallFacts(t.turnId(), bob)).isEmpty();
+        assertThat(db.getTurnMemorySnapshot(another.turnId(), bob).context()).isEmpty();
+        assertThat(db.getTurnMemorySnapshot(t.turnId(), bob)).isNull();
     }
 
     @Test
@@ -820,7 +820,14 @@ class MemoryIT {
                                 "test-memory-only"));
         assertThat(restricted.queryForObject("SELECT count(*) FROM memory.jobs", Integer.class))
                 .isZero();
-        for (var table : List.of("business.turns", "agent_runtime.states", "channel.bindings"))
+        for (var table :
+                List.of(
+                        "business.turns",
+                        "agent_runtime.states",
+                        "agent_runtime.work_contexts",
+                        "channel.bindings",
+                        "memory.user_profiles",
+                        "memory.turn_snapshots"))
             assertThatThrownBy(() -> restricted.queryForList("SELECT * FROM " + table))
                     .isInstanceOf(org.springframework.dao.DataAccessException.class);
         assertThatThrownBy(() -> restricted.execute("CREATE TABLE memory.forbidden(id int)"))

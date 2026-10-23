@@ -13,8 +13,8 @@ spec = importlib.util.spec_from_file_location('drain_files', Path(__file__).with
 files = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(files)
 MAX_BYTES = 16 * 1024 * 1024
-COUNTERS = ('unsafe_profiles', 'unsafe_sources', 'unsafe_facts', 'unsafe_projections', 'unsafe_recalls',
-            'unsafe_jobs', 'invalid_audit_targets')
+COUNTERS = ('unsafe_profiles', 'unsafe_sources', 'unsafe_facts', 'unsafe_projections', 'unsafe_snapshots',
+            'unsafe_work_contexts', 'unsafe_jobs', 'invalid_audit_targets')
 
 
 def require(value):

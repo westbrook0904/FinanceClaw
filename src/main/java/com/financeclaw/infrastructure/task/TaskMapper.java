@@ -280,7 +280,7 @@ worker_id=#{worker},lease_until=clock_timestamp()+#{lease}*interval '1 milliseco
             @Param("status") String status,
             @Param("revision") long revision);
 
-    /** 只选同一会话、同 release 与同授权版本的已完成历史；记忆层还会过滤 owner/epoch/画像版本。 */
+    /** 有界的历史观察查询；记忆层再过滤 owner/epoch。模型运行时使用持久工作投影，不调用本查询拼提示。 */
     @Select(
             "SELECT "
                     + TURN_COLUMNS

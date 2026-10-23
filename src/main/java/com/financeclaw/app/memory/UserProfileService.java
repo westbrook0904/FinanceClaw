@@ -1,29 +1,22 @@
 package com.financeclaw.app.memory;
 
 import com.financeclaw.app.memory.port.MemoryRepository;
-import com.financeclaw.app.task.TaskEventHub;
 import com.financeclaw.domain.Memory.Privacy;
 import com.financeclaw.domain.Task.*;
 import com.financeclaw.domain.memory.MemoryPolicy;
 import com.financeclaw.domain.memory.UserProfile;
 import org.springframework.transaction.support.TransactionTemplate;
 
-/** 人工 Markdown 画像管理：按用户隔离并通过 epoch 与 revision 拒绝过期编辑；只有事务提交后的版本变更才使旧执行尝试失效。 */
+/** 人工 Markdown 画像管理：按用户隔离并通过 epoch 与 revision 拒绝过期编辑；修改仅作用于之后受理的 Turn，既有执行沿用其冻结正文。 */
 public final class UserProfileService {
     private final MemoryRepository db;
     private final TransactionTemplate tx;
     private final MemoryPolicy settings;
-    private final TaskEventHub events;
 
-    public UserProfileService(
-            MemoryRepository db,
-            TransactionTemplate tx,
-            MemoryPolicy settings,
-            TaskEventHub events) {
+    public UserProfileService(MemoryRepository db, TransactionTemplate tx, MemoryPolicy settings) {
         this.db = db;
         this.tx = tx;
         this.settings = settings;
-        this.events = events;
     }
 
     /** 读取当前用户画像；空画像使用版本零，任何正文与权威版本不一致都拒绝静默降级。 */
@@ -56,8 +49,7 @@ public final class UserProfileService {
                     var updated = new UserProfile(expectedEpoch, expectedRevision + 1, markdown);
                     db.saveUserProfile(owner, updated);
                     db.audit(owner, expectedEpoch, "profile_update", "profile.md");
-                    // 仍持有用户锁时捕获受影响尝试；只有事务提交后才发布失效事件，回滚不影响现有执行。
-                    events.invalidateOwner(owner);
+                    // 只影响后续受理的新 Turn；已有长期记忆快照在遗忘前保持不变。
                     return updated;
                 });
     }

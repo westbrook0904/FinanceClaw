@@ -496,8 +496,14 @@ try:
         sql("INSERT INTO memory.projections(fact_id,tenant,subject,epoch,revision,model_revision,dimensions,embedding) "
             "SELECT id,tenant,subject,epoch,revision,'m5e-synthetic',1024,array_fill(0.1::real,ARRAY[1024]) "
             "FROM memory.facts WHERE status='active'; "
-            "INSERT INTO memory.recalls(turn_id,fact_id,revision,epoch) "
-            "SELECT source_id,id,revision,epoch FROM memory.facts WHERE status='active' ON CONFLICT DO NOTHING; "
+            "INSERT INTO memory.turn_snapshots(turn_id,tenant,subject,epoch,profile_revision,context) "
+            "SELECT id,tenant,subject,epoch,profile_revision,'synthetic-private-snapshot' FROM memory.sources "
+            "WHERE status<>'forgotten' ON CONFLICT DO NOTHING; "
+            "INSERT INTO agent_runtime.work_contexts(turn_id,conversation_id,tenant,subject,epoch,release_hash,grant_revision,attempt_id,state_version,payload,transcript) "
+            "SELECT DISTINCT ON (t.id) t.id,t.conversation_id,t.tenant,t.subject,s.epoch,t.release_hash,1,a.id,1,'{}','[]' "
+            "FROM business.turns t JOIN memory.sources s ON s.id=t.id JOIN business.commands c ON c.turn_id=t.id "
+            "JOIN business.attempts a ON a.command_id=c.id WHERE s.status<>'forgotten' ORDER BY t.id,a.fence DESC "
+            "ON CONFLICT(turn_id) DO UPDATE SET epoch=excluded.epoch; "
             f"INSERT INTO memory.audit(tenant,subject,epoch,action,target) VALUES "
             f"('local','developer',{epoch + 1},'forget','invalid-target'),"
             "('m5e-orphan','synthetic',2,'forget','all')", old_database)
@@ -505,7 +511,7 @@ try:
         residual_state = json.loads(residual.read_text())
         owner = next(o for o in residual_state['owners'] if o['tenant'] == 'local' and o['subject'] == 'developer')
         counters = ('unsafe_profiles', 'unsafe_sources', 'unsafe_facts', 'unsafe_projections',
-                    'unsafe_recalls', 'unsafe_jobs', 'invalid_audit_targets')
+                    'unsafe_snapshots', 'unsafe_work_contexts', 'unsafe_jobs', 'invalid_audit_targets')
         assert all(owner[k] > 0 for k in counters) and residual_state['orphan_owners'] > 0
         residual_report = privacy_check(reference, residual, 'residual_memory', 'blocked')
         assert 'no_orphan_owners' in residual_report['errors'] and 'no_unsafe_memory_rows' in residual_report['errors']

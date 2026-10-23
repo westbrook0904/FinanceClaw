@@ -20,7 +20,12 @@ public final class Memory {
         }
 
         public boolean permits(Source source) {
-            return source != null && source.epoch() == epoch && !purgePending;
+            return source != null
+                    && source.tenant().equals(tenant)
+                    && source.subject().equals(subject)
+                    && source.epoch() == epoch
+                    && !"forgotten".equals(source.status())
+                    && !purgePending;
         }
 
         public boolean permits(long observedEpoch) {

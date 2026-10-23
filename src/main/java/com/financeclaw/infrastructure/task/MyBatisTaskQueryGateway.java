@@ -8,7 +8,7 @@ import org.springframework.stereotype.Repository;
 
 /**
  * 实现 TaskQueryGateway，提供 owner 范围的会话任务读取及有游标的历史查询。 外部请求先通过 owned 方法验证身份，内部按 ID 读取不自行补充权限。历史按
- * release 和 grant revision 过滤，记忆用例再检查隐私与画像版本。
+ * release 和 grant revision 过滤，记忆用例再检查隐私 epoch；模型上下文由独立工作投影接续。
  */
 @Repository
 public class MyBatisTaskQueryGateway implements TaskQueryGateway {

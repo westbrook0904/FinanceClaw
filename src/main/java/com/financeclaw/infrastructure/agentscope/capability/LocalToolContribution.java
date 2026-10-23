@@ -25,7 +25,12 @@ public final class LocalToolContribution implements ToolContribution {
     public static final Map<String, Object> EMPTY =
             Map.of("type", "object", "properties", Map.of(), "additionalProperties", false);
     public static final Set<String> NAMES =
-            Set.of("request_city", "create_report", "search_catalog", "read_artifact");
+            Set.of(
+                    "request_city",
+                    "create_report",
+                    "search_catalog",
+                    "read_artifact",
+                    "read_artifact_range");
 
     private final ArtifactService artifacts;
     private final ReportService reports;
@@ -126,6 +131,49 @@ public final class LocalToolContribution implements ToolContribution {
                                                                                 .getOrDefault(
                                                                                         "path",
                                                                                         ""))))));
+        registrar.tool(
+                "read_artifact_range",
+                "按 UTF-8 字节偏移读取归档 JSON 的一小段；接续使用 nextStart，text 片段拼接后才是完整 JSON。",
+                Map.of(
+                        "type",
+                        "object",
+                        "properties",
+                        Map.of(
+                                "artifact_id", Map.of("type", "string"),
+                                "start",
+                                        Map.of("type", "integer", "minimum", 0, "maximum", 2097152),
+                                "max_bytes",
+                                        Map.of("type", "integer", "minimum", 4, "maximum", 512)),
+                        "required",
+                        List.of("artifact_id"),
+                        "additionalProperties",
+                        false),
+                null,
+                p ->
+                        Mono.fromCallable(
+                                () ->
+                                        ToolResultBlock.text(
+                                                PayloadJson.canonical(
+                                                        artifacts.readRange(
+                                                                new Owner(
+                                                                        claim.turn().tenant(),
+                                                                        claim.turn().subject()),
+                                                                (String)
+                                                                        p.getInput()
+                                                                                .get("artifact_id"),
+                                                                ((Number)
+                                                                                p.getInput()
+                                                                                        .getOrDefault(
+                                                                                                "start",
+                                                                                                0))
+                                                                        .intValue(),
+                                                                ((Number)
+                                                                                p.getInput()
+                                                                                        .getOrDefault(
+                                                                                                "max_bytes",
+                                                                                                512))
+                                                                        .intValue())))),
+                null);
     }
 
     private static final class CityInteraction implements InteractionHandler {

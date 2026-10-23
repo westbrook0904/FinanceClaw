@@ -20,6 +20,10 @@ public final class AgentStateInspector {
         this.state = state;
         if (state != null) {
             for (var message : state.getContext()) {
+                if (com.financeclaw.infrastructure.agentscope.context.WorkingContextSession
+                        .isHistorical(message)) {
+                    continue;
+                }
                 message.getContentBlocks(ToolUseBlock.class)
                         .forEach(call -> calls.put(call.getId(), call));
                 message.getContentBlocks(ToolResultBlock.class)

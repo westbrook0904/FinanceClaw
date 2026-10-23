@@ -104,7 +104,8 @@ public final class McpToolContribution implements ToolContribution, AutoCloseabl
     }
 
     private ToolResultBlock archived(Object result, String scope) {
-        var artifact = artifacts.archive(claim, result, scope);
+        // MCP 回执属于工具输出，沿用原工具权限并绑定遗忘状态，不额外要求 artifact:read。
+        var artifact = artifacts.archiveToolResult(claim, result, scope);
         return ToolResultBlock.text(
                 PayloadJson.canonical(
                         Map.of(
@@ -113,7 +114,21 @@ public final class McpToolContribution implements ToolContribution, AutoCloseabl
                                 "hash",
                                 artifact.hash(),
                                 "bytes",
-                                artifact.bytes())));
+                                artifact.bytes(),
+                                "download_url",
+                                "/v1/artifacts/" + artifact.id() + "/download",
+                                "read_range",
+                                Map.of(
+                                        "tool",
+                                        "read_artifact_range",
+                                        "artifact_id",
+                                        artifact.id(),
+                                        "start",
+                                        0,
+                                        "max_bytes",
+                                        512,
+                                        "instructions",
+                                        "start 是 UTF-8 字节偏移；接续使用 nextStart，text 拼接后为完整 JSON。"))));
     }
 
     @Override

@@ -266,7 +266,8 @@ class MemoryHttpContractTest {
         verify(db).eraseProfile(OWNER);
         verify(db).eraseSources(OWNER);
         verify(db).eraseFacts(OWNER);
-        verify(db).eraseRecalls(OWNER);
+        verify(db).eraseSnapshots(OWNER);
+        verify(db).eraseWorkContexts(OWNER);
         verify(db).eraseIndex(OWNER);
         verify(db).eraseJobs(OWNER);
         verify(db).recordOperation(OWNER, key, ExecutionScope.hash(List.of("forget", "1")), "2");

@@ -5,7 +5,6 @@ import static org.mockito.Mockito.*;
 
 import com.financeclaw.app.memory.UserProfileService;
 import com.financeclaw.app.memory.port.MemoryRepository;
-import com.financeclaw.app.task.TaskEventHub;
 import com.financeclaw.domain.Memory.Privacy;
 import com.financeclaw.domain.Task.*;
 import com.financeclaw.domain.memory.*;
@@ -20,7 +19,6 @@ import org.springframework.transaction.support.TransactionTemplate;
 class UserProfileServiceTest {
     private static final Owner OWNER = new Owner("tenant", "alice");
     private final MemoryRepository db = mock(MemoryRepository.class);
-    private final TaskEventHub events = mock(TaskEventHub.class);
     private final PlatformTransactionManager manager = mock(PlatformTransactionManager.class);
     private UserProfileService profiles;
 
@@ -28,7 +26,7 @@ class UserProfileServiceTest {
     void setup() {
         when(manager.getTransaction(any())).thenAnswer(ignored -> new SimpleTransactionStatus());
         when(db.lock(OWNER)).thenReturn(new Privacy("tenant", "alice", 2, false, 0));
-        profiles = new UserProfileService(db, new TransactionTemplate(manager), policy(), events);
+        profiles = new UserProfileService(db, new TransactionTemplate(manager), policy());
     }
 
     private static MemoryPolicy policy() {
@@ -54,18 +52,17 @@ class UserProfileServiceTest {
     }
 
     @Test
-    void firstManualEditWritesOnlyTheProfileAndInvalidatesTheOwner() {
+    void firstManualEditWritesOnlyTheProfileForFutureTurns() {
         when(db.advanceProfile(OWNER, 2, 0)).thenReturn(1);
         var expected = new UserProfile(2, 1, "# 画像\n偏好简洁回答。\n");
 
         assertEquals(expected, profiles.update(OWNER, 2, 0, expected.markdown()));
 
-        var ordered = inOrder(db, events);
+        var ordered = inOrder(db);
         ordered.verify(db).lock(OWNER);
         ordered.verify(db).advanceProfile(OWNER, 2, 0);
         ordered.verify(db).saveUserProfile(OWNER, expected);
         ordered.verify(db).audit(OWNER, 2, "profile_update", "profile.md");
-        ordered.verify(events).invalidateOwner(OWNER);
         ordered.verifyNoMoreInteractions();
     }
 
@@ -80,7 +77,6 @@ class UserProfileServiceTest {
         verify(db).lock(OWNER);
         verify(db).userProfile(OWNER);
         verifyNoMoreInteractions(db);
-        verifyNoInteractions(events);
     }
 
     @Test
@@ -88,7 +84,6 @@ class UserProfileServiceTest {
         assertEquals(new UserProfile(2, 0, ""), profiles.update(OWNER, 2, 0, ""));
         verify(db).lock(OWNER);
         verifyNoMoreInteractions(db);
-        verifyNoInteractions(events);
     }
 
     @Test
@@ -103,7 +98,6 @@ class UserProfileServiceTest {
                         .getMessage());
         verify(db, times(2)).lock(OWNER);
         verifyNoMoreInteractions(db);
-        verifyNoInteractions(events);
     }
 
     @Test
@@ -140,8 +134,7 @@ class UserProfileServiceTest {
                 new UserProfileService(
                         db,
                         new TransactionTemplate(manager),
-                        new MemoryPolicy(true, false, "model", false),
-                        events);
+                        new MemoryPolicy(true, false, "model", false));
         assertEquals(
                 "profile_disabled",
                 assertThrows(Problem.class, () -> profiles.read(OWNER)).getMessage());
@@ -149,7 +142,7 @@ class UserProfileServiceTest {
                 "profile_disabled",
                 assertThrows(Problem.class, () -> profiles.update(OWNER, 2, 0, "new"))
                         .getMessage());
-        verifyNoInteractions(db, events);
+        verifyNoInteractions(db);
     }
 
     @Test
@@ -173,6 +166,6 @@ class UserProfileServiceTest {
                 "invalid_profile_markdown",
                 assertThrows(Problem.class, () -> profiles.update(OWNER, 2, 0, markdown))
                         .getMessage());
-        verifyNoInteractions(db, events);
+        verifyNoInteractions(db);
     }
 }

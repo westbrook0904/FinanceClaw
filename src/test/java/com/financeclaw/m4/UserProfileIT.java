@@ -71,7 +71,7 @@ class UserProfileIT {
         sql.execute("TRUNCATE memory.owners,memory.jobs,memory.operations,memory.audit CASCADE");
         events = new TaskEventHub();
         var settings = new MemoryPolicy(false, false, "disabled", true);
-        profiles = new UserProfileService(db, tx, settings, events);
+        profiles = new UserProfileService(db, tx, settings);
         memory =
                 new MemoryService(
                         db,
@@ -232,13 +232,14 @@ class UserProfileIT {
                 assertThatThrownBy(() -> memory.check(turn)).hasMessage("memory_privacy_changed");
             } else {
                 assertThat(changed).isEqualTo(new UserProfile(1, 1, "updated after admission"));
-                assertThatThrownBy(() -> memory.check(turn)).hasMessage("profile_changed");
+                assertThatCode(() -> memory.check(turn)).doesNotThrowAnyException();
+                assertThat(memory.context(turn)).isEmpty();
             }
         }
     }
 
     @Test
-    void admissionBindsTheProfileVersionWithoutStoringTheBodyOrEvidenceSource() {
+    void admissionStoresAnImmutableProfileSnapshotWithoutCreatingEvidenceJobs() {
         profiles.update(ALICE, 1, 0, "private profile marker");
         var turn = admit("turn", ALICE);
         var source = db.sourceById(turn.id());
@@ -247,8 +248,8 @@ class UserProfileIT {
         assertThat(memory.context(turn)).contains("private profile marker");
         tx.executeWithoutResult(s -> memory.completed(turn.id()));
         assertThat(sql.queryForObject("SELECT count(*) FROM memory.jobs", Integer.class)).isZero();
-        assertThat(sql.queryForObject("SELECT count(*) FROM memory.recalls", Integer.class))
-                .isZero();
+        assertThat(sql.queryForObject("SELECT count(*) FROM memory.turn_snapshots", Integer.class))
+                .isEqualTo(1);
         assertThat(
                         sql.queryForObject(
                                 "SELECT content FROM memory.sources WHERE id='turn'", String.class))
@@ -256,26 +257,22 @@ class UserProfileIT {
     }
 
     @Test
-    void profileChangesBlockOldExecutionAndFilterOldHistoryWithoutChangingPrivacyEpoch() {
+    void profileChangesAffectOnlyNewTurnsAndDoNotRemoveSameEpochHistory() {
         var old = admit("old", ALICE);
         profiles.update(ALICE, 1, 0, "new profile");
         var current = admit("current", ALICE);
         var foreign = admit("foreign", BOB);
 
-        assertThatThrownBy(() -> memory.check(old))
-                .isInstanceOf(Blocked.class)
-                .hasMessage("profile_changed");
-        assertThatThrownBy(() -> memory.context(old))
-                .isInstanceOf(Blocked.class)
-                .hasMessage("profile_changed");
+        assertThatCode(() -> memory.check(old)).doesNotThrowAnyException();
+        assertThat(memory.context(old)).isEmpty();
         assertThat(memory.sameEpoch(old)).isTrue();
         assertThat(memory.filterHistory(current, List.of(old, foreign, current)))
-                .containsExactly(current);
+                .containsExactly(old, current);
         assertThat(memory.context(current)).contains("new profile");
     }
 
     @Test
-    void disabledProfilesRejectOldProfileExecutionsButBindNewTurnsWithoutProfileContent() {
+    void disabledProfilesPreserveOldSnapshotsAndFreezeNewTurnsWithoutProfileContent() {
         profiles.update(ALICE, 1, 0, "profile marker");
         var old = admit("old", ALICE);
         memory =
@@ -292,15 +289,15 @@ class UserProfileIT {
                                         com.financeclaw.app.memory.port.ForgetLedger.class),
                                 events));
 
-        assertThatThrownBy(() -> memory.check(old))
-                .isInstanceOf(Blocked.class)
-                .hasMessage("profile_changed");
+        assertThatCode(() -> memory.check(old)).doesNotThrowAnyException();
+        assertThat(memory.context(old)).contains("profile marker");
         var current = admit("current", ALICE);
         assertThat(db.sourceById(current.id()))
                 .isEqualTo(new Source("current", "tenant", "alice", 1, null, "profile_only", 0));
         assertThatCode(() -> memory.check(current)).doesNotThrowAnyException();
         assertThat(memory.context(current)).isEmpty();
-        assertThat(memory.filterHistory(current, List.of(old, current))).containsExactly(current);
+        assertThat(memory.filterHistory(current, List.of(old, current)))
+                .containsExactly(old, current);
         tx.executeWithoutResult(s -> memory.completed(current.id()));
         assertThat(sql.queryForObject("SELECT count(*) FROM memory.jobs", Integer.class)).isZero();
     }
@@ -359,8 +356,11 @@ class UserProfileIT {
                     .doesNotThrowAnyException();
 
             profiles.update(ALICE, 1, 1, "committed");
-            assertThatThrownBy(() -> events.progress(claim, "text_delta", "obsolete", null))
-                    .isInstanceOf(Fenced.class);
+            assertThatCode(() -> events.progress(claim, "text_delta", "still live", null))
+                    .doesNotThrowAnyException();
+            assertThat(memory.context(turn))
+                    .contains("before")
+                    .doesNotContain("committed", "rolled back");
         }
     }
 
@@ -405,6 +405,87 @@ class UserProfileIT {
                         "\"evidence\":\"我喜欢详细\"");
         assertThat(profiles.read(ALICE))
                 .isEqualTo(new UserProfile(1, 1, "Prefer concise answers."));
+    }
+
+    @Test
+    void resumedAttemptsKeepTheSameProfileAndEvidenceBytesUntilTheTurnFinishes() {
+        profiles.update(ALICE, 1, 0, "profile before approval");
+        memory =
+                new MemoryService(
+                        db,
+                        tx,
+                        new MemoryPolicy(true, false, "model", true),
+                        org.mockito.Mockito.mock(MemoryForgetService.class));
+        var evidenceTurn = admit("evidence", ALICE);
+        tx.executeWithoutResult(
+                status ->
+                        db.insertFact(
+                                new Fact(
+                                        "evidence-fact",
+                                        evidenceTurn.id(),
+                                        "tenant",
+                                        "alice",
+                                        1,
+                                        "response_style",
+                                        "concise before approval",
+                                        "explicit preference before approval",
+                                        1,
+                                        "active")));
+        var waiting = admit("waiting", ALICE);
+        String original = memory.context(waiting);
+        sql.update("UPDATE business.turns SET status='waiting' WHERE id=?", waiting.id());
+        profiles.update(ALICE, 1, 1, "profile after approval");
+        sql.update(
+                "UPDATE memory.facts SET content='expanded after approval',evidence='new evidence',revision=revision+1");
+        sql.update(
+                "UPDATE business.turns SET status='resuming',revision=revision+1 WHERE id=?",
+                waiting.id());
+        // A fresh service instance models process recovery; no in-memory cache can supply these
+        // bytes.
+        var resumed =
+                new MemoryService(
+                        db,
+                        tx,
+                        new MemoryPolicy(false, false, "disabled", false),
+                        org.mockito.Mockito.mock(MemoryForgetService.class));
+        assertThat(resumed.context(waiting))
+                .isEqualTo(original)
+                .contains(
+                        "profile before approval",
+                        "concise before approval",
+                        "explicit preference before approval")
+                .doesNotContain(
+                        "profile after approval", "expanded after approval", "new evidence");
+        assertThat(db.turnSnapshot(waiting.id(), BOB)).isNull();
+        assertThatThrownBy(
+                        () ->
+                                tx.executeWithoutResult(
+                                        status ->
+                                                db.insertTurnSnapshot(
+                                                        new TurnMemorySnapshot(
+                                                                waiting.id(),
+                                                                "tenant",
+                                                                "alice",
+                                                                1,
+                                                                2,
+                                                                "replacement"))))
+                .isInstanceOf(org.springframework.dao.DuplicateKeyException.class);
+        assertThat(resumed.context(waiting)).isEqualTo(original);
+    }
+
+    @Test
+    void forgetDeletesFrozenProfileBodyAndPreventsTheOldTurnFromResuming() {
+        profiles.update(ALICE, 1, 0, "sensitive frozen profile");
+        var old = admit("old", ALICE);
+        assertThat(memory.context(old)).contains("sensitive frozen profile");
+        assertThat(memory.forget(ALICE, 1, "forget-snapshot")).isEqualTo(2);
+        assertThat(sql.queryForObject("SELECT count(*) FROM memory.turn_snapshots", Integer.class))
+                .isZero();
+        assertThatThrownBy(() -> memory.context(old)).hasMessage("memory_privacy_changed");
+        profiles.update(ALICE, 2, 0, "new epoch profile");
+        assertThat(memory.context(admit("new", ALICE)))
+                .contains("new epoch profile")
+                .doesNotContain("sensitive frozen profile");
     }
 
     @Test

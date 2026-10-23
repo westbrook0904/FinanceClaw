@@ -120,6 +120,17 @@ financeclaw:
       key-ref: ${FINANCECLAW_ZIWEI_KEY_REF:ZIWEI_HMAC_KEY}
       key-version: ${FINANCECLAW_ZIWEI_KEY_VERSION:}
       query-timezone: ${FINANCECLAW_ZIWEI_QUERY_TIMEZONE:Asia/Shanghai}
+  # 各块使用保守 UTF-8 字节预算；current-input/tool-result 是 work-context 的子预算。
+  context:
+    system-bytes: ${FINANCECLAW_CONTEXT_SYSTEM_BYTES:8192}
+    long-memory-bytes: ${FINANCECLAW_CONTEXT_LONG_MEMORY_BYTES:16384}
+    work-context-bytes: ${FINANCECLAW_CONTEXT_WORK_CONTEXT_BYTES:24576}
+    current-input-bytes: ${FINANCECLAW_CONTEXT_CURRENT_INPUT_BYTES:8192}
+    tool-schema-bytes: ${FINANCECLAW_CONTEXT_TOOL_SCHEMA_BYTES:16384}
+    tool-result-bytes: ${FINANCECLAW_CONTEXT_TOOL_RESULT_BYTES:8192}
+    summary-bytes: ${FINANCECLAW_CONTEXT_SUMMARY_BYTES:2048}
+    compact-at-percent: ${FINANCECLAW_CONTEXT_COMPACT_AT_PERCENT:80}
+    retained-rounds: ${FINANCECLAW_CONTEXT_RETAINED_ROUNDS:1}
   memory:
     enabled: ${FINANCECLAW_MEMORY_ENABLED:false}
     profile-enabled: ${FINANCECLAW_PROFILE_ENABLED:true}

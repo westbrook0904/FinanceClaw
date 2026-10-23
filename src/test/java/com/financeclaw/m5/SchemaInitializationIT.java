@@ -46,6 +46,7 @@ class SchemaInitializationIT {
         assertThat(tables())
                 .containsExactly(
                         "agent_runtime.states",
+                        "agent_runtime.work_contexts",
                         "business.admission",
                         "business.admission_changes",
                         "business.artifacts",
@@ -76,8 +77,8 @@ class SchemaInitializationIT {
                         "memory.owners",
                         "memory.privacy_ledger_binding",
                         "memory.projections",
-                        "memory.recalls",
                         "memory.sources",
+                        "memory.turn_snapshots",
                         "memory.user_profiles");
         assertThat(initialization.info().applied()).hasSize(1);
         assertThat(initialization.info().current().getVersion().toString()).isEqualTo("1");
@@ -87,7 +88,7 @@ class SchemaInitializationIT {
 
     @Test
     void startsWithoutUserDataAndLeavesTheIndependentLedgerOutsideTheBusinessDatabase() {
-        assertThat(initialRows).hasSize(34);
+        assertThat(initialRows).hasSize(35);
         initialRows.forEach(
                 (table, count) ->
                         assertThat(count)

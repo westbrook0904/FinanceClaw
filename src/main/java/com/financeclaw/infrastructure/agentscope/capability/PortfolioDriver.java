@@ -38,6 +38,10 @@ public final class PortfolioDriver implements Model {
             List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
         List<ToolResultBlock> results =
                 messages.stream()
+                        .filter(
+                                m ->
+                                        !com.financeclaw.infrastructure.agentscope.context
+                                                .WorkingContextSession.isHistorical(m))
                         .flatMap(m -> m.getContentBlocks(ToolResultBlock.class).stream())
                         .filter(r -> !r.isSuspended())
                         .toList();

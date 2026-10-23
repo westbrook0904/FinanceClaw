@@ -19,6 +19,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.SimpleTransactionStatus;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -61,7 +62,8 @@ class ArtifactServiceTest {
                 new ArtifactService(
                         gateway, leases, policy, releases, new TransactionTemplate(transactions));
         when(gateway.artifact("artifact")).thenReturn(artifact("tenant", "subject"));
-        when(gateway.artifactScope("artifact")).thenReturn("ziwei:read");
+        when(gateway.artifactAccess("artifact"))
+                .thenReturn(new ArtifactGateway.Access("ziwei:read", false));
         when(gateway.turn("turn")).thenReturn(turn);
         when(gateway.lockGrant("conversation"))
                 .thenReturn(new Grant("conversation", 1, "[\"artifact:read\",\"ziwei:read\"]"));
@@ -75,11 +77,10 @@ class ArtifactServiceTest {
         var order = inOrder(transactions, gateway, policy, releases);
         order.verify(transactions).getTransaction(any());
         order.verify(gateway).artifact("artifact");
-        order.verify(gateway).artifactScope("artifact");
+        order.verify(gateway).artifactAccess("artifact");
         order.verify(gateway).turn("turn");
         order.verify(policy).checkArtifactPrivacy(turn);
         order.verify(gateway).lockGrant("conversation");
-        order.verify(gateway).artifactScope("artifact");
         order.verify(releases).require("release");
         order.verify(transactions).commit(any());
     }
@@ -89,7 +90,7 @@ class ArtifactServiceTest {
     void foreignOwnerStopsBeforePrivacyAndGrantLocks(String tenant, String subject) {
         when(gateway.artifact("artifact")).thenReturn(artifact(tenant, subject));
         problem(() -> service.read(owner, "artifact", 0, 1), 404, "not_found");
-        verify(gateway, never()).artifactScope(any());
+        verify(gateway, never()).artifactAccess(any());
         verify(gateway, never()).lockGrant(any());
         verifyNoInteractions(policy, releases);
     }
@@ -98,7 +99,7 @@ class ArtifactServiceTest {
     void missingArtifactUsesTheSameNotFoundContractAsForeignOwner() {
         when(gateway.artifact("artifact")).thenReturn(null);
         problem(() -> service.read(owner, "artifact", 0, 1), 404, "not_found");
-        verify(gateway, never()).artifactScope(any());
+        verify(gateway, never()).artifactAccess(any());
         verifyNoInteractions(policy, releases);
     }
 
@@ -113,7 +114,8 @@ class ArtifactServiceTest {
 
     @Test
     void artifactsWithoutPrivacyScopeDoNotAcquireOwnerPrivacyLocks() {
-        when(gateway.artifactScope("artifact")).thenReturn("artifact:read");
+        when(gateway.artifactAccess("artifact"))
+                .thenReturn(new ArtifactGateway.Access("artifact:read", false));
         service.read(owner, "artifact", 0, 1);
         verify(gateway, never()).turn(any());
         verifyNoInteractions(policy);
@@ -216,6 +218,126 @@ class ArtifactServiceTest {
                 .hasMessage("artifact_too_large");
         verifyNoInteractions(leases, policy);
         verify(gateway, never()).insertArtifact(any());
+    }
+
+    @Test
+    void toolResultArchivePublishesPayloadScopeAndPrivacyInOneWriteUnderTheFence() {
+        var depth = new AtomicInteger();
+        when(leases.fenced(eq(claim), any()))
+                .thenAnswer(
+                        invocation -> {
+                            depth.incrementAndGet();
+                            try {
+                                return ((Supplier<?>) invocation.getArgument(1)).get();
+                            } finally {
+                                depth.decrementAndGet();
+                            }
+                        });
+        when(policy.checkPolicy(claim))
+                .thenReturn(new Policy("turn", 1, "[\"catalog:read\"]", 0, 0));
+        when(gateway.insertToolResultArtifact(any(), eq("catalog:read")))
+                .thenAnswer(
+                        invocation -> {
+                            assertThat(depth.get()).isEqualTo(1);
+                            return 1;
+                        });
+        var payload = Map.of("output", "海".repeat(10000));
+        var artifact = service.archiveToolResult(claim, payload, "catalog:read");
+        assertThat(artifact.tenant()).isEqualTo(owner.tenant());
+        assertThat(artifact.subject()).isEqualTo(owner.subject());
+        assertThat(artifact.turnId()).isEqualTo(turn.id());
+        assertThat(artifact.hash()).isEqualTo(ArtifactPayload.encode(payload).hash());
+        verify(gateway).insertToolResultArtifact(artifact, "catalog:read");
+        verify(gateway, never()).policy(any());
+        verify(gateway, never()).insertArtifact(any());
+        verify(gateway, never()).setArtifactScope(any(), any());
+        verify(policy).checkPolicy(claim);
+        assertThat(depth.get()).isZero();
+    }
+
+    @Test
+    void toolResultArchiveRejectsRevocationAndDoesNotPublishAReferenceOnFailedInsert() {
+        when(policy.checkPolicy(claim)).thenReturn(new Policy("turn", 1, "[]", 0, 0));
+        assertThatThrownBy(() -> service.archiveToolResult(claim, "body", "catalog:read"))
+                .isInstanceOf(Blocked.class)
+                .hasMessage("artifact_scope_denied");
+        verify(gateway, never()).insertToolResultArtifact(any(), any());
+        when(policy.checkPolicy(claim))
+                .thenReturn(new Policy("turn", 1, "[\"artifact:read\"]", 0, 0));
+        assertThatThrownBy(() -> service.archiveToolResult(claim, "body", null))
+                .isInstanceOf(Blocked.class)
+                .hasMessage("artifact_archive_failed");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"range", "download"})
+    void fileReadsKeepOwnerIsolationBeforePrivacyOrGrantChecks(String operation) {
+        when(gateway.artifact("artifact")).thenReturn(artifact("tenant", "other"));
+        problem(() -> fileRead(operation), 404, "not_found");
+        verify(gateway, never()).artifactAccess(any());
+        verify(gateway, never()).lockGrant(any());
+        verifyNoInteractions(policy, releases);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"range", "download"})
+    void privacyBoundToolFilesCheckForgetEvenWhenOriginalToolHasNoPrivacyScope(String operation) {
+        when(gateway.artifactAccess("artifact"))
+                .thenReturn(new ArtifactGateway.Access("artifact:read", true));
+        doThrow(new Problem(409, "privacy_epoch_changed")).when(policy).checkArtifactPrivacy(turn);
+        problem(() -> fileRead(operation), 409, "privacy_epoch_changed");
+        verify(gateway, never()).lockGrant(any());
+        verifyNoInteractions(releases);
+        verify(transactions).rollback(any());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"range", "download"})
+    void fileReadsRecheckTheOriginalToolScopeAndPinnedRelease(String operation) {
+        when(gateway.lockGrant("conversation"))
+                .thenReturn(new Grant("conversation", 2, "[\"artifact:read\"]"));
+        problem(() -> fileRead(operation), 403, "artifact_scope_denied");
+        verifyNoInteractions(releases);
+        when(gateway.lockGrant("conversation"))
+                .thenReturn(new Grant("conversation", 2, "[\"artifact:read\",\"ziwei:read\"]"));
+        when(releases.require("release")).thenThrow(new Blocked("release_disabled"));
+        problem(() -> fileRead(operation), 409, "release_disabled");
+    }
+
+    @Test
+    void fileReadsReturnTheSameStoredBytesAndDigest() {
+        var range = service.readRange(owner, "artifact", 0, 4);
+        var document = service.download(owner, "artifact");
+        assertThat(range.text()).isEqualTo("[1,2");
+        assertThat(range.nextStart()).isEqualTo(4);
+        assertThat(range.complete()).isFalse();
+        assertThat(document.hash()).isEqualTo(range.hash());
+        assertThat(new String(document.content(), java.nio.charset.StandardCharsets.UTF_8))
+                .isEqualTo("[1,2]");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"range", "download"})
+    void skillOnlyGrantCanReadItsOffloadedFileButNotOrdinaryArtifacts(String operation) {
+        when(gateway.artifactAccess("artifact"))
+                .thenReturn(new ArtifactGateway.Access("skill:use", true));
+        when(gateway.lockGrant("conversation"))
+                .thenReturn(new Grant("conversation", 1, "[\"skill:use\"]"));
+        fileRead(operation);
+        verify(policy).checkArtifactPrivacy(turn);
+        verify(releases).require("release");
+
+        when(gateway.artifactAccess("artifact"))
+                .thenReturn(new ArtifactGateway.Access("skill:use", false));
+        problem(() -> fileRead(operation), 403, "artifact_denied");
+    }
+
+    private void fileRead(String operation) {
+        if ("range".equals(operation)) {
+            service.readRange(owner, "artifact", 0, 4096);
+        } else {
+            service.download(owner, "artifact");
+        }
     }
 
     private Artifact artifact(String tenant, String subject) {

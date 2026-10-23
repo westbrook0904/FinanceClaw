@@ -32,8 +32,13 @@ public class MyBatisArtifactGateway implements ArtifactGateway {
     }
 
     @Override
-    public String artifactScope(String id) {
-        return db.getArtifactScope(id);
+    public Access artifactAccess(String id) {
+        return db.getArtifactAccess(id);
+    }
+
+    @Override
+    public int insertToolResultArtifact(Artifact artifact, String requiredScope) {
+        return db.insertToolResultArtifact(artifact, requiredScope);
     }
 
     @Override

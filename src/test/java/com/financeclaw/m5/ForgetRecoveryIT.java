@@ -5,7 +5,6 @@ import static org.mockito.Mockito.*;
 
 import com.financeclaw.app.memory.*;
 import com.financeclaw.app.memory.port.*;
-import com.financeclaw.app.task.TaskEventHub;
 import com.financeclaw.bootstrap.FinanceClawApplication;
 import com.financeclaw.domain.Memory.*;
 import com.financeclaw.domain.Task.*;
@@ -131,7 +130,6 @@ class ForgetRecoveryIT {
         tx.executeWithoutResult(
                 status -> {
                     repository.insertFact(fact);
-                    repository.freeze(accepted.turnId(), owner, fact.epoch());
                     repository.indexJob(fact.id(), "test");
                     var vector = new double[1024];
                     vector[0] = 1;
@@ -198,10 +196,7 @@ class ForgetRecoveryIT {
         var onlyProfiles = profileOnly(configuredForget(independentLedger));
         var profiles =
                 new UserProfileService(
-                        repository,
-                        tx,
-                        new MemoryPolicy(false, false, "disabled", true),
-                        new TaskEventHub());
+                        repository, tx, new MemoryPolicy(false, false, "disabled", true));
         profiles.update(alice, 1, 0, "alice-profile-before-forget");
         profiles.update(bob, 1, 0, "bob-profile");
 

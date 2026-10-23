@@ -181,6 +181,79 @@ class ArtifactPayloadTest {
                 .hasMessage("invalid_stored_json");
     }
 
+    @Test
+    void byteRangesReadAnOversizedSingleStringWithoutSplittingUnicodeOrLosingJsonEscapes() {
+        var artifact = artifact(Map.of("output", "海😀\\\"\n".repeat(4000)));
+        problem(() -> ArtifactPayload.read(artifact, 0, 1, ""), 422, "artifact_object_too_large");
+        var reconstructed = new StringBuilder();
+        int start = 0;
+        do {
+            var range = ArtifactPayload.readRange(artifact, start, 1024);
+            assertThat(range.start()).isEqualTo(start);
+            assertThat(range.count()).isBetween(1, 1024);
+            assertThat(range.nextStart()).isEqualTo(start + range.count());
+            assertThat(range.text()).doesNotContain("\ufffd");
+            assertThat(range.text().getBytes(StandardCharsets.UTF_8)).hasSize(range.count());
+            reconstructed.append(range.text());
+            start = range.nextStart();
+            assertThat(range.complete()).isEqualTo(start == artifact.bytes());
+        } while (start < artifact.bytes());
+        assertThat(reconstructed.toString()).isEqualTo(artifact.payload());
+        assertThat(PayloadDigest.sha256(reconstructed.toString())).isEqualTo(artifact.hash());
+        assertThat(ArtifactPayload.document(artifact).content())
+                .isEqualTo(artifact.payload().getBytes(StandardCharsets.UTF_8));
+        var eof = ArtifactPayload.readRange(artifact, start, 1);
+        assertThat(eof.complete()).isTrue();
+        assertThat(eof.count()).isZero();
+        assertThat(eof.text()).isEmpty();
+    }
+
+    @ParameterizedTest
+    @CsvSource({"-1,4", "6,4", "0,0", "0,16385", "2,4", "3,4"})
+    void invalidByteRangesAndOffsetsInsideUnicodeAreRejected(int start, int maxBytes) {
+        problem(
+                () -> ArtifactPayload.readRange(artifact("海"), start, maxBytes),
+                422,
+                "invalid_artifact_range");
+    }
+
+    @Test
+    void undersizedRangeCannotReturnAnEmptyChunkBeforeEof() {
+        problem(
+                () -> ArtifactPayload.readRange(artifact("海"), 1, 1),
+                422,
+                "artifact_range_too_small");
+        assertThat(ArtifactPayload.readRange(artifact("海"), 0, 3).text()).isEqualTo("\"");
+    }
+
+    @Test
+    void corruptSizeIsRejectedByBothFileAndObjectReads() {
+        var original = artifact(List.of(1));
+        var corrupt =
+                new Artifact(
+                        original.id(),
+                        original.turnId(),
+                        original.conversationId(),
+                        original.tenant(),
+                        original.subject(),
+                        original.releaseHash(),
+                        original.hash(),
+                        original.payload(),
+                        original.bytes() + 1);
+        problem(() -> ArtifactPayload.read(corrupt, 0, 1, ""), 409, "artifact_corrupt");
+        problem(() -> ArtifactPayload.readRange(corrupt, 0, 4), 409, "artifact_corrupt");
+        problem(() -> ArtifactPayload.document(corrupt), 409, "artifact_corrupt");
+    }
+
+    @Test
+    void documentCannotBeMutatedThroughReturnedByteArrays() {
+        var artifact = artifact("original");
+        var document = ArtifactPayload.document(artifact);
+        document.content()[0] = 'x';
+        assertThat(document.content())
+                .isEqualTo(artifact.payload().getBytes(StandardCharsets.UTF_8));
+    }
+
     private static Artifact artifact(Object value) {
         var encoded = ArtifactPayload.encode(value);
         return new Artifact(
