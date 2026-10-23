@@ -1,5 +1,6 @@
 package com.financeclaw.app.release.port;
 
+import com.financeclaw.domain.agent.AgentReleaseManifest;
 import com.financeclaw.domain.release.Deployment;
 import com.financeclaw.domain.release.DeploymentChange;
 import com.financeclaw.domain.release.ReleaseDefinition;
@@ -10,6 +11,10 @@ public interface ReleaseRepository {
     void insertManifestIfAbsent(String hash, ReleaseDefinition release);
 
     ReleaseDefinition findManifest(String hash);
+
+    void insertAgentManifestIfAbsent(String hash, AgentReleaseManifest manifest);
+
+    AgentReleaseManifest findAgentManifest(String hash);
 
     Deployment current(String deployment);
 

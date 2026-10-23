@@ -14,8 +14,21 @@ public interface ReleaseMapper {
             """)
     int insertManifestIfAbsent(@Param("hash") String hash, @Param("manifest") String manifest);
 
-    @Select("SELECT manifest::text FROM control_plane.release_manifests WHERE release_hash=#{hash}")
+    @Select(
+            "SELECT manifest::text FROM control_plane.release_manifests WHERE release_hash=#{hash} AND manifest_format='legacy-v1'")
     String getManifest(String hash);
+
+    @Insert(
+            """
+            INSERT INTO control_plane.release_manifests(release_hash,manifest,manifest_format)
+            VALUES(#{hash},CAST(#{manifest} AS jsonb),'agent-v2')
+            ON CONFLICT(release_hash) DO NOTHING
+            """)
+    int insertAgentManifestIfAbsent(@Param("hash") String hash, @Param("manifest") String manifest);
+
+    @Select(
+            "SELECT manifest::text FROM control_plane.release_manifests WHERE release_hash=#{hash} AND manifest_format='agent-v2'")
+    String getAgentManifest(String hash);
 
     @Select("SELECT name,release_hash,revision FROM control_plane.deployments WHERE name=#{name}")
     Deployment getDeployment(String name);

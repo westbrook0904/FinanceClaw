@@ -1,6 +1,7 @@
 package com.financeclaw.bootstrap;
 
 import com.financeclaw.api.*;
+import com.financeclaw.app.agent.AgentService;
 import com.financeclaw.app.artifact.ArtifactService;
 import com.financeclaw.app.execution.*;
 import com.financeclaw.app.governance.GrantService;
@@ -17,6 +18,7 @@ import com.financeclaw.app.research.MarketResearchService;
 import com.financeclaw.app.task.*;
 import com.financeclaw.app.ziwei.*;
 import com.financeclaw.channel.*;
+import com.financeclaw.infrastructure.agent.MyBatisAgentRepository;
 import com.financeclaw.infrastructure.agentscope.AgentScopeInteractionCheckpoint;
 import com.financeclaw.infrastructure.agentscope.capability.*;
 import com.financeclaw.infrastructure.agentscope.execution.TaskAgentRuntime;
@@ -72,6 +74,9 @@ public final class RoleConfiguration {
         MemoryConfiguration.class,
         MyBatisMemoryRepository.class,
         MapperConfiguration.Releases.class,
+        MapperConfiguration.Agents.class,
+        MyBatisAgentRepository.class,
+        AgentService.class,
         MyBatisReleaseRepository.class,
         EnvironmentReleaseSource.class,
         EnvironmentCredentials.class,
@@ -126,6 +131,7 @@ public final class RoleConfiguration {
         HttpRequestConfiguration.class,
         ApiErrors.class,
         TaskController.class,
+        AgentController.class,
         TaskEvents.class,
         GovernanceController.class,
         ArtifactContentController.class,

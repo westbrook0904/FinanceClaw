@@ -10,6 +10,7 @@ import com.financeclaw.app.release.port.Credentials;
 import com.financeclaw.app.report.ReportService;
 import com.financeclaw.domain.Governance.*;
 import com.financeclaw.domain.Task.*;
+import com.financeclaw.domain.agent.AgentDraft;
 import com.financeclaw.infrastructure.agentscope.AgentStateInspector;
 import com.financeclaw.infrastructure.agentscope.IsolatedAgentFactory;
 import com.financeclaw.infrastructure.agentscope.ResumeInputs;
@@ -127,7 +128,10 @@ public class TaskAgentRuntime implements com.financeclaw.app.execution.port.Agen
 
     private Outcome executeRegistered(Claim claim) {
         policy.checkDispatch(claim);
-        var release = releases.require(claim.turn().releaseHash());
+        var resolved = releases.resolve(claim.turn().releaseHash());
+        resolved.requireIdentity(
+                new Owner(claim.turn().tenant(), claim.turn().subject()), claim.turn().agentId());
+        var release = resolved.definition();
         // 本 attempt 只读既有 Turn 快照，不重新召回或替换长期记忆；恢复也使用同一正文。
         String userContext = policy.memoryContext(claim);
         var budgetProfile =
@@ -177,7 +181,9 @@ public class TaskAgentRuntime implements com.financeclaw.app.execution.port.Agen
             Model delegate = release.primary().name().equals("offline") ? model(claim) : provider;
             tools.business(
                     release.primary().name().equals("offline") ? null : provider, capabilities);
-            boolean workflow = claim.turn().message().startsWith(PortfolioReviewService.COMMAND);
+            boolean workflow =
+                    resolved.agentId().equals(AgentDraft.BUILTIN_AGENT)
+                            && claim.turn().message().startsWith(PortfolioReviewService.COMMAND);
             if (workflow) {
                 delegate = capabilities.portfolioDriver(claim);
             }
@@ -210,6 +216,7 @@ public class TaskAgentRuntime implements com.financeclaw.app.execution.port.Agen
                             store,
                             tools.permissions(),
                             builder -> {
+                                builder.name(resolved.agentId()).sysPrompt(resolved.systemPrompt());
                                 tools.configure(builder);
                                 builder.middleware(contextMiddleware).hook(contextMiddleware);
                                 builder.middleware(

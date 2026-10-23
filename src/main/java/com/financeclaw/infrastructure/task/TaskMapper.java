@@ -77,6 +77,15 @@ public interface TaskMapper {
     @Select("SELECT release_hash FROM business.conversations WHERE id=#{id}")
     String getConversationRelease(String id);
 
+    @Select("SELECT agent_id FROM business.conversations WHERE id=#{id}")
+    String getConversationAgent(String id);
+
+    @Update(
+            "UPDATE business.conversations SET agent_id=#{agent},release_hash=#{hash}"
+                    + " WHERE id=#{id} AND release_hash IS NULL")
+    int updateConversationAgentIfAbsent(
+            @Param("id") String id, @Param("agent") String agent, @Param("hash") String hash);
+
     /** 会话创建或持有会话行锁时首次绑定版本，永不覆盖已经选定的 release。 */
     @Update(
             "UPDATE business.conversations SET release_hash=#{hash} WHERE id=#{id} AND release_hash IS NULL")
@@ -93,7 +102,7 @@ public interface TaskMapper {
     String getOwnedConversation(@Param("id") String id, @Param("owner") Owner owner);
 
     String TURN_COLUMNS =
-            "id,conversation_id,tenant,subject,idempotency_key,request_hash,message,release_hash,status,revision,result,reason";
+            "id,conversation_id,tenant,subject,idempotency_key,request_hash,message,release_hash,status,revision,result,reason,agent_id";
 
     @Select("SELECT " + TURN_COLUMNS + " FROM business.turns WHERE id=#{id}")
     Turn getTurnById(String id);
@@ -126,8 +135,8 @@ public interface TaskMapper {
 
     @Insert(
             """
-INSERT INTO business.turns(id,conversation_id,tenant,subject,idempotency_key,request_hash,message,release_hash,status)
-VALUES(#{id},#{conversationId},#{tenant},#{subject},#{idempotencyKey},#{requestHash},#{message},#{releaseHash},'queued')
+INSERT INTO business.turns(id,conversation_id,tenant,subject,idempotency_key,request_hash,message,release_hash,status,agent_id)
+VALUES(#{id},#{conversationId},#{tenant},#{subject},#{idempotencyKey},#{requestHash},#{message},#{releaseHash},'queued',#{agentId})
 """)
     int insertTurn(Turn turn);
 

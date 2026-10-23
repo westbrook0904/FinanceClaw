@@ -1,6 +1,6 @@
 # 运行维护
 
-当前支持新库初始化及现行 Java V1 基线的 V2/V3 前向升级，不导入 Python 或历史实验库，也不提供原拆分部署切换路径。业务运行结构见[统一进程](architecture/combined-runtime.md)。
+当前支持新库初始化及现行 Java V1 基线的 V2/V3/V4 前向升级，不导入 Python 或历史实验库，也不提供原拆分部署切换路径。业务运行结构见[统一进程](architecture/combined-runtime.md)。自定义 Agent 的创建、提示词草稿、发布与指定目标会话见 [Agent 管理说明](architecture/agent-definitions.md)。
 
 ## 配置与启动
 

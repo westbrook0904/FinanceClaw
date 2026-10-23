@@ -1,5 +1,6 @@
 package com.financeclaw.app.task;
 
+import com.financeclaw.app.agent.AgentService;
 import com.financeclaw.app.execution.port.*;
 import com.financeclaw.app.task.port.*;
 import com.financeclaw.domain.ExecutionScope;
@@ -20,18 +21,21 @@ public class SubmitTaskService {
     private final ExecutionRelease releases;
     private final ExecutionMemory memory;
     private final TransactionTemplate tx;
+    private final AgentService agents;
 
     public SubmitTaskService(
             TaskAdmissionGateway db,
             ExecutionPolicyGateway governance,
             ExecutionRelease releases,
             ExecutionMemory memory,
-            TransactionTemplate tx) {
+            TransactionTemplate tx,
+            AgentService agents) {
         this.db = db;
         this.governance = governance;
         this.releases = releases;
         this.memory = memory;
         this.tx = tx;
+        this.agents = agents;
     }
 
     private static String id() {
@@ -40,13 +44,25 @@ public class SubmitTaskService {
 
     /** 创建用户独占会话，固定发布并初始化授权；三项写入共同提交。 */
     public String createConversation(Owner owner) {
+        return createConversation(owner, "finance_agent");
+    }
+
+    /** 目标解析、owner 校验与绑定在同一事务内；后续发布只影响新建会话。 */
+    public String createConversation(Owner owner, String agentId) {
         String id = id();
         tx.executeWithoutResult(
                 s -> {
-                    String releaseHash = releases.currentHash();
+                    String releaseHash =
+                            "finance_agent".equals(agentId)
+                                    ? releases.currentHash()
+                                    : agents.resolveTarget(owner, agentId).releaseHash();
                     var release = releases.require(releaseHash);
                     db.createConversation(id, owner);
-                    bindRelease(id, releaseHash);
+                    if ("finance_agent".equals(agentId)) {
+                        bindRelease(id, releaseHash);
+                    } else if (db.bindConversationAgent(id, agentId, releaseHash) != 1) {
+                        throw new Problem(409, "conversation_release_conflict");
+                    }
                     governance.ensureGrant(id, PayloadJson.canonical(release.scopes()));
                 });
         return id;
@@ -80,11 +96,14 @@ public class SubmitTaskService {
                     // 新会话创建时已固定版本；迁移前从未使用的空会话在首次受理时绑定。
                     // 历史任务的版本由迁移保留；缺少清单时阻断，不能回退到 current。
                     String releaseHash = db.conversationRelease(conversation);
+                    String agentId = db.conversationAgent(conversation);
                     if (releaseHash == null) {
+                        if (!"finance_agent".equals(agentId)) {
+                            throw new Blocked("release_unavailable");
+                        }
                         releaseHash = releases.currentHash();
                         bindRelease(conversation, releaseHash);
                     }
-                    var release = releases.require(releaseHash);
                     Turn t =
                             new Turn(
                                     id(),
@@ -98,7 +117,9 @@ public class SubmitTaskService {
                                     "queued",
                                     1,
                                     null,
-                                    null);
+                                    null,
+                                    agentId);
+                    var release = releases.requireForTurn(t);
                     // 阶段二：冻结本次执行的发布、记忆和权限版本，随后才创建可领取命令。
                     db.insertTurn(t);
                     memory.admit(t);

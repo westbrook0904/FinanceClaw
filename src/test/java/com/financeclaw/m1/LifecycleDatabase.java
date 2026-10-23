@@ -48,6 +48,7 @@ public final class LifecycleDatabase {
             config.addMapper(RuntimeMapper.class);
             config.addMapper(TaskMapper.class);
             config.addMapper(ReleaseMapper.class);
+            config.addMapper(com.financeclaw.infrastructure.agent.AgentMapper.class);
             config.addMapper(com.financeclaw.infrastructure.governance.GovernanceMapper.class);
             config.addMapper(LifecycleProbeMapper.class);
             SqlSessionFactoryBean factory = new SqlSessionFactoryBean();
@@ -60,6 +61,14 @@ public final class LifecycleDatabase {
                             new EnvironmentReleaseSource(
                                     new org.springframework.mock.env.MockEnvironment()),
                             new MyBatisReleaseRepository(session.getMapper(ReleaseMapper.class)),
+                            tx);
+            var agents =
+                    new com.financeclaw.app.agent.AgentService(
+                            new com.financeclaw.infrastructure.agent.MyBatisAgentRepository(
+                                    session.getMapper(
+                                            com.financeclaw.infrastructure.agent.AgentMapper
+                                                    .class)),
+                            releases,
                             tx);
             var tasks = session.getMapper(TaskMapper.class);
             var gov =
@@ -106,7 +115,8 @@ public final class LifecycleDatabase {
                             policy,
                             release,
                             memory,
-                            tx);
+                            tx,
+                            agents);
             var cancellation =
                     new CancelTaskService(queries, reads, mutations, commands, transitions, tx);
             leases = new ExecutionLeaseService(commands, mutations, reads, transitions, tx);

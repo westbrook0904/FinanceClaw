@@ -5,6 +5,7 @@ import com.financeclaw.domain.Task.Problem;
 import java.util.Map;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
@@ -38,6 +39,11 @@ public class ApiErrors {
             code = "invalid_memory_epoch";
         }
         return ResponseEntity.unprocessableEntity().body(Map.of("error", code));
+    }
+
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    ResponseEntity<?> unsupportedMethod(HttpRequestMethodNotSupportedException e) {
+        return ResponseEntity.status(405).body(Map.of("error", "method_not_allowed"));
     }
 
     @ExceptionHandler(Exception.class)

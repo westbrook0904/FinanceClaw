@@ -52,7 +52,7 @@ public class ExecutionPolicyService {
 
     /** 调用方先锁命令，再按隐私用户、授权行的顺序加锁，使执行写入与撤权、遗忘互斥。 */
     public Policy checkPolicy(Claim claim) {
-        releases.require(claim.turn().releaseHash());
+        releases.requireForTurn(claim.turn());
         memory.check(claim.turn());
         var p = governance.policy(claim.turn().id());
         var grant = governance.lockGrant(claim.turn().conversationId());
@@ -117,7 +117,7 @@ public class ExecutionPolicyService {
                     if (scope != null && !PayloadJson.scopes(p.scopes()).contains(scope)) {
                         throw new Blocked("tool_denied");
                     }
-                    var r = releases.require(claim.turn().releaseHash());
+                    var r = releases.requireForTurn(claim.turn());
                     int changed =
                             model
                                     ? governance.modelCall(claim.turn().id(), r.maxModelCalls())

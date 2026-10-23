@@ -27,7 +27,44 @@ public final class Task {
             String status,
             long revision,
             String result,
-            String reason) {
+            String reason,
+            String agentId) {
+        /** 旧任务及现有内置调用保持原 Agent 身份，避免改变历史检查点的命名空间。 */
+        public Turn(
+                String id,
+                String conversationId,
+                String tenant,
+                String subject,
+                String idempotencyKey,
+                String requestHash,
+                String message,
+                String releaseHash,
+                String status,
+                long revision,
+                String result,
+                String reason) {
+            this(
+                    id,
+                    conversationId,
+                    tenant,
+                    subject,
+                    idempotencyKey,
+                    requestHash,
+                    message,
+                    releaseHash,
+                    status,
+                    revision,
+                    result,
+                    reason,
+                    "finance_agent");
+        }
+
+        public Turn {
+            if (agentId == null || agentId.isBlank()) {
+                throw new IllegalArgumentException("Missing agent identity");
+            }
+        }
+
         public boolean terminal() {
             return Set.of("completed", "failed", "cancelled").contains(status);
         }
@@ -80,7 +117,7 @@ public final class Task {
                                     turn.id(),
                                     command.id(),
                                     command.attemptId())),
-                    "finance_agent",
+                    turn.agentId(),
                     turn.releaseHash());
         }
     }

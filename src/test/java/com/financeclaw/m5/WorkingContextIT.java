@@ -125,7 +125,8 @@ class WorkingContextIT {
                         CONVERSATION,
                         "completed",
                         "completed",
-                        SEALED_STATE_VERSION);
+                        SEALED_STATE_VERSION,
+                        mismatch.equals("turn-release") ? "other-release" : RELEASE);
         save(previous, "sensitive previous answer");
         sql.update("UPDATE business.turns SET status='completed' WHERE id='current'");
         switch (mismatch) {
@@ -172,9 +173,9 @@ class WorkingContextIT {
                 conversation("other", ALICE);
                 sql.update("UPDATE business.turns SET conversation_id='other' WHERE id='previous'");
             }
-            case "turn-release" ->
-                    sql.update(
-                            "UPDATE business.turns SET release_hash='other-release' WHERE id='previous'");
+            case "turn-release" -> {
+                /* Historical mismatch was seeded before immutable binding. */
+            }
             case "current-epoch" ->
                     sql.update("UPDATE memory.sources SET epoch=2 WHERE id='current'");
             case "missing-current-source" ->
@@ -363,6 +364,17 @@ class WorkingContextIT {
             String status,
             String outcome,
             long version) {
+        return seed(id, owner, conversation, status, outcome, version, RELEASE);
+    }
+
+    private static Claim seed(
+            String id,
+            Owner owner,
+            String conversation,
+            String status,
+            String outcome,
+            long version,
+            String storedRelease) {
         conversation(conversation, owner);
         sql.update(
                 "INSERT INTO memory.owners(tenant,subject) VALUES(?,?) ON CONFLICT DO NOTHING",
@@ -375,7 +387,7 @@ class WorkingContextIT {
                 owner.tenant(),
                 owner.subject(),
                 id,
-                RELEASE,
+                storedRelease,
                 status);
         sql.update(
                 "INSERT INTO memory.sources(id,tenant,subject,epoch,status) VALUES(?,?,?,1,'profile_only')",

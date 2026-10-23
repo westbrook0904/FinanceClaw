@@ -62,7 +62,8 @@ class RuntimePackagingIT {
                     .containsExactly(
                             "BOOT-INF/classes/db/migration/V1__initialize_application.sql",
                             "BOOT-INF/classes/db/migration/V2__release_catalog.sql",
-                            "BOOT-INF/classes/db/migration/V3__conversation_release_binding.sql");
+                            "BOOT-INF/classes/db/migration/V3__conversation_release_binding.sql",
+                            "BOOT-INF/classes/db/migration/V4__agent_definitions.sql");
             for (var entry : entries) {
                 if (!entry.getName().startsWith("BOOT-INF/lib/")
                         || !entry.getName().endsWith(".jar")) continue;
@@ -97,6 +98,7 @@ class RuntimePackagingIT {
                         "com.financeclawmemory.MemoryWorkerApplication",
                         "com.financeclawprivacy.PrivacyRecoveryApplication",
                         "com.financeclawrelease.ReleaseAdministrationApplication",
+                        "com.financeclawagent.AgentAdministrationApplication",
                         "com.financeclaw.infrastructure.agentscope.execution.TaskAgentRuntime",
                         "com.financeclaw.infrastructure.agentscope.execution.GovernedTools",
                         "com.financeclaw.infrastructure.agentscope.capability.McpToolContribution"

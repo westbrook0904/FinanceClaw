@@ -597,7 +597,8 @@ class TaskLifecycleIT {
                         bean(ExecutionPolicyGateway.class),
                         bean(ExecutionRelease.class),
                         bean(ExecutionMemory.class),
-                        transaction());
+                        transaction(),
+                        bean(com.financeclaw.app.agent.AgentService.class));
         assertThatThrownBy(() -> useCase.submit(owner, conversation, "atomic-admission", "hello"))
                 .hasMessage("after admission writes");
         for (String table : List.of("turns", "turn_policies", "commands", "journal", "events"))

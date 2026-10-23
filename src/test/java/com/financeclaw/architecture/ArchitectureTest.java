@@ -20,7 +20,8 @@ class ArchitectureTest {
                             "com.financeclawmemory",
                             "com.financeclawsetup",
                             "com.financeclawprivacy",
-                            "com.financeclawrelease");
+                            "com.financeclawrelease",
+                            "com.financeclawagent");
 
     @Test
     void productionPackagesHaveNoCycles() {

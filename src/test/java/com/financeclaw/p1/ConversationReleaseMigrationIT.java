@@ -66,14 +66,21 @@ class ConversationReleaseMigrationIT {
                         "SELECT id,conversation_id,release_hash,status FROM business.turns ORDER BY id");
 
         var migrations = Flyway.configure().dataSource(source).load();
-        assertThat(migrations.migrate().migrationsExecuted).isEqualTo(2);
-        assertThat(migrations.info().current().getVersion().toString()).isEqualTo("3");
+        assertThat(migrations.migrate().migrationsExecuted).isEqualTo(3);
+        assertThat(migrations.info().current().getVersion().toString()).isEqualTo("4");
         assertThat(
                         sql.queryForMap(
                                 "SELECT id,release_hash FROM business.conversations WHERE id='history'"))
                 .isEqualTo(Map.of("id", "history", "release_hash", "missing-latest-release"));
         assertThat(binding(sql, "same-time")).isEqualTo("tie-latest-release");
         assertThat(binding(sql, "empty")).isNull();
+        assertThat(sql.queryForList("SELECT DISTINCT agent_id FROM business.turns", String.class))
+                .containsExactly("finance_agent");
+        assertThat(
+                        sql.queryForList(
+                                "SELECT DISTINCT agent_id FROM business.conversations",
+                                String.class))
+                .containsExactly("finance_agent");
         assertThat(
                         sql.queryForList(
                                 "SELECT id,conversation_id,release_hash,status FROM business.turns ORDER BY id"))

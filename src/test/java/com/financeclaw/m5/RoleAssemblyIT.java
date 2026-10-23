@@ -71,7 +71,7 @@ class RoleAssemblyIT {
                         false,
                         Map.of("spring.flyway.enabled", "true"))) {
             assertThat(migration.getBean(Flyway.class).info().current().getVersion().toString())
-                    .isEqualTo("3");
+                    .isEqualTo("4");
         }
         sql.execute("CREATE ROLE financeclaw_memory LOGIN PASSWORD 'test-memory-only'");
         sql.execute(
@@ -216,6 +216,7 @@ class RoleAssemblyIT {
                     .containsExactlyInAnyOrder(
                             "ArtifactContentController",
                             "TaskController",
+                            "AgentController",
                             "GovernanceController",
                             "MemoryController",
                             "UserProfileController",
@@ -229,7 +230,8 @@ class RoleAssemblyIT {
                             "MemoryMapper",
                             "OperationsMapper",
                             "FeishuMapper",
-                            "ReleaseMapper");
+                            "ReleaseMapper",
+                            "AgentMapper");
             assertThat(context.getBean(GrantService.class)).isNotNull();
             assertThat(context.getBean(ArtifactService.class)).isNotNull();
             assertThat(context.getBean(ReportService.class)).isNotNull();
@@ -369,7 +371,7 @@ class RoleAssemblyIT {
                                 "financeclaw.feishu.enabled",
                                 "true"))) {
             assertThat(context.getBean(Flyway.class).info().current().getVersion().toString())
-                    .isEqualTo("3");
+                    .isEqualTo("4");
             assertThat(mappers(context)).isEmpty();
             absent(
                     context,

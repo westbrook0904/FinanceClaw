@@ -12,8 +12,14 @@ public interface TaskAdmissionGateway {
     /** 仅在持有已验证 owner 的会话锁时读取；null 表示尚未使用的历史会话。 */
     String conversationRelease(String id);
 
+    /** 与发布一起读取已锁定会话的固定目标，不能由每次 Turn 请求重选。 */
+    String conversationAgent(String id);
+
     /** 只允许首次绑定，返回 0 表示已有绑定；与会话创建或首次受理共同提交。 */
     int bindConversationRelease(String id, String releaseHash);
+
+    /** 私有 Agent 的身份与发布在同一次首次绑定中写入。 */
+    int bindConversationAgent(String id, String agentId, String releaseHash);
 
     Turn replay(String conversation, String key);
 

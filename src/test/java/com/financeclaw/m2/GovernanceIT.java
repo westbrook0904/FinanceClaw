@@ -324,8 +324,22 @@ class GovernanceIT {
         answer(t, i, approve(i));
         run(claim());
         assertThat(reports()).isOne();
-        var missing = submit("report");
-        sql.update("UPDATE business.turns SET release_hash='missing' WHERE id=?", missing.turnId());
+        // Simulate a restored historical task whose manifest is absent at insertion time.
+        // Admitted targets are immutable; production cannot rewrite a Turn's release.
+        String conversation = tasks.createConversation(owner);
+        String missingId = UUID.randomUUID().toString();
+        sql.update(
+                "INSERT INTO business.turns(id,conversation_id,tenant,subject,idempotency_key,request_hash,message,release_hash,status) VALUES(?,?,?,?,?,'hash','report','missing','queued')",
+                missingId,
+                conversation,
+                owner.tenant(),
+                owner.subject(),
+                missingId);
+        sql.update(
+                "INSERT INTO business.commands(id,turn_id,status) VALUES(?,?,'queued')",
+                UUID.randomUUID().toString(),
+                missingId);
+        var missing = new Accepted(conversation, missingId, "queued", 1, false);
         run(claim());
         assertThat(turn(missing).reason()).isEqualTo("release_unavailable");
     }

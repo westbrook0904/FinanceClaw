@@ -28,7 +28,7 @@ class SchemaInitializationIT {
         var source =
                 new DriverManagerDataSource(PG.getJdbcUrl(), PG.getUsername(), PG.getPassword());
         initialization = Flyway.configure().dataSource(source).load();
-        assertThat(initialization.migrate().migrationsExecuted).isEqualTo(3);
+        assertThat(initialization.migrate().migrationsExecuted).isEqualTo(4);
         sql = new JdbcTemplate(source);
         initialRows = new LinkedHashMap<>();
         for (String table : tables()) {
@@ -67,6 +67,8 @@ class SchemaInitializationIT {
                         "channel.inbox",
                         "channel.link_codes",
                         "channel.notices",
+                        "control_plane.agent_draft_revisions",
+                        "control_plane.agents",
                         "control_plane.deployment_changes",
                         "control_plane.deployments",
                         "control_plane.release_manifests",
@@ -83,15 +85,15 @@ class SchemaInitializationIT {
                         "memory.sources",
                         "memory.turn_snapshots",
                         "memory.user_profiles");
-        assertThat(initialization.info().applied()).hasSize(3);
-        assertThat(initialization.info().current().getVersion().toString()).isEqualTo("3");
+        assertThat(initialization.info().applied()).hasSize(4);
+        assertThat(initialization.info().current().getVersion().toString()).isEqualTo("4");
         assertThat(initialization.validateWithResult().validationSuccessful).isTrue();
         assertThat(initialization.migrate().migrationsExecuted).isZero();
     }
 
     @Test
     void startsWithoutUserDataAndLeavesTheIndependentLedgerOutsideTheBusinessDatabase() {
-        assertThat(initialRows).hasSize(38);
+        assertThat(initialRows).hasSize(40);
         initialRows.forEach(
                 (table, count) ->
                         assertThat(count)

@@ -61,7 +61,7 @@ class ToolDispatchQueryTest {
         when(policies.policy("turn")).thenReturn(new Policy("turn", 4, "[\"catalog:read\"]", 0, 0));
         when(policies.lockGrant("conversation"))
                 .thenReturn(new Grant("conversation", 4, "[\"catalog:read\"]"));
-        when(releases.require("release"))
+        when(releases.requireForTurn(TURN))
                 .thenReturn(new ExecutionPolicy(List.of("catalog:read"), 10, 20));
         when(policies.toolCall("turn", 20)).thenReturn(1);
     }
@@ -132,6 +132,38 @@ class ToolDispatchQueryTest {
                 "execution_budget_exhausted",
                 assertThrows(Blocked.class, () -> service.consumeTool(CLAIM, "catalog:read"))
                         .getMessage());
+        verify(manager).rollback(any());
+    }
+
+    @Test
+    void mismatchedAgentReleaseBlocksBeforePrivacyReadsOrBudgetConsumption() {
+        when(releases.requireForTurn(TURN)).thenThrow(new Blocked("agent_identity_mismatch"));
+
+        assertEquals(
+                "agent_identity_mismatch",
+                assertThrows(Blocked.class, () -> service.consumeTool(CLAIM, "catalog:read"))
+                        .getMessage());
+
+        verifyNoInteractions(memory, policies);
+        verify(releases, never()).require(anyString());
+        verify(manager).rollback(any());
+    }
+
+    @Test
+    void frozenReleaseModelBudgetRemainsAuthoritativeForEachReservation() {
+        when(releases.requireForTurn(TURN))
+                .thenReturn(new ExecutionPolicy(List.of("catalog:read"), 1, 20));
+        when(policies.modelCall("turn", 1)).thenReturn(1, 0);
+
+        service.consume(CLAIM, true);
+        assertEquals(
+                "execution_budget_exhausted",
+                assertThrows(Blocked.class, () -> service.consume(CLAIM, true)).getMessage());
+
+        verify(policies, times(2)).modelCall("turn", 1);
+        verify(releases, times(4)).requireForTurn(TURN);
+        verify(releases, never()).require(anyString());
+        verify(releases, never()).currentHash();
         verify(manager).rollback(any());
     }
 

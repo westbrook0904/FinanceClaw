@@ -39,6 +39,16 @@ public class MyBatisTaskAdmissionGateway implements TaskAdmissionGateway {
     }
 
     @Override
+    public String conversationAgent(String id) {
+        return db.getConversationAgent(id);
+    }
+
+    @Override
+    public int bindConversationAgent(String id, String agentId, String releaseHash) {
+        return db.updateConversationAgentIfAbsent(id, agentId, releaseHash);
+    }
+
+    @Override
     public int bindConversationRelease(String id, String releaseHash) {
         return db.updateConversationReleaseIfAbsent(id, releaseHash);
     }

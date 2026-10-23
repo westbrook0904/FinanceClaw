@@ -64,8 +64,10 @@ class TaskHttpContractTest {
         when(reads.ownedConversation("conversation", owner)).thenReturn("conversation");
         when(releases.currentHash()).thenReturn("release");
         when(admissions.conversationRelease("conversation")).thenReturn("release");
+        when(admissions.conversationAgent("conversation")).thenReturn("finance_agent");
         when(admissions.bindConversationRelease(anyString(), eq("release"))).thenReturn(1);
         when(releases.require("release")).thenReturn(new ExecutionPolicy(List.of(), 4, 4));
+        when(releases.requireForTurn(any())).thenReturn(new ExecutionPolicy(List.of(), 4, 4));
         when(policy.lockGrant("conversation")).thenReturn(new Grant("conversation", 1, "[]"));
         Turn cancelled =
                 new Turn(
@@ -88,7 +90,14 @@ class TaskHttpContractTest {
         when(manager.getTransaction(any())).thenAnswer(ignored -> new SimpleTransactionStatus());
         var tx = new TransactionTemplate(manager);
         var queries = new TaskQueryService(reads);
-        var submission = new SubmitTaskService(admissions, policy, releases, memory, tx);
+        var submission =
+                new SubmitTaskService(
+                        admissions,
+                        policy,
+                        releases,
+                        memory,
+                        tx,
+                        mock(com.financeclaw.app.agent.AgentService.class));
         var cancellation =
                 new CancelTaskService(
                         queries,

@@ -3,6 +3,8 @@ package com.financeclaw.infrastructure.execution;
 import com.financeclaw.app.execution.port.ExecutionRelease;
 import com.financeclaw.app.release.ReleaseService;
 import com.financeclaw.domain.ExecutionPolicy;
+import com.financeclaw.domain.Task.Owner;
+import com.financeclaw.domain.Task.Turn;
 import org.springframework.stereotype.Component;
 
 /**
@@ -25,6 +27,14 @@ public class CatalogExecutionRelease implements ExecutionRelease {
     @Override
     public ExecutionPolicy require(String hash) {
         var r = catalog.require(hash);
+        return new ExecutionPolicy(r.scopes(), r.maxModelCalls(), r.maxToolCalls());
+    }
+
+    @Override
+    public ExecutionPolicy requireForTurn(Turn turn) {
+        var resolved = catalog.resolve(turn.releaseHash());
+        resolved.requireIdentity(new Owner(turn.tenant(), turn.subject()), turn.agentId());
+        var r = resolved.definition();
         return new ExecutionPolicy(r.scopes(), r.maxModelCalls(), r.maxToolCalls());
     }
 }

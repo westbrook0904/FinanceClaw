@@ -164,7 +164,7 @@ SSE 转发原生文本增量和工具状态，并回放持久任务事件。先�
 | 记忆模型 | 提取、embedding 单独配置和凭据；提取使用 SDK 类型化结构输出，不承诺供应商原生 JSON Schema 模式 |
 | 发布身份 | AgentScope 版本、模型配置、预算、scopes、打包 Skill 和业务配置参与摘要；任务绑定受理时版本 |
 
-发布清单、默认发布指针和变更历史保存在 PostgreSQL。启动登记当前配置，但已有指针不会被环境变更覆盖；显式切换使用 revision CAS。新会话创建时固定发布，后续 Turn、重试和审批恢复沿用该版本；升级通过新会话生效。缺失或摘要不匹配的历史清单会阻断执行，不回退到当前版本。当前只提供单 Agent 的默认指针，通用 Agent 定义、完整 Deployment、多资源池与模型网关仍在后续计划中。见[平台化实施方案](docs/architecture/platform-implementation-plan.md)和[发布运维](docs/operations.md#发布版本管理)。
+发布清单、默认发布指针和变更历史保存在 PostgreSQL。启动登记当前配置，但已有指针不会被环境变更覆盖；显式切换使用 revision CAS。新会话创建时固定发布，后续 Turn、重试和审批恢复沿用该版本；升级通过新会话生效。缺失或摘要不匹配的历史清单会阻断执行，不回退到当前版本。P2a 增加 owner 私有的 Agent 身份、提示词草稿和独立发布指针，CLI 管理后可通过 `POST /v1/conversations` 的 `agent_id` 选择已发布目标；会话固定 Agent ID 与版本。模型和工具仍继承创建时的内置基础发布，完整能力装配、多资源池与模型网关继续分阶段实施。操作说明见 [Agent 定义与调用](docs/architecture/agent-definitions.md)、[平台化实施方案](docs/architecture/platform-implementation-plan.md)和[发布运维](docs/operations.md#发布版本管理)。
 
 源码：[ModelFactory](src/main/java/com/financeclaw/infrastructure/agentscope/execution/ModelFactory.java)、[ModelProfile](src/main/java/com/financeclaw/domain/release/ModelProfile.java)、[ReleaseService](src/main/java/com/financeclaw/app/release/ReleaseService.java)、[ReleaseIdentity](src/main/java/com/financeclaw/app/release/ReleaseIdentity.java)、[AgentScopeMemoryModels](src/main/java/com/financeclaw/infrastructure/agentscope/memory/AgentScopeMemoryModels.java)。
 
@@ -199,7 +199,7 @@ docker compose up -d --build --wait --wait-timeout 180
 curl --fail http://localhost:8080/actuator/health/readiness
 ```
 
-就绪预期返回 `{"status":"UP"}`。Compose 的 `init-db` 完成新库结构与授权后，启动统一业务服务 `api` 和受限 `memory-worker`；API 仅绑定本机 8080。主库由 V1 基线及 V2/V3 演进建立 38 张应用表，支持当前 Java V1 基线升级；不导入 Python 或历史实验库，详见[数据库初始化与升级](docs/architecture/fresh-schema.md)。
+就绪预期返回 `{"status":"UP"}`。Compose 的 `init-db` 完成新库结构与授权后，启动统一业务服务 `api` 和受限 `memory-worker`；API 仅绑定本机 8080。主库由 V1 基线及 V2/V3/V4 演进建立 40 张应用表，支持当前 Java V1 基线升级；不导入 Python 或历史实验库，详见[数据库初始化与升级](docs/architecture/fresh-schema.md)。
 
 ### 跑通一次请求
 
@@ -261,7 +261,9 @@ python3 scripts/validate-compose.py --ziwei --admission --preflight --restore-pr
 
 数据库测试使用 Testcontainers 和独立数据库；模型、MCP、embedding 和飞书使用本地模拟服务。Compose 使用随机项目和新数据卷，覆盖进程故障、审批恢复、受理排空、画像隔离、备份恢复及隐私拦截。真实服务验收入口为 `scripts/validate-live.py`，不属于默认离线测试。
 
-本次上下文改造的本地记录：**1032 项 Java 单元/契约/架构测试通过**，提交前的响应 ID 与摘要 thinking 隔离修复又通过 59 项定向回归；44 项 Python 脚本测试、格式与静态交付检查通过。已补充 PostgreSQL 工作上下文及记忆快照测试并完成测试源码编译，但本机 Docker 守护进程超时，**尚未实测本次数据库集成与 Compose 场景；真实摘要供应商输出仍需单独验收**。下面的历史基线不能替代本次提交的远程 CI。
+当前平台化阶段的 P1 已完成本地全量验收并推送：1,440 项 Java 测试、44 项脚本测试和 32 项 Compose 检查通过，见[实施与交付记录](docs/architecture/platform-implementation-plan.md#7-实施状态与验证记录)。P2a 也已完成本地验收：**1,516 项 Java 测试、44 项脚本测试、36 项 Compose 检查通过**，覆盖自定义 Agent 发布、目标会话、重启和 40 表恢复，见 [P2a 证据](docs/architecture/evidence/p2a-implementation.json)。P2a 当前尚未提交；本地和历史测试结果不替代远程 CI。
+
+历史上下文阶段曾记录 1,032 项 Java 单元/契约/架构测试及 59 项定向回归，并因当时 Docker 超时未完成数据库/Compose 实测。该限制描述的是当时的验证范围；后续 P1 全量验收已覆盖当前数据库集成与容器场景，真实摘要供应商输出仍需单独验收。
 
 代码基线 [`b5cf86b`](https://github.com/westbrook0904/FinanceClaw/commit/b5cf86b4474bdd84379d68ca69e5a6dcd00b4720) 的[远程验证](https://github.com/westbrook0904/FinanceClaw/actions/runs/39894283554)通过 **950 项单元/契约/架构测试、319 项集成测试、44 项脚本测试和 31 项 Compose 检查**。这是该代码基线的结果，不代表真实外部服务已验收，也不代替后续提交的 CI。Java 汇总写入 `target/verification/results.json`，Compose 单独记录部署证据。
 
@@ -269,6 +271,7 @@ python3 scripts/validate-compose.py --ziwei --admission --preflight --restore-pr
 | --- | --- |
 | [运行结构](docs/architecture/combined-runtime.md) | 统一 JVM、受限入口、SSE 与调度 |
 | [上下文生命周期与预算](docs/architecture/context-management.md) | Turn 快照、会话轨迹、结构化摘要、预算与文件读取 |
+| [Agent 定义与调用](docs/architecture/agent-definitions.md) | P2a 提示词草稿、发布 CLI 与指定 Agent 会话 |
 | [平台化实施方案](docs/architecture/platform-implementation-plan.md) | 控制面、数据面、Scheduler 边界与分阶段验收 |
 | [数据结构](docs/architecture/database-schema-review.md) / [数据库访问](docs/architecture/database-access-review.md) | 权威状态边界、锁与查询策略 |
 | [画像与证据记忆](docs/architecture/user-profile-memory.md) | Markdown、来源、确认、版本和隐私 |
@@ -276,4 +279,4 @@ python3 scripts/validate-compose.py --ziwei --admission --preflight --restore-pr
 | [运行维护](docs/operations.md) | 受理排空、配置、备份与隔离隐私恢复 |
 | [历史记录](docs/history/README.md) | 过去设计和验收证据，非当前迁移或兼容承诺 |
 
-后续可强化的 Harness 边界包括：可配置 Agent 定义与完整依赖版本、远端 MCP Schema 指纹锁定、可信多用户认证、跨实例事件转发，以及统一观测和模型成本记录；这些仍属于 P2 及后续范围。P1 仅持久化现有发布清单、默认指针与会话绑定，验收状态见[实施方案](docs/architecture/platform-implementation-plan.md#7-实施状态与验证记录)。
+后续可强化的 Harness 边界包括：完整 Agent 能力装配与依赖版本、远端 MCP Schema 指纹锁定、可信多用户认证、跨实例事件转发，以及统一观测和模型成本记录；这些仍属于 P2b 及后续范围。P2a 在 P1 基础上加入 Agent 身份、提示词草稿和目标版本绑定，验收状态见[实施方案](docs/architecture/platform-implementation-plan.md#7-实施状态与验证记录)。

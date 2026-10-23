@@ -2,7 +2,7 @@
 
 本文是 FinanceClaw Java 的实施方案与阶段状态记录。面向四类使用方式：通用对话、定制 RAG Workflow、通过提示词与工具等配置组装 Agent，以及直接调用一个独立 Agent。本文中的目标模型不代表当前已经实现的能力。
 
-截至 2026-10-23，已完成现有代码与官方 AgentScope Service 的设计对比，并完成 **P1：持久发布与会话版本绑定** 的实现与本地隔离验收。P2–P4 尚未实施。每阶段应形成可独立检查的代码、验证记录与交付范围，再推进下一阶段；本轮验证见第 7 节。
+截至 2026-10-23，已完成现有代码与官方 AgentScope Service 的设计对比，并完成 **P1：持久发布与会话版本绑定** 的实现、本地隔离验收和推送。**P2a：Agent 身份、提示词草稿与目标会话** 已完成本地全量和隔离容器验收，代码保留在工作区；P2b–P4 尚未实施。每阶段应形成可独立检查的代码、验证记录与交付范围，再推进下一阶段；P1 验证见第 7 节。
 
 ## 1. 实施前基线与改造目标
 
@@ -155,12 +155,12 @@ P2 的 Agent 装配先支持受控目录中的能力：提示词、模型 profil
 
 1. 创建 conversation 时，在同一事务中保存 owner、固定发布与初始授权；失败不留下半成品会话。
 2. 受理 Turn 保持现有会话锁、幂等回放、暂停检查、权限/记忆快照和 Command 写入顺序；绑定发布读取不能移到可产生竞态的事务外。
-3. 登记候选单独提交不可变清单，不切换已有指针；相同 hash 重复登记幂等，摘要与正文不一致必须拒绝。首次 bootstrap 在同一事务中登记清单、创建缺失指针并写入 revision 1 历史。后续 `activate` 在另一短事务中校验已登记清单、CAS 更新指针并追加历史；CAS 失败时指针和历史都不改变，之前登记的候选可以保留。回滚到旧 hash 也必须使用预期 revision。
+3. P1 的 `prepare` 登记候选单独提交不可变清单，不切换已有指针；相同 hash 重复登记幂等，摘要与正文不一致必须拒绝。首次 bootstrap 在同一事务中登记清单、创建缺失指针并写入 revision 1 历史。后续 `activate` 在另一短事务中校验已登记清单、CAS 更新指针并追加历史；CAS 失败时指针和历史都不改变，之前登记的候选可以保留。回滚到旧 hash 也必须使用预期 revision。P2a 的 `publish` 则在持有 Agent owner 行锁的同一外层事务中完成清单登记、指针 CAS 与历史追加；任一步失败全部回滚。
 4. 任务提交后才唤醒 Worker。网络、模型、MCP 和知识服务调用不占用业务事务；回写前重新验证执行围栏。
 5. 数据面可以缓存不可变发布，但持久库是权威。缓存缺失从持久库读取；发布缺失或摘要校验失败必须阻断，不能退回 current。完整执行器/依赖兼容校验随 P2 逐步补充，不能把清单可读等同于任意历史代码可恢复。
 6. Workflow 和 Scheduler 使用已有任务状态机推进工作。未来拆进程时引入 outbox、消费去重与可重放事件，再移除当前同 JVM 的直接通知依赖。
 
-数据库保留现有 V1 文件与 checksum，新增 V2 发布目录和 V3 会话绑定前向迁移，支持当前 Java V1 基线升级与新库完整初始化。旧实验结构与 Python 数据不在支持范围。V3 仅从已有 Turn 回填会话 hash，不伪造旧发布 manifest。初始化与升级仍由独立 init-db 入口和结构所有者执行，业务进程不能自动迁移。同步更新角色授权、结构检查和[数据库初始化说明](fresh-schema.md)，不得删除现有库来完成测试。
+数据库保留现有 V1 文件与 checksum，新增 V2 发布目录、V3 会话绑定及 V4 Agent 定义前向迁移，支持当前 Java V1 基线升级与新库完整初始化。旧实验结构与 Python 数据不在支持范围。V3 仅从已有 Turn 回填会话 hash，不伪造旧发布 manifest。V4 默认历史 Agent 身份为 `finance_agent`，保留旧 hash 与恢复命名空间；自定义 Agent 使用带格式标识的新 manifest，不能混用旧解码器。初始化与升级仍由独立 init-db 入口和结构所有者执行，业务进程不能自动迁移。同步更新角色授权、结构检查和[数据库初始化说明](fresh-schema.md)，不得删除现有库来完成测试。
 
 ## 6. 分阶段实施与验收
 
@@ -209,13 +209,17 @@ release-admin history --after-revision 0 --limit 20
 
 ### P2：通用 Agent 定义与按发布装配
 
-状态：**待实施**。以 P1 发布库与会话绑定通过验收为前置条件。
+P2 拆成两个独立模块。P1 发布库与会话绑定已通过验收；P2a **已完成本地验收，尚未提交**，P2b 待实施。
 
-实施顺序：先抽出稳定 Agent 身份与定义 revision，再将当前 `finance_agent` 表达为内置定义；随后开放受控提示词、模型、Function/MCP、Skill 选择。发布步骤生成已解析依赖快照，数据面按该快照装配，替代散落的运行时最新配置读取。
+**P2a：Agent 身份、提示词草稿与目标会话。** 内置 `finance_agent` 保留为只读兼容入口；自定义 Agent 使用显式 UUID、owner 和不可变草稿 revision。首次创建固定当时内置默认发布作为基础能力版本，只开放 `displayName` 与 `systemPrompt`，不让客户端选择模型 URL、凭据、Function、MCP 或 Skill。发布固定 Agent 身份、提示词与基础发布，并以独立部署指针 CAS 生效。新会话显式选择已发布且归属当前 owner 的 Agent，后续 Turn 和恢复保持同一 Agent/release。
 
-增加 Tool/Skill 目录与身份校验，记录内容摘要、Schema 和所需权限。MCP 需要在发布/验证阶段获取并规范化远端 Schema，执行与审批恢复时检测不兼容漂移；不能因冻结连接地址就认为契约已固定。外部发现失败时发布应失败或显式标记不可运行，不能保存“已验证”状态。
+P2a 管理走独立 `agent-admin` CLI，由可访问本机及业务数据库凭据的 operator 操作；普通 Bearer 仍只代表业务调用者，不自动成为平台管理员。CLI 严格解析 owner、UUID 和预期 revision，JSON 文件只允许两个字段，输出只含资源 ID、revision 与摘要。它不启动 HTTP、Worker、Flyway 或环境候选；当前数据库角色隔离水平保持原有边界，不能把独立入口等同于独立管理数据库权限。操作契约见 [Agent 定义与发布](agent-definitions.md)。
 
-验收：同一模板可创建两个配置不同的 Agent；发布后编辑草稿不影响既有会话；Tool/Skill 白名单与 scope 交集实际控制装配；Schema/内容漂移能阻断；非法引用、越权、循环与摘要不一致均拒绝；当前业务 Agent 行为与治理回归通过。
+P2a 验收：两个 Agent 的身份、草稿、发布指针和会话彼此隔离；跨 owner 读取、发布和调用拒绝；草稿更新与发布均使用显式 CAS；创建重放保留最初草稿与基础发布；新发布不影响旧会话和暂停恢复；Agent 身份参与检查点与执行身份；用户 Agent 不因 `/workflow` 前缀切换固定业务驱动；既有内置 Agent 与治理回归通过。真实打包 CLI 还需验证错误脱敏、非法文件、坏环境候选、禁用自动迁移及不产生执行命令。以上已由单元/真实 SDK、PostgreSQL、打包 CLI 与 Compose 检查完成本地验收，具体范围见第 9 节。
+
+**P2b：受控能力选择与依赖冻结。** 在 P2a 之上开放模型 profile、Function/MCP 与 Skill 选择。增加能力目录与身份校验，记录内容摘要、Schema 和所需权限，发布生成已解析依赖快照，数据面按该快照装配。MCP 需要在发布/验证阶段获取并规范化远端 Schema，执行与审批恢复时检测不兼容漂移；不能因冻结连接地址就认为契约已固定。外部发现失败时发布应失败或显式标记不可运行，不能保存“已验证”状态。
+
+P2b 验收：Tool/Skill 白名单与 scope 交集实际控制装配；Schema/内容漂移能阻断；非法引用、越权、循环与摘要不一致均拒绝；当前业务 Agent 行为与治理回归通过。用户自助管理 HTTP、真正多用户认证、共享/委派策略与凭据资源授权需要另行落实，不能复用会话执行 scopes 代替。
 
 主要风险：过早建立通用插件系统、任意代码上传、权限默认放宽、草稿内容进入运行时、凭据泄露到发布或日志。第一版只支持平台已安装且明确允许的能力。
 
@@ -254,12 +258,15 @@ release-admin history --after-revision 0 --limit 20
 | P1 发布持久化 | 已完成 | PostgreSQL 目录、并发 CAS、不可变历史、真实 CLI 与跨进程恢复通过 | 完整依赖冻结与工件兼容按 P2+ 推进 |
 | P1 会话发布绑定 | 已完成 | 新旧会话、V1→V3 回填、并发、幂等与缺失清单阻断通过 | 完整 AgentSession 与显式目标按后续阶段推进 |
 | P1 治理回归与文档同步 | 已完成 | 1,440 项 Java 测试、44 项脚本测试、32 项 Compose 检查；文档与静态检查通过 | 真实外部服务和生产环境不属于本轮验收 |
-| P2 通用装配 | 待实施 | 设计约束 | P1 完成后细化最小能力目录 |
+| P2a Agent 定义与目标会话 | 已完成本地验收，尚未提交 | 1,516 项 Java 测试、44 项脚本测试、36 项 Compose 检查；[证据](evidence/p2a-implementation.json) | 真实外部服务不在本轮验收范围；能力装配按 P2b 推进 |
+| P2b 受控能力装配 | 待实施 | 设计约束 | Tool/Skill/模型资源目录、依赖冻结和契约漂移检查 |
 | P3a 独立 Agent 与子调用 | 待实施 | 现有受限研究子 Agent 可作适配起点 | 持久调用模型与权限/预算验证 |
 | P3b 定制 RAG Workflow | 待实施 | 仅有现有记忆与固定 Workflow 基础 | 知识模型、索引发布、端到端引用验收 |
 | P4 Scheduler 与服务化 | 待实施 | 现有 TaskWorker/lease/fence | 触发模型、调度扩展与拆分前置设施 |
 
-本轮实际通过的验证命令：
+P1 已于 2026-10-23 提交并推送到 `origin/codex/java-agentscope`：[2a811e7](https://github.com/westbrook0904/FinanceClaw/commit/2a811e7026bdf436cb916e820b15457ac6877282)。推送后核对远端 SHA 一致；此记录不代表远程 CI 成功。下方 P1 证据保留验证发生时的工作区状态。
+
+P1 实际通过的验证命令（不代表 P2a 已通过）：
 
 ```bash
 scripts/mvn.sh -B -ntp spotless:apply verify
@@ -277,7 +284,7 @@ python3 scripts/check-delivery.py
 
 Compose 的 32 项检查包含容器内发布命令、受限角色、强制退出后审批恢复、数据库中断恢复、38 张应用表的备份恢复、旧备份的隐私拒绝、恢复后重新受理。测试使用独立随机项目和隔离数据库；仅清理本次测试创建的容器及卷。模型为离线模式、行情为合成数据，其他协议测试使用本机模拟服务；这些结果不代表真实模型/MCP/飞书、生产容量或远程 CI 验收。
 
-持久验证摘要见 [P1 验证记录](evidence/p1-implementation.json)，完整本地报告位于 `target/verification/results.json` 与 `target/m5e/deployment/compose-results.json`。记录保存 JAR、变更源码及报告摘要；本轮修改保留在工作区，未提交或推送。
+持久验证摘要见 [P1 验证记录](evidence/p1-implementation.json)，当时完整本地报告生成在 `target/verification/results.json` 与 `target/m5e/deployment/compose-results.json`，这些通用路径会被后续验证覆盖；P1 持久证据以该阶段 JSON 为准。记录保存 JAR、变更源码及报告摘要；P1 已由提交 `2a811e7` 推送。P2a 的实现与验证在第 9 节单独记录，不沿用 P1 测试数字宣称完成。
 
 ## 8. P1 实现入口与验收映射
 
@@ -288,4 +295,22 @@ Compose 的 32 项检查包含容器内发布命令、受限角色、强制退�
 | 发布运维入口 | [ReleaseAdministrationApplication](../../src/main/java/com/financeclawrelease/ReleaseAdministrationApplication.java)、[容器入口](../../ops/container-entrypoint.sh) | [CLI 集成测试](../../src/test/java/com/financeclawrelease/ReleaseAdministrationCliIT.java)：真实打包进程、CAS/回滚、坏候选下查询、禁用自动迁移与错误脱敏 |
 | 暂停任务恢复与角色权限 | [角色装配](../../src/main/java/com/financeclaw/bootstrap/RoleConfiguration.java)、[角色授权](../../src/main/resources/deployment/grants.sql) | [ZiweiRecoveryIT](../../src/test/java/com/financeclaw/m6/ZiweiRecoveryIT.java)：配置变化后原版本继续；[RoleAssemblyIT](../../src/test/java/com/financeclaw/m5/RoleAssemblyIT.java)：Memory Worker 拒绝控制面权限 |
 
-交付范围限于上述 P1。当前仍是单 Agent 默认入口和单业务 JVM；完整提示词/Function/Skill/MCP 依赖冻结、通用 Agent 管理、RAG 知识库与触发 Scheduler 按 P2–P4 推进。下一步 P2 先定义 Agent 身份和草稿 revision，将现有 `finance_agent` 迁入同一发布模型，再开放受控能力选择。
+P1 已推送；P2a 已完成本地验收，当前保持未提交工作区状态。工程继续保持单业务 JVM；完整 Function/Skill/MCP 依赖冻结、用户自助管理、RAG 知识库与触发 Scheduler 按 P2b–P4 推进。
+
+
+## 9. P2a 实现与验收记录
+
+2026-10-23 已完成 P2a：稳定 Agent ID 与 owner、不可变提示词草稿修订、CAS 发布、私有目标会话和按发布装配。管理入口为独立 `agent-admin`；普通 HTTP 只开放 owner 范围的目录读取和创建目标会话。当前仍继承首次创建时的内置受控模型、工具与预算，不能把 P2a 理解为完整能力自由组装。
+
+| 内容 | 实现入口 | 验证 |
+| --- | --- | --- |
+| 身份、草稿与原子发布 | [AgentService](../../src/main/java/com/financeclaw/app/agent/AgentService.java)、[V4](../../src/main/resources/db/migration/V4__agent_definitions.sql) | owner 隔离、创建重放、草稿/发布并发 CAS、失败回滚、不可变约束 |
+| 新格式与 legacy 兼容 | [AgentReleaseManifest](../../src/main/java/com/financeclaw/domain/agent/AgentReleaseManifest.java)、[ReleaseService](../../src/main/java/com/financeclaw/app/release/ReleaseService.java) | 原 hash 不变、双层摘要校验、错误 runtime/嵌套 base 拒绝、V1→V4 历史身份保留 |
+| 目标受理和实际 SDK 执行 | [SubmitTaskService](../../src/main/java/com/financeclaw/app/task/SubmitTaskService.java)、[TaskAgentRuntime](../../src/main/java/com/financeclaw/infrastructure/agentscope/execution/TaskAgentRuntime.java) | 新旧会话固定、真实 SDK prompt/name/scope、审批恢复、工具权限与预算、普通输入不触发内置 Workflow 前缀 |
+| 管理入口与部署 | [操作说明](agent-definitions.md)、[CLI](../../src/main/java/com/financeclawagent/AgentAdministrationApplication.java)、[Compose 验收](../../scripts/validate-compose.py) | 严格文件/参数、错误脱敏、不启动执行或迁移、容器 HTTP 执行、重启和 40 表备份恢复 |
+
+实际通过：`scripts/mvn.sh -B -ntp spotless:apply verify`，**1,122 项单元/契约/架构测试 + 394 项集成测试 = 1,516 项**，零失败、零错误、零跳过。另有 44 项脚本测试，以及 `python3 scripts/validate-compose.py --ziwei --admission --preflight --restore-privacy` 的 **36 项检查**。一次完整构建的 JAR 与容器验收 JAR 摘要一致；原 V1/V2/V3 SQL 与 legacy hash 算法未改变。静态交付检查及源码/报告一致性检查通过。
+
+Compose 新增覆盖两个 owner 的目录隔离、未发布目标拒绝、草稿/发布 CAS、旧会话继续使用原发布、新会话使用新发布、运行进程重启保留目录，以及恢复后继续执行已发布 Agent。恢复覆盖全部 **40 张主库应用表**，同时保留已有审批围栏和隐私恢复检查。模型为离线模式，外部协议使用本机模拟服务；这些结果不证明真实模型/MCP/飞书或生产容量，也不是远程 CI 结果。
+
+持久摘要见 [P2a 验证记录](evidence/p2a-implementation.json)。当前完整报告为 `target/verification/results.json` 与 `target/m5e/deployment/compose-results.json`；后续运行可能覆盖通用路径。P2a 尚未提交或推送，下一模块为 P2b 的受控能力选择和依赖冻结。

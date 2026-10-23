@@ -53,6 +53,15 @@ if ARGS.ziwei:
 market = {'AAPL': {'price': '100', 'currency': 'USD', 'provider': 'm5-fixture',
                    'as_of': datetime.now(timezone.utc).isoformat()}}
 (TEMP / 'market.json').write_text(json.dumps(market))
+AGENT_NAME = 'P2a synthetic agent'
+AGENT_PROMPTS = ('P2a synthetic prompt revision one.', 'P2a synthetic prompt revision two.')
+AGENT_FILES = []
+for index, prompt in enumerate(AGENT_PROMPTS, 1):
+    definition = TEMP / f'agent-definition-{index}.json'
+    definition.write_text(json.dumps({'displayName': AGENT_NAME, 'systemPrompt': prompt}), encoding='utf-8')
+    # Synthetic fixture only; readable by the container user and mounted read-only per command.
+    definition.chmod(0o644)
+    AGENT_FILES.append(definition)
 override = {'services': {s: {
     'environment': {'FINANCECLAW_MARKET_FILE': '/app/market.json'},
     'volumes': [f'{TEMP / "market.json"}:/app/market.json:ro']}
@@ -95,6 +104,28 @@ def command(args, *, data=None, timeout=240, expected_exit=0):
 
 def compose(*args, **kw):
     return command(BASE + list(args), **kw)
+
+
+def agent_admin(action, agent_id=None, *options, definition=None, subject='developer', expected_exit=0):
+    arguments = ['run', '--rm', '--no-deps']
+    if definition is not None:
+        assert definition in AGENT_FILES
+        arguments.extend(['-v', f'{definition}:/input/agent-definition.json:ro'])
+    arguments.extend(['api', 'agent-admin', action, '--tenant', 'local', '--subject', subject])
+    if agent_id is not None:
+        arguments.extend(['--agent-id', agent_id])
+    if definition is not None:
+        arguments.extend(['--file', '/input/agent-definition.json'])
+    arguments.extend(options)
+    raw = compose(*arguments, expected_exit=expected_exit)
+    assert len(raw.strip().splitlines()) == 1
+    text = raw.decode('utf-8')
+    assert all(value not in text for value in (*AGENT_PROMPTS, AGENT_NAME, TOKEN,
+                                              '"systemPrompt"', '"displayName"', '"tenant"', '"subject"'))
+    response = json.loads(raw)
+    if expected_exit == 2:
+        assert set(response) == {'result', 'error'} and response['result'] == 'blocked'
+    return response
 
 
 def restart_runtime(*, execute=True):
@@ -169,8 +200,8 @@ def mark(name, details=True):
     print('PASS:', name, flush=True)
 
 
-def turn(message='M5 synthetic request'):
-    c = api('/v1/conversations', {})['conversation_id']
+def turn(message='M5 synthetic request', agent_id=None):
+    c = api('/v1/conversations', {} if agent_id is None else {'agent_id': agent_id})['conversation_id']
     receipt = api(f'/v1/conversations/{c}/turns', {'message': message}, 'admit-once')
     path = f'/v1/conversations/{c}/turns/{receipt["turn_id"]}'
     return c, receipt, path
@@ -319,6 +350,58 @@ try:
     assert history_after['result'] == 'history' and len(history_after['items']) == 1
     mark('release_admin_container_prepares_without_overwriting_default_or_history')
 
+    agent_id, foreign_agent_id = str(uuid.uuid4()), str(uuid.uuid4())
+    created = agent_admin('create', agent_id, definition=AGENT_FILES[0])
+    assert created['result'] == 'created' and created['draftRevision'] == 1
+    assert created['baseReleaseHash'] == prepared['current']['releaseHash']
+    assert created['inputSha256'] == hashlib.sha256(AGENT_FILES[0].read_bytes()).hexdigest()
+    assert agent_admin('create', agent_id, definition=AGENT_FILES[0]) == created
+    assert agent_admin('get', agent_id)['contentHash'] == created['contentHash']
+    agent_admin('create', foreign_agent_id, definition=AGENT_FILES[0], subject='p2a-other-owner')
+    assert agent_admin('get', foreign_agent_id, expected_exit=2)['error'] == 'not_found'
+    assert request('/v1/agents', auth=False)[0] == 401
+    visible_agents = api('/v1/agents')
+    assert all(set(item) == {'agent_id', 'draft_revision', 'builtin'} for item in visible_agents)
+    assert {item['agent_id'] for item in visible_agents} == {'finance_agent', agent_id}
+    assert request('/v1/conversations', {'agent_id': agent_id})[0] == 409
+    assert request('/v1/conversations', {'agent_id': foreign_agent_id})[0] == 404
+    first_publish = agent_admin('publish', agent_id, '--draft-revision', '1', '--expected-revision', '0')
+    assert first_publish['result'] == 'published' and first_publish['revision'] == 1
+    agent_release_one = first_publish['releaseHash']
+    old_agent_conversation, old_agent_receipt, old_agent_path = turn('P2a first published request', agent_id)
+    terminal(old_agent_path)
+    assert sql(f"SELECT agent_id||':'||release_hash FROM business.conversations WHERE id='{old_agent_conversation}'") == agent_id + ':' + agent_release_one
+    mark('agent_admin_create_owner_isolation_and_targeted_http_execution')
+
+    updated = agent_admin('update', agent_id, '--expected-revision', '1', definition=AGENT_FILES[1])
+    assert updated['draftRevision'] == 2 and updated['contentHash'] != created['contentHash']
+    assert updated['baseReleaseHash'] == created['baseReleaseHash']
+    assert agent_admin('update', agent_id, '--expected-revision', '1', definition=AGENT_FILES[1],
+                       expected_exit=2)['error'] == 'agent_draft_revision_changed'
+    history_one = agent_admin('history', agent_id)
+    assert len(history_one['items']) == 1 and history_one['items'][0]['releaseHash'] == agent_release_one
+    assert agent_admin('publish', agent_id, '--draft-revision', '1', '--expected-revision', '1',
+                       expected_exit=2)['error'] == 'agent_draft_revision_changed'
+    second_publish = agent_admin('publish', agent_id, '--draft-revision', '2', '--expected-revision', '1')
+    agent_release_two = second_publish['releaseHash']
+    assert second_publish['revision'] == 2 and agent_release_two != agent_release_one
+    assert agent_admin('publish', agent_id, '--draft-revision', '2', '--expected-revision', '1',
+                       expected_exit=2)['error'] == 'release_revision_changed'
+    history_two = agent_admin('history', agent_id, '--after-revision', '1', '--limit', '1')
+    assert history_two['nextAfterRevision'] == 2 and len(history_two['items']) == 1
+    assert history_two['items'][0]['previousHash'] == agent_release_one
+    assert history_two['items'][0]['releaseHash'] == agent_release_two
+    old_agent_next = api(f'/v1/conversations/{old_agent_conversation}/turns',
+                         {'message': 'P2a old conversation keeps first release'}, 'p2a-old-after-publish')
+    terminal(f'/v1/conversations/{old_agent_conversation}/turns/{old_agent_next["turn_id"]}')
+    assert sql(f"SELECT release_hash FROM business.turns WHERE id='{old_agent_next['turn_id']}'") == agent_release_one
+    new_agent_conversation, new_agent_receipt, new_agent_path = turn('/workflow portfolio_review P2a plain user input', agent_id)
+    terminal(new_agent_path)
+    assert sql(f"SELECT agent_id||':'||release_hash FROM business.turns WHERE id='{new_agent_receipt['turn_id']}'") == agent_id + ':' + agent_release_two
+    assert sql("SELECT count(*) FROM business.capability_steps WHERE step='publish_report'") == '0'
+    assert sql("SELECT release_hash || ':' || revision FROM control_plane.deployments WHERE name='default'") == release_before
+    mark('agent_draft_publish_cas_pins_existing_sessions_and_keeps_builtin_driver_separate')
+
     def sample(_):
         start = time.monotonic()
         c, receipt, path = turn()
@@ -347,6 +430,11 @@ try:
     compose('restart', 'api')
     URL = 'http://' + compose('port', 'api', '8080').decode().strip()
     wait(lambda: request('/actuator/health/readiness', auth=False)[0] == 200)
+    assert agent_admin('get', agent_id)['contentHash'] == updated['contentHash']
+    assert agent_admin('history', agent_id)['nextAfterRevision'] == 2
+    assert sql(f"SELECT count(*) FROM control_plane.release_manifests WHERE release_hash IN ('{agent_release_one}','{agent_release_two}')") == '2'
+    assert sql(f"SELECT release_hash FROM business.conversations WHERE id='{old_agent_conversation}'") == agent_release_one
+    mark('agent_catalog_and_pinned_conversation_survive_runtime_restart')
     replay = api(f'/v1/conversations/{c}/turns', {'message': 'durable admission across API restart'}, 'admit-once')
     assert replay['turn_id'] == receipt['turn_id']
     if ARGS.admission:
@@ -470,6 +558,10 @@ try:
 
     compose('stop', 'api', 'memory-worker')
     original = fingerprints('financeclaw_java')
+    assert len(original) == 40
+    assert {'control_plane.agents', 'control_plane.agent_draft_revisions'} <= original.keys()
+    assert original['control_plane.agents'].split(':', 1)[0] == '2'
+    assert original['control_plane.agent_draft_revisions'].split(':', 1)[0] == '3'
     backup = compose('exec', '-T', 'postgres', 'pg_dump', '-U', 'postgres', '-d', 'financeclaw_java', '-Fc')
     dump = OUT / 'synthetic-restore.dump'
     dump.write_bytes(backup)
@@ -558,6 +650,14 @@ try:
         if ARGS.preflight:
             preflight('reopened_admission', 'blocked')
     terminal(turn('new Java task after restored backup')[2])
+    assert agent_admin('get', agent_id)['contentHash'] == updated['contentHash']
+    assert agent_admin('history', agent_id)['nextAfterRevision'] == 2
+    restored_agent_conversation, restored_agent_receipt, restored_agent_path = turn('P2a restored published request', agent_id)
+    terminal(restored_agent_path)
+    assert sql(f"SELECT release_hash FROM business.turns WHERE id='{restored_agent_receipt['turn_id']}'", restored) == agent_release_two
+    assert sql(f"SELECT agent_id||':'||release_hash FROM business.conversations WHERE id='{old_agent_conversation}'", restored) == agent_id + ':' + agent_release_one
+    assert sql(f"SELECT release_hash FROM business.turns WHERE id='{old_agent_receipt['turn_id']}'", restored) == agent_release_one
+    mark('restored_agent_definitions_history_and_new_execution_keep_release_identity', {'application_tables': len(original)})
     assert sql("SELECT count(*) FROM business.capability_steps WHERE step='publish_report'", restored) == '1'
     assert sql("SELECT count(*) FROM business.artifacts WHERE required_scope='workflow:run'", restored) == '1'
     mark('restored_runtime_keeps_results_privacy_and_accepts_new_turns')

@@ -45,11 +45,20 @@ public class TaskController {
 
     @PostMapping
     public ResponseEntity<?> create(HttpServletRequest request, @RequestBody JsonNode body) {
-        if (!body.isObject() || !body.isEmpty()) {
+        if (!body.isObject()
+                || (!body.isEmpty()
+                        && (body.size() != 1
+                                || !body.has("agent_id")
+                                || !body.get("agent_id").isTextual()
+                                || body.get("agent_id").textValue().isBlank()))) {
             throw new Problem(422, "invalid_body");
         }
-        return ResponseEntity.status(201)
-                .body(Map.of("conversation_id", submission.createConversation(owner(request))));
+        String conversation =
+                body.isEmpty()
+                        ? submission.createConversation(owner(request))
+                        : submission.createConversation(
+                                owner(request), body.get("agent_id").textValue());
+        return ResponseEntity.status(201).body(Map.of("conversation_id", conversation));
     }
 
     @PostMapping("/{conversation}/turns")
