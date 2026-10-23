@@ -14,7 +14,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.testcontainers.containers.PostgreSQLContainer;
 
-/** 新库契约：一次初始化建立完整模型，不依赖历史表、升级步骤或预装 pgvector。 */
+/** 新库契约：从空库建立当前模型，并验证当前 Java 基线之后的增量迁移。 */
 class SchemaInitializationIT {
     private static final PostgreSQLContainer<?> PG =
             new PostgreSQLContainer<>("postgres:16.10-alpine");
@@ -28,7 +28,7 @@ class SchemaInitializationIT {
         var source =
                 new DriverManagerDataSource(PG.getJdbcUrl(), PG.getUsername(), PG.getPassword());
         initialization = Flyway.configure().dataSource(source).load();
-        assertThat(initialization.migrate().migrationsExecuted).isOne();
+        assertThat(initialization.migrate().migrationsExecuted).isEqualTo(3);
         sql = new JdbcTemplate(source);
         initialRows = new LinkedHashMap<>();
         for (String table : tables()) {
@@ -42,7 +42,7 @@ class SchemaInitializationIT {
     }
 
     @Test
-    void createsExactlyTheCurrentThirtyFourTablesInOneInitialization() {
+    void createsCurrentTablesThroughVersionedMigrations() {
         assertThat(tables())
                 .containsExactly(
                         "agent_runtime.states",
@@ -67,6 +67,9 @@ class SchemaInitializationIT {
                         "channel.inbox",
                         "channel.link_codes",
                         "channel.notices",
+                        "control_plane.deployment_changes",
+                        "control_plane.deployments",
+                        "control_plane.release_manifests",
                         "memory.audit",
                         "memory.embedding_profiles",
                         "memory.facts",
@@ -80,15 +83,15 @@ class SchemaInitializationIT {
                         "memory.sources",
                         "memory.turn_snapshots",
                         "memory.user_profiles");
-        assertThat(initialization.info().applied()).hasSize(1);
-        assertThat(initialization.info().current().getVersion().toString()).isEqualTo("1");
+        assertThat(initialization.info().applied()).hasSize(3);
+        assertThat(initialization.info().current().getVersion().toString()).isEqualTo("3");
         assertThat(initialization.validateWithResult().validationSuccessful).isTrue();
         assertThat(initialization.migrate().migrationsExecuted).isZero();
     }
 
     @Test
     void startsWithoutUserDataAndLeavesTheIndependentLedgerOutsideTheBusinessDatabase() {
-        assertThat(initialRows).hasSize(35);
+        assertThat(initialRows).hasSize(38);
         initialRows.forEach(
                 (table, count) ->
                         assertThat(count)
@@ -142,7 +145,7 @@ class SchemaInitializationIT {
 
     private static List<String> tables() {
         return sql.queryForList(
-                "SELECT schemaname||'.'||tablename FROM pg_tables WHERE schemaname IN ('business','agent_runtime','memory','channel') ORDER BY schemaname,tablename",
+                "SELECT schemaname||'.'||tablename FROM pg_tables WHERE schemaname IN ('business','agent_runtime','memory','channel','control_plane') ORDER BY schemaname,tablename",
                 String.class);
     }
 }

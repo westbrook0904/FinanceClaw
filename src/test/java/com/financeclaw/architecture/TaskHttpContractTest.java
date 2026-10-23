@@ -63,6 +63,8 @@ class TaskHttpContractTest {
         when(admissions.lockConversation("conversation", owner)).thenReturn("conversation");
         when(reads.ownedConversation("conversation", owner)).thenReturn("conversation");
         when(releases.currentHash()).thenReturn("release");
+        when(admissions.conversationRelease("conversation")).thenReturn("release");
+        when(admissions.bindConversationRelease(anyString(), eq("release"))).thenReturn(1);
         when(releases.require("release")).thenReturn(new ExecutionPolicy(List.of(), 4, 4));
         when(policy.lockGrant("conversation")).thenReturn(new Grant("conversation", 1, "[]"));
         Turn cancelled =

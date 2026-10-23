@@ -3,7 +3,6 @@ package com.financeclaw.m6;
 import static org.assertj.core.api.Assertions.*;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.financeclaw.app.release.ReleaseService;
 import com.financeclaw.app.ziwei.ZiweiIdentity;
 import com.financeclaw.domain.Task.Owner;
 import com.financeclaw.domain.release.ZiweiPolicy;
@@ -247,13 +246,17 @@ class ZiweiDomainTest {
                         .withProperty("financeclaw.business.ziwei.key-version", "test-v1")
                         .withProperty("financeclaw.business.ziwei.query-timezone", "Asia/Shanghai")
                         .withProperty("ZIWEI_HMAC_KEY", KEY);
-        var catalog = new ReleaseService(new EnvironmentReleaseSource(env));
+        var catalog =
+                com.financeclaw.fixture.TestReleases.create(new EnvironmentReleaseSource(env));
         String hash = catalog.currentHash();
         assertThat(PayloadJson.canonical(catalog.require(hash)))
                 .doesNotContain(KEY)
                 .contains(POLICY.convention(), "2026b", POLICY.schemaHash());
         env.setProperty("financeclaw.business.ziwei.key-version", "test-v2");
-        assertThat(new ReleaseService(new EnvironmentReleaseSource(env)).currentHash())
+        assertThat(
+                        com.financeclaw.fixture.TestReleases.create(
+                                        new EnvironmentReleaseSource(env))
+                                .currentHash())
                 .isNotEqualTo(hash);
         assertThatThrownBy(() -> ZiweiPolicy.key("short")).hasMessage("ziwei_key_unavailable");
         assertThat(

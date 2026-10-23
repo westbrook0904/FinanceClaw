@@ -2,7 +2,7 @@ package com.financeclaw.app.release.port;
 
 import com.financeclaw.domain.release.ReleaseDefinition;
 
-/** 发布配置来源边界：提供当前发布指针和按固定身份读取的不可变定义。 */
+/** 启动发布配置来源；只提供待登记的初始定义，数据库中的持久指针始终决定当前版本。 */
 public interface ReleaseSource {
     ReleaseDefinition initial();
 }

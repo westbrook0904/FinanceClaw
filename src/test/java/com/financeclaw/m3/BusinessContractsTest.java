@@ -2,7 +2,6 @@ package com.financeclaw.m3;
 
 import static org.assertj.core.api.Assertions.*;
 
-import com.financeclaw.app.release.ReleaseService;
 import com.financeclaw.domain.release.RemoteEndpoint;
 import com.financeclaw.infrastructure.agentscope.skills.PackagedSkills;
 import com.financeclaw.infrastructure.release.BusinessConfigurationLoader;
@@ -17,13 +16,14 @@ class BusinessContractsTest {
     @Test
     void processBootstrapAndSpringDefaultsProduceTheSameRelease() {
         assertThat(
-                        new ReleaseService(
+                        com.financeclaw.fixture.TestReleases.create(
                                         new EnvironmentReleaseSource(
                                                 new org.springframework.core.env
                                                         .StandardEnvironment()))
                                 .currentHash())
                 .isEqualTo(
-                        new ReleaseService(new EnvironmentReleaseSource(new MockEnvironment()))
+                        com.financeclaw.fixture.TestReleases.create(
+                                        new EnvironmentReleaseSource(new MockEnvironment()))
                                 .currentHash());
         assertThatThrownBy(
                         () ->

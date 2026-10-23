@@ -15,11 +15,12 @@ import org.apache.ibatis.annotations.*;
  */
 @Mapper
 public interface MemoryMapper {
-    /** 检查数据库角色不能访问业务、运行时和渠道 schema，也不能在 memory 内创建对象。 这不是用户授权检查，而是记忆 Worker 启动时的最小权限边界。 */
+    /** 检查角色不能访问业务、运行时、渠道和控制面，也不能在控制面或 memory 内创建对象。 这不是用户授权检查，而是记忆 Worker 启动时的最小权限边界。 */
     @Select(
             "SELECT NOT has_schema_privilege(current_user,'business','USAGE') AND NOT"
                     + " has_schema_privilege(current_user,'agent_runtime','USAGE') AND NOT"
                     + " has_schema_privilege(current_user,'channel','USAGE') AND NOT"
+                    + " has_schema_privilege(current_user,'control_plane','USAGE,CREATE') AND NOT"
                     + " has_schema_privilege(current_user,'memory','CREATE') AND NOT"
                     + " has_table_privilege(current_user,'memory.user_profiles','SELECT,INSERT,UPDATE,DELETE') AND NOT"
                     + " has_table_privilege(current_user,'memory.turn_snapshots','SELECT,INSERT,UPDATE,DELETE')")

@@ -366,8 +366,52 @@ class ZiweiRecoveryIT {
                 .isEqualTo(mode.equals("after-seal") ? 1 : 0);
     }
 
+    @Test
+    void answeredSuspensionKeepsPinnedReleaseWhenRestartConfigurationChanges() throws Exception {
+        var t = submit();
+        String pinnedHash = turn(t).releaseHash();
+        var deployment = tasks.releases().current();
+        run("normal", true, 0);
+        assertThat(turn(t).status()).isEqualTo("waiting");
+        answer(t);
+
+        var changedConfiguration = settings("normal", true);
+        changedConfiguration.setProperty("financeclaw.business.ziwei.key-version", "next-version");
+        finish(start(changedConfiguration), 0);
+
+        // 重启只登记配置，不能替换暂停 Turn、会话或默认指针绑定的发布版本。
+        assertThat(turn(t).status()).isEqualTo("completed");
+        assertThat(turn(t).releaseHash()).isEqualTo(pinnedHash);
+        assertThat(
+                        sql.queryForObject(
+                                "SELECT release_hash FROM business.conversations WHERE id=?",
+                                String.class,
+                                t.conversationId()))
+                .isEqualTo(pinnedHash);
+        assertThat(tasks.releases().current()).isEqualTo(deployment);
+        assertThat(tasks.releases().require(pinnedHash).business().ziwei().keyVersion())
+                .isEqualTo("test-v1");
+        assertThat(
+                        sql.queryForList(
+                                "SELECT release_hash FROM control_plane.release_manifests"
+                                        + " WHERE manifest->'business'->'ziwei'->>'keyVersion'=?",
+                                String.class,
+                                "next-version"))
+                .hasSize(1)
+                .doesNotContain(pinnedHash);
+        assertThat(artifacts()).isEqualTo(1);
+        assertSingleToolFile(t, true);
+        assertThat(
+                        sql.queryForObject(
+                                "SELECT release_hash FROM business.artifacts WHERE id=?",
+                                String.class,
+                                artifact()))
+                .isEqualTo(pinnedHash);
+        // 缺失清单和摘要不匹配仍由 ReleaseCatalogIT 验证为 release_unavailable。
+    }
+
     @ParameterizedTest
-    @ValueSource(strings = {"key", "release", "grant", "privacy", "cancel"})
+    @ValueSource(strings = {"key", "grant", "privacy", "cancel"})
     void answeredSuspensionCannotBypassChangesWhileWorkerIsStopped(String change) throws Exception {
         var t = submit();
         run("normal", true, 0);
@@ -376,8 +420,6 @@ class ZiweiRecoveryIT {
         var p = settings("normal", true);
         switch (change) {
             case "key" -> p.setProperty("ZIWEI_HMAC_KEY", ZiweiDomainTest.KEY + "rotated");
-            case "release" ->
-                    p.setProperty("financeclaw.business.ziwei.key-version", "next-version");
             case "grant" ->
                     governance.changeGrant(
                             owner,
@@ -396,7 +438,6 @@ class ZiweiRecoveryIT {
                     .isEqualTo(
                             switch (change) {
                                 case "key" -> "step_input_conflict";
-                                case "release" -> "release_unavailable";
                                 case "grant" -> "authorization_changed";
                                 case "privacy" -> "memory_privacy_changed";
                                 default -> throw new AssertionError(change);

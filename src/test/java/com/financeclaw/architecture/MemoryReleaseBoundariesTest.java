@@ -50,7 +50,7 @@ class MemoryReleaseBoundariesTest {
                                                                     entry.getKey(),
                                                                     entry.getValue().asText()));
                                             var catalog =
-                                                    new ReleaseService(
+                                                    com.financeclaw.fixture.TestReleases.create(
                                                             new EnvironmentReleaseSource(env));
                                             var release = catalog.require(catalog.currentHash());
                                             String canonical = PayloadJson.canonical(release);
@@ -92,7 +92,7 @@ class MemoryReleaseBoundariesTest {
                                                                     entry.getKey(),
                                                                     entry.getValue().asText()));
                                             var repeated =
-                                                    new ReleaseService(
+                                                    com.financeclaw.fixture.TestReleases.create(
                                                             new EnvironmentReleaseSource(reversed));
                                             assertThat(repeated.currentHash())
                                                     .isEqualTo(catalog.currentHash());
@@ -123,7 +123,9 @@ class MemoryReleaseBoundariesTest {
 
     @Test
     void modelBudgetAndVersionChangesProduceDistinctExecutionIdentities() {
-        var catalog = new ReleaseService(new EnvironmentReleaseSource(new MockEnvironment()));
+        var catalog =
+                com.financeclaw.fixture.TestReleases.create(
+                        new EnvironmentReleaseSource(new MockEnvironment()));
         var current = catalog.require(catalog.currentHash());
         var primary = current.primary();
         var changedModel =
@@ -260,7 +262,7 @@ class MemoryReleaseBoundariesTest {
                         12,
                         32,
                         business);
-        var catalog = new ReleaseService(() -> original);
+        var catalog = com.financeclaw.fixture.TestReleases.create(() -> original);
         String oldHash = catalog.currentHash();
         scopes.clear();
         tools.clear();
@@ -280,8 +282,8 @@ class MemoryReleaseBoundariesTest {
                         business);
         catalog.publish(next);
         assertThat(catalog.currentHash()).isNotEqualTo(oldHash);
-        assertThat(catalog.require(oldHash)).isSameAs(original);
-        assertThat(catalog.require(catalog.currentHash())).isSameAs(next);
+        assertThat(catalog.require(oldHash)).isEqualTo(original);
+        assertThat(catalog.require(catalog.currentHash())).isEqualTo(next);
         String current = catalog.currentHash();
         assertThatThrownBy(
                         () ->
@@ -303,7 +305,8 @@ class MemoryReleaseBoundariesTest {
     @Test
     void credentialsRotateWithoutChangingReleaseIdentity() {
         var env = new MockEnvironment().withProperty("TOKEN", "synthetic-before");
-        var catalog = new ReleaseService(new EnvironmentReleaseSource(env));
+        var catalog =
+                com.financeclaw.fixture.TestReleases.create(new EnvironmentReleaseSource(env));
         var credentials = new EnvironmentCredentials(env);
         String hash = catalog.currentHash();
         assertThat(credentials.resolve("TOKEN")).isEqualTo("synthetic-before");

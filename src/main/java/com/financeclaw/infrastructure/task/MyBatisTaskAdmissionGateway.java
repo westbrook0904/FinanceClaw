@@ -34,6 +34,16 @@ public class MyBatisTaskAdmissionGateway implements TaskAdmissionGateway {
     }
 
     @Override
+    public String conversationRelease(String id) {
+        return db.getConversationRelease(id);
+    }
+
+    @Override
+    public int bindConversationRelease(String id, String releaseHash) {
+        return db.updateConversationReleaseIfAbsent(id, releaseHash);
+    }
+
+    @Override
     public Turn replay(String conversation, String key) {
         return db.getTurnByIdempotencyKey(conversation, key);
     }

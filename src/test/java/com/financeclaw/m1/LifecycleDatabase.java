@@ -17,6 +17,8 @@ import com.financeclaw.infrastructure.governance.*;
 import com.financeclaw.infrastructure.interaction.*;
 import com.financeclaw.infrastructure.release.EnvironmentCredentials;
 import com.financeclaw.infrastructure.release.EnvironmentReleaseSource;
+import com.financeclaw.infrastructure.release.MyBatisReleaseRepository;
+import com.financeclaw.infrastructure.release.ReleaseMapper;
 import com.financeclaw.infrastructure.state.RuntimeMapper;
 import com.financeclaw.infrastructure.task.*;
 import javax.sql.DataSource;
@@ -31,10 +33,7 @@ public final class LifecycleDatabase {
     public final WorkSignals signals = new WorkSignals();
     public final TaskFixture service;
     public final GovernanceFixture governance;
-    public final ReleaseService releases =
-            new ReleaseService(
-                    new EnvironmentReleaseSource(
-                            new org.springframework.mock.env.MockEnvironment()));
+    public final ReleaseService releases;
     public final ExecutionLeaseService leases;
     public final ExecutionCompletionService completion;
     public final RecoverTaskService recovery;
@@ -48,6 +47,7 @@ public final class LifecycleDatabase {
             config.setLocalCacheScope(LocalCacheScope.STATEMENT);
             config.addMapper(RuntimeMapper.class);
             config.addMapper(TaskMapper.class);
+            config.addMapper(ReleaseMapper.class);
             config.addMapper(com.financeclaw.infrastructure.governance.GovernanceMapper.class);
             config.addMapper(LifecycleProbeMapper.class);
             SqlSessionFactoryBean factory = new SqlSessionFactoryBean();
@@ -55,6 +55,12 @@ public final class LifecycleDatabase {
             factory.setConfiguration(config);
             session = new SqlSessionTemplate(factory.getObject());
             var tx = new TransactionTemplate(new DataSourceTransactionManager(source));
+            releases =
+                    new ReleaseService(
+                            new EnvironmentReleaseSource(
+                                    new org.springframework.mock.env.MockEnvironment()),
+                            new MyBatisReleaseRepository(session.getMapper(ReleaseMapper.class)),
+                            tx);
             var tasks = session.getMapper(TaskMapper.class);
             var gov =
                     session.getMapper(

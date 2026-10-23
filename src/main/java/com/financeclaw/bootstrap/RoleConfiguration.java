@@ -10,6 +10,8 @@ import com.financeclaw.app.memory.*;
 import com.financeclaw.app.operations.*;
 import com.financeclaw.app.portfolio.PortfolioReviewService;
 import com.financeclaw.app.release.ReleaseService;
+import com.financeclaw.app.release.port.ReleaseRepository;
+import com.financeclaw.app.release.port.ReleaseSource;
 import com.financeclaw.app.report.ReportService;
 import com.financeclaw.app.research.MarketResearchService;
 import com.financeclaw.app.task.*;
@@ -33,6 +35,7 @@ import com.financeclaw.infrastructure.task.*;
 import com.financeclaw.infrastructure.ziwei.*;
 import com.financeclaw.worker.TaskWorker;
 import org.springframework.context.annotation.*;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * 显式装配统一业务上下文及其职责分组，避免全包扫描把离线或受限入口混入业务进程。
@@ -68,7 +71,8 @@ public final class RoleConfiguration {
         MapperConfiguration.Memory.class,
         MemoryConfiguration.class,
         MyBatisMemoryRepository.class,
-        ReleaseService.class,
+        MapperConfiguration.Releases.class,
+        MyBatisReleaseRepository.class,
         EnvironmentReleaseSource.class,
         EnvironmentCredentials.class,
         CatalogExecutionRelease.class,
@@ -93,7 +97,13 @@ public final class RoleConfiguration {
         CatalogZiweiConfiguration.class,
         AgentScopeZiweiInputs.class
     })
-    static class GovernedTasks {}
+    static class GovernedTasks {
+        @Bean
+        ReleaseService releaseService(
+                ReleaseSource source, ReleaseRepository repository, TransactionTemplate tx) {
+            return new ReleaseService(source, repository, tx);
+        }
+    }
 
     @Configuration(proxyBeanMethods = false)
     @Import({

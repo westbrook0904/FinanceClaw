@@ -11,5 +11,7 @@ case "$role" in
     exec java -Dloader.main=com.financeclawsetup.DatabaseInitializationApplication -cp /app/financeclaw.jar org.springframework.boot.loader.launch.PropertiesLauncher "$@" ;;
   privacy-recovery)
     exec java -Dloader.main=com.financeclawprivacy.PrivacyRecoveryApplication -cp /app/financeclaw.jar org.springframework.boot.loader.launch.PropertiesLauncher "$@" ;;
-  *) echo 'Expected standalone, memory-worker, init-db or privacy-recovery' >&2; exit 2 ;;
+  release-admin)
+    exec java -Dloader.main=com.financeclawrelease.ReleaseAdministrationApplication -cp /app/financeclaw.jar org.springframework.boot.loader.launch.PropertiesLauncher "$@" ;;
+  *) echo 'Expected standalone, memory-worker, init-db, privacy-recovery or release-admin' >&2; exit 2 ;;
 esac

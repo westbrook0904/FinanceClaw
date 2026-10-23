@@ -3,6 +3,7 @@ package com.financeclaw.bootstrap;
 import com.financeclaw.infrastructure.channel.FeishuMapper;
 import com.financeclaw.infrastructure.governance.GovernanceMapper;
 import com.financeclaw.infrastructure.memory.MemoryMapper;
+import com.financeclaw.infrastructure.release.ReleaseMapper;
 import com.financeclaw.infrastructure.state.RuntimeMapper;
 import com.financeclaw.infrastructure.task.*;
 import org.apache.ibatis.session.SqlSessionFactory;
@@ -28,6 +29,14 @@ public final class MapperConfiguration {
         @Bean
         MapperFactoryBean<TaskMapper> taskMapper(SqlSessionFactory sessions) {
             return mapper(TaskMapper.class, sessions);
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    public static class Releases {
+        @Bean
+        MapperFactoryBean<ReleaseMapper> releaseMapper(SqlSessionFactory sessions) {
+            return mapper(ReleaseMapper.class, sessions);
         }
     }
 

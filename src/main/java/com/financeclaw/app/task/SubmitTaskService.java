@@ -38,16 +38,16 @@ public class SubmitTaskService {
         return UUID.randomUUID().toString();
     }
 
-    /** 创建用户独占的会话并初始化授权，两项写入共同提交，避免会话缺少权限行。 */
+    /** 创建用户独占会话，固定发布并初始化授权；三项写入共同提交。 */
     public String createConversation(Owner owner) {
         String id = id();
         tx.executeWithoutResult(
                 s -> {
+                    String releaseHash = releases.currentHash();
+                    var release = releases.require(releaseHash);
                     db.createConversation(id, owner);
-                    governance.ensureGrant(
-                            id,
-                            PayloadJson.canonical(
-                                    releases.require(releases.currentHash()).scopes()));
+                    bindRelease(id, releaseHash);
+                    governance.ensureGrant(id, PayloadJson.canonical(release.scopes()));
                 });
         return id;
     }
@@ -77,6 +77,14 @@ public class SubmitTaskService {
                     if (db.active(conversation)) {
                         throw new Problem(409, "conversation_busy");
                     }
+                    // 新会话创建时已固定版本；迁移前从未使用的空会话在首次受理时绑定。
+                    // 历史任务的版本由迁移保留；缺少清单时阻断，不能回退到 current。
+                    String releaseHash = db.conversationRelease(conversation);
+                    if (releaseHash == null) {
+                        releaseHash = releases.currentHash();
+                        bindRelease(conversation, releaseHash);
+                    }
+                    var release = releases.require(releaseHash);
                     Turn t =
                             new Turn(
                                     id(),
@@ -86,7 +94,7 @@ public class SubmitTaskService {
                                     key,
                                     hash,
                                     message,
-                                    releases.currentHash(),
+                                    releaseHash,
                                     "queued",
                                     1,
                                     null,
@@ -103,12 +111,16 @@ public class SubmitTaskService {
                             grant.revision(),
                             PayloadJson.canonical(
                                     PayloadJson.scopes(grant.scopes()).stream()
-                                            .filter(
-                                                    releases.require(t.releaseHash()).scopes()
-                                                            ::contains)
+                                            .filter(release.scopes()::contains)
                                             .toList()));
                     db.recordAdmission(t, id());
                     return t.accepted(false);
                 });
+    }
+
+    private void bindRelease(String conversation, String releaseHash) {
+        if (db.bindConversationRelease(conversation, releaseHash) != 1) {
+            throw new Problem(409, "conversation_release_conflict");
+        }
     }
 }

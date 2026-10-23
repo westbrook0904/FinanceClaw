@@ -183,7 +183,7 @@ def terminal(path, status='completed'):
 
 def fingerprints(database):
     tables = sql("SELECT schemaname||'.'||tablename FROM pg_tables WHERE schemaname IN "
-                 "('business','agent_runtime','memory','channel') ORDER BY 1", database).splitlines()
+                 "('business','agent_runtime','memory','channel','control_plane') ORDER BY 1", database).splitlines()
     assert tables and all(re.fullmatch(r'[a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*', t) for t in tables)
     # One statement preserves the original per-table count/hash formula and shares one snapshot.
     # Avoid hundreds of Docker/psql invocations when comparing several isolated restore databases.
@@ -296,12 +296,28 @@ try:
         assert sql("SELECT to_regclass('" + retired + "') IS NULL") == 't', retired
     mark('fresh_schema_has_only_current_application_tables')
     assert sql("SELECT has_schema_privilege('financeclaw_memory','business','USAGE')") == 'f'
+    assert sql("SELECT has_schema_privilege('financeclaw_memory','control_plane','USAGE,CREATE')") == 'f'
     assert sql("SELECT has_schema_privilege('financeclaw_app','business','CREATE')") == 'f'
     for role in ('memory-worker',):
         code = compose('exec', '-T', role, 'curl', '-s', '-o', '/dev/null', '-w', '%{http_code}',
                        'http://localhost:8080/v1/conversations').decode()
         assert code == '404', (role, code)
     mark('background_http_and_database_privilege_boundaries')
+
+    release_before = sql("SELECT release_hash || ':' || revision FROM control_plane.deployments WHERE name='default'")
+    history_before = json.loads(compose('run', '--rm', '--no-deps', 'api',
+                                       'release-admin', 'history'))
+    prepared = json.loads(compose('run', '--rm', '--no-deps', 'api',
+                                  'release-admin', 'prepare'))
+    assert prepared['result'] == 'prepared'
+    assert re.fullmatch('[0-9a-f]{64}', prepared['candidateHash'])
+    assert prepared['current']['releaseHash'] + ':' + str(prepared['current']['revision']) == release_before
+    assert sql("SELECT release_hash || ':' || revision FROM control_plane.deployments WHERE name='default'") == release_before
+    history_after = json.loads(compose('run', '--rm', '--no-deps', 'api',
+                                      'release-admin', 'history'))
+    assert history_before == history_after
+    assert history_after['result'] == 'history' and len(history_after['items']) == 1
+    mark('release_admin_container_prepares_without_overwriting_default_or_history')
 
     def sample(_):
         start = time.monotonic()

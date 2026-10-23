@@ -71,7 +71,7 @@ class RoleAssemblyIT {
                         false,
                         Map.of("spring.flyway.enabled", "true"))) {
             assertThat(migration.getBean(Flyway.class).info().current().getVersion().toString())
-                    .isEqualTo("1");
+                    .isEqualTo("3");
         }
         sql.execute("CREATE ROLE financeclaw_memory LOGIN PASSWORD 'test-memory-only'");
         sql.execute(
@@ -228,7 +228,8 @@ class RoleAssemblyIT {
                             "RuntimeMapper",
                             "MemoryMapper",
                             "OperationsMapper",
-                            "FeishuMapper");
+                            "FeishuMapper",
+                            "ReleaseMapper");
             assertThat(context.getBean(GrantService.class)).isNotNull();
             assertThat(context.getBean(ArtifactService.class)).isNotNull();
             assertThat(context.getBean(ReportService.class)).isNotNull();
@@ -303,13 +304,19 @@ class RoleAssemblyIT {
                     OperationsMapper.class);
             assertThat(context.getBean(MemoryMapper.class).isMemoryWorkerRoleRestricted()).isTrue();
             var restricted = new JdbcTemplate(context.getBean(DataSource.class));
-            for (String schema : List.of("business", "agent_runtime", "channel"))
+            for (String schema : List.of("business", "agent_runtime", "channel", "control_plane")) {
                 assertThat(
                                 restricted.queryForObject(
                                         "SELECT has_schema_privilege(current_user, ?, 'USAGE')",
                                         Boolean.class,
                                         schema))
                         .isFalse();
+            }
+            assertThat(
+                            restricted.queryForObject(
+                                    "SELECT has_schema_privilege(current_user, 'control_plane', 'CREATE')",
+                                    Boolean.class))
+                    .isFalse();
             assertThat(context.getBean(MemoryProcessingService.class)).isNotNull();
             assertThat(
                             request(context, "/actuator/health/readiness", "GET", null, false)
@@ -318,6 +325,33 @@ class RoleAssemblyIT {
             assertThat(request(context, "/v1/conversations", "GET", null, false).statusCode())
                     .isEqualTo(404);
             inventory("memory", context);
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"USAGE", "CREATE"})
+    void accidentalControlPlanePrivilegePreventsMemoryWorkerStartup(String privilege) {
+        sql.execute("GRANT " + privilege + " ON SCHEMA control_plane TO financeclaw_memory");
+        try {
+            assertThatThrownBy(
+                            () -> {
+                                try (var context =
+                                        start(
+                                                MemoryWorkerApplication.class,
+                                                false,
+                                                Map.of(
+                                                        "spring.datasource.username",
+                                                        "financeclaw_memory",
+                                                        "spring.datasource.password",
+                                                        "test-memory-only",
+                                                        "financeclaw.memory.embedding.revision",
+                                                        "role-fixture"))) {
+                                    // A successful context is closed before the assertion fails.
+                                }
+                            })
+                    .hasRootCauseMessage("Memory worker requires a restricted database role");
+        } finally {
+            sql.execute("REVOKE " + privilege + " ON SCHEMA control_plane FROM financeclaw_memory");
         }
     }
 
@@ -335,7 +369,7 @@ class RoleAssemblyIT {
                                 "financeclaw.feishu.enabled",
                                 "true"))) {
             assertThat(context.getBean(Flyway.class).info().current().getVersion().toString())
-                    .isEqualTo("1");
+                    .isEqualTo("3");
             assertThat(mappers(context)).isEmpty();
             absent(
                     context,

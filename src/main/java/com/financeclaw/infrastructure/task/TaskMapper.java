@@ -73,6 +73,15 @@ public interface TaskMapper {
                     + " VALUES(#{id},#{owner.tenant},#{owner.subject})")
     int insertConversation(@Param("id") String id, @Param("owner") Owner owner);
 
+    /** 调用方先锁定并验证会话 owner；未绑定的历史空会话返回 null。 */
+    @Select("SELECT release_hash FROM business.conversations WHERE id=#{id}")
+    String getConversationRelease(String id);
+
+    /** 会话创建或持有会话行锁时首次绑定版本，永不覆盖已经选定的 release。 */
+    @Update(
+            "UPDATE business.conversations SET release_hash=#{hash} WHERE id=#{id} AND release_hash IS NULL")
+    int updateConversationReleaseIfAbsent(@Param("id") String id, @Param("hash") String hash);
+
     @Select(
             "SELECT id FROM business.conversations WHERE id=#{id} AND tenant=#{owner.tenant} AND"
                     + " subject=#{owner.subject} FOR UPDATE")

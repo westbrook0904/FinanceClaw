@@ -164,7 +164,7 @@ SSE 转发原生文本增量和工具状态，并回放持久任务事件。先�
 | 记忆模型 | 提取、embedding 单独配置和凭据；提取使用 SDK 类型化结构输出，不承诺供应商原生 JSON Schema 模式 |
 | 发布身份 | AgentScope 版本、模型配置、预算、scopes、打包 Skill 和业务配置参与摘要；任务绑定受理时版本 |
 
-发布目录当前是内存 Map，重启只加载启动配置；旧发布未做持久化注册，所需发布不存在时会阻断恢复。当前不是具备持久版本库、负载均衡、动态路由和独立供应商密钥池的模型网关。
+发布清单、默认发布指针和变更历史保存在 PostgreSQL。启动登记当前配置，但已有指针不会被环境变更覆盖；显式切换使用 revision CAS。新会话创建时固定发布，后续 Turn、重试和审批恢复沿用该版本；升级通过新会话生效。缺失或摘要不匹配的历史清单会阻断执行，不回退到当前版本。当前只提供单 Agent 的默认指针，通用 Agent 定义、完整 Deployment、多资源池与模型网关仍在后续计划中。见[平台化实施方案](docs/architecture/platform-implementation-plan.md)和[发布运维](docs/operations.md#发布版本管理)。
 
 源码：[ModelFactory](src/main/java/com/financeclaw/infrastructure/agentscope/execution/ModelFactory.java)、[ModelProfile](src/main/java/com/financeclaw/domain/release/ModelProfile.java)、[ReleaseService](src/main/java/com/financeclaw/app/release/ReleaseService.java)、[ReleaseIdentity](src/main/java/com/financeclaw/app/release/ReleaseIdentity.java)、[AgentScopeMemoryModels](src/main/java/com/financeclaw/infrastructure/agentscope/memory/AgentScopeMemoryModels.java)。
 
@@ -199,7 +199,7 @@ docker compose up -d --build --wait --wait-timeout 180
 curl --fail http://localhost:8080/actuator/health/readiness
 ```
 
-就绪预期返回 `{"status":"UP"}`。Compose 的 `init-db` 完成新库结构与授权后，启动统一业务服务 `api` 和受限 `memory-worker`；API 仅绑定本机 8080。主库由单一 V1 创建 35 张应用表，不提供历史库迁移或回填，详见[新库初始化](docs/architecture/fresh-schema.md)。
+就绪预期返回 `{"status":"UP"}`。Compose 的 `init-db` 完成新库结构与授权后，启动统一业务服务 `api` 和受限 `memory-worker`；API 仅绑定本机 8080。主库由 V1 基线及 V2/V3 演进建立 38 张应用表，支持当前 Java V1 基线升级；不导入 Python 或历史实验库，详见[数据库初始化与升级](docs/architecture/fresh-schema.md)。
 
 ### 跑通一次请求
 
@@ -269,10 +269,11 @@ python3 scripts/validate-compose.py --ziwei --admission --preflight --restore-pr
 | --- | --- |
 | [运行结构](docs/architecture/combined-runtime.md) | 统一 JVM、受限入口、SSE 与调度 |
 | [上下文生命周期与预算](docs/architecture/context-management.md) | Turn 快照、会话轨迹、结构化摘要、预算与文件读取 |
+| [平台化实施方案](docs/architecture/platform-implementation-plan.md) | 控制面、数据面、Scheduler 边界与分阶段验收 |
 | [数据结构](docs/architecture/database-schema-review.md) / [数据库访问](docs/architecture/database-access-review.md) | 权威状态边界、锁与查询策略 |
 | [画像与证据记忆](docs/architecture/user-profile-memory.md) | Markdown、来源、确认、版本和隐私 |
 | [HTTP 校验](docs/architecture/http-request-validation.md) / [Java 规范](docs/architecture/java-coding-guidelines.md) | 输入边界与关键逻辑注释约定 |
 | [运行维护](docs/operations.md) | 受理排空、配置、备份与隔离隐私恢复 |
 | [历史记录](docs/history/README.md) | 过去设计和验收证据，非当前迁移或兼容承诺 |
 
-后续可强化的 Harness 边界包括：持久化发布定义与版本目录、远端 MCP Schema 指纹锁定、可信多用户认证、跨实例事件转发，以及统一观测和模型成本记录；这些均不作为当前已交付能力。
+后续可强化的 Harness 边界包括：可配置 Agent 定义与完整依赖版本、远端 MCP Schema 指纹锁定、可信多用户认证、跨实例事件转发，以及统一观测和模型成本记录；这些仍属于 P2 及后续范围。P1 仅持久化现有发布清单、默认指针与会话绑定，验收状态见[实施方案](docs/architecture/platform-implementation-plan.md#7-实施状态与验证记录)。
