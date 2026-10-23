@@ -41,6 +41,7 @@ class UserProfileContextTest {
   void setup() {
     when(manager.getTransaction(any())).thenAnswer(ignored -> new SimpleTransactionStatus());
     when(db.lock(OWNER)).thenReturn(new Privacy("tenant", "alice", 1, false, 2));
+    when(db.lockForAdmission(OWNER)).thenReturn(new Privacy("tenant", "alice", 1, false, 2));
     when(db.sourceById("turn"))
         .thenReturn(new Source("turn", "tenant", "alice", 1, null, "profile_only", 2));
     when(db.userProfile(OWNER))
@@ -59,9 +60,34 @@ class UserProfileContextTest {
     memory.completed(TURN.id());
 
     var ordered = inOrder(db);
-    ordered.verify(db).lock(OWNER);
+    ordered.verify(db).lockForAdmission(OWNER);
     ordered.verify(db).source(new Source("turn", "tenant", "alice", 1, null, "profile_only", 2));
     ordered.verifyNoMoreInteractions();
+  }
+
+  @Test
+  void firstAdmissionCreatesTheOwnerThenAcquiresItsSharedPrivacyLock() {
+    when(db.lockForAdmission(OWNER)).thenReturn(null, new Privacy("tenant", "alice", 1, false, 0));
+
+    memory.admit(TURN);
+
+    var ordered = inOrder(db);
+    ordered.verify(db).lockForAdmission(OWNER);
+    ordered.verify(db).ensure(OWNER);
+    ordered.verify(db).lockForAdmission(OWNER);
+    ordered.verify(db).source(new Source("turn", "tenant", "alice", 1, null, "profile_only", 0));
+    ordered.verifyNoMoreInteractions();
+  }
+
+  @Test
+  void sharedAdmissionLockStillRejectsAPendingForget() {
+    when(db.lockForAdmission(OWNER)).thenReturn(new Privacy("tenant", "alice", 1, true, 2));
+
+    assertEquals(
+        "purge_pending", assertThrows(Problem.class, () -> memory.admit(TURN)).getMessage());
+
+    verify(db).lockForAdmission(OWNER);
+    verifyNoMoreInteractions(db);
   }
 
   @Test
@@ -150,7 +176,8 @@ class UserProfileContextTest {
     memory.completed(TURN.id());
     assertTrue(memory.sameEpoch(TURN));
     assertEquals("", memory.context(TURN));
-    verify(db, times(3)).lock(OWNER);
+    verify(db).lockForAdmission(OWNER);
+    verify(db, times(2)).lock(OWNER);
     verify(db).source(new Source("turn", "tenant", "alice", 1, null, "profile_only", 0));
     verify(db, times(2)).sourceById("turn");
     verifyNoMoreInteractions(db);

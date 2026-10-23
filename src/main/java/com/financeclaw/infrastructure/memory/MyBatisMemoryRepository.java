@@ -24,6 +24,10 @@ public class MyBatisMemoryRepository implements MemoryRepository {
     return db.getOwnerPrivacyForUpdate(owner);
   }
 
+  public Privacy lockForAdmission(Owner owner) {
+    return db.getOwnerPrivacyForShare(owner);
+  }
+
   public UserProfile userProfile(Owner owner) {
     return db.getUserProfile(owner);
   }

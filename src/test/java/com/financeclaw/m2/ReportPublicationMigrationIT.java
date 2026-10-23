@@ -52,9 +52,13 @@ class ReportPublicationMigrationIT {
   void legacyDatabase() {
     source = new DriverManagerDataSource(PG.getJdbcUrl(), PG.getUsername(), PG.getPassword());
     var legacy = Flyway.configure().dataSource(source).cleanDisabled(false).target("10").load();
-    legacy.clean();
-    legacy.migrate();
     sql = new JdbcTemplate(source);
+    // Flyway manages its history in public; the migrations create additional schemas themselves.
+    // This container belongs only to this class, so remove every application schema between cases.
+    legacy.clean();
+    for (String schema : List.of("memory", "channel", "business", "agent_runtime"))
+      sql.execute("DROP SCHEMA IF EXISTS " + schema + " CASCADE");
+    legacy.migrate();
     sql.update(
         "INSERT INTO business.conversations(id,tenant,subject) VALUES('conversation','tenant','subject')");
     sql.update(

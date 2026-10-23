@@ -320,7 +320,7 @@ class BacklogIT {
     submit(owner);
     admissions.change(owner, "pause", true, 0);
     sql.update(
-        "INSERT INTO memory.owners(tenant,subject,purge_pending) VALUES('local','developer',true)");
+        "INSERT INTO memory.owners(tenant,subject,purge_pending) VALUES('local','developer',true) ON CONFLICT(tenant,subject) DO UPDATE SET purge_pending=true");
     Map<String, String> before = fingerprints();
     for (String kind : List.of("turns", "notifications", "notification_bindings", "memory_jobs"))
       all(owner, kind, 1);

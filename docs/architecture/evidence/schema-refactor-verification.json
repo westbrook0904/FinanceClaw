@@ -1,5 +1,5 @@
 {
-  "recorded_at": "2026-10-23T02:14:30.868820+00:00",
+  "recorded_at": "2026-10-23T02:31:08.279582+00:00",
   "scope": "V8-V11, manual user profiles, background DB optimizations, redundant persistence retirement and Mapper contracts",
   "migration": {
     "main_application_tables_before": 39,
@@ -23,7 +23,7 @@
     "current_counts": {
       "TaskMapper": 38,
       "GovernanceMapper": 29,
-      "MemoryMapper": 42,
+      "MemoryMapper": 43,
       "FeishuMapper": 19,
       "OperationsMapper": 8,
       "RuntimeMapper": 4
@@ -32,7 +32,7 @@
     "notes": "One subsequently removed constant SQL method is included in the original edit count."
   },
   "unit_http_architecture": {
-    "tests": 1026,
+    "tests": 1028,
     "failures": 0,
     "errors": 0,
     "skipped": 0
@@ -47,17 +47,33 @@
   "format_and_static_checks": "passed",
   "local_postgres_and_compose": "not run; Docker API does not respond; remote Actions will verify after push",
   "remote_ci": {
-    "status": "pending_push"
+    "status": "correction awaiting push and rerun",
+    "initial_run": {
+      "url": "https://github.com/westbrook0904/FinanceClaw/actions/runs/39888631895",
+      "commit": "2ae7b74f4696404378ccddae189d648398ee970f",
+      "status": "failed",
+      "unit_tests": 1026,
+      "integration_tests": 326,
+      "integration_errors": 6
+    },
+    "corrections": [
+      "V10-to-V11 migration test removes its application schemas between cases.",
+      "Admission reads existing privacy owners FOR SHARE; independent conversations coexist while profile editing and forgetting still wait on their FOR UPDATE lock.",
+      "Admission/backlog fixtures account for the profile admission path already creating a privacy owner.",
+      "Added two shared-lock writer-barrier PostgreSQL cases and two focused unit cases."
+    ]
   },
-  "product_sha256": "29832c1dec5752f1657452650cb5dcf095e6c8f32dfac989034f33b0ffd6423c",
+  "product_sha256": "3d28931264c5099a34ec838b660fbe608154be66bc8f5189a556f45e07ca9fc0",
   "notes": [
     "Full local test execution passed; a first package invocation ended at formatting check after an IT schedule assertion was edited, then formatting and the complete unit run were rerun successfully.",
-    "SQL counts are static path counts, not load-test measurements."
+    "SQL counts are static path counts, not load-test measurements.",
+    "Correction validation: a sandboxed invocation could not open loopback sockets for three HTTP contracts; the complete 1028-test run then passed in the authorized execution environment."
   ],
   "product_packaging": {
     "tests": 1,
     "failures": 0,
     "errors": 0,
     "skipped": 0
-  }
+  },
+  "record_type": "local pre-push snapshot; later remote status is available from Actions for the delivered commit"
 }

@@ -43,6 +43,18 @@ public interface MemoryMapper {
           + " tenant=#{tenant} AND subject=#{subject} FOR UPDATE")
   Privacy getOwnerPrivacyForUpdate(Owner owner);
 
+  @ConstructorArgs({
+    @Arg(column = "tenant", javaType = String.class),
+    @Arg(column = "subject", javaType = String.class),
+    @Arg(column = "epoch", javaType = long.class),
+    @Arg(column = "purge_pending", javaType = boolean.class),
+    @Arg(column = "profile_revision", javaType = long.class)
+  })
+  @Select(
+      "SELECT tenant,subject,epoch,purge_pending,profile_revision FROM memory.owners WHERE"
+          + " tenant=#{tenant} AND subject=#{subject} FOR SHARE")
+  Privacy getOwnerPrivacyForShare(Owner owner);
+
   @Select(
       "SELECT epoch,revision,markdown FROM memory.user_profiles WHERE tenant=#{tenant} AND"
           + " subject=#{subject}")

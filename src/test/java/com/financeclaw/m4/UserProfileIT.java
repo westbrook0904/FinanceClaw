@@ -16,6 +16,8 @@ import org.apache.ibatis.session.Configuration;
 import org.apache.ibatis.session.LocalCacheScope;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.*;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mybatis.spring.SqlSessionFactoryBean;
 import org.mybatis.spring.SqlSessionTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -129,6 +131,91 @@ class UserProfileIT {
       return "updated";
     } catch (Problem conflict) {
       return conflict.getMessage();
+    }
+  }
+
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  void profileEditsAndForgettingWaitForAnAdmittedTurnsSharedOwnerLock(boolean forgetting)
+      throws Exception {
+    // The unique-key insert on first use is outside this steady-state shared-lock scenario.
+    profiles.read(ALICE);
+    var admitted = new CountDownLatch(1);
+    var release = new CountDownLatch(1);
+    var mutationStarted = new CountDownLatch(1);
+    try (var pool = Executors.newVirtualThreadPerTaskExecutor()) {
+      var reader =
+          pool.submit(
+              () ->
+                  tx.execute(
+                      status -> {
+                        var turn = admit("held-admission", ALICE);
+                        admitted.countDown();
+                        try {
+                          if (!release.await(10, TimeUnit.SECONDS))
+                            throw new AssertionError("admission release timeout");
+                        } catch (InterruptedException interrupted) {
+                          Thread.currentThread().interrupt();
+                          throw new AssertionError(interrupted);
+                        }
+                        return turn;
+                      }));
+      Future<Object> mutation;
+      try {
+        assertThat(admitted.await(10, TimeUnit.SECONDS)).isTrue();
+        mutation =
+            pool.submit(
+                () -> {
+                  mutationStarted.countDown();
+                  if (forgetting) return memory.forget(ALICE, 1, "forget-after-admission");
+                  return profiles.update(ALICE, 1, 0, "updated after admission");
+                });
+        assertThat(mutationStarted.await(10, TimeUnit.SECONDS)).isTrue();
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        boolean waiting;
+        do {
+          waiting =
+              sql.queryForObject(
+                      "SELECT count(*) FROM pg_stat_activity WHERE pid<>pg_backend_pid()"
+                          + " AND wait_event_type='Lock' AND query LIKE '%memory.owners%'"
+                          + " AND query LIKE '%FOR UPDATE%'",
+                      Integer.class)
+                  > 0;
+          if (!waiting) Thread.sleep(10);
+        } while (!waiting && System.nanoTime() < deadline);
+        assertThat(waiting).as("profile mutation waits for the shared owner lock").isTrue();
+        assertThat(mutation.isDone()).isFalse();
+        assertThat(
+                sql.queryForMap(
+                    "SELECT epoch,profile_revision,purge_pending FROM memory.owners"
+                        + " WHERE tenant=? AND subject=?",
+                    ALICE.tenant(),
+                    ALICE.subject()))
+            .containsEntry("epoch", 1L)
+            .containsEntry("profile_revision", 0L)
+            .containsEntry("purge_pending", false);
+      } finally {
+        release.countDown();
+      }
+      var turn = reader.get(10, TimeUnit.SECONDS);
+      Object changed = mutation.get(10, TimeUnit.SECONDS);
+      assertThat(db.sourceById(turn.id()))
+          .isEqualTo(
+              new Source(
+                  turn.id(),
+                  "tenant",
+                  "alice",
+                  1,
+                  null,
+                  forgetting ? "forgotten" : "profile_only",
+                  0));
+      if (forgetting) {
+        assertThat(changed).isEqualTo(2L);
+        assertThatThrownBy(() -> memory.check(turn)).hasMessage("memory_privacy_changed");
+      } else {
+        assertThat(changed).isEqualTo(new UserProfile(1, 1, "updated after admission"));
+        assertThatThrownBy(() -> memory.check(turn)).hasMessage("profile_changed");
+      }
     }
   }
 

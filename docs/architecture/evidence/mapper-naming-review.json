@@ -61,7 +61,7 @@
       "note": "",
       "implementation": "renamed",
       "lineAtReview": 49,
-      "currentLine": 49
+      "currentLine": 61
     },
     {
       "mapper": "MemoryMapper",
@@ -71,7 +71,7 @@
       "note": "",
       "implementation": "renamed",
       "lineAtReview": 55,
-      "currentLine": 55
+      "currentLine": 67
     },
     {
       "mapper": "MemoryMapper",
@@ -81,7 +81,7 @@
       "note": "",
       "implementation": "renamed",
       "lineAtReview": 63,
-      "currentLine": 63
+      "currentLine": 75
     },
     {
       "mapper": "MemoryMapper",
@@ -91,7 +91,7 @@
       "note": "",
       "implementation": "renamed",
       "lineAtReview": 66,
-      "currentLine": 67
+      "currentLine": 79
     },
     {
       "mapper": "MemoryMapper",
@@ -101,7 +101,7 @@
       "note": "",
       "implementation": "renamed",
       "lineAtReview": 71,
-      "currentLine": 72
+      "currentLine": 84
     },
     {
       "mapper": "MemoryMapper",
@@ -111,7 +111,7 @@
       "note": "",
       "implementation": "renamed",
       "lineAtReview": 85,
-      "currentLine": 86
+      "currentLine": 98
     },
     {
       "mapper": "MemoryMapper",
@@ -121,7 +121,7 @@
       "note": "",
       "implementation": "renamed",
       "lineAtReview": 93,
-      "currentLine": 94
+      "currentLine": 106
     },
     {
       "mapper": "MemoryMapper",
@@ -131,7 +131,7 @@
       "note": "",
       "implementation": "renamed",
       "lineAtReview": 103,
-      "currentLine": 104
+      "currentLine": 116
     },
     {
       "mapper": "MemoryMapper",
@@ -141,7 +141,7 @@
       "note": "",
       "implementation": "renamed",
       "lineAtReview": 109,
-      "currentLine": 110
+      "currentLine": 122
     },
     {
       "mapper": "MemoryMapper",
@@ -151,7 +151,7 @@
       "note": "",
       "implementation": "renamed",
       "lineAtReview": 115,
-      "currentLine": 116
+      "currentLine": 128
     },
     {
       "mapper": "MemoryMapper",
@@ -161,7 +161,7 @@
       "note": "",
       "implementation": "renamed",
       "lineAtReview": 128,
-      "currentLine": 130
+      "currentLine": 142
     },
     {
       "mapper": "MemoryMapper",
@@ -171,7 +171,7 @@
       "note": "",
       "implementation": "renamed",
       "lineAtReview": 136,
-      "currentLine": 138
+      "currentLine": 150
     },
     {
       "mapper": "MemoryMapper",
@@ -181,7 +181,7 @@
       "note": "",
       "implementation": "renamed",
       "lineAtReview": 139,
-      "currentLine": 141
+      "currentLine": 153
     },
     {
       "mapper": "MemoryMapper",
@@ -191,7 +191,7 @@
       "note": "",
       "implementation": "renamed",
       "lineAtReview": 146,
-      "currentLine": 148
+      "currentLine": 160
     },
     {
       "mapper": "MemoryMapper",
@@ -201,7 +201,7 @@
       "note": "",
       "implementation": "renamed",
       "lineAtReview": 154,
-      "currentLine": 156
+      "currentLine": 168
     },
     {
       "mapper": "MemoryMapper",
@@ -211,7 +211,7 @@
       "note": "",
       "implementation": "renamed",
       "lineAtReview": 160,
-      "currentLine": 162
+      "currentLine": 174
     },
     {
       "mapper": "MemoryMapper",
@@ -221,7 +221,7 @@
       "note": "",
       "implementation": "renamed",
       "lineAtReview": 165,
-      "currentLine": 167
+      "currentLine": 179
     },
     {
       "mapper": "MemoryMapper",
@@ -231,7 +231,7 @@
       "note": "",
       "implementation": "renamed",
       "lineAtReview": 168,
-      "currentLine": 170
+      "currentLine": 182
     },
     {
       "mapper": "MemoryMapper",
@@ -241,7 +241,7 @@
       "note": "",
       "implementation": "renamed",
       "lineAtReview": 175,
-      "currentLine": 177
+      "currentLine": 189
     },
     {
       "mapper": "MemoryMapper",
@@ -269,7 +269,7 @@
       "note": "",
       "implementation": "renamed",
       "lineAtReview": 195,
-      "currentLine": 203
+      "currentLine": 215
     },
     {
       "mapper": "MemoryMapper",
@@ -288,7 +288,7 @@
       "note": "",
       "implementation": "renamed",
       "lineAtReview": 207,
-      "currentLine": 226
+      "currentLine": 238
     },
     {
       "mapper": "MemoryMapper",
@@ -298,7 +298,7 @@
       "note": "",
       "implementation": "renamed",
       "lineAtReview": 210,
-      "currentLine": 230
+      "currentLine": 242
     },
     {
       "mapper": "MemoryMapper",
@@ -308,7 +308,7 @@
       "note": "",
       "implementation": "renamed",
       "lineAtReview": 218,
-      "currentLine": 238
+      "currentLine": 250
     },
     {
       "mapper": "MemoryMapper",
@@ -318,7 +318,7 @@
       "note": "",
       "implementation": "renamed",
       "lineAtReview": 230,
-      "currentLine": 250
+      "currentLine": 262
     },
     {
       "mapper": "MemoryMapper",
@@ -328,7 +328,7 @@
       "note": "",
       "implementation": "renamed",
       "lineAtReview": 236,
-      "currentLine": 256
+      "currentLine": 268
     },
     {
       "mapper": "MemoryMapper",
@@ -338,7 +338,7 @@
       "note": "",
       "implementation": "renamed",
       "lineAtReview": 241,
-      "currentLine": 261
+      "currentLine": 273
     },
     {
       "mapper": "MemoryMapper",
@@ -348,7 +348,7 @@
       "note": "",
       "implementation": "renamed",
       "lineAtReview": 250,
-      "currentLine": 270
+      "currentLine": 282
     },
     {
       "mapper": "MemoryMapper",
@@ -358,7 +358,7 @@
       "note": "",
       "implementation": "renamed",
       "lineAtReview": 259,
-      "currentLine": 279
+      "currentLine": 291
     },
     {
       "mapper": "MemoryMapper",
@@ -368,7 +368,7 @@
       "note": "UPDATE redacts content and marks forgotten; not DELETE.",
       "implementation": "renamed",
       "lineAtReview": 264,
-      "currentLine": 284
+      "currentLine": 296
     },
     {
       "mapper": "MemoryMapper",
@@ -378,7 +378,7 @@
       "note": "UPDATE redacts content/evidence, marks forgotten, increments revision; not DELETE.",
       "implementation": "renamed",
       "lineAtReview": 269,
-      "currentLine": 289
+      "currentLine": 301
     },
     {
       "mapper": "MemoryMapper",
@@ -388,7 +388,7 @@
       "note": "",
       "implementation": "renamed",
       "lineAtReview": 272,
-      "currentLine": 292
+      "currentLine": 304
     },
     {
       "mapper": "MemoryMapper",
@@ -398,7 +398,7 @@
       "note": "",
       "implementation": "renamed",
       "lineAtReview": 277,
-      "currentLine": 297
+      "currentLine": 309
     },
     {
       "mapper": "MemoryMapper",
@@ -408,7 +408,7 @@
       "note": "UPDATE marks forgotten and clears leases; not DELETE.",
       "implementation": "renamed",
       "lineAtReview": 282,
-      "currentLine": 302
+      "currentLine": 314
     },
     {
       "mapper": "MemoryMapper",
@@ -418,7 +418,7 @@
       "note": "Reads and locks a purge owner, performs no purge write.",
       "implementation": "renamed",
       "lineAtReview": 296,
-      "currentLine": 316
+      "currentLine": 328
     },
     {
       "mapper": "MemoryMapper",
@@ -428,7 +428,7 @@
       "note": "",
       "implementation": "renamed",
       "lineAtReview": 302,
-      "currentLine": 322
+      "currentLine": 334
     },
     {
       "mapper": "RuntimeMapper",
@@ -1499,14 +1499,14 @@
     "retired_or_replaced": 11,
     "unchanged": 6
   },
-  "currentMethodCount": 140,
+  "currentMethodCount": 141,
   "currentMapperCounts": {
     "TaskMapper": 38,
     "GovernanceMapper": 29,
-    "MemoryMapper": 42,
+    "MemoryMapper": 43,
     "FeishuMapper": 19,
     "OperationsMapper": 8,
     "RuntimeMapper": 4
   },
-  "implementationScope": "V10/V11 and typed Mapper refactor applied; retired/replaced methods are not renamed back into existence"
+  "implementationScope": "V10/V11 and typed Mapper refactor applied; retired/replaced methods are not renamed back into existence; admission privacy reads use getOwnerPrivacyForShare"
 }

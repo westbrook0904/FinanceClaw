@@ -50,10 +50,18 @@ public class MemoryService implements ExecutionMemory {
     return db.lock(o);
   }
 
+  private Privacy admissionOwner(Owner owner) {
+    var existing = db.lockForAdmission(owner);
+    if (existing != null) return existing;
+    // First creation may wait on a concurrent insert; established owners only need a shared lock.
+    db.ensure(owner);
+    return db.lockForAdmission(owner);
+  }
+
   /** Invoked inside the same admission transaction as the trusted USER journal. */
   public void admit(Turn turn) {
     Owner o = new Owner(turn.tenant(), turn.subject());
-    Privacy p = owner(o);
+    Privacy p = admissionOwner(o);
     p.requireAvailable();
     db.source(
         new Source(

@@ -294,7 +294,8 @@ class AdmissionIT {
     sql.update("UPDATE channel.bindings SET muted=true");
     assertThat(operations.drain(owner).drained()).isTrue();
     sql.update(
-        "INSERT INTO memory.owners(tenant,subject,purge_pending) VALUES(?,?,true)",
+        "INSERT INTO memory.owners(tenant,subject,purge_pending) VALUES(?,?,true)"
+            + " ON CONFLICT(tenant,subject) DO UPDATE SET purge_pending=true",
         owner.tenant(),
         owner.subject());
     sql.update(
@@ -375,6 +376,11 @@ class AdmissionIT {
   @Test
   void admissionUsesSharedLocksAcrossIndependentConversations() throws Exception {
     admissions.change(owner, "initial", false, 0);
+    // Initial owner creation can serialize on its unique key. Exercise established-owner admission.
+    sql.update(
+        "INSERT INTO memory.owners(tenant,subject) VALUES(?,?) ON CONFLICT DO NOTHING",
+        owner.tenant(),
+        owner.subject());
     var held = new CountDownLatch(1);
     var release = new CountDownLatch(1);
     try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {

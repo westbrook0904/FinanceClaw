@@ -12,6 +12,9 @@ public interface MemoryRepository {
 
   Privacy lock(Owner owner);
 
+  /** Admission readers coexist but serialize with profile edits and forgetting. */
+  Privacy lockForAdmission(Owner owner);
+
   UserProfile userProfile(Owner owner);
 
   int advanceProfile(Owner owner, long epoch, long revision);

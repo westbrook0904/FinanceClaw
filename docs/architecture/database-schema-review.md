@@ -156,6 +156,7 @@ TaskTransitionService：终态写入 business.outbox
 - **V11** 将 `tool_calls` 回执合入 `reports`，保留原报告 ID、标题及回执原文字节；receipt-only 不编造实体，report-only 标记 `legacy_untracked`，pending 或结果缺失继续阻断。新发布仅一条 INSERT。目标主库应用表从 39 减为 **34**，独立账本仍为 2 张。
 - Mapper 采用类型解析后改名，避免替换到 Service/Domain 的同名业务方法；调用点、方法引用及测试同步调整。租约三态、CAS、逻辑擦除与 UPSERT 的 SQL 行为保留。原 147 项候选中的退役方法直接删除。
 - Memory Worker 有任务时 claim 从 3 次 SQL 减为 1 次，租约有效性校验从 2 次减为 1 次；保留 SKIP LOCKED、token/owner/epoch/revision 校验与锁后数据库时间判断。
+- 已存在用户的受理事务使用隐私行共享锁，允许独立会话并行受理；画像修改和遗忘仍持独占锁，等待受理事务结束。首次建立用户行仍可能因唯一键串行。
 - 授权变更的幂等回放合并读取请求 hash 与原回执，仍先处理旧请求重放，再检查当前 grant revision。
 - 飞书 scheduled 空闲轮询退避至 5 秒，恢复扫描独立每 5 秒；空闲稳态路径约从 3 SQL/s 减为 0.6 SQL/s。unknown 或缺少可靠回执的发送不自动重投。以上是路径计数，不是压测结果。
 
