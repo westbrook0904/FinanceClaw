@@ -1,6 +1,6 @@
 # 运行维护
 
-当前支持新库初始化及现行 Java V1 基线的 V2–V7 前向升级，主库仍为 41 张应用表；V7 的执行隐私清理已随 P3a.2 完成本地验收，尚未推送。不导入 Python 或历史实验库，也不提供原拆分部署切换路径。业务运行结构见[统一进程](architecture/combined-runtime.md)。自定义 Agent 的创建、提示词草稿、发布与指定目标会话见 [Agent 管理说明](architecture/agent-definitions.md)。
+当前支持新库初始化及现行 Java V1 基线的 V2–V8 前向升级，主库仍为 41 张应用表。V7 的执行隐私清理已随 P3a.2 推送并通过远程 CI；V8 的私有叶子绑定已随 P3a.3 完成本地验收，未推送。不导入 Python 或历史实验库，也不提供原拆分部署切换路径。业务运行结构见[统一进程](architecture/combined-runtime.md)。自定义 Agent 的创建、提示词草稿、发布与指定目标会话见 [Agent 管理说明](architecture/agent-definitions.md)。
 
 ## 配置与启动
 
@@ -79,6 +79,8 @@ docker compose run --rm --no-deps api release-admin history --after-revision 0 -
 
 候选登记与激活是两个步骤：已有指针时，`prepare` 可以留下尚未激活的清单。`activate` 的指针更新与历史追加在同一事务内完成，CAS 冲突不会产生切换历史，也不会删除候选。首次 bootstrap 才将清单登记、缺失指针和首条历史共同提交。
 
-当前发布身份覆盖既有模型、预算、scopes、业务配置与打包 Skill 摘要，仍限定现有 AgentScope 2.0.3 运行实现；硬编码提示词、Function 实现、Workflow 代码和 MCP 实时 Schema 尚未形成完整依赖版本。历史 hash 缺少清单时保持阻断，只有还原准确配置且登记后 hash 完全匹配才可恢复。凭据仍从运行环境解析，发布不恢复已撤销权限。
+显式 `agent-release/3` 冻结生产 class 工件、所选 Function／Skill 和 SDK 有效 MCP 契约；旧格式没有这份完整快照，不能事后补造。运行仍限定可兼容的 AgentScope 2.0.3 工件，历史 hash 缺少清单或工件不匹配时保持阻断。凭据继续从运行环境解析，发布不恢复已撤销权限；完整边界见[能力组装](architecture/agent-composition.md)。
 
-本阶段只有应用级默认指针，没有多租户发布管理 HTTP API、完整 Deployment 资源或原地会话升级。需要采用新版本时创建新会话；后续路线见[平台化实施方案](architecture/platform-implementation-plan.md)。
+P3a.3 已完成同 owner 空工具叶子委派的本地验收，未推送。operator 先以显式 `composition.capabilities: []` 发布叶子，再在父定义中选择 `agent:<UUID>` 并发布；父自动带上 Artifact reader 支持依赖，子工具集仍为空。父冻结选定目标 release，目标后续发布不自动升级父；采用新目标需要重新发布父并创建新会话。运行工件严格兼容检查保持，不允许换成 current 绕过旧版本阻断。定义示例、输入隔离和预算见[私有叶子 Agent 委派](architecture/private-agent-delegation.md)。本轮 44 项 Compose 检查验证发布冻结与恢复绑定，SDK 委派由运行时测试验证；分次 Java 结果和部署摘要见[本地证据](architecture/evidence/p3a3-implementation.json)。
+
+内置默认发布与 owner 私有 Agent 各有独立发布指针，管理继续通过 CLI。没有多租户自助发布 HTTP API、完整 Deployment 资源或原地会话升级；采用新版本时创建新会话。后续路线见[平台化实施方案](architecture/platform-implementation-plan.md)。

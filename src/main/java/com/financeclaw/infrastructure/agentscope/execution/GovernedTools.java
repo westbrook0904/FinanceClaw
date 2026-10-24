@@ -177,6 +177,11 @@ public final class GovernedTools implements AutoCloseable {
             capabilities.ziwei(claim, this::register);
         }
         capabilities.contribute(claim, model, scopes.contains("workflow:run"), this::register);
+        capabilities.privateAgents(
+                claim,
+                plan,
+                (name, description, schema, scope, action, interaction) ->
+                        register("agent", name, description, schema, scope, action, interaction));
         if (plan != null
                 && selectedTools.values().stream()
                         .filter(binding -> scopes.containsAll(binding.scopes()))
@@ -270,7 +275,7 @@ public final class GovernedTools implements AutoCloseable {
             if (binding == null
                     || !binding.kind().equals(kind)
                     || !scopes.containsAll(binding.scopes())) return;
-            if (binding.kind().equals("function")) {
+            if (binding.kind().equals("function") || binding.kind().equals("agent")) {
                 var frozen = PayloadJson.object(binding.contractJson());
                 if (!Objects.equals(frozen.get("description"), description)
                         || !PayloadJson.canonical(frozen.get("inputSchema"))
@@ -324,7 +329,9 @@ public final class GovernedTools implements AutoCloseable {
                                             // attempt.
                                             if (plan != null
                                                     && error instanceof Blocked blocked
-                                                    && blocked.getMessage().startsWith("mcp_")) {
+                                                    && (kind.equals("agent")
+                                                            || blocked.getMessage()
+                                                                    .startsWith("mcp_"))) {
                                                 compatibilityFailure.compareAndSet(null, blocked);
                                             }
                                         })

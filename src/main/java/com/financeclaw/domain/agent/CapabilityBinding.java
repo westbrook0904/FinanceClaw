@@ -25,11 +25,15 @@ public record CapabilityBinding(
     public void validate() {
         if (!AgentComposition.validId(id)
                 || kind == null
-                || !Set.of("function", "skill", "mcp").contains(kind)
+                || !Set.of("function", "skill", "mcp", "agent").contains(kind)
                 || !id.startsWith(kind + ":")
                 || name == null
                 || !name.matches("[A-Za-z][A-Za-z0-9_.-]{0,127}")
-                || !(kind.equals("mcp") ? id.endsWith("/" + name) : id.equals(kind + ":" + name))
+                || !(kind.equals("mcp")
+                        ? id.endsWith("/" + name)
+                        : kind.equals("agent")
+                                ? name.equals(PrivateAgentTarget.toolName(id.substring(6)))
+                                : id.equals(kind + ":" + name))
                 || scopes == null
                 || scopes.size() > 32
                 || scopes.stream().anyMatch(s -> s == null || s.isBlank() || s.length() > 128)

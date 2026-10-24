@@ -1,0 +1,231 @@
+{
+  "milestone": "P3a.3 owner-scoped release-pinned zero-tool leaf Agent delegation",
+  "collected_at_utc": "2026-10-24T04:33:11.990340+00:00",
+  "base_commit": "c96b4e787f0bf0c59c74d4465a72dcbabb531590",
+  "recorded_before_commit": true,
+  "local_acceptance": {
+    "status": "passed",
+    "clean_full_maven_verify": {
+      "status": "completed with two failures",
+      "process_exit_code": 1,
+      "unit": {
+        "suites": 77,
+        "tests": 1242,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "integration": {
+        "suites": 40,
+        "tests": 460,
+        "failures": 2,
+        "errors": 0,
+        "skipped": 0
+      },
+      "passed_integration_cases": 458,
+      "failed_cases": [
+        {
+          "suite": "com.financeclaw.p1.ConversationReleaseMigrationIT",
+          "case": "existingConversationsKeepTheirLatestAdmittedReleaseAndEmptyOnesBindOnlyOnce",
+          "outcome": "failure"
+        },
+        {
+          "suite": "com.financeclawagent.AgentAdministrationCliIT",
+          "case": "ownerScopedReadsAndIndependentAgentPointersWorkWithInvalidEnvironmentCandidate",
+          "outcome": "failure"
+        }
+      ],
+      "failure_context": [
+        {
+          "suite": "com.financeclaw.p1.ConversationReleaseMigrationIT",
+          "reason": "V1-to-V8 remaining migration count correctly returned seven; the test still expected six."
+        },
+        {
+          "suite": "com.financeclawagent.AgentAdministrationCliIT",
+          "case": "ownerScopedReadsAndIndependentAgentPointersWorkWithInvalidEnvironmentCandidate",
+          "reason": "The existing 30-second packaged CLI process termination wait timed out."
+        }
+      ],
+      "frozen_report_directory": "/tmp/financeclaw-p3a3-verified-reports/full",
+      "report_summary_sha256": "56d4515aa5b2b1007580f49845eb9da00926eed25f6ea7351ee8cdd8e4f35589",
+      "log_path": "/tmp/financeclaw-p3a3-verify-final.log",
+      "log_sha256": "80e8133cf47049b37633542883cb86e9bba423c23b16c9daf4e23c0ff0a0d14a",
+      "all_frozen_inputs_matched_at_run_completion": true,
+      "note": "All complete suites executed, but the clean Maven verify exited with failure. No single all-green complete verify is claimed."
+    },
+    "earlier_corrections": [
+      "Corrected application constructor wiring before the final clean run.",
+      "Moved canonical JSON/digest binding codec from domain.PrivateAgentTarget to support.PrivateAgentContracts, preserving domain purity and avoiding an app.agent/app.release dependency cycle.",
+      "Moved ModelFactory and BudgetedTransport to infrastructure.agentscope.model, removing the capability/execution package cycle without weakening architecture rules."
+    ],
+    "scripts": {
+      "status": "completed",
+      "tests": 46,
+      "groups": [
+        {
+          "script": "scripts/test-restore-privacy.py",
+          "tests": 16,
+          "success": true,
+          "log_sha256": "6a2bd465e2407f2c73225810a4efd37e1f4468f126f1f668dc93c93ee96f088d"
+        },
+        {
+          "script": "scripts/test-inspect-drain.py",
+          "tests": 12,
+          "success": true,
+          "log_sha256": "e07c7de360959aa4cf4030b3b3da27bdfb5676bd0d0447e921289e8109e88e12"
+        },
+        {
+          "script": "scripts/test-user-profile.py",
+          "tests": 10,
+          "success": true,
+          "log_sha256": "68f2b3455355872e031921a34feeaa0f230eefe827a7bfe2f1571007e79e6331"
+        },
+        {
+          "script": "scripts/test-live-acceptance.py",
+          "tests": 8,
+          "success": true,
+          "log_sha256": "cbe7ebabc676211522fb03b7d125712682f06a76b8a2234a687c92f95eb3bae3"
+        }
+      ]
+    },
+    "full_maven_verify_completed_successfully": false,
+    "scoped_rerun": {
+      "status": "completed",
+      "process_exit_code": 0,
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "cases": [
+        {
+          "suite": "com.financeclaw.p1.ConversationReleaseMigrationIT",
+          "case": "existingConversationsKeepTheirLatestAdmittedReleaseAndEmptyOnesBindOnlyOnce",
+          "outcome": "passed"
+        },
+        {
+          "suite": "com.financeclawagent.AgentAdministrationCliIT",
+          "case": "ownerScopedReadsAndIndependentAgentPointersWorkWithInvalidEnvironmentCandidate",
+          "outcome": "passed"
+        }
+      ],
+      "correction": "Only the stale migration-test constant changed from six to seven; the CLI assertion and 30-second timeout remain unchanged.",
+      "production_sql_and_application_jar_changed": false,
+      "frozen_report_directory": "/tmp/financeclaw-p3a3-verified-reports/scoped-rerun",
+      "report_summary_sha256": "65f522e8b0a60d3a4a22a3a00f7c1df0a72fcaae92eb49267b79a665b227e647",
+      "case_coverage_summary_path": "/tmp/financeclaw-p3a3-verified-reports/case-coverage-summary.json",
+      "case_coverage_summary_sha256": "5d3c658ca0fad87a917f242442f4d8f8260201d48f0e6b024a6f33305b50c1b2",
+      "log_path": "/tmp/financeclaw-p3a3-scoped-rerun.log",
+      "log_sha256": "05a0a378fb29eb789767a1d3dc28544c4af0b363596fe7b98e18f2ccf334e984",
+      "note": "The scoped report directory also retains earlier reports; the two rerun cases and 460 latest unique outcomes were checked by exact case identity, not by summing mixed suite totals."
+    },
+    "current_java": {
+      "status": "passed with documented test-only correction and exact scoped rerun",
+      "unit_tests": 1242,
+      "distinct_integration_tests": 460,
+      "tests_with_passing_current_outcomes": 1702,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "single_full_verify_success": false,
+      "note": "Initial complete integration coverage had 458 passing cases and two failures; the two exact failing cases passed the scoped rerun on the same production JAR."
+    },
+    "note": "Local acceptance combines full initial coverage, the exact two-case rerun after a test-only migration-count correction, 46 script tests and 44 Compose checks. It is not a single successful full Maven verify or P3a.3 remote CI."
+  },
+  "frozen_inputs": {
+    "manifest_path": "/tmp/financeclaw-p3a3-frozen-inputs-final.json",
+    "manifest_sha256": "54c5a2c0ea98972b5f79b1495def9319ce183f738d4c3e76dfa0635a1078f999",
+    "entries": 42,
+    "all_current_entries_match": false,
+    "deleted_model_source_paths": [
+      "src/main/java/com/financeclaw/infrastructure/agentscope/execution/BudgetedTransport.java",
+      "src/main/java/com/financeclaw/infrastructure/agentscope/execution/ModelFactory.java"
+    ],
+    "note": "The complete run matched this 42-entry manifest, including two explicit source deletions. The only later source change is the listed migration-test constant correction; production Java, SQL and the application JAR stayed unchanged.",
+    "all_entries_matched_at_full_run_completion": true,
+    "test_only_changes_after_full_run": [
+      {
+        "path": "src/test/java/com/financeclaw/p1/ConversationReleaseMigrationIT.java",
+        "full_run_sha256": "b2756d768c44f30a9814cacadfafe3f1bfe56d9488d060143fc98c856d7425b8",
+        "current_sha256": "f70183475ecb1db0e71567c29a34d249a5d4e2cd94239ae15f35e9f6b364cd56"
+      }
+    ]
+  },
+  "application_jar_sha256": "cfd12efa3aee5a5de92048acbbc29b4d08f4fba5e7f4736b23e2768b555ae38f",
+  "compose": {
+    "status": "completed",
+    "success": true,
+    "acceptance_completed": true,
+    "process_exit_code": 0,
+    "cleanup_process_completed": true,
+    "checks_passed": 44,
+    "project": "financeclaw-m5e-f33ea84619",
+    "started_at": "2026-10-24T04:07:36.590569+00:00",
+    "finished_at": "2026-10-24T04:30:18.148014+00:00",
+    "container_image": "e46b1b96253236a16352099f98b927b1bcfaad4ae7582d82526819d41488db5a",
+    "application_jar_sha256": "cfd12efa3aee5a5de92048acbbc29b4d08f4fba5e7f4736b23e2768b555ae38f",
+    "same_jar_as_java_validation": true,
+    "deployment_inputs": 11,
+    "all_deployment_inputs_match": true,
+    "frozen_report_directory": "/tmp/financeclaw-p3a3-verified-reports/compose",
+    "summary_sha256": "708988e4fb17d29c087412961b20b2e93ba8c383098cf7e4f8a5d47f873033ba",
+    "report_sha256": "19a4fab0e8fbda25547ba2a7143810713aa584343d237d81d2aeaeb4b5ea6790",
+    "validation_log_sha256": "afb0a03684f2a7cd3a5d77544bff313726bba87a6e022a093013a54c306563f2",
+    "compose_log_sha256": "b6f98dcaa35434d047621cb11024f47e66101988f91df870083188353aaf093a",
+    "new_checks": [
+      "private_leaf_catalog_and_parent_release_freeze_target_identity",
+      "private_leaf_republish_does_not_change_parent_frozen_target",
+      "restored_private_leaf_and_parent_keep_frozen_target"
+    ],
+    "scope": "The three private-leaf deployment checks certify catalog, frozen publication identity and restored bindings. They do not prove an offline parent model naturally selects delegation; the real SDK delegation path is exercised by PrivateAgentDelegationIT."
+  },
+  "remote_baseline": {
+    "commit": "c96b4e787f0bf0c59c74d4465a72dcbabb531590",
+    "workflow_url": "https://github.com/westbrook0904/FinanceClaw/actions/runs/40055663280",
+    "workflow_status": "completed/success",
+    "verify": "completed/success",
+    "unit_tests": 1226,
+    "integration_tests": 437,
+    "delivery": "completed/success",
+    "delivery_checks": 41,
+    "includes_p3a3": false
+  },
+  "schema": {
+    "migration": 8,
+    "application_tables": 41,
+    "new_tables": [],
+    "migration_sha256": "3ac6be7d5da287c61d6983e738f5b9db03c20289b7d9371830bf0e0a42f7a37b",
+    "new_target_fields": [
+      "target_agent_id",
+      "target_release_hash"
+    ],
+    "privacy_snapshot_schema_version": 3,
+    "privacy_mapping": "All historical attempts use the frozen target identity and the same length-prefixed UTF-8 scope hash as Java. SQL metadata helpers locate privacy copies and flag residuals; they do not certify authorization, manifest digests or runtime compatibility."
+  },
+  "execution_contract": {
+    "target": "same-owner private Agent with an explicit non-null v3 execution plan and empty requested capabilities, actual capabilities and scopes",
+    "binding": "agent-leaf/1 freezes target Agent ID and immutable release hash; execution never substitutes the current deployment pointer",
+    "input": "Only explicit message; no implicit parent profile, long memory, work context, history or tool-result injection",
+    "models": "Independent target primary/fallback adapters; strict RuntimeArtifacts compatibility; each physical call reserves child and parent counters",
+    "max_depth": 1,
+    "max_model_calls": 4,
+    "max_tool_calls": 0,
+    "budget_scope": "The target release maximum and the shared parent Turn budget also apply; changing attempts does not reset the persistent child count.",
+    "parent_support": "artifact:read and function:read_artifact_range support governed offloading of large child results; these tools are not installed in the leaf.",
+    "lifecycle": "Existing parent Claim, Command, fence, cancellation and privacy/grant gates; no child queue, lease, heartbeat or scheduler."
+  },
+  "recovery_limits": {
+    "same_attempt": "A valid current attempt can finish a saved SDK final checkpoint whose child business result was not committed, without another model request even if the four-call budget is exhausted.",
+    "cross_attempt": "Only committed child business results replay across attempts. Old SDK state is not copied or resumed to fill a missing child receipt.",
+    "root_authority": "A child completion does not clear root blocked/unconfirmed_execution. RecoverTaskService still requires a sealed root attempt receipt."
+  },
+  "not_certified": [
+    "a single complete successful Maven verify",
+    "P3a.3 remote CI",
+    "full-permission or recursive private Agent delegation",
+    "implicit child conversation memory",
+    "live external providers",
+    "production capacity",
+    "offline parent natural-language selection of delegation by Compose",
+    "P3a overall completion"
+  ]
+}

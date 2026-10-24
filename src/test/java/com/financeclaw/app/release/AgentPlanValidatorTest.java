@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.*;
 import com.financeclaw.domain.agent.*;
 import com.financeclaw.domain.release.*;
 import com.financeclaw.support.PayloadDigest;
+import com.financeclaw.support.PrivateAgentContracts;
 import java.util.*;
 import org.junit.jupiter.api.Test;
 
@@ -278,6 +279,37 @@ class AgentPlanValidatorTest {
         var a = binding("function:a", "a", List.of(), List.of());
         var b = binding("function:b", "b", List.of(), List.of());
         assertInvalid(plan(List.of(b.id(), a.id()), List.of(a, b)));
+    }
+
+    @Test
+    void privateTargetsAreValidatedAsFixedContractsWithoutResolvingAnotherAgent() {
+        var target =
+                PrivateAgentContracts.binding(
+                        "11e8e638-0689-40df-99ed-b22de07c1172", "b".repeat(64));
+        var reader =
+                binding(
+                        "function:read_artifact_range",
+                        "read_artifact_range",
+                        List.of("artifact:read"),
+                        List.of());
+        AgentPlanValidator.validate(
+                plan(List.of(target.id()), List.of(target, reader)), base(), "tenant");
+        assertInvalid(plan(List.of(target.id()), List.of(target)));
+        var contract =
+                new LinkedHashMap<>(
+                        com.financeclaw.support.PayloadJson.object(target.contractJson()));
+        contract.put("maxDepth", 2);
+        String json = com.financeclaw.support.PayloadJson.canonical(contract);
+        var recursive =
+                new CapabilityBinding(
+                        target.id(),
+                        target.kind(),
+                        target.name(),
+                        target.scopes(),
+                        target.dependencies(),
+                        json,
+                        PayloadDigest.sha256(json));
+        assertInvalid(plan(List.of(recursive.id()), List.of(recursive, reader)));
     }
 
     private static AgentExecutionPlan withDefinition(

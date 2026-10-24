@@ -1,6 +1,7 @@
 package com.financeclaw.infrastructure.agent;
 
 import com.financeclaw.app.agent.port.AgentCapabilityResolver;
+import com.financeclaw.app.agent.port.AgentRepository;
 import com.financeclaw.app.release.ReleaseService;
 import com.financeclaw.app.release.port.Credentials;
 import com.financeclaw.domain.Governance.Blocked;
@@ -10,6 +11,7 @@ import com.financeclaw.domain.release.*;
 import com.financeclaw.infrastructure.agentscope.RuntimeArtifacts;
 import com.financeclaw.infrastructure.agentscope.capability.LocalCapabilityCatalog;
 import com.financeclaw.infrastructure.agentscope.capability.McpCapabilityDiscovery;
+import com.financeclaw.support.PrivateAgentContracts;
 import java.util.*;
 import org.springframework.stereotype.Component;
 
@@ -18,18 +20,25 @@ import org.springframework.stereotype.Component;
 public final class CatalogAgentCapabilityResolver implements AgentCapabilityResolver {
     private final ReleaseService releases;
     private final McpCapabilityDiscovery discovery;
+    private final AgentRepository agents;
 
-    public CatalogAgentCapabilityResolver(ReleaseService releases, Credentials credentials) {
+    public CatalogAgentCapabilityResolver(
+            ReleaseService releases, Credentials credentials, AgentRepository agents) {
         this.releases = releases;
         this.discovery = new McpCapabilityDiscovery(credentials);
+        this.agents = agents;
     }
 
     @Override
     public AgentCapabilityCatalog catalog(Owner owner, String baseReleaseHash) {
         var base = releases.require(baseReleaseHash);
+        SortedMap<String, PrivateAgentTarget> targets =
+                base.scopes().contains(PrivateAgentTarget.TOOL_SCOPE)
+                        ? targets(owner)
+                        : new TreeMap<>();
         return new AgentCapabilityCatalog(
                 base.fallback() == null ? List.of("primary") : List.of("primary", "fallback"),
-                options(owner, base).values().stream().toList());
+                options(owner, base, targets).values().stream().toList());
     }
 
     @Override
@@ -40,9 +49,17 @@ public final class CatalogAgentCapabilityResolver implements AgentCapabilityReso
                 || (selection.modelProfile().equals("fallback") && base.fallback() == null)) {
             throw new Blocked("agent_model_unavailable");
         }
-        var options = options(owner, base);
+        // 一次 owner 目录查询提供候选及当时固定 hash；仅实际选中的目标读取完整清单。
+        SortedMap<String, PrivateAgentTarget> targets =
+                selection.capabilities().stream().anyMatch(id -> id.startsWith("agent:"))
+                        ? targets(owner)
+                        : new TreeMap<>();
+        var options = options(owner, base, targets);
         var selected = new TreeSet<String>();
         for (String id : selection.capabilities()) {
+            if (id.equals("agent:" + draft.agentId())) {
+                throw new Blocked("agent_self_delegation_denied");
+            }
             expand(id, options, selected, new HashSet<>());
         }
         if (selected.size() > AgentComposition.MAX_CAPABILITIES) {
@@ -55,6 +72,16 @@ public final class CatalogAgentCapabilityResolver implements AgentCapabilityReso
         discovery
                 .discover(owner, base, selected.stream().toList())
                 .forEach(binding -> bindings.put(binding.id(), binding));
+        for (String id : selected) {
+            if (!id.startsWith("agent:")) continue;
+            var target = targets.get(id);
+            // 不再次读取 current；目录已选定的不可变版本不会因并发发布而被替换。
+            var resolved = releases.resolve(target.releaseHash());
+            PrivateAgentTarget.requireLeaf(owner, resolved);
+            resolved.requireIdentity(owner, target.agentId());
+            LocalCapabilityCatalog.requireCompatible(resolved.plan());
+            bindings.put(id, PrivateAgentContracts.binding(target));
+        }
         if (!bindings.keySet().equals(selected)) {
             throw new Blocked("agent_capability_unavailable");
         }
@@ -106,8 +133,19 @@ public final class CatalogAgentCapabilityResolver implements AgentCapabilityReso
                 definition);
     }
 
+    private SortedMap<String, PrivateAgentTarget> targets(Owner owner) {
+        var result = new TreeMap<String, PrivateAgentTarget>();
+        for (var candidate : agents.listPublishedLeafTargets(owner)) {
+            var target = new PrivateAgentTarget(candidate.agentId(), candidate.releaseHash());
+            if (result.putIfAbsent("agent:" + target.agentId(), target) != null) {
+                throw new Blocked("agent_capability_unavailable");
+            }
+        }
+        return result;
+    }
+
     private static SortedMap<String, CapabilityOption> options(
-            Owner owner, ReleaseDefinition base) {
+            Owner owner, ReleaseDefinition base, SortedMap<String, PrivateAgentTarget> targets) {
         var result = new TreeMap<String, CapabilityOption>();
         for (var binding : LocalCapabilityCatalog.bindings(base)) {
             add(
@@ -143,6 +181,21 @@ public final class CatalogAgentCapabilityResolver implements AgentCapabilityReso
                                 name,
                                 List.of(scope),
                                 List.of("function:read_artifact_range")));
+            }
+        }
+        // 结果归档的父侧读取能力必须存在；它不会进入子 Agent 的空工具计划。
+        if (base.scopes().contains(PrivateAgentTarget.TOOL_SCOPE)
+                && result.containsKey(LocalCapabilityCatalog.ARTIFACT_READER)) {
+            for (var target : targets.values()) {
+                var binding = PrivateAgentContracts.binding(target);
+                add(
+                        result,
+                        new CapabilityOption(
+                                binding.id(),
+                                binding.kind(),
+                                binding.name(),
+                                binding.scopes(),
+                                binding.dependencies()));
             }
         }
         return result;

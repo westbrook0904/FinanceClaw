@@ -6,6 +6,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.financeclaw.domain.release.ModelProfile;
 import com.financeclaw.infrastructure.agentscope.IsolatedAgentFactory;
 import com.financeclaw.infrastructure.agentscope.execution.*;
+import com.financeclaw.infrastructure.agentscope.model.BudgetedTransport;
+import com.financeclaw.infrastructure.agentscope.model.ModelFactory;
 import com.financeclaw.support.PayloadJson;
 import io.agentscope.core.message.*;
 import io.agentscope.core.model.*;

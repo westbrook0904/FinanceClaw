@@ -436,6 +436,42 @@ try:
     assert sql(f"SELECT release_hash FROM business.turns WHERE id='{pinned['turn_id']}'") == empty_release
     mark('composed_agent_dependencies_are_frozen_and_prior_session_keeps_empty_plan')
 
+    # 叶子与父 Agent 均由同一 owner 显式发布。父侧目录与清单编译在真实容器执行，
+    # 离线父模型只回文本；实际原生 SDK 子调用另由 PrivateAgentDelegationIT 验证。
+    leaf_agent, parent_agent = str(uuid.uuid4()), str(uuid.uuid4())
+    agent_admin('create', leaf_agent, definition=AGENT_FILES[2])
+    leaf_release_one = agent_admin('publish', leaf_agent, '--draft-revision', '1', '--expected-revision', '0')['releaseHash']
+    parent_definition = TEMP / 'private-parent.json'
+    parent_definition.write_text(json.dumps({'displayName': AGENT_NAME, 'systemPrompt': AGENT_PROMPTS[0],
+                                            'composition': {'modelProfile': 'primary', 'capabilities': ['agent:' + leaf_agent]}}), encoding='utf-8')
+    parent_definition.chmod(0o644)
+    AGENT_FILES.append(parent_definition)
+    agent_admin('create', parent_agent, definition=parent_definition)
+    assert 'agent:' + leaf_agent in {item['id'] for item in agent_admin('catalog', parent_agent)['catalog']['capabilities']}
+    parent_release = agent_admin('publish', parent_agent, '--draft-revision', '1', '--expected-revision', '0')['releaseHash']
+    parent_manifest = json.loads(sql(f"SELECT manifest FROM control_plane.release_manifests WHERE release_hash='{parent_release}'"))
+    assert {item['id'] for item in parent_manifest['plan']['capabilities']} == {'agent:' + leaf_agent, 'function:read_artifact_range'}
+    leaf_binding = next(item for item in parent_manifest['plan']['capabilities'] if item['kind'] == 'agent')
+    frozen_leaf = json.loads(leaf_binding['contractJson'])
+    assert frozen_leaf['agentId'] == leaf_agent and frozen_leaf['releaseHash'] == leaf_release_one
+    assert (frozen_leaf['maxDepth'], frozen_leaf['maxModelCalls'], frozen_leaf['maxToolCalls']) == (1, 4, 0)
+    terminal(turn('P3a private parent assembly', parent_agent)[2])
+    mark('private_leaf_catalog_and_parent_release_freeze_target_identity')
+
+    leaf_definition_two = TEMP / 'private-leaf-two.json'
+    leaf_definition_two.write_text(json.dumps({'displayName': AGENT_NAME, 'systemPrompt': AGENT_PROMPTS[1],
+                                              'composition': {'modelProfile': 'primary', 'capabilities': []}}), encoding='utf-8')
+    leaf_definition_two.chmod(0o644)
+    AGENT_FILES.append(leaf_definition_two)
+    leaf_updated = agent_admin('update', leaf_agent, '--expected-revision', '1', definition=leaf_definition_two)
+    leaf_release_two = agent_admin('publish', leaf_agent, '--draft-revision', '2', '--expected-revision', '1')['releaseHash']
+    assert leaf_release_two != leaf_release_one
+    assert json.loads(sql(f"SELECT manifest FROM control_plane.release_manifests WHERE release_hash='{parent_release}'")) == parent_manifest
+    _, frozen_parent_receipt, frozen_parent_path = turn('P3a parent keeps frozen leaf', parent_agent)
+    terminal(frozen_parent_path)
+    assert sql(f"SELECT release_hash FROM business.turns WHERE id='{frozen_parent_receipt['turn_id']}'") == parent_release
+    mark('private_leaf_republish_does_not_change_parent_frozen_target')
+
     def sample(_):
         start = time.monotonic()
         c, receipt, path = turn()
@@ -604,9 +640,9 @@ try:
     assert len(original) == 41
     assert {'control_plane.agents', 'control_plane.agent_draft_revisions',
             'business.child_invocations'} <= original.keys()
-    # 两个基础隔离用户 Agent，加上组合能力场景新建的第三个 Agent（含两版草稿）。
-    assert original['control_plane.agents'].split(':', 1)[0] == '3'
-    assert original['control_plane.agent_draft_revisions'].split(':', 1)[0] == '5'
+    # 基础隔离/组合三个 Agent，加上私有叶子与父 Agent；叶子有两版草稿。
+    assert original['control_plane.agents'].split(':', 1)[0] == '5'
+    assert original['control_plane.agent_draft_revisions'].split(':', 1)[0] == '8'
     backup = compose('exec', '-T', 'postgres', 'pg_dump', '-U', 'postgres', '-d', 'financeclaw_java', '-Fc')
     dump = OUT / 'synthetic-restore.dump'
     dump.write_bytes(backup)
@@ -726,6 +762,14 @@ try:
     assert sql(f"SELECT release_hash FROM business.turns WHERE id='{restored_composed_receipt['turn_id']}'", restored) == function_release
     assert sql(f"SELECT release_hash FROM business.conversations WHERE id='{pure_conversation}'", restored) == empty_release
     mark('restored_composed_agent_executes_frozen_plan_with_same_runtime_artifact')
+    assert agent_admin('get', leaf_agent)['contentHash'] == leaf_updated['contentHash']
+    assert agent_admin('history', leaf_agent)['nextAfterRevision'] == 2
+    restored_parent = json.loads(sql(f"SELECT manifest FROM control_plane.release_manifests WHERE release_hash='{parent_release}'", restored))
+    assert restored_parent == parent_manifest
+    _, restored_parent_receipt, restored_parent_path = turn('P3a restored private parent', parent_agent)
+    terminal(restored_parent_path)
+    assert sql(f"SELECT release_hash FROM business.turns WHERE id='{restored_parent_receipt['turn_id']}'", restored) == parent_release
+    mark('restored_private_leaf_and_parent_keep_frozen_target')
     # 备份在遗忘后生成：旧执行回执应已清除，普通业务报告仍按原策略保留。
     assert sql("SELECT count(*) FROM business.capability_steps WHERE step='publish_report'", restored) == '0'
     assert sql("SELECT count(*) FROM business.artifacts WHERE required_scope='workflow:run'", restored) == '1'

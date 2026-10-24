@@ -4,7 +4,7 @@ import com.financeclaw.app.memory.port.*;
 import com.financeclaw.domain.Memory.*;
 import com.financeclaw.domain.memory.EmbeddingVector;
 import com.financeclaw.domain.release.ModelProfile;
-import com.financeclaw.infrastructure.agentscope.execution.ModelFactory;
+import com.financeclaw.infrastructure.agentscope.model.ModelFactory;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.embedding.EmbeddingModel;
 import io.agentscope.core.embedding.openai.OpenAITextEmbedding;

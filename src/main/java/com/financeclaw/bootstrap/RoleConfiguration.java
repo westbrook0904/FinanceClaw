@@ -174,6 +174,7 @@ public final class RoleConfiguration {
         MarketResearchService.class,
         ZiweiService.class,
         GovernedZiweiPublication.class,
+        PrivateAgentDelegation.class,
         BusinessCapabilities.class,
         ExecutionSchedulingConfiguration.class,
         TaskAgentRuntime.class,

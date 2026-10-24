@@ -6,6 +6,7 @@ import com.financeclaw.domain.release.ReleaseDefinition;
 import com.financeclaw.domain.release.RemoteEndpoint;
 import com.financeclaw.support.PayloadDigest;
 import com.financeclaw.support.PayloadJson;
+import com.financeclaw.support.PrivateAgentContracts;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 
@@ -39,6 +40,8 @@ public final class AgentPlanValidator {
         int totalBytes = 0;
         for (var binding : plan.capabilities()) {
             binding.validate();
+            // 私有目标只核验冻结契约；此处不递归解析目标，也不查询其可变部署指针。
+            if (binding.kind().equals("agent")) PrivateAgentContracts.from(binding);
             require(bindings.putIfAbsent(binding.id(), binding) == null);
             require(binding.kind().equals("skill") || toolNames.add(binding.name()));
             scopes.addAll(binding.scopes());

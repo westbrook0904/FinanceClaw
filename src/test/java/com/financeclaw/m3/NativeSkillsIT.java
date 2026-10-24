@@ -3,7 +3,7 @@ package com.financeclaw.m3;
 import static org.assertj.core.api.Assertions.*;
 
 import com.financeclaw.domain.release.ModelProfile;
-import com.financeclaw.infrastructure.agentscope.execution.ModelFactory;
+import com.financeclaw.infrastructure.agentscope.model.ModelFactory;
 import com.financeclaw.infrastructure.agentscope.skills.PackagedSkills;
 import io.agentscope.core.ReActAgent;
 import io.agentscope.core.message.*;

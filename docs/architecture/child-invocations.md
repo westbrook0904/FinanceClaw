@@ -1,6 +1,6 @@
 # 固定市场研究子调用：P3a.1
 
-P3a.1 给现有 `market_research` 子 Agent 增加持久调用身份、累计预算和检查点访问门禁。P3a.1 已于 **2026-10-24 完成本地验收并推送 `5d82f24`，远程 verify/delivery 均成功**。提交前本地通过 1,226 项完整单元/契约/架构测试、109 项定向 PostgreSQL 测试及 39 项 Compose 检查；109 项来自 10 个指定 suite，未运行完整 Maven verify，见[原本地证据](evidence/p3a1-implementation.json)。远程最终结果见文末，后续 P3a.2 的执行数据清理也已完成本地验收、尚未推送，阶段状态见[实施方案](platform-implementation-plan.md#11-p3a1-固定研究子调用)。
+P3a.1 给现有 `market_research` 子 Agent 增加持久调用身份、累计预算和检查点访问门禁。P3a.1 已于 **2026-10-24 完成本地验收并推送 `5d82f24`，远程 verify/delivery 均成功**。提交前本地通过 1,226 项完整单元/契约/架构测试、109 项定向 PostgreSQL 测试及 39 项 Compose 检查；109 项来自 10 个指定 suite，未运行完整 Maven verify，见[原本地证据](evidence/p3a1-implementation.json)。远程最终结果见文末，后续 P3a.2 的执行数据清理也已完成本地验收并推送；P3a.3 私有叶子委派已本地验收，未推送，阶段状态见[实施方案](platform-implementation-plan.md#11-p3a1-固定研究子调用)。
 
 ## 使用范围
 
@@ -18,7 +18,7 @@ P3a.1 给现有 `market_research` 子 Agent 增加持久调用身份、累计预
 
 证券必须存在于基础发布的行情快照中；默认行情为空。缺少证券或期间时沿用持久人工输入交互，回答后使用原 Turn 和工具调用 ID。基础发布允许时，可在[能力组装](agent-composition.md)中选择 `function:market_research`，其依赖会纳入固定计划。默认父模型仍为离线回显，不会根据这段自然语言自行触发研究。
 
-本阶段没有增加用户私有 Agent 之间的通用委派、任意目标 ID、递归调用、独立子队列或子调度 API。研究执行器仍使用原生 `ReActAgent`，未采用生产 `SubAgentTool` 或 `HarnessAgent` 封装。
+P3a.1 的目标固定为研究执行器。后续 [P3a.3 私有叶子委派](private-agent-delegation.md)另行提供父发布冻结的同 owner 空工具目标，仍为深度一；已完成独立本地验收，不扩大本文件原 P3a.1 验证范围。没有递归调用、独立子队列或子调度 API。研究执行器仍使用原生 `ReActAgent`，未采用生产 `SubAgentTool` 或 `HarnessAgent` 封装。
 
 ## 一张调用表，复用根身份与步骤结果
 
@@ -86,4 +86,4 @@ P3a.2 将普通遗忘与独立账本重放接到同一清理契约，并为恢�
 
 同一 JAR 的 **39 项 Compose 检查**已成功并完成隔离环境清理，覆盖故障恢复、权限、遗忘、41 张应用表备份恢复和恢复后的新执行。模型使用离线或本机模拟服务，行情为合成数据；这些结果不认证真实供应商接入或生产容量。冻结报告摘要、三份运行日志、Compose 报告及 JAR SHA-256 记录在[原本地证据](evidence/p3a1-implementation.json)，不改写为后续测试数字。
 
-提交 `5d82f24` 的 [run 40045383841](https://github.com/westbrook0904/FinanceClaw/actions/runs/40045383841) 已整体 `completed/success`：verify 为 **1,226 单元/契约/架构 + 423 集成 = 1,649 项**，delivery 的 **39 项部署检查**通过。该次远程运行不覆盖后续 P3a.2；任意私有 Agent 委派、P3a 整体、P3b 和 P4 仍未完成。
+提交 `5d82f24` 的 [run 40045383841](https://github.com/westbrook0904/FinanceClaw/actions/runs/40045383841) 已整体 `completed/success`：verify 为 **1,226 单元/契约/架构 + 423 集成 = 1,649 项**，delivery 的 **39 项部署检查**通过。该次远程运行不覆盖后续 P3a.2/P3a.3；P3a.3 已本地验收，未推送，其 1,702 项 Java 最新分次结果、46 项脚本和 44 项 Compose 另见[本轮证据](evidence/p3a3-implementation.json)。该结果不声称单次完整 verify 全绿；完整权限私有 Agent 委派、P3a 整体、P3b 和 P4 仍未完成。

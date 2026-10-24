@@ -17,6 +17,7 @@ import com.financeclaw.infrastructure.agentscope.ResumeInputs;
 import com.financeclaw.infrastructure.agentscope.capability.BusinessCapabilities;
 import com.financeclaw.infrastructure.agentscope.capability.LocalCapabilityCatalog;
 import com.financeclaw.infrastructure.agentscope.context.*;
+import com.financeclaw.infrastructure.agentscope.model.ModelFactory;
 import com.financeclaw.infrastructure.state.MyBatisAgentStateStore;
 import com.financeclaw.infrastructure.state.RuntimeMapper;
 import com.financeclaw.support.PayloadJson;

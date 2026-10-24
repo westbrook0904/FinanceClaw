@@ -13,7 +13,10 @@ public interface ChildInvocationGateway {
 
     int insertIfAbsent(String root, String call, String hash);
 
-    int reserveModel(String root, String call, String hash);
+    int insertPrivateIfAbsent(
+            String root, String call, String hash, String targetAgent, String targetRelease);
+
+    int reserveModel(String root, String call, String hash, int limit);
 
     int reserveTool(String root, String call, String hash);
 

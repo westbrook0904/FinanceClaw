@@ -18,6 +18,8 @@ public interface GovernanceMapper {
             String rootTurnId,
             String callId,
             String target,
+            String targetAgentId,
+            String targetReleaseHash,
             String inputHash,
             String scopes,
             String status,
@@ -35,7 +37,8 @@ public interface GovernanceMapper {
     /** 子调用只保存身份和计数；隐私来源必须与根 Turn 的 owner 相同，不能借错误关联派生身份。 */
     @Select(
             """
-            SELECT c.root_turn_id,c.call_id,c.target,c.input_hash,c.scopes::text AS scopes,c.status,
+            SELECT c.root_turn_id,c.call_id,c.target,c.target_agent_id,c.target_release_hash,
+                   c.input_hash,c.scopes::text AS scopes,c.status,
                    c.model_calls,c.tool_calls,t.tenant,t.subject,t.conversation_id,t.release_hash,
                    s.epoch,p.grant_revision,r.input_hash AS result_hash,r.result
             FROM business.child_invocations c
@@ -48,7 +51,7 @@ public interface GovernanceMapper {
             """)
     ChildInvocationRow getChildInvocation(@Param("root") String root, @Param("call") String call);
 
-    /** 目标和子权限是本阶段固定常量，禁止调用者提供目标或扩大权限。 */
+    /** 研究目标和子权限是固定常量，私有 Agent 使用单独入口保存已经校验的冻结目标。 */
     @Insert(
             """
             INSERT INTO business.child_invocations(root_turn_id,call_id,target,input_hash,scopes)
@@ -62,20 +65,42 @@ public interface GovernanceMapper {
     int insertChildInvocationIfAbsent(
             @Param("root") String root, @Param("call") String call, @Param("hash") String hash);
 
+    /** 保存私有叶子目标的不可变发布身份；owner、根发布和来源仍从父受理记录派生。 */
+    @Insert(
+            """
+            INSERT INTO business.child_invocations(
+              root_turn_id,call_id,target,target_agent_id,target_release_hash,input_hash,scopes)
+            SELECT t.id,#{call},'private_agent',#{targetAgent},#{targetRelease},#{hash},'[]'::jsonb
+            FROM business.turns t
+            JOIN memory.sources s ON s.id=t.id AND s.tenant=t.tenant AND s.subject=t.subject
+            JOIN business.turn_policies p ON p.turn_id=t.id
+            WHERE t.id=#{root}
+            ON CONFLICT(root_turn_id,call_id) DO NOTHING
+            """)
+    int insertPrivateChildInvocationIfAbsent(
+            @Param("root") String root,
+            @Param("call") String call,
+            @Param("hash") String hash,
+            @Param("targetAgent") String targetAgent,
+            @Param("targetRelease") String targetRelease);
+
     @Update(
             """
             UPDATE business.child_invocations SET model_calls=model_calls+1
             WHERE root_turn_id=#{root} AND call_id=#{call} AND input_hash=#{hash}
-              AND status='pending' AND model_calls<4
+              AND status='pending' AND #{limit} BETWEEN 1 AND 4 AND model_calls<#{limit}
             """)
     int updatePendingChildModelCountWithinLimit(
-            @Param("root") String root, @Param("call") String call, @Param("hash") String hash);
+            @Param("root") String root,
+            @Param("call") String call,
+            @Param("hash") String hash,
+            @Param("limit") int limit);
 
     @Update(
             """
             UPDATE business.child_invocations SET tool_calls=tool_calls+1
             WHERE root_turn_id=#{root} AND call_id=#{call} AND input_hash=#{hash}
-              AND status='pending' AND tool_calls<10
+              AND target='market_research' AND status='pending' AND tool_calls<10
             """)
     int updatePendingChildToolCountWithinLimit(
             @Param("root") String root, @Param("call") String call, @Param("hash") String hash);

@@ -525,7 +525,7 @@ class ChildInvocationIT {
     }
 
     private ChildInvocationService rebuilt() {
-        return new ChildInvocationService(calls, steps, tasks.policy());
+        return new ChildInvocationService(calls, steps, tasks.policy(), releases);
     }
 
     private Claim claim(Owner owner) {

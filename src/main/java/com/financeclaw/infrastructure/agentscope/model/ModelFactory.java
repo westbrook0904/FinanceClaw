@@ -1,4 +1,4 @@
-package com.financeclaw.infrastructure.agentscope.execution;
+package com.financeclaw.infrastructure.agentscope.model;
 
 import com.financeclaw.domain.Governance.Blocked;
 import com.financeclaw.domain.release.ModelProfile;

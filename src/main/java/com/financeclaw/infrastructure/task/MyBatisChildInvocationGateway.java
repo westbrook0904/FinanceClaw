@@ -25,6 +25,8 @@ public class MyBatisChildInvocationGateway implements ChildInvocationGateway {
                         row.rootTurnId(),
                         row.callId(),
                         row.target(),
+                        row.targetAgentId(),
+                        row.targetReleaseHash(),
                         row.inputHash(),
                         PayloadJson.scopes(row.scopes()),
                         row.status(),
@@ -46,8 +48,15 @@ public class MyBatisChildInvocationGateway implements ChildInvocationGateway {
     }
 
     @Override
-    public int reserveModel(String root, String call, String hash) {
-        return db.updatePendingChildModelCountWithinLimit(root, call, hash);
+    public int insertPrivateIfAbsent(
+            String root, String call, String hash, String targetAgent, String targetRelease) {
+        return db.insertPrivateChildInvocationIfAbsent(
+                root, call, hash, targetAgent, targetRelease);
+    }
+
+    @Override
+    public int reserveModel(String root, String call, String hash, int limit) {
+        return db.updatePendingChildModelCountWithinLimit(root, call, hash, limit);
     }
 
     @Override

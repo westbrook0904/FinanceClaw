@@ -174,7 +174,11 @@ public final class LocalCapabilityCatalog {
         var available = new HashMap<String, CapabilityBinding>();
         bindings(plan.definition()).forEach(binding -> available.put(binding.id(), binding));
         for (var binding : plan.capabilities()) {
-            if (!binding.kind().equals("mcp") && !binding.equals(available.get(binding.id()))) {
+            if (binding.kind().equals("agent")) {
+                // 目标来自父发布的不可变契约，不是当前本地 Function 目录中的动态别名。
+                PrivateAgentContracts.from(binding);
+            } else if (!binding.kind().equals("mcp")
+                    && !binding.equals(available.get(binding.id()))) {
                 throw new Blocked("capability_release_changed");
             }
         }

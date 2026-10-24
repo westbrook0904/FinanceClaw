@@ -116,7 +116,7 @@ Harness 的 `WorkspaceMessageBus` 可以利用共享文件系统传输消息，�
 
 SDK 的 [LongTermMemory](https://github.com/agentscope-ai/agentscope-java/blob/v2.0.3/agentscope-core/src/main/java/io/agentscope/core/memory/LongTermMemory.java) 已标记废弃，跨会话持久化交给应用；这不等于 Harness 没有记忆、搜索或压缩能力。当前模型提取和 embedding 已原生化，SQL 来源、审批、epoch、审计和受限 Worker 是产品规则。向量命中必须再满足 owner/epoch/revision 条件，不能把向量库变成事实权威。
 
-历史压缩可以在业务筛选后的历史上复用 [ConversationCompactor](https://github.com/agentscope-ai/agentscope-java/blob/v2.0.3/agentscope-harness/src/main/java/io/agentscope/harness/agent/memory/compaction/ConversationCompactor.java)，但要禁止摘要变成可信 USER 事实，并审查其 memory flush/offload 副作用。它不替代 [BudgetedTransport](../../../src/main/java/com/financeclaw/infrastructure/agentscope/execution/BudgetedTransport.java) 对供应商最终请求的检查。
+历史压缩可以在业务筛选后的历史上复用 [ConversationCompactor](https://github.com/agentscope-ai/agentscope-java/blob/v2.0.3/agentscope-harness/src/main/java/io/agentscope/harness/agent/memory/compaction/ConversationCompactor.java)，但要禁止摘要变成可信 USER 事实，并审查其 memory flush/offload 副作用。它不替代 [BudgetedTransport](../../../src/main/java/com/financeclaw/infrastructure/agentscope/model/BudgetedTransport.java) 对供应商最终请求的检查。
 
 ### 3.6 飞书与依赖不能只按名字去重
 

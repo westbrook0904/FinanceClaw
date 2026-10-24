@@ -8,6 +8,7 @@ import com.financeclaw.domain.Task.Owner;
 import com.financeclaw.domain.agent.AgentComposition;
 import com.financeclaw.domain.agent.AgentDefinition;
 import com.financeclaw.domain.agent.AgentDraft;
+import com.financeclaw.domain.agent.ResolvedTarget;
 import com.financeclaw.support.PayloadJson;
 import java.util.List;
 import org.springframework.stereotype.Repository;
@@ -77,5 +78,10 @@ public class MyBatisAgentRepository implements AgentRepository {
     @Override
     public List<AgentDefinition> list(Owner owner) {
         return mapper.listOwnedAgents(owner);
+    }
+
+    @Override
+    public List<ResolvedTarget> listPublishedLeafTargets(Owner owner) {
+        return mapper.listPublishedLeafTargetsByOwner(owner);
     }
 }

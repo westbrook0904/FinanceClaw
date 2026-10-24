@@ -64,7 +64,7 @@ flowchart LR
 
 大结果文件的完整 JSON 保存在 SQL Artifact 归档中，单文件上限 **2 MiB**，超过时明确拒绝。模型通过 `read_artifact_range` 每次读取最多 512 个 UTF-8 字节；HTTP 提供 `GET /v1/artifacts/{id}/range?start=0&maxBytes=4096` 和 `GET /v1/artifacts/{id}/download`，均使用正常 Bearer 认证，重新核验 owner、隐私和原工具权限。
 
-源码：[TaskAgentRuntime](src/main/java/com/financeclaw/infrastructure/agentscope/execution/TaskAgentRuntime.java)、[BudgetedTransport](src/main/java/com/financeclaw/infrastructure/agentscope/execution/BudgetedTransport.java)、[ExecutionPolicyService](src/main/java/com/financeclaw/app/execution/ExecutionPolicyService.java)。
+源码：[TaskAgentRuntime](src/main/java/com/financeclaw/infrastructure/agentscope/execution/TaskAgentRuntime.java)、[BudgetedTransport](src/main/java/com/financeclaw/infrastructure/agentscope/model/BudgetedTransport.java)、[ExecutionPolicyService](src/main/java/com/financeclaw/app/execution/ExecutionPolicyService.java)。
 
 ### 2. 记忆系统
 
@@ -124,12 +124,13 @@ SSE 转发原生文本增量和工具状态，并回放持久任务事件。先�
 | 基础工具 | 城市补充、示例目录检索、审批后创建本地报告、Artifact 分页读取 |
 | 市场快照 | 发布时固定的数据，携带 provider / as_of；默认数据为空，不是默认接入实时行情 |
 | 市场研究 | 固定目标、深度为一的 ReAct 子 Agent；持久调用身份与 4 次模型 / 10 次实际行情读取上限，额度同时计入根 Turn |
+| 私有叶子 Agent | P3a.3 已本地验收，未推送；同 owner 显式空工具目标、冻结发布、仅显式消息输入，最多 4 次子模型请求并受根预算约束 |
 | 组合复盘 | `/workflow portfolio_review …` 固定步骤驱动，包含计算、数据新鲜度、敞口检查、人工批准和归档 |
 | 紫微 | 本命、大限、年、月、日五个受治理入口；默认关闭，仍需显式开发配置 |
 
-P3a.1 用一张 `child_invocations` 窄表保存研究调用身份和累计额度，结果继续复用 `capability_steps`，更换 attempt 不重置计数。相同快照回执不重复执行行情读取或扣减该次子/根读取额度；缓存与 SDK 状态读写都先通过父 Turn 的运行状态、fence、隐私与授权门禁。P3a.1 已于 2026-10-24 完成本地验收：1,226 项完整单元/契约/架构测试、109 项定向 PostgreSQL 测试及 39 项 Compose 检查通过；未运行完整 Maven verify，模型为离线或本机模拟、行情为合成数据，详见[固定研究子调用](docs/architecture/child-invocations.md)。当前没有任意私有 Agent 委派、独立子调度或生产 `SubAgentTool` 封装；组合复盘仍是固定工作流。
+P3a.1 用一张 `child_invocations` 窄表保存研究调用身份和累计额度，结果继续复用 `capability_steps`，更换 attempt 不重置计数。相同快照回执不重复执行行情读取或扣减该次子/根读取额度；缓存与 SDK 状态读写都先通过父 Turn 的运行状态、fence、隐私与授权门禁。原验收与远程结果见[固定研究子调用](docs/architecture/child-invocations.md)，组合复盘仍是固定工作流。
 
-P3a.2 已完成旧执行正文清理和恢复核对的本地验收，不增加委派目标、后台扫描或独立子生命周期。同 owner 的空工具叶子 Agent 委派留待 P3a.3，本轮不开展。
+P3a.2 已完成旧执行正文清理和恢复核对的本地验收并推送。P3a.3 已完成同 owner 空工具叶子 Agent 委派的本地验收：父发布冻结目标版本，子 Agent 使用独立模型／提示词，只接收明确的 `message`；父侧 Artifact reader 依赖支持大结果引用，子侧保持零工具。仍复用父调度、取消和预算，不增加子队列或轮询。配置与验收边界见[私有叶子 Agent 委派](docs/architecture/private-agent-delegation.md)。
 
 #### MCP
 
@@ -172,7 +173,7 @@ P2b 显式组装的 `agent-release/3` 在发布时通过事务外发现，冻结
 
 发布清单、默认发布指针和变更历史保存在 PostgreSQL。启动登记当前配置，但已有指针不会被环境变更覆盖；显式切换使用 revision CAS。新会话创建时固定发布，后续 Turn、重试和审批恢复沿用该版本；升级通过新会话生效。缺失或摘要不匹配的历史清单会阻断执行，不回退到当前版本。P2a 增加 owner 私有的 Agent 身份、提示词草稿和独立发布指针，CLI 管理后可通过 `POST /v1/conversations` 的 `agent_id` 选择已发布目标；会话固定 Agent ID 与版本。P2b 在固定基础上增加模型 profile、Function/Skill/MCP 选择与依赖快照，详见 [受控能力组装](docs/architecture/agent-composition.md)；多资源池与模型网关继续分阶段实施。操作说明见 [Agent 定义与调用](docs/architecture/agent-definitions.md)、[平台化实施方案](docs/architecture/platform-implementation-plan.md)和[发布运维](docs/operations.md#发布版本管理)。
 
-源码：[ModelFactory](src/main/java/com/financeclaw/infrastructure/agentscope/execution/ModelFactory.java)、[ModelProfile](src/main/java/com/financeclaw/domain/release/ModelProfile.java)、[ReleaseService](src/main/java/com/financeclaw/app/release/ReleaseService.java)、[ReleaseIdentity](src/main/java/com/financeclaw/app/release/ReleaseIdentity.java)、[AgentScopeMemoryModels](src/main/java/com/financeclaw/infrastructure/agentscope/memory/AgentScopeMemoryModels.java)。
+源码：[ModelFactory](src/main/java/com/financeclaw/infrastructure/agentscope/model/ModelFactory.java)、[ModelProfile](src/main/java/com/financeclaw/domain/release/ModelProfile.java)、[ReleaseService](src/main/java/com/financeclaw/app/release/ReleaseService.java)、[ReleaseIdentity](src/main/java/com/financeclaw/app/release/ReleaseIdentity.java)、[AgentScopeMemoryModels](src/main/java/com/financeclaw/infrastructure/agentscope/memory/AgentScopeMemoryModels.java)。
 
 ### 7. 中间件与执行边界
 
@@ -205,7 +206,7 @@ docker compose up -d --build --wait --wait-timeout 180
 curl --fail http://localhost:8080/actuator/health/readiness
 ```
 
-就绪预期返回 `{"status":"UP"}`。Compose 的 `init-db` 完成新库结构与授权后，启动统一业务服务 `api` 和受限 `memory-worker`；API 仅绑定本机 8080。主库由 V1 基线及 V2–V7 演进建立 41 张应用表；V7 只增加执行隐私清理／核对函数及索引，不增加表。支持当前 Java V1 基线升级，不导入 Python 或历史实验库，详见[数据库初始化与升级](docs/architecture/fresh-schema.md)。
+就绪预期返回 `{"status":"UP"}`。Compose 的 `init-db` 完成新库结构与授权后，启动统一业务服务 `api` 和受限 `memory-worker`；API 仅绑定本机 8080。主库由 V1 基线及 V2–V8 演进建立 41 张应用表；V8 扩充既有调用绑定和隐私映射，不增加表。支持当前 Java V1 基线升级，不导入 Python 或历史实验库，详见[数据库初始化与升级](docs/architecture/fresh-schema.md)。
 
 ### 跑通一次请求
 
@@ -274,7 +275,9 @@ python3 scripts/validate-compose.py --ziwei --admission --preflight --restore-pr
 
 P3a.1 提交 `5d82f24` 已推送，[远程流水线](https://github.com/westbrook0904/FinanceClaw/actions/runs/40045383841)整体 `completed/success`：`verify` 通过 **1,226 项单元/契约/架构测试 + 423 项集成测试 = 1,649 项**，`delivery` 的 **39 项部署检查**也通过。该次运行不包含后续 P3a.2。
 
-P3a.2 已完成本地验收：**1,226 项单元测试、437 项集成用例的最新结果、46 项脚本测试和最终 41 项 Compose 检查通过**。集成初跑 435 项通过、2 项进程超时，使用同一 JAR 复跑 5 项覆盖两处失败；因此不是单次完整 Maven verify 全绿。Compose 首轮 40 项通过后遇到遗忘后的旧断言，修正验证脚本后完整重跑通过，详见[本轮证据](docs/architecture/evidence/p3a2-implementation.json)。P3a.2 尚未推送，远程 CI 仍以上述 P3a.1 为准。离线和本机模拟服务测试不代表真实外部服务或生产容量验收。
+P3a.2 提交 `c96b4e7` 已推送，[远程流水线](https://github.com/westbrook0904/FinanceClaw/actions/runs/40055663280)整体 `completed/success`：**1,226 单元 + 437 集成 = 1,663 项 Java 测试**及 **41 项部署检查**通过。提交前本地的进程超时／定向复跑、46 项脚本及 Compose 旧断言修正记录保留在[原本地证据](docs/architecture/evidence/p3a2-implementation.json)，不改写成远程结果。该次远程运行不覆盖 P3a.3；离线和本机模拟服务测试不代表真实外部服务或生产容量验收。
+
+P3a.3 **已本地验收，未推送**：**1,242 单元 + 460 独立集成 = 1,702 项 Java 用例的最新结果通过**，另有 **46 项脚本测试、44 项 Compose 检查**。首次完整 verify 失败于迁移次数旧断言和 CLI 30 秒等待；仅修正测试常数 6→7 后，两个原失败用例按原 CLI 条件精确复跑通过，同一生产 JAR 未变。该结果按用例身份合并，`single_full_verify_success=false`，详见[本轮证据](docs/architecture/evidence/p3a3-implementation.json)。Compose 验证发布冻结与恢复绑定，真实 SDK 委派由运行时测试覆盖，不将离线父模型作为自然语言触发委派的证明。
 
 | 文档 | 内容 |
 | --- | --- |
@@ -287,6 +290,7 @@ P3a.2 已完成本地验收：**1,226 项单元测试、437 项集成用例的�
 | [数据结构](docs/architecture/database-schema-review.md) / [数据库访问](docs/architecture/database-access-review.md) | 权威状态边界、锁与查询策略 |
 | [画像与证据记忆](docs/architecture/user-profile-memory.md) | Markdown、来源、确认、版本和隐私 |
 | [执行数据隐私清理](docs/architecture/execution-privacy.md) | 检查点墓碑、步骤与工具文件清理、Snapshot v3 恢复门禁 |
+| [私有叶子 Agent 委派](docs/architecture/private-agent-delegation.md) | 同 owner 空工具目标、固定发布、显式消息与共享预算；P3a.3 已本地验收，未推送 |
 | [HTTP 校验](docs/architecture/http-request-validation.md) / [Java 规范](docs/architecture/java-coding-guidelines.md) | 输入边界与关键逻辑注释约定 |
 | [运行维护](docs/operations.md) | 受理排空、配置、备份与隔离隐私恢复 |
 | [历史记录](docs/history/README.md) | 过去设计和验收证据，非当前迁移或兼容承诺 |

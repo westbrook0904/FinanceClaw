@@ -1,4 +1,4 @@
-package com.financeclaw.infrastructure.agentscope.execution;
+package com.financeclaw.infrastructure.agentscope.model;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;

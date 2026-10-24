@@ -196,7 +196,8 @@ public final class LifecycleDatabase {
                                     new ChildInvocationService(
                                             new MyBatisChildInvocationGateway(gov),
                                             steps,
-                                            policies),
+                                            policies,
+                                            releases),
                                     market),
                             policies,
                             session.getMapper(RuntimeMapper.class),

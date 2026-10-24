@@ -21,6 +21,9 @@ public record AgentComposition(String modelProfile, List<String> capabilities) {
     }
 
     public static boolean validId(String id) {
+        if (id != null && id.startsWith("agent:")) {
+            return AgentDraft.isCustomId(id.substring(6));
+        }
         return id != null
                 && id.length() <= 272
                 && id.matches(

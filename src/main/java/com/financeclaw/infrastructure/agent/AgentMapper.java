@@ -3,6 +3,7 @@ package com.financeclaw.infrastructure.agent;
 import com.financeclaw.domain.Task.Owner;
 import com.financeclaw.domain.agent.AgentDefinition;
 import com.financeclaw.domain.agent.AgentDraft;
+import com.financeclaw.domain.agent.ResolvedTarget;
 import java.util.List;
 import org.apache.ibatis.annotations.*;
 
@@ -71,4 +72,26 @@ public interface AgentMapper {
             WHERE tenant=#{owner.tenant} AND subject=#{owner.subject} ORDER BY created_at,id
             """)
     List<AgentDefinition> listOwnedAgents(@Param("owner") Owner owner);
+
+    /**
+     * 目录只做同 owner 的集合候选筛选，不为每个 Agent 再查询发布。私有目标仅支持显式 v3 空计划， 不能把 plan 缺失的继承式发布当成零工具。清单真实性由选中目标时的
+     * ReleaseService 重新验证。
+     */
+    @Select(
+            """
+            SELECT a.id AS agent_id,d.release_hash
+            FROM control_plane.agents a
+            JOIN control_plane.deployments d ON d.name='agent:' || a.id
+            JOIN control_plane.release_manifests m ON m.release_hash=d.release_hash
+            WHERE a.tenant=#{owner.tenant} AND a.subject=#{owner.subject}
+              AND m.manifest_format='agent-v3'
+              AND m.manifest->>'format'='agent-release/3'
+              AND m.manifest->>'agentId'=a.id
+              AND m.manifest->>'tenant'=a.tenant AND m.manifest->>'subject'=a.subject
+              AND m.manifest#>'{plan,requestedCapabilities}'='[]'::jsonb
+              AND m.manifest#>'{plan,capabilities}'='[]'::jsonb
+              AND m.manifest#>'{plan,definition,scopes}'='[]'::jsonb
+            ORDER BY a.created_at,a.id
+            """)
+    List<ResolvedTarget> listPublishedLeafTargetsByOwner(@Param("owner") Owner owner);
 }
