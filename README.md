@@ -124,7 +124,7 @@ SSE 转发原生文本增量和工具状态，并回放持久任务事件。先�
 | 基础工具 | 城市补充、示例目录检索、审批后创建本地报告、Artifact 分页读取 |
 | 市场快照 | 发布时固定的数据，携带 provider / as_of；默认数据为空，不是默认接入实时行情 |
 | 市场研究 | 固定目标、深度为一的 ReAct 子 Agent；持久调用身份与 4 次模型 / 10 次实际行情读取上限，额度同时计入根 Turn |
-| 私有叶子 Agent | 同 owner、冻结发布、仅显式消息输入；支持空工具与单次行情两个固定契约；最多 4 次子模型并受根预算约束；P3a.6 已本地验收，未推送 |
+| 私有叶子 Agent | 同 owner、冻结发布、仅显式消息输入；支持空工具与单次行情两个固定契约；最多 4 次子模型并受根预算约束；P3a.6 已推送，远程 CI 通过 |
 | 组合复盘 | `/workflow portfolio_review …` 固定步骤驱动，包含计算、数据新鲜度、敞口检查、人工批准和归档 |
 | 紫微 | 本命、大限、年、月、日五个受治理入口；默认关闭，仍需显式开发配置 |
 
@@ -283,7 +283,9 @@ P3a.4 提交 `467ba8f` 已推送，[远程流水线](https://github.com/westbroo
 
 P3a.5 提交 `a4a6ef4` 已推送，[远程流水线](https://github.com/westbrook0904/FinanceClaw/actions/runs/40077157872)整体 `completed/success`：**1,242 单元 + 474 集成 = 1,716 项 Java、46 项脚本、44 项部署检查**通过。根检查点结果保留、画像与预算连续性见[暂停恢复专项](docs/architecture/private-agent-resume-validation.md)；[提交前本地证据](docs/architecture/evidence/p3a5-implementation.json)继续保留原先分次验收与测试假设修正，不改写为远程结果。
 
-P3a.6 **已本地验收，未推送**：固定 `market_snapshot` 私有叶子最多一次行情读取，使用目标冻结发布的数据，结果归档保留行情权限。最新分次验证为 **1,253 单元 + 490 集成 = 1,743 个唯一 Java 用例、46 项脚本和 44 项部署检查通过**。首完整 `verify` 有四项未通过；修正两处 schema 版本断言后，对受影响的三个完整套件共 35 项复测通过，其余沿用首跑通过结果，并非单次完整 `verify` 成功。配置、失败过程与验证边界见[固定行情叶子](docs/architecture/private-agent-market-leaf.md)及[证据](docs/architecture/evidence/p3a6-implementation.json)，P3a 整体仍未完成。
+P3a.6 已推送 `13f73a7`，[远程流水线](https://github.com/westbrook0904/FinanceClaw/actions/runs/40105280949)整体 `completed/success`：**1,253 单元 + 490 集成 = 1,743 项 Java、46 项脚本和 44 项部署检查全部通过**。固定 `market_snapshot` 私有叶子最多一次行情读取，使用目标冻结发布的数据，结果归档保留行情权限。配置与范围见[固定行情叶子](docs/architecture/private-agent-market-leaf.md)；[原本地证据](docs/architecture/evidence/p3a6-implementation.json)继续保留分次验收和失败历史，P3a 整体仍未完成。
+
+P3a.7 **已本地验收，未推送**：同次模型／工具扣额复用已校验发布。实测私有行情首次读取 **33→29 条 SQL**、子模型预算预留 **21→17 条**、直接根工具扣额 **15→11 条**；回放仍为 16 条，实时门禁与原子回滚保持。同次本地验证通过 **1,253 项全量单元 + 137 项选定集成 = 1,390 项 Java 测试**；其余集成、脚本与 Compose 未在本阶段重跑。范围与证据见[预算查询优化](docs/architecture/execution-budget-queries.md)。
 
 | 文档 | 内容 |
 | --- | --- |
@@ -299,7 +301,8 @@ P3a.6 **已本地验收，未推送**：固定 `market_snapshot` 私有叶子最
 | [私有叶子 Agent 委派](docs/architecture/private-agent-delegation.md) | 同 owner 空工具目标、固定发布、显式消息与共享预算；P3a.3 已推送，远程 CI 成功 |
 | [父子运行时验收](docs/architecture/private-agent-runtime-validation.md) | P3a.4 完整父子模型及取消传播修复；已推送，远程 CI 成功 |
 | [暂停恢复验收](docs/architecture/private-agent-resume-validation.md) | P3a.5 根检查点结果保留、画像与预算连续性；已推送，远程 CI 成功 |
-| [固定行情叶子](docs/architecture/private-agent-market-leaf.md) | P3a.6 单次行情能力、冻结数据与权限归档；已本地分次验收，未推送 |
+| [固定行情叶子](docs/architecture/private-agent-market-leaf.md) | P3a.6 单次行情能力、冻结数据与权限归档；已推送，远程 CI 通过 |
+| [预算查询优化](docs/architecture/execution-budget-queries.md) | P3a.7 同次扣额减少发布查询；已本地验收，未推送 |
 | [HTTP 校验](docs/architecture/http-request-validation.md) / [Java 规范](docs/architecture/java-coding-guidelines.md) | 输入边界与关键逻辑注释约定 |
 | [运行维护](docs/operations.md) | 受理排空、配置、备份与隔离隐私恢复 |
 | [历史记录](docs/history/README.md) | 过去设计和验收证据，非当前迁移或兼容承诺 |

@@ -1,6 +1,6 @@
 # 固定行情私有叶子：P3a.6
 
-**状态：2026-10-24 已完成本地分次验收，尚未推送。** 远程基线为 `a4a6ef4` 的 [run 40077157872](https://github.com/westbrook0904/FinanceClaw/actions/runs/40077157872)：1,716 Java、46 脚本及 44 部署检查全部通过。该基线不包含本模块。
+**状态：2026-10-24 已推送 `13f73a7`，远程流水线通过。** [run 40105280949](https://github.com/westbrook0904/FinanceClaw/actions/runs/40105280949) 整体 `completed/success`：1,253 单元 + 490 集成 = 1,743 Java、46 脚本及 44 部署检查全部通过，包含本模块。下文的首次失败和分次结果为提交前本地记录，原证据不改写为远程结果。
 
 ## 配置与实际能力
 
@@ -52,4 +52,6 @@ Compose 使用同一本地 JAR，覆盖既有空工具父发布装配、重启�
 
 ## 剩余数据库热点
 
-本模块没有新增队列或轮询，目标行情直接使用已解析的冻结正文。但实际读取仍沿用研究调用的双门禁：`ChildInvocationService.snapshotWithinDispatch` 校验父执行并预留子额度后，`MarketDataService.readFrozen` 经 `consumeTool` 再校验一次父执行并扣根额度。子 UPDATE 会使 MyBatis 本地缓存失效，重复发布解析和 grant／隐私查询不能按缓存命中视为零成本。此处是源码识别，尚未实测 SQL 次数。后续应以独立 SQL 计数用例验收同事务内复用受信的已验证发布和策略；跨事务的 grant、epoch 与 fence 不能缓存，回放必须保留实时门禁，根／子额度与回执仍须原子提交。
+本模块没有新增队列或轮询，目标行情直接使用已解析的冻结正文。但实际读取仍沿用研究调用的双门禁：`ChildInvocationService.snapshotWithinDispatch` 校验父执行并预留子额度后，`MarketDataService.readFrozen` 经 `consumeTool` 再校验一次父执行并扣根额度。应用使用 MyBatis STATEMENT 级本地缓存，重复发布解析和 grant／隐私查询不能按缓存命中视为零成本。在 P3a.6 交付时，此处仅作源码识别，尚未实测 SQL 次数；后续通过独立计数用例验收同事务内复用已验证的不可变发布预算。跨事务的 grant、epoch 与 fence 不能缓存，回放必须保留实时门禁，根／子额度与回执仍须原子提交。
+
+后续本地模块 [P3a.7](execution-budget-queries.md)已实测这条路径：仅消除预算事务中第二次根发布解析，首次行情窗口由 33 降至 29 条 SQL，回放保持 16 条。内外实时门禁均保留，跨事务权限不缓存。P3a.7 的状态与验证范围独立记录，尚未推送。

@@ -161,7 +161,7 @@ class ToolDispatchQueryTest {
                 assertThrows(Blocked.class, () -> service.consume(CLAIM, true)).getMessage());
 
         verify(policies, times(2)).modelCall("turn", 1);
-        verify(releases, times(4)).requireForTurn(TURN);
+        verify(releases, times(2)).requireForTurn(TURN);
         verify(releases, never()).require(anyString());
         verify(releases, never()).currentHash();
         verify(manager).rollback(any());

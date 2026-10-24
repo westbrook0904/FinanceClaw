@@ -3,6 +3,7 @@ package com.financeclaw.app.execution;
 import com.financeclaw.app.execution.port.*;
 import com.financeclaw.app.task.TaskEventHub;
 import com.financeclaw.app.task.port.*;
+import com.financeclaw.domain.ExecutionPolicy;
 import com.financeclaw.domain.Governance.*;
 import com.financeclaw.domain.Task.*;
 import com.financeclaw.support.PayloadJson;
@@ -46,13 +47,18 @@ public class ExecutionPolicyService {
 
     /** 在一次父执行栅栏事务内完成运行状态、隐私和授权核验，再执行本地工作。 子调用只能借用父 Claim，不能形成另一个调度或授权权威；回调禁止发起模型、网络等远程调用。 */
     public <T> T dispatch(Claim claim, Function<Policy, T> localWork) {
+        return dispatchChecked(claim, checked -> localWork.apply(checked.policy()));
+    }
+
+    /** 每次进入都重新检查租约、Turn、隐私与授权；即使嵌套在已持锁事务内，也不能省略数据库时间的租约判断。 */
+    private <T> T dispatchChecked(Claim claim, Function<CheckedPolicy, T> localWork) {
         return leases.fenced(
                 claim,
                 () -> {
                     if (!db.turn(claim.turn().id()).status().equals("running")) {
                         throw new Fenced();
                     }
-                    return localWork.apply(checkPolicy(claim));
+                    return localWork.apply(checkPolicyWithRelease(claim));
                 });
     }
 
@@ -64,15 +70,22 @@ public class ExecutionPolicyService {
 
     /** 调用方先锁命令，再按隐私用户、授权行的顺序加锁，使执行写入与撤权、遗忘互斥。 */
     public Policy checkPolicy(Claim claim) {
-        releases.requireForTurn(claim.turn());
+        return checkPolicyWithRelease(claim).policy();
+    }
+
+    private CheckedPolicy checkPolicyWithRelease(Claim claim) {
+        var release = releases.requireForTurn(claim.turn());
         memory.check(claim.turn());
         var p = governance.policy(claim.turn().id());
         var grant = governance.lockGrant(claim.turn().conversationId());
         if (p == null || grant == null || p.grantRevision() != grant.revision()) {
             throw new Blocked("authorization_changed");
         }
-        return p;
+        return new CheckedPolicy(p, release);
     }
+
+    /** 仅在当前调用栈中携带已校验的不可变发布投影，供同次扣额使用。 不作为公开句柄，不保存到字段或跨事务缓存；授权、隐私、租约及调用计数仍以每次实时门禁和 CAS 为准。 */
+    private record CheckedPolicy(Policy policy, ExecutionPolicy release) {}
 
     public List<Turn> history(Claim claim) {
         return leases.fenced(
@@ -124,14 +137,17 @@ public class ExecutionPolicyService {
     }
 
     private void consume(Claim claim, boolean model, String scope, Consumer<Policy> reserveChild) {
-        dispatch(
+        dispatchChecked(
                 claim,
-                p -> {
+                checked -> {
+                    var p = checked.policy();
                     if (scope != null && !PayloadJson.scopes(p.scopes()).contains(scope)) {
                         throw new Blocked("tool_denied");
                     }
                     reserveChild.accept(p);
-                    var r = releases.requireForTurn(claim.turn());
+                    // 发布内容已按本 Turn 身份完整核验且不可变；子预留后不重复查同一发布。
+                    // 子额度与下面的根 CAS 仍在同一 fenced 事务中提交或整体回滚。
+                    var r = checked.release();
                     int changed =
                             model
                                     ? governance.modelCall(claim.turn().id(), r.maxModelCalls())
