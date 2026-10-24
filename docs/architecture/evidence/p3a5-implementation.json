@@ -1,0 +1,294 @@
+{
+  "milestone": "P3a.5 private delegation result and budget continuity through sealed suspension and Spring restart",
+  "collected_at_utc": "2026-10-24T08:06:46.732664+00:00",
+  "base_commit": "467ba8f924293601c3770e83a4ed969678ffd682",
+  "recorded_before_commit": true,
+  "local_acceptance": {
+    "status": "passed",
+    "delivery_status": "locally accepted; not pushed",
+    "selected_integration": {
+      "suites": 3,
+      "tests": 52,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "includes_new_cases": 5,
+      "includes_runtime_suite_cases": 14
+    },
+    "single_full_selected_run_success": false,
+    "unit_tests_rerun": false,
+    "full_project_integration_rerun": false,
+    "compose_rerun": false,
+    "python_script_tests_rerun": false,
+    "note": "Latest outcomes for 52 unique cases combine the corrected 14-case runtime rerun with 38 unchanged passing core cases from the initial failed 52-case run. The new 5 cases are included, not added again."
+  },
+  "final_validation": {
+    "results_manifest_path": "target/p3a5/resume-regression-results.json",
+    "results_manifest_sha256": "97717929eefbf3d0d6c6e66ab6b34e6999d70af8505d44856cf7a649b91bc4b5",
+    "frozen_report_directory": "/tmp/financeclaw-p3a5-verified-reports/final-resume-regression",
+    "frozen_summary_sha256": "97717929eefbf3d0d6c6e66ab6b34e6999d70af8505d44856cf7a649b91bc4b5",
+    "unique_case_ids_checked": 52,
+    "reports": [
+      {
+        "suite": "com.financeclaw.p3.PrivateAgentRuntimeIT",
+        "tests": 14,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "report_sha256": "720205db3e02c372ac31e2dae70412a569863cfe0d8fcd2a81f323010b4b7ed9",
+        "provenance": "precise_14_case_rerun"
+      },
+      {
+        "suite": "com.financeclaw.m1.TaskLifecycleIT",
+        "tests": 25,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "report_sha256": "177ee6d3acdeef474661bd0dd92e6aad6675880cceb745e22746d6bde780f110",
+        "provenance": "unchanged_core_first_run"
+      },
+      {
+        "suite": "com.financeclaw.m0.RecoveryIT",
+        "tests": 13,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "report_sha256": "35cb97d6459b317450c369820faffccd6cfd3385bb6a16d0103326abe1bf0e7e",
+        "provenance": "unchanged_core_first_run"
+      }
+    ],
+    "precise_rerun": {
+      "process_exit_code": 0,
+      "build_success": true,
+      "tests": 14,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "command": "scripts/mvn.sh -B -ntp -o spotless:apply test-compile -Dit.test=PrivateAgentRuntimeIT failsafe:integration-test failsafe:verify",
+      "log_path": "/tmp/financeclaw-p3a5-resume-rerun.log",
+      "log_sha256": "f6fb95af1f17e4e84a01b8ec48cc7c8f63b28f78d8d59de2ac837b06a453af53",
+      "failsafe_summary_sha256": "6ef96131cbaade4dc4119d2e18a6a5ed1bb1e45c291f405b2f1805d999049cea"
+    }
+  },
+  "first_business_attempt": {
+    "process_exit_code": 1,
+    "tests": 52,
+    "failures": 1,
+    "errors": 0,
+    "skipped": 0,
+    "reason": "Incorrect expectation that native SDK redispatches an already-resolved call ID and appends a second result",
+    "log_sha256": "94d7f423e7a8c6bb92af82e5aca5bb96b87a98892a250da30ee58fafa5668742",
+    "reports": [
+      {
+        "suite": "com.financeclaw.m1.TaskLifecycleIT",
+        "tests": 25,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "report_sha256": "177ee6d3acdeef474661bd0dd92e6aad6675880cceb745e22746d6bde780f110",
+        "report": "/tmp/financeclaw-p3a5-verified-reports/first-business-regression/TEST-com.financeclaw.m1.TaskLifecycleIT.xml"
+      },
+      {
+        "suite": "com.financeclaw.p3.PrivateAgentRuntimeIT",
+        "tests": 14,
+        "failures": 1,
+        "errors": 0,
+        "skipped": 0,
+        "report_sha256": "65ca8034a72f348820f8c8985e9d96f9508882f99285146004ebfc3a99999426",
+        "report": "/tmp/financeclaw-p3a5-verified-reports/first-business-regression/TEST-com.financeclaw.p3.PrivateAgentRuntimeIT.xml"
+      },
+      {
+        "suite": "com.financeclaw.m0.RecoveryIT",
+        "tests": 13,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "report_sha256": "35cb97d6459b317450c369820faffccd6cfd3385bb6a16d0103326abe1bf0e7e",
+        "report": "/tmp/financeclaw-p3a5-verified-reports/first-business-regression/TEST-com.financeclaw.m0.RecoveryIT.xml"
+      }
+    ],
+    "passed_tests": 51,
+    "frozen_report_directory": "/tmp/financeclaw-p3a5-verified-reports/first-business-regression",
+    "summary_sha256": "593b1f7827f1b7286d2b7183d14ac972a2f852085072ab15f5ed4ce4cc6ccb57",
+    "failsafe_summary_sha256": "f5193741374d1ec1c87818625ff390075ae008fc78d793eacb6cb0cd307de54e",
+    "failed_method": "completedChildReceiptAndFrozenTurnMemorySurviveSpringRestart",
+    "initial_test_inputs": {
+      "src/test/java/com/financeclaw/p3/PrivateAgentRuntimeIT.java": "021b33d27ceb22ad4199432b870667b811771ebdab1171aec67f9a603a678856",
+      "src/test/java/com/financeclaw/p3/PrivateAgentLoopback.java": "3ca20199f3b637915f7bd848ff8827476b2ec11bc648217950db7f0d49869e20"
+    },
+    "classification": "Test expectation mismatch against pinned SDK completed-call handling; no production defect confirmed."
+  },
+  "test_correction": {
+    "production_defect_confirmed": false,
+    "original_wrong_assumption": "A model request repeating a completed call ID would redispatch the governed tool, consume a third root tool call and append a second ToolResult.",
+    "confirmed_sdk_behavior": "The fixed SDK filters completed tool IDs before acting. No second governed dispatch occurs; the parent consumes the saved result and root tool count remains two.",
+    "changed_expectations": "Assert one wire result against the paused canonical child receipt, root model 5 / tool 2 / child 1, while preserving the explicit repeated CALL/input and all A/B, budget, privacy, attempt and binding checks.",
+    "unchanged_test_limits": "No timeout, budget, profile, child-count or authorization/privacy assertion was weakened."
+  },
+  "sdk_primary_evidence": {
+    "version": "2.0.3",
+    "files": [
+      {
+        "path": "/tmp/financeclaw-p3a5-CallExecution-bytecode.txt",
+        "sha256": "d34186e833e39131d49d6606e6ff5c9d17b7207c3ecfb401f902e6a65f0ca9ff"
+      },
+      {
+        "path": "/tmp/p3a4-call-execution-javap.txt",
+        "sha256": "d34186e833e39131d49d6606e6ff5c9d17b7207c3ecfb401f902e6a65f0ca9ff"
+      },
+      {
+        "path": "/tmp/p3a5-openai-format-javap.txt",
+        "sha256": "5d7563b738ed98b77143811bd43f5e382a55d64d000d5d8cd900d67fa05d8bca"
+      }
+    ],
+    "execution": "CallExecution.getPendingToolUseIds collects context ToolResult IDs; lambda$getPendingToolUseIds$8 excludes a requested ID already in that result set. An empty acting list continues executeIteration without dispatch.",
+    "formatter": "OpenAIChatFormatter.doFormat adds each formatted message; no formatter deduplication explains the observed single result."
+  },
+  "execution_contract": {
+    "path": "Native parent delegate -> committed child business result -> real request_city waiting/sealed receipt -> same-JVM Spring restart -> HTTP answer/new attempt -> repeated same-call request skipped by SDK -> parent consumes saved result",
+    "state_preserved_across_restart": "PostgreSQL and the loopback SSE server/captured requests remain alive; only the Spring application context restarts.",
+    "result_reuse": "The resumed root checkpoint preserves the completed tool result, checked against the paused committed child receipt. This case neither re-enters the business child-result cache branch nor resumes or adopts old child SDK final checkpoints.",
+    "memory": "The original Turn retains profile A; a later ordinary Turn reads profile B.",
+    "release": "The old frozen binding and completed result remain unchanged when leaf current becomes non-empty; this case does not re-enter beginPrivate to resolve the target again.",
+    "answer_replay": "Replaying the same HTTP answer must not produce a third attempt or another model request.",
+    "budget": "A root model limit of three must not reset when the answered interaction creates a new attempt.",
+    "negative_paths": [
+      "waiting cancellation",
+      "grant revocation while waiting",
+      "forget while waiting"
+    ],
+    "retained_authorities": [
+      "normal sealed root receipt",
+      "current parent Claim/fence",
+      "privacy epoch and grant revision",
+      "immutable target release",
+      "persistent parent and child budgets"
+    ],
+    "repeated_call": "The model explicitly requests the same call ID/input, but the SDK filters completed IDs before acting; no second governed tool dispatch occurs, so root tool count remains two.",
+    "saved_result_reference": "The sole wire result was checked against the independently captured canonical committed child receipt from the paused state.",
+    "positive_first_turn_counters": {
+      "root_model_calls": 5,
+      "root_tool_calls": 2,
+      "child_model_calls": 1,
+      "child_tool_calls": 0
+    },
+    "positive_first_turn_wire_calls": {
+      "parent_model_requests": 4,
+      "child_model_requests": 1
+    },
+    "positive_with_next_turn_wire_calls": {
+      "parent_model_requests": 5,
+      "child_model_requests": 1,
+      "note": "Includes one parent request in the later ordinary Turn; first-Turn persistent counters remain separate."
+    }
+  },
+  "frozen_inputs": {
+    "production_baseline_manifest": "/tmp/financeclaw-p3a5-baseline/production-inputs.json",
+    "production_baseline_manifest_sha256": "c7a04a05bf086695d82254f1398efd0d0e7ab1a49c03a3c59c9e3eb7c55c78ca",
+    "production_paths": 305,
+    "production_changes": [],
+    "test_inputs": {
+      "src/test/java/com/financeclaw/p3/PrivateAgentRuntimeIT.java": "eb5216fe2f1fd9ebf01549fc23a7b8ea155d1fd59202621cfa3fd36463d195ee",
+      "src/test/java/com/financeclaw/p3/PrivateAgentLoopback.java": "d1bd7abf90a171fc00930de197ba423a617388012ce7745d8b7b11b2f1641abf"
+    },
+    "local_jar_path": "target/financeclaw-java-0.1.0-SNAPSHOT.jar",
+    "local_jar_sha256": "be9cee69755450dc8abacb1fbe75876927e3d61f91dc1ca9b70829bb1d169128",
+    "production_classes_matching_local_jar": 392,
+    "remote_jar_byte_identity_verified": false,
+    "note": "Unchanged production and the local validation JAR are frozen; no byte-identity claim is made about a downloaded CI JAR."
+  },
+  "change_scope": {
+    "test_files": [
+      "src/test/java/com/financeclaw/p3/PrivateAgentRuntimeIT.java",
+      "src/test/java/com/financeclaw/p3/PrivateAgentLoopback.java"
+    ],
+    "production_changes": [],
+    "sql_changes": [],
+    "new_tables": [],
+    "new_polling": false
+  },
+  "environment_events": [
+    {
+      "stage": "Testcontainers Ryuk startup, before PostgreSQL or any business case",
+      "status": "environment interruption",
+      "business_cases_entered": false,
+      "postgres_started": false,
+      "test_compile_passed": true,
+      "maven_exit_code": 143,
+      "docker_probes_timed_out": [
+        "version",
+        "inspect own Ryuk",
+        "logs own Ryuk"
+      ],
+      "probe_timeout_seconds": 8,
+      "log_path": "/tmp/financeclaw-p3a5-verified-reports/environment/docker-unresponsive-before-cases.log",
+      "log_sha256": "302c94e43937c9f9d7471ed0d4d8e78e398ec9694d5e1b18bb3b436f084b87bb",
+      "test_sources_compiled": 147,
+      "frozen_summary_path": "/tmp/financeclaw-p3a5-verified-reports/environment/summary.json",
+      "frozen_summary_sha256": "beafdd7a547cc7ae2efdc35112a79780e5d8ecd485eccb713e1c7b6eb38e1501",
+      "termination": "Only the current Maven process tree was sent SIGTERM; no business case outcome is inferred.",
+      "docker_restart": {
+        "previous_user_authorization": true,
+        "normal_quit_left_old_backend_running": true,
+        "old_backend_pid": 33807,
+        "old_backend_termination": "SIGTERM to that single backend, confirmed exited before reopening Docker",
+        "open_mode": "open -g Docker",
+        "api_ready_confirmed_at_event": false
+      },
+      "classification": "Environment interruption, neither a passing business case nor a business assertion failure."
+    },
+    {
+      "stage": "Docker API recovery",
+      "status": "recovered",
+      "ready_at_utc": "2026-10-24T07:42:38.468700+00:00",
+      "docker_version_process_exit_code": 0,
+      "docker_server_version": "26.1.1"
+    }
+  ],
+  "remote_baseline": {
+    "commit": "467ba8f924293601c3770e83a4ed969678ffd682",
+    "branch": "codex/java-agentscope",
+    "workflow_run_id": 40072812866,
+    "workflow_url": "https://github.com/westbrook0904/FinanceClaw/actions/runs/40072812866",
+    "status": "completed",
+    "conclusion": "success",
+    "verify": {
+      "job_id": 120809719977,
+      "status": "completed",
+      "conclusion": "success",
+      "unit_tests": 1242,
+      "integration_tests": 469,
+      "java_tests": 1711,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "script_tests": 46
+    },
+    "delivery": {
+      "job_id": 120812223515,
+      "status": "completed",
+      "conclusion": "success",
+      "checks": 44
+    },
+    "includes_p3a5": false,
+    "record_path": "target/p3a5/remote-ci-40072812866.json",
+    "record_sha256": "39aa91cc5321736ba46c634dca88a3148bb1bb9aec20b6457bb942c15dd007f2"
+  },
+  "historical_evidence": {
+    "p3a4_path": "docs/architecture/evidence/p3a4-implementation.json",
+    "p3a4_sha256": "2c551cf9110067b5f29b5af6d6d6f319c0328b38250da589ebb4bc6bf686d7b4",
+    "unchanged": true,
+    "note": "The original pre-commit 1404-case local scope and historical failures remain intact; the later complete 1711/46/44 remote run is separate."
+  },
+  "not_certified": [
+    "P3a.5 remote CI",
+    "a single green 52-case selected run",
+    "a new unit, full-project integration, Compose or Python-script rerun in this module",
+    "business child-cache branch re-entry in this resume case",
+    "child SDK continuation across attempts",
+    "root recovery without a sealed receipt",
+    "private parent-child resume chain in a separately restarted JVM or independently forked application JAR",
+    "live external providers or production capacity",
+    "P3a overall completion"
+  ]
+}

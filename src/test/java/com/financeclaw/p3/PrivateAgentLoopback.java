@@ -47,14 +47,26 @@ final class PrivateAgentLoopback implements AutoCloseable {
         }
 
         String toolResult(String callId) {
+            var results = toolResults(callId);
+            return results.isEmpty() ? null : results.getFirst();
+        }
+
+        /** 读取当前 wire 的匹配结果；条数取决于 SDK 已完成 callId 语义，不能假设必然追加第二份。 */
+        List<String> toolResults(String callId) {
+            var results = new ArrayList<String>();
             for (var message : payload.path("messages")) {
                 if (message.path("role").asText().equals("tool")
                         && message.path("tool_call_id").asText().equals(callId)) {
                     var content = message.path("content");
-                    return content.isTextual() ? content.asText() : content.toString();
+                    results.add(content.isTextual() ? content.asText() : content.toString());
                 }
             }
-            return null;
+            return List.copyOf(results);
+        }
+
+        String lastToolResult(String callId) {
+            var results = toolResults(callId);
+            return results.isEmpty() ? null : results.getLast();
         }
     }
 

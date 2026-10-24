@@ -29,6 +29,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Function;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.parallel.Execution;
@@ -57,6 +58,8 @@ class PrivateAgentRuntimeIT {
     private static final String ANSWER = "LEAF_ANSWER_SENTINEL";
     private static final String FINAL = "PARENT_FINAL_FROM_LEAF";
     private static final String CALL = "delegate-call";
+    private static final String CITY_CALL = "city-resume-call";
+    private static final String CITY = "CITY_RESUME_SENTINEL";
     private final ObjectMapper json = new ObjectMapper();
     private final PostgreSQLContainer<?> postgres =
             new PostgreSQLContainer<>("postgres:16.10-alpine");
@@ -81,65 +84,103 @@ class PrivateAgentRuntimeIT {
         }
     }
 
+    /** 保存暂停时的持久事实；后续只从 HTTP 回答恢复，不把这些值交给生产代码伪造 attempt。 */
+    record Waiting(
+            Published published,
+            Turn turn,
+            JsonNode question,
+            String commandId,
+            String attemptId,
+            String releaseHash,
+            String childReceipt,
+            List<Map<String, Object>> sdkRows,
+            Map<String, Object> memorySnapshot) {
+        String answerPath() {
+            return turn.path() + "/interactions/" + question.path("id").asText() + "/answer";
+        }
+    }
+
     @BeforeAll
     void startApplication() throws Exception {
         try {
             postgres.start();
             model = new PrivateAgentLoopback();
-            var properties = new LinkedHashMap<String, String>();
-            properties.put("spring.datasource.url", postgres.getJdbcUrl());
-            properties.put("spring.datasource.username", postgres.getUsername());
-            properties.put("spring.datasource.password", postgres.getPassword());
-            properties.put("spring.datasource.hikari.maximum-pool-size", "6");
-            properties.put("spring.config.import", "");
-            properties.put("server.port", "0");
-            properties.put("spring.main.banner-mode", "off");
-            properties.put("financeclaw.worker.enabled", "true");
-            properties.put("financeclaw.worker.parallelism", "1");
-            properties.put("financeclaw.worker.poll-ms", "100");
-            properties.put("financeclaw.worker.idle-max-ms", "100");
-            properties.put("financeclaw.worker.lease-ms", "60000");
-            properties.put("financeclaw.worker.heartbeat-ms", "1000");
-            properties.put("financeclaw.integrations.enabled", "false");
-            properties.put("financeclaw.memory.enabled", "false");
-            properties.put("financeclaw.memory.profile-enabled", "true");
-            properties.put("financeclaw.memory.profile-directory", "");
-            properties.put("financeclaw.memory.forget-ledger.enabled", "false");
-            properties.put("financeclaw.auth.token", TOKEN);
-            properties.put("financeclaw.auth.tenant", OWNER.tenant());
-            properties.put("financeclaw.auth.subject", OWNER.subject());
-            properties.put("financeclaw.model.name", "offline");
-            properties.put("financeclaw.model.api-key", "synthetic-loopback-key");
-            properties.put("financeclaw.fallback.name", "");
-            properties.put("financeclaw.feishu.enabled", "false");
-            properties.put("financeclaw.business.hotel.enabled", "false");
-            properties.put("financeclaw.business.taibu.enabled", "false");
-            properties.put("financeclaw.business.ziwei.enabled", "false");
-            application =
-                    new SpringApplicationBuilder(FinanceClawApplication.class)
-                            .web(WebApplicationType.SERVLET)
-                            .run(
-                                    properties.entrySet().stream()
-                                            .map(e -> "--" + e.getKey() + "=" + e.getValue())
-                                            .toArray(String[]::new));
-            api =
-                    "http://127.0.0.1:"
-                            + ((ServletWebServerApplicationContext) application)
-                                    .getWebServer()
-                                    .getPort();
             http =
                     HttpClient.newBuilder()
                             .version(HttpClient.Version.HTTP_1_1)
                             .connectTimeout(Duration.ofSeconds(5))
                             .build();
-            sql = new JdbcTemplate(application.getBean(DataSource.class));
-            agents = application.getBean(AgentService.class);
-            releases = application.getBean(ReleaseService.class);
-            assertThat(application.getBean(TaskWorker.class)).isNotNull();
+            startSpring();
+
         } catch (Exception | Error failure) {
             stopApplication();
             throw failure;
         }
+    }
+
+    /** Spring 可以关闭再启动，PG、模型 HTTP 服务、请求记录及测试 HTTP client 都由外层生命周期持有。 */
+    private void startSpring() {
+        var properties = new LinkedHashMap<String, String>();
+        properties.put("spring.datasource.url", postgres.getJdbcUrl());
+        properties.put("spring.datasource.username", postgres.getUsername());
+        properties.put("spring.datasource.password", postgres.getPassword());
+        properties.put("spring.datasource.hikari.maximum-pool-size", "6");
+        properties.put("spring.config.import", "");
+        properties.put("server.port", "0");
+        properties.put("spring.main.banner-mode", "off");
+        properties.put("financeclaw.worker.enabled", "true");
+        properties.put("financeclaw.worker.parallelism", "1");
+        properties.put("financeclaw.worker.poll-ms", "100");
+        properties.put("financeclaw.worker.idle-max-ms", "100");
+        properties.put("financeclaw.worker.lease-ms", "60000");
+        properties.put("financeclaw.worker.heartbeat-ms", "1000");
+        properties.put("financeclaw.integrations.enabled", "false");
+        properties.put("financeclaw.memory.enabled", "false");
+        properties.put("financeclaw.memory.profile-enabled", "true");
+        properties.put("financeclaw.memory.profile-directory", "");
+        properties.put("financeclaw.memory.forget-ledger.enabled", "false");
+        properties.put("financeclaw.auth.token", TOKEN);
+        properties.put("financeclaw.auth.tenant", OWNER.tenant());
+        properties.put("financeclaw.auth.subject", OWNER.subject());
+        properties.put("financeclaw.model.name", "offline");
+        properties.put("financeclaw.model.api-key", "synthetic-loopback-key");
+        properties.put("financeclaw.fallback.name", "");
+        properties.put("financeclaw.feishu.enabled", "false");
+        properties.put("financeclaw.business.hotel.enabled", "false");
+        properties.put("financeclaw.business.taibu.enabled", "false");
+        properties.put("financeclaw.business.ziwei.enabled", "false");
+        application =
+                new SpringApplicationBuilder(FinanceClawApplication.class)
+                        .web(WebApplicationType.SERVLET)
+                        .run(
+                                properties.entrySet().stream()
+                                        .map(e -> "--" + e.getKey() + "=" + e.getValue())
+                                        .toArray(String[]::new));
+        api =
+                "http://127.0.0.1:"
+                        + ((ServletWebServerApplicationContext) application)
+                                .getWebServer()
+                                .getPort();
+        sql = new JdbcTemplate(application.getBean(DataSource.class));
+        agents = application.getBean(AgentService.class);
+        releases = application.getBean(ReleaseService.class);
+        assertThat(application.getBean(TaskWorker.class)).isNotNull();
+    }
+
+    /** 只重启应用；调用方必须先进入持久 waiting/终态，不能靠关闭进程手工制造新 attempt。 */
+    private void restartSpring() throws InterruptedException {
+        waitCommandsFinished();
+        model.awaitIdle(Duration.ofSeconds(5));
+        var previous = application;
+        previous.close();
+        assertThat(previous.isActive()).isFalse();
+        application = null;
+        // 旧 Hikari 已随 context 关闭；后续所有 SQL 和管理用例必须重新取得新 context 的 bean。
+        sql = null;
+        agents = null;
+        releases = null;
+        startSpring();
+        assertThat(application).isNotSameAs(previous);
     }
 
     @BeforeEach
@@ -522,7 +563,605 @@ class PrivateAgentRuntimeIT {
         assertLateReplyRejected(turn);
     }
 
+    @Test
+    void completedChildReceiptAndFrozenTurnMemorySurviveSpringRestart() throws Exception {
+        var published = publish(32, List.of("function:request_city"));
+        String profileA = "PROFILE_A_FROZEN_FOR_WAITING_TURN";
+        String profileB = "PROFILE_B_ONLY_FOR_NEXT_TURN";
+        String changedLeafPrompt = "NEW_NON_LEAF_PROMPT_MUST_NOT_REPLACE_FROZEN_TARGET";
+        String nextAnswer = "NEXT_TURN_USES_CURRENT_PROFILE";
+        var canonicalReceipt = new AtomicReference<String>();
+        updateProfile(profileA);
+        waitingScript(
+                published,
+                request -> {
+                    if (request.round() == 3) {
+                        // 恢复输入必须带上原始已完成子回执与本次 HTTP 城市答复；画像仍是受理时的 A。
+                        assertThat(canonicalReceipt.get()).isNotBlank();
+                        assertThat(request.toolResults(CALL)).hasSize(1);
+                        assertThat(request.lastToolResult(CALL)).isEqualTo(canonicalReceipt.get());
+                        assertThat(object(request.lastToolResult(CALL)).path("answer").asText())
+                                .isEqualTo(ANSWER);
+                        assertThat(object(request.lastToolResult(CITY_CALL)).path("city").asText())
+                                .isEqualTo(CITY);
+                        assertThat(request.serialized())
+                                .contains(profileA)
+                                .doesNotContain(profileB, changedLeafPrompt);
+                        assertThat(request.toolNames())
+                                .containsExactlyInAnyOrder(
+                                        published.tool(), "request_city", "read_artifact_range");
+                        // 显式重复同 CALL 观察 SDK 对已完成 ID 的去重；旧结果来自恢复的检查点，
+                        // 不再次进入 GovernedTools/子业务回执边界，也不再次扣根工具预算。
+                        return PrivateAgentLoopback.Reply.tool(
+                                CALL, published.tool(), Map.of("message", MESSAGE));
+                    }
+                    if (request.round() == 4) {
+                        assertThat(canonicalReceipt.get()).isNotBlank();
+                        assertThat(request.toolResults(CALL)).hasSize(1);
+                        assertThat(request.lastToolResult(CALL)).isEqualTo(canonicalReceipt.get());
+                        assertThat(object(request.lastToolResult(CALL)).path("answer").asText())
+                                .isEqualTo(ANSWER);
+                        assertThat(request.serialized())
+                                .contains(profileA)
+                                .doesNotContain(profileB, changedLeafPrompt);
+                        return PrivateAgentLoopback.Reply.text(FINAL);
+                    }
+                    if (request.round() == 5) {
+                        // 同一 conversation 的新 Turn 重新冻结画像；A 是系统记忆，不应混入继承工作投影。
+                        assertThat(request.serialized())
+                                .contains(profileB)
+                                .doesNotContain(profileA, changedLeafPrompt);
+                        return PrivateAgentLoopback.Reply.text(nextAnswer);
+                    }
+                    throw new AssertionError("Unexpected parent request after resume");
+                });
+        var paused =
+                awaitWaiting(
+                        published,
+                        submit(published.parentId(), "Delegate, then ask me for a city."));
+        // 以已封存 SQL 回执为独立基准，不能把同一 wire 列表的 first/last 相等当成恢复证据。
+        canonicalReceipt.set(paused.childReceipt());
+        assertThat((String) paused.memorySnapshot().get("context"))
+                .contains(profileA)
+                .doesNotContain(profileB);
+        updateProfile(profileB);
+        // current 改为非空工具 Agent，但本 Turn 的冻结 target/旧 SDK 结果保持不变。
+        // 该重复 CALL 被 SDK 去重；这里只验旧结果与持久绑定，不声称重新运行目标或业务缓存重入。
+        agents.update(
+                OWNER,
+                published.leaf().agentId(),
+                1,
+                "Changed non-leaf",
+                changedLeafPrompt,
+                new AgentComposition("primary", List.of("function:search_catalog")));
+        var newer = agents.publish(OWNER, published.leaf().agentId(), 2, 1);
+        assertThat(newer.releaseHash()).isNotEqualTo(published.leaf().releaseHash());
+        assertThat(memorySnapshot(paused.turn())).isEqualTo(paused.memorySnapshot());
+
+        restartSpring();
+        assertWaitingWasNotReplayed(paused);
+        var accepted = answer(paused, 202);
+        assertThat(accepted.path("idempotent_replay").asBoolean()).isFalse();
+        assertCompleted(paused.turn(), FINAL);
+        assertThat(model.requests(PrivateAgentLoopback.PARENT)).hasSize(4);
+        assertThat(model.requests(PrivateAgentLoopback.LEAF)).hasSize(1);
+        assertCounters(paused.turn(), 5, 2, 1);
+        assertResumedAttempt(paused);
+        assertCompletedChildUnchanged(paused);
+        assertThat(stateVersions())
+                .containsAll(paused.sdkRows())
+                .hasSize(paused.sdkRows().size() + 1);
+        assertThat(childStateVersions(published.leaf()))
+                .isEqualTo(
+                        paused.sdkRows().stream()
+                                .filter(
+                                        row ->
+                                                childNamespace(published.leaf())
+                                                        .equals(row.get("namespace")))
+                                .toList());
+        assertThat(memorySnapshot(paused.turn())).isEqualTo(paused.memorySnapshot());
+        assertThat(integer("SELECT count(*) FROM memory.sources WHERE id=?", paused.turn().id()))
+                .isOne();
+        assertThat(
+                        integer(
+                                "SELECT count(*) FROM business.journal WHERE turn_id=? AND role='assistant'",
+                                paused.turn().id()))
+                .isOne();
+        for (var request : model.requests(PrivateAgentLoopback.PARENT)) {
+            assertThat(request.serialized()).contains(profileA).doesNotContain(profileB);
+        }
+        assertThat(model.requests(PrivateAgentLoopback.LEAF).getFirst().serialized())
+                .contains(LEAF_PROMPT, MESSAGE)
+                .doesNotContain(profileA, profileB, changedLeafPrompt);
+
+        // 回答幂等回放只返回原回执，不能让已完成的 Turn 再领取第三次 attempt 或重复调用模型。
+        var replay = answer(paused, 202);
+        assertThat(replay.path("idempotent_replay").asBoolean()).isTrue();
+        assertThat(replay.path("interaction_id").asText())
+                .isEqualTo(paused.question().path("id").asText());
+        assertResumedAttempt(paused);
+        assertThat(model.requests()).hasSize(5);
+        assertCounters(paused.turn(), 5, 2, 1);
+
+        var next =
+                submitConversation(
+                        paused.turn().conversation(),
+                        "Use the newly maintained profile in this new Turn.");
+        assertCompleted(next, nextAnswer);
+        assertThat(model.requests(PrivateAgentLoopback.PARENT)).hasSize(5);
+        assertThat(model.requests(PrivateAgentLoopback.LEAF)).hasSize(1);
+        assertThat(
+                        integer(
+                                "SELECT model_calls FROM business.turn_policies WHERE turn_id=?",
+                                next.id()))
+                .isOne();
+        assertThat(
+                        integer(
+                                "SELECT tool_calls FROM business.turn_policies WHERE turn_id=?",
+                                next.id()))
+                .isZero();
+        assertThat(
+                        integer(
+                                "SELECT count(*) FROM business.child_invocations WHERE root_turn_id=?",
+                                next.id()))
+                .isZero();
+        assertThat((String) memorySnapshot(next).get("context"))
+                .contains(profileB)
+                .doesNotContain(profileA);
+        assertThat(memorySnapshot(paused.turn())).isEqualTo(paused.memorySnapshot());
+    }
+
+    @Test
+    void resumedTurnCannotResetTheSharedRootModelBudget() throws Exception {
+        // 父两次模型 + 叶子一次模型恰好耗尽 3 次根预算；暂停与新 attempt 不是新额度。
+        var paused = pauseAfterCompletedChild(3);
+        restartSpring();
+        assertWaitingWasNotReplayed(paused);
+        answer(paused, 202);
+        var snapshot = awaitTerminal(paused.turn());
+        assertThat(snapshot.path("status").asText()).isEqualTo("blocked");
+        assertThat(snapshot.path("reason").asText()).isEqualTo("execution_budget_exhausted");
+        assertThat(snapshot.path("result").isNull()).isTrue();
+        assertThat(model.requests(PrivateAgentLoopback.PARENT)).hasSize(2);
+        assertThat(model.requests(PrivateAgentLoopback.LEAF)).hasSize(1);
+        assertCounters(paused.turn(), 3, 2, 1);
+        assertResumedAttempt(paused);
+        assertCompletedChildUnchanged(paused);
+        assertThat(stateVersions()).containsAll(paused.sdkRows());
+        assertThat(childStateVersions(paused.published().leaf()))
+                .isEqualTo(
+                        paused.sdkRows().stream()
+                                .filter(
+                                        row ->
+                                                childNamespace(paused.published().leaf())
+                                                        .equals(row.get("namespace")))
+                                .toList());
+        assertNoAssistant(paused.turn());
+    }
+
+    @Test
+    void waitingCancellationSurvivesRestartAndRejectsOldAnswer() throws Exception {
+        var paused = pauseAfterCompletedChild(32);
+        var cancelled = send("POST", paused.turn().path() + "/cancel", Map.of(), 202);
+        assertThat(cancelled.path("status").asText()).isEqualTo("cancelled");
+        restartSpring();
+        assertThat(get(paused.turn().path()).path("status").asText()).isEqualTo("cancelled");
+        assertThat(answer(paused, 409).path("error").asText()).isEqualTo("stale_interaction");
+        assertThat(get(paused.turn().path() + "/interactions").get(0).path("status").asText())
+                .isEqualTo("invalid");
+        assertNoResumedAttemptOrNetwork(paused);
+        assertCompletedChildUnchanged(paused);
+        assertThat(stateVersions()).isEqualTo(paused.sdkRows());
+        assertNoAssistant(paused.turn());
+    }
+
+    @Test
+    void waitingRevocationSurvivesRestartAndRejectsOldAnswer() throws Exception {
+        var paused = pauseAfterCompletedChild(32);
+        String path = "/v1/conversations/" + paused.turn().conversation() + "/grant";
+        long revision = get(path).path("revision").asLong();
+        var revoked = send("PUT", path, Map.of("revision", revision, "scopes", List.of()), 200);
+        assertThat(revoked.path("revision").asLong()).isEqualTo(revision + 1);
+        restartSpring();
+        assertThat(get(path).path("revision").asLong()).isEqualTo(revision + 1);
+        assertThat(answer(paused, 409).path("error").asText()).isEqualTo("authorization_changed");
+        // 拒绝回答的事务没有迁移 Turn，也没有回答/重新入队；等待状态仍可由正常取消入口结束。
+        assertThat(get(paused.turn().path()).path("status").asText()).isEqualTo("waiting");
+        assertThat(get(paused.turn().path() + "/interactions").get(0).path("status").asText())
+                .isEqualTo("pending");
+        assertNoResumedAttemptOrNetwork(paused);
+        assertCompletedChildUnchanged(paused);
+        assertThat(stateVersions()).isEqualTo(paused.sdkRows());
+        assertNoAssistant(paused.turn());
+        send("POST", paused.turn().path() + "/cancel", Map.of(), 202);
+    }
+
+    @Test
+    void waitingForgetErasesPrivateExecutionAndRejectsOldAnswerAfterRestart() throws Exception {
+        updateProfile("WAITING_PROFILE_MUST_BE_FORGOTTEN");
+        var paused = pauseAfterCompletedChild(32);
+        long epoch = get("/v1/memory/privacy").path("epoch").asLong();
+        var forgotten = send("POST", "/v1/memory/forget", Map.of("epoch", epoch), 200);
+        assertThat(forgotten.path("epoch").asLong()).isEqualTo(epoch + 1);
+        // 本 fixture 仅启用画像；本地擦除同步结束，不依赖证据 Worker 才能解除 purge 屏障。
+        var privacy = get("/v1/memory/privacy");
+        assertThat(privacy.path("epoch").asLong()).isEqualTo(epoch + 1);
+        assertThat(privacy.path("purge_pending").asBoolean()).isFalse();
+        assertForgottenExecution(paused);
+        var tombstones = stateVersions();
+        restartSpring();
+        assertThat(answer(paused, 409).path("error").asText()).isEqualTo("memory_privacy_changed");
+        assertThat(get(paused.turn().path()).path("status").asText()).isEqualTo("waiting");
+        assertNoResumedAttemptOrNetwork(paused);
+        assertForgottenExecution(paused);
+        assertThat(stateVersions()).isEqualTo(tombstones);
+        assertNoAssistant(paused.turn());
+        send("POST", paused.turn().path() + "/cancel", Map.of(), 202);
+    }
+
+    /** 正常模型先完成一次子调用，再主动选择无参数 request_city 形成持久暂停。 */
+    private void waitingScript(
+            Published published,
+            Function<PrivateAgentLoopback.Request, PrivateAgentLoopback.Reply> continuation) {
+        model.reset(
+                request -> {
+                    if (request.model().equals(PrivateAgentLoopback.LEAF)) {
+                        assertThat(request.round())
+                                .as("completed child must not make another HTTP request")
+                                .isOne();
+                        return PrivateAgentLoopback.Reply.text(ANSWER);
+                    }
+                    if (request.round() == 1) {
+                        return PrivateAgentLoopback.Reply.tool(
+                                CALL, published.tool(), Map.of("message", MESSAGE));
+                    }
+                    if (request.round() == 2) {
+                        assertThat(object(request.lastToolResult(CALL)).path("answer").asText())
+                                .isEqualTo(ANSWER);
+                        return PrivateAgentLoopback.Reply.tool(CITY_CALL, "request_city", Map.of());
+                    }
+                    return continuation.apply(request);
+                });
+    }
+
+    private Waiting pauseAfterCompletedChild(int rootModels) throws Exception {
+        var published = publish(rootModels, List.of("function:request_city"));
+        waitingScript(
+                published,
+                request -> {
+                    throw new AssertionError(
+                            "No additional model HTTP request is authorized in this scenario");
+                });
+        return awaitWaiting(
+                published,
+                submit(published.parentId(), "Delegate once, then wait for my city answer."));
+    }
+
+    /** 先观察 HTTP waiting 与已封存问题，再读数据库核对，不用 SQL 制造暂停或后续 attempt。 */
+    private Waiting awaitWaiting(Published published, Turn turn) throws Exception {
+        var snapshot = awaitStatus(turn, "waiting");
+        assertThat(snapshot.path("result").isNull()).isTrue();
+        model.awaitIdle(Duration.ofSeconds(5));
+        var questions = get(turn.path() + "/interactions");
+        assertThat(questions.isArray()).isTrue();
+        assertThat(questions.size()).isOne();
+        var question = questions.get(0);
+        assertThat(question.path("id").asText()).isNotBlank();
+        assertThat(question.path("tool").asText()).isEqualTo("request_city");
+        assertThat(question.path("kind").asText()).isEqualTo("input");
+        assertThat(question.path("status").asText()).isEqualTo("pending");
+        assertThat(question.path("live").asBoolean()).isTrue();
+        String command =
+                sql.queryForObject(
+                        "SELECT id FROM business.commands WHERE turn_id=?",
+                        String.class,
+                        turn.id());
+        String attempt =
+                sql.queryForObject(
+                        "SELECT attempt_id FROM business.commands WHERE id=?",
+                        String.class,
+                        command);
+        String release =
+                sql.queryForObject(
+                        "SELECT release_hash FROM business.turns WHERE id=?",
+                        String.class,
+                        turn.id());
+        var binding =
+                sql.queryForMap(
+                        "SELECT command_id,attempt_id,state_version,release_hash FROM business.interactions WHERE id=?",
+                        question.path("id").asText());
+        assertThat(binding)
+                .containsEntry("command_id", command)
+                .containsEntry("attempt_id", attempt)
+                .containsEntry("release_hash", release);
+        String rootNamespace =
+                ExecutionScope.hash(
+                        List.of(
+                                "financeclaw-state-v1",
+                                OWNER.tenant(),
+                                OWNER.subject(),
+                                published.parentId(),
+                                release));
+        assertThat(
+                        sql.queryForObject(
+                                "SELECT version FROM agent_runtime.states WHERE namespace=? AND NOT deleted",
+                                Long.class,
+                                rootNamespace))
+                .isEqualTo(((Number) binding.get("state_version")).longValue());
+        String receipt =
+                sql.queryForObject(
+                        "SELECT result FROM business.capability_steps WHERE turn_id=? AND namespace=? AND step='result'",
+                        String.class,
+                        turn.id(),
+                        "child:" + CALL);
+        assertThat(object(receipt).path("answer").asText()).isEqualTo(ANSWER);
+        var paused =
+                new Waiting(
+                        published,
+                        turn,
+                        question,
+                        command,
+                        attempt,
+                        release,
+                        receipt,
+                        stateVersions(),
+                        memorySnapshot(turn));
+        assertThat(paused.sdkRows()).hasSize(2);
+        assertNoResumedAttemptOrNetwork(paused);
+        assertCompletedChildUnchanged(paused);
+        assertNoAssistant(turn);
+        return paused;
+    }
+
+    /** waiting 不是失败终态，单独等待它；有界时间与本类原终态等待保持相同。 */
+    private JsonNode awaitStatus(Turn turn, String expected) throws Exception {
+        long deadline = System.nanoTime() + Duration.ofSeconds(25).toNanos();
+        JsonNode last;
+        do {
+            last = get(turn.path());
+            if (last.path("status").asText().equals(expected)) {
+                waitCommandsFinished();
+                return last;
+            }
+            if (List.of("completed", "failed", "cancelled", "blocked")
+                    .contains(last.path("status").asText())) {
+                throw new AssertionError(
+                        "Expected "
+                                + expected
+                                + ", observed "
+                                + last
+                                + "; protocol failures="
+                                + model.failures());
+            }
+            Thread.sleep(100);
+        } while (System.nanoTime() < deadline);
+        throw new AssertionError(
+                "Turn did not reach "
+                        + expected
+                        + ": "
+                        + last
+                        + "; protocol failures="
+                        + model.failures());
+    }
+
+    private void assertWaitingWasNotReplayed(Waiting paused) throws Exception {
+        assertThat(get(paused.turn().path()).path("status").asText()).isEqualTo("waiting");
+        assertThat(get(paused.turn().path() + "/interactions").get(0)).isEqualTo(paused.question());
+        assertNoResumedAttemptOrNetwork(paused);
+        assertCompletedChildUnchanged(paused);
+        assertThat(stateVersions()).isEqualTo(paused.sdkRows());
+        assertThat(memorySnapshot(paused.turn())).isEqualTo(paused.memorySnapshot());
+    }
+
+    private JsonNode answer(Waiting paused, int expectedStatus) throws Exception {
+        return send(
+                "POST",
+                paused.answerPath(),
+                Map.of(
+                        "kind",
+                        "input",
+                        "revision",
+                        paused.question().path("revision").asLong(),
+                        "answer",
+                        Map.of("city", CITY)),
+                expectedStatus);
+    }
+
+    private Map<String, Object> memorySnapshot(Turn turn) {
+        return sql.queryForMap(
+                "SELECT epoch,profile_revision,context FROM memory.turn_snapshots WHERE turn_id=?",
+                turn.id());
+    }
+
+    /** 回答后仍是原 Command；新 attempt 和 resume_id 必须由回答事务与普通 Worker 产生。 */
+    private void assertResumedAttempt(Waiting paused) {
+        var command =
+                sql.queryForMap(
+                        "SELECT id,attempt_id,status,resume_id FROM business.commands WHERE turn_id=?",
+                        paused.turn().id());
+        assertThat(command)
+                .containsEntry("id", paused.commandId())
+                .containsEntry("status", "done")
+                .containsEntry("resume_id", paused.question().path("id").asText());
+        assertThat((String) command.get("attempt_id"))
+                .isNotBlank()
+                .isNotEqualTo(paused.attemptId());
+        assertThat(
+                        integer(
+                                "SELECT count(*) FROM business.commands WHERE turn_id=?",
+                                paused.turn().id()))
+                .isOne();
+        assertThat(
+                        integer(
+                                "SELECT count(*) FROM business.attempts WHERE command_id=?",
+                                paused.commandId()))
+                .isEqualTo(2);
+        assertThat(
+                        sql.queryForObject(
+                                "SELECT outcome FROM business.attempts WHERE id=?",
+                                String.class,
+                                paused.attemptId()))
+                .isEqualTo("waiting");
+        assertThat(
+                        sql.queryForObject(
+                                "SELECT status FROM business.interactions WHERE id=?",
+                                String.class,
+                                paused.question().path("id").asText()))
+                .isEqualTo("answered");
+        assertThat(
+                        sql.queryForObject(
+                                "SELECT attempt_id FROM business.interactions WHERE id=?",
+                                String.class,
+                                paused.question().path("id").asText()))
+                .isEqualTo(paused.attemptId());
+        assertThat(
+                        sql.queryForObject(
+                                "SELECT release_hash FROM business.turns WHERE id=?",
+                                String.class,
+                                paused.turn().id()))
+                .isEqualTo(paused.releaseHash());
+    }
+
+    /** 拒答必须没有重新排队/新 attempt/模型网络访问；遗忘后 child 表会被擦除，所以此处只验根事实。 */
+    private void assertNoResumedAttemptOrNetwork(Waiting paused) {
+        var command =
+                sql.queryForMap(
+                        "SELECT id,attempt_id,status,resume_id FROM business.commands WHERE turn_id=?",
+                        paused.turn().id());
+        assertThat(command)
+                .containsEntry("id", paused.commandId())
+                .containsEntry("attempt_id", paused.attemptId())
+                .containsEntry("status", "done")
+                .containsEntry("resume_id", null);
+        assertThat(
+                        integer(
+                                "SELECT count(*) FROM business.commands WHERE turn_id=?",
+                                paused.turn().id()))
+                .isOne();
+        assertThat(
+                        integer(
+                                "SELECT count(*) FROM business.attempts WHERE command_id=?",
+                                paused.commandId()))
+                .isOne();
+        assertThat(
+                        integer(
+                                "SELECT count(*) FROM business.interactions WHERE id=? AND response_json IS NOT NULL",
+                                paused.question().path("id").asText()))
+                .isZero();
+        assertThat(
+                        integer(
+                                "SELECT model_calls FROM business.turn_policies WHERE turn_id=?",
+                                paused.turn().id()))
+                .isEqualTo(3);
+        assertThat(
+                        integer(
+                                "SELECT tool_calls FROM business.turn_policies WHERE turn_id=?",
+                                paused.turn().id()))
+                .isEqualTo(2);
+        assertThat(
+                        sql.queryForObject(
+                                "SELECT release_hash FROM business.turns WHERE id=?",
+                                String.class,
+                                paused.turn().id()))
+                .isEqualTo(paused.releaseHash());
+        assertThat(model.requests(PrivateAgentLoopback.PARENT)).hasSize(2);
+        assertThat(model.requests(PrivateAgentLoopback.LEAF)).hasSize(1);
+    }
+
+    private void assertCompletedChildUnchanged(Waiting paused) {
+        assertThat(
+                        integer(
+                                "SELECT count(*) FROM business.child_invocations WHERE root_turn_id=?",
+                                paused.turn().id()))
+                .isOne();
+        var row =
+                sql.queryForMap(
+                        "SELECT call_id,target,target_agent_id,target_release_hash,status,model_calls,tool_calls FROM business.child_invocations WHERE root_turn_id=?",
+                        paused.turn().id());
+        assertThat(row)
+                .containsEntry("call_id", CALL)
+                .containsEntry("target", "private_agent")
+                .containsEntry("target_agent_id", paused.published().leaf().agentId())
+                .containsEntry("target_release_hash", paused.published().leaf().releaseHash())
+                .containsEntry("status", "completed")
+                .containsEntry("model_calls", 1)
+                .containsEntry("tool_calls", 0);
+        assertThat(
+                        integer(
+                                "SELECT count(*) FROM business.capability_steps WHERE turn_id=? AND namespace=?",
+                                paused.turn().id(),
+                                "child:" + CALL))
+                .isOne();
+        assertThat(
+                        sql.queryForObject(
+                                "SELECT result FROM business.capability_steps WHERE turn_id=? AND namespace=? AND step='result'",
+                                String.class,
+                                paused.turn().id(),
+                                "child:" + CALL))
+                .isEqualTo(paused.childReceipt());
+    }
+
+    private void assertForgottenExecution(Waiting paused) {
+        assertThat(
+                        integer(
+                                "SELECT count(*) FROM business.child_invocations WHERE root_turn_id=?",
+                                paused.turn().id()))
+                .isZero();
+        assertThat(
+                        integer(
+                                "SELECT count(*) FROM business.capability_steps WHERE turn_id=? AND namespace LIKE 'child:%'",
+                                paused.turn().id()))
+                .isZero();
+        assertThat(
+                        integer(
+                                "SELECT count(*) FROM memory.turn_snapshots WHERE turn_id=?",
+                                paused.turn().id()))
+                .isZero();
+        assertThat(
+                        integer(
+                                "SELECT count(*) FROM agent_runtime.work_contexts WHERE turn_id=?",
+                                paused.turn().id()))
+                .isZero();
+        assertThat(
+                        sql.queryForObject(
+                                "SELECT status FROM memory.sources WHERE id=?",
+                                String.class,
+                                paused.turn().id()))
+                .isEqualTo("forgotten");
+        var erased = stateVersions();
+        assertThat(erased).hasSize(paused.sdkRows().size());
+        for (var before : paused.sdkRows()) {
+            var after =
+                    erased.stream()
+                            .filter(row -> stateKey(row).equals(stateKey(before)))
+                            .findFirst()
+                            .orElseThrow();
+            assertThat(after).containsEntry("deleted", true);
+            assertThat(((Number) after.get("version")).longValue())
+                    .isEqualTo(((Number) before.get("version")).longValue() + 1);
+        }
+        assertThat(integer("SELECT count(*) FROM agent_runtime.states WHERE payload IS NOT NULL"))
+                .isZero();
+        assertThat(integer("SELECT count(*) FROM agent_runtime.unsafe_execution_data()")).isZero();
+    }
+
+    private Map<String, Object> stateKey(Map<String, Object> row) {
+        return Map.of(
+                "namespace",
+                row.get("namespace"),
+                "user_id",
+                row.get("user_id"),
+                "session_id",
+                row.get("session_id"),
+                "state_key",
+                row.get("state_key"));
+    }
+
     private Published publish(int rootModels, boolean catalog) {
+        return publish(rootModels, catalog ? List.of("function:search_catalog") : List.of());
+    }
+
+    private Published publish(int rootModels, List<String> extraCapabilities) {
         // Leaf 与 parent 分别捕获自己的无 fallback 模型；发布顺序不让模型选择互相混淆。
         publishBase(PrivateAgentLoopback.LEAF, 32);
         String leaf = UUID.randomUUID().toString();
@@ -533,7 +1172,7 @@ class PrivateAgentRuntimeIT {
         String parent = UUID.randomUUID().toString();
         var requested = new ArrayList<String>();
         requested.add("agent:" + leaf);
-        if (catalog) requested.add("function:search_catalog");
+        requested.addAll(extraCapabilities);
         agents.create(
                 OWNER,
                 parent,
@@ -761,15 +1400,18 @@ class PrivateAgentRuntimeIT {
                 "SELECT namespace,user_id,session_id,state_key,version,deleted FROM agent_runtime.states ORDER BY namespace,user_id,session_id,state_key");
     }
 
+    private String childNamespace(PrivateAgentTarget target) {
+        return ExecutionScope.hash(
+                List.of(
+                        "financeclaw-state-v1",
+                        OWNER.tenant(),
+                        OWNER.subject(),
+                        target.agentId(),
+                        target.releaseHash()));
+    }
+
     private List<Map<String, Object>> childStateVersions(PrivateAgentTarget target) {
-        String namespace =
-                ExecutionScope.hash(
-                        List.of(
-                                "financeclaw-state-v1",
-                                OWNER.tenant(),
-                                OWNER.subject(),
-                                target.agentId(),
-                                target.releaseHash()));
+        String namespace = childNamespace(target);
         return stateVersions().stream()
                 .filter(row -> namespace.equals(row.get("namespace")))
                 .toList();

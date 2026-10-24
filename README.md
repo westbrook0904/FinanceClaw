@@ -279,7 +279,9 @@ P3a.2 提交 `c96b4e7` 已推送，[远程流水线](https://github.com/westbroo
 
 P3a.3 提交 `d433423` 已推送，[远程流水线](https://github.com/westbrook0904/FinanceClaw/actions/runs/40065079071)整体 `completed/success`：**1,242 单元 + 460 集成 = 1,702 项 Java 测试、46 项脚本测试、44 项部署检查**通过。[提交前本地证据](docs/architecture/evidence/p3a3-implementation.json)仍保留首次完整 verify 失败、精确复跑及 `single_full_verify_success=false` 的历史事实，不改写为后续远程成功。
 
-P3a.4 **已本地验收，未推送**：完整 **HTTP → Worker → 父 delegate → 子模型 → 父消费结果**链路及取消传播修复已验证，**1,242 单元 + 10 套选定集成 162 项 = 1,404 项**全部通过，新增 9 项包含其中。测试使用真实 Spring 应用和本机 SSE，业务终态仍由持久取消确认推进；本轮未重跑其余集成、Compose 或脚本。P3a.3 的 Compose 只验证发布冻结与恢复绑定，直接调用子适配器的测试也不能代替这条完整入口，详见[父子运行时验收](docs/architecture/private-agent-runtime-validation.md)。P3a 整体仍未完成。
+P3a.4 提交 `467ba8f` 已推送，[远程流水线](https://github.com/westbrook0904/FinanceClaw/actions/runs/40072812866)整体成功：**1,242 单元 + 469 集成 = 1,711 项 Java、46 项脚本、44 项部署检查**通过。完整父子入口与取消传播修复见[运行时专项](docs/architecture/private-agent-runtime-validation.md)；[提交前本地证据](docs/architecture/evidence/p3a4-implementation.json)仍保留当时 1,404 项指定范围及失败过程，不改写为远程结果。
+
+P3a.5 **已本地验收，未推送**：真实 waiting、同 JVM 内 Spring 重启、HTTP 回答及新 attempt 的 **52 个唯一用例最新结果通过**。首轮 52 项有 1 项 SDK 派发假设错误，修正后完整复跑 14 项全过，与原先通过的核心 38 项合并，不称单次 52 项全绿。恢复的是旧根检查点中的结果，不重入业务缓存或续跑子 SDK；画像、预算及隐私边界见[暂停恢复专项](docs/architecture/private-agent-resume-validation.md)。本轮未重跑单元、全项目集成、Compose 或脚本，P3a 整体仍未完成。
 
 | 文档 | 内容 |
 | --- | --- |
@@ -293,7 +295,8 @@ P3a.4 **已本地验收，未推送**：完整 **HTTP → Worker → 父 delegat
 | [画像与证据记忆](docs/architecture/user-profile-memory.md) | Markdown、来源、确认、版本和隐私 |
 | [执行数据隐私清理](docs/architecture/execution-privacy.md) | 检查点墓碑、步骤与工具文件清理、Snapshot v3 恢复门禁 |
 | [私有叶子 Agent 委派](docs/architecture/private-agent-delegation.md) | 同 owner 空工具目标、固定发布、显式消息与共享预算；P3a.3 已推送，远程 CI 成功 |
-| [父子运行时验收](docs/architecture/private-agent-runtime-validation.md) | P3a.4 完整父子模型及取消传播修复；已本地验收，未推送 |
+| [父子运行时验收](docs/architecture/private-agent-runtime-validation.md) | P3a.4 完整父子模型及取消传播修复；已推送，远程 CI 成功 |
+| [暂停恢复验收](docs/architecture/private-agent-resume-validation.md) | P3a.5 根检查点结果保留、画像与预算连续性；已本地验收，未推送 |
 | [HTTP 校验](docs/architecture/http-request-validation.md) / [Java 规范](docs/architecture/java-coding-guidelines.md) | 输入边界与关键逻辑注释约定 |
 | [运行维护](docs/operations.md) | 受理排空、配置、备份与隔离隐私恢复 |
 | [历史记录](docs/history/README.md) | 过去设计和验收证据，非当前迁移或兼容承诺 |

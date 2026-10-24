@@ -1,6 +1,8 @@
 # 私有委派完整链路验收与取消传播修复：P3a.4
 
-**状态：2026-10-24 已本地验收，未推送。** 一次最终指定范围的 verify 通过 **1,242 项单元／契约／架构 + 10 套选定集成的 162 项 = 1,404 项 Java 测试**，零失败、错误或跳过。新增的 **9 项完整父子运行时用例已包含在 162 项中**，不能再次相加。结果与输入摘要见[本轮证据](evidence/p3a4-implementation.json)。
+**状态：2026-10-24 已推送 `467ba8f`，远程 CI 成功。** [run 40072812866](https://github.com/westbrook0904/FinanceClaw/actions/runs/40072812866) 的 **1,242 单元 + 469 集成 = 1,711 项 Java、46 项脚本和 44 项部署检查**全部通过。
+
+提交前本地的一次指定范围 verify 曾通过 **1,242 单元 + 10 套选定集成 162 项 = 1,404 项**，新增 9 项包含在 162 中。[原本地证据](evidence/p3a4-implementation.json)保留该范围、两次失败和候选过程，不改写为后续远程成功。
 
 ## 完整入口验证了什么
 
@@ -54,8 +56,11 @@ HTTP 提交 → 正常受理/Command → TaskWorker → 父 ReAct
 scripts/mvn.sh -B -ntp -o spotless:apply '-Dit.test=PrivateAgentRuntimeIT,TaskLifecycleIT,ExecutionHeartbeatIT,BusinessIT,WorkingContextIT,RecoveryIT,StateAndIsolationIT,PrivateAgentDelegationIT,ChildInvocationIT,ExecutionPrivacyIT' verify
 ```
 
-集成范围覆盖新增委派、生命周期、心跳、业务工具、工作上下文、恢复、状态隔离、既有私有委派、研究子调用及执行隐私。**本轮没有重跑其余集成 suite、Compose 或 Python 脚本，不是全项目集成重跑。** 305 项生产输入对比只有 TaskAgentRuntime 变化，新增测试为 PrivateAgentRuntimeIT 与 PrivateAgentLoopback 两个文件；冻结清单记录源码、逐 suite 报告和 JAR 摘要。
+集成范围覆盖新增委派、生命周期、心跳、业务工具、工作上下文、恢复、状态隔离、既有私有委派、研究子调用及执行隐私。**提交前该次本地验证没有重跑其余集成 suite、Compose 或 Python 脚本，不是全项目集成重跑。** 305 项生产输入对比只有 TaskAgentRuntime 变化，新增测试为 PrivateAgentRuntimeIT 与 PrivateAgentLoopback 两个文件；冻结清单记录源码、逐 suite 报告和 JAR 摘要。
 
 P3a.3 提交 `d433423` 的 [run 40065079071](https://github.com/westbrook0904/FinanceClaw/actions/runs/40065079071) 为独立远程基线：**1,702 Java、46 脚本、44 部署检查**全部通过，未将这些数量加入本轮。[P3a.3 提交前证据](evidence/p3a3-implementation.json)保持原样。
 
 同 owner、冻结 release、深度一、空工具叶子及根共享预算仍按 [P3a.3 契约](private-agent-delegation.md)执行。跨 attempt SDK final 补回执、有工具叶子、共享授权、递归、独立子调度、RAG 和 Scheduler 不在本模块范围，P3a 整体仍未完成。
+
+
+后续 [P3a.5 真实暂停恢复专项](private-agent-resume-validation.md)已本地验收，未推送，52 唯一用例分次通过；恢复根检查点中的已完成结果，不重入子业务缓存，也不把旧子 SDK final 复制成新 attempt 的完成依据。

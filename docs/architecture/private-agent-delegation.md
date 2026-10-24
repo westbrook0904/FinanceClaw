@@ -83,7 +83,7 @@ SDK scope 仍包含父 attempt。**跨 attempt 只回放已提交的子业务结
 
 当时 **46 项脚本测试、44 项 Compose 检查全部通过**，隔离部署进程正常退出并完成清理。Compose 与 Java 验证使用同一生产 JAR，11 项部署输入摘要均与现场文件一致。
 
-Compose 新增的三项检查覆盖候选目录与父发布冻结目标、叶子重新发布后父目标不变，以及恢复后双方绑定保留。它们不证明离线父模型会根据自然语言触发委派；23 项 PrivateAgentDelegationIT 等测试覆盖直接进入子适配器的 SDK 链路。父 HTTP／Worker 入口到最终消费结果及取消传播修复已由 [P3a.4 专项](private-agent-runtime-validation.md)完成本地验收，未推送：1,242 单元 + 10 套选定集成 162 项 = 1,404 项通过，新增 9 项包含其中。本轮未重跑其余集成、Compose 或脚本。
+Compose 新增的三项检查覆盖候选目录与父发布冻结目标、叶子重新发布后父目标不变，以及恢复后双方绑定保留。它们不证明离线父模型会根据自然语言触发委派；23 项 PrivateAgentDelegationIT 等测试覆盖直接进入子适配器的 SDK 链路。父 HTTP／Worker 完整入口及取消传播修复已由 [P3a.4 专项](private-agent-runtime-validation.md)完成，`467ba8f` 的[远程运行](https://github.com/westbrook0904/FinanceClaw/actions/runs/40072812866)为 1,711 Java／46 脚本／44 部署全部通过；提交前 1,404 项本地范围另行保留。P3a.5 的[真实暂停恢复](private-agent-resume-validation.md)已本地验收，未推送，52 唯一用例的分次结果通过；保留根检查点中的完成结果，不重入子业务缓存或续跑旧子 SDK。
 
 P3a.2 提交 `c96b4e7` 的 [run 40055663280](https://github.com/westbrook0904/FinanceClaw/actions/runs/40055663280) 已整体成功，verify 为 1,226 单元 + 437 集成 = 1,663 项、delivery 为 41 项检查；该基线不包含本轮 P3a.3。
 
