@@ -52,7 +52,34 @@ public final class ChildInvocationService {
             String target,
             String targetAgentId,
             String targetReleaseHash,
-            int maxModelCalls) {
+            int maxModelCalls,
+            int maxToolCalls,
+            PrivateAgentTarget.Profile profile) {
+        /** 旧句柄构造保留研究十次工具、v1 私有零工具的既有含义。新 profile 只能由已校验目标派生。 */
+        public Invocation(
+                Claim parent,
+                String callId,
+                String inputHash,
+                String cachedResult,
+                List<String> snapshotResults,
+                String target,
+                String targetAgentId,
+                String targetReleaseHash,
+                int maxModelCalls) {
+            this(
+                    parent,
+                    callId,
+                    inputHash,
+                    cachedResult,
+                    snapshotResults,
+                    target,
+                    targetAgentId,
+                    targetReleaseHash,
+                    maxModelCalls,
+                    "market_research".equals(target) ? 10 : 0,
+                    PrivateAgentTarget.Profile.EMPTY);
+        }
+
         public Invocation(
                 Claim parent,
                 String callId,
@@ -84,7 +111,7 @@ public final class ChildInvocationService {
     public record PrivateInvocation(Invocation invocation, ResolvedAgentRelease release) {}
 
     /**
-     * 仅执行父发布中显式冻结的同 owner 空工具叶子。目标只按给定 hash 解析，不能读取当前发布 替换已受理目标。控制面清单均不可变；父 gate
+     * 仅执行父发布中显式冻结的同 owner 叶子及闭集 profile。目标只按给定 hash 解析，不能读取当前发布 替换已受理目标。控制面清单均不可变；父 gate
      * 与调用绑定则在每次状态/模型/结果访问时复核。
      */
     public PrivateInvocation beginPrivate(
@@ -102,23 +129,33 @@ public final class ChildInvocationService {
         }
         var resolved = releases.resolve(target.releaseHash());
         resolved.requireIdentity(owner, target.agentId());
-        PrivateAgentTarget.requireLeaf(owner, resolved);
+        PrivateAgentTarget.requireLeaf(owner, resolved, target.profile());
         int limit = Math.min(4, resolved.definition().maxModelCalls());
+        int toolLimit = Math.min(target.maxToolCalls(), resolved.definition().maxToolCalls());
         String hash = hash(input);
         return policies.dispatch(
                 parent,
                 policy -> {
-                    requirePrivateScope(parent, policy);
+                    requirePrivateScope(parent, policy, target.profile());
                     var saved = calls.get(parent.turn().id(), callId);
                     if (saved == null) {
                         if (calls.hasSteps(parent.turn().id(), "child:" + callId))
                             throw new Blocked("child_invocation_missing");
-                        calls.insertPrivateIfAbsent(
-                                parent.turn().id(),
-                                callId,
-                                hash,
-                                target.agentId(),
-                                target.releaseHash());
+                        if (target.profile() == PrivateAgentTarget.Profile.MARKET_SNAPSHOT) {
+                            calls.insertPrivateMarketIfAbsent(
+                                    parent.turn().id(),
+                                    callId,
+                                    hash,
+                                    target.agentId(),
+                                    target.releaseHash());
+                        } else {
+                            calls.insertPrivateIfAbsent(
+                                    parent.turn().id(),
+                                    callId,
+                                    hash,
+                                    target.agentId(),
+                                    target.releaseHash());
+                        }
                         saved = calls.get(parent.turn().id(), callId);
                     }
                     var invocation =
@@ -131,7 +168,9 @@ public final class ChildInvocationService {
                                     "private_agent",
                                     target.agentId(),
                                     target.releaseHash(),
-                                    limit);
+                                    limit,
+                                    toolLimit,
+                                    target.profile());
                     validateBinding(invocation, saved, policy);
                     return new PrivateInvocation(
                             new Invocation(
@@ -143,7 +182,9 @@ public final class ChildInvocationService {
                                     "private_agent",
                                     target.agentId(),
                                     target.releaseHash(),
-                                    limit),
+                                    limit,
+                                    toolLimit,
+                                    target.profile()),
                             resolved);
                 });
     }
@@ -209,6 +250,52 @@ public final class ChildInvocationService {
             Supplier<Object> localRead) {
         requireKey(toolCallId);
         if (!"market_research".equals(invocation.target())) throw new Blocked("child_tools_denied");
+        return snapshotWithinDispatch(invocation, toolCallId, input, localRead, false);
+    }
+
+    /**
+     * 市场叶子唯一工具入口。父身份与冻结目标来自 begin 句柄；模型不能传入 release、scope 或额度。 回执输入绑定标准化 symbol 与冻结目标版本，即使 attempt
+     * 更换也不能用同一工具 ID 改查另一个输入。 仅首次本地读取预留一个子额度；其内 readFrozen 扣根工具额度，与回执在同一父事务提交或回滚。
+     */
+    public Object privateSnapshot(
+            Invocation invocation,
+            String toolCallId,
+            Map<String, Object> input,
+            Supplier<Object> localRead) {
+        requireKey(toolCallId);
+        if (!"private_agent".equals(invocation.target())
+                || invocation.profile() != PrivateAgentTarget.Profile.MARKET_SNAPSHOT
+                || invocation.maxToolCalls() != 1) {
+            throw new Blocked("child_tools_denied");
+        }
+        // 新市场 profile 的快照保持小结果；限制真实 UTF-8 ID 与控制字符的 JSON 膨胀，
+        // 不改变既有 v1/研究工具的调用 ID 协议。SDK 包装层还会核验完整结果小于 4096 字节。
+        if (!StandardCharsets.UTF_8.newEncoder().canEncode(toolCallId)
+                || toolCallId.getBytes(StandardCharsets.UTF_8).length > 512
+                || toolCallId.codePoints().anyMatch(Character::isISOControl)) {
+            throw new Blocked("child_invocation_invalid");
+        }
+        if (input == null
+                || !input.keySet().equals(Set.of("symbol"))
+                || !(input.get("symbol") instanceof String symbol)
+                || !symbol.matches("[A-Za-z0-9._-]{1,16}")) {
+            throw new Blocked("invalid_symbol");
+        }
+        var boundInput =
+                Map.<String, Object>of(
+                        "symbol",
+                        symbol.toUpperCase(java.util.Locale.ROOT),
+                        "source_release_hash",
+                        invocation.targetReleaseHash());
+        return snapshotWithinDispatch(invocation, toolCallId, boundInput, localRead, true);
+    }
+
+    private Object snapshotWithinDispatch(
+            Invocation invocation,
+            String toolCallId,
+            Map<String, Object> input,
+            Supplier<Object> localRead,
+            boolean privateMarket) {
         return policies.dispatch(
                 invocation.parent(),
                 policy -> {
@@ -219,11 +306,17 @@ public final class ChildInvocationService {
                             "tool:" + toolCallId,
                             hash(input),
                             () -> {
-                                if (calls.reserveTool(
-                                                invocation.parent().turn().id(),
-                                                invocation.callId(),
-                                                invocation.inputHash())
-                                        != 1) {
+                                int changed =
+                                        privateMarket
+                                                ? calls.reservePrivateMarketTool(
+                                                        invocation.parent().turn().id(),
+                                                        invocation.callId(),
+                                                        invocation.inputHash())
+                                                : calls.reserveTool(
+                                                        invocation.parent().turn().id(),
+                                                        invocation.callId(),
+                                                        invocation.inputHash());
+                                if (changed != 1) {
                                     throw new Blocked("child_tool_budget_exceeded");
                                 }
                                 return localRead.get();
@@ -277,7 +370,7 @@ public final class ChildInvocationService {
 
     private void validate(Invocation invocation, ChildInvocation saved, Policy policy) {
         if ("private_agent".equals(invocation.target()))
-            requirePrivateScope(invocation.parent(), policy);
+            requirePrivateScope(invocation.parent(), policy, invocation.profile());
         else requireScopes(invocation.parent(), policy);
         validateBinding(invocation, saved, policy);
     }
@@ -293,11 +386,7 @@ public final class ChildInvocationService {
                 || !Objects.equals(saved.targetReleaseHash(), invocation.targetReleaseHash())
                 || invocation.maxModelCalls() < 1
                 || invocation.maxModelCalls() > 4
-                || !(invocation.target().equals("private_agent")
-                        ? saved.scopes().isEmpty() && saved.toolCalls() == 0
-                        : invocation.target().equals("market_research")
-                                && saved.scopes().equals(List.of("market:read"))
-                                && invocation.maxModelCalls() == 4)
+                || !validToolProfile(invocation, saved)
                 || !saved.tenant().equals(turn.tenant())
                 || !saved.subject().equals(turn.subject())
                 || !saved.conversationId().equals(turn.conversationId())
@@ -317,14 +406,41 @@ public final class ChildInvocationService {
         }
     }
 
+    /** 持久化 scopes 与固定 profile 一一对应，损坏或旧式句柄不能把非零工具数据解释为空计划。 */
+    private static boolean validToolProfile(Invocation invocation, ChildInvocation saved) {
+        if ("market_research".equals(invocation.target())) {
+            return saved.scopes().equals(List.of("market:read"))
+                    && invocation.maxModelCalls() == 4
+                    && invocation.maxToolCalls() == 10;
+        }
+        if (!"private_agent".equals(invocation.target()) || invocation.profile() == null)
+            return false;
+        return switch (invocation.profile()) {
+            case EMPTY ->
+                    saved.scopes().isEmpty()
+                            && saved.toolCalls() == 0
+                            && invocation.maxToolCalls() == 0;
+            case MARKET_SNAPSHOT ->
+                    saved.scopes().equals(List.of(PrivateAgentTarget.MARKET_SCOPE))
+                            && invocation.maxToolCalls() == 1
+                            && saved.toolCalls() >= 0
+                            && saved.toolCalls() <= 1;
+        };
+    }
+
     private void requireScopes(Claim parent, Policy policy) {
         if (!policies.effectiveScopes(parent, policy).containsAll(REQUIRED)) {
             throw new Blocked("research_denied");
         }
     }
 
-    private void requirePrivateScope(Claim parent, Policy policy) {
-        if (!policies.effectiveScopes(parent, policy).contains(PrivateAgentTarget.TOOL_SCOPE)) {
+    private void requirePrivateScope(
+            Claim parent, Policy policy, PrivateAgentTarget.Profile profile) {
+        var required =
+                profile == PrivateAgentTarget.Profile.MARKET_SNAPSHOT
+                        ? List.of(PrivateAgentTarget.TOOL_SCOPE, PrivateAgentTarget.MARKET_SCOPE)
+                        : List.of(PrivateAgentTarget.TOOL_SCOPE);
+        if (profile == null || !policies.effectiveScopes(parent, policy).containsAll(required)) {
             throw new Blocked("agent_delegation_denied");
         }
     }

@@ -46,6 +46,17 @@ final class PrivateAgentLoopback implements AutoCloseable {
             return List.copyOf(names);
         }
 
+        /** 直接检查真实 HTTP wire 的 schema，避免仅凭模型发出的工具名推断子工具已注册。 */
+        JsonNode toolSchema(String name) {
+            for (var tool : payload.path("tools")) {
+                var function = tool.path("function");
+                if (function.path("name").asText().equals(name)) {
+                    return function.path("parameters");
+                }
+            }
+            throw new AssertionError("Tool is absent from model request: " + name);
+        }
+
         String toolResult(String callId) {
             var results = toolResults(callId);
             return results.isEmpty() ? null : results.getFirst();
@@ -71,17 +82,27 @@ final class PrivateAgentLoopback implements AutoCloseable {
     }
 
     record Reply(
-            String text, String callId, String tool, Map<String, Object> arguments, Gate gate) {
+            String text,
+            String callId,
+            String tool,
+            Map<String, Object> arguments,
+            Gate gate,
+            boolean fragmented) {
         static Reply text(String text) {
-            return new Reply(text, null, null, null, null);
+            return new Reply(text, null, null, null, null, false);
         }
 
         static Reply tool(String callId, String tool, Map<String, Object> arguments) {
-            return new Reply(null, callId, tool, arguments, null);
+            return new Reply(null, callId, tool, arguments, null, false);
+        }
+
+        /** 后续参数片段故意省略 id/name，复现 OpenAI SSE 参数续片而非两次完整工具调用。 */
+        static Reply fragmentedTool(String callId, String tool, Map<String, Object> arguments) {
+            return new Reply(null, callId, tool, arguments, null, true);
         }
 
         Reply held(Gate gate) {
-            return new Reply(text, callId, tool, arguments, gate);
+            return new Reply(text, callId, tool, arguments, gate, fragmented);
         }
     }
 
@@ -218,6 +239,54 @@ final class PrivateAgentLoopback implements AutoCloseable {
                                                             "arguments",
                                                             json.writeValueAsString(
                                                                     reply.arguments())))));
+            StringBuilder stream = new StringBuilder();
+            if (reply.fragmented()) {
+                String arguments = json.writeValueAsString(reply.arguments());
+                int middle = arguments.length() / 2;
+                var header =
+                        Map.of(
+                                "role",
+                                "assistant",
+                                "tool_calls",
+                                List.of(
+                                        Map.of(
+                                                "index",
+                                                0,
+                                                "id",
+                                                reply.callId(),
+                                                "type",
+                                                "function",
+                                                "function",
+                                                Map.of(
+                                                        "name",
+                                                        reply.tool(),
+                                                        "arguments",
+                                                        arguments.substring(0, middle)))));
+                stream.append("data: ")
+                        .append(
+                                json.writeValueAsString(
+                                        Map.of(
+                                                "id",
+                                                "loopback-" + model + "-" + request.round(),
+                                                "object",
+                                                "chat.completion.chunk",
+                                                "created",
+                                                1,
+                                                "model",
+                                                model,
+                                                "choices",
+                                                List.of(Map.of("index", 0, "delta", header)))))
+                        .append("\n\n");
+                delta =
+                        Map.of(
+                                "tool_calls",
+                                List.of(
+                                        Map.of(
+                                                "index",
+                                                0,
+                                                "function",
+                                                Map.of("arguments", arguments.substring(middle)))));
+            }
             var frame =
                     Map.of(
                             "id",
@@ -246,7 +315,10 @@ final class PrivateAgentLoopback implements AutoCloseable {
                                     "total_tokens",
                                     56));
             byte[] bytes =
-                    ("data: " + json.writeValueAsString(frame) + "\n\ndata: [DONE]\n\n")
+                    stream.append("data: ")
+                            .append(json.writeValueAsString(frame))
+                            .append("\n\ndata: [DONE]\n\n")
+                            .toString()
                             .getBytes(StandardCharsets.UTF_8);
             exchange.getResponseHeaders().set("Content-Type", "text/event-stream; charset=utf-8");
             exchange.getResponseHeaders().set("Cache-Control", "no-cache");

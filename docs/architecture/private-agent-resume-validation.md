@@ -1,6 +1,6 @@
 # 私有委派真实暂停恢复验收：P3a.5
 
-**状态：2026-10-24 已本地验收，未推送。** 三套选定集成的 **52 个唯一用例最新结果全部通过**，新 5 项包含其中。首轮 52 项有 1 项测试假设错误；修正后完整复跑 runtime suite 的 14 项全部通过，与原先通过且未变更的核心 38 项合并验收。`single_full_selected_run_success=false`，不称单次 52 项全绿。结果、报告来源和输入摘要见[本轮证据](evidence/p3a5-implementation.json)。
+**状态：2026-10-24 已推送 `a4a6ef4`，远程 CI 成功。** 下文提交前本地过程保持原样。 三套选定集成的 **52 个唯一用例最新结果全部通过**，新 5 项包含其中。首轮 52 项有 1 项测试假设错误；修正后完整复跑 runtime suite 的 14 项全部通过，与原先通过且未变更的核心 38 项合并验收。`single_full_selected_run_success=false`，不称单次 52 项全绿。结果、报告来源和输入摘要见[本轮证据](evidence/p3a5-implementation.json)。
 
 ## 正常恢复链路
 
@@ -51,3 +51,5 @@ scripts/mvn.sh -B -ntp -o spotless:apply test-compile -Dit.test=PrivateAgentRunt
 P3a.4 提交 `467ba8f` 的 [run 40072812866](https://github.com/westbrook0904/FinanceClaw/actions/runs/40072812866) 为独立远程基线：**1,242 单元 + 469 集成 = 1,711 Java、46 脚本、44 部署检查**全部通过，不包含本轮新 5 项。[P3a.4 原本地证据](evidence/p3a4-implementation.json)保持原样。
 
 同 owner、显式输入、深度一、4 次子模型／0 次子工具、当前 grant／隐私 epoch、持久 fence 和根 sealed receipt 保持。工具叶子、共享授权、递归、未封存 SDK 补回执、RAG 及新调度生命周期不在本模块范围，P3a 整体仍未完成。
+
+提交后 [run 40077157872](https://github.com/westbrook0904/FinanceClaw/actions/runs/40077157872) 已整体 `completed/success`：**1,242 单元 + 474 集成 = 1,716 Java、46 脚本及 44 部署检查**通过，包含本模块新增 5 项。本结果不覆盖后续 P3a.6；原本地 JSON 与分次结果不作追溯改写。

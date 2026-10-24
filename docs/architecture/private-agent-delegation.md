@@ -2,6 +2,8 @@
 
 **状态：2026-10-24 已推送 `d433423`，远程 CI 成功。** 本模块让父 Agent 同步调用同 owner 的已发布叶子 Agent，最大深度为一。没有新增子队列、租约、心跳或调度生命周期；提交前的[本地验收证据](evidence/p3a3-implementation.json)与后续远程结果分别记录。
 
+本文描述仍保留的 `agent-leaf/1` 空工具契约。固定行情扩展使用独立 v2 契约，见[P3a.6 固定行情叶子](private-agent-market-leaf.md)。
+
 ## 配置目标与父 Agent
 
 目标必须有明确的 `agent-release/3` 发布，且请求能力、实际能力和 scopes 全部为空。省略 `composition` 的继承式发布没有显式空计划，会被拒绝。目标与父请求必须属于同一 `(tenant, subject)`，父不能选择自身。
@@ -83,7 +85,7 @@ SDK scope 仍包含父 attempt。**跨 attempt 只回放已提交的子业务结
 
 当时 **46 项脚本测试、44 项 Compose 检查全部通过**，隔离部署进程正常退出并完成清理。Compose 与 Java 验证使用同一生产 JAR，11 项部署输入摘要均与现场文件一致。
 
-Compose 新增的三项检查覆盖候选目录与父发布冻结目标、叶子重新发布后父目标不变，以及恢复后双方绑定保留。它们不证明离线父模型会根据自然语言触发委派；23 项 PrivateAgentDelegationIT 等测试覆盖直接进入子适配器的 SDK 链路。父 HTTP／Worker 完整入口及取消传播修复已由 [P3a.4 专项](private-agent-runtime-validation.md)完成，`467ba8f` 的[远程运行](https://github.com/westbrook0904/FinanceClaw/actions/runs/40072812866)为 1,711 Java／46 脚本／44 部署全部通过；提交前 1,404 项本地范围另行保留。P3a.5 的[真实暂停恢复](private-agent-resume-validation.md)已本地验收，未推送，52 唯一用例的分次结果通过；保留根检查点中的完成结果，不重入子业务缓存或续跑旧子 SDK。
+Compose 新增的三项检查覆盖候选目录与父发布冻结目标、叶子重新发布后父目标不变，以及恢复后双方绑定保留。它们不证明离线父模型会根据自然语言触发委派；23 项 PrivateAgentDelegationIT 等测试覆盖直接进入子适配器的 SDK 链路。父 HTTP／Worker 完整入口及取消传播修复已由 [P3a.4 专项](private-agent-runtime-validation.md)完成，`467ba8f` 的[远程运行](https://github.com/westbrook0904/FinanceClaw/actions/runs/40072812866)为 1,711 Java／46 脚本／44 部署全部通过；提交前 1,404 项本地范围另行保留。P3a.5 的[真实暂停恢复](private-agent-resume-validation.md)已推送 `a4a6ef4`，远程 1,716 Java／46 脚本／44 部署通过；原本地 52 唯一用例的分次结果通过；保留根检查点中的完成结果，不重入子业务缓存或续跑旧子 SDK。
 
 P3a.2 提交 `c96b4e7` 的 [run 40055663280](https://github.com/westbrook0904/FinanceClaw/actions/runs/40055663280) 已整体成功，verify 为 1,226 单元 + 437 集成 = 1,663 项、delivery 为 41 项检查；该基线不包含本轮 P3a.3。
 

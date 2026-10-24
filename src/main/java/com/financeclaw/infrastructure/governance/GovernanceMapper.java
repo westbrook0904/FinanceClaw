@@ -84,6 +84,25 @@ public interface GovernanceMapper {
             @Param("targetAgent") String targetAgent,
             @Param("targetRelease") String targetRelease);
 
+    /** 市场 profile 与 v1 共用身份表，使用固定 scopes 区分；不引入可由调用方扩大的工具权限参数。 */
+    @Insert(
+            """
+            INSERT INTO business.child_invocations(
+              root_turn_id,call_id,target,target_agent_id,target_release_hash,input_hash,scopes)
+            SELECT t.id,#{call},'private_agent',#{targetAgent},#{targetRelease},#{hash},'["market:read"]'::jsonb
+            FROM business.turns t
+            JOIN memory.sources s ON s.id=t.id AND s.tenant=t.tenant AND s.subject=t.subject
+            JOIN business.turn_policies p ON p.turn_id=t.id
+            WHERE t.id=#{root}
+            ON CONFLICT(root_turn_id,call_id) DO NOTHING
+            """)
+    int insertPrivateMarketChildInvocationIfAbsent(
+            @Param("root") String root,
+            @Param("call") String call,
+            @Param("hash") String hash,
+            @Param("targetAgent") String targetAgent,
+            @Param("targetRelease") String targetRelease);
+
     @Update(
             """
             UPDATE business.child_invocations SET model_calls=model_calls+1
@@ -103,6 +122,16 @@ public interface GovernanceMapper {
               AND target='market_research' AND status='pending' AND tool_calls<10
             """)
     int updatePendingChildToolCountWithinLimit(
+            @Param("root") String root, @Param("call") String call, @Param("hash") String hash);
+
+    @Update(
+            """
+            UPDATE business.child_invocations SET tool_calls=tool_calls+1
+            WHERE root_turn_id=#{root} AND call_id=#{call} AND input_hash=#{hash}
+              AND target='private_agent' AND scopes='["market:read"]'::jsonb
+              AND status='pending' AND tool_calls<1
+            """)
+    int updatePendingPrivateMarketToolCountWithinLimit(
             @Param("root") String root, @Param("call") String call, @Param("hash") String hash);
 
     /** 与既有 result 步骤写入同事务调用；缺少回执或摘要不同不能把调用单独标为完成。 */

@@ -73,14 +73,15 @@ public class BusinessCapabilities {
         if (plan == null) return;
         for (var binding : plan.capabilities()) {
             if (!binding.kind().equals("agent")) continue;
-            PrivateAgentContracts.from(binding);
+            var target = PrivateAgentContracts.from(binding);
             if (privateAgents == null)
                 throw new com.financeclaw.domain.Governance.Blocked("capability_unavailable");
             registrar.tool(
                     binding.name(),
                     PrivateAgentTarget.DESCRIPTION,
                     PrivateAgentTarget.INPUT_SCHEMA,
-                    PrivateAgentTarget.TOOL_SCOPE,
+                    // 行情派生的委派结果必须保留 market 权限，不能降格为 artifact-only 文件。
+                    target.resultScope(),
                     param -> privateAgents.run(claim, binding, param),
                     null);
         }

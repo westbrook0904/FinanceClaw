@@ -14,8 +14,10 @@ import com.financeclaw.domain.agent.PrivateAgentTarget;
 import com.financeclaw.domain.release.BusinessFeatures;
 import com.financeclaw.domain.release.ModelProfile;
 import com.financeclaw.domain.release.ReleaseDefinition;
+import com.financeclaw.infrastructure.agentscope.capability.MarketToolSchemas;
 import com.financeclaw.infrastructure.agentscope.skills.PackagedSkills;
 import com.financeclaw.support.PayloadDigest;
+import com.financeclaw.support.PayloadJson;
 import com.financeclaw.worker.TaskWorker;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -60,6 +62,16 @@ class PrivateAgentRuntimeIT {
     private static final String CALL = "delegate-call";
     private static final String CITY_CALL = "city-resume-call";
     private static final String CITY = "CITY_RESUME_SENTINEL";
+    private static final String SNAPSHOT_CALL = "leaf-market-snapshot";
+    private static final String SYMBOL = "AAPL";
+    private static final Map<String, Object> MARKET_A =
+            market("101.11", "TARGET_FROZEN_PROVIDER_A", "2026-10-20T01:02:03Z");
+    private static final Map<String, Object> MARKET_P =
+            market("202.22", "PARENT_RELEASE_PROVIDER_P", "2026-10-21T02:03:04Z");
+    private static final Map<String, Object> MARKET_B =
+            market("303.33", "GLOBAL_CURRENT_PROVIDER_B", "2026-10-22T03:04:05Z");
+    private static final String MARKET_ANSWER =
+            ANSWER + "\nFrozen market evidence: " + PayloadJson.canonical(MARKET_A);
     private final ObjectMapper json = new ObjectMapper();
     private final PostgreSQLContainer<?> postgres =
             new PostgreSQLContainer<>("postgres:16.10-alpine");
@@ -94,7 +106,9 @@ class PrivateAgentRuntimeIT {
             String releaseHash,
             String childReceipt,
             List<Map<String, Object>> sdkRows,
-            Map<String, Object> memorySnapshot) {
+            Map<String, Object> memorySnapshot,
+            int childModels,
+            int childTools) {
         String answerPath() {
             return turn.path() + "/interactions/" + question.path("id").asText() + "/answer";
         }
@@ -799,6 +813,364 @@ class PrivateAgentRuntimeIT {
         send("POST", paused.turn().path() + "/cancel", Map.of(), 202);
     }
 
+    /** 普通控制面发布三份不同证据，真正的子工具请求必须命中父计划中已冻结的 A。 */
+    @Test
+    void marketLeafReadsItsFrozenTargetInsteadOfParentOrGlobalCurrentMarket() throws Exception {
+        var published = publishMarket(List.of());
+        String changedPrompt = "CURRENT_MARKET_LEAF_PROMPT_MUST_NOT_REPLACE_FROZEN_A";
+        // 普通草稿没有 rebase 能力：同一叶子 current 只改变提示词/hash，行情仍来自原 base A。
+        // 独立发布全局 B 并创建 B 叶子，明确区分 target A、parent P 和当前全局 B 三份数据。
+        publishMarketBase(PrivateAgentLoopback.LEAF, 32, MARKET_B);
+        String newerLeaf = UUID.randomUUID().toString();
+        agents.create(
+                OWNER,
+                newerLeaf,
+                "Independent B leaf",
+                "GLOBAL_B_LEAF_PROMPT",
+                new AgentComposition("primary", List.of("function:market_snapshot")));
+        String newerHash = agents.publish(OWNER, newerLeaf, 1, 0).releaseHash();
+        assertThat(releases.resolve(newerHash).definition().business().marketJson())
+                .isEqualTo(PayloadJson.canonical(Map.of(SYMBOL, MARKET_B)));
+        agents.update(
+                OWNER,
+                published.leaf().agentId(),
+                1,
+                "Changed market leaf",
+                changedPrompt,
+                new AgentComposition("primary", List.of("function:market_snapshot")));
+        String changedHash = agents.publish(OWNER, published.leaf().agentId(), 2, 1).releaseHash();
+        assertThat(changedHash).isNotEqualTo(published.leaf().releaseHash());
+        assertThat(releases.resolve(changedHash).definition().business().marketJson())
+                .isEqualTo(PayloadJson.canonical(Map.of(SYMBOL, MARKET_A)));
+        marketScript(
+                published,
+                MARKET_ANSWER,
+                request -> {
+                    assertThat(request.round()).isEqualTo(2);
+                    assertThat(object(request.lastToolResult(CALL)).path("answer").asText())
+                            .isEqualTo(MARKET_ANSWER);
+                    assertThat(request.serialized())
+                            .contains((String) MARKET_A.get("provider"))
+                            .doesNotContain(
+                                    (String) MARKET_P.get("provider"),
+                                    (String) MARKET_B.get("provider"));
+                    return PrivateAgentLoopback.Reply.text(FINAL);
+                });
+        var turn = submit(published.parentId(), "Use only the frozen target market evidence.");
+        assertCompleted(turn, FINAL);
+        assertThat(model.requests(PrivateAgentLoopback.PARENT)).hasSize(2);
+        assertThat(model.requests(PrivateAgentLoopback.PARENT).getFirst().toolNames())
+                .containsExactlyInAnyOrder(published.tool(), "read_artifact_range");
+        assertThat(model.requests(PrivateAgentLoopback.LEAF)).hasSize(2);
+        for (var request : model.requests(PrivateAgentLoopback.LEAF)) {
+            assertThat(request.serialized())
+                    .contains(LEAF_PROMPT, MESSAGE)
+                    .doesNotContain(PARENT_PROMPT, changedPrompt, "GLOBAL_B_LEAF_PROMPT");
+        }
+        assertCounters(turn, 4, 2, 2, 1);
+        assertMarketSnapshotReceipt(turn);
+        assertThat(
+                        sql.queryForObject(
+                                "SELECT target_release_hash FROM business.child_invocations WHERE root_turn_id=?",
+                                String.class,
+                                turn.id()))
+                .isEqualTo(published.leaf().releaseHash());
+        assertThat(integer("SELECT count(*) FROM agent_runtime.unsafe_execution_data()"))
+                .as("valid market binding and its SDK scope are safe recovery data")
+                .isZero();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"read_artifact_range", "delegate"})
+    void marketLeafCannotTurnCompileDependenciesOrNestedDelegationIntoTools(String forbidden)
+            throws Exception {
+        var published = publishMarket(List.of());
+        String name = forbidden.equals("delegate") ? published.tool() : forbidden;
+        model.reset(
+                request -> {
+                    if (request.model().equals(PrivateAgentLoopback.LEAF)) {
+                        assertMarketSchema(request);
+                        return PrivateAgentLoopback.Reply.tool(
+                                "forged-market-tool",
+                                name,
+                                forbidden.equals("delegate")
+                                        ? Map.of("message", "Nested delegation")
+                                        : Map.of(
+                                                "artifact_id",
+                                                "guessed-artifact",
+                                                "start",
+                                                0,
+                                                "max_bytes",
+                                                512));
+                    }
+                    return request.round() == 1
+                            ? PrivateAgentLoopback.Reply.tool(
+                                    CALL, published.tool(), Map.of("message", MESSAGE))
+                            : PrivateAgentLoopback.Reply.text("MARKET_TOOL_FAILURE_WAS_SWALLOWED");
+                });
+        var turn =
+                submit(published.parentId(), "The market child cannot invent another capability.");
+        var snapshot = awaitTerminal(turn);
+        assertThat(snapshot.path("status").asText()).isEqualTo("blocked");
+        assertThat(snapshot.path("reason").asText()).isEqualTo("child_tools_denied");
+        assertThat(model.requests(PrivateAgentLoopback.PARENT)).hasSize(1);
+        assertThat(model.requests(PrivateAgentLoopback.LEAF)).hasSize(1);
+        assertCounters(turn, 2, 1, 1, 0);
+        assertUnfinishedChild(turn);
+        assertNoAssistant(turn);
+        assertThat(
+                        integer(
+                                "SELECT count(*) FROM business.capability_steps WHERE turn_id=?",
+                                turn.id()))
+                .isZero();
+        assertThat(integer("SELECT count(*) FROM business.artifacts")).isZero();
+        assertThat(integer("SELECT count(*) FROM business.reports")).isZero();
+    }
+
+    @Test
+    void cancellationAfterMarketSnapshotRejectsLateChildFinalWithoutErasingCommittedEvidence()
+            throws Exception {
+        var published = publishMarket(List.of());
+        var finalGate = new AtomicReference<PrivateAgentLoopback.Gate>();
+        String lateAnswer = "LATE_MARKET_CHILD_FINAL_MUST_NOT_COMMIT";
+        String lateParent = "LATE_MARKET_PARENT_FINAL_MUST_NOT_COMMIT";
+        marketScript(
+                published,
+                lateAnswer,
+                request -> PrivateAgentLoopback.Reply.text(lateParent),
+                finalGate);
+        // reset 会释放并清理旧 gate，因此本次 gate 必须在脚本安装完成后创建。
+        var gate = model.gate();
+        finalGate.set(gate);
+        var turn = submit(published.parentId(), "Cancel after the market evidence has been read.");
+        assertThat(gate.awaitEntered(Duration.ofSeconds(10))).isTrue();
+        // 第二次子模型请求已携带成功快照；取消不能撤销已经提交的读回执，也不能允许迟到最终答复收尾。
+        assertMarketSnapshotReceipt(turn);
+        assertCounters(turn, 3, 2, 2, 1);
+        var childVersions = childStateVersions(published.leaf());
+        send("POST", turn.path() + "/cancel", Map.of(), 202);
+        var cancelled = awaitTerminal(turn);
+        assertThat(cancelled.path("status").asText()).isEqualTo("cancelled");
+        assertThat(cancelled.path("result").isNull()).isTrue();
+        assertThat(childStateVersions(published.leaf())).isEqualTo(childVersions);
+        var terminalVersions = stateVersions();
+        gate.releaseAfterInvalidation();
+        model.awaitIdle(Duration.ofSeconds(5));
+        assertThat(gate.responseAttempted()).isTrue();
+        assertThat(stateVersions()).isEqualTo(terminalVersions);
+        assertThat(get(turn.path()).path("status").asText()).isEqualTo("cancelled");
+        assertCounters(turn, 3, 2, 2, 1);
+        assertMarketSnapshotReceipt(turn);
+        assertUnfinishedChild(turn);
+        assertNoAssistant(turn);
+        assertThat(model.requests(PrivateAgentLoopback.PARENT)).hasSize(1);
+        assertThat(model.requests(PrivateAgentLoopback.LEAF)).hasSize(2);
+        for (String forbidden : List.of(lateAnswer, lateParent)) {
+            assertThat(
+                            integer(
+                                    "SELECT count(*) FROM agent_runtime.states WHERE payload::text LIKE ?",
+                                    "%" + forbidden + "%"))
+                    .isZero();
+            assertThat(
+                            integer(
+                                    "SELECT count(*) FROM agent_runtime.work_contexts WHERE (payload::text || transcript::text) LIKE ?",
+                                    "%" + forbidden + "%"))
+                    .isZero();
+        }
+    }
+
+    @Test
+    void completedMarketEvidenceSurvivesWaitingRestartAndNativeResolvedCallReplay()
+            throws Exception {
+        var published = publishMarket(List.of("function:request_city"));
+        var canonical = new AtomicReference<String>();
+        marketScript(
+                published,
+                MARKET_ANSWER,
+                request -> {
+                    if (request.round() == 2) {
+                        assertThat(object(request.lastToolResult(CALL)).path("answer").asText())
+                                .isEqualTo(MARKET_ANSWER);
+                        return PrivateAgentLoopback.Reply.tool(CITY_CALL, "request_city", Map.of());
+                    }
+                    assertThat(canonical.get()).isNotBlank();
+                    assertThat(request.toolResults(CALL)).hasSize(1);
+                    assertThat(request.lastToolResult(CALL)).isEqualTo(canonical.get());
+                    assertThat(object(request.lastToolResult(CITY_CALL)).path("city").asText())
+                            .isEqualTo(CITY);
+                    if (request.round() == 3) {
+                        // SDK 已完成 ID 去重，不重入子业务调用；其余恢复事实仍由数据库独立核验。
+                        return PrivateAgentLoopback.Reply.tool(
+                                CALL, published.tool(), Map.of("message", MESSAGE));
+                    }
+                    assertThat(request.round()).isEqualTo(4);
+                    return PrivateAgentLoopback.Reply.text(FINAL);
+                });
+        var paused =
+                awaitWaiting(
+                        published,
+                        submit(
+                                published.parentId(),
+                                "Read market evidence, then ask me for a city."),
+                        2,
+                        1);
+        canonical.set(paused.childReceipt());
+        assertMarketSnapshotReceipt(paused.turn());
+        String snapshotReceipt = marketSnapshotReceipt(paused.turn());
+        restartSpring();
+        assertWaitingWasNotReplayed(paused);
+        assertThat(answer(paused, 202).path("idempotent_replay").asBoolean()).isFalse();
+        assertCompleted(paused.turn(), FINAL);
+        assertResumedAttempt(paused);
+        assertCompletedChildUnchanged(paused);
+        assertThat(marketSnapshotReceipt(paused.turn())).isEqualTo(snapshotReceipt);
+        assertCounters(paused.turn(), 6, 3, 2, 1);
+        assertThat(model.requests(PrivateAgentLoopback.PARENT)).hasSize(4);
+        assertThat(model.requests(PrivateAgentLoopback.LEAF)).hasSize(2);
+        assertThat(childStateVersions(published.leaf()))
+                .isEqualTo(
+                        paused.sdkRows().stream()
+                                .filter(
+                                        row ->
+                                                childNamespace(published.leaf())
+                                                        .equals(row.get("namespace")))
+                                .toList());
+        assertThat(stateVersions())
+                .containsAll(paused.sdkRows())
+                .hasSize(paused.sdkRows().size() + 1);
+        assertThat(answer(paused, 202).path("idempotent_replay").asBoolean()).isTrue();
+        assertResumedAttempt(paused);
+        assertCounters(paused.turn(), 6, 3, 2, 1);
+        assertThat(model.requests()).hasSize(6);
+    }
+
+    @Test
+    void marketArchiveKeepsMarketScopeAfterOnlyMarketPermissionIsRevoked() throws Exception {
+        var published = publishMarket(List.of());
+        String head = "MARKET_ARCHIVE_VISIBLE_HEAD";
+        String tail = "MARKET_ARCHIVE_UNREAD_TAIL";
+        String answer = head + "x".repeat(14000) + tail;
+        String deniedFinal = "CURRENT_READER_OBSERVED_MARKET_SCOPE_DENIAL";
+        var reference = new AtomicReference<JsonNode>();
+        var chunk = new AtomicReference<JsonNode>();
+        marketScript(
+                published,
+                answer,
+                request -> {
+                    if (request.round() == 2) {
+                        assertThat(request.serialized()).doesNotContain(head, tail, answer);
+                        var ref = object(request.lastToolResult(CALL));
+                        assertThat(ref.path("archived").asBoolean()).isTrue();
+                        reference.set(ref);
+                        return rangeRequest("market-range", ref.path("artifact_id").asText());
+                    }
+                    if (request.round() == 3) {
+                        var read = object(request.lastToolResult("market-range"));
+                        assertThat(read.path("start").asInt()).isZero();
+                        assertThat(read.path("count").asInt()).isBetween(1, 512);
+                        assertThat(read.path("text").asText()).contains(head).doesNotContain(tail);
+                        assertThat(request.serialized())
+                                .contains(head)
+                                .doesNotContain(tail, answer);
+                        chunk.set(read);
+                        return PrivateAgentLoopback.Reply.text(FINAL);
+                    }
+                    if (request.round() == 4) {
+                        // 这是使用最新 grant revision 受理的新 Turn，不能靠旧 Claim 的通用 revision 栅栏制造假阳性。
+                        assertThat(request.toolNames()).containsExactly("read_artifact_range");
+                        assertThat(request.serialized()).doesNotContain(tail, answer);
+                        return rangeRequest(
+                                "revoked-market-range",
+                                reference.get().path("artifact_id").asText());
+                    }
+                    assertThat(request.round()).isEqualTo(5);
+                    assertThat(request.lastToolResult("revoked-market-range"))
+                            .contains("artifact_scope_denied")
+                            .doesNotContain(head, tail, answer);
+                    return PrivateAgentLoopback.Reply.text(deniedFinal);
+                });
+        var turn = submit(published.parentId(), "Read only a bounded part of the market answer.");
+        assertCompleted(turn, FINAL);
+        assertCounters(turn, 5, 3, 2, 1);
+        assertMarketSnapshotReceipt(turn);
+        var ref = reference.get();
+        assertThat(ref).isNotNull();
+        assertThat(chunk.get()).isNotNull();
+        String id = ref.path("artifact_id").asText();
+        var download = raw("GET", ref.path("download_url").asText(), null, Map.of(), 200);
+        String archived = new String(download.body(), StandardCharsets.UTF_8);
+        assertThat(archived).contains(head, tail, answer);
+        assertThat(download.body()).hasSize(ref.path("bytes").asInt());
+        assertThat(PayloadDigest.sha256(archived)).isEqualTo(ref.path("hash").asText());
+        assertThat(download.headers().firstValue("X-Artifact-SHA256"))
+                .contains(ref.path("hash").asText());
+        assertThat(chunk.get().path("text").asText())
+                .isEqualTo(new String(download.body(), 0, 512, StandardCharsets.UTF_8));
+        assertThat(chunk.get().path("nextStart").asInt()).isEqualTo(512);
+        assertThat(
+                        sql.queryForMap(
+                                "SELECT required_scope,privacy_bound FROM business.artifacts WHERE id=?",
+                                id))
+                .containsEntry("required_scope", "market:read")
+                .containsEntry("privacy_bound", true);
+        assertParentContextHasOnlyReadChunk(turn, head, tail, answer);
+
+        String grantPath = "/v1/conversations/" + turn.conversation() + "/grant";
+        long revision = get(grantPath).path("revision").asLong();
+        var changed =
+                send(
+                        "PUT",
+                        grantPath,
+                        Map.of("revision", revision, "scopes", List.of("artifact:read")),
+                        200);
+        assertThat(changed.path("revision").asLong()).isEqualTo(revision + 1);
+        assertThat(
+                        new String(
+                                raw("GET", ref.path("download_url").asText(), null, Map.of(), 403)
+                                        .body(),
+                                StandardCharsets.UTF_8))
+                .contains("artifact_scope_denied");
+        var reader =
+                submitConversation(
+                        turn.conversation(),
+                        "Read that archived market result with my current grant.");
+        // SDK 可继续一次推理解释拒权，但 ERROR 工具回执仍使最终检查点判为 failed，
+        // 不能把模型的拒权说明作为业务成功答案或 assistant journal 提交。
+        var denied = awaitTerminal(reader);
+        assertThat(denied.path("status").asText()).isEqualTo("failed");
+        assertThat(denied.path("result").isNull()).isTrue();
+        assertNoAssistant(reader);
+        assertThat(
+                        sql.queryForObject(
+                                "SELECT grant_revision FROM business.turn_policies WHERE turn_id=?",
+                                Long.class,
+                                reader.id()))
+                .isEqualTo(revision + 1);
+        assertThat(
+                        integer(
+                                "SELECT model_calls FROM business.turn_policies WHERE turn_id=?",
+                                reader.id()))
+                .isEqualTo(2);
+        assertThat(
+                        integer(
+                                "SELECT tool_calls FROM business.turn_policies WHERE turn_id=?",
+                                reader.id()))
+                .isOne();
+        assertThat(
+                        integer(
+                                "SELECT count(*) FROM business.child_invocations WHERE root_turn_id=?",
+                                reader.id()))
+                .isZero();
+        assertThat(model.requests(PrivateAgentLoopback.PARENT)).hasSize(5);
+        assertThat(model.requests(PrivateAgentLoopback.LEAF)).hasSize(2);
+        assertThat(
+                        sql.queryForObject(
+                                "SELECT required_scope FROM business.artifacts WHERE id=?",
+                                String.class,
+                                id))
+                .isEqualTo("market:read");
+    }
+
     /** 正常模型先完成一次子调用，再主动选择无参数 request_city 形成持久暂停。 */
     private void waitingScript(
             Published published,
@@ -839,6 +1211,11 @@ class PrivateAgentRuntimeIT {
 
     /** 先观察 HTTP waiting 与已封存问题，再读数据库核对，不用 SQL 制造暂停或后续 attempt。 */
     private Waiting awaitWaiting(Published published, Turn turn) throws Exception {
+        return awaitWaiting(published, turn, 1, 0);
+    }
+
+    private Waiting awaitWaiting(Published published, Turn turn, int childModels, int childTools)
+            throws Exception {
         var snapshot = awaitStatus(turn, "waiting");
         assertThat(snapshot.path("result").isNull()).isTrue();
         model.awaitIdle(Duration.ofSeconds(5));
@@ -894,7 +1271,8 @@ class PrivateAgentRuntimeIT {
                         String.class,
                         turn.id(),
                         "child:" + CALL);
-        assertThat(object(receipt).path("answer").asText()).isEqualTo(ANSWER);
+        assertThat(object(receipt).path("answer").asText())
+                .isEqualTo(childTools == 0 ? ANSWER : MARKET_ANSWER);
         var paused =
                 new Waiting(
                         published,
@@ -905,7 +1283,9 @@ class PrivateAgentRuntimeIT {
                         release,
                         receipt,
                         stateVersions(),
-                        memorySnapshot(turn));
+                        memorySnapshot(turn),
+                        childModels,
+                        childTools);
         assertThat(paused.sdkRows()).hasSize(2);
         assertNoResumedAttemptOrNetwork(paused);
         assertCompletedChildUnchanged(paused);
@@ -1052,12 +1432,12 @@ class PrivateAgentRuntimeIT {
                         integer(
                                 "SELECT model_calls FROM business.turn_policies WHERE turn_id=?",
                                 paused.turn().id()))
-                .isEqualTo(3);
+                .isEqualTo(2 + paused.childModels());
         assertThat(
                         integer(
                                 "SELECT tool_calls FROM business.turn_policies WHERE turn_id=?",
                                 paused.turn().id()))
-                .isEqualTo(2);
+                .isEqualTo(2 + paused.childTools());
         assertThat(
                         sql.queryForObject(
                                 "SELECT release_hash FROM business.turns WHERE id=?",
@@ -1065,7 +1445,7 @@ class PrivateAgentRuntimeIT {
                                 paused.turn().id()))
                 .isEqualTo(paused.releaseHash());
         assertThat(model.requests(PrivateAgentLoopback.PARENT)).hasSize(2);
-        assertThat(model.requests(PrivateAgentLoopback.LEAF)).hasSize(1);
+        assertThat(model.requests(PrivateAgentLoopback.LEAF)).hasSize(paused.childModels());
     }
 
     private void assertCompletedChildUnchanged(Waiting paused) {
@@ -1084,14 +1464,14 @@ class PrivateAgentRuntimeIT {
                 .containsEntry("target_agent_id", paused.published().leaf().agentId())
                 .containsEntry("target_release_hash", paused.published().leaf().releaseHash())
                 .containsEntry("status", "completed")
-                .containsEntry("model_calls", 1)
-                .containsEntry("tool_calls", 0);
+                .containsEntry("model_calls", paused.childModels())
+                .containsEntry("tool_calls", paused.childTools());
         assertThat(
                         integer(
                                 "SELECT count(*) FROM business.capability_steps WHERE turn_id=? AND namespace=?",
                                 paused.turn().id(),
                                 "child:" + CALL))
-                .isOne();
+                .isEqualTo(1 + paused.childTools());
         assertThat(
                         sql.queryForObject(
                                 "SELECT result FROM business.capability_steps WHERE turn_id=? AND namespace=? AND step='result'",
@@ -1155,6 +1535,186 @@ class PrivateAgentRuntimeIT {
                 row.get("session_id"),
                 "state_key",
                 row.get("state_key"));
+    }
+
+    /** 三份行情使用同一证券、不同价格/来源/采样时间，错误读取父或 global 发布时一定无法通过。 */
+    private static Map<String, Object> market(String price, String provider, String asOf) {
+        return Map.of("price", price, "currency", "USD", "provider", provider, "as_of", asOf);
+    }
+
+    private Published publishMarket(List<String> extraCapabilities) {
+        publishMarketBase(PrivateAgentLoopback.LEAF, 32, MARKET_A);
+        String leaf = UUID.randomUUID().toString();
+        agents.create(
+                OWNER,
+                leaf,
+                "Read-only market leaf",
+                LEAF_PROMPT,
+                new AgentComposition("primary", List.of("function:market_snapshot")));
+        var target =
+                new PrivateAgentTarget(
+                        leaf,
+                        agents.publish(OWNER, leaf, 1, 0).releaseHash(),
+                        PrivateAgentTarget.Profile.MARKET_SNAPSHOT);
+        publishMarketBase(PrivateAgentLoopback.PARENT, 32, MARKET_P);
+        String parent = UUID.randomUUID().toString();
+        var requested = new ArrayList<String>();
+        requested.add("agent:" + leaf);
+        requested.addAll(extraCapabilities);
+        agents.create(
+                OWNER,
+                parent,
+                "Market-delegating parent",
+                PARENT_PROMPT,
+                new AgentComposition("primary", requested));
+        String parentHash = agents.publish(OWNER, parent, 1, 0).releaseHash();
+        assertThat(releases.resolve(parentHash).definition().business().marketJson())
+                .isEqualTo(PayloadJson.canonical(Map.of(SYMBOL, MARKET_P)));
+        return new Published(parent, target);
+    }
+
+    private void publishMarketBase(String name, int maxModels, Map<String, Object> snapshot) {
+        releases.publish(
+                new ReleaseDefinition(
+                        "private-market-runtime-e2e",
+                        "finance_agent",
+                        ReleaseDefinition.SCOPES,
+                        new ModelProfile(name, model.baseUrl(), 65536, 131072, 8192, 512, false),
+                        null,
+                        maxModels,
+                        64,
+                        new BusinessFeatures(
+                                List.of(),
+                                PackagedSkills.hash(),
+                                PayloadJson.canonical(Map.of(SYMBOL, snapshot)),
+                                null)));
+    }
+
+    private void marketScript(
+            Published published,
+            String leafAnswer,
+            Function<PrivateAgentLoopback.Request, PrivateAgentLoopback.Reply> parentContinuation) {
+        marketScript(published, leafAnswer, parentContinuation, null);
+    }
+
+    /** 仅 SSE 协议由测试驱动；快照工具真实经 SDK、子调用服务和数据库预算边界执行。 */
+    private void marketScript(
+            Published published,
+            String leafAnswer,
+            Function<PrivateAgentLoopback.Request, PrivateAgentLoopback.Reply> parentContinuation,
+            AtomicReference<PrivateAgentLoopback.Gate> finalGate) {
+        model.reset(
+                request -> {
+                    if (request.model().equals(PrivateAgentLoopback.LEAF)) {
+                        assertMarketSchema(request);
+                        if (request.round() == 1) {
+                            // 首片有名字/id，后片仅续传 arguments；验证实际 SDK 参数流合并与工具白名单相容。
+                            return PrivateAgentLoopback.Reply.fragmentedTool(
+                                    SNAPSHOT_CALL, "market_snapshot", Map.of("symbol", SYMBOL));
+                        }
+                        assertThat(request.round())
+                                .as("completed market child cannot call its model again")
+                                .isEqualTo(2);
+                        assertFrozenSnapshot(
+                                request.lastToolResult(SNAPSHOT_CALL),
+                                published.leaf().releaseHash());
+                        var reply = PrivateAgentLoopback.Reply.text(leafAnswer);
+                        return finalGate == null ? reply : reply.held(finalGate.get());
+                    }
+                    if (request.round() == 1) {
+                        return PrivateAgentLoopback.Reply.tool(
+                                CALL, published.tool(), Map.of("message", MESSAGE));
+                    }
+                    return parentContinuation.apply(request);
+                });
+    }
+
+    private void assertMarketSchema(PrivateAgentLoopback.Request request) {
+        assertThat(request.toolNames()).containsExactly("market_snapshot");
+        assertThat(request.toolSchema("market_snapshot"))
+                .isEqualTo(json.valueToTree(MarketToolSchemas.SNAPSHOT));
+    }
+
+    private void assertFrozenSnapshot(String value, String frozenHash) {
+        var snapshot = object(value);
+        assertThat(snapshot.path("symbol").asText()).isEqualTo(SYMBOL);
+        for (String key : List.of("price", "currency", "provider", "as_of")) {
+            assertThat(snapshot.path(key).asText())
+                    .as("frozen target snapshot field %s", key)
+                    .isEqualTo(MARKET_A.get(key));
+        }
+        assertThat(snapshot.path("source_release_hash").asText()).isEqualTo(frozenHash);
+        assertThat(snapshot.path("input_hash").asText())
+                .isEqualTo(
+                        PayloadDigest.sha256(
+                                PayloadJson.canonical(
+                                        Map.of(
+                                                "symbol",
+                                                SYMBOL,
+                                                "source_release_hash",
+                                                frozenHash))));
+        assertThat(snapshot.path("tool_version").asText()).isEqualTo("1.0.0");
+        assertThat(value)
+                .doesNotContain(
+                        (String) MARKET_P.get("provider"), (String) MARKET_B.get("provider"));
+    }
+
+    private String marketSnapshotReceipt(Turn turn) {
+        return sql.queryForObject(
+                "SELECT result FROM business.capability_steps WHERE turn_id=? AND namespace=? AND step=?",
+                String.class,
+                turn.id(),
+                "child:" + CALL,
+                "tool:" + SNAPSHOT_CALL);
+    }
+
+    private void assertMarketSnapshotReceipt(Turn turn) {
+        String frozenHash =
+                sql.queryForObject(
+                        "SELECT target_release_hash FROM business.child_invocations WHERE root_turn_id=?",
+                        String.class,
+                        turn.id());
+        assertFrozenSnapshot(marketSnapshotReceipt(turn), frozenHash);
+        assertThat(
+                        integer(
+                                "SELECT count(*) FROM business.capability_steps WHERE turn_id=? AND namespace=? AND step LIKE 'tool:%'",
+                                turn.id(), "child:" + CALL))
+                .isOne();
+    }
+
+    private PrivateAgentLoopback.Reply rangeRequest(String callId, String artifact) {
+        return PrivateAgentLoopback.Reply.tool(
+                callId,
+                "read_artifact_range",
+                Map.of("artifact_id", artifact, "start", 0, "max_bytes", 512));
+    }
+
+    /** 完整正文只能存在子侧与归档文件；父 SDK/work context 仅允许显式读取过的有界头部。 */
+    private void assertParentContextHasOnlyReadChunk(
+            Turn turn, String head, String tail, String answer) {
+        var parentStates =
+                sql.queryForList(
+                        """
+                SELECT s.payload::text FROM agent_runtime.states s JOIN business.turns t ON t.id=?
+                WHERE NOT s.deleted
+                  AND s.namespace=agent_runtime.scope_hash(ARRAY['financeclaw-state-v1',t.tenant,t.subject,t.agent_id,t.release_hash])
+                  AND s.user_id=agent_runtime.scope_hash(ARRAY[t.tenant,t.subject])
+                """,
+                        String.class,
+                        turn.id());
+        assertThat(parentStates).hasSize(1);
+        parentStates.forEach(
+                payload -> assertThat(payload).contains(head).doesNotContain(tail, answer));
+        var work =
+                sql.queryForList(
+                        "SELECT payload::text,transcript::text FROM agent_runtime.work_contexts WHERE turn_id=?",
+                        turn.id());
+        assertThat(work).hasSize(1);
+        for (String column : List.of("payload", "transcript")) {
+            assertThat((String) work.getFirst().get(column))
+                    .contains(head)
+                    .doesNotContain(tail, answer);
+        }
     }
 
     private Published publish(int rootModels, boolean catalog) {
@@ -1351,6 +1911,11 @@ class PrivateAgentRuntimeIT {
     }
 
     private void assertCounters(Turn turn, int rootModels, int rootTools, int leafModels) {
+        assertCounters(turn, rootModels, rootTools, leafModels, 0);
+    }
+
+    private void assertCounters(
+            Turn turn, int rootModels, int rootTools, int leafModels, int leafTools) {
         assertThat(
                         integer(
                                 "SELECT model_calls FROM business.turn_policies WHERE turn_id=?",
@@ -1370,7 +1935,7 @@ class PrivateAgentRuntimeIT {
                         integer(
                                 "SELECT tool_calls FROM business.child_invocations WHERE root_turn_id=?",
                                 turn.id()))
-                .isZero();
+                .isEqualTo(leafTools);
     }
 
     private void assertNoAssistant(Turn turn) {

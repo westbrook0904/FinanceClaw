@@ -63,4 +63,4 @@ P3a.3 提交 `d433423` 的 [run 40065079071](https://github.com/westbrook0904/Fi
 同 owner、冻结 release、深度一、空工具叶子及根共享预算仍按 [P3a.3 契约](private-agent-delegation.md)执行。跨 attempt SDK final 补回执、有工具叶子、共享授权、递归、独立子调度、RAG 和 Scheduler 不在本模块范围，P3a 整体仍未完成。
 
 
-后续 [P3a.5 真实暂停恢复专项](private-agent-resume-validation.md)已本地验收，未推送，52 唯一用例分次通过；恢复根检查点中的已完成结果，不重入子业务缓存，也不把旧子 SDK final 复制成新 attempt 的完成依据。
+后续 [P3a.5 真实暂停恢复专项](private-agent-resume-validation.md)已推送 `a4a6ef4`，远程 1,716 Java／46 脚本／44 部署通过；原本地 52 唯一用例分次通过；恢复根检查点中的已完成结果，不重入子业务缓存，也不把旧子 SDK final 复制成新 attempt 的完成依据。

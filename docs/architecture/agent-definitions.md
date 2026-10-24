@@ -134,3 +134,5 @@ Content-Type: application/json
 | `agent_admin_failed` | 未知故障被脱敏；检查独立数据库连通性与 schema 状态，不从输出获取原始异常 |
 
 实现入口：[CLI](../../src/main/java/com/financeclawagent/AgentAdministrationApplication.java)、[AgentService](../../src/main/java/com/financeclaw/app/agent/AgentService.java)、[容器入口](../../ops/container-entrypoint.sh)。验证入口：[参数/文件与安全输出单测](../../src/test/java/com/financeclawagent/AgentAdministrationApplicationTest.java)、[真实打包 CLI 集成测试](../../src/test/java/com/financeclawagent/AgentAdministrationCliIT.java)。后者由 Maven `verify` 在 `package` 之后运行，需要隔离 PostgreSQL 容器；本轮已实际执行通过，使用离线模型与隔离数据库，不代表真实外部服务验收。
+
+创建后的 Agent 还可作为同 owner 父 Agent 的受限叶子目标。明确空能力发布使用[空工具契约](private-agent-delegation.md)；仅选择 `function:market_snapshot` 的发布可使用[固定行情叶子契约](private-agent-market-leaf.md)。父发布固定目标版本，目标草稿更新不会改变已有会话或父绑定。

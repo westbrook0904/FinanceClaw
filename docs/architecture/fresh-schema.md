@@ -2,7 +2,7 @@
 
 FinanceClaw Java 是独立应用，支持全新数据库初始化，以及当前 Java V1 基线之后的前向升级；不导入 Python 数据或升级过去的实验结构。
 
-主库保留 [V1 初始化 SQL](../../src/main/resources/db/migration/V1__initialize_application.sql) 的原内容和校验值。V1 创建 35 张应用表；[V2](../../src/main/resources/db/migration/V2__release_catalog.sql) 增加三张持久发布表；[V3](../../src/main/resources/db/migration/V3__conversation_release_binding.sql) 增加会话发布绑定；[V4](../../src/main/resources/db/migration/V4__agent_definitions.sql) 增加 Agent 身份、不可变草稿修订及会话/Turn 的 Agent 绑定。[V5](../../src/main/resources/db/migration/V5__agent_compositions.sql) 增加可空能力选择和 v3 发布格式标记，不改写旧正文。[V6](../../src/main/resources/db/migration/V6__child_invocations.sql) 增加固定研究子调用的身份与累计预算。[V7](../../src/main/resources/db/migration/V7__execution_privacy.sql) 增加四个执行隐私函数及三个部分索引。[V8](../../src/main/resources/db/migration/V8__private_agent_delegation.sql) 扩充既有调用表的私有叶子绑定和隐私映射，P3a.3 已推送 `d433423`，[远程 CI](https://github.com/westbrook0904/FinanceClaw/actions/runs/40065079071)成功，1,702 项 Java、46 项脚本和 44 项部署检查通过。V7/V8 均不增加表，Flyway 按序执行并验证历史校验值，最终仍为 41 张表。独立遗忘账本仍使用自己的两张表和凭据，不混入主库初始化。
+主库保留 [V1 初始化 SQL](../../src/main/resources/db/migration/V1__initialize_application.sql) 的原内容和校验值。V1 创建 35 张应用表；[V2](../../src/main/resources/db/migration/V2__release_catalog.sql) 增加三张持久发布表；[V3](../../src/main/resources/db/migration/V3__conversation_release_binding.sql) 增加会话发布绑定；[V4](../../src/main/resources/db/migration/V4__agent_definitions.sql) 增加 Agent 身份、不可变草稿修订及会话/Turn 的 Agent 绑定。[V5](../../src/main/resources/db/migration/V5__agent_compositions.sql) 增加可空能力选择和 v3 发布格式标记，不改写旧正文。[V6](../../src/main/resources/db/migration/V6__child_invocations.sql) 增加固定研究子调用的身份与累计预算。[V7](../../src/main/resources/db/migration/V7__execution_privacy.sql) 增加四个执行隐私函数及三个部分索引。[V8](../../src/main/resources/db/migration/V8__private_agent_delegation.sql) 扩充既有调用表的私有叶子绑定和隐私映射，P3a.3 已推送 `d433423`，[远程 CI](https://github.com/westbrook0904/FinanceClaw/actions/runs/40065079071)成功，1,702 项 Java、46 项脚本和 44 项部署检查通过。[V9](../../src/main/resources/db/migration/V9__private_agent_market_leaf.sql) 扩展固定行情私有叶子的约束和集合绑定核验。V7/V8/V9 均不增加表，Flyway 按序执行并验证历史校验值，最终仍为 41 张表。独立遗忘账本仍使用自己的两张表和凭据，不混入主库初始化。
 
 | 结构 | 表数 | 责任 |
 | --- | ---: | --- |
@@ -14,7 +14,7 @@ FinanceClaw Java 是独立应用，支持全新数据库初始化，以及当前
 
 报告的实体、动作身份与精确回执保存在同一行，并在执行围栏事务内一次插入。`id`、`title`、`action_hash`、`result` 均不可为空；不再存在历史半成品或恒定的 status 字段。`(turn_id, call_id)` 是业务唯一身份，`id` 另有唯一约束。
 
-`business.child_invocations` 仅保存根 Turn/工具调用 ID、固定市场研究目标、输入摘要、固定只读权限、pending/completed 和 4/10 累计计数。owner、会话、发布、epoch 和 grant revision 从根受理记录 JOIN，结果复用 `capability_steps`；没有子队列、子租约或输入/结果副本。V6 给已存在的业务角色显式授予新表 CRUD 权限，Memory Worker 不获得访问权限。详见[固定研究子调用](child-invocations.md)。
+`business.child_invocations` 仅保存根 Turn/工具调用 ID、研究目标或冻结的私有 Agent/发布、输入摘要、固定权限、pending/completed 及累计计数；研究为 4/10、空工具叶子最多 4/0、固定行情叶子最多 4/1。owner、会话、发布、epoch 和 grant revision 从根受理记录 JOIN，结果复用 `capability_steps`；没有子队列、子租约或输入/结果副本。V6 给已存在的业务角色显式授予新表 CRUD 权限，Memory Worker 不获得访问权限。详见[固定研究子调用](child-invocations.md)。
 
 初始化 SQL 按依赖顺序建表。命令/尝试与交互之间存在双向外键，因此在三表建完后追加两条外键约束；这是新库建立约束所需的步骤，不是旧库升级。
 
@@ -28,9 +28,9 @@ docker compose up -d --build --wait --wait-timeout 180
 
 已有实验数据库不在支持范围内，代码不会清空或猜测其中的数据；开发者可为当前应用指定新的数据库或新的 Compose 项目。当前版本的备份、独立遗忘事实和恢复隔离仍然需要保留。
 
-## 从当前 Java V1–V7 升级
+## 从当前 Java V1–V8 升级
 
-先保留数据库备份和旧启动配置，停止旧业务进程，再以新版 `init-db` 执行尚未应用的 V2–V8 和角色授权，最后统一启动新版业务进程。本次升级不支持新旧二进制混跑；旧进程不能提供新版本的私有目标绑定及执行隐私映射。Compose 中应明确重新运行初始化服务，不能仅重启旧的成功退出容器：
+先保留数据库备份和旧启动配置，停止旧业务进程，再以新版 `init-db` 执行尚未应用的 V2–V9 和角色授权，最后统一启动新版业务进程。本次升级不支持新旧二进制混跑；旧进程不能提供新版本的私有目标绑定及执行隐私映射。Compose 中应明确重新运行初始化服务，不能仅重启旧的成功退出容器：
 
 ```bash
 scripts/mvn.sh -B -ntp clean package -DskipTests
@@ -51,3 +51,5 @@ V6 不回填旧研究步骤的调用绑定或预算。已有 `child:<call_id>` �
 V7 的函数在后续遗忘或隔离恢复重放时清理旧执行副本；应用结构变更本身不等于已清理历史正文。SDK 状态先保留递增版本墓碑，再删除旧步骤、子调用及隐私绑定工具文件，不移除普通业务 Turn、Journal、报告或 Artifact。Snapshot v3 必须使用 V7 的全局残留函数，v2 不再作为当前恢复证明；旧快照不能补零后继续使用，应在已升级的隔离库重新导出。具体范围、未知状态阻断与验收状态见[执行数据隐私清理](execution-privacy.md)。
 
 V8 增加 `target_agent_id`、`target_release_hash` 和私有绑定不可变约束；只允许同 owner 显式空工具叶子，原市场研究字段及 scope 不回填或改写。集合恢复函数改用保存的目标和历史 attempt 派生私有 scope，不读取 current。运行仍严格校验生产工件摘要，升级后二进制不匹配的旧组合发布保持阻断；应先用新运行工件发布叶子，再重新发布父 Agent 并创建新会话，不能重写旧会话或旧目标 hash。配置和本地验收范围见[私有叶子 Agent 委派](private-agent-delegation.md)。
+
+V9 不改变旧空工具契约、调用身份或 scope 派生式；新行情档位最多一次读取，目标计划按冻结元数据严格匹配。升级后仍先发布新工件的目标与父 Agent，再创建新会话。配置与本地验证范围见[固定行情叶子](private-agent-market-leaf.md)。

@@ -6,6 +6,7 @@ import com.financeclaw.app.agent.AgentService;
 import com.financeclaw.app.execution.CapabilityStepService;
 import com.financeclaw.app.execution.ChildInvocationService;
 import com.financeclaw.app.execution.port.ChildInvocationGateway;
+import com.financeclaw.app.market.MarketDataService;
 import com.financeclaw.app.memory.MemoryService;
 import com.financeclaw.app.memory.port.ForgetRecoveryRepository;
 import com.financeclaw.app.release.ReleaseService;
@@ -91,6 +92,7 @@ class PrivateAgentDelegationIT {
     @Autowired ChildInvocationGateway calls;
     @Autowired CapabilityStepService steps;
     @Autowired MemoryService memory;
+    @Autowired MarketDataService market;
     @Autowired ForgetRecoveryRepository recovery;
     @Autowired RuntimeMapper states;
     @Autowired TransactionTemplate tx;
@@ -703,6 +705,394 @@ class PrivateAgentDelegationIT {
                                                 "agent_state"))
                                 .version())
                 .isEqualTo(2);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"artifact:read", "market:read"})
+    void marketLeafRequiresBothParentDelegationAndMarketPermission(String onlyScope) {
+        var target = marketLeaf(ALICE);
+        String conversation = submission.createConversation(ALICE, parentId(ALICE, target));
+        governance.changeGrant(ALICE, conversation, "narrow-market-parent", 1, List.of(onlyScope));
+        var parent = submit(ALICE, conversation);
+        assertThatThrownBy(() -> children.beginPrivate(parent, CALL, INPUT, target))
+                .hasMessage("agent_delegation_denied");
+        assertThat(childRows(parent)).isZero();
+        assertThat(rootModels(parent)).isZero();
+        assertThat(rootTools(parent)).isZero();
+    }
+
+    @Test
+    void marketLeafUsesItsFrozenCatalogAndReplaysTheSameSnapshotWithoutChargingAgain() {
+        publishMarketBase(32, 64, "123.45");
+        var target = marketLeaf(ALICE);
+        // 父受理版本包含另一份行情；真实父 Claim 只作执行门禁，不能替换叶子的冻结输入。
+        publishMarketBase(32, 64, "999.99");
+        var parent = parent(ALICE, target);
+        var started = children.beginPrivate(parent, CALL, INPUT, target);
+        var invocation = started.invocation();
+        children.reserveModel(invocation);
+        Map<String, Object> input = Map.of("symbol", "AAPL");
+        Object answer =
+                children.privateSnapshot(
+                        invocation,
+                        "snapshot:stable",
+                        input,
+                        () -> market.readFrozen(parent, target, started.release(), "AAPL"));
+        assertThat(((Map<?, ?>) answer).get("price")).isEqualTo("123.45");
+        assertThat(((Map<?, ?>) answer).get("source_release_hash")).isEqualTo(target.releaseHash());
+        assertThat(rootTools(parent)).isOne();
+        assertThat(calls.get(parent.turn().id(), CALL).toolCalls()).isOne();
+        var readAgain = new AtomicBoolean();
+        assertThat(
+                        children.privateSnapshot(
+                                invocation,
+                                "snapshot:stable",
+                                Map.of("symbol", "aapl"),
+                                () -> {
+                                    readAgain.set(true);
+                                    throw new AssertionError(
+                                            "A persisted snapshot cannot execute again");
+                                }))
+                .isEqualTo(answer);
+        assertThat(readAgain).isFalse();
+        assertThatThrownBy(
+                        () ->
+                                children.privateSnapshot(
+                                        invocation,
+                                        "snapshot:stable",
+                                        Map.of("symbol", "MSFT"),
+                                        () -> Map.of()))
+                .hasMessage("step_input_conflict");
+        assertThatThrownBy(
+                        () ->
+                                children.privateSnapshot(
+                                        invocation,
+                                        "another-snapshot",
+                                        input,
+                                        () -> {
+                                            readAgain.set(true);
+                                            return Map.of();
+                                        }))
+                .hasMessage("child_tool_budget_exceeded");
+        assertThat(readAgain).isFalse();
+        assertThat(rootTools(parent)).isOne();
+        assertThat(calls.get(parent.turn().id(), CALL).toolCalls()).isOne();
+        assertThat(steps.find(parent, "child:" + CALL, "tool:snapshot:stable")).isNotNull();
+        assertThat(unsafeExecutionRows()).isZero();
+
+        // 这里只测试服务层对已获授权的新 attempt 的持久回放；真实 HTTP 恢复另由运行时 IT 验证。
+        var next = nextAttempt(parent);
+        var resumed = children.beginPrivate(next, CALL, INPUT, target);
+        children.reserveModel(resumed.invocation());
+        assertThat(
+                        children.privateSnapshot(
+                                resumed.invocation(),
+                                "snapshot:stable",
+                                input,
+                                () -> {
+                                    throw new AssertionError(
+                                            "Replacement attempt must replay the original snapshot");
+                                }))
+                .isEqualTo(answer);
+        assertThatThrownBy(
+                        () ->
+                                children.privateSnapshot(
+                                        resumed.invocation(), "new-attempt-read", input, Map::of))
+                .hasMessage("child_tool_budget_exceeded");
+        assertThat(rootModels(next)).isEqualTo(2);
+        assertThat(rootTools(next)).isOne();
+        assertThat(calls.get(next.turn().id(), CALL).modelCalls()).isEqualTo(2);
+        assertThat(calls.get(next.turn().id(), CALL).toolCalls()).isOne();
+        assertThatThrownBy(
+                        () ->
+                                children.privateSnapshot(
+                                        invocation, "snapshot:stable", input, Map::of))
+                .isInstanceOf(Fenced.class);
+        assertThat(unsafeExecutionRows()).isZero();
+    }
+
+    @Test
+    void exhaustedRootToolBudgetRollsBackThePrivateSnapshotReservationAndReceipt() {
+        publishMarketBase(32, 64, "123.45");
+        var target = marketLeaf(ALICE);
+        publishMarketBase(32, 1, "999.99");
+        var parent = parent(ALICE, target);
+        var started = children.beginPrivate(parent, CALL, INPUT, target);
+        tasks.policy().consumeTool(parent, "artifact:read");
+        assertThatThrownBy(
+                        () ->
+                                children.privateSnapshot(
+                                        started.invocation(),
+                                        "snapshot",
+                                        Map.of("symbol", "AAPL"),
+                                        () ->
+                                                market.readFrozen(
+                                                        parent, target, started.release(), "AAPL")))
+                .hasMessage("execution_budget_exhausted");
+        assertThat(rootTools(parent)).isOne();
+        assertThat(calls.get(parent.turn().id(), CALL).toolCalls()).isZero();
+        assertThat(steps.find(parent, "child:" + CALL, "tool:snapshot")).isNull();
+        assertThat(unsafeExecutionRows()).isZero();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"local", "ledger"})
+    void marketLeafForgetErasesAllAttemptsAndPreservesNewEpochDuringReplay(String entrypoint) {
+        publishMarketBase(32, 64, "123.45");
+        var target = marketLeaf(ALICE);
+        var parent = parent(ALICE, target);
+        var first = children.beginPrivate(parent, CALL, INPUT, target);
+        children.reserveModel(first.invocation());
+        var evidence =
+                children.privateSnapshot(
+                        first.invocation(),
+                        "snapshot",
+                        Map.of("symbol", "AAPL"),
+                        () -> market.readFrozen(parent, target, first.release(), "AAPL"));
+        var oldScope = target.scope(parent.scope(), CALL);
+        savePrivateCheckpoint(oldScope, first.invocation());
+        var next = nextAttempt(parent);
+        var resumed = children.beginPrivate(next, CALL, INPUT, target);
+        children.reserveModel(resumed.invocation());
+        assertThat(
+                        children.privateSnapshot(
+                                resumed.invocation(),
+                                "snapshot",
+                                Map.of("symbol", "AAPL"),
+                                () -> {
+                                    throw new AssertionError(
+                                            "Cross-attempt snapshot replay cannot read the catalog");
+                                }))
+                .isEqualTo(evidence);
+        var newScope = target.scope(next.scope(), CALL);
+        savePrivateCheckpoint(newScope, resumed.invocation());
+        children.complete(
+                resumed.invocation(),
+                () -> Map.of("answer", "market evidence retained until forget"));
+        assertThat(unsafeExecutionRows()).isZero();
+        for (var scope : List.of(oldScope, newScope)) {
+            assertThat(
+                            sql.queryForObject(
+                                    "SELECT invocation_bound FROM agent_runtime.execution_scopes()"
+                                            + " WHERE root_turn_id=? AND namespace=? AND user_id=? AND session_id=?",
+                                    Boolean.class,
+                                    parent.turn().id(),
+                                    scope.namespace(),
+                                    scope.userId(),
+                                    scope.sessionId()))
+                    .isTrue();
+        }
+        var fact =
+                new ForgetFact(
+                        UUID.randomUUID().toString(),
+                        recovery.binding().lineage(),
+                        ALICE,
+                        1,
+                        "market-leaf-authoritative-forget",
+                        ForgetFact.hash(1));
+        String key = "market-leaf-local-forget";
+        if (entrypoint.equals("local")) assertThat(memory.forget(ALICE, 1, key)).isEqualTo(2);
+        else applyForget(fact, true);
+        for (var scope : List.of(oldScope, newScope)) assertPrivateTombstone(scope, 2);
+        assertThat(childRows(parent)).isZero();
+        assertThat(
+                        sql.queryForObject(
+                                "SELECT count(*) FROM business.capability_steps WHERE turn_id=?",
+                                Integer.class,
+                                parent.turn().id()))
+                .isZero();
+        assertThatThrownBy(
+                        () ->
+                                children.privateSnapshot(
+                                        resumed.invocation(),
+                                        "snapshot",
+                                        Map.of("symbol", "AAPL"),
+                                        () -> {
+                                            throw new AssertionError(
+                                                    "Forgotten snapshot cannot be read or recomputed");
+                                        }))
+                .isInstanceOfAny(Fenced.class, Blocked.class);
+        assertThat(unsafeExecutionRows()).isZero();
+
+        // 同一遗忘事实重放必须保留随后合法受理的新 epoch，不能按相同目标 hash 扫掉新正文。
+        var newer = parent(ALICE, target);
+        var fresh = children.beginPrivate(newer, CALL, INPUT, target).invocation();
+        var freshScope = target.scope(newer.scope(), CALL);
+        savePrivateCheckpoint(freshScope, fresh);
+        if (entrypoint.equals("local")) assertThat(memory.forget(ALICE, 1, key)).isEqualTo(2);
+        else applyForget(fact, false);
+        for (var scope : List.of(oldScope, newScope)) assertPrivateTombstone(scope, 2);
+        var preserved = states.getState(stateKey(freshScope));
+        assertThat(preserved.deleted()).isFalse();
+        assertThat(preserved.payload()).isNotNull();
+        assertThat(preserved.version()).isEqualTo(1);
+        assertThat(childRows(newer)).isOne();
+        assertThat(unsafeExecutionRows()).isZero();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"foreign", "empty", "unrelated", "expanded"})
+    void restoredMarketBindingIsUnsafeWithoutSdkAndRemainsLocatableForErasure(String failure) {
+        var approved = leaf(ALICE, List.of());
+        var parent = parent(ALICE, approved);
+        var owner =
+                failure.equals("foreign")
+                        ? new Owner(ALICE.tenant(), "foreign-market-owner")
+                        : ALICE;
+        var capabilities =
+                switch (failure) {
+                    case "empty" -> List.<String>of();
+                    case "unrelated" -> List.of("function:search_catalog");
+                    case "expanded" ->
+                            List.of("function:market_snapshot", "function:search_catalog");
+                    default -> List.of("function:market_snapshot");
+                };
+        var invalid = leaf(owner, capabilities);
+        String call = "restored-market:" + failure;
+        String hash = "d".repeat(64);
+        sql.update(
+                "INSERT INTO business.child_invocations(root_turn_id,call_id,target,target_agent_id,target_release_hash,input_hash,scopes,status,model_calls,tool_calls)"
+                        + " VALUES(?,?,'private_agent',?,?,?,'[\"market:read\"]'::jsonb,'completed',1,1)",
+                parent.turn().id(),
+                call,
+                invalid.agentId(),
+                invalid.releaseHash(),
+                hash);
+        sql.update(
+                "INSERT INTO business.capability_steps(turn_id,namespace,step,input_hash,result) VALUES(?,?,'result',?,?)",
+                parent.turn().id(),
+                "child:" + call,
+                hash,
+                "{\"answer\":\"invalid market restore\"}");
+        assertThat(sql.queryForObject("SELECT count(*) FROM agent_runtime.states", Integer.class))
+                .isZero();
+        assertThat(
+                        sql.queryForObject(
+                                "SELECT binding_valid FROM agent_runtime.child_invocation_bindings() WHERE root_turn_id=? AND call_id=?",
+                                Boolean.class,
+                                parent.turn().id(),
+                                call))
+                .isFalse();
+        for (String kind : List.of("child_invocations", "capability_steps")) {
+            assertThat(
+                            sql.queryForObject(
+                                    "SELECT count(*) FROM agent_runtime.unsafe_execution_data() WHERE tenant=? AND subject=? AND kind=?",
+                                    Integer.class,
+                                    ALICE.tenant(),
+                                    ALICE.subject(),
+                                    kind))
+                    .isOne();
+        }
+        var scope = invalid.scope(parent.scope(), call);
+        assertThat(
+                        sql.queryForObject(
+                                "SELECT invocation_bound FROM agent_runtime.execution_scopes() WHERE root_turn_id=? AND namespace=? AND user_id=? AND session_id=?",
+                                Boolean.class,
+                                parent.turn().id(),
+                                scope.namespace(),
+                                scope.userId(),
+                                scope.sessionId()))
+                .isFalse();
+        assertThat(states.insertStateIfAbsent(stateKey(scope), "{\"market\":\"residual body\"}"))
+                .isOne();
+        assertThat(unsafeExecutionRows()).isEqualTo(3);
+        assertThat(memory.forget(ALICE, 1, "forget-restored-market:" + failure)).isEqualTo(2);
+        assertPrivateTombstone(scope, 2);
+        assertThat(childRows(parent)).isZero();
+        assertThat(
+                        sql.queryForObject(
+                                "SELECT count(*) FROM business.capability_steps WHERE turn_id=?",
+                                Integer.class,
+                                parent.turn().id()))
+                .isZero();
+        assertThat(unsafeExecutionRows()).isZero();
+    }
+
+    private PrivateAgentTarget marketLeaf(Owner owner) {
+        var target = leaf(owner, List.of("function:market_snapshot"));
+        return new PrivateAgentTarget(
+                target.agentId(), target.releaseHash(), PrivateAgentTarget.Profile.MARKET_SNAPSHOT);
+    }
+
+    private int rootTools(Claim parent) {
+        return sql.queryForObject(
+                "SELECT tool_calls FROM business.turn_policies WHERE turn_id=?",
+                Integer.class,
+                parent.turn().id());
+    }
+
+    private int unsafeExecutionRows() {
+        return sql.queryForObject(
+                "SELECT count(*) FROM agent_runtime.unsafe_execution_data()", Integer.class);
+    }
+
+    private void savePrivateCheckpoint(
+            com.financeclaw.domain.ExecutionScope scope,
+            ChildInvocationService.Invocation invocation) {
+        var store = new PrivateAgentStateStore(states, scope, children, invocation);
+        assertThat(
+                        store.saveIfVersion(
+                                scope.userId(),
+                                scope.sessionId(),
+                                "agent_state",
+                                AgentState.builder().build(),
+                                0))
+                .isEqualTo(1);
+    }
+
+    private static RuntimeMapper.StateKey stateKey(com.financeclaw.domain.ExecutionScope scope) {
+        return new RuntimeMapper.StateKey(
+                scope.namespace(), scope.userId(), scope.sessionId(), "agent_state");
+    }
+
+    private void assertPrivateTombstone(com.financeclaw.domain.ExecutionScope scope, long version) {
+        var erased = states.getState(stateKey(scope));
+        assertThat(erased.deleted()).isTrue();
+        assertThat(erased.payload()).isNull();
+        assertThat(erased.version()).isEqualTo(version);
+        assertThat(states.updateStateByExpectedVersion(stateKey(scope), "{}", version - 1))
+                .isZero();
+        assertThat(states.insertStateIfAbsent(stateKey(scope), "{}")).isZero();
+    }
+
+    private void applyForget(ForgetFact fact, boolean prepare) {
+        tx.executeWithoutResult(
+                status -> {
+                    sql.queryForObject(
+                            "SELECT epoch FROM memory.owners WHERE tenant=? AND subject=? FOR UPDATE",
+                            Long.class,
+                            ALICE.tenant(),
+                            ALICE.subject());
+                    if (prepare) recovery.prepare(fact);
+                    recovery.apply(fact);
+                    recovery.complete(ALICE);
+                });
+    }
+
+    private void publishMarketBase(int modelLimit, int toolLimit, String price) {
+        String marketJson =
+                PayloadJson.canonical(
+                        Map.of(
+                                "AAPL",
+                                Map.of(
+                                        "price",
+                                        price,
+                                        "currency",
+                                        "USD",
+                                        "provider",
+                                        "frozen-private-market",
+                                        "as_of",
+                                        "2026-10-24T10:00:00Z")));
+        releases.publish(
+                new ReleaseDefinition(
+                        "private-agent-market-test",
+                        "finance_agent",
+                        ReleaseDefinition.SCOPES,
+                        ReleaseDefinition.OFFLINE,
+                        null,
+                        modelLimit,
+                        toolLimit,
+                        new BusinessFeatures(List.of(), PackagedSkills.hash(), marketJson, null)));
     }
 
     private static ToolCallParam parameter(PrivateAgentTarget target) {

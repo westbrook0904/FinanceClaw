@@ -42,7 +42,7 @@ docker compose run --rm --no-deps api agent-admin catalog \
 
 ## 能力与依赖
 
-能力 ID 使用 `function:name`、`skill:name`、`mcp:service/tool`。每项冻结实际工具名称、所需 scopes、依赖、规范化契约正文和 SHA-256。发布展开依赖后检查完整闭包、循环、重名、基础权限上限与端点策略。
+能力 ID 使用 `function:name`、`skill:name`、`mcp:service/tool` 及 `agent:<UUID>`。每项冻结实际工具名称、所需 scopes、依赖、规范化契约正文和 SHA-256。发布展开依赖后检查完整闭包、循环、重名、基础权限上限与端点策略。
 
 | 能力 | 必要约束 |
 | --- | --- |
@@ -51,9 +51,10 @@ docker compose run --rm --no-deps api agent-admin catalog \
 | `function:portfolio_review` | 固定组合 Workflow，内部行情读取仍需行情权限 |
 | `function:create_report`、`function:publish_portfolio_report` | 保留人工审批、动作摘要与发布围栏 |
 | `skill:cocktail-from-what-i-have` | 冻结所选 Skill 的 metadata、正文与资源；继续禁用代码执行 |
+| `agent:<UUID>` | 仅同 owner 的已发布叶子；空工具 v1 或固定行情 v2，父发布冻结目标 hash；详见[空工具](private-agent-delegation.md)与[固定行情](private-agent-market-leaf.md) |
 | `mcp:hotel/...`、`mcp:taibu/...` | 只能选择固定基础发布允许的工具及端点；继续检查租户、出口与凭据策略 |
 
-非空能力集合会显式纳入 `function:read_artifact_range`，用于读取大结果归档；它读取时校验 Artifact 的 owner、原始权限以及当前执行的有效权限。即使同一 owner 在其他会话拥有更高权限，能力收窄的 Agent 也不能借这个支持工具读取越权产物。依赖展开中的本地工具也会出现在可用工具集合中，目录提前显示这些依赖。没有新建任意子 Agent 委派接口；独立 Agent 子调用属于 P3a。
+非空能力集合会显式纳入 `function:read_artifact_range`，用于读取大结果归档；它读取时校验 Artifact 的 owner、原始权限以及当前执行的有效权限。即使同一 owner 在其他会话拥有更高权限，能力收窄的 Agent 也不能借这个支持工具读取越权产物。依赖展开中的本地工具也会出现在可用工具集合中，目录提前显示这些依赖。P3a 已增加受限叶子委派：市场目标保留 snapshot 与 reader 的编译闭包，但 v2 子运行时只执行 snapshot；父侧 reader 依赖与子侧白名单分别受冻结契约约束，不开放任意工具委派。
 
 ## 控制面发布与数据面执行
 

@@ -55,6 +55,13 @@ public class MyBatisChildInvocationGateway implements ChildInvocationGateway {
     }
 
     @Override
+    public int insertPrivateMarketIfAbsent(
+            String root, String call, String hash, String targetAgent, String targetRelease) {
+        return db.insertPrivateMarketChildInvocationIfAbsent(
+                root, call, hash, targetAgent, targetRelease);
+    }
+
+    @Override
     public int reserveModel(String root, String call, String hash, int limit) {
         return db.updatePendingChildModelCountWithinLimit(root, call, hash, limit);
     }
@@ -62,6 +69,11 @@ public class MyBatisChildInvocationGateway implements ChildInvocationGateway {
     @Override
     public int reserveTool(String root, String call, String hash) {
         return db.updatePendingChildToolCountWithinLimit(root, call, hash);
+    }
+
+    @Override
+    public int reservePrivateMarketTool(String root, String call, String hash) {
+        return db.updatePendingPrivateMarketToolCountWithinLimit(root, call, hash);
     }
 
     @Override

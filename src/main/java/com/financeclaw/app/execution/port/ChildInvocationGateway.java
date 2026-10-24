@@ -16,9 +16,16 @@ public interface ChildInvocationGateway {
     int insertPrivateIfAbsent(
             String root, String call, String hash, String targetAgent, String targetRelease);
 
+    /** 固定市场 profile，存储适配器写死 market:read，不能传任意 scope。 */
+    int insertPrivateMarketIfAbsent(
+            String root, String call, String hash, String targetAgent, String targetRelease);
+
     int reserveModel(String root, String call, String hash, int limit);
 
     int reserveTool(String root, String call, String hash);
+
+    /** 私有市场叶子仅一次工具读取，独立于旧研究十次上限。 */
+    int reservePrivateMarketTool(String root, String call, String hash);
 
     int complete(String root, String call, String hash);
 

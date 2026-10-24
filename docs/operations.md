@@ -1,6 +1,6 @@
 # 运行维护
 
-当前支持新库初始化及现行 Java V1 基线的 V2–V8 前向升级，主库仍为 41 张应用表。V7 的执行隐私清理已随 P3a.2 推送并通过远程 CI；V8 的私有叶子绑定已随 P3a.3 推送 `d433423` 并通过[远程 CI](https://github.com/westbrook0904/FinanceClaw/actions/runs/40065079071)，1,702 项 Java、46 项脚本和 44 项部署检查通过。不导入 Python 或历史实验库，也不提供原拆分部署切换路径。业务运行结构见[统一进程](architecture/combined-runtime.md)。自定义 Agent 的创建、提示词草稿、发布与指定目标会话见 [Agent 管理说明](architecture/agent-definitions.md)。
+当前支持新库初始化及现行 Java V1 基线的 V2–V9 前向升级，主库仍为 41 张应用表。V7 的执行隐私清理已随 P3a.2 推送并通过远程 CI；V8 的私有叶子绑定已随 P3a.3 推送 `d433423` 并通过[远程 CI](https://github.com/westbrook0904/FinanceClaw/actions/runs/40065079071)，1,702 项 Java、46 项脚本和 44 项部署检查通过。V9 固定行情叶子的约束和清理核验见[专项](architecture/private-agent-market-leaf.md)。不导入 Python 或历史实验库，也不提供原拆分部署切换路径。业务运行结构见[统一进程](architecture/combined-runtime.md)。自定义 Agent 的创建、提示词草稿、发布与指定目标会话见 [Agent 管理说明](architecture/agent-definitions.md)。
 
 ## 配置与启动
 

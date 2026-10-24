@@ -11,6 +11,7 @@ import com.financeclaw.support.PayloadJson;
 import com.financeclaw.support.PrivateAgentContracts;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 class PrivateAgentTargetTest {
@@ -38,6 +39,145 @@ class PrivateAgentTargetTest {
                 .containsEntry("maxModelCalls", 4)
                 .containsEntry("maxToolCalls", 0);
         assertThat(contract).doesNotContainKeys("owner", "systemPrompt", "memory");
+    }
+
+    @Test
+    void emptyProfilePreservesTheOriginalV1CanonicalContractByteForByte() {
+        String original =
+                "{\"agentId\":\""
+                        + ID
+                        + "\",\"approval\":false,\"description\":\"Delegate an explicit message to a release-pinned private leaf Agent.\","
+                        + "\"format\":\"agent-leaf/1\",\"inputSchema\":{\"additionalProperties\":false,"
+                        + "\"properties\":{\"message\":{\"maxLength\":16384,\"minLength\":1,\"type\":\"string\"}},"
+                        + "\"required\":[\"message\"],\"type\":\"object\"},\"maxDepth\":1,\"maxModelCalls\":4,"
+                        + "\"maxToolCalls\":0,\"releaseHash\":\""
+                        + HASH
+                        + "\"}";
+        var target = new PrivateAgentTarget(ID, HASH);
+        assertThat(target.profile()).isEqualTo(PrivateAgentTarget.Profile.EMPTY);
+        assertThat(PrivateAgentContracts.binding(target).contractJson()).isEqualTo(original);
+        assertThat(PrivateAgentContracts.binding(target).contentHash())
+                .isEqualTo(PayloadDigest.sha256(original));
+    }
+
+    @Test
+    void marketContractPinsTheClosedProfilePermissionsAndOneToolWithoutExposingTheReader() {
+        var target = new PrivateAgentTarget(ID, HASH, PrivateAgentTarget.Profile.MARKET_SNAPSHOT);
+        var binding = PrivateAgentContracts.binding(target);
+        assertThat(PrivateAgentContracts.from(binding)).isEqualTo(target);
+        assertThat(binding.scopes()).containsExactly("artifact:read", "market:read");
+        assertThat(binding.dependencies()).containsExactly("function:read_artifact_range");
+        assertThat(target.resultScope()).isEqualTo("market:read");
+        var contract = PayloadJson.object(binding.contractJson());
+        assertThat(contract)
+                .containsEntry("format", "agent-leaf/2")
+                .containsEntry("profile", "market-snapshot-only")
+                .containsEntry("maxToolCalls", 1)
+                .containsEntry("childTools", List.of("market_snapshot"))
+                .containsEntry("toolScopes", List.of("market:read"))
+                .containsEntry("resultScope", "market:read");
+        for (var change :
+                List.of(
+                        Map.entry("profile", (Object) "arbitrary-tools"),
+                        Map.entry(
+                                "childTools",
+                                (Object) List.of("market_snapshot", "read_artifact_range")),
+                        Map.entry("resultScope", (Object) "artifact:read"),
+                        Map.entry("maxToolCalls", (Object) 2))) {
+            var changed = new LinkedHashMap<>(contract);
+            changed.put(change.getKey(), change.getValue());
+            String json = PayloadJson.canonical(changed);
+            var forged =
+                    new CapabilityBinding(
+                            binding.id(),
+                            binding.kind(),
+                            binding.name(),
+                            binding.scopes(),
+                            binding.dependencies(),
+                            json,
+                            PayloadDigest.sha256(json));
+            assertThatThrownBy(() -> PrivateAgentContracts.from(forged))
+                    .hasMessage("agent_plan_invalid");
+        }
+    }
+
+    @Test
+    void marketLeafRequiresExactlyItsSnapshotRequestAndPublishedReaderClosure() {
+        var market = definition(List.of("market:read"));
+        var snapshot =
+                new CapabilityBinding(
+                        PrivateAgentTarget.SNAPSHOT,
+                        "function",
+                        "market_snapshot",
+                        List.of("market:read"),
+                        List.of(PrivateAgentTarget.READER),
+                        "{}",
+                        HASH);
+        var reader =
+                new CapabilityBinding(
+                        PrivateAgentTarget.READER,
+                        "function",
+                        "read_artifact_range",
+                        List.of(),
+                        List.of(),
+                        "{}",
+                        HASH);
+        var plan =
+                new AgentExecutionPlan(
+                        "primary",
+                        HASH,
+                        List.of(PrivateAgentTarget.SNAPSHOT),
+                        List.of(snapshot, reader),
+                        market);
+        var leaf = resolved(OWNER, market, plan);
+        PrivateAgentTarget.requireLeaf(OWNER, leaf, PrivateAgentTarget.Profile.MARKET_SNAPSHOT);
+        assertThatThrownBy(() -> PrivateAgentTarget.requireLeaf(OWNER, leaf))
+                .hasMessage("agent_leaf_required");
+        for (var invalid :
+                List.of(
+                        new AgentExecutionPlan(
+                                "primary", HASH, List.of(), List.of(snapshot, reader), market),
+                        new AgentExecutionPlan(
+                                "primary",
+                                HASH,
+                                List.of(PrivateAgentTarget.SNAPSHOT),
+                                List.of(snapshot),
+                                market),
+                        new AgentExecutionPlan(
+                                "primary",
+                                HASH,
+                                List.of(PrivateAgentTarget.SNAPSHOT, PrivateAgentTarget.READER),
+                                List.of(snapshot, reader),
+                                market),
+                        new AgentExecutionPlan(
+                                "primary",
+                                HASH,
+                                List.of(PrivateAgentTarget.SNAPSHOT),
+                                List.of(reader, snapshot),
+                                market))) {
+            assertThatThrownBy(
+                            () ->
+                                    PrivateAgentTarget.requireLeaf(
+                                            OWNER,
+                                            resolved(OWNER, market, invalid),
+                                            PrivateAgentTarget.Profile.MARKET_SNAPSHOT))
+                    .hasMessage("agent_leaf_required");
+        }
+        var expanded = definition(List.of("artifact:read", "market:read"));
+        var expandedPlan =
+                new AgentExecutionPlan(
+                        "primary",
+                        HASH,
+                        List.of(PrivateAgentTarget.SNAPSHOT),
+                        List.of(snapshot, reader),
+                        expanded);
+        assertThatThrownBy(
+                        () ->
+                                PrivateAgentTarget.requireLeaf(
+                                        OWNER,
+                                        resolved(OWNER, expanded, expandedPlan),
+                                        PrivateAgentTarget.Profile.MARKET_SNAPSHOT))
+                .hasMessage("agent_leaf_required");
     }
 
     @Test

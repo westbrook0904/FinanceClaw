@@ -1,0 +1,407 @@
+{
+  "milestone": "P3a.6 fixed read-only market snapshot private leaf",
+  "collected_at_utc": "2026-10-24T10:39:09.052632+00:00",
+  "base_commit": "a4a6ef412c675a41dfc1f6114bd2d5b7905b286b",
+  "recorded_before_commit": true,
+  "local_acceptance": {
+    "status": "passed",
+    "delivery_status": "locally accepted; not pushed",
+    "single_full_verify_success": false,
+    "java": {
+      "unit": 1253,
+      "integration": 490,
+      "total": 1743,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "scripts": 46,
+    "compose_checks": 44,
+    "note": "Latest unique results combine the failed full run's passing unit and unselected integration suites with all 35 cases in the three complete targeted rerun suites. The original Role beforeAll placeholder is retained only as historical failure; it is replaced by eight real normal cases, not counted as an additional final case."
+  },
+  "final_validation": {
+    "composite_results_path": "target/p3a6/results.json",
+    "composite_results_sha256": "34cbbb5b94d553b195f0ff389411c4397796e74597a917c72f98dacdf51102a4",
+    "composite_results_hash_encoding": "canonical JSON content digest; file byte SHA recorded separately after atomic write",
+    "full_command": "scripts/mvn.sh -B -ntp -o verify",
+    "initial_full": {
+      "summary": {
+        "path": "/tmp/financeclaw-p3a6-reports/full-verify/summary.json",
+        "sha256": "a2981782b5b68edcbd26eeea2c0ecb0f21f6a28f8ebeb2cd2cbf192011d7985a",
+        "source_snapshot_method": "Captured after full execution; RoleAssemblyIT reconstructed from baseline, verified exactly two version constant changes; all other inputs unchanged during run.",
+        "role_old_source_sha256": "487c471b0e16846ceb422167d66c66fe63ba339f1810ddc2138dd5cfb4aa2159",
+        "role_old_class_sha256": "5f4768a1d0f80832e203508fd94ef6d226e5ba781dd079273cbc19230009f7bc"
+      },
+      "unit": {
+        "suites": 78,
+        "tests": 1253,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "integration": {
+        "suites": 41,
+        "tests": 483,
+        "failures": 4,
+        "errors": 0,
+        "skipped": 0
+      },
+      "log": {
+        "path": "/tmp/financeclaw-p3a6-reports/full-verify/maven.log",
+        "sha256": "eab8d0d36a38c55edc12f8c4cf87e3b759e434e14652135927e04f90d02982f0"
+      },
+      "failsafe_summary": {
+        "path": "/tmp/financeclaw-p3a6-reports/full-verify/failsafe-reports/failsafe-summary.xml",
+        "sha256": "b67bf6618339ec623621773f86730d227a7b7bcabb6db2a53f00bd53cba8a946",
+        "original_runner_counts": {
+          "completed": 483,
+          "errors": 1,
+          "failures": 3,
+          "skipped": 0,
+          "flakes": 0
+        },
+        "original_suite_counts": {
+          "suites": 41,
+          "tests": 483,
+          "failures": 4,
+          "errors": 0,
+          "skipped": 0
+        },
+        "classification": "Role beforeAll: runner reports one error; suite XML reports the same one failure; total nonpassing remains four"
+      },
+      "failed_cases": [
+        {
+          "id": "integration:com.financeclaw.m5.PrivacyRecoveryCliIT::com.financeclaw.m5.PrivacyRecoveryCliIT::packagedReplayFinishesAuthorizedPendingRequestAndRetryKeepsTheSameReceipt",
+          "name": "packagedReplayFinishesAuthorizedPendingRequestAndRetryKeepsTheSameReceipt",
+          "status": "failure"
+        },
+        {
+          "id": "integration:com.financeclaw.m5.PrivacyRecoveryCliIT::com.financeclaw.m5.PrivacyRecoveryCliIT::packagedBootstrapAndEmptyReplayReturnOnlySafeReports",
+          "name": "packagedBootstrapAndEmptyReplayReturnOnlySafeReports",
+          "status": "failure"
+        },
+        {
+          "id": "integration:com.financeclaw.m5.ProfilePrivacyRepositoryIT::com.financeclaw.m5.ProfilePrivacyRepositoryIT::restoredSnapshotsRequireTheOriginalOwnerEpochAndSourceVersion(String)[6]",
+          "name": "restoredSnapshotsRequireTheOriginalOwnerEpochAndSourceVersion(String)[6]",
+          "status": "failure"
+        },
+        {
+          "id": "integration:com.financeclaw.m5.RoleAssemblyIT::com.financeclaw.m5.RoleAssemblyIT::",
+          "name": "",
+          "status": "failure"
+        }
+      ]
+    },
+    "targeted_rerun": {
+      "summary": {
+        "path": "/tmp/financeclaw-p3a6-reports/targeted-rerun/summary.json",
+        "sha256": "dbeca85ab8b41d4d50ff58a326f98d4dc28f1b777e6518ed7f5fd5cb51bfbe31",
+        "source_snapshot_method": "Input hashes captured before targeted compilation and execution; only two Role version assertions differ from full run."
+      },
+      "integration": {
+        "suites": 3,
+        "tests": 35,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "log": {
+        "path": "/tmp/financeclaw-p3a6-reports/targeted-rerun/maven.log",
+        "sha256": "139afad0f7d01eaa39c8141786b17b7bf6cf8472631b477d30f8471e75d9f3db"
+      },
+      "failsafe_summary": {
+        "path": "/tmp/financeclaw-p3a6-reports/targeted-rerun/failsafe-reports/failsafe-summary.xml",
+        "sha256": "d60d81e2cec374eefac8ada6fd6094f061d0524b75ab80613c309d4116902d97",
+        "original_runner_counts": {
+          "completed": 35,
+          "errors": 0,
+          "failures": 0,
+          "skipped": 0,
+          "flakes": 0
+        },
+        "original_suite_counts": {
+          "suites": 3,
+          "tests": 35,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "classification": "identical"
+      },
+      "replaced_suites": [
+        "com.financeclaw.m5.PrivacyRecoveryCliIT",
+        "com.financeclaw.m5.ProfilePrivacyRepositoryIT",
+        "com.financeclaw.m5.RoleAssemblyIT"
+      ]
+    },
+    "featured_suites": [
+      {
+        "suite": "com.financeclaw.p3.PrivateAgentRuntimeIT",
+        "tests": 20,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "report": {
+          "path": "/tmp/financeclaw-p3a6-reports/full-verify/failsafe-reports/TEST-com.financeclaw.p3.PrivateAgentRuntimeIT.xml",
+          "sha256": "b9d7b04f646d662e7fb785aca55325d26dbd97740889f250778e14160fecc618"
+        },
+        "provenance": "failed_full_verify",
+        "includes_new_cases": 6
+      },
+      {
+        "suite": "com.financeclaw.p3.PrivateAgentDelegationIT",
+        "tests": 33,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "report": {
+          "path": "/tmp/financeclaw-p3a6-reports/full-verify/failsafe-reports/TEST-com.financeclaw.p3.PrivateAgentDelegationIT.xml",
+          "sha256": "4cd0d5206725003514fda1c00f5b4cb7b123cf80c135d3c96c0270dc8cf037ca"
+        },
+        "provenance": "failed_full_verify",
+        "includes_new_cases": 10
+      }
+    ],
+    "compose": {
+      "command": "python3 scripts/validate-compose.py --ziwei --admission --preflight --restore-privacy",
+      "report": {
+        "path": "/Users/hebinghui/Documents/ChatGPT/FinanceClaw-java/target/m5e/deployment/compose-results.json",
+        "sha256": "e222c35d22d75da2b7c9b62780c000ee4025e6fb86adf18d0f3c99e957393fd1"
+      },
+      "log": {
+        "path": "/Users/hebinghui/Documents/ChatGPT/FinanceClaw-java/target/m5e/deployment/compose-validation.log",
+        "sha256": "21609e131a47a866bfc3ed26f000f8874dc94d2d17955c514e36c86898af45db"
+      },
+      "project": "financeclaw-m5e-b249fae6b5",
+      "success": true,
+      "checks": 44,
+      "jar_sha256": "4da316e1f5eee17f50dbfbcb1e29c4b118885a7bcbf58c2a69cd8eeada05ccbf",
+      "source_manifest_sha256": "7206a191a45c7a519a92844f47d2498ae5ccc742389f67a9d78868edd09d1043",
+      "stdout_log": {
+        "path": "/tmp/financeclaw-p3a6-compose.log",
+        "sha256": "595a34a9183e8929c3319a8b1ae82b4a6b4bf44b0dee9c5ae1fb8abc30257989"
+      }
+    },
+    "script_reports": [
+      {
+        "path": "/Users/hebinghui/Documents/ChatGPT/FinanceClaw-java/target/m6/live-validator-tests.json",
+        "sha256": "820422880c3e74df4fc6c4495334f2def097a79bc8ed10d4e38f3b437582ed73"
+      },
+      {
+        "path": "/Users/hebinghui/Documents/ChatGPT/FinanceClaw-java/target/m5d/preflight-tests.json",
+        "sha256": "3f319a99bc59cbb06049fce069d6890bb16d3dea3460db473067ba8c7e02b05f"
+      },
+      {
+        "path": "/Users/hebinghui/Documents/ChatGPT/FinanceClaw-java/target/m5e/privacy-tests.json",
+        "sha256": "0c0acb60da1e4b5907cb446ac5d1f6a295e3044e4486bfe4b0d6afa90ebbc92a"
+      }
+    ],
+    "script_logs": {
+      "live-acceptance": {
+        "tests": 8,
+        "path": "/tmp/financeclaw-p3a6-test-live-acceptance.py.log",
+        "sha256": "a0020b710378d0f91ace5939d79307eae6cf81be975be115b860616e51e1ff97"
+      },
+      "inspect-drain": {
+        "tests": 12,
+        "path": "/tmp/financeclaw-p3a6-test-inspect-drain.py.log",
+        "sha256": "6f7c73e61ea8957a647b92a3e1ace16a29215774a85f5453d3e9abffb7f6dc8d"
+      },
+      "restore-privacy": {
+        "tests": 16,
+        "path": "/tmp/financeclaw-p3a6-test-restore-privacy.py.log",
+        "sha256": "4e97eddf8333c95edef9101e552595c53155b1fd3b804dc1e5c8e6f107e71eba"
+      },
+      "user-profile": {
+        "tests": 10,
+        "path": "/tmp/financeclaw-p3a6-test-user-profile.py.log",
+        "sha256": "c3da3498d570d6c8c115092e274d46062c1a61a88661ceaba6306685a84e4c20"
+      }
+    },
+    "composite_results_file_sha256": "f7f17eba0dda6e8e2111b3baad91bc0b4034db392582760e7446bcdabe35f177"
+  },
+  "frozen_inputs": {
+    "jar": "target/financeclaw-java-0.1.0-SNAPSHOT.jar",
+    "application_jar_sha256": "4da316e1f5eee17f50dbfbcb1e29c4b118885a7bcbf58c2a69cd8eeada05ccbf",
+    "build_proof": {
+      "path": "/tmp/financeclaw-p3a6-baseline/build-proof.json",
+      "sha256": "15fd2b85f2fb0a6187f69298b0b53bba3b02f097d97ec4cebbc2ed3fb9ee7510"
+    },
+    "matching_production_classes": 408,
+    "production_class_count_correction": {
+      "recorded_production_classes": 396,
+      "actual_all_packages": 408,
+      "initial_record": "/tmp/financeclaw-p3a6-baseline/build-proof-initial-count.json",
+      "jar_sha256_unchanged": true
+    },
+    "input_count": 482,
+    "source_manifest_sha256": "c69851fe3ee5f7b0ba969b3933bce19a7a6d5d8d8398e25807099970cd15ed26",
+    "input_provenance": {
+      "full_snapshot": {
+        "path": "/tmp/financeclaw-p3a6-reports/full-verify/inputs.json",
+        "sha256": "e63bf623dd7ac82502ed48bd1d12ca83f4cac95473e7f76a60976efbb7a72ede"
+      },
+      "rerun_snapshot": {
+        "path": "/tmp/financeclaw-p3a6-reports/targeted-rerun/inputs.json",
+        "sha256": "80228862eb7221a21f79489ac1b0359a90ceb9c3daca3f921b6f0343d17099cb"
+      },
+      "only_changed_between_runs": [
+        "src/test/java/com/financeclaw/m5/RoleAssemblyIT.java"
+      ],
+      "full_snapshot_method": "Captured after full execution; RoleAssemblyIT reconstructed from baseline, verified exactly two version constant changes; all other inputs unchanged during run.",
+      "old_role_class_sha256_recorded": "5f4768a1d0f80832e203508fd94ef6d226e5ba781dd079273cbc19230009f7bc",
+      "old_role_class_bytes_independently_reverified": false,
+      "change": "Exactly two Role schema-version assertions .isEqualTo(\"8\") -> .isEqualTo(\"9\"); no timeout, production, or behavioral assertion change.",
+      "source_manifest_sha256": "c69851fe3ee5f7b0ba969b3933bce19a7a6d5d8d8398e25807099970cd15ed26"
+    },
+    "changed_input_sha256": {
+      "src/main/java/com/financeclaw/app/agent/port/AgentRepository.java": "4ea2d792a6f5c57e9a5d22e054077d25768c1bcdc25bdb52ee6e4e9dce709d17",
+      "src/main/java/com/financeclaw/app/execution/ChildInvocationService.java": "e8f22540201adf0ef4005e51d33997794836c3182de9086d60673ac256b69061",
+      "src/main/java/com/financeclaw/app/execution/port/ChildInvocationGateway.java": "facffbf13988e7007e3723c24821ca0402cd053c5f668a9a678b4e10f6cf248c",
+      "src/main/java/com/financeclaw/app/market/MarketDataService.java": "9d6db785960e4222b35f279e6cb9c446de1da3bb70992c82aefde8f83e73974a",
+      "src/main/java/com/financeclaw/domain/agent/PrivateAgentTarget.java": "c5fb815cd08b249fbdc09450ddd67de3e3077a8376199e9a22a10ac2df0e48cf",
+      "src/main/java/com/financeclaw/domain/agent/ResolvedTarget.java": "3e27f649836a73b45a0f69d7a7f2076850fe67c9ef93eb694a16a5113cc53edb",
+      "src/main/java/com/financeclaw/infrastructure/agent/AgentMapper.java": "de2c66c510dfd8721fe48ebd46037648240be94c02cc02214af384ffc29c97f6",
+      "src/main/java/com/financeclaw/infrastructure/agent/CatalogAgentCapabilityResolver.java": "1b0d84bfe0f8288d202f35ca303d7938d77871bb0e08aa80ff7a6a52321adbc5",
+      "src/main/java/com/financeclaw/infrastructure/agentscope/capability/BusinessCapabilities.java": "5ca5ce2f6ccabf1e6bb78ee7f2798289d5d1fe30ebbc87a13539ca5604a7595f",
+      "src/main/java/com/financeclaw/infrastructure/agentscope/capability/PrivateAgentDelegation.java": "9d1a2954521748ad36186214327d0f392dabbdf33bc6c58c08a275d51945a677",
+      "src/main/java/com/financeclaw/infrastructure/governance/GovernanceMapper.java": "7d409a07e0bb14646d52573bcac94944b0de6b6c638534a2f1020fc3ff30beb8",
+      "src/main/java/com/financeclaw/infrastructure/task/MyBatisChildInvocationGateway.java": "e2abca9d2bc4244f3a134fd086f5db9ed114cde99bd3c08e6badbfaea680bcee",
+      "src/main/java/com/financeclaw/support/PrivateAgentContracts.java": "cba19c0ff55aaed904d2abde36d277e2daf0dbe749f60907e4020a3e965e8f05",
+      "src/main/resources/db/migration/V9__private_agent_market_leaf.sql": "ac97ae082aacac284faec1d8c2fb0fe773710fce0983f80a9e88fe8afc29b1db",
+      "src/test/java/com/financeclaw/app/market/MarketDataServiceTest.java": "be31a33a86f45203ed282ad5a8e5378d6bef8f2ad93468ef40443fe707728b06",
+      "src/test/java/com/financeclaw/architecture/RuntimePackagingIT.java": "52c4a56719b88abda77670b9391e6ff7384733af1ddc44964ef84f1f6411cdb5",
+      "src/test/java/com/financeclaw/domain/agent/PrivateAgentTargetTest.java": "aae4c1dbfa95f422da9456d60f1f3277fcebd2ea9f5ee96e1a0acb96dbecf449",
+      "src/test/java/com/financeclaw/infrastructure/agentscope/capability/PrivateAgentDelegationTest.java": "45ddab448cd2e45b2ddc575ac49f3e4e60285c2ce9c2f92ccd957c715040bacd",
+      "src/test/java/com/financeclaw/m5/RoleAssemblyIT.java": "b7a8cbe55e3a48bdcd7ef4ca700d992362e917f06388c1f2f4954d35598fc3ce",
+      "src/test/java/com/financeclaw/m5/SchemaInitializationIT.java": "9746602f7bf521ed190345018085d8494364de2412cf65513dc3112e83dbe41c",
+      "src/test/java/com/financeclaw/p1/ConversationReleaseMigrationIT.java": "58ffe15721c4a75d81479a5846ff40edf1913b2bd42e7cfcd370ea363e253fc2",
+      "src/test/java/com/financeclaw/p3/PrivateAgentDelegationIT.java": "7caf91360b66298796447907f35d159e39daaf064d121d0f9c62ff22f74db902",
+      "src/test/java/com/financeclaw/p3/PrivateAgentLoopback.java": "3dac66688e3b19c7537a1511383fd538092f3268d6f949bb5c210e8e37531272",
+      "src/test/java/com/financeclaw/p3/PrivateAgentRuntimeIT.java": "a3df6c98a486a11b07bb184d7f4673c12b508413e8b0ef5a5a3f8a6ef8766b68"
+    },
+    "remote_jar_byte_identity_verified": false
+  },
+  "earlier_attempts": [
+    {
+      "stage": "sandbox Maven",
+      "log": {
+        "path": "/tmp/financeclaw-p3a6-unit.log",
+        "sha256": "0e1cd523069ead66b4c7f3fd0eaca5c149aaf51224bf9b782889878b84f63a71"
+      },
+      "exit_code": 143,
+      "classification": "Scoped process stopped after compilation to permit required loopback HTTP; no complete test outcome inferred."
+    },
+    {
+      "stage": "first unit/package",
+      "log": {
+        "path": "/tmp/financeclaw-p3a6-package.log",
+        "sha256": "31572c045c80e66bde65d3d09a2f1197ff6bbc55cb0636b114e188350794c334"
+      },
+      "tests": 1253,
+      "failures": 3,
+      "errors": 2,
+      "cause": "Runtime unit mocks matched only EMPTY targets; corrected to exact dynamic profile matching.",
+      "corrected_12_case_rerun": {
+        "path": "/tmp/financeclaw-p3a6-private-unit.log",
+        "sha256": "f28906766eab69cdb6af584faceceaf3aef5becc735698a69e6f95d69744b869"
+      }
+    },
+    {
+      "stage": "inspect-drain sandbox",
+      "log": {
+        "path": "/tmp/financeclaw-p3a6-inspect-drain-sandbox.log",
+        "sha256": "ad12d57d88c3d3b587d657a0c8440a7b471d0e5df9d2327d8aa08e95addfe8da"
+      },
+      "tests": 12,
+      "errors": 7,
+      "cause": "PermissionError binding loopback ports; permitted rerun passed 12 cases."
+    }
+  ],
+  "failed_full_run_explanation": {
+    "profile_export": "Read-only snapshot child psql exited 1 after about 1801 seconds, alongside a global log pause and Hikari elapsed-time warnings. Sleep, VM pause, clock change and starvation cannot be distinguished; stderr was not retained by the existing assertion, so the cause is unconfirmed. Retained as a failure.",
+    "privacy_cli": "Two first-bootstrap subprocess termination assertions exceeded their unchanged 30-second waits before the later 30-minute log pause. They did not reach replay; no common root cause is inferred. Retained as failures until complete-suite rerun.",
+    "role": "V9 made two old expected-version constants stale. The initial beforeAll failed before the eight normal cases ran. Only those two constants change 8 to 9; no timeout or behavioral condition changes.",
+    "original_classification": "Original suite XML: four failures/zero errors. Original Failsafe summary: three failures/one error. The same Role beforeAll placeholder is classified differently; both original files remain untouched and both report four nonpassing cases.",
+    "collector": "The normal collector correctly rejects this split provenance and late Role test source. It is unchanged; no default target/verification/results.json or aggregate Failsafe summary is fabricated."
+  },
+  "pre_run_assertion_correction": "The market archive revocation test expects failed after Inspector sees an ERROR ToolResult, even if the SDK makes an explanatory inference. This corrects the oracle to existing behavior; production authorization is not relaxed.",
+  "execution_contract": {
+    "profile": "agent-leaf/2 market-snapshot-only; original agent-leaf/1 canonical unchanged",
+    "target": "Same owner, requested snapshot only, exact snapshot plus reader compile closure, target scope market:read only, target frozen release data.",
+    "runtime": "Depth one, only snapshot exposed, max four models/one tool, bounded by target and persistent root budgets; explicit message only and serialized non-system working messages budgeted.",
+    "authorization": "Parent requires artifact:read plus market:read; delegated result and parent archive retain market:read. All callbacks keep parent fence/grant/privacy checks.",
+    "results": "Snapshot with complete SDK wrapper stays below 4096 bytes. Parent can archive large final results; no generic child file reader or offloader.",
+    "happy_counters": {
+      "root_models": 4,
+      "root_tools": 2,
+      "child_models": 2,
+      "child_tools": 1
+    },
+    "waiting_resume_counters": {
+      "root_models": 6,
+      "root_tools": 3,
+      "child_models": 2,
+      "child_tools": 1
+    },
+    "resume": "Existing sealed root checkpoint/committed business receipt reused after same-JVM Spring restart, not cross-attempt child SDK continuation.",
+    "privacy": "V9 fixed-profile checks align with Java scope/forget; PG covers local and ledger forget and cross-attempt budgets. Still 41 tables, no new polling."
+  },
+  "remaining_database_hotspot": {
+    "status": "retained; source inspection only, SQL count not measured",
+    "path": "ChildInvocationService.snapshotWithinDispatch -> MarketDataService.readFrozen -> consumeTool -> nested dispatch",
+    "cost": "Actual reads retain duplicate fence/Turn/privacy/grant checks and repeated root-release projection. Owner directory is one set query; frozen target data requires no new release/current lookup.",
+    "future_boundary": "Independent transaction-scoped validated context optimization; preserve lock order, first-receipt-only root/child atomic charging, rollback and fresh replay gates. No mutable-authority cache across transactions."
+  },
+  "remote_baseline": {
+    "sha": "a4a6ef412c675a41dfc1f6114bd2d5b7905b286b",
+    "branch": "codex/java-agentscope",
+    "url": "https://github.com/westbrook0904/FinanceClaw/actions/runs/40077157872",
+    "run_id": 40077157872,
+    "status": "completed",
+    "conclusion": "success",
+    "jobs": [
+      {
+        "id": 120822884111,
+        "name": "verify",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 120825154380,
+        "name": "delivery",
+        "status": "completed",
+        "conclusion": "success"
+      }
+    ],
+    "java": {
+      "unit": 1242,
+      "integration": 474,
+      "total": 1716
+    },
+    "scripts": 46,
+    "delivery_checks": 44,
+    "record": {
+      "path": "/tmp/financeclaw-p3a6-baseline/remote-ci.json",
+      "sha256": "e2b371ee55f78adc2ecef17b64e21b36e6a6f6773fbd0afa6ffc9779846702aa"
+    },
+    "includes_p3a6": false
+  },
+  "historical_evidence": {
+    "p3a5": {
+      "path": "/Users/hebinghui/Documents/ChatGPT/FinanceClaw-java/docs/architecture/evidence/p3a5-implementation.json",
+      "sha256": "12581163ed87898dcaf9f6d0c07be213097826bbf386a862b3f6d8d0d4dbe6e7"
+    },
+    "unchanged_from_base": true
+  },
+  "not_certified": [
+    "single complete successful Maven verify",
+    "P3a.6 remote CI",
+    "P3a overall completion",
+    "new market parent-child chain in independently forked packaged application JAR",
+    "real external provider or production capacity",
+    "arbitrary Function/MCP delegation",
+    "child SDK continuation across attempts or unsealed root recovery",
+    "measured database query reduction"
+  ]
+}

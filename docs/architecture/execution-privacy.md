@@ -73,3 +73,5 @@ Compose 首轮通过 40 项后，末尾旧断言仍要求遗忘后保留 `publis
 P3a.3 的[同 owner 空工具叶子委派](private-agent-delegation.md)已推送 `d433423`，[远程 CI](https://github.com/westbrook0904/FinanceClaw/actions/runs/40065079071)整体成功：1,702 项 Java、46 项脚本和 44 项部署检查通过。V8 将既有集合映射扩展到冻结的目标 Agent/release，私有 scope 与 Java 派生式一致；失效绑定即使没有 SDK 状态也计入恢复残留，原先先墓碑后删除及未知 live 状态阻断的契约保留。本轮通过 1,702 项 Java 用例的最新分次结果、46 项脚本及 44 项 Compose 检查；原完整 verify 的两项失败与精确复跑记录见[P3a.3 证据](evidence/p3a3-implementation.json)，不声称单次完整 verify 全绿。P3a.2 的历史证据不改写为 P3a.3 结果。
 
 P3a 整体、通用子工具装配、递归、RAG 与 Scheduler 不属于本模块。
+
+P3a.6 的[固定行情叶子](private-agent-market-leaf.md)通过 V9 将集合核验扩展到精确市场计划与一次工具上限，继续复用现有 scope 和先墓碑后删除流程；无效绑定仍保留原始定位字段。表数量保持 41，不新增隐私状态权威。该模块的本地和远程状态以专项记录为准。

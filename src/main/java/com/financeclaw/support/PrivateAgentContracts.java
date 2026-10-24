@@ -3,6 +3,7 @@ package com.financeclaw.support;
 import com.financeclaw.domain.Governance.Blocked;
 import com.financeclaw.domain.agent.CapabilityBinding;
 import com.financeclaw.domain.agent.PrivateAgentTarget;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -19,8 +20,9 @@ public final class PrivateAgentContracts {
     /** 完整契约参与父发布摘要；归档读取仅是父侧依赖，不向零工具子 Agent 授权。 */
     public static CapabilityBinding binding(PrivateAgentTarget target) {
         if (target == null) throw new Blocked("agent_plan_invalid");
-        String contract =
-                PayloadJson.canonical(
+        // EMPTY 不增加任何新字段，保持已冻结 v1 契约字节与摘要完全不变。
+        var fields =
+                new LinkedHashMap<String, Object>(
                         Map.of(
                                 "format",
                                 "agent-leaf/1",
@@ -40,11 +42,23 @@ public final class PrivateAgentContracts {
                                 4,
                                 "maxToolCalls",
                                 0));
+        boolean market = target.profile() == PrivateAgentTarget.Profile.MARKET_SNAPSHOT;
+        if (market) {
+            fields.put("format", "agent-leaf/2");
+            fields.put("profile", "market-snapshot-only");
+            fields.put("maxToolCalls", 1);
+            fields.put("childTools", List.of("market_snapshot"));
+            fields.put("toolScopes", List.of(PrivateAgentTarget.MARKET_SCOPE));
+            fields.put("resultScope", PrivateAgentTarget.MARKET_SCOPE);
+        }
+        String contract = PayloadJson.canonical(fields);
         return new CapabilityBinding(
                 "agent:" + target.agentId(),
                 "agent",
                 PrivateAgentTarget.toolName(target.agentId()),
-                List.of(PrivateAgentTarget.TOOL_SCOPE),
+                market
+                        ? List.of(PrivateAgentTarget.TOOL_SCOPE, PrivateAgentTarget.MARKET_SCOPE)
+                        : List.of(PrivateAgentTarget.TOOL_SCOPE),
                 List.of(READER),
                 contract,
                 PayloadDigest.sha256(contract));
@@ -62,7 +76,16 @@ public final class PrivateAgentContracts {
             var contract = PayloadJson.object(binding.contractJson());
             var hash = contract.get("releaseHash");
             if (!(hash instanceof String)) throw new Blocked("agent_plan_invalid");
-            var target = new PrivateAgentTarget(binding.id().substring(6), (String) hash);
+            PrivateAgentTarget.Profile profile;
+            if ("agent-leaf/1".equals(contract.get("format"))) {
+                profile = PrivateAgentTarget.Profile.EMPTY;
+            } else if ("agent-leaf/2".equals(contract.get("format"))
+                    && "market-snapshot-only".equals(contract.get("profile"))) {
+                profile = PrivateAgentTarget.Profile.MARKET_SNAPSHOT;
+            } else {
+                throw new Blocked("agent_plan_invalid");
+            }
+            var target = new PrivateAgentTarget(binding.id().substring(6), (String) hash, profile);
             if (!binding(target).equals(binding)) throw new Blocked("agent_plan_invalid");
             return target;
         } catch (RuntimeException invalid) {

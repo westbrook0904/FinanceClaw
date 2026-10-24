@@ -77,7 +77,7 @@ public final class CatalogAgentCapabilityResolver implements AgentCapabilityReso
             var target = targets.get(id);
             // 不再次读取 current；目录已选定的不可变版本不会因并发发布而被替换。
             var resolved = releases.resolve(target.releaseHash());
-            PrivateAgentTarget.requireLeaf(owner, resolved);
+            PrivateAgentTarget.requireLeaf(owner, resolved, target.profile());
             resolved.requireIdentity(owner, target.agentId());
             LocalCapabilityCatalog.requireCompatible(resolved.plan());
             bindings.put(id, PrivateAgentContracts.binding(target));
@@ -136,7 +136,9 @@ public final class CatalogAgentCapabilityResolver implements AgentCapabilityReso
     private SortedMap<String, PrivateAgentTarget> targets(Owner owner) {
         var result = new TreeMap<String, PrivateAgentTarget>();
         for (var candidate : agents.listPublishedLeafTargets(owner)) {
-            var target = new PrivateAgentTarget(candidate.agentId(), candidate.releaseHash());
+            var target =
+                    new PrivateAgentTarget(
+                            candidate.agentId(), candidate.releaseHash(), candidate.profile());
             if (result.putIfAbsent("agent:" + target.agentId(), target) != null) {
                 throw new Blocked("agent_capability_unavailable");
             }
@@ -188,6 +190,8 @@ public final class CatalogAgentCapabilityResolver implements AgentCapabilityReso
                 && result.containsKey(LocalCapabilityCatalog.ARTIFACT_READER)) {
             for (var target : targets.values()) {
                 var binding = PrivateAgentContracts.binding(target);
+                // 目录提示不授予权限：父基础发布必须同时允许归档读取及市场数据访问。
+                if (!base.scopes().containsAll(binding.scopes())) continue;
                 add(
                         result,
                         new CapabilityOption(
