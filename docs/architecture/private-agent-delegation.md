@@ -1,6 +1,6 @@
 # 私有叶子 Agent 委派：P3a.3
 
-**状态：2026-10-24 已本地验收，未推送。** 本模块让父 Agent 同步调用同 owner 的已发布叶子 Agent，最大深度为一。没有新增子队列、租约、心跳或调度生命周期；本模块使用独立的[本地验收证据](evidence/p3a3-implementation.json)。
+**状态：2026-10-24 已推送 `d433423`，远程 CI 成功。** 本模块让父 Agent 同步调用同 owner 的已发布叶子 Agent，最大深度为一。没有新增子队列、租约、心跳或调度生命周期；提交前的[本地验收证据](evidence/p3a3-implementation.json)与后续远程结果分别记录。
 
 ## 配置目标与父 Agent
 
@@ -75,13 +75,15 @@ SDK scope 仍包含父 attempt。**跨 attempt 只回放已提交的子业务结
 
 ## 当前验收状态
 
-[本轮证据](evidence/p3a3-implementation.json)记录完整初跑、精确复跑与部署检查，保留失败过程和各自验证范围。
+提交 `d433423` 的 [run 40065079071](https://github.com/westbrook0904/FinanceClaw/actions/runs/40065079071) 已整体 `completed/success`：verify 的 **1,242 单元 + 460 集成 = 1,702 项 Java 测试**零失败、零错误、零跳过，另有 **46 项脚本测试**，delivery 的 **44 项检查**通过。该远程基线不包含后续 P3a.4。
 
-本轮 Java 的最新结果为 **1,242 项单元／契约／架构 + 460 项独立集成用例 = 1,702 项通过**，包含全部 23 项私有委派用例。完整初跑集成 458 项通过、2 处失败（迁移次数旧断言及 CLI 30 秒等待），仅修正迁移常数 6→7 后，两个原失败用例的精确定向复跑均通过；生产代码、SQL、JAR 和 CLI 超时／业务断言未改。这是按用例身份合并的分次结果，`single_full_verify_success=false`，不声称单次完整 verify 全绿。
+[提交前本地证据](evidence/p3a3-implementation.json)保留完整初跑、精确复跑与部署检查的历史过程：
 
-**46 项脚本测试、44 项 Compose 检查全部通过**，隔离部署进程正常退出并完成清理。Compose 与 Java 验证使用同一生产 JAR，11 项部署输入摘要均与现场文件一致。
+提交前本地 Java 的分次结果为 **1,242 项单元／契约／架构 + 460 项独立集成用例 = 1,702 项通过**，包含全部 23 项私有委派用例。完整初跑集成 458 项通过、2 处失败（迁移次数旧断言及 CLI 30 秒等待），仅修正迁移常数 6→7 后，两个原失败用例的精确定向复跑均通过；生产代码、SQL、JAR 和 CLI 超时／业务断言未改。这是按用例身份合并的分次结果，`single_full_verify_success=false`，不声称单次完整 verify 全绿。
 
-Compose 新增的三项检查覆盖候选目录与父发布冻结目标、叶子重新发布后父目标不变，以及恢复后双方绑定保留。它们不证明离线父模型会根据自然语言触发委派；真实 SDK 委派链路由 23 项 PrivateAgentDelegationIT 等运行时测试验证。
+当时 **46 项脚本测试、44 项 Compose 检查全部通过**，隔离部署进程正常退出并完成清理。Compose 与 Java 验证使用同一生产 JAR，11 项部署输入摘要均与现场文件一致。
+
+Compose 新增的三项检查覆盖候选目录与父发布冻结目标、叶子重新发布后父目标不变，以及恢复后双方绑定保留。它们不证明离线父模型会根据自然语言触发委派；23 项 PrivateAgentDelegationIT 等测试覆盖直接进入子适配器的 SDK 链路。父 HTTP／Worker 入口到最终消费结果及取消传播修复已由 [P3a.4 专项](private-agent-runtime-validation.md)完成本地验收，未推送：1,242 单元 + 10 套选定集成 162 项 = 1,404 项通过，新增 9 项包含其中。本轮未重跑其余集成、Compose 或脚本。
 
 P3a.2 提交 `c96b4e7` 的 [run 40055663280](https://github.com/westbrook0904/FinanceClaw/actions/runs/40055663280) 已整体成功，verify 为 1,226 单元 + 437 集成 = 1,663 项、delivery 为 41 项检查；该基线不包含本轮 P3a.3。
 

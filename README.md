@@ -124,13 +124,13 @@ SSE 转发原生文本增量和工具状态，并回放持久任务事件。先�
 | 基础工具 | 城市补充、示例目录检索、审批后创建本地报告、Artifact 分页读取 |
 | 市场快照 | 发布时固定的数据，携带 provider / as_of；默认数据为空，不是默认接入实时行情 |
 | 市场研究 | 固定目标、深度为一的 ReAct 子 Agent；持久调用身份与 4 次模型 / 10 次实际行情读取上限，额度同时计入根 Turn |
-| 私有叶子 Agent | P3a.3 已本地验收，未推送；同 owner 显式空工具目标、冻结发布、仅显式消息输入，最多 4 次子模型请求并受根预算约束 |
+| 私有叶子 Agent | P3a.3 已推送并通过远程 CI；同 owner 显式空工具目标、冻结发布、仅显式消息输入，最多 4 次子模型请求并受根预算约束 |
 | 组合复盘 | `/workflow portfolio_review …` 固定步骤驱动，包含计算、数据新鲜度、敞口检查、人工批准和归档 |
 | 紫微 | 本命、大限、年、月、日五个受治理入口；默认关闭，仍需显式开发配置 |
 
 P3a.1 用一张 `child_invocations` 窄表保存研究调用身份和累计额度，结果继续复用 `capability_steps`，更换 attempt 不重置计数。相同快照回执不重复执行行情读取或扣减该次子/根读取额度；缓存与 SDK 状态读写都先通过父 Turn 的运行状态、fence、隐私与授权门禁。原验收与远程结果见[固定研究子调用](docs/architecture/child-invocations.md)，组合复盘仍是固定工作流。
 
-P3a.2 已完成旧执行正文清理和恢复核对的本地验收并推送。P3a.3 已完成同 owner 空工具叶子 Agent 委派的本地验收：父发布冻结目标版本，子 Agent 使用独立模型／提示词，只接收明确的 `message`；父侧 Artifact reader 依赖支持大结果引用，子侧保持零工具。仍复用父调度、取消和预算，不增加子队列或轮询。配置与验收边界见[私有叶子 Agent 委派](docs/architecture/private-agent-delegation.md)。
+P3a.2 已完成旧执行正文清理和恢复核对的本地验收并推送。P3a.3 已交付同 owner 空工具叶子 Agent 委派并通过远程 CI：父发布冻结目标版本，子 Agent 使用独立模型／提示词，只接收明确的 `message`；父侧 Artifact reader 依赖支持大结果引用，子侧保持零工具。仍复用父调度、取消和预算，不增加子队列或轮询。配置与验收边界见[私有叶子 Agent 委派](docs/architecture/private-agent-delegation.md)。
 
 #### MCP
 
@@ -277,7 +277,9 @@ P3a.1 提交 `5d82f24` 已推送，[远程流水线](https://github.com/westbroo
 
 P3a.2 提交 `c96b4e7` 已推送，[远程流水线](https://github.com/westbrook0904/FinanceClaw/actions/runs/40055663280)整体 `completed/success`：**1,226 单元 + 437 集成 = 1,663 项 Java 测试**及 **41 项部署检查**通过。提交前本地的进程超时／定向复跑、46 项脚本及 Compose 旧断言修正记录保留在[原本地证据](docs/architecture/evidence/p3a2-implementation.json)，不改写成远程结果。该次远程运行不覆盖 P3a.3；离线和本机模拟服务测试不代表真实外部服务或生产容量验收。
 
-P3a.3 **已本地验收，未推送**：**1,242 单元 + 460 独立集成 = 1,702 项 Java 用例的最新结果通过**，另有 **46 项脚本测试、44 项 Compose 检查**。首次完整 verify 失败于迁移次数旧断言和 CLI 30 秒等待；仅修正测试常数 6→7 后，两个原失败用例按原 CLI 条件精确复跑通过，同一生产 JAR 未变。该结果按用例身份合并，`single_full_verify_success=false`，详见[本轮证据](docs/architecture/evidence/p3a3-implementation.json)。Compose 验证发布冻结与恢复绑定，真实 SDK 委派由运行时测试覆盖，不将离线父模型作为自然语言触发委派的证明。
+P3a.3 提交 `d433423` 已推送，[远程流水线](https://github.com/westbrook0904/FinanceClaw/actions/runs/40065079071)整体 `completed/success`：**1,242 单元 + 460 集成 = 1,702 项 Java 测试、46 项脚本测试、44 项部署检查**通过。[提交前本地证据](docs/architecture/evidence/p3a3-implementation.json)仍保留首次完整 verify 失败、精确复跑及 `single_full_verify_success=false` 的历史事实，不改写为后续远程成功。
+
+P3a.4 **已本地验收，未推送**：完整 **HTTP → Worker → 父 delegate → 子模型 → 父消费结果**链路及取消传播修复已验证，**1,242 单元 + 10 套选定集成 162 项 = 1,404 项**全部通过，新增 9 项包含其中。测试使用真实 Spring 应用和本机 SSE，业务终态仍由持久取消确认推进；本轮未重跑其余集成、Compose 或脚本。P3a.3 的 Compose 只验证发布冻结与恢复绑定，直接调用子适配器的测试也不能代替这条完整入口，详见[父子运行时验收](docs/architecture/private-agent-runtime-validation.md)。P3a 整体仍未完成。
 
 | 文档 | 内容 |
 | --- | --- |
@@ -290,7 +292,8 @@ P3a.3 **已本地验收，未推送**：**1,242 单元 + 460 独立集成 = 1,70
 | [数据结构](docs/architecture/database-schema-review.md) / [数据库访问](docs/architecture/database-access-review.md) | 权威状态边界、锁与查询策略 |
 | [画像与证据记忆](docs/architecture/user-profile-memory.md) | Markdown、来源、确认、版本和隐私 |
 | [执行数据隐私清理](docs/architecture/execution-privacy.md) | 检查点墓碑、步骤与工具文件清理、Snapshot v3 恢复门禁 |
-| [私有叶子 Agent 委派](docs/architecture/private-agent-delegation.md) | 同 owner 空工具目标、固定发布、显式消息与共享预算；P3a.3 已本地验收，未推送 |
+| [私有叶子 Agent 委派](docs/architecture/private-agent-delegation.md) | 同 owner 空工具目标、固定发布、显式消息与共享预算；P3a.3 已推送，远程 CI 成功 |
+| [父子运行时验收](docs/architecture/private-agent-runtime-validation.md) | P3a.4 完整父子模型及取消传播修复；已本地验收，未推送 |
 | [HTTP 校验](docs/architecture/http-request-validation.md) / [Java 规范](docs/architecture/java-coding-guidelines.md) | 输入边界与关键逻辑注释约定 |
 | [运行维护](docs/operations.md) | 受理排空、配置、备份与隔离隐私恢复 |
 | [历史记录](docs/history/README.md) | 过去设计和验收证据，非当前迁移或兼容承诺 |

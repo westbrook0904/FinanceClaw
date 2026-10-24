@@ -1,0 +1,323 @@
+{
+  "milestone": "P3a.4 complete private Agent runtime validation and cancellation propagation repair",
+  "collected_at_utc": "2026-10-24T06:37:57.668338+00:00",
+  "base_commit": "d43342348190277197fa5f4af7b0fba959930c9e",
+  "recorded_before_commit": true,
+  "local_acceptance": {
+    "status": "passed",
+    "delivery_status": "locally accepted; not pushed",
+    "unit": {
+      "suites": 77,
+      "tests": 1242,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "selected_integration": {
+      "suites": 10,
+      "tests": 162,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "includes_new_runtime_cases": 9
+    },
+    "java_tests": 1404,
+    "scoped_maven_verify_success": true,
+    "full_project_integration_rerun": false,
+    "compose_rerun": false,
+    "python_script_tests_rerun": false,
+    "note": "One final verify passed the complete unit phase and ten selected integration suites; the new nine cases are included in 162, not added again. This is not a full-project integration, Compose or Python-script rerun."
+  },
+  "final_validation": {
+    "command": "scripts/mvn.sh -B -ntp -o spotless:apply '-Dit.test=PrivateAgentRuntimeIT,TaskLifecycleIT,ExecutionHeartbeatIT,BusinessIT,WorkingContextIT,RecoveryIT,StateAndIsolationIT,PrivateAgentDelegationIT,ChildInvocationIT,ExecutionPrivacyIT' verify",
+    "process_exit_code": 0,
+    "build_success": true,
+    "results_manifest_path": "target/p3a4/runtime-regression-results.json",
+    "results_manifest_sha256": "edcf16514b4061f34ebf46b3e0c1b5ca29cb2e305b473520429e80703d67125a",
+    "frozen_report_directory": "/tmp/financeclaw-p3a4-verified-reports/final-runtime-regression",
+    "frozen_summary_sha256": "edcf16514b4061f34ebf46b3e0c1b5ca29cb2e305b473520429e80703d67125a",
+    "log_path": "/tmp/financeclaw-p3a4-runtime-regression.log",
+    "log_sha256": "fb239fef882d9925ab6a9a1e0eaeaab09d0939506569cab0bb9b7484b65ed67d",
+    "failsafe_summary_sha256": "4ba1ce106d765cb0c0b4ee9a021de5efd337f3ec39d90c41443216023c7812a2",
+    "unique_unit_case_ids_checked": 1242,
+    "unique_selected_integration_case_ids_checked": 162,
+    "all_current_report_hashes_match": true,
+    "integration_suites": [
+      {
+        "suite": "com.financeclaw.m0.RecoveryIT",
+        "tests": 13,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "report_sha256": "89ce88a2a1de4c6a55c47795a875450ddd7f4573fc0dd28a65297683329b9637"
+      },
+      {
+        "suite": "com.financeclaw.m0.StateAndIsolationIT",
+        "tests": 8,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "report_sha256": "c873e2251cc8e3c70ef718663d84f1bedca4fb7fb787fee8d077d48247ac8c95"
+      },
+      {
+        "suite": "com.financeclaw.m1.ExecutionHeartbeatIT",
+        "tests": 14,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "report_sha256": "b47afe93e7ff56bbefc89f3dd40e6e902624e73e80bb03a12d340309c350e111"
+      },
+      {
+        "suite": "com.financeclaw.m1.TaskLifecycleIT",
+        "tests": 25,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "report_sha256": "8d07120db0d04b23e28d42d914e6a860a2f222ad39c9e74fb0d758e8ed67ce25"
+      },
+      {
+        "suite": "com.financeclaw.m3.BusinessIT",
+        "tests": 25,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "report_sha256": "1e858c1d40ee82f44a0a5bd39b78ede8fbaacb702bb11d58fc022c226dde188c"
+      },
+      {
+        "suite": "com.financeclaw.m5.WorkingContextIT",
+        "tests": 20,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "report_sha256": "cfb08184895be2dbe0067da01389f2f80396c79b7435100a1f8abf2de306fcdd"
+      },
+      {
+        "suite": "com.financeclaw.p3.ChildInvocationIT",
+        "tests": 11,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "report_sha256": "df680a93f6d8ed1484259ff4d869f6d20f3d3f3124b963cb885b14cc9dd33ed4"
+      },
+      {
+        "suite": "com.financeclaw.p3.ExecutionPrivacyIT",
+        "tests": 14,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "report_sha256": "fb6f93e2483fb8965b5cb30c1c79ace8aac73ba1e827308372c65341446f9107"
+      },
+      {
+        "suite": "com.financeclaw.p3.PrivateAgentDelegationIT",
+        "tests": 23,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "report_sha256": "994f384903511d6ef175c29b430302240b934e61d55c24c1a1daee6f5cfd375e"
+      },
+      {
+        "suite": "com.financeclaw.p3.PrivateAgentRuntimeIT",
+        "tests": 9,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "report_sha256": "55410a2d7298f55e52c00a955afcd10bf30662cebf47d74d910c236c716edb4f"
+      }
+    ]
+  },
+  "frozen_inputs": {
+    "manifest_path": "target/p3a4/runtime-regression-inputs.json",
+    "manifest_sha256": "d7ec7160509ef3d60df72ecdf5b0b27918725c4fb195b5aed9c75ade03f53446",
+    "production_paths_compared": 305,
+    "production_changes": {
+      "src/main/java/com/financeclaw/infrastructure/agentscope/execution/TaskAgentRuntime.java": {
+        "base_sha256": "61fc33b3394b055399577db96a1c944e9abd2a0304bca63c13da929a15b22f8f",
+        "current_sha256": "7eb4a1828ddf5d229b45e94ddf20e8cdfe9c5eb13c0c02d4bc46de0d1cd48db4"
+      }
+    },
+    "test_inputs": {
+      "src/test/java/com/financeclaw/p3/PrivateAgentRuntimeIT.java": "c5a44edf6933f98174b9c66e2155ea5a89fab3dea2ed257c4fa645722db51951",
+      "src/test/java/com/financeclaw/p3/PrivateAgentLoopback.java": "614623439fbae9219e7ee266de5ffd03868ab7cbb6a49bc106d47be882147d31"
+    },
+    "jar_path": "target/financeclaw-java-0.1.0-SNAPSHOT.jar",
+    "jar_sha256": "be9cee69755450dc8abacb1fbe75876927e3d61f91dc1ca9b70829bb1d169128",
+    "all_recorded_current_hashes_match": true
+  },
+  "runtime_scope": {
+    "application": "Owned real SpringApplicationBuilder instance on a random HTTP port with the normal automatic TaskWorker",
+    "database": "Real isolated PostgreSQL",
+    "providers": "Loopback OpenAI-compatible SSE over production parent and child ModelFactory/BudgetedTransport adapters",
+    "path": "HTTP admission -> persistent Command -> TaskWorker -> native parent delegate -> governed tool -> frozen native leaf -> child result -> parent bound ToolResult -> sealed root completion",
+    "new_test_methods": 8,
+    "new_test_cases": 9,
+    "packaged_jar_fork": false,
+    "direct_child_adapter_entry": false,
+    "production_model_replaced": false,
+    "schema_migration": 8,
+    "application_tables": 41,
+    "new_tables": []
+  },
+  "cancellation_repair": {
+    "status": "locally accepted on final source",
+    "file": "src/main/java/com/financeclaw/infrastructure/agentscope/execution/TaskAgentRuntime.java",
+    "finding": "The former root stop guarded only the parent model and did not dispose an active child tool Mono and independent HTTP request.",
+    "implementation": [
+      "Active holds a per-attempt AtomicBoolean interrupted flag.",
+      "interrupt sets the flag before the SDK call and emits stop in finally.",
+      "The complete native streamEvents subscription uses takeUntilOther(stop.asMono()), propagating disposal to the active tool and child HTTP.",
+      "After blockLast returns, an interrupted attempt throws Fenced before compatibility checks or checkpoint classification."
+    ],
+    "business_authority": "Persistent cancellation acknowledgement still decides the root business terminal state; event-stream termination alone is not business completion.",
+    "unchanged_boundaries": [
+      "SQL and schema",
+      "queues and child lifecycle",
+      "permissions and privacy gates",
+      "lease/fence checks",
+      "sealed-root-receipt and unknown-execution recovery",
+      "timeouts"
+    ]
+  },
+  "historical_failed_attempts": [
+    {
+      "attempt": 1,
+      "process_exit_code": 1,
+      "integration": {
+        "tests": 9,
+        "failures": 1,
+        "errors": 0,
+        "skipped": 0
+      },
+      "passed_integration_cases": 8,
+      "failed_cases": [
+        "cancellationDuringChildHttpRejectsLateCompletion"
+      ],
+      "frozen_report_directory": "/tmp/financeclaw-p3a4-verified-reports/first-runtime",
+      "report_sha256": "340d591dd43f38aa7d0e4f20da7db32aa17f1faab08bef3c82bbdc3001c6c7ae",
+      "log_sha256": "473c1b0beac3f8c8011347576c0a20fb890e3b6b16fa12e62fd86df6961b54de",
+      "context": "The cancellation case failed its state-version comparison while cancellation finalization was still running. A parent cancellation checkpoint is allowed before the root reaches cancelled; this result alone is not classified as a production gate defect."
+    },
+    {
+      "attempt": 2,
+      "process_exit_code": 1,
+      "integration": {
+        "tests": 9,
+        "failures": 1,
+        "errors": 0,
+        "skipped": 0
+      },
+      "passed_integration_cases": 8,
+      "failed_cases": [
+        "cancellationDuringChildHttpRejectsLateCompletion"
+      ],
+      "frozen_report_directory": "/tmp/financeclaw-p3a4-verified-reports/selected-verify-failed",
+      "report_sha256": "6a740703ceb27ccf0ebfccbf03be721e9dc599c04bcb006921079712ce1a9f5b",
+      "log_sha256": "485d232293226938cfb3d6713416be4bf013122ccb0c377e48a6d1c65cae0e2f",
+      "context": "The strengthened cancellation scenario still failed: the held SSE fixture reached its eight-second gate boundary and did not meet the expected late-send condition after confirmed cancellation.",
+      "unit": {
+        "tests": 1242,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      }
+    }
+  ],
+  "intermediate_candidate_validation": {
+    "status": "passed for the initial full-event-stream cancellation candidate",
+    "process_exit_code": 0,
+    "tests": 4,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "selection": {
+      "PrivateAgentRuntimeIT_strict_cancellation": 1,
+      "TaskLifecycleIT_cancellation_pre_dispatch_and_timeout": 3
+    },
+    "log_path": "/tmp/financeclaw-p3a4-cancel-fix.log",
+    "log_sha256": "a3fa125a0b57dd2ce006910d4c768b2d0ac8eb610a44203a833c0d711cf250c4",
+    "final_implementation_certified": false,
+    "note": "The candidate passed before the planned per-attempt interruption marker and post-blockLast Fenced guard. It is intermediate evidence, not final module acceptance."
+  },
+  "environment_events": [
+    {
+      "stage": "Initial targeted happy-path attempt before PostgreSQL or Spring startup",
+      "status": "Interrupted during Docker API discovery",
+      "test_compilation": {
+        "files": 147,
+        "success": true,
+        "type_errors": 0
+      },
+      "postgres_started": false,
+      "spring_started": false,
+      "business_test_case_entered": false,
+      "docker_checks": {
+        "cli_timeout_seconds": 10,
+        "unix_socket_ping_timeout_seconds": 4,
+        "unix_sockets_timed_out": 2
+      },
+      "maven_process_exit_code": 143,
+      "termination": "Only the current Maven process tree was sent SIGTERM after Docker diagnostics confirmed unresponsiveness.",
+      "docker_desktop_restart": {
+        "previous_user_authorization": true,
+        "quit_process_exit_code": 0,
+        "open_process_exit_code": 0,
+        "api_ready_confirmed": false
+      },
+      "log_path": "/tmp/financeclaw-p3a4-verified-reports/environment/docker-unresponsive-happy.log",
+      "log_sha256": "f4bae441ee08c2e62d7eb3d5ec71c12518f4c12a21c35b3dc2d433df6103b0f2",
+      "classification": "Environment interruption; neither a passing business test nor a business assertion failure."
+    },
+    {
+      "stage": "Docker API recovery",
+      "status": "recovered",
+      "normal_desktop_quit_open_recovered_backend": false,
+      "old_backend_termination": "Normal SIGTERM to the identified old backend; confirmed exited after 15 seconds; Docker Desktop opened again.",
+      "sigkill_used": false,
+      "volumes_removed": false,
+      "api_ping_http_status": 200,
+      "api_ready_at": "2026-10-24T13:49:41+08:00",
+      "business_test_case_entered_at_this_stage": false
+    }
+  ],
+  "retained_contract": {
+    "owner": "same owner",
+    "target": "explicit empty v3 plan frozen by agent-leaf/1",
+    "max_depth": 1,
+    "max_child_model_calls": 4,
+    "max_child_tool_calls": 0,
+    "budget": "Every physical child request also consumes the shared root Turn budget",
+    "cross_attempt": "Only committed business child results replay; no old SDK final adoption or root unconfirmed_execution bypass"
+  },
+  "remote_baseline": {
+    "commit": "d43342348190277197fa5f4af7b0fba959930c9e",
+    "workflow_run_id": 40065079071,
+    "workflow_url": "https://github.com/westbrook0904/FinanceClaw/actions/runs/40065079071",
+    "workflow_status": "completed/success",
+    "verify_job_id": 120786498225,
+    "unit_tests": 1242,
+    "integration_tests": 460,
+    "java_tests": 1702,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "script_tests": 46,
+    "delivery_job_id": 120789063910,
+    "delivery_checks": 44,
+    "includes_p3a4": false
+  },
+  "historical_evidence": {
+    "p3a3_path": "docs/architecture/evidence/p3a3-implementation.json",
+    "p3a3_sha256": "d8efb521332932c1d953b2c188b8f19fc5617f395b6b7b8a6ed6a1e38c01ceee",
+    "unchanged": true,
+    "note": "The original pre-commit local record remains unchanged; the later complete d433423 remote baseline is independent of this new scoped validation."
+  },
+  "not_certified": [
+    "P3a.4 remote CI",
+    "a new full-project integration rerun",
+    "a new Compose or Python-script execution in this module",
+    "parent-child chain in an independently forked packaged application JAR",
+    "live external provider quality or production capacity",
+    "cross-attempt recovery from an unsealed root execution",
+    "tool-enabled or recursive private Agent delegation",
+    "P3a overall completion"
+  ]
+}

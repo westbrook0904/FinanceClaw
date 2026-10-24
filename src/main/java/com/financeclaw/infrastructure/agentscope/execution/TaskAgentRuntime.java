@@ -30,6 +30,7 @@ import io.agentscope.core.state.*;
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.env.Environment;
@@ -57,7 +58,7 @@ public class TaskAgentRuntime implements com.financeclaw.app.execution.port.Agen
     private final ReportService reports;
     private final BusinessCapabilities capabilities;
 
-    private record Active(ReActAgent agent, Sinks.Empty<Void> stop) {}
+    private record Active(ReActAgent agent, Sinks.Empty<Void> stop, AtomicBoolean interrupted) {}
 
     private final Map<String, Active> active = new ConcurrentHashMap<>();
 
@@ -168,6 +169,7 @@ public class TaskAgentRuntime implements com.financeclaw.app.execution.port.Agen
                     }
                 };
         var stop = Sinks.<Void>empty();
+        var interrupted = new AtomicBoolean();
         try (var tools =
                         new GovernedTools(
                                 policy,
@@ -243,7 +245,7 @@ public class TaskAgentRuntime implements com.financeclaw.app.execution.port.Agen
                                         });
                             },
                             resolved.plan() != null && resolved.plan().capabilities().isEmpty())) {
-                active.put(claim.command().attemptId(), new Active(agent, stop));
+                active.put(claim.command().attemptId(), new Active(agent, stop, interrupted));
                 List<Msg> inputs = inputs(claim, store, tools, workContext);
                 agent.streamEvents(
                                 inputs,
@@ -280,7 +282,17 @@ public class TaskAgentRuntime implements com.financeclaw.app.execution.port.Agen
                                                 tool.getToolCallName());
                                     }
                                 })
+                        // 停止信号覆盖完整 SDK 订阅，不能只停止父模型流：父 Agent 在等待子工具时，
+                        // 模型流已经结束，单独停止它不会取消子 Agent 的 HTTP 请求。AgentScope 2.0.3
+                        // 的 streamEvents.onCancel 会 dispose 当前 call，沿 Reactor 传递到子调用；
+                        // cancelled 终态仍由 ExecuteTaskService 核验持久取消回执后确认。
+                        .takeUntilOther(stop.asMono())
                         .blockLast(timeout);
+                // 停止订阅会正常结束事件流，但不代表业务执行成功。先退出本次 attempt，
+                // 避免把中断前的部分检查点解释为 waiting/completed；持久取消确认仍走业务层。
+                if (interrupted.get()) {
+                    throw new Fenced();
+                }
                 tools.checkCompatibility();
                 var saved =
                         store.getVersioned(
@@ -432,9 +444,14 @@ public class TaskAgentRuntime implements com.financeclaw.app.execution.port.Agen
     public void interrupt(Claim claim) {
         var agent = active.get(claim.command().attemptId());
         if (agent != null) {
-            agent.agent().interrupt(IsolatedAgentFactory.context(claim.scope()));
-            // SDK signals alone are only observed between model chunks; also cancel an idle stream.
-            agent.stop().tryEmitEmpty();
+            // 先记录停止意图，保证事件流结束后不会继续解释旧检查点。SDK 的协作式中断
+            // 与 Reactor 订阅取消同时执行；即使 SDK 中断异常，也必须释放正在等待的子调用。
+            agent.interrupted().set(true);
+            try {
+                agent.agent().interrupt(IsolatedAgentFactory.context(claim.scope()));
+            } finally {
+                agent.stop().tryEmitEmpty();
+            }
         }
     }
 

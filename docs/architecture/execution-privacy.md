@@ -1,6 +1,6 @@
 # 执行数据隐私清理：P3a.2
 
-**状态：2026-10-24 完成本地验收，由 `c96b4e7` 推送且远程 CI 成功。** P3a.1 已为固定研究子调用提供在线隐私门禁，P3a.2 补齐遗忘后的执行副本清理和恢复残留检查。[原本地证据](evidence/p3a2-implementation.json)区分首次完整运行、关联进程用例复跑、脚本和部署验证；[远程运行](https://github.com/westbrook0904/FinanceClaw/actions/runs/40055663280)整体 `completed/success`，1,663 项 Java 测试和 41 项部署检查通过。P3a.3 的私有叶子 scope 扩展已单独完成本地验收，尚未推送，见文末。
+**状态：2026-10-24 完成本地验收，由 `c96b4e7` 推送且远程 CI 成功。** P3a.1 已为固定研究子调用提供在线隐私门禁，P3a.2 补齐遗忘后的执行副本清理和恢复残留检查。[原本地证据](evidence/p3a2-implementation.json)区分首次完整运行、关联进程用例复跑、脚本和部署验证；[远程运行](https://github.com/westbrook0904/FinanceClaw/actions/runs/40055663280)整体 `completed/success`，1,663 项 Java 测试和 41 项部署检查通过。P3a.3 的私有叶子 scope 扩展已单独完成验收并推送 `d433423`，远程 CI 成功，见文末。
 
 ## 清理哪些数据
 
@@ -70,6 +70,6 @@ Compose 首轮通过 40 项后，末尾旧断言仍要求遗忘后保留 `publis
 
 验证覆盖普通遗忘与账本重放的原子清理、全部历史根／子 attempt、墓碑和旧 CAS、有效新 epoch／其他 owner 保留、未知状态阻断，以及严格 v3 快照、受限角色和 41 表备份恢复。模型为离线或本机模拟，未认证真实外部供应商或生产容量。
 
-P3a.3 的[同 owner 空工具叶子委派](private-agent-delegation.md)已本地验收，未推送。V8 将既有集合映射扩展到冻结的目标 Agent/release，私有 scope 与 Java 派生式一致；失效绑定即使没有 SDK 状态也计入恢复残留，原先先墓碑后删除及未知 live 状态阻断的契约保留。本轮通过 1,702 项 Java 用例的最新分次结果、46 项脚本及 44 项 Compose 检查；原完整 verify 的两项失败与精确复跑记录见[P3a.3 证据](evidence/p3a3-implementation.json)，不声称单次完整 verify 全绿。P3a.2 的历史证据不改写为 P3a.3 结果。
+P3a.3 的[同 owner 空工具叶子委派](private-agent-delegation.md)已推送 `d433423`，[远程 CI](https://github.com/westbrook0904/FinanceClaw/actions/runs/40065079071)整体成功：1,702 项 Java、46 项脚本和 44 项部署检查通过。V8 将既有集合映射扩展到冻结的目标 Agent/release，私有 scope 与 Java 派生式一致；失效绑定即使没有 SDK 状态也计入恢复残留，原先先墓碑后删除及未知 live 状态阻断的契约保留。本轮通过 1,702 项 Java 用例的最新分次结果、46 项脚本及 44 项 Compose 检查；原完整 verify 的两项失败与精确复跑记录见[P3a.3 证据](evidence/p3a3-implementation.json)，不声称单次完整 verify 全绿。P3a.2 的历史证据不改写为 P3a.3 结果。
 
 P3a 整体、通用子工具装配、递归、RAG 与 Scheduler 不属于本模块。
