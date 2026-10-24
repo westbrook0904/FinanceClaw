@@ -1,6 +1,6 @@
 # 固定市场研究子调用：P3a.1
 
-P3a.1 给现有 `market_research` 子 Agent 增加持久调用身份、累计预算和检查点访问门禁。P3a.1 已于 **2026-10-24 完成本地验收**：1,226 项完整单元/契约/架构测试、109 项定向 PostgreSQL 测试及 39 项 Compose 检查通过。109 项来自 10 个指定 suite 的当前通过结果，未运行完整 Maven verify，见[本轮证据](evidence/p3a1-implementation.json)。已通过的远程基线 `8e57404` 不包含本轮 P3a.1，阶段状态见[实施方案](platform-implementation-plan.md#11-p3a1-固定研究子调用)。
+P3a.1 给现有 `market_research` 子 Agent 增加持久调用身份、累计预算和检查点访问门禁。P3a.1 已于 **2026-10-24 完成本地验收并推送 `5d82f24`，远程 verify/delivery 均成功**。提交前本地通过 1,226 项完整单元/契约/架构测试、109 项定向 PostgreSQL 测试及 39 项 Compose 检查；109 项来自 10 个指定 suite，未运行完整 Maven verify，见[原本地证据](evidence/p3a1-implementation.json)。远程最终结果见文末，后续 P3a.2 的执行数据清理也已完成本地验收、尚未推送，阶段状态见[实施方案](platform-implementation-plan.md#11-p3a1-固定研究子调用)。
 
 ## 使用范围
 
@@ -62,7 +62,9 @@ P3a.1 给现有 `market_research` 子 Agent 增加持久调用身份、累计预
 
 `pending/completed` 是调用元数据，不替代父 Turn 的完成、失败、取消或恢复权威。没有独立子心跳、租约、轮询或调度器，也不会因为子状态仍为 pending 就自动启动后台补跑。
 
-本轮保证的是受治理访问和迟到回调门禁，不宣称遗忘流程已完整物理删除调用元数据、所有 `capability_steps` 正文或全部子 SDK 状态。已有隐私恢复与独立遗忘账本继续生效；扩大物理清除和恢复残留检查范围需要单独验收。
+P3a.1 的验收范围是受治理访问和迟到回调门禁，不包含调用元数据、`capability_steps` 正文及全部子 SDK 状态的完整物理清除。后续 **P3a.2 已补齐这部分清理并完成本地验收**：根据根 Turn、全部历史 attempt 和调用 ID，在 SQL 中使用与 Java 相同的长度前缀 SHA-256 派生根／子状态 scope；先将旧 SDK 正文改为递增版本墓碑，再删除步骤、子调用和隐私绑定工具文件。该次序保留定位依据及旧 CAS 的拒绝能力。
+
+P3a.2 将普通遗忘与独立账本重放接到同一清理契约，并为恢复快照增加四类执行残留与无归属状态核对。新 epoch、其他 owner 及既有合法墓碑保留；无法定位的 live SDK 状态不能假定已清除，必须阻断。业务 Turn、Journal、报告和普通 Artifact 的保留策略没有扩大为账户全删。详见[执行数据隐私清理](execution-privacy.md)。
 
 ## 数据库成本与实现入口
 
@@ -82,4 +84,6 @@ P3a.1 给现有 `market_research` 子 Agent 增加持久调用身份、累计预
 
 完整单元/契约/架构测试为 **1,226 项**，零失败、错误或跳过。定向 PostgreSQL 验证当前共 **109 项、10 个 suite**：首次 108 项中，9 个 suite 的 84 项通过，只有 BusinessIT 的旧手写无绑定缓存 fixture 被新门禁拒绝；改为真实 research 流程并新增孤立回执拒绝用例后，BusinessIT 最后 25/25 通过。两次集成运行之间未修改生产实现，不能将这组定向结果表述为一次完整 Maven verify。
 
-同一 JAR 的 **39 项 Compose 检查**已成功并完成隔离环境清理，覆盖故障恢复、权限、遗忘、41 张应用表备份恢复和恢复后的新执行。模型使用离线或本机模拟服务，行情为合成数据；这些结果不认证真实供应商接入或生产容量。冻结报告摘要、三份运行日志、Compose 报告及 JAR SHA-256 记录在[本轮证据](evidence/p3a1-implementation.json)。P3a.1 的新远程 CI 未由本轮认证；任意私有 Agent 委派、P3a 整体、P3b 和 P4 仍未完成。
+同一 JAR 的 **39 项 Compose 检查**已成功并完成隔离环境清理，覆盖故障恢复、权限、遗忘、41 张应用表备份恢复和恢复后的新执行。模型使用离线或本机模拟服务，行情为合成数据；这些结果不认证真实供应商接入或生产容量。冻结报告摘要、三份运行日志、Compose 报告及 JAR SHA-256 记录在[原本地证据](evidence/p3a1-implementation.json)，不改写为后续测试数字。
+
+提交 `5d82f24` 的 [run 40045383841](https://github.com/westbrook0904/FinanceClaw/actions/runs/40045383841) 已整体 `completed/success`：verify 为 **1,226 单元/契约/架构 + 423 集成 = 1,649 项**，delivery 的 **39 项部署检查**通过。该次远程运行不覆盖后续 P3a.2；任意私有 Agent 委派、P3a 整体、P3b 和 P4 仍未完成。

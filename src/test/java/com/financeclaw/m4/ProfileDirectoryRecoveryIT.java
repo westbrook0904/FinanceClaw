@@ -81,7 +81,7 @@ class ProfileDirectoryRecoveryIT {
 
     @BeforeEach
     void reset() {
-        database.sql().execute("TRUNCATE business.conversations CASCADE");
+        database.sql().execute("TRUNCATE business.conversations,agent_runtime.states CASCADE");
         database.sql()
                 .execute(
                         "TRUNCATE memory.owners,memory.jobs,memory.operations,memory.audit CASCADE");

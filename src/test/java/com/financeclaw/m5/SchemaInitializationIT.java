@@ -31,7 +31,7 @@ class SchemaInitializationIT {
         // 增量迁移必须给已存在的应用角色授予新表权限，不能依赖旧 GRANT ON ALL TABLES。
         sql.execute("CREATE ROLE financeclaw_app");
         initialization = Flyway.configure().dataSource(source).load();
-        assertThat(initialization.migrate().migrationsExecuted).isEqualTo(6);
+        assertThat(initialization.migrate().migrationsExecuted).isEqualTo(7);
         initialRows = new LinkedHashMap<>();
         for (String table : tables()) {
             initialRows.put(table, sql.queryForObject("SELECT count(*) FROM " + table, Long.class));
@@ -88,8 +88,8 @@ class SchemaInitializationIT {
                         "memory.sources",
                         "memory.turn_snapshots",
                         "memory.user_profiles");
-        assertThat(initialization.info().applied()).hasSize(6);
-        assertThat(initialization.info().current().getVersion().toString()).isEqualTo("6");
+        assertThat(initialization.info().applied()).hasSize(7);
+        assertThat(initialization.info().current().getVersion().toString()).isEqualTo("7");
         assertThat(initialization.validateWithResult().validationSuccessful).isTrue();
         assertThat(initialization.migrate().migrationsExecuted).isZero();
     }

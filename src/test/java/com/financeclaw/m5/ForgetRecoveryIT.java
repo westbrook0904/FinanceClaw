@@ -82,7 +82,7 @@ class ForgetRecoveryIT {
     @BeforeEach
     void reset() {
         sql = new JdbcTemplate(source);
-        sql.execute("TRUNCATE business.conversations CASCADE");
+        sql.execute("TRUNCATE business.conversations,agent_runtime.states CASCADE");
         sql.execute("TRUNCATE memory.owners,memory.jobs,memory.audit,memory.operations CASCADE");
         sql.update(
                 "UPDATE memory.privacy_ledger_binding SET lineage=?,active=false",

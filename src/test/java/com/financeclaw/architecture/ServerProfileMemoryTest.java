@@ -218,6 +218,7 @@ class ServerProfileMemoryTest {
         ordered.verify(db).eraseProfile(OWNER);
         ordered.verify(db).eraseSnapshots(OWNER);
         ordered.verify(db).eraseWorkContexts(OWNER);
+        ordered.verify(db).eraseExecutionData(OWNER, 2);
         verify(db, never()).purged(any());
     }
 
@@ -234,6 +235,7 @@ class ServerProfileMemoryTest {
         verify(db, never()).eraseProfile(any());
         verify(db, never()).eraseSnapshots(any());
         verify(db, never()).eraseWorkContexts(any());
+        verify(db, never()).eraseExecutionData(any(), anyLong());
         verify(db, never()).recordOperation(any(), anyString(), anyString(), anyString());
         verify(db, never()).purged(any());
         verifyNoInteractions(events);

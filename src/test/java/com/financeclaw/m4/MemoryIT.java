@@ -67,7 +67,7 @@ class MemoryIT {
     @BeforeEach
     void reset() throws Exception {
         sql = new JdbcTemplate(source);
-        sql.execute("TRUNCATE business.conversations CASCADE");
+        sql.execute("TRUNCATE business.conversations,agent_runtime.states CASCADE");
         sql.execute(
                 "TRUNCATE memory.owners,memory.jobs,memory.operations,memory.audit,memory.embedding_profiles CASCADE");
         sql.execute(

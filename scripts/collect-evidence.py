@@ -58,7 +58,7 @@ if (preflight['tests'] != 12 or any(preflight[k] for k in ('failures', 'errors',
         or any(manifest['scripts/' + name] != value for name, value in preflight['source_sha256'].items())):
     raise SystemExit('Drain preflight evidence is stale or failed; run scripts/test-inspect-drain.py')
 privacy = json.loads((root / "target/m5e/privacy-tests.json").read_text())
-if (privacy['tests'] != 14 or any(privacy[k] for k in ('failures', 'errors', 'skipped'))
+if (privacy['tests'] != 16 or any(privacy[k] for k in ('failures', 'errors', 'skipped'))
         or any(manifest[name] != value for name, value in privacy['source_sha256'].items())):
     raise SystemExit('Restore privacy evidence is stale or failed; run scripts/test-restore-privacy.py')
 evidence = {"commit": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True).strip(), "application": "FinanceClaw Java", "collected_at_utc": datetime.now(timezone.utc).isoformat(),

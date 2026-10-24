@@ -268,6 +268,7 @@ class MemoryHttpContractTest {
         verify(db).eraseFacts(OWNER);
         verify(db).eraseSnapshots(OWNER);
         verify(db).eraseWorkContexts(OWNER);
+        verify(db).eraseExecutionData(OWNER, 2);
         verify(db).eraseIndex(OWNER);
         verify(db).eraseJobs(OWNER);
         verify(db).recordOperation(OWNER, key, ExecutionScope.hash(List.of("forget", "1")), "2");
@@ -305,6 +306,7 @@ class MemoryHttpContractTest {
                 .andExpect(content().json("{\"epoch\":2}", JsonCompareMode.STRICT));
         verify(db, never()).forget(any());
         verify(db, never()).eraseFacts(any());
+        verify(db, never()).eraseExecutionData(any(), anyLong());
     }
 
     @Test

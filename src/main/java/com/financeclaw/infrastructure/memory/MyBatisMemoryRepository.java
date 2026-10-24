@@ -220,6 +220,11 @@ public class MyBatisMemoryRepository implements MemoryRepository {
     }
 
     @Override
+    public void eraseExecutionData(Owner owner, long beforeEpoch) {
+        db.deleteExecutionDataBeforeEpoch(owner, beforeEpoch);
+    }
+
+    @Override
     public void eraseJobs(Owner owner) {
         db.updateJobsForgotten(owner);
     }

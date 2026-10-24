@@ -14,7 +14,8 @@ files = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(files)
 MAX_BYTES = 16 * 1024 * 1024
 COUNTERS = ('unsafe_profiles', 'unsafe_sources', 'unsafe_facts', 'unsafe_projections', 'unsafe_snapshots',
-            'unsafe_work_contexts', 'unsafe_jobs', 'invalid_audit_targets')
+            'unsafe_work_contexts', 'unsafe_jobs', 'invalid_audit_targets',
+            'unsafe_sdk_states', 'unsafe_capability_steps', 'unsafe_child_invocations', 'unsafe_tool_artifacts')
 
 
 def require(value):
@@ -30,12 +31,13 @@ def timestamp(value):
 
 def snapshot(raw):
     require(type(raw) is dict and set(raw) == {'schema_version', 'scope', 'consistency',
-                                              'captured_at', 'orphan_owners', 'owners'})
-    require(type(raw['schema_version']) is int and raw['schema_version'] == 2
+                                              'captured_at', 'orphan_owners', 'orphan_runtime_rows', 'owners'})
+    require(type(raw['schema_version']) is int and raw['schema_version'] == 3
             and raw['scope'] == 'all_memory_owners'
             and raw['consistency'] == 'repeatable_read_read_only')
     timestamp(raw['captured_at'])
     files.number(raw['orphan_owners'])
+    files.number(raw['orphan_runtime_rows'])
     require(type(raw['owners']) is list and len(raw['owners']) <= 100000)
     owners = {}
     audit_ids = set()
@@ -65,7 +67,7 @@ def snapshot(raw):
 
 
 def compare(reference, restored):
-    report = {'schema_version': 2, 'scope': 'all_memory_owners',
+    report = {'schema_version': 3, 'scope': 'all_memory_owners',
               'assessment': 'incomplete', 'errors': [], 'checks': {},
               'consistency': 'two_supplied_snapshots',
               'checked_at': datetime.now(timezone.utc).isoformat()}
@@ -74,6 +76,7 @@ def compare(reference, restored):
         checks = report['checks']
         checks['owner_sets_match'] = expected.keys() == actual.keys()
         checks['no_orphan_owners'] = reference['orphan_owners'] == restored['orphan_owners'] == 0
+        checks['no_orphan_runtime_rows'] = reference['orphan_runtime_rows'] == restored['orphan_runtime_rows'] == 0
         checks['epochs_match'] = checks['owner_sets_match'] and all(
             expected[k]['epoch'] == actual[k]['epoch'] for k in expected)
         checks['privacy_events_match'] = checks['owner_sets_match'] and all(
@@ -122,7 +125,7 @@ def main():
         report = compare(reference, restored)
         report['input_sha256'] = {'reference': ref_hash, 'restored': restored_hash}
     except (files.Invalid, ValueError, UnicodeError, RecursionError):
-        report = {'schema_version': 2, 'assessment': 'incomplete', 'errors': ['invalid_snapshot']}
+        report = {'schema_version': 3, 'assessment': 'incomplete', 'errors': ['invalid_snapshot']}
     except OSError:
         print('Privacy check failed: local_file_error', file=sys.stderr)
         return 1

@@ -73,7 +73,7 @@ class RoleAssemblyIT {
                         false,
                         Map.of("spring.flyway.enabled", "true"))) {
             assertThat(migration.getBean(Flyway.class).info().current().getVersion().toString())
-                    .isEqualTo("6");
+                    .isEqualTo("7");
         }
         sql.execute("CREATE ROLE financeclaw_memory LOGIN PASSWORD 'test-memory-only'");
         sql.execute(
@@ -95,7 +95,7 @@ class RoleAssemblyIT {
 
     @BeforeEach
     void clearDatabase() {
-        sql.execute("TRUNCATE business.conversations CASCADE");
+        sql.execute("TRUNCATE business.conversations,agent_runtime.states CASCADE");
         sql.execute("TRUNCATE memory.owners,memory.jobs,memory.operations,memory.audit CASCADE");
     }
 
@@ -382,7 +382,7 @@ class RoleAssemblyIT {
                                 "financeclaw.feishu.enabled",
                                 "true"))) {
             assertThat(context.getBean(Flyway.class).info().current().getVersion().toString())
-                    .isEqualTo("6");
+                    .isEqualTo("7");
             assertThat(mappers(context)).isEmpty();
             absent(
                     context,

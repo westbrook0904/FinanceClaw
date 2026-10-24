@@ -88,6 +88,9 @@ public interface MemoryRepository {
 
     void eraseWorkContexts(Owner owner);
 
+    /** 在持有 owner 隐私锁的遗忘事务内擦除旧执行正文；新 epoch 与既有墓碑不受影响。 */
+    void eraseExecutionData(Owner owner, long beforeEpoch);
+
     void eraseJobs(Owner owner);
 
     Privacy purge();

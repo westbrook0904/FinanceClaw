@@ -81,7 +81,9 @@ flowchart LR
 
 可选向量搜索使用 **1024 维**嵌入，固定模型 revision 和配置指纹；SQL 事实是权威，向量索引是可重建投影。`GET /v1/memory/search` 是显式搜索接口，当前 Agent **不是每轮自动向量召回**。提取和索引由独立受限 Worker 执行，远程调用在事务外，写回前重新检查租约、owner、epoch 和 revision。
 
-遗忘会提升 epoch，清理画像与记忆正文、召回、投影和作业，并阻断旧版本执行。可选独立遗忘账本用于恢复旧备份后的核对和重放，默认关闭。该能力不等于物理删除业务 Journal、所有 AgentState 和全部产物。
+遗忘会提升 epoch，清理画像与记忆正文、召回、投影和作业，并阻断旧版本执行。可选独立遗忘账本用于恢复旧备份后的核对和重放，默认关闭。P3a.2 已补齐执行副本的物理清理与恢复残留检查并完成本地验收：同一遗忘事务先擦除根／研究子 Agent 的全部历史 attempt 检查点正文并保留 CAS 墓碑，再删除旧步骤、子调用记录和 `privacy_bound=true` 的工具文件。普通业务 Turn、Journal、报告和非隐私绑定 Artifact 继续按业务保留策略管理，不能将遗忘解释为账户数据全删。
+
+恢复核对同步升级为 Snapshot v3，必须包含 SDK 状态、步骤、子调用、工具文件四类残留计数及全局孤立运行行计数；v2 无法证明这些执行副本已清理，当前比较器拒绝使用。未知且仍有正文的 SDK 状态会阻断清理，不能因为 epoch 已更新就报告成功。范围与操作入口见[执行数据隐私清理](docs/architecture/execution-privacy.md)。
 
 直接目录维护的路径、权限和 Compose 启动步骤见[画像目录配置](docs/architecture/user-profile-memory.md#直接维护服务器目录)，也可使用 `compose.profile.yml` 挂载服务器目录。
 
@@ -126,6 +128,8 @@ SSE 转发原生文本增量和工具状态，并回放持久任务事件。先�
 | 紫微 | 本命、大限、年、月、日五个受治理入口；默认关闭，仍需显式开发配置 |
 
 P3a.1 用一张 `child_invocations` 窄表保存研究调用身份和累计额度，结果继续复用 `capability_steps`，更换 attempt 不重置计数。相同快照回执不重复执行行情读取或扣减该次子/根读取额度；缓存与 SDK 状态读写都先通过父 Turn 的运行状态、fence、隐私与授权门禁。P3a.1 已于 2026-10-24 完成本地验收：1,226 项完整单元/契约/架构测试、109 项定向 PostgreSQL 测试及 39 项 Compose 检查通过；未运行完整 Maven verify，模型为离线或本机模拟、行情为合成数据，详见[固定研究子调用](docs/architecture/child-invocations.md)。当前没有任意私有 Agent 委派、独立子调度或生产 `SubAgentTool` 封装；组合复盘仍是固定工作流。
+
+P3a.2 已完成旧执行正文清理和恢复核对的本地验收，不增加委派目标、后台扫描或独立子生命周期。同 owner 的空工具叶子 Agent 委派留待 P3a.3，本轮不开展。
 
 #### MCP
 
@@ -201,7 +205,7 @@ docker compose up -d --build --wait --wait-timeout 180
 curl --fail http://localhost:8080/actuator/health/readiness
 ```
 
-就绪预期返回 `{"status":"UP"}`。Compose 的 `init-db` 完成新库结构与授权后，启动统一业务服务 `api` 和受限 `memory-worker`；API 仅绑定本机 8080。主库由 V1 基线及 V2–V6 演进建立 41 张应用表，支持当前 Java V1 基线升级；不导入 Python 或历史实验库，详见[数据库初始化与升级](docs/architecture/fresh-schema.md)。
+就绪预期返回 `{"status":"UP"}`。Compose 的 `init-db` 完成新库结构与授权后，启动统一业务服务 `api` 和受限 `memory-worker`；API 仅绑定本机 8080。主库由 V1 基线及 V2–V7 演进建立 41 张应用表；V7 只增加执行隐私清理／核对函数及索引，不增加表。支持当前 Java V1 基线升级，不导入 Python 或历史实验库，详见[数据库初始化与升级](docs/architecture/fresh-schema.md)。
 
 ### 跑通一次请求
 
@@ -268,7 +272,9 @@ python3 scripts/validate-compose.py --ziwei --admission --preflight --restore-pr
 
 历史上下文阶段曾记录 1,032 项 Java 单元/契约/架构测试及 59 项定向回归，并因当时 Docker 超时未完成数据库/Compose 实测。该限制描述的是当时的验证范围；后续 P1 全量验收已覆盖当前数据库集成与容器场景，真实摘要供应商输出仍需单独验收。
 
-代码基线 [`8e57404`](https://github.com/westbrook0904/FinanceClaw/commit/8e574046eedb5c3ad4487b8fa7cb23759d365076) 的[远程验证](https://github.com/westbrook0904/FinanceClaw/actions/runs/39975391411)已完成：`verify` 通过 **1,214 项单元/契约/架构测试 + 409 项集成测试 = 1,623 项**，`delivery` 部署验收也成功。该基线不包含当前 P3a.1；本轮验证状态见[子调用说明](docs/architecture/child-invocations.md)，不能沿用基线结果宣称本轮 CI 通过。离线和本机模拟服务测试也不代表真实外部服务或生产容量验收。Java 汇总写入 `target/verification/results.json`，Compose 单独记录部署证据。
+P3a.1 提交 `5d82f24` 已推送，[远程流水线](https://github.com/westbrook0904/FinanceClaw/actions/runs/40045383841)整体 `completed/success`：`verify` 通过 **1,226 项单元/契约/架构测试 + 423 项集成测试 = 1,649 项**，`delivery` 的 **39 项部署检查**也通过。该次运行不包含后续 P3a.2。
+
+P3a.2 已完成本地验收：**1,226 项单元测试、437 项集成用例的最新结果、46 项脚本测试和最终 41 项 Compose 检查通过**。集成初跑 435 项通过、2 项进程超时，使用同一 JAR 复跑 5 项覆盖两处失败；因此不是单次完整 Maven verify 全绿。Compose 首轮 40 项通过后遇到遗忘后的旧断言，修正验证脚本后完整重跑通过，详见[本轮证据](docs/architecture/evidence/p3a2-implementation.json)。P3a.2 尚未推送，远程 CI 仍以上述 P3a.1 为准。离线和本机模拟服务测试不代表真实外部服务或生产容量验收。
 
 | 文档 | 内容 |
 | --- | --- |
@@ -280,6 +286,7 @@ python3 scripts/validate-compose.py --ziwei --admission --preflight --restore-pr
 | [平台化实施方案](docs/architecture/platform-implementation-plan.md) | 控制面、数据面、Scheduler 边界与分阶段验收 |
 | [数据结构](docs/architecture/database-schema-review.md) / [数据库访问](docs/architecture/database-access-review.md) | 权威状态边界、锁与查询策略 |
 | [画像与证据记忆](docs/architecture/user-profile-memory.md) | Markdown、来源、确认、版本和隐私 |
+| [执行数据隐私清理](docs/architecture/execution-privacy.md) | 检查点墓碑、步骤与工具文件清理、Snapshot v3 恢复门禁 |
 | [HTTP 校验](docs/architecture/http-request-validation.md) / [Java 规范](docs/architecture/java-coding-guidelines.md) | 输入边界与关键逻辑注释约定 |
 | [运行维护](docs/operations.md) | 受理排空、配置、备份与隔离隐私恢复 |
 | [历史记录](docs/history/README.md) | 过去设计和验收证据，非当前迁移或兼容承诺 |

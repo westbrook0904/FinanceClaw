@@ -2,7 +2,7 @@
 
 本文是 FinanceClaw Java 的实施方案与阶段状态记录。面向四类使用方式：通用对话、定制 RAG Workflow、通过提示词与工具等配置组装 Agent，以及直接调用一个独立 Agent。本文中的目标模型不代表当前已经实现的能力。
 
-截至 2026-10-24，已完成现有代码与官方 AgentScope Service 的设计对比，并完成 **P1：持久发布与会话版本绑定** 的实现、本地隔离验收和推送。**P2a：Agent 身份、提示词草稿与目标会话** 已完成本地全量和隔离容器验收并推送；P2b 受控能力选择与依赖冻结已推送，基线 `8e57404` 的远程 verify/delivery 均通过，本地历史证据见第 10 节。**P3a.1 固定研究子调用**已完成本地验收：1,226 项完整单元/契约测试、109 项定向 PostgreSQL 测试和 39 项 Compose 检查通过，未运行完整 Maven verify；P3a 整体、P3b 和 P4 尚未完成，不能把固定深度为一的研究执行器视为任意私有 Agent 委派。每阶段应形成可独立检查的代码、验证记录与交付范围，再推进下一阶段；P1 验证见第 7 节。
+截至 2026-10-24，已完成现有代码与官方 AgentScope Service 的设计对比，并完成 **P1：持久发布与会话版本绑定** 的实现、本地隔离验收和推送。**P2a：Agent 身份、提示词草稿与目标会话** 已完成本地全量和隔离容器验收并推送；P2b 受控能力选择与依赖冻结已推送，本地历史证据见第 10 节。**P3a.1 固定研究子调用**已由 `5d82f24` 推送，远程流水线整体成功：1,649 项 Java 测试和 39 项部署检查通过。**P3a.2 执行数据隐私清理**已完成本地验收、未推送；同 owner 空工具叶子 Agent 委派留待 P3a.3。P3a 整体、P3b 和 P4 尚未完成，不能把固定深度为一的研究执行器视为任意私有 Agent 委派。每阶段应形成可独立检查的代码、验证记录与交付范围，再推进下一阶段；P1 验证见第 7 节。
 
 ## 1. 实施前基线与改造目标
 
@@ -225,7 +225,7 @@ P2b 验收：Tool/Skill 白名单与 scope 交集实际控制装配；Schema/内
 
 ### P3：独立 Agent 调用与定制 RAG Workflow
 
-状态：**P3a.1 本地验收完成；P3a 整体与 P3b 尚未完成**。P3a.1 先为固定市场研究子 Agent 加入持久身份、累计额度、结果原子性和父门禁；不开放任意私有 Agent 委派。见[固定研究子调用](child-invocations.md)及第 11 节。P3a 与 P3b 仍分别验收，不要求同时交付。
+状态：**P3a.1 已本地验收并推送；P3a.2 已本地验收、未推送；P3a 整体与 P3b 尚未完成**。P3a.1 为固定市场研究子 Agent 加入持久身份、累计额度、结果原子性和父门禁；P3a.2 补齐执行正文的遗忘清理及恢复残留检测。见[固定研究子调用](child-invocations.md)、[执行数据隐私清理](execution-privacy.md)及第 11、12 节。同 owner 空工具叶子 Agent 委派安排在后续 P3a.3，不在本轮实现。P3a 与 P3b 仍分别验收，不要求同时交付。
 
 - P3a：建立统一调用入口及父子调用记录，支持直接调用已发布 Agent、受限同步子调用、父子预算与权限收敛；逐步将现有研究子 Agent 适配到同一契约。
 - P3b：建立知识库、摄取作业、索引发布和 RetrieverProfile；先实现固定 RAG Workflow，再决定是否需要通用流程 DSL。摄取/embedding 属于后台工作，知识查询属于受治理的执行步骤。
@@ -260,8 +260,9 @@ P2b 验收：Tool/Skill 白名单与 scope 交集实际控制装配；Schema/内
 | P1 治理回归与文档同步 | 已完成 | 1,440 项 Java 测试、44 项脚本测试、32 项 Compose 检查；文档与静态检查通过 | 真实外部服务和生产环境不属于本轮验收 |
 | P2a Agent 定义与目标会话 | 已完成并推送 `851446f` | 1,516 项 Java 测试、44 项脚本测试、36 项 Compose 检查；[证据](evidence/p2a-implementation.json) | 真实外部服务不在本轮验收范围；能力装配按 P2b 推进 |
 | P2b 受控能力装配 | 已推送，远程基线已通过 | `8e57404` 远程 verify：1,214 单元 + 409 集成，delivery 成功；提交前[本地证据](evidence/p2b-implementation.json)单独保留 | 远程基线不覆盖后续 P3a.1；真实外部服务和生产容量未认证 |
-| P3a.1 固定研究子调用 | 已完成本地验收 | 1,226 项完整单元/契约/架构测试、109 项定向 PostgreSQL 测试、39 项 Compose 检查；[证据](evidence/p3a1-implementation.json) | 未运行完整 Maven verify；未认证本轮远程 CI、真实供应商或生产容量 |
-| P3a 独立 Agent 与子调用 | 部分实现，整体未完成 | P3a.1 仅覆盖固定深度为一的市场研究执行器 | 通用私有 Agent 委派、目标授权和完整调用模型 |
+| P3a.1 固定研究子调用 | 已推送 `5d82f24`，远程流水线通过 | 远程 1,226 单元 + 423 集成 = 1,649 项；delivery 39 项检查；提交前[本地证据](evidence/p3a1-implementation.json)单独保留 | 真实供应商或生产容量未认证；P3a.2 验证单独记录 |
+| P3a.2 执行数据隐私清理 | 已本地验收，未推送 | 1,226 单元、437 集成最新逐用例结果、46 脚本、最终 41 项 Compose；[证据](evidence/p3a2-implementation.json) | 非单次完整 verify 全绿；本轮远程 CI、真实供应商和生产容量未认证 |
+| P3a 独立 Agent 与子调用 | 部分实现，整体未完成 | P3a.1 仅覆盖固定深度为一的市场研究执行器，P3a.2 不扩大委派范围 | P3a.3 叶子私有 Agent 委派、目标授权和完整调用模型 |
 | P3b 定制 RAG Workflow | 待实施 | 仅有现有记忆与固定 Workflow 基础 | 知识模型、索引发布、端到端引用验收 |
 | P4 Scheduler 与服务化 | 待实施 | 现有 TaskWorker/lease/fence | 触发模型、调度扩展与拆分前置设施 |
 
@@ -296,7 +297,7 @@ Compose 的 32 项检查包含容器内发布命令、受限角色、强制退�
 | 发布运维入口 | [ReleaseAdministrationApplication](../../src/main/java/com/financeclawrelease/ReleaseAdministrationApplication.java)、[容器入口](../../ops/container-entrypoint.sh) | [CLI 集成测试](../../src/test/java/com/financeclawrelease/ReleaseAdministrationCliIT.java)：真实打包进程、CAS/回滚、坏候选下查询、禁用自动迁移与错误脱敏 |
 | 暂停任务恢复与角色权限 | [角色装配](../../src/main/java/com/financeclaw/bootstrap/RoleConfiguration.java)、[角色授权](../../src/main/resources/deployment/grants.sql) | [ZiweiRecoveryIT](../../src/test/java/com/financeclaw/m6/ZiweiRecoveryIT.java)：配置变化后原版本继续；[RoleAssemblyIT](../../src/test/java/com/financeclaw/m5/RoleAssemblyIT.java)：Memory Worker 拒绝控制面权限 |
 
-P1、P2a 和 P2b 已推送。工程继续保持单业务 JVM；P3a.1 先完善固定研究调用的持久身份与预算，用户自助管理、任意私有 Agent 委派、RAG 知识库与触发 Scheduler 继续按后续阶段推进。
+P1、P2a、P2b 和 P3a.1 已推送。工程继续保持单业务 JVM；P3a.2 已本地验收、未推送，补齐执行正文清理和恢复残留检查；用户自助管理、私有 Agent 委派、RAG 知识库与触发 Scheduler 继续按后续阶段推进。
 
 
 ## 9. P2a 实现与验收记录
@@ -351,4 +352,18 @@ P3a.1 已于 2026-10-24 完成本地验收。范围为固定 `market_research`�
 
 实现与测试入口、SQL 成本、跨 attempt 及物理删除的边界见[固定研究子调用](child-invocations.md)。P3a 整体、P3b RAG 和 P4 Scheduler 尚未完成，不使用 P2b 历史数字代替本轮验证。
 
-已确认的远程结果仅属于提交 [`8e57404`](https://github.com/westbrook0904/FinanceClaw/commit/8e574046eedb5c3ad4487b8fa7cb23759d365076)：[run 39975391411](https://github.com/westbrook0904/FinanceClaw/actions/runs/39975391411) 的 verify/delivery 均 completed/success，verify 为 1,214 单元 + 409 集成 = 1,623 项。该基线不包含 P3a.1，也不代表真实外部模型/MCP/飞书或生产容量验收。
+P3a.1 提交 `5d82f24` 的 [run 40045383841](https://github.com/westbrook0904/FinanceClaw/actions/runs/40045383841) 已确认整体 completed/success：verify 为 **1,226 单元/契约/架构 + 423 集成 = 1,649 项**，delivery 的 **39 项部署检查**通过。此前 [`8e57404`](https://github.com/westbrook0904/FinanceClaw/commit/8e574046eedb5c3ad4487b8fa7cb23759d365076) 的 [run 39975391411](https://github.com/westbrook0904/FinanceClaw/actions/runs/39975391411) 为 1,214 单元 + 409 集成，原记录继续保留。两次运行均不包含后续 P3a.2，也不代表真实外部模型/MCP/飞书或生产容量验收。
+
+## 12. P3a.2 执行数据隐私清理
+
+**状态：已本地验收，未推送。** 本模块处理固定研究调用在遗忘后留下的步骤、子调用、SDK 正文和隐私绑定工具文件，再推进 P3a.3 的叶子私有 Agent 委派。详细契约见[执行数据隐私清理](execution-privacy.md)。
+
+V7 不加表，主库保持 41 表；四个集合函数负责同构 scope hash、全部历史 attempt 的根／子 scope 映射、执行残留汇总和 owner 范围清理。普通遗忘及独立账本重放在各自原事务内调用清理：先清空 SDK 正文、保留递增版本墓碑，再删除步骤、子调用和 `privacy_bound=true` 工具文件。合法新 epoch、其他 owner 和既有墓碑版本保留；普通业务 Turn、Journal、报告及非隐私绑定 Artifact 保留。
+
+未绑定 `child:*` 步骤只提供擦除定位，不恢复预算或授权。未知 live SDK 状态不能通过缺失 JOIN 被漏掉；无法证明已安全清理时抛错、回滚并保持原隐私屏障。清理使用 SQL 集合操作，不增加 Java 逐 attempt 查询、后台任务、心跳或轮询。三个部分索引分别支持 owner 范围 live 状态、根 Turn 的工具文件、Artifact 声明 owner 的工具文件；先收集两类文件候选再按主键删除，避免普通遗忘扫描全体用户的产物。
+
+恢复快照升级为 v3，强制包含 `unsafe_sdk_states`、`unsafe_capability_steps`、`unsafe_child_invocations`、`unsafe_tool_artifacts` 和顶层 `orphan_runtime_rows`；v2 或缺字段输入拒绝，必须应用 V7 后重导双方快照。四类执行计数按 owner 一次聚合，不在每个主体下重复扫描残留集合。隔离恢复的 `unsafeRows` 使用同一残留函数，epoch 一致不再能掩盖旧执行正文。
+
+本地已通过 **1,226 项单元／契约／架构测试、437 项集成用例的最新结果、46 项脚本测试和最终 41 项 Compose 检查**。集成初跑 435 项通过、2 项进程超时，同一 JAR 复跑关联 5 项全部通过并覆盖两处失败；这是最新逐用例结果，不能声称单次完整 Maven verify 全绿。
+
+Compose 首轮 40 项通过后遇到遗忘后应清零步骤的旧断言；只修正验证脚本后完整重跑 41 项通过，隔离项目已清理。生产 Java、SQL、JAR 未因复跑改变，首次失败及最终报告摘要见[本轮证据](evidence/p3a2-implementation.json)。验证覆盖遗忘／重放原子性、历史根／子 attempt、墓碑与旧 CAS、有效新数据保留、未知状态阻断、v3 快照、受限角色及 41 表备份恢复。P3a.2 尚未推送，不沿用 P3a.1 远程 CI 宣称本轮通过；P3a.3 本轮不开展。

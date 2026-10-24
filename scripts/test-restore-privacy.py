@@ -23,12 +23,30 @@ def fixture(epoch=2):
     for n in range(2, epoch + 1):
         row['events'].extend([{'id': n * 2, 'epoch': n, 'action': 'forget', 'at': AT},
                               {'id': n * 2 + 1, 'epoch': n, 'action': 'purge_complete', 'at': AT}])
-    return {'schema_version': 2, 'scope': 'all_memory_owners',
+    return {'schema_version': 3, 'scope': 'all_memory_owners',
             'consistency': 'repeatable_read_read_only', 'captured_at': AT,
-            'orphan_owners': 0, 'owners': [row]}
+            'orphan_owners': 0, 'orphan_runtime_rows': 0, 'owners': [row]}
 
 
 class RestorePrivacyTest(unittest.TestCase):
+    def test_v2_cannot_omit_execution_residuals_and_unknown_states(self):
+        legacy = fixture()
+        legacy['schema_version'] = 2
+        legacy.pop('orphan_runtime_rows')
+        for owner in legacy['owners']:
+            for key in ('unsafe_sdk_states', 'unsafe_capability_steps', 'unsafe_child_invocations', 'unsafe_tool_artifacts'):
+                owner.pop(key)
+        for left, right in ((legacy, legacy), (legacy, fixture()), (fixture(), legacy)):
+            report = privacy.compare(left, right)
+            self.assertEqual(report['assessment'], 'incomplete')
+            self.assertEqual(report['errors'], ['invalid_snapshot'])
+
+    def test_unknown_execution_state_blocks_even_with_clean_owner_counters(self):
+        source, dirty = fixture(), fixture()
+        dirty['orphan_runtime_rows'] = 1
+        for left, right in ((source, dirty), (dirty, source)):
+            self.assertIn('no_orphan_runtime_rows', privacy.compare(left, right)['errors'])
+
     def test_old_snapshots_cannot_prove_profile_erasure(self):
         legacy = fixture()
         legacy['schema_version'] = 1

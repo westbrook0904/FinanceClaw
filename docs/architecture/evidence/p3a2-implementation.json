@@ -1,0 +1,229 @@
+{
+  "milestone": "P3a.2 execution privacy erasure and restore residual detection",
+  "collected_at_utc": "2026-10-24T02:42:36.744096+00:00",
+  "base_commit": "5d82f246f6eb2635e446b1b85b84abf9e2849642",
+  "recorded_before_commit": true,
+  "local_acceptance": {
+    "status": "P3a.2 scoped local acceptance completed",
+    "full_maven_verify_completed_successfully": false,
+    "initial_complete_run": {
+      "status": "completed with two process timeout failures",
+      "unit": {
+        "suites": 75,
+        "tests": 1226,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "failed_cases": []
+      },
+      "integration": {
+        "suites": 39,
+        "tests": 437,
+        "failures": 2,
+        "errors": 0,
+        "skipped": 0,
+        "failed_cases": [
+          {
+            "suite": "com.financeclaw.m6.ZiweiRecoveryIT",
+            "case": "cancellationAndPrivacyCompeteWithToolDispatchAndReceipt(String)[1]"
+          },
+          {
+            "suite": "com.financeclawagent.AgentAdministrationCliIT",
+            "case": "ownerScopedReadsAndIndependentAgentPointersWorkWithInvalidEnvironmentCandidate"
+          }
+        ]
+      },
+      "integration_passed_cases": 435,
+      "failure_context": [
+        {
+          "suite": "com.financeclaw.m6.ZiweiRecoveryIT",
+          "case": "cancellationAndPrivacyCompeteWithToolDispatchAndReceipt(String)[1]",
+          "reason": "40-second process marker wait timed out before tool dispatch"
+        },
+        {
+          "suite": "com.financeclawagent.AgentAdministrationCliIT",
+          "case": "ownerScopedReadsAndIndependentAgentPointersWorkWithInvalidEnvironmentCandidate",
+          "reason": "30-second wait for the second create CLI process timed out"
+        }
+      ],
+      "frozen_report_directory": "/tmp/financeclaw-p3a2-verified-reports/initial-full",
+      "report_summary_sha256": "a2e215087202dbacd7fe38bc50614575edb349369e5ddf34417935063650fb94",
+      "log_path": "/tmp/financeclaw-p3a2-verify-final.log",
+      "log_sha256": "f5327ca21ff595978d5a97f8b8e84e44f3d70006fcfc0a6253d2d4a2711f5831",
+      "process_exit_code": 1
+    },
+    "targeted_process_rerun": {
+      "status": "completed",
+      "process_exit_code": 0,
+      "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "cases_by_suite": {
+        "com.financeclaw.m6.ZiweiRecoveryIT": 4,
+        "com.financeclawagent.AgentAdministrationCliIT": 1
+      },
+      "covers_both_initial_failures": true,
+      "production_tests_and_sql_changed_since_initial_complete_run": false,
+      "same_application_jar": true,
+      "frozen_report_directory": "/tmp/financeclaw-p3a2-verified-reports/process-rerun",
+      "report_summary_sha256": "c594e80ab16a23e0fec493f1a0e6a22cdf7cde11c8e3b095f9c8de9e7b1f7194",
+      "report_sha256": {
+        "TEST-com.financeclaw.m6.ZiweiRecoveryIT.xml": "f7f21a4335c4d5657e22d660ef3b2f4773ec79d8e3ac61d3a82fb2cad6d75e9e",
+        "TEST-com.financeclawagent.AgentAdministrationCliIT.xml": "65217e50ceb556342f1332ec09d8c4bd18f57292b4dd05b29c1f7079a96a1fd2"
+      },
+      "log_path": "/tmp/financeclaw-p3a2-process-rerun.log",
+      "log_sha256": "7a49d5b3a03a4bec608f4a628576c642459fc024efaf506902112915d38ff6bb",
+      "note": "The five rerun cases cover the two initial failures and three previously passing parameter cases. Latest per-case results account for 437 unique passing integration cases; the initial complete Maven verify still exited with failure."
+    },
+    "new_execution_privacy_integration_suite": {
+      "suite": "com.financeclaw.p3.ExecutionPrivacyIT",
+      "tests": 14,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "included_in_initial_complete_run": true
+    },
+    "scripts": {
+      "status": "completed",
+      "tests": 46,
+      "groups": [
+        {
+          "script": "scripts/test-restore-privacy.py",
+          "tests": 16,
+          "success": true,
+          "log_sha256": "1388eb6c430ff7b1a24f2559d1b8ffe9b02fb90dc6f4fe5b8f8f88c7e3554624"
+        },
+        {
+          "script": "scripts/test-inspect-drain.py",
+          "tests": 12,
+          "success": true,
+          "log_sha256": "97436a0ba92fb104af255fa65c90eb4ae79cb489f93682348e084958a5234daa"
+        },
+        {
+          "script": "scripts/test-user-profile.py",
+          "tests": 10,
+          "success": true,
+          "log_sha256": "2d6603fa9f5000144e76e400c77dd7540642ffd9e3ba07e69618a92fee4d406c"
+        },
+        {
+          "script": "scripts/test-live-acceptance.py",
+          "tests": 8,
+          "success": true,
+          "log_sha256": "8ef821c64e56e3683d17e7d2f88c8b8c596fbd6243f4c479239e64d7f48a52b5"
+        }
+      ]
+    },
+    "current_integration": {
+      "coverage": "Latest per-case outcomes from the frozen initial complete run and the five-case same-build rerun, not one all-green full Maven verify",
+      "suites": 39,
+      "unique_tests": 437,
+      "passed": 437,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "note": "1226 complete unit cases and latest per-case outcomes for 437 unique integration cases, including a five-case same-build rerun after two initial process timeout failures; 46 script cases and the final 41-check Compose run passed. This is not a single successful complete Maven verify."
+  },
+  "application_jar_sha256": "bfa285f5742c433af41d24bbfd507268d204fe0b2c92b0c34c332f1a16454ca4",
+  "compose": {
+    "status": "completed after correcting an obsolete script assertion",
+    "success": true,
+    "acceptance_completed": true,
+    "process_exit_code": 0,
+    "command": "python3 scripts/validate-compose.py --ziwei --admission --preflight --restore-privacy",
+    "project": "financeclaw-m5e-97173e0613",
+    "checks_passed": 41,
+    "first_attempt": {
+      "project": "financeclaw-m5e-092c738dd5",
+      "process_exit_code": 1,
+      "checks_passed": 40,
+      "failure": "Final restore assertion expected one publish_report capability receipt after forget, while the new execution-data erasure requires zero.",
+      "follow_up": "Corrected only the obsolete final post-forget publish_report count from one to zero and added explicit erased-step/retained-artifact checks, then completed the full 41-check Compose rerun.",
+      "production_java_sql_and_jar_changed": false,
+      "frozen_report_directory": "/tmp/financeclaw-p3a2-verified-reports/compose-initial",
+      "frozen_artifact_hashes": {
+        "synthetic-restore.dump": "a4c2b12a0f9009261a582d352cd82642b3922714d1652fbb3af4c9d7e6f086b2",
+        "financeclaw-p3a2-compose.log": "19b660cf35db67d90df17294636daa67968440d834190aa1327053817e9b6bca",
+        "compose-validation.log": "c8b02f9f7fd4ecceaa6ffa8fe7515bf891455e7dada40d1ca9749b397acb4d92"
+      },
+      "note": "Persisted backup contents were checked offline with pg_restore using row counts only. The first attempt did not reach the later report-preservation assertion; the final complete rerun exercised and passed it.",
+      "failed_check": "restored_runtime_keeps_results_privacy_and_accepts_new_turns",
+      "backup_capability_step_rows": 0,
+      "backup_artifact_rows": 1,
+      "report_preservation_assertion_not_reached": true,
+      "report_summary_sha256": "6ccf50849c4f437630ef7d03ddd12e6b69c664cc38672491b791e5590806bbc8"
+    },
+    "report_sha256": "de8f813d4147d33639dd0881a60d34fa78088fc21ee64490ef46b62f757f3dfd",
+    "log_sha256": {
+      "financeclaw-p3a2-compose-final.log": "7c1009361ab7b6999816d0dd4bd5c17fa924624a3eac8e7fbad74b21b71f1d84",
+      "compose-validation.log": "f1a910e59070af44eb2cbdf5c3f9d8845f89a863837fa0d5501420762dd919d1"
+    },
+    "frozen_report_directory": "/tmp/financeclaw-p3a2-verified-reports/compose-final",
+    "jar_sha256": "bfa285f5742c433af41d24bbfd507268d204fe0b2c92b0c34c332f1a16454ca4",
+    "same_jar_as_java_validation": true,
+    "production_java_sql_and_jar_changed_after_initial_java_run": false,
+    "source_fingerprints_verified": 11,
+    "source_fingerprints_match_current_files": true,
+    "restored_application_tables": 41,
+    "new_privacy_checks": {
+      "forget_erases_execution_copies_and_preserves_cas_tombstones": true,
+      "restore_v3_rejects_execution_residuals_and_unknown_live_states": true
+    },
+    "started_at": "2026-10-24T02:23:28.635356+00:00",
+    "finished_at": "2026-10-24T02:41:08.739581+00:00",
+    "scope": "isolated real containers; offline model and synthetic market only",
+    "cleanup": "The isolated process exited successfully after its finally cleanup; a subsequent Docker inventory check found no containers belonging to this project."
+  },
+  "remote_baseline": {
+    "commit": "5d82f246f6eb2635e446b1b85b84abf9e2849642",
+    "workflow_url": "https://github.com/westbrook0904/FinanceClaw/actions/runs/40045383841",
+    "workflow_status": "completed/success",
+    "verify": "completed/success",
+    "unit_tests": 1226,
+    "integration_tests": 423,
+    "delivery": "completed/success",
+    "delivery_checks": 39,
+    "includes_p3a2": false,
+    "note": "Verified remote results cover P3a.1 only; this draft does not certify P3a.2 remote CI."
+  },
+  "schema": {
+    "migration": 7,
+    "application_tables": 41,
+    "new_tables": [],
+    "functions": [
+      "agent_runtime.scope_hash",
+      "agent_runtime.execution_scopes",
+      "agent_runtime.unsafe_execution_data",
+      "agent_runtime.erase_execution_data"
+    ],
+    "partial_indexes": [
+      "agent_runtime.states_live_user",
+      "business.artifacts_private_turn",
+      "business.artifacts_private_owner"
+    ],
+    "migration_sha256": "d3abcbc9784d6aec39ea99ebfd1bf0c274724dfef3c3a6a8d431a6e0c50689a0",
+    "privacy_snapshot_schema_version": 3,
+    "required_execution_counters": [
+      "unsafe_sdk_states",
+      "unsafe_capability_steps",
+      "unsafe_child_invocations",
+      "unsafe_tool_artifacts"
+    ],
+    "required_global_counter": "orphan_runtime_rows",
+    "v2_snapshots_accepted": false
+  },
+  "scope": "Fixed research and root execution privacy copies: all historical attempts, versioned SDK tombstones, old capability receipts and child metadata, privacy-bound tool artifacts, owner-scoped set-based erasure and strict restore residual gates. Ordinary business Turn, Journal, reports and non-privacy-bound Artifacts remain governed by existing retention.",
+  "not_certified": [
+    "a single complete successful Maven verify",
+    "P3a.2 remote CI",
+    "private Agent delegation or all P3a",
+    "live external providers",
+    "production capacity"
+  ],
+  "local_acceptance_date": "2026-10-24",
+  "delivery": {
+    "p3a2_status": "local acceptance completed; not pushed",
+    "remote_ci_for_p3a2": false
+  }
+}

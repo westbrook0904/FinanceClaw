@@ -80,7 +80,7 @@ class ZiweiRecoveryIT {
     @BeforeEach
     void reset() throws Exception {
         sql = new JdbcTemplate(source);
-        sql.execute("TRUNCATE business.conversations CASCADE");
+        sql.execute("TRUNCATE business.conversations,agent_runtime.states CASCADE");
         sql.execute("TRUNCATE memory.owners,memory.jobs,memory.operations,memory.audit CASCADE");
         launcher = directory.resolve("probe.jar");
         String resource = "com/financeclaw/m6/ZiweiRuntimeProbe.class";
@@ -483,7 +483,8 @@ class ZiweiRecoveryIT {
             assertThat(turn(t).status())
                     .isEqualTo(scenario.startsWith("cancel") ? "cancelled" : "blocked");
             assertThat(artifacts()).isEqualTo(mode.equals("after-tool") ? 1 : 0);
-            assertThat(toolFiles(t)).containsExactlyElementsOf(originalFiles);
+            if (scenario.startsWith("privacy")) assertThat(toolFiles(t)).isEmpty();
+            else assertThat(toolFiles(t)).containsExactlyElementsOf(originalFiles);
             assertThat(
                             sql.queryForObject(
                                     "SELECT count(*) FROM business.journal WHERE role='assistant'",
@@ -498,7 +499,7 @@ class ZiweiRecoveryIT {
                                         governance
                                                 .artifacts()
                                                 .download(owner, originalFiles.getFirst()))
-                        .hasMessage("privacy_epoch_changed");
+                        .hasMessage("not_found");
             }
         } finally {
             child.destroyForcibly();

@@ -151,6 +151,9 @@ public final class MemoryForgetService {
                     memory.eraseFacts(owner);
                     memory.eraseSnapshots(owner);
                     memory.eraseWorkContexts(owner);
+                    // 与隐私版本推进同一事务；必须在删除子调用绑定前定位全部旧 SDK scope。
+                    // SQL 内保留递增版本墓碑，迟到 CAS 不能将擦除后的状态当成新执行。
+                    memory.eraseExecutionData(owner, privacy.epoch() + 1);
                     memory.eraseIndex(owner);
                     memory.eraseJobs(owner);
                     memory.audit(owner, privacy.epoch() + 1, "forget", "all");

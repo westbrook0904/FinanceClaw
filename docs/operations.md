@@ -1,6 +1,6 @@
 # 运行维护
 
-当前支持新库初始化及现行 Java V1 基线的 V2/V3/V4 前向升级，不导入 Python 或历史实验库，也不提供原拆分部署切换路径。业务运行结构见[统一进程](architecture/combined-runtime.md)。自定义 Agent 的创建、提示词草稿、发布与指定目标会话见 [Agent 管理说明](architecture/agent-definitions.md)。
+当前支持新库初始化及现行 Java V1 基线的 V2–V7 前向升级，主库仍为 41 张应用表；V7 的执行隐私清理已随 P3a.2 完成本地验收，尚未推送。不导入 Python 或历史实验库，也不提供原拆分部署切换路径。业务运行结构见[统一进程](architecture/combined-runtime.md)。自定义 Agent 的创建、提示词草稿、发布与指定目标会话见 [Agent 管理说明](architecture/agent-definitions.md)。
 
 ## 配置与启动
 
@@ -32,6 +32,8 @@ python3 scripts/inspect-drain.py --help
 
 自动证据提取默认关闭；手工画像默认启用，两者是不同配置。画像只能由认证 API 或隔离隐私恢复入口处理，受限 Worker 不具备画像表读取权限。
 
+P3a.2 已将普通遗忘和独立账本重放接入同一执行副本清理并完成本地验收。清理先覆盖根／研究子 Agent 全部历史 attempt 的 SDK 正文并保留 CAS 墓碑，再删除旧步骤、子调用和隐私绑定工具文件；普通业务 Turn、Journal、报告及非隐私绑定 Artifact 保留。未知且有正文的状态会阻断清理，不能通过仅更新 epoch 解除门禁，详见[执行数据隐私清理](architecture/execution-privacy.md)。
+
 ## 备份和隐私恢复
 
 当前应用的正常备份恢复继续保留。恢复旧主库备份可能遗漏其后发生的遗忘，必须在隔离库中与独立遗忘事实或最新权威快照核对，不能只比较 epoch，也不能先启动业务进程再补清理。
@@ -44,7 +46,11 @@ python3 scripts/check-restore-privacy.py --help
 python3 scripts/user-profile.py --help
 ```
 
-隐私快照由 [SQL](../ops/restore-privacy-snapshot.sql) 导出，不包含记忆正文或 Markdown。比较器拒绝不支持的快照结构和缺少权威事实的恢复。独立遗忘账本由[账本 SQL](../src/main/resources/privacy-ledger/V1__forget_ledger.sql)单独创建，启用前使用 `privacy-recovery` 的显式隔离 `bootstrap`；恢复库使用 `replay` 重放，再重新检查快照。
+隐私快照由 [SQL](../ops/restore-privacy-snapshot.sql) 导出，不包含记忆、SDK、步骤或工具文件正文。当前协议为 **Snapshot v3**，强制要求每个 owner 的 `unsafe_sdk_states`、`unsafe_capability_steps`、`unsafe_child_invocations`、`unsafe_tool_artifacts`，以及顶层 `orphan_runtime_rows`。任何残留都阻断恢复；v1/v2、缺字段或不支持的结构返回 `incomplete`，不能在旧 JSON 中补零。先在隔离环境应用 V7，再从最新权威库与恢复库分别重导。
+
+独立遗忘账本由[账本 SQL](../src/main/resources/privacy-ledger/V1__forget_ledger.sql)单独创建，启用前使用 `privacy-recovery` 的显式隔离 `bootstrap`；恢复库使用 `replay` 重放，再重新检查快照。`unsafeRows` 包含执行副本残留，epoch 与账本一致本身不能证明清理完成。需要未知 live 状态修复时保持隔离，不自行推测归属或删除其他用户资料。
+
+恢复顺序为：保持全部写入者停止 → 升级隔离库结构 → 核对或重放最新独立遗忘事实 → 用当前 SQL 导出双方 v3 快照 → 运行比较器 → 继续业务完整性、发布身份和渠道唯一消费者检查。快照相符不等于已批准启动，参考事实是否最新仍须由操作者保证。
 
 保留的恢复边界与完整参数示例见历史操作记录中的[独立遗忘账本](history/m5f-forget-ledger.md)和[恢复隐私核对](history/m5e-restore-privacy.md)。它们记录过去验收批次，当前表结构和入口以本文件、新库初始化及代码为准。新的初始化程序不会修改或清空任何已有实验库。
 

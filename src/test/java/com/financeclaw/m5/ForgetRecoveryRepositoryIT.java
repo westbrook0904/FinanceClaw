@@ -39,7 +39,7 @@ class ForgetRecoveryRepositoryIT {
     @BeforeEach
     void reset() {
         sql.execute(
-                "TRUNCATE business.conversations,memory.owners,memory.jobs,memory.operations,memory.audit CASCADE");
+                "TRUNCATE business.conversations,agent_runtime.states,memory.owners,memory.jobs,memory.operations,memory.audit CASCADE");
         sql.update("UPDATE memory.privacy_ledger_binding SET active=false");
         sql.update(
                 "INSERT INTO memory.owners(tenant,subject) VALUES(?,?)",

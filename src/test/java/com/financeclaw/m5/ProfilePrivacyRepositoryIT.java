@@ -47,7 +47,7 @@ class ProfilePrivacyRepositoryIT {
 
     @BeforeEach
     void reset() {
-        sql.execute("TRUNCATE business.conversations CASCADE");
+        sql.execute("TRUNCATE business.conversations,agent_runtime.states CASCADE");
         sql.execute("TRUNCATE memory.owners,memory.user_profiles CASCADE");
         sql.update("INSERT INTO memory.owners(tenant,subject) VALUES('profile-test','owner')");
     }
@@ -60,7 +60,7 @@ class ProfilePrivacyRepositoryIT {
         profile(1, 3, "sensitive-profile-body");
 
         var snapshot = snapshot();
-        assertThat(snapshot.path("schema_version").asInt()).isEqualTo(2);
+        assertThat(snapshot.path("schema_version").asInt()).isEqualTo(3);
         assertThat(snapshot.toString()).doesNotContain("sensitive-profile-body", "markdown");
         assertThat(ownerSnapshot(snapshot).path("unsafe_profiles").asLong()).isZero();
         assertThat(recovery.unsafeRows()).isZero();

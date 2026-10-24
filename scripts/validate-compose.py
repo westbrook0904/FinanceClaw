@@ -265,7 +265,7 @@ def privacy_snapshot(database, name):
     raw = compose('exec', '-T', 'postgres', 'psql', '-X', '-qAt', '-U', 'postgres',
                   '-d', database, '-v', 'ON_ERROR_STOP=1',
                   data=(ROOT / 'ops/restore-privacy-snapshot.sql').read_bytes())
-    assert json.loads(raw)['schema_version'] == 2
+    assert json.loads(raw)['schema_version'] == 3
     assert PROFILE_TEXT.encode('utf-8') not in raw and b'm5-profile-private-sentinel' not in raw
     destination = TEMP / (name + '.json')
     with destination.open('xb') as out:
@@ -280,7 +280,7 @@ def privacy_check(reference, restored_snapshot, name, expected):
              '--reference', str(reference), '--restored', str(restored_snapshot), '--output', str(destination)],
             expected_exit={'privacy_matches_reference': 0, 'blocked': 2, 'incomplete': 3}[expected])
     report = json.loads(destination.read_text())
-    assert report['assessment'] == expected and report['schema_version'] == 2
+    assert report['assessment'] == expected and report['schema_version'] == 3
     assert destination.stat().st_mode & 0o777 == 0o600
     for path, label in ((reference, 'reference'), (restored_snapshot, 'restored')):
         assert report['input_sha256'][label] == hashlib.sha256(path.read_bytes()).hexdigest()
@@ -580,6 +580,15 @@ try:
     assert sql('SELECT max(profile_revision) FROM memory.owners') == '0'
     assert profile(PROFILE_TEXT, saved_version)[0] == 409
     mark('forget_deletes_profile_resets_revision_and_rejects_pre_forget_import')
+    # SDK 正文必须已擦除并留下 CAS 墓碑；业务报告仍按原业务留存规则保留。
+    owner_states = "user_id=agent_runtime.scope_hash(ARRAY['local','developer'])"
+    assert int(sql(f'SELECT count(*) FROM agent_runtime.states WHERE {owner_states} AND deleted')) > 0
+    assert sql(f'SELECT count(*) FROM agent_runtime.states WHERE {owner_states} AND NOT deleted') == '0'
+    assert sql("SELECT count(*) FROM agent_runtime.unsafe_execution_data() "
+               "WHERE tenant='local' AND subject='developer'") == '0'
+    assert sql("SELECT count(*) FROM business.capability_steps WHERE step='publish_report'") == '0'
+    assert sql("SELECT count(*) FROM business.artifacts WHERE required_scope='workflow:run'") == '1'
+    mark('forget_erases_execution_copies_and_preserves_cas_tombstones')
     mark('restricted_memory_worker_and_forgetting')
     RESULT['operations'] = api('/v1/operations')
     if ARGS.admission:
@@ -651,15 +660,32 @@ try:
             f"INSERT INTO memory.audit(tenant,subject,epoch,action,target) VALUES "
             f"('local','developer',{epoch + 1},'forget','invalid-target'),"
             "('m5e-orphan','synthetic',2,'forget','all')", old_database)
+        # 只污染从未接入运行时的旧备份克隆，分别验证已关联副本和完全未知的 SDK scope。
+        sql("INSERT INTO business.child_invocations(root_turn_id,call_id,input_hash) "
+            "SELECT t.id,'privacy-synthetic-child',repeat('0',64) FROM business.turns t "
+            "WHERE t.tenant='local' AND t.subject='developer' ORDER BY t.id LIMIT 1; "
+            "INSERT INTO business.capability_steps(turn_id,namespace,step,input_hash,result) "
+            "SELECT root_turn_id,'child:'||call_id,'result',input_hash,'synthetic-private-step' "
+            "FROM business.child_invocations WHERE call_id='privacy-synthetic-child'; "
+            "INSERT INTO business.artifacts(id,turn_id,conversation_id,tenant,subject,release_hash,hash,payload,bytes,privacy_bound) "
+            "SELECT 'privacy-synthetic-artifact',t.id,t.conversation_id,t.tenant,t.subject,t.release_hash,repeat('0',64),"
+            "'synthetic-private-artifact',octet_length('synthetic-private-artifact'),true "
+            "FROM business.turns t WHERE t.tenant='local' AND t.subject='developer' ORDER BY t.id LIMIT 1; "
+            "INSERT INTO agent_runtime.states(namespace,user_id,session_id,state_key,version,payload) "
+            "VALUES(repeat('a',64),repeat('b',64),repeat('c',64),'agent_state',1,'{}')", old_database)
         residual = privacy_snapshot(old_database, 'residual-privacy')
         residual_state = json.loads(residual.read_text())
         owner = next(o for o in residual_state['owners'] if o['tenant'] == 'local' and o['subject'] == 'developer')
         counters = ('unsafe_profiles', 'unsafe_sources', 'unsafe_facts', 'unsafe_projections',
-                    'unsafe_snapshots', 'unsafe_work_contexts', 'unsafe_jobs', 'invalid_audit_targets')
+                    'unsafe_snapshots', 'unsafe_work_contexts', 'unsafe_jobs', 'invalid_audit_targets',
+                    'unsafe_sdk_states', 'unsafe_capability_steps', 'unsafe_child_invocations', 'unsafe_tool_artifacts')
         assert all(owner[k] > 0 for k in counters) and residual_state['orphan_owners'] > 0
         residual_report = privacy_check(reference, residual, 'residual_memory', 'blocked')
         assert 'no_orphan_owners' in residual_report['errors'] and 'no_unsafe_memory_rows' in residual_report['errors']
         mark('sql_detects_residual_memory_and_orphan_owners', {k: owner[k] for k in counters})
+        assert residual_state['orphan_runtime_rows'] > 0
+        assert 'no_orphan_runtime_rows' in residual_report['errors']
+        mark('restore_v3_rejects_execution_residuals_and_unknown_live_states')
         # Delete only this synthetic, never-connected restore. No restore script repairs privacy.
         sql(f'DROP DATABASE {old_database}')
         mark('rejected_synthetic_restore_removed_before_runtime_start')
@@ -700,7 +726,8 @@ try:
     assert sql(f"SELECT release_hash FROM business.turns WHERE id='{restored_composed_receipt['turn_id']}'", restored) == function_release
     assert sql(f"SELECT release_hash FROM business.conversations WHERE id='{pure_conversation}'", restored) == empty_release
     mark('restored_composed_agent_executes_frozen_plan_with_same_runtime_artifact')
-    assert sql("SELECT count(*) FROM business.capability_steps WHERE step='publish_report'", restored) == '1'
+    # 备份在遗忘后生成：旧执行回执应已清除，普通业务报告仍按原策略保留。
+    assert sql("SELECT count(*) FROM business.capability_steps WHERE step='publish_report'", restored) == '0'
     assert sql("SELECT count(*) FROM business.artifacts WHERE required_scope='workflow:run'", restored) == '1'
     mark('restored_runtime_keeps_results_privacy_and_accepts_new_turns')
     RESULT['jar_sha256'] = hashlib.sha256((ROOT / 'target/financeclaw-java-0.1.0-SNAPSHOT.jar').read_bytes()).hexdigest()

@@ -83,7 +83,7 @@ class ZiweiToolsIT {
     @BeforeEach
     void reset() {
         sql = new JdbcTemplate(source);
-        sql.execute("TRUNCATE business.conversations CASCADE");
+        sql.execute("TRUNCATE business.conversations,agent_runtime.states CASCADE");
         sql.execute("TRUNCATE memory.owners,memory.jobs,memory.operations,memory.audit CASCADE");
         publish(ZiweiDomainTest.POLICY);
     }

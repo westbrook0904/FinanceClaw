@@ -165,6 +165,15 @@ public final class JdbcForgetRecoveryRepository implements ForgetRecoveryReposit
         }
         var audits = forgetAudits(o, fact.toEpoch());
 
+        // 账本重放也清理执行副本。集合函数先建立 SDK 墓碑，再移除步骤/调用绑定，
+        // 并按来源 epoch 保留此遗忘事实之后产生的新资料；任一写入失败仍由外层事务回滚。
+        db.queryForObject(
+                "SELECT agent_runtime.erase_execution_data(?,?,?)",
+                Long.class,
+                o.tenant(),
+                o.subject(),
+                fact.toEpoch());
+
         db.update(
                 "DELETE FROM memory.user_profiles WHERE tenant=? AND subject=? AND epoch<?",
                 o.tenant(),
@@ -392,6 +401,8 @@ public final class JdbcForgetRecoveryRepository implements ForgetRecoveryReposit
         return db.queryForObject(
                 """
 SELECT
+  (SELECT count(*) FROM agent_runtime.unsafe_execution_data())
+  +
   (SELECT count(*) FROM memory.owners WHERE epoch<1 OR profile_revision<0 OR purge_pending)
   + (SELECT count(*) FROM memory.owners o WHERE o.epoch>1 AND NOT o.purge_pending
      AND NOT EXISTS(SELECT 1 FROM memory.audit f JOIN memory.audit p

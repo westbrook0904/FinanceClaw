@@ -452,7 +452,7 @@ class ChildInvocationIT {
                 .isInstanceOfAny(Fenced.class, Blocked.class);
         assertThatThrownBy(() -> store.delete(scope.userId(), scope.sessionId(), "agent_state"))
                 .isInstanceOfAny(Fenced.class, Blocked.class);
-        // 只查物理版本证明没有晚写；普通应用读取仍须经过上述 gate，不承诺删除所有业务历史。
+        // 遗忘已擦除物理正文并留下递增版本墓碑；其他门禁不删除检查点，迟到写入都不能成功。
         var row =
                 states.getState(
                         new RuntimeMapper.StateKey(
@@ -460,8 +460,9 @@ class ChildInvocationIT {
                                 scope.userId(),
                                 scope.sessionId(),
                                 "agent_state"));
-        assertThat(row.version()).isEqualTo(1);
-        assertThat(row.deleted()).isFalse();
+        assertThat(row.version()).isEqualTo(change.equals("forget") ? 2 : 1);
+        assertThat(row.deleted()).isEqualTo(change.equals("forget"));
+        if (change.equals("forget")) assertThat(row.payload()).isNull();
     }
 
     @Test
@@ -519,7 +520,7 @@ class ChildInvocationIT {
                                                 scope.sessionId(),
                                                 "agent_state"))
                                 .version())
-                .isEqualTo(1);
+                .isEqualTo(2);
         assertThat(memory.privacy(ALICE).epoch()).isEqualTo(2);
     }
 

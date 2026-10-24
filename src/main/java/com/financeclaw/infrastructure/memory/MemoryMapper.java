@@ -355,6 +355,12 @@ SELECT EXISTS(SELECT 1 FROM locked
     @Delete("DELETE FROM agent_runtime.work_contexts WHERE tenant=#{tenant} AND subject=#{subject}")
     void deleteWorkContextsByOwner(Owner owner);
 
+    /** 一次集合 SQL 完成根/子检查点墓碑与步骤、隐私工具正文清理，不逐个 attempt 或调用访问数据库。 */
+    @Select(
+            "SELECT agent_runtime.erase_execution_data(#{owner.tenant},#{owner.subject},#{beforeEpoch})")
+    long deleteExecutionDataBeforeEpoch(
+            @Param("owner") Owner owner, @Param("beforeEpoch") long beforeEpoch);
+
     @Update(
             "UPDATE memory.jobs SET status='forgotten',lease_token=NULL,lease_until=NULL WHERE"
                     + " tenant=#{tenant} AND subject=#{subject}")

@@ -65,7 +65,8 @@ class RuntimePackagingIT {
                             "BOOT-INF/classes/db/migration/V3__conversation_release_binding.sql",
                             "BOOT-INF/classes/db/migration/V4__agent_definitions.sql",
                             "BOOT-INF/classes/db/migration/V5__agent_compositions.sql",
-                            "BOOT-INF/classes/db/migration/V6__child_invocations.sql");
+                            "BOOT-INF/classes/db/migration/V6__child_invocations.sql",
+                            "BOOT-INF/classes/db/migration/V7__execution_privacy.sql");
             for (var entry : entries) {
                 if (!entry.getName().startsWith("BOOT-INF/lib/")
                         || !entry.getName().endsWith(".jar")) continue;
