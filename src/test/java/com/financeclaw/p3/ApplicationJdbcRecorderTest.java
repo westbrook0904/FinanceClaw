@@ -32,6 +32,28 @@ class ApplicationJdbcRecorderTest {
                     + " FROM locked_turn t WHERE c.id=t.id RETURNING false";
 
     @Test
+    void releaseSelfJoinCountsOneExecutionInsteadOfTwoTableReads() throws Exception {
+        String lookup =
+                "SELECT r.release_hash, r.manifest_format, r.manifest::text AS manifest_json,"
+                        + " b.release_hash AS base_release_hash, b.manifest_format AS base_manifest_format,"
+                        + " b.manifest::text AS base_manifest_json"
+                        + " FROM control_plane.release_manifests r LEFT JOIN control_plane.release_manifests b"
+                        + " ON r.manifest_format IN ('agent-v2','agent-v3')"
+                        + " AND b.release_hash=r.manifest->>'baseReleaseHash' WHERE r.release_hash=?";
+        var recorder = new ApplicationJdbcRecorder();
+        var database = new Database();
+        var window = recorder.begin("joined-release");
+        try (var connection = recorder.wrap(database.source).getConnection();
+                var statement = connection.prepareStatement(lookup)) {
+            statement.executeQuery();
+        }
+        var result = window.finish(WAIT);
+        assertThat(result.statements()).isOne();
+        assertThat(result.count("release_lookup")).isOne();
+        assertThat(result.families()).containsOnly(entry("release_lookup", 1L));
+    }
+
+    @Test
     void capturesAllThreadsWithFixedRolesAndObservesHeartbeatExecution() throws Exception {
         var recorder = new ApplicationJdbcRecorder();
         var database = new Database();

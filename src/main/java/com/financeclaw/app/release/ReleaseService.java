@@ -2,6 +2,7 @@ package com.financeclaw.app.release;
 
 import com.financeclaw.app.release.port.ReleaseRepository;
 import com.financeclaw.app.release.port.ReleaseSource;
+import com.financeclaw.app.release.port.StoredRelease;
 import com.financeclaw.domain.Governance.Blocked;
 import com.financeclaw.domain.Task.Problem;
 import com.financeclaw.domain.agent.AgentDraft;
@@ -199,40 +200,63 @@ public class ReleaseService {
 
     public ResolvedAgentRelease resolve(String hash) {
         requireHash(hash);
-        var legacy = repository.findManifest(hash);
-        if (legacy != null) {
-            verifyLegacy(hash, legacy);
-            return new ResolvedAgentRelease(
-                    AgentDraft.BUILTIN_AGENT, AgentDraft.BUILTIN_PROMPT, legacy, null, null);
-        }
-        var manifest = repository.findAgentManifest(hash);
-        if (manifest != null) {
-            if (!AgentReleaseIdentity.hash(manifest).equals(hash)) {
-                throw new Blocked("release_unavailable");
-            }
-            manifest.validate();
-            var base = requireLegacy(manifest.baseReleaseHash());
-            return new ResolvedAgentRelease(
-                    manifest.agentId(),
-                    manifest.systemPrompt(),
-                    base,
-                    manifest.tenant(),
-                    manifest.subject());
-        }
-        var composed = repository.findComposedAgentManifest(hash);
-        if (composed == null || !ComposedAgentReleaseIdentity.hash(composed).equals(hash)) {
+        var stored = repository.findStoredRelease(hash);
+        if (stored == null || !hash.equals(stored.hash())) {
             throw new Blocked("release_unavailable");
         }
-        composed.validate();
-        var base = requireLegacy(composed.baseReleaseHash());
-        AgentPlanValidator.validate(composed.plan(), base, composed.tenant());
-        return new ResolvedAgentRelease(
-                composed.agentId(),
-                composed.systemPrompt(),
-                composed.plan().definition(),
-                composed.tenant(),
-                composed.subject(),
-                composed.plan());
+        // 查询已经聚合两层事实，但验证顺序保持：外层摘要 → 外层内容/runtime → 基础摘要 → v3 计划。
+        // 聚合不是授权缓存；owner、当前 grant、隐私 epoch、租约/fence 仍由原调用路径逐次检查。
+        return switch (stored) {
+            case StoredRelease.Legacy legacy -> {
+                verifyLegacy(hash, legacy.definition());
+                yield new ResolvedAgentRelease(
+                        AgentDraft.BUILTIN_AGENT,
+                        AgentDraft.BUILTIN_PROMPT,
+                        legacy.definition(),
+                        null,
+                        null);
+            }
+            case StoredRelease.AgentV2 agent -> {
+                var manifest = agent.manifest();
+                if (manifest == null || !AgentReleaseIdentity.hash(manifest).equals(hash)) {
+                    throw new Blocked("release_unavailable");
+                }
+                manifest.validate();
+                var base = requireStoredBase(manifest.baseReleaseHash(), agent.base());
+                yield new ResolvedAgentRelease(
+                        manifest.agentId(),
+                        manifest.systemPrompt(),
+                        base,
+                        manifest.tenant(),
+                        manifest.subject());
+            }
+            case StoredRelease.AgentV3 agent -> {
+                var composed = agent.manifest();
+                if (composed == null || !ComposedAgentReleaseIdentity.hash(composed).equals(hash)) {
+                    throw new Blocked("release_unavailable");
+                }
+                composed.validate();
+                var base = requireStoredBase(composed.baseReleaseHash(), agent.base());
+                AgentPlanValidator.validate(composed.plan(), base, composed.tenant());
+                yield new ResolvedAgentRelease(
+                        composed.agentId(),
+                        composed.systemPrompt(),
+                        composed.plan().definition(),
+                        composed.tenant(),
+                        composed.subject(),
+                        composed.plan());
+            }
+        };
+    }
+
+    private static ReleaseDefinition requireStoredBase(
+            String expectedHash, StoredRelease.LegacyBase base) {
+        requireHash(expectedHash);
+        if (base == null || !expectedHash.equals(base.hash())) {
+            throw new Blocked("release_unavailable");
+        }
+        verifyLegacy(expectedHash, base.definition());
+        return base.definition();
     }
 
     private ReleaseDefinition requireLegacy(String hash) {

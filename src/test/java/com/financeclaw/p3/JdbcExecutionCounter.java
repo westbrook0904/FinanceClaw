@@ -36,7 +36,10 @@ final class JdbcExecutionCounter {
         }
 
         long manifests() {
-            return count("release_legacy") + count("release_agent_v2") + count("release_agent_v3");
+            return count("release_lookup")
+                    + count("release_legacy")
+                    + count("release_agent_v2")
+                    + count("release_agent_v3");
         }
     }
 
@@ -189,6 +192,12 @@ final class JdbcExecutionCounter {
 
     /** 使用精确的语句形状区分类别，不能把 child JOIN 中出现的其他表再次计算成单表读取。 */
     private static String family(String sql) {
+        // 一条自关联查询只计一次物理 execute，不能把基础清单 JOIN 再算成一次读取。
+        if (sql.startsWith(
+                        "select r.release_hash, r.manifest_format, r.manifest::text as manifest_json,")
+                && sql.contains(
+                        " from control_plane.release_manifests r left join control_plane.release_manifests b "))
+            return "release_lookup";
         if (sql.startsWith("select manifest::text from control_plane.release_manifests")) {
             if (sql.contains("manifest_format='agent-v3'")) return "release_agent_v3";
             if (sql.contains("manifest_format='agent-v2'")) return "release_agent_v2";

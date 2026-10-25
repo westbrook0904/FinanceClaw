@@ -7,6 +7,15 @@ import org.apache.ibatis.annotations.*;
 
 /** 发布目录 SQL：定义和历史只追加，指针 CAS 在应用短事务中与历史记录共同提交。 */
 public interface ReleaseMapper {
+    /** 显式列顺序对应 record 构造器；不复用已经丢失基础身份的执行投影。 */
+    record StoredReleaseRow(
+            String releaseHash,
+            String manifestFormat,
+            String manifestJson,
+            String baseReleaseHash,
+            String baseManifestFormat,
+            String baseManifestJson) {}
+
     @Insert(
             """
             INSERT INTO control_plane.release_manifests(release_hash,manifest)
@@ -18,6 +27,24 @@ public interface ReleaseMapper {
             "SELECT manifest::text FROM control_plane.release_manifests WHERE release_hash=#{hash} AND manifest_format='legacy-v1'")
     String getManifest(String hash);
 
+    /**
+     * 根与基础均按 release_hash 主键定位，一次 JDBC 查询最多返回一行。LEFT JOIN 保留缺失/错误基础的根行， 不能将基础格式条件移到 WHERE
+     * 而提前吞掉根清单。此处只读取事实，不递归、不按 current 指针替代历史 hash。
+     */
+    @Select(
+            """
+            SELECT r.release_hash, r.manifest_format, r.manifest::text AS manifest_json,
+                   b.release_hash AS base_release_hash,
+                   b.manifest_format AS base_manifest_format,
+                   b.manifest::text AS base_manifest_json
+            FROM control_plane.release_manifests r
+            LEFT JOIN control_plane.release_manifests b
+              ON r.manifest_format IN ('agent-v2','agent-v3')
+             AND b.release_hash=r.manifest->>'baseReleaseHash'
+            WHERE r.release_hash=#{hash}
+            """)
+    StoredReleaseRow getStoredRelease(String hash);
+
     @Insert(
             """
             INSERT INTO control_plane.release_manifests(release_hash,manifest,manifest_format)
@@ -25,10 +52,6 @@ public interface ReleaseMapper {
             ON CONFLICT(release_hash) DO NOTHING
             """)
     int insertAgentManifestIfAbsent(@Param("hash") String hash, @Param("manifest") String manifest);
-
-    @Select(
-            "SELECT manifest::text FROM control_plane.release_manifests WHERE release_hash=#{hash} AND manifest_format='agent-v2'")
-    String getAgentManifest(String hash);
 
     @Insert(
             """
@@ -38,10 +61,6 @@ public interface ReleaseMapper {
             """)
     int insertComposedAgentManifestIfAbsent(
             @Param("hash") String hash, @Param("manifest") String manifest);
-
-    @Select(
-            "SELECT manifest::text FROM control_plane.release_manifests WHERE release_hash=#{hash} AND manifest_format='agent-v3'")
-    String getComposedAgentManifest(String hash);
 
     @Select("SELECT name,release_hash,revision FROM control_plane.deployments WHERE name=#{name}")
     Deployment getDeployment(String name);

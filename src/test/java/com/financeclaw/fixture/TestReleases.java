@@ -6,6 +6,7 @@ import static org.mockito.Mockito.*;
 import com.financeclaw.app.release.ReleaseService;
 import com.financeclaw.app.release.port.ReleaseRepository;
 import com.financeclaw.app.release.port.ReleaseSource;
+import com.financeclaw.app.release.port.StoredRelease;
 import com.financeclaw.domain.release.Deployment;
 import com.financeclaw.domain.release.ReleaseDefinition;
 import java.util.HashMap;
@@ -31,6 +32,15 @@ public final class TestReleases {
                 .insertManifestIfAbsent(anyString(), any());
         when(repository.findManifest(anyString()))
                 .thenAnswer(call -> manifests.get(call.getArgument(0)));
+        when(repository.findStoredRelease(anyString()))
+                .thenAnswer(
+                        call -> {
+                            String hash = call.getArgument(0);
+                            var definition = manifests.get(hash);
+                            return definition == null
+                                    ? null
+                                    : new StoredRelease.Legacy(hash, definition);
+                        });
         when(repository.current(anyString())).thenAnswer(call -> pointers.get(call.getArgument(0)));
         when(repository.insertDeploymentIfAbsent(anyString(), anyString()))
                 .thenAnswer(

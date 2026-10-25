@@ -13,13 +13,12 @@ public interface ReleaseRepository {
 
     ReleaseDefinition findManifest(String hash);
 
+    /** 同一查询返回选定发布及其单层基础清单；不存在时返回 null，不按格式分别探测或回退。 */
+    StoredRelease findStoredRelease(String hash);
+
     void insertAgentManifestIfAbsent(String hash, AgentReleaseManifest manifest);
 
-    AgentReleaseManifest findAgentManifest(String hash);
-
     void insertComposedAgentManifestIfAbsent(String hash, ComposedAgentReleaseManifest manifest);
-
-    ComposedAgentReleaseManifest findComposedAgentManifest(String hash);
 
     Deployment current(String deployment);
 

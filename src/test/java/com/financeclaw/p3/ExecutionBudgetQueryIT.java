@@ -50,7 +50,8 @@ import org.testcontainers.containers.PostgreSQLContainer;
 
 /**
  * 在真实 PG/JDBC execute 边界比较本地执行预算的 SQL 成本。正常发布、受理、领取及 begin 均在观察窗口之外； 不 mock 生产端口、不运行模型或后台
- * Worker。性能目标仅去掉 consume 内第二次发布解析， 外层子调用和内层行情读取的全部 fence、owner、source、policy、grant 门禁继续独立执行。
+ * Worker。P3a.7 去掉 consume 内第二次发布解析，P3a.9 将每次解析合并为一次主/基础清单查询； 外层子调用和内层行情读取的全部
+ * fence、owner、source、policy、grant 门禁继续独立执行。
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 @Execution(ExecutionMode.SAME_THREAD)
@@ -186,7 +187,7 @@ class ExecutionBudgetQueryIT {
                                     "connection_id_semantics",
                                             "unique JDBC connection borrow; nested REQUIRED shares the same id",
                                     "expected_change",
-                                            "one fewer root release resolution inside each consume callback; every authority gate retained",
+                                            "one joined root/base SQL per release resolution; P3a.7 consume reuse and every authority gate retained",
                                     "measurements", List.copyOf(measurements)));
         } finally {
             // 资源归本测试所有，避免 PG 已停止而缓存 Spring/Hikari 上下文继续重连。
@@ -199,7 +200,7 @@ class ExecutionBudgetQueryIT {
     }
 
     @Test
-    void firstPrivateSnapshotDropsOnlyTheDuplicateBudgetReleaseReadAndReplayKeepsItsGate() {
+    void firstPrivateSnapshotAndReplayUseJoinedReleaseReadsAndKeepEveryGate() {
         var scenario = scenario(ALICE, 32, 64);
         var first = observe("private-first", () -> snapshot(scenario, TOOL_CALL));
         var replay =
@@ -243,10 +244,12 @@ class ExecutionBudgetQueryIT {
         assertThat(replay.sql().count("child_tool_update")).isZero();
         assertSingleTransaction(first.sql(), false);
         assertSingleTransaction(replay.sql(), false);
-        assertThat(first.sql().manifests()).isEqualTo(12);
-        assertThat(first.sql().statements()).isEqualTo(29);
-        assertThat(replay.sql().manifests()).isEqualTo(8);
-        assertThat(replay.sql().statements()).isEqualTo(16);
+        assertThat(first.sql().manifests()).isEqualTo(3);
+        assertThat(first.sql().count("release_lookup")).isEqualTo(3);
+        assertThat(first.sql().statements()).isEqualTo(20);
+        assertThat(replay.sql().manifests()).isEqualTo(2);
+        assertThat(replay.sql().count("release_lookup")).isEqualTo(2);
+        assertThat(replay.sql().statements()).isEqualTo(10);
     }
 
     @Test
@@ -277,10 +280,10 @@ class ExecutionBudgetQueryIT {
         assertFamilies(tool.sql(), Map.of("root_tool_update", 1L));
         assertSingleTransaction(model.sql(), false);
         assertSingleTransaction(tool.sql(), false);
-        assertThat(model.sql().manifests()).isEqualTo(8);
-        assertThat(model.sql().statements()).isEqualTo(17);
-        assertThat(tool.sql().manifests()).isEqualTo(4);
-        assertThat(tool.sql().statements()).isEqualTo(11);
+        assertThat(model.sql().manifests()).isEqualTo(2);
+        assertThat(model.sql().statements()).isEqualTo(11);
+        assertThat(tool.sql().manifests()).isOne();
+        assertThat(tool.sql().statements()).isEqualTo(8);
     }
 
     @Test
@@ -305,8 +308,8 @@ class ExecutionBudgetQueryIT {
                         1L));
         assertThat(failed.sql().count("step_insert")).isZero();
         assertSingleTransaction(failed.sql(), true);
-        assertThat(failed.sql().manifests()).isEqualTo(12);
-        assertThat(failed.sql().statements()).isEqualTo(28);
+        assertThat(failed.sql().manifests()).isEqualTo(3);
+        assertThat(failed.sql().statements()).isEqualTo(19);
     }
 
     @ParameterizedTest
@@ -368,7 +371,8 @@ class ExecutionBudgetQueryIT {
         if (change.equals("lease-and-fence")) {
             assertThat(rejected.sql().statements()).isOne();
         } else {
-            assertThat(rejected.sql().manifests()).isEqualTo(4);
+            assertThat(rejected.sql().manifests()).isOne();
+            assertThat(rejected.sql().statements()).isEqualTo(change.equals("grant") ? 7 : 5);
             assertThat(rejected.sql().count("owner_lock")).isOne();
             assertThat(rejected.sql().count("source_read")).isOne();
             assertThat(rejected.sql().count("grant_lock"))
@@ -418,8 +422,8 @@ class ExecutionBudgetQueryIT {
             assertGates(sample.sql(), 1);
             assertThat(sample.sql().count("root_model_update")).isOne();
             assertSingleTransaction(sample.sql(), sample == aLimited);
-            assertThat(sample.sql().manifests()).isEqualTo(4);
-            assertThat(sample.sql().statements()).isEqualTo(11);
+            assertThat(sample.sql().manifests()).isOne();
+            assertThat(sample.sql().statements()).isEqualTo(8);
         }
     }
 

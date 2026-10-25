@@ -631,6 +631,12 @@ final class ApplicationJdbcRecorder {
         if (sql.startsWith("with locked_command as materialized")
                 && sql.contains("update business.commands c")
                 && sql.contains("set lease_until=clock_timestamp()")) return "heartbeat_renew";
+        // 自关联的两条目录记录属于一次 SQL 执行；不按 SQL 中出现的表名重复计数。
+        if (sql.startsWith(
+                        "select r.release_hash, r.manifest_format, r.manifest::text as manifest_json,")
+                && sql.contains(
+                        " from control_plane.release_manifests r left join control_plane.release_manifests b "))
+            return "release_lookup";
         if (sql.startsWith("select manifest::text from control_plane.release_manifests")) {
             if (sql.contains("manifest_format='agent-v3'")) return "release_agent_v3";
             if (sql.contains("manifest_format='agent-v2'")) return "release_agent_v2";

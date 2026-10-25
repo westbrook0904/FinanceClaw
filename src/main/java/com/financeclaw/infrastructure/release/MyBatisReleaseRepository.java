@@ -3,6 +3,7 @@ package com.financeclaw.infrastructure.release;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.json.JsonMapper;
 import com.financeclaw.app.release.port.ReleaseRepository;
+import com.financeclaw.app.release.port.StoredRelease;
 import com.financeclaw.domain.Governance.Blocked;
 import com.financeclaw.domain.agent.AgentReleaseManifest;
 import com.financeclaw.domain.agent.ComposedAgentReleaseManifest;
@@ -49,34 +50,60 @@ public class MyBatisReleaseRepository implements ReleaseRepository {
     }
 
     @Override
-    public AgentReleaseManifest findAgentManifest(String hash) {
-        String json = mapper.getAgentManifest(hash);
-        if (json == null) {
-            return null;
-        }
-        try {
-            return READER.readValue(json, AgentReleaseManifest.class);
-        } catch (JsonProcessingException | IllegalArgumentException invalid) {
-            throw new Blocked("release_unavailable");
-        }
-    }
-
-    @Override
     public void insertComposedAgentManifestIfAbsent(
             String hash, ComposedAgentReleaseManifest manifest) {
         mapper.insertComposedAgentManifestIfAbsent(hash, PayloadJson.canonical(manifest));
     }
 
     @Override
-    public ComposedAgentReleaseManifest findComposedAgentManifest(String hash) {
-        String json = mapper.getComposedAgentManifest(hash);
-        if (json == null) {
-            return null;
-        }
+    public StoredRelease findStoredRelease(String hash) {
+        var row = mapper.getStoredRelease(hash);
+        if (row == null) return null;
         try {
-            return READER.readValue(json, ComposedAgentReleaseManifest.class);
+            // 物理格式是唯一分派依据，未知格式不尝试其他类型或额外数据库读取。
+            if ("legacy-v1".equals(row.manifestFormat())) {
+                return new StoredRelease.Legacy(
+                        row.releaseHash(), readRoot(row.manifestJson(), ReleaseDefinition.class));
+            }
+            if ("agent-v2".equals(row.manifestFormat())) {
+                return new StoredRelease.AgentV2(
+                        row.releaseHash(),
+                        readRoot(row.manifestJson(), AgentReleaseManifest.class),
+                        readBase(row));
+            }
+            if ("agent-v3".equals(row.manifestFormat())) {
+                return new StoredRelease.AgentV3(
+                        row.releaseHash(),
+                        readRoot(row.manifestJson(), ComposedAgentReleaseManifest.class),
+                        readBase(row));
+            }
+            throw new Blocked("release_unavailable");
         } catch (JsonProcessingException | IllegalArgumentException invalid) {
             throw new Blocked("release_unavailable");
+        }
+    }
+
+    private static <T> T readRoot(String json, Class<T> type) throws JsonProcessingException {
+        T value = READER.readValue(json, type);
+        if (value == null) throw new Blocked("release_unavailable");
+        return value;
+    }
+
+    /**
+     * 基础正文提前随查询返回，但不可提前把它的损坏转换成业务异常。原语义先校验外层 hash、manifest/runtime，再检查基础； 因此这里只标记不可用，由
+     * ReleaseService 在原来的校验阶段统一拒绝，不能遮蔽外层更早的错误。
+     */
+    private static StoredRelease.LegacyBase readBase(ReleaseMapper.StoredReleaseRow row) {
+        if (row.baseReleaseHash() == null
+                || !"legacy-v1".equals(row.baseManifestFormat())
+                || row.baseManifestJson() == null) return null;
+        try {
+            var definition = READER.readValue(row.baseManifestJson(), ReleaseDefinition.class);
+            return definition == null
+                    ? null
+                    : new StoredRelease.LegacyBase(row.baseReleaseHash(), definition);
+        } catch (JsonProcessingException | IllegalArgumentException invalid) {
+            return null;
         }
     }
 
