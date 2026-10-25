@@ -291,6 +291,8 @@ P3a.8 **已推送 `f330a17`，远程流水线通过**：[整轮数据库访问�
 
 P3a.9 **已本地分次验收，未推送**：[发布解析合并](docs/architecture/release-lookup-queries.md)将 v3 每次 4 条查询合为 1 条，普通 Turn 发布查询 36→9、行情与双 owner 四会话整批分别 144→36。非发布业务模板保持一致，实时授权、隐私、租约和预算门禁保持。1,806 个唯一 Java 用例分次通过及 46 项脚本通过；首次完整构建有 1 项记忆 Worker 启动窗口失败，同源码、同 JAR、原断言下整套 26 项复跑通过，**不是一次完整 verify 全绿**。
 
+P3a.10 **已本地验收，未推送**：[Worker 与渠道 Outbox](docs/architecture/worker-outbox-queries.md)实测成功领取 **8→7 条 SQL**，完成通知首次投影并发送 **12→10 条**，waiting **12→11 条**；21 条旧通知加 1 条有效通知的完整积压 **135→94 条**。通知支持提交后本地唤醒，每轮最多检查 20 个候选、发送一次，空闲退避与独立恢复保留。最终同次 **1,299 单元 + 113 选定集成 = 1,412 项**全部通过；没有执行本阶段全项目 verify、Compose 或远程 CI。心跳仍使用实时双锁 CTE，后续重点为批量投影、队首竞争、恢复重复读取和连接池争用。
+
 | 文档 | 内容 |
 | --- | --- |
 | [运行结构](docs/architecture/combined-runtime.md) | 统一 JVM、受限入口、SSE 与调度 |
@@ -309,6 +311,7 @@ P3a.9 **已本地分次验收，未推送**：[发布解析合并](docs/architec
 | [预算查询优化](docs/architecture/execution-budget-queries.md) | P3a.7 同次扣额减少发布查询；已推送，远程 CI 通过 |
 | [整轮数据库访问基线](docs/architecture/turn-database-baseline.md) | P3a.8 跨线程 SQL、连接借用与多 owner 并发测量；已推送，远程 CI 通过 |
 | [发布解析合并](docs/architecture/release-lookup-queries.md) | P3a.9 一条查询读取主/基础清单；已本地分次验收，未推送 |
+| [Worker 与渠道 Outbox](docs/architecture/worker-outbox-queries.md) | P3a.10 领取/通知减少查询、提交后唤醒与有限积压处理；已本地验收，未推送 |
 | [HTTP 校验](docs/architecture/http-request-validation.md) / [Java 规范](docs/architecture/java-coding-guidelines.md) | 输入边界与关键逻辑注释约定 |
 | [运行维护](docs/operations.md) | 受理排空、配置、备份与隔离隐私恢复 |
 | [历史记录](docs/history/README.md) | 过去设计和验收证据，非当前迁移或兼容承诺 |

@@ -5,6 +5,7 @@ import com.financeclaw.app.interaction.AnswerInteractionService;
 import com.financeclaw.app.task.CancelTaskService;
 import com.financeclaw.app.task.SubmitTaskService;
 import com.financeclaw.app.task.TaskQueryService;
+import com.financeclaw.app.task.WorkSignals;
 import com.financeclaw.domain.ExecutionScope;
 import com.financeclaw.domain.Feishu.*;
 import com.financeclaw.domain.Governance.*;
@@ -30,6 +31,7 @@ public class FeishuService {
     private final FeishuMapper db;
     private final TransactionTemplate tx;
     private final FeishuSettings settings;
+    private final WorkSignals signals;
 
     public FeishuService(
             TaskQueryService queries,
@@ -38,7 +40,8 @@ public class FeishuService {
             AnswerInteractionService answers,
             FeishuMapper db,
             TransactionTemplate tx,
-            FeishuSettings settings) {
+            FeishuSettings settings,
+            WorkSignals signals) {
         this.queries = queries;
         this.submission = submission;
         this.cancellation = cancellation;
@@ -46,6 +49,7 @@ public class FeishuService {
         this.db = db;
         this.tx = tx;
         this.settings = settings;
+        this.signals = signals;
     }
 
     public String link(Owner owner, String conversation) {
@@ -244,6 +248,9 @@ public class FeishuService {
                     Object result = Map.of("code", 0);
                     db.insertInboxReceipt(
                             event, binding.id(), requestHash, PayloadJson.canonical(result));
+                    // 绑定、静音和回答等入站变更提交后，才允许投递器重新观察持久通知。
+                    // 已有事件回放在上方直接返回，不重新推进通知代次。
+                    signals.afterCommit(WorkSignals.Queue.NOTICE);
                     return result;
                 });
     }

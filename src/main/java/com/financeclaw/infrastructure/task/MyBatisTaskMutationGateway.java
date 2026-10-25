@@ -1,6 +1,7 @@
 package com.financeclaw.infrastructure.task;
 
 import com.financeclaw.app.task.TaskEventHub;
+import com.financeclaw.app.task.WorkSignals;
 import com.financeclaw.app.task.port.TaskMutationGateway;
 import com.financeclaw.domain.Governance.*;
 import com.financeclaw.domain.Task.*;
@@ -14,8 +15,10 @@ import org.springframework.stereotype.Repository;
 public class MyBatisTaskMutationGateway implements TaskMutationGateway {
     private final TaskMapper db;
     private final TaskEventHub events;
+    private final WorkSignals signals;
 
-    public MyBatisTaskMutationGateway(TaskMapper db, TaskEventHub events) {
+    public MyBatisTaskMutationGateway(TaskMapper db, TaskEventHub events, WorkSignals signals) {
+        this.signals = signals;
         this.events = events;
         this.db = db;
     }
@@ -42,7 +45,10 @@ public class MyBatisTaskMutationGateway implements TaskMutationGateway {
 
     @Override
     public void event(String turn) {
-        events.committed(db.insertTurnEventAndReturn(turn));
+        var event = db.insertTurnEventAndReturn(turn);
+        events.committed(event);
+        // 以实际持久事件的状态选择唤醒；提交前不通知，回滚不留下虚假的本地代次。
+        signals.afterTaskCommit(event.status());
     }
 
     @Override

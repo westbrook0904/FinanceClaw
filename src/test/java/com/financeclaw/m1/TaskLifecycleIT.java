@@ -715,7 +715,9 @@ class TaskLifecycleIT {
         var mutations =
                 spy(
                         new MyBatisTaskMutationGateway(
-                                mapper, bean(com.financeclaw.app.task.TaskEventHub.class)));
+                                mapper,
+                                bean(com.financeclaw.app.task.TaskEventHub.class),
+                                bean(com.financeclaw.app.task.WorkSignals.class)));
         doAnswer(
                         call -> {
                             call.callRealMethod();
@@ -756,7 +758,9 @@ class TaskLifecycleIT {
         var mutations =
                 spy(
                         new MyBatisTaskMutationGateway(
-                                mapper, bean(com.financeclaw.app.task.TaskEventHub.class)));
+                                mapper,
+                                bean(com.financeclaw.app.task.TaskEventHub.class),
+                                bean(com.financeclaw.app.task.WorkSignals.class)));
         doAnswer(
                         call -> {
                             call.callRealMethod();

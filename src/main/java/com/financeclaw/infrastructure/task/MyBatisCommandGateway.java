@@ -34,8 +34,8 @@ public class MyBatisCommandGateway implements CommandGateway {
     }
 
     @Override
-    public void claim(String id, String attempt, String worker, long lease) {
-        db.updateCommandClaim(id, attempt, worker, lease);
+    public Command claim(String id, String attempt, String worker, long lease) {
+        return db.updateCommandClaim(id, attempt, worker, lease);
     }
 
     @Override

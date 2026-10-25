@@ -12,7 +12,8 @@ public interface CommandGateway {
 
     Command lockTurnCommand(String turn);
 
-    void claim(String id, String attempt, String worker, long lease);
+    /** 调用方已按 command → Turn 加锁；返回更新后的真实行，null 必须令领取事务整体失败。 */
+    Command claim(String id, String attempt, String worker, long lease);
 
     void insertAttempt(Command command);
 

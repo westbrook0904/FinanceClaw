@@ -192,6 +192,34 @@ final class JdbcExecutionCounter {
 
     /** 使用精确的语句形状区分类别，不能把 child JOIN 中出现的其他表再次计算成单表读取。 */
     private static String family(String sql) {
+        // 渠道与领取的观察同样按一次 execute 归类；不能把投影 JOIN 中的 Turn 再记一遍。
+        if (sql.startsWith("select b.id from channel.bindings b join business.turns t "))
+            return "notice_projection_scan";
+        if (sql.startsWith("select ")
+                && sql.contains(" from channel.bindings where id=")
+                && sql.endsWith("for update")) return "notice_binding_lock";
+        if (sql.startsWith("select ")
+                && sql.contains(" from channel.notices where status='pending'"))
+            return "notice_pending_read";
+        if (sql.startsWith("select ")
+                && sql.contains(" from channel.notices where id=")
+                && sql.endsWith("for update")) return "notice_lock";
+        if (sql.startsWith("insert into channel.notices")) return "notice_insert";
+        if (sql.startsWith("update channel.notices set status='sending'"))
+            return "notice_claim_update";
+        if (sql.startsWith("update channel.notices set status='unknown',reason='worker_lost'"))
+            return "notice_expired_recovery";
+        if (sql.startsWith("update channel.notices set status=")) return "notice_outcome_update";
+        if (sql.startsWith("select ") && sql.contains(" from business.interactions where "))
+            return "interaction_read";
+        if (sql.startsWith("select ")
+                && sql.contains(" from business.commands where status='queued'")
+                && sql.endsWith("for update skip locked")) return "command_claim_poll";
+        if (sql.startsWith("update business.commands set status='running'"))
+            return "command_claim_update";
+        if (sql.startsWith("insert into business.attempts")) return "attempt_insert";
+        if (sql.startsWith("update business.turns set status=")) return "turn_state_update";
+        if (sql.startsWith("insert into business.events")) return "event_insert";
         // 一条自关联查询只计一次物理 execute，不能把基础清单 JOIN 再算成一次读取。
         if (sql.startsWith(
                         "select r.release_hash, r.manifest_format, r.manifest::text as manifest_json,")

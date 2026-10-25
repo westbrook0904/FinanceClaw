@@ -5,26 +5,95 @@ import static org.mockito.Mockito.*;
 
 import com.financeclaw.app.execution.port.ExecutionContextGateway;
 import com.financeclaw.app.task.TaskQueryService;
+import com.financeclaw.app.task.WorkSignals;
+import com.financeclaw.domain.Feishu.Binding;
+import com.financeclaw.domain.Feishu.Notice;
 import com.financeclaw.infrastructure.channel.FeishuMapper;
 import com.financeclaw.worker.IdlePoll;
 import java.util.List;
 import java.util.concurrent.*;
 import org.junit.jupiter.api.Test;
+import org.springframework.transaction.support.SimpleTransactionStatus;
+import org.springframework.transaction.support.TransactionCallback;
 import org.springframework.transaction.support.TransactionTemplate;
 
 class FeishuPollingTest {
     private final FeishuMapper db = mock(FeishuMapper.class);
     private final IdlePoll idle = new IdlePoll(1000, 5000);
+    private final WorkSignals signals = new WorkSignals();
+    private final TransactionTemplate tx = mock(TransactionTemplate.class);
 
     private FeishuDelivery delivery(boolean enabled) {
         return new FeishuDelivery(
                 db,
                 mock(TaskQueryService.class),
                 mock(ExecutionContextGateway.class),
-                mock(TransactionTemplate.class),
+                tx,
                 mock(AgentScopeFeishu.class),
+                signals,
                 enabled,
                 idle);
+    }
+
+    @Test
+    void noticeCommitDuringAnEmptyScanCannotBeHiddenByItsOldBackoffTicket() {
+        var delivery = delivery(true);
+        when(db.listBindingIdsRequiringProjection())
+                .thenAnswer(
+                        ignored -> {
+                            signals.afterCommit(WorkSignals.Queue.NOTICE);
+                            return List.of();
+                        });
+        delivery.scheduled();
+        delivery.scheduled();
+        verify(db, times(2)).listBindingIdsRequiringProjection();
+        verify(db, times(2)).getNextPendingNotice();
+    }
+
+    @Test
+    void onlyTheNoticeQueueCanWakeNotificationBackoff() {
+        var delivery = delivery(true);
+        when(db.listBindingIdsRequiringProjection()).thenReturn(List.of());
+        delivery.scheduled();
+        signals.afterCommit(WorkSignals.Queue.COMMAND);
+        delivery.scheduled();
+        verify(db, times(1)).listBindingIdsRequiringProjection();
+        signals.afterCommit(WorkSignals.Queue.NOTICE);
+        delivery.scheduled();
+        verify(db, times(2)).listBindingIdsRequiringProjection();
+    }
+
+    @Test
+    void suppressingAStaleCandidateCountsAsWorkInsteadOfStartingIdleBackoff() {
+        var delivery = delivery(true);
+        var stale = new Notice("notice", "turn", "binding", 1, 2, "payload", "pending", null);
+        var muted =
+                new Binding(
+                        "binding",
+                        "channel-tenant",
+                        "user",
+                        "chat",
+                        "tenant",
+                        "subject",
+                        "conversation",
+                        1,
+                        true,
+                        "turn");
+        when(tx.execute(any()))
+                .thenAnswer(
+                        call ->
+                                call.<TransactionCallback<?>>getArgument(0)
+                                        .doInTransaction(new SimpleTransactionStatus()));
+        when(db.listBindingIdsRequiringProjection()).thenReturn(List.of());
+        when(db.getNextPendingNotice()).thenReturn(stale, null, null);
+        when(db.getBindingForUpdate("binding")).thenReturn(muted);
+        when(db.getNoticeForUpdate("notice")).thenReturn(stale);
+        delivery.scheduled();
+        delivery.scheduled();
+        verify(db).updateNoticeOutcome("notice", "suppressed", "binding_changed");
+        verify(db, times(2)).listBindingIdsRequiringProjection();
+        verify(db, times(3)).getNextPendingNotice();
+        verify(db, never()).updatePendingNoticeSending(anyString());
     }
 
     @Test

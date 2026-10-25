@@ -76,7 +76,7 @@ public final class LifecycleDatabase {
                             com.financeclaw.infrastructure.governance.GovernanceMapper.class);
             var events = new com.financeclaw.app.task.TaskEventHub();
             var reads = new MyBatisTaskQueryGateway(tasks);
-            var mutations = new MyBatisTaskMutationGateway(tasks, events);
+            var mutations = new MyBatisTaskMutationGateway(tasks, events, signals);
             var commands = new MyBatisCommandGateway(tasks);
             var policy = new MyBatisExecutionPolicyGateway(gov);
             var receipts =

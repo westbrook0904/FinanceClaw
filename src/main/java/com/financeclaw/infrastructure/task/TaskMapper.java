@@ -166,13 +166,22 @@ VALUES(#{id},#{conversationId},#{tenant},#{subject},#{idempotencyKey},#{requestH
                     + " lease_until<=clock_timestamp() ORDER BY lease_until LIMIT 50")
     List<String> listExpiredCommandIds();
 
-    /** 调用方已经锁定可领取命令和 turn 后，写入新 attempt、递增 fence 并建立租约。 本方法不是独立的无锁 CAS，不能脱离领取事务调用。 */
-    @Update(
-            """
+    /**
+     * 调用方已经按 command → Turn 顺序锁定并校验可领取状态，再写入新 attempt、递增 fence 和建立租约。 RETURNING 携带数据库实际写入的身份及即时
+     * live 投影，避免同一事务再次 SELECT 已锁行；不能由调用方旧 Command 合成。 本方法不是独立的无锁 CAS，不能脱离领取事务调用，返回 null 时不得继续创建
+     * attempt 或迁移 Turn。
+     */
+    @Select(
+            value =
+                    """
 UPDATE business.commands SET status='running',attempt_id=#{attempt},fence=fence+1,
 worker_id=#{worker},lease_until=clock_timestamp()+#{lease}*interval '1 millisecond' WHERE id=#{id}
-""")
-    int updateCommandClaim(
+RETURNING
+"""
+                            + COMMAND_COLUMNS,
+            affectData = true)
+    @Options(flushCache = Options.FlushCachePolicy.TRUE, useCache = false)
+    Command updateCommandClaim(
             @Param("id") String id,
             @Param("attempt") String attempt,
             @Param("worker") String worker,

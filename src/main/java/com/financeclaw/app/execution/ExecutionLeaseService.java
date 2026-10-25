@@ -45,8 +45,12 @@ public class ExecutionLeaseService {
                     }
                     Turn t = turns.lockTurn(c.turnId());
                     t.requireClaimable();
-                    db.claim(c.id(), id(), worker, leaseMillis);
-                    c = db.lockCommand(c.id());
+                    // command 的原始行锁仍保持到事务结束。使用 UPDATE RETURNING 的真实行，
+                    // 只移除更新后的重复读取，不改变 command → Turn 锁序或后续独立执行栅栏。
+                    c = db.claim(c.id(), id(), worker, leaseMillis);
+                    if (c == null) {
+                        throw new Fenced();
+                    }
                     db.insertAttempt(c);
                     transitions.change(t, "running", null, null);
                     return new Claim(c, reads.turn(t.id()));
