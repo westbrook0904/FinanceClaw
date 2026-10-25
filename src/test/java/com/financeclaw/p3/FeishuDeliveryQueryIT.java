@@ -189,7 +189,7 @@ class FeishuDeliveryQueryIT {
                             configuration
                                     .getMappedStatement(
                                             GovernanceMapper.class.getName()
-                                                    + ".listInteractionsByTurnId")
+                                                    + ".listPendingInteractionsByTurnId")
                                     .getBoundSql("turn")
                                     .getSql());
         } catch (RuntimeException | Error failure) {

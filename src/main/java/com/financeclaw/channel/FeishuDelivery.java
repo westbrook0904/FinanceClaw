@@ -205,10 +205,11 @@ public class FeishuDelivery {
                             .contains(turn.status())) {
                         return;
                     }
-                    // 只有 waiting 文案使用交互；完成、失败、取消和阻断直接使用结果或固定提示。
+                    // 只有 waiting 文案读取 pending 交互，避免反复映射历史回答正文。
+                    // 完整历史仍供执行与恢复使用；通知渲染器继续核对 pending 状态及 SQL 采样的 live。
                     List<Interaction> pending =
                             turn.status().equals("waiting")
-                                    ? interactions.interactions(turn.id())
+                                    ? interactions.pendingInteractions(turn.id())
                                     : List.of();
                     String text = FeishuText.render(b, turn, pending);
                     if (text.isBlank()) {

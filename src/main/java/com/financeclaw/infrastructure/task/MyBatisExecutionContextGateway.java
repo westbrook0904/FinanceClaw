@@ -30,6 +30,11 @@ public class MyBatisExecutionContextGateway implements ExecutionContextGateway {
     }
 
     @Override
+    public List<Interaction> pendingInteractions(String turn) {
+        return db.listPendingInteractionsByTurnId(turn);
+    }
+
+    @Override
     public java.time.Instant requestClock(String turn) {
         return db.getTurnCreatedAt(turn);
     }

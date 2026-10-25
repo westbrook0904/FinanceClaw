@@ -1,6 +1,6 @@
 # 通知候选结果瘦身：P3a.14
 
-**状态：本地验收通过，尚未推送。** 前置 `dda1d7d` 已推送，[run 40184268889](https://github.com/westbrook0904/FinanceClaw/actions/runs/40184268889) 整条成功：1,885 Java、46 脚本、44 部署检查通过。该远程结果仅对应 P3a.13；本阶段的 [1,493 项本地选定验收](evidence/p3a14-implementation.json)单独记录。
+**状态：已推送 `e115834`，远程完整 CI 通过。** 前置 `dda1d7d` 已推送，[run 40184268889](https://github.com/westbrook0904/FinanceClaw/actions/runs/40184268889) 整条成功：1,885 Java、46 脚本、44 部署检查通过。该远程结果仅对应 P3a.13；本阶段的 [1,493 项本地选定验收](evidence/p3a14-implementation.json)单独记录。
 
 ## 为什么只返回两个标识
 
@@ -51,8 +51,12 @@ scripts/mvn.sh -B -ntp -o validate spotless:check package -Dit.test=NoticeCandid
 
 实际 XML：**1,320 单元 + 173 项、14 套选定集成 = 1,493 项**，失败/错误/跳过均为 0。相关范围涵盖通知锁等待与回滚、Worker 领取、生命周期、执行心跳、恢复、工作上下文、隐私、预算和整轮 SQL 基线。打包的 419 个生产 class、22 个资源与编译输出/源码资源字节一致，JAR SHA-256 为 `9e9ba45dda4ea76e64acec0f4a4266ced08b3d5273e0dd317e1de10b240dc61c`。证据保留真实进程退出、原始报告、前后 SQL、输入和产物摘要。
 
-本阶段未执行完整项目 verify、46 项脚本测试套件、Compose、远程 CI、独立 CLI 或部署后 JAR 验收；前置远程全绿结果不能替代这些验收。
+原提交前本地命令未执行完整项目 verify、46 项脚本测试套件、Compose、远程 CI、独立 CLI 或部署后 JAR 验收；后续远程结果单列，原本地证据保持。
 
 ## 后续热点
 
 Outbox 批量投影仍逐 binding 读取并提交；队首竞争仍需多执行者锁等待测量。恢复扫描需大表 EXPLAIN/BUFFERS，连接池与执行心跳需测等待时间、续租延迟和租约余量。长工具链上下文写入与独立 Turn.result 正文读取也仍需单独测量，见 [Worker/Outbox 后续清单](worker-outbox-queries.md#后续五类数据库热点)。
+
+## 远程交付补充
+
+[run 40189599778](https://github.com/westbrook0904/FinanceClaw/actions/runs/40189599778) 针对 `e115834` 整条 completed/success：**1,320 单元 + 570 集成 = 1,890 Java、46 脚本和 44 部署检查通过**。原本地 1,493 项选定验收、失败记录与 SQL/结果指标保持；[远程证据](evidence/p3a14-remote-ci.json)独立保存，不覆盖后续 P3a.15。远程与本地产物未比较 JAR 字节身份。

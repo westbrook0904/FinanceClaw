@@ -276,6 +276,16 @@ VALUES(#{id},#{turnId},#{commandId},#{attemptId},#{stateVersion},#{grantRevision
                     + " FROM business.interactions WHERE turn_id=#{id} ORDER BY revision,id")
     List<Interaction> listInteractionsByTurnId(String id);
 
+    /**
+     * 通知只需当前 pending 行；通用历史读取保留给批次回答判断及执行恢复。 不在此筛除过期 pending，也不改变 live 的数据库时间表达式或原排序，渲染器仍须检查状态与有效期。
+     */
+    @Select(
+            "SELECT "
+                    + INTERACTION_COLUMNS
+                    + " FROM business.interactions WHERE turn_id=#{id} AND status='pending'"
+                    + " ORDER BY revision,id")
+    List<Interaction> listPendingInteractionsByTurnId(String id);
+
     @Update(
             "UPDATE business.interactions SET"
                     + " status='answered',response_hash=#{hash},response_json=#{json} WHERE id=#{id}"

@@ -102,7 +102,9 @@ CI 原有 `target/p3*/` 归档规则覆盖 `target/p3a10/` SQL 报告。P3a.12 �
 4. **恢复扫描的规模成本。** 命令过期和 sending 失联扫描仍需大表 EXPLAIN/BUFFERS，再决定部分索引与有界扫描；锁后仍要用数据库时间重新检查，unknown 不自动重发。
 5. **多用户连接池与心跳延迟。** 当前心跳已是单条双锁 CTE；重点测 Hikari 等待、锁等待、续租延迟及租约余量，按证据评估资源隔离，不靠降低心跳频率、缓存 live 或批量续活减 SQL。
 
-[P3a.13](notice-claim-lock-queries.md) 已推送 `dda1d7d` 并通过远程完整 CI，领取时双锁查询合并，完整旧通知积压进一步 94→72 SQL。[P3a.14](notice-candidate-results.md) 又本地验证候选 8→2 列、去除候选正文 getter 重复读取，SQL 次数保持不变；本阶段尚未推送。两者保留逐项投影事务和原队首等待，批量投影与公平性仍未完成。
+[P3a.13](notice-claim-lock-queries.md) 已推送 `dda1d7d` 并通过远程完整 CI，领取时双锁查询合并，完整旧通知积压进一步 94→72 SQL。[P3a.14](notice-candidate-results.md) 已推送 `e115834` 并通过远程完整 CI，候选 8→2 列、去除候选正文 getter 重复读取，SQL 次数保持不变。两者保留逐项投影事务和原队首等待，批量投影与公平性仍未完成。
+
+[P3a.15](waiting-notice-queries.md) 已本地验收 waiting 通知的 pending 专用读取，9 个投影窗口映射 34→15 行、旧回答逻辑字节 86,412→0，SQL 次数保持；尚未推送。原生恢复与回答批次仍使用完整交互历史。
 
 长工具链的 SDK/工作上下文写入字节、重复正文和写入放大仍需独立测量；本阶段的 SQL 次数不能替代这些证据。
 
