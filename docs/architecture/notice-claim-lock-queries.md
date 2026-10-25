@@ -1,6 +1,6 @@
 # 通知领取双锁查询优化：P3a.13
 
-**状态：已完成本地选定范围验收，尚未推送。** 前置 `24e74e5` 已推送，[run 40179982140](https://github.com/westbrook0904/FinanceClaw/actions/runs/40179982140) 整条成功：1,875 Java、46 脚本、44 部署检查通过。本阶段单独测量与验收。
+**状态：已推送 `dda1d7d`，远程完整 CI 通过。** 前置 `24e74e5` 已推送，[run 40179982140](https://github.com/westbrook0904/FinanceClaw/actions/runs/40179982140) 整条成功：1,875 Java、46 脚本、44 部署检查通过。本阶段单独测量与验收。
 
 ## 实施范围
 
@@ -49,4 +49,8 @@ before 使用专用 `-Dfinanceclaw.test.notice-locks-baseline=true test-compile`
 
 最终 463 项输入前后不变，418 项生产 class、22 项资源与本次 JAR 逐字匹配，包含 JAR 根目录的三份许可证。[本阶段证据](evidence/p3a13-implementation.json)保留两份原始 SQL 报告、严格比较、测试与产物身份；完整 Notice/正文没有写入 SQL JSON，新报告只导出固定布尔事实和计数，旧报告只包含 SQL 观测。
 
-本阶段未执行其余集成、脚本用例、Compose、打包 CLI、独立部署 JAR 或新远程 CI；前置远程 1,875／46／44 独立保留。有限双 owner 积压不证明持续流量下的公平性，也不等于生产多用户认证验收。Outbox 批量投影、队首锁等待、扫描计划、多用户连接池和心跳续租延迟仍待专项测量。
+原提交前本地命令未执行其余集成、脚本用例、Compose、打包 CLI、独立部署 JAR 或新远程 CI；前置远程 1,875／46／44 独立保留。有限双 owner 积压不证明持续流量下的公平性，也不等于生产多用户认证验收。Outbox 批量投影、队首锁等待、扫描计划、多用户连接池和心跳续租延迟仍待专项测量。
+
+## 远程交付补充
+
+[run 40184268889](https://github.com/westbrook0904/FinanceClaw/actions/runs/40184268889) 对 `dda1d7d` 整条 completed/success：**1,318 单元 + 567 集成 = 1,885 Java、46 脚本和 44 部署检查通过**。原本地选定 1,488 项与 SQL 证据保持；[远程证据](evidence/p3a13-remote-ci.json)独立保存，不覆盖后续 P3a.14。

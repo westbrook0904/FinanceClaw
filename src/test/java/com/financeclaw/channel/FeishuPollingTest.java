@@ -85,7 +85,8 @@ class FeishuPollingTest {
                                 call.<TransactionCallback<?>>getArgument(0)
                                         .doInTransaction(new SimpleTransactionStatus()));
         when(db.listBindingIdsRequiringProjection()).thenReturn(List.of());
-        when(db.getNextPendingNotice()).thenReturn(stale, null, null);
+        var candidate = new FeishuMapper.NoticeCandidate(stale.id(), stale.bindingId());
+        when(db.getNextPendingNotice()).thenReturn(candidate, null, null);
         when(db.getBindingAndNoticeForUpdate("binding", "notice"))
                 .thenReturn(
                         new FeishuMapper.LockedNoticeRow(
@@ -116,22 +117,13 @@ class FeishuPollingTest {
     }
 
     @Test
-    void missingLockedClaimRowsCannotUseTheObservedPayloadWriteOrSend() {
+    void missingLockedClaimRowsCannotWriteOrSendFromCandidateIdentifiers() {
         var tasks = mock(TaskQueryService.class);
         var interactions = mock(ExecutionContextGateway.class);
         var channel = mock(AgentScopeFeishu.class);
         var delivery =
                 new FeishuDelivery(db, tasks, interactions, tx, channel, signals, true, idle);
-        var observed =
-                new Notice(
-                        "notice",
-                        "turn",
-                        "binding",
-                        1,
-                        2,
-                        "must never send an unlocked candidate payload",
-                        "pending",
-                        null);
+        var observed = new FeishuMapper.NoticeCandidate("notice", "binding");
         when(tx.execute(any()))
                 .thenAnswer(
                         call ->
@@ -146,7 +138,8 @@ class FeishuPollingTest {
         verify(db).listBindingIdsRequiringProjection();
         verify(db, times(2)).getNextPendingNotice();
         verify(db).getBindingAndNoticeForUpdate("binding", "notice");
-        // No legacy lock/read fallback, state write, or uncertain network send is allowed.
+        // Candidate identifiers cannot substitute for missing locked rows or authorize side
+        // effects.
         verifyNoMoreInteractions(db);
         verifyNoInteractions(tasks, interactions, channel);
         assertEquals(0, signals.generation(WorkSignals.Queue.NOTICE));

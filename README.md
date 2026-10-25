@@ -297,7 +297,9 @@ P3a.11 **已推送 `2de8537`，远程完整 CI 通过**：[恢复回执复用](d
 
 P3a.12 **已推送 `24e74e5`，远程完整 CI 通过**：[Worker 状态返回](docs/architecture/worker-turn-returning-queries.md)使用同一状态更新返回真实 Turn，成功领取进一步 **7→6 条 SQL**，15 个公共窗口 **77→69 条**。普通迁移仍只写，Command/Turn 锁序、事件、回滚与心跳门禁保持。同次 **1,317 单元 + 161 选定集成 = 1,478 项**通过；首次沙箱 JVM 附加失败与相同输入重跑记录分别保留。原提交前本地命令未执行其余集成、脚本、Compose 或远程 CI；后续 [run 40179982140](https://github.com/westbrook0904/FinanceClaw/actions/runs/40179982140) 整条 completed/success：**1,317 单元 + 558 集成 = 1,875 Java、46 脚本及 44 部署检查通过**。
 
-P3a.13 **已完成本地选定范围验收，尚未推送**：[通知领取双锁查询](docs/architecture/notice-claim-lock-queries.md)合并 binding/notice 锁读取，合法领取 **5→4 条 SQL**，完成通知首次投影并发送 **10→9 条**；21 条旧通知加 1 条有效通知的完整处理 **94→72 条**。原锁序、锁后独立 owner/Turn 查询、逐项投影提交、回滚及事务外发送保持。同次 **1,318 单元 + 170 选定集成 = 1,488 项**通过；本阶段未执行其余集成、脚本、Compose 或远程 CI。
+P3a.13 **已推送 `dda1d7d`，远程完整 CI 通过**：[通知领取双锁查询](docs/architecture/notice-claim-lock-queries.md)合并 binding/notice 锁读取，合法领取 **5→4 条 SQL**，完成通知首次投影并发送 **10→9 条**；21 条旧通知加 1 条有效通知的完整处理 **94→72 条**。原锁序、锁后独立 owner/Turn 查询、逐项投影提交、回滚及事务外发送保持。原提交前本地同次 **1,318 单元 + 170 选定集成 = 1,488 项**通过；后续 [run 40184268889](https://github.com/westbrook0904/FinanceClaw/actions/runs/40184268889) 整条 completed/success：**1,318 单元 + 567 集成 = 1,885 Java、46 脚本及 44 部署检查通过**。
+
+P3a.14 **本地验收通过，尚未推送**：[通知候选结果瘦身](docs/architecture/notice-candidate-results.md)将候选映射由完整 Notice 的 8 列缩为两字段定位对象，移除重复正文读取。7 个新窗口的候选正文 getter UTF-8 逻辑字节 **152,264→0**，SQL 保持 **85→85**；锁内通知正文及后续独立 Turn 读取保留。**1,320 单元 + 173 选定集成 = 1,493 项**同次通过；首次校准测试的 Mockito 配置错误已修正并保留失败记录。本阶段未执行完整 verify、脚本测试套件、Compose 或远程 CI，不把前置流水线结果归于本阶段。
 
 | 文档 | 内容 |
 | --- | --- |
@@ -320,7 +322,8 @@ P3a.13 **已完成本地选定范围验收，尚未推送**：[通知领取双�
 | [Worker 与渠道 Outbox](docs/architecture/worker-outbox-queries.md) | P3a.10 领取/通知减少查询、提交后唤醒与有限积压处理；已推送，远程完整 CI 通过 |
 | [恢复回执复用](docs/architecture/recovery-receipt-queries.md) | P3a.11 同事务复用 sealed receipt，补齐绑定校验；已推送，远程完整 CI 通过 |
 | [Worker 状态返回](docs/architecture/worker-turn-returning-queries.md) | P3a.12 领取复用真实更新行，成功 7→6 SQL；已推送，远程完整 CI 通过 |
-| [通知领取双锁查询](docs/architecture/notice-claim-lock-queries.md) | P3a.13 保持 binding→notice 锁序并合并读取；本地选定范围通过，尚未推送 |
+| [通知领取双锁查询](docs/architecture/notice-claim-lock-queries.md) | P3a.13 保持 binding→notice 锁序并合并读取；已推送，远程完整 CI 通过 |
+| [通知候选结果瘦身](docs/architecture/notice-candidate-results.md) | P3a.14 候选 8→2 列并移除重复正文；本地 1,493 项选定范围通过，尚未推送 |
 | [HTTP 校验](docs/architecture/http-request-validation.md) / [Java 规范](docs/architecture/java-coding-guidelines.md) | 输入边界与关键逻辑注释约定 |
 | [运行维护](docs/operations.md) | 受理排空、配置、备份与隔离隐私恢复 |
 | [历史记录](docs/history/README.md) | 过去设计和验收证据，非当前迁移或兼容承诺 |

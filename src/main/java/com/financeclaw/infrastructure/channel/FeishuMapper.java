@@ -86,11 +86,18 @@ public interface FeishuMapper {
                     + " channel.notices.binding_revision=excluded.binding_revision")
     void insertOrReactivateNotice(Notice notice);
 
-    /** 只观察最早 pending 通知；真正领取还需在事务内锁 binding、notice 并重验版本。 */
+    /** 无锁观察阶段只传递领取定位所需的两个标识，不重复读取通知正文或版本。 候选不是发送资格或授权快照；完整通知与路由仍须取自后续锁定读取，缺行时不能回退到候选。 */
+    record NoticeCandidate(String id, String bindingId) {}
+
+    /** 只观察最早 pending 通知的位置；原队列谓词、排序和单条上限保持，真正领取仍需锁内重验。 */
     @Select(
-            "SELECT id,turn_id,binding_id,binding_revision,revision,payload,status,reason FROM"
-                    + " channel.notices WHERE status='pending' ORDER BY created_at LIMIT 1")
-    Notice getNextPendingNotice();
+            "SELECT id,binding_id FROM channel.notices WHERE status='pending' ORDER BY created_at"
+                    + " LIMIT 1")
+    @ConstructorArgs({
+        @Arg(column = "id", javaType = String.class),
+        @Arg(column = "binding_id", javaType = String.class)
+    })
+    NoticeCandidate getNextPendingNotice();
 
     @Select(
             "SELECT id,turn_id,binding_id,binding_revision,revision,payload,status,reason FROM"
