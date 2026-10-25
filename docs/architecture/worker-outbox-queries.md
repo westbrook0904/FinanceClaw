@@ -86,7 +86,7 @@ scripts/mvn.sh -B -ntp -o validate spotless:check package \
 
 本历史阶段的 before 使用 `-Dfinanceclaw.test.query-baseline=true test-compile`，仅选择两个新 IT；生产输入与 `0c789b8` 的 278 项文件逐个核对一致。
 成功 before 后，Feishu 测试仅因构造器新增参数而接入共享 WorkSignals，Worker fixture 保持；不把两套测试源码表述为字节完全相同。
-CI 原有 `target/p3*/` 归档规则覆盖 `target/p3a10/` SQL 报告。P3a.12 已为 Worker 改用专用 7→6 基线开关和 `target/p3a12/worker-turn-returning-sql.json`，旧开关不适用于当前 Worker 测试。
+CI 原有 `target/p3*/` 归档规则覆盖 `target/p3a10/` SQL 报告。P3a.12 已为 Worker 改用专用 7→6 基线开关和 `target/p3a12/worker-turn-returning-sql.json`，旧开关不适用于当前 Worker 测试。P3a.13 又为当前 Feishu 回归移除该历史开关，新增 NoticeClaimQueryIT 专用基线；当前输出见 `target/p3a13/`。
 
 两次 Docker API 启动中断均发生在业务集成执行前：before 为 0 用例；首次 after 已通过 1,299 单元、0 集成，均主动中止退出 143。原日志、报告及输入指纹保留，不混入最终同次成功结果。
 恢复 Docker 使用用户此前的明确授权；不把本轮中断挪用为其他阶段的失败历史，也不在无证据时认定所有失败均由环境导致。
@@ -101,6 +101,8 @@ CI 原有 `target/p3*/` 归档规则覆盖 `target/p3a10/` SQL 报告。P3a.12 �
 3. **执行事务的后续改进。** 原阶段发现的恢复 sealed receipt 重读已由 [P3a.11](recovery-receipt-queries.md) 消除；Worker running 后回读由 [P3a.12](worker-turn-returning-queries.md) 使用真实 RETURNING 消除并完成本地验收。事件、完整字段、sealed/fence/checkpoint 和回滚语义保持，历史 8→7 SQL 数据不重写。
 4. **恢复扫描的规模成本。** 命令过期和 sending 失联扫描仍需大表 EXPLAIN/BUFFERS，再决定部分索引与有界扫描；锁后仍要用数据库时间重新检查，unknown 不自动重发。
 5. **多用户连接池与心跳延迟。** 当前心跳已是单条双锁 CTE；重点测 Hikari 等待、锁等待、续租延迟及租约余量，按证据评估资源隔离，不靠降低心跳频率、缓存 live 或批量续活减 SQL。
+
+[P3a.13](notice-claim-lock-queries.md) 已本地验证领取时双锁查询合并，完整旧通知积压进一步 94→72 SQL；它保留逐项投影事务和原队首等待，不将批量投影与公平性标为完成。
 
 长工具链的 SDK/工作上下文写入字节、重复正文和写入放大仍需独立测量；本阶段的 SQL 次数不能替代这些证据。
 

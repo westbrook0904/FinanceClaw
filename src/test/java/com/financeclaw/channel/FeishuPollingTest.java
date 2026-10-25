@@ -86,14 +86,70 @@ class FeishuPollingTest {
                                         .doInTransaction(new SimpleTransactionStatus()));
         when(db.listBindingIdsRequiringProjection()).thenReturn(List.of());
         when(db.getNextPendingNotice()).thenReturn(stale, null, null);
-        when(db.getBindingForUpdate("binding")).thenReturn(muted);
-        when(db.getNoticeForUpdate("notice")).thenReturn(stale);
+        when(db.getBindingAndNoticeForUpdate("binding", "notice"))
+                .thenReturn(
+                        new FeishuMapper.LockedNoticeRow(
+                                muted.id(),
+                                muted.tenantKey(),
+                                muted.openId(),
+                                muted.chatId(),
+                                muted.tenant(),
+                                muted.subject(),
+                                muted.conversationId(),
+                                muted.revision(),
+                                muted.muted(),
+                                muted.activeTurn(),
+                                stale.id(),
+                                stale.turnId(),
+                                stale.bindingId(),
+                                stale.bindingRevision(),
+                                stale.revision(),
+                                stale.payload(),
+                                stale.status(),
+                                stale.reason()));
         delivery.scheduled();
         delivery.scheduled();
         verify(db).updateNoticeOutcome("notice", "suppressed", "binding_changed");
         verify(db, times(2)).listBindingIdsRequiringProjection();
         verify(db, times(3)).getNextPendingNotice();
         verify(db, never()).updatePendingNoticeSending(anyString());
+    }
+
+    @Test
+    void missingLockedClaimRowsCannotUseTheObservedPayloadWriteOrSend() {
+        var tasks = mock(TaskQueryService.class);
+        var interactions = mock(ExecutionContextGateway.class);
+        var channel = mock(AgentScopeFeishu.class);
+        var delivery =
+                new FeishuDelivery(db, tasks, interactions, tx, channel, signals, true, idle);
+        var observed =
+                new Notice(
+                        "notice",
+                        "turn",
+                        "binding",
+                        1,
+                        2,
+                        "must never send an unlocked candidate payload",
+                        "pending",
+                        null);
+        when(tx.execute(any()))
+                .thenAnswer(
+                        call ->
+                                call.<TransactionCallback<?>>getArgument(0)
+                                        .doInTransaction(new SimpleTransactionStatus()));
+        when(db.listBindingIdsRequiringProjection()).thenReturn(List.of());
+        when(db.getNextPendingNotice()).thenReturn(observed, null);
+        when(db.getBindingAndNoticeForUpdate("binding", "notice")).thenReturn(null);
+
+        delivery.scheduled();
+
+        verify(db).listBindingIdsRequiringProjection();
+        verify(db, times(2)).getNextPendingNotice();
+        verify(db).getBindingAndNoticeForUpdate("binding", "notice");
+        // No legacy lock/read fallback, state write, or uncertain network send is allowed.
+        verifyNoMoreInteractions(db);
+        verifyNoInteractions(tasks, interactions, channel);
+        assertEquals(0, signals.generation(WorkSignals.Queue.NOTICE));
     }
 
     @Test

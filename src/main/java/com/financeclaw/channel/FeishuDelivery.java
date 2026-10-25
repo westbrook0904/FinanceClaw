@@ -246,8 +246,14 @@ public class FeishuDelivery {
         }
         return tx.execute(
                 s -> {
-                    var b = db.getBindingForUpdate(pending.bindingId());
-                    var notice = db.getNoticeForUpdate(pending.id());
+                    // 候选只用于定位；两级锁 CTE 保持 binding → notice 顺序并返回实际锁定行。
+                    var locked = db.getBindingAndNoticeForUpdate(pending.bindingId(), pending.id());
+                    if (locked == null) {
+                        // 缺行不能回退到未锁定的 pending 快照，更不能继续写入或发送。
+                        return new ClaimResult(ClaimState.SKIPPED, null, null);
+                    }
+                    var b = locked.binding();
+                    var notice = locked.notice();
                     if (!notice.status().equals("pending")) {
                         return new ClaimResult(ClaimState.SKIPPED, null, null);
                     }
@@ -257,6 +263,7 @@ public class FeishuDelivery {
                         db.updateNoticeOutcome(notice.id(), "suppressed", "binding_changed");
                         return new ClaimResult(ClaimState.SKIPPED, null, null);
                     }
+                    // 独立语句取得锁后的新快照；MATERIALIZED 不是新的 PG statement snapshot。
                     var turn =
                             tasks.get(
                                     new Owner(b.tenant(), b.subject()),

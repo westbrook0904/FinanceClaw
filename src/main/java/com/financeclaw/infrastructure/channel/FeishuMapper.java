@@ -97,6 +97,98 @@ public interface FeishuMapper {
                     + " channel.notices WHERE id=#{id} FOR UPDATE")
     Notice getNoticeForUpdate(String id);
 
+    /** 同一领取事务的类型化行投影，只按 SQL 实际返回的标量构造 Binding/Notice。 不从候选、旧绑定或应用时间合成状态，也不承载跨事务授权缓存。 */
+    record LockedNoticeRow(
+            String bindingId,
+            String tenantKey,
+            String openId,
+            String chatId,
+            String tenant,
+            String subject,
+            String conversationId,
+            long bindingRevision,
+            boolean muted,
+            String activeTurn,
+            String noticeId,
+            String noticeTurnId,
+            String noticeBindingId,
+            long noticeBindingRevision,
+            long noticeRevision,
+            String noticePayload,
+            String noticeStatus,
+            String noticeReason) {
+        public Binding binding() {
+            return new Binding(
+                    bindingId,
+                    tenantKey,
+                    openId,
+                    chatId,
+                    tenant,
+                    subject,
+                    conversationId,
+                    bindingRevision,
+                    muted,
+                    activeTurn);
+        }
+
+        public Notice notice() {
+            return new Notice(
+                    noticeId,
+                    noticeTurnId,
+                    noticeBindingId,
+                    noticeBindingRevision,
+                    noticeRevision,
+                    noticePayload,
+                    noticeStatus,
+                    noticeReason);
+        }
+    }
+
+    /**
+     * 只合并原领取事务中的两个锁定读取。locked_notice 依赖 locked_binding 的实际行， 必须先取得 binding 行锁，才能产生待锁 notice
+     * 的连接结果；不在 SQL 预筛 status、静音或版本。 两级 MATERIALIZED 不建立新的 PostgreSQL 语句快照；行锁等待后的更新版本由 PG 核验， 后续
+     * owner 范围的 Turn 读取仍必须使用原来独立的新 SQL，不能移进此 CTE。
+     */
+    @Select(
+            """
+WITH locked_binding AS MATERIALIZED (
+    SELECT b.* FROM channel.bindings b
+    WHERE b.id=#{bindingId} FOR UPDATE OF b
+), locked_notice AS MATERIALIZED (
+    SELECT n.* FROM locked_binding b CROSS JOIN channel.notices n
+    WHERE n.id=#{noticeId} FOR UPDATE OF n
+)
+SELECT b.id AS binding_id,b.tenant_key,b.open_id,b.chat_id,b.tenant,b.subject,b.conversation_id,
+       b.revision AS binding_revision,b.muted,b.active_turn,
+       n.id AS notice_id,n.turn_id AS notice_turn_id,n.binding_id AS notice_binding_id,
+       n.binding_revision AS notice_binding_revision,n.revision AS notice_revision,
+       n.payload AS notice_payload,n.status AS notice_status,n.reason AS notice_reason
+FROM locked_binding b CROSS JOIN locked_notice n
+""")
+    @Options(flushCache = Options.FlushCachePolicy.TRUE, useCache = false)
+    @ConstructorArgs({
+        @Arg(column = "binding_id", javaType = String.class),
+        @Arg(column = "tenant_key", javaType = String.class),
+        @Arg(column = "open_id", javaType = String.class),
+        @Arg(column = "chat_id", javaType = String.class),
+        @Arg(column = "tenant", javaType = String.class),
+        @Arg(column = "subject", javaType = String.class),
+        @Arg(column = "conversation_id", javaType = String.class),
+        @Arg(column = "binding_revision", javaType = long.class),
+        @Arg(column = "muted", javaType = boolean.class),
+        @Arg(column = "active_turn", javaType = String.class),
+        @Arg(column = "notice_id", javaType = String.class),
+        @Arg(column = "notice_turn_id", javaType = String.class),
+        @Arg(column = "notice_binding_id", javaType = String.class),
+        @Arg(column = "notice_binding_revision", javaType = long.class),
+        @Arg(column = "notice_revision", javaType = long.class),
+        @Arg(column = "notice_payload", javaType = String.class),
+        @Arg(column = "notice_status", javaType = String.class),
+        @Arg(column = "notice_reason", javaType = String.class)
+    })
+    LockedNoticeRow getBindingAndNoticeForUpdate(
+            @Param("bindingId") String bindingId, @Param("noticeId") String noticeId);
+
     /** 以 pending 条件原子取得发送资格；返回 1 后才允许在事务外调用 SDK。 */
     @Update(
             "UPDATE channel.notices SET status='sending',started_at=clock_timestamp() WHERE"

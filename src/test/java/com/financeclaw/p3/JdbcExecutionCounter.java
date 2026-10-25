@@ -204,6 +204,12 @@ final class JdbcExecutionCounter {
         if (sql.startsWith("insert into business.journal")) return "journal_insert";
         if (sql.startsWith("update business.interactions set status='invalid'"))
             return "interaction_invalidate";
+        if (sql.startsWith("with locked_binding as materialized (")
+                && sql.contains("locked_notice as materialized (")
+                && sql.contains("from channel.bindings b ")
+                && sql.contains("cross join channel.notices n ")
+                && sql.contains("for update of b")
+                && sql.contains("for update of n")) return "notice_claim_locked_read";
         // 渠道与领取的观察同样按一次 execute 归类；不能把投影 JOIN 中的 Turn 再记一遍。
         if (sql.startsWith("select b.id from channel.bindings b join business.turns t "))
             return "notice_projection_scan";

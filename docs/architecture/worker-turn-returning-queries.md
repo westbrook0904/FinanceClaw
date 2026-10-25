@@ -1,6 +1,6 @@
 # Worker 状态返回查询优化：P3a.12
 
-**状态：已完成本地选定范围验收，尚未推送。** 前置 `2de8537` 已推送，[run 40176176072](https://github.com/westbrook0904/FinanceClaw/actions/runs/40176176072) 整条 completed/success：1,866 Java、46 脚本及 44 部署检查通过。本阶段基线、源码和验收单独记录。
+**状态：已推送 `24e74e5`，远程完整 CI 通过。** 前置 `2de8537` 已推送，[run 40176176072](https://github.com/westbrook0904/FinanceClaw/actions/runs/40176176072) 整条 completed/success：1,866 Java、46 脚本及 44 部署检查通过。本阶段基线、源码和验收单独记录。
 
 ## 实施方案
 
@@ -46,4 +46,8 @@ scripts/mvn.sh -B -ntp -o validate spotless:check package \
 
 SQL 原始报告只包含固定阶段、调用成功标志、模板摘要和连接/线程/事务元数据，不包含完整 Turn 或事件正文；完整记录与事件一致性由两次 JUnit 断言独立验证，不能冒称是 SQL JSON 中的业务事实比较。窗口排除准备和验收回读，后台 Worker 关闭、记忆提取关闭、离线模型，不是整轮真实供应商或生产多用户容量验收。原始数据与构建身份见[本阶段证据](evidence/p3a12-implementation.json)。
 
-最终命令覆盖全量单元与上述选定集成，没有执行其余集成、脚本用例、Compose 或本阶段远程 CI。前置远程成功不替代本阶段验收。后续重点仍是 Outbox 批量投影与队首竞争、恢复扫描计划，以及多用户连接池等待和心跳续租延迟。
+原提交前最终命令覆盖全量单元与上述选定集成，没有执行其余集成、脚本用例、Compose 或本阶段远程 CI；后续远程结果单列如下。前置远程成功不替代本阶段验收。后续重点仍是 Outbox 批量投影与队首竞争、恢复扫描计划，以及多用户连接池等待和心跳续租延迟。
+
+## 远程交付补充
+
+[run 40179982140](https://github.com/westbrook0904/FinanceClaw/actions/runs/40179982140) 对 `24e74e5` 整条 completed/success：**1,317 单元 + 558 集成 = 1,875 Java、46 脚本和 44 部署检查通过**。原提交前本地 1,478 项及首次沙箱失败记录不改写；[远程证据](evidence/p3a12-remote-ci.json)独立保存，不覆盖后续 P3a.13。

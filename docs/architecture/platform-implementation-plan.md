@@ -2,7 +2,7 @@
 
 本文是 FinanceClaw Java 的实施方案与阶段状态记录。面向四类使用方式：通用对话、定制 RAG Workflow、通过提示词与工具等配置组装 Agent，以及直接调用一个独立 Agent。本文中的目标模型不代表当前已经实现的能力。
 
-截至 2026-10-25，P1 发布持久化、P2a Agent 定义、P2b 能力与依赖冻结、P3a.1 固定研究子调用以及 **P3a.2 执行数据隐私清理**均已交付。**P3a.3 同 owner 空工具叶子 Agent 委派**也已由 `d433423` 推送，整条远程流水线成功：1,702 项 Java 测试、46 项脚本和 44 项部署检查通过。P3a.4 完整父子链路验收与取消传播修复也已由 `467ba8f` 推送，远程 1,711 Java／46 脚本／44 部署通过；P3a.5 已推送 `a4a6ef4`，远程 1,716 Java／46 脚本／44 部署通过；P3a.6 已推送 `13f73a7`，远程 1,743 Java／46 脚本／44 部署通过；P3a.7 已推送 `c166da7`，远程 1,750 Java／46 脚本／44 部署通过；P3a.8 整轮数据库基线已由 `f330a17` 推送，远程 1,767 Java／46 脚本／44 部署通过；P3a.9 `0c789b8` 与 P3a.10 `06ec674` 已一起推送，远程 1,843 Java／46 脚本／44 部署检查通过。P3a.11 `2de8537` 已推送，远程 1,866 Java／46 脚本／44 部署检查通过。P3a.12 Worker 状态返回已完成本地选定范围验收，1,317 单元 + 161 集成通过，尚未推送。P3a 整体、P3b 和 P4 尚未完成。每阶段分别保留代码、验证记录与交付范围；固定深度的子执行器不等同于完整权限、跨 owner 或递归委派。
+截至 2026-10-25，P1 发布持久化、P2a Agent 定义、P2b 能力与依赖冻结、P3a.1 固定研究子调用以及 **P3a.2 执行数据隐私清理**均已交付。**P3a.3 同 owner 空工具叶子 Agent 委派**也已由 `d433423` 推送，整条远程流水线成功：1,702 项 Java 测试、46 项脚本和 44 项部署检查通过。P3a.4 完整父子链路验收与取消传播修复也已由 `467ba8f` 推送，远程 1,711 Java／46 脚本／44 部署通过；P3a.5 已推送 `a4a6ef4`，远程 1,716 Java／46 脚本／44 部署通过；P3a.6 已推送 `13f73a7`，远程 1,743 Java／46 脚本／44 部署通过；P3a.7 已推送 `c166da7`，远程 1,750 Java／46 脚本／44 部署通过；P3a.8 整轮数据库基线已由 `f330a17` 推送，远程 1,767 Java／46 脚本／44 部署通过；P3a.9 `0c789b8` 与 P3a.10 `06ec674` 已一起推送，远程 1,843 Java／46 脚本／44 部署检查通过。P3a.11 `2de8537` 已推送，远程 1,866 Java／46 脚本／44 部署检查通过。P3a.12 Worker 状态返回已推送 `24e74e5`，远程 1,875 Java／46 脚本／44 部署检查通过。P3a.13 通知双锁查询已本地验收，1,318 单元 + 170 选定集成通过，尚未推送。P3a 整体、P3b 和 P4 尚未完成。每阶段分别保留代码、验证记录与交付范围；固定深度的子执行器不等同于完整权限、跨 owner 或递归委派。
 
 ## 1. 实施前基线与改造目标
 
@@ -225,7 +225,7 @@ P2b 验收：Tool/Skill 白名单与 scope 交集实际控制装配；Schema/内
 
 ### P3：独立 Agent 调用与定制 RAG Workflow
 
-状态：**P3a.1–P3a.4 已推送并通过远程 CI；P3a.5 已推送 `a4a6ef4`，远程 1,716 Java／46 脚本／44 部署通过；P3a.6 已推送 `13f73a7`，远程 1,743 Java／46 脚本／44 部署通过；P3a 整体与 P3b 尚未完成**。P3a.1 为固定市场研究子 Agent 加入持久身份、累计额度、结果原子性和父门禁；P3a.2 补齐执行正文的遗忘清理及恢复残留检测；P3a.3 提供同 owner、冻结发布、仅显式输入的空工具叶子委派。见[固定研究子调用](child-invocations.md)、[执行数据隐私清理](execution-privacy.md)、[叶子委派](private-agent-delegation.md)及第 11–22 节。P3a 与 P3b 分别验收。
+状态：**P3a.1–P3a.4 已推送并通过远程 CI；P3a.5 已推送 `a4a6ef4`，远程 1,716 Java／46 脚本／44 部署通过；P3a.6 已推送 `13f73a7`，远程 1,743 Java／46 脚本／44 部署通过；P3a 整体与 P3b 尚未完成**。P3a.1 为固定市场研究子 Agent 加入持久身份、累计额度、结果原子性和父门禁；P3a.2 补齐执行正文的遗忘清理及恢复残留检测；P3a.3 提供同 owner、冻结发布、仅显式输入的空工具叶子委派。见[固定研究子调用](child-invocations.md)、[执行数据隐私清理](execution-privacy.md)、[叶子委派](private-agent-delegation.md)及第 11–23 节。P3a 与 P3b 分别验收。
 
 - P3a：建立统一调用入口及父子调用记录，支持直接调用已发布 Agent、受限同步子调用、父子预算与权限收敛；逐步将现有研究子 Agent 适配到同一契约。
 - P3b：建立知识库、摄取作业、索引发布和 RetrieverProfile；先实现固定 RAG Workflow，再决定是否需要通用流程 DSL。摄取/embedding 属于后台工作，知识查询属于受治理的执行步骤。
@@ -271,7 +271,8 @@ P2b 验收：Tool/Skill 白名单与 scope 交集实际控制装配；Schema/内
 | P3a.9 发布解析合并 | 已推送，随 `06ec674` 通过远程 CI | 发布读取 4→1；1,806 唯一 Java 用例及 46 脚本分次通过；[证据](evidence/p3a9-implementation.json) | 首次完整构建 1 个启动窗口失败，原断言下整套复跑通过；[范围](release-lookup-queries.md) |
 | P3a.10 Worker 与渠道 Outbox | 已推送 `06ec674`，远程 CI 通过 | 成功领取 8→7、完成通知 12→10、完整旧通知积压 135→94 SQL；1,299 单元 + 113 选定集成同次通过；[证据](evidence/p3a10-implementation.json) | [范围](worker-outbox-queries.md)；远程 1,843 Java／46 脚本／44 部署；批量投影与争用仍待优化 |
 | P3a.11 恢复回执复用 | 已推送 `2de8537`，远程 CI 通过 | completed 恢复 16→15、waiting 14→13 SQL；1,309 单元 + 150 选定集成同次通过；[证据](evidence/p3a11-implementation.json) | [范围](recovery-receipt-queries.md)；新增两项错绑防护单列；后续远程 1,866／46／44 通过 |
-| P3a.12 Worker 状态返回 | 本地选定范围通过，尚未推送 | 成功领取 7→6、15 窗口 77→69 SQL；1,317 单元 + 161 选定集成同次通过；[证据](evidence/p3a12-implementation.json) | [范围](worker-turn-returning-queries.md)；普通写入不返回正文，心跳门禁与失败路径保持 |
+| P3a.12 Worker 状态返回 | 已推送 `24e74e5`，远程 CI 通过 | 成功领取 7→6、15 窗口 77→69 SQL；1,317 单元 + 161 选定集成同次通过；[证据](evidence/p3a12-implementation.json) | [范围](worker-turn-returning-queries.md)；普通写入不返回正文，心跳门禁与失败路径保持 |
+| P3a.13 通知双锁查询 | 本地选定范围通过，尚未推送 | 合法领取 5→4、完整旧通知积压 94→72 SQL；1,318 单元 + 170 选定集成同次通过；[证据](evidence/p3a13-implementation.json) | [范围](notice-claim-lock-queries.md)；真实锁等待/新行可见性与投影部分提交验证，未合并批量事务 |
 | P3a 独立 Agent 与子调用 | 部分实现，整体未完成 | P3a.1 固定研究，P3a.2 执行隐私，P3a.3 受限叶子委派已交付，P3a.4 完整入口与取消传播修复已交付，P3a.5 暂停恢复已交付，P3a.6 固定行情叶子已交付 | 完整权限私有 Agent、共享授权和完整调用模型 |
 | P3b 定制 RAG Workflow | 待实施 | 仅有现有记忆与固定 Workflow 基础 | 知识模型、索引发布、端到端引用验收 |
 | P4 Scheduler 与服务化 | 待实施 | 现有 TaskWorker/lease/fence | 触发模型、调度扩展与拆分前置设施 |
@@ -462,8 +463,19 @@ V8 不增表，仍为 41 表；增加冻结目标字段和不可变约束，同�
 
 ## 22. P3a.12 Worker 状态返回
 
-**2026-10-25 已完成本地选定范围验收，尚未推送。** Worker 领取使用 `UPDATE RETURNING` 得到真实完整 Turn，删除原迁移后末尾回读，成功领取 **7→6 条 SQL**；15 个公共 JDBC 窗口合计 **77→69 条**。初始 Turn 行锁、Command→Turn 锁序、attempt/fence、running 事件及事务结果保持。普通状态迁移继续使用原只写入口，不额外返回问题/结果正文；两入口共用相同 DML 及副作用顺序，空返回在事件前 Fenced。
+**2026-10-25 已推送 `24e74e5`，远程 CI 通过。** Worker 领取使用 `UPDATE RETURNING` 得到真实完整 Turn，删除原迁移后末尾回读，成功领取 **7→6 条 SQL**；15 个公共 JDBC 窗口合计 **77→69 条**。初始 Turn 行锁、Command→Turn 锁序、attempt/fence、running 事件及事务结果保持。普通状态迁移继续使用原只写入口，不额外返回问题/结果正文；两入口共用相同 DML 及副作用顺序，空返回在事件前 Fenced。
 
 原 `2de8537` 生产实现的 10 项基线全部通过；最终同次 **1,317 单元 + 12 套选定集成 161 项 = 1,478 Java** 零失败/错误/跳过。三处写故障均整体回滚并可重试，失败窗口仍 4/5/6 条；严格比较只允许 8 次末尾回读删除与精确 RETURNING 模板变化，15 个连接组及 10 commit/5 rollback 保持。完整 Turn 与事件由两次 JUnit 断言验证，SQL JSON 仅含摘要与观测标志，不冒称包含业务正文。
 
-首次 after 因沙箱限制 Mockito JVM 附加而失败，未进入集成或打包；保留完整原报告，同源码/资源输入及命令下以允许附加的环境重跑成功。没有修改断言或把旧 JAR 当作本阶段产物。462 项最终输入前后不变，Worker fixture 前后字节相同；打包身份及验证边界见[专项](worker-turn-returning-queries.md)与[证据](evidence/p3a12-implementation.json)。本阶段未重跑其余集成、脚本、Compose 或远程 CI；前置 `2de8537` 的完整远程 1,866／46／44 成功单独保留。
+首次 after 因沙箱限制 Mockito JVM 附加而失败，未进入集成或打包；保留完整原报告，同源码/资源输入及命令下以允许附加的环境重跑成功。没有修改断言或把旧 JAR 当作本阶段产物。462 项最终输入前后不变，Worker fixture 前后字节相同；打包身份及验证边界见[专项](worker-turn-returning-queries.md)与[证据](evidence/p3a12-implementation.json)。原提交前本地命令未重跑其余集成、脚本、Compose 或远程 CI；前置 `2de8537` 的完整远程 1,866／46／44 成功单独保留。
+
+随后 [run 40179982140](https://github.com/westbrook0904/FinanceClaw/actions/runs/40179982140) 针对 `24e74e5` 整体 completed/success：1,875 Java、46 脚本、44 部署检查通过；[远程证据](evidence/p3a12-remote-ci.json)独立于原本地选定范围和后续阶段。
+
+
+## 23. P3a.13 通知领取双锁查询
+
+**2026-10-25 已完成本地选定范围验收，尚未推送。** 只将领取事务的 binding/notice 两次锁读取合为有明确依赖的两级 MATERIALIZED CTE，返回真实锁定行的类型化投影。合法领取 **5→4 条 SQL**，首次完成通知投影并发送 **10→9 条**；21 条旧通知加 1 条有效通知的完整维护 **94→72 条**。锁后的 owner/Turn 独立语句、原检查与抑制原因、pending→sending CAS 和事务外发送保持。投影仍逐 binding 提交，不增加跨事务缓存或改变心跳。
+
+原生产 19 项基线通过；最终同次 **1,318 单元 + 13 套选定集成 170 项 = 1,488 Java** 零失败/错误/跳过。新 9 项 PG 用例通过 pg_blocking_pids/NOWAIT 证明两方向锁序及等锁后新状态/Turn revision 可见性，并验证第二项投影故障保留第一项提交。16 个新窗口 **274→244 SQL**，25 个现有窗口 **395→345**，只替换 80 对同连接/线程相邻锁查询；显式 commit/rollback 与其他有序模板保持。新报告固定业务标志一致，完整 Notice 与路由/正文依靠 JUnit 断言，不冒称 SQL JSON 含业务正文。
+
+463 项输入无漂移，418 class 与 22 资源同本次 JAR 字节匹配。新 Notice fixture 和计数器前后同 SHA；既有 Feishu fixture 的计数、模板与报告路径适配单列，fresh before 原 mode=after 历史标签不改写。无失败尝试；本阶段未执行其余集成、脚本、Compose、独立打包 CLI/部署 JAR 或新远程 CI。详细范围见[专项](notice-claim-lock-queries.md)与[证据](evidence/p3a13-implementation.json)，前置 24e 的远程 1,875／46／44 独立保留。

@@ -66,7 +66,6 @@ class FeishuDeliveryQueryIT {
     private static final Owner ALICE = new Owner("feishu-query-test", "alice");
     private static final Owner BOB = new Owner("feishu-query-test", "bob");
     private static final String TENANT_KEY = "feishu-query-tenant";
-    private final boolean baseline = Boolean.getBoolean("financeclaw.test.query-baseline");
     private final ObjectMapper json = new ObjectMapper();
     private final PostgreSQLContainer<?> postgres =
             new PostgreSQLContainer<>("postgres:16.10-alpine");
@@ -83,6 +82,7 @@ class FeishuDeliveryQueryIT {
     private FeishuSettings settings;
     private AgentScopeFeishu sender;
     private String bindingTemplate;
+    private String lockedClaimTemplate;
     private String interactionTemplate;
 
     record Send(String chat, String text) {}
@@ -126,6 +126,10 @@ class FeishuDeliveryQueryIT {
     @BeforeAll
     void start() {
         try {
+            if (Boolean.getBoolean("financeclaw.test.query-baseline")) {
+                throw new IllegalArgumentException(
+                        "P3a.13 delivery regression is after-only; use NoticeClaimQueryIT for baseline");
+            }
             postgres.start();
             application =
                     new SpringApplicationBuilder(
@@ -171,6 +175,15 @@ class FeishuDeliveryQueryIT {
                                             FeishuMapper.class.getName() + ".getBindingForUpdate")
                                     .getBoundSql("binding")
                                     .getSql());
+            lockedClaimTemplate =
+                    digest(
+                            configuration
+                                    .getMappedStatement(
+                                            FeishuMapper.class.getName()
+                                                    + ".getBindingAndNoticeForUpdate")
+                                    .getBoundSql(
+                                            Map.of("bindingId", "binding", "noticeId", "notice"))
+                                    .getSql());
             interactionTemplate =
                     digest(
                             configuration
@@ -212,12 +225,13 @@ class FeishuDeliveryQueryIT {
     @AfterAll
     void stopAndWriteMeasurements() throws Exception {
         try {
-            Path output = Path.of("target/p3a10/feishu-delivery-sql.json");
+            Path output = Path.of("target/p3a13/feishu-delivery-sql.json");
             Files.createDirectories(output.getParent());
             var report = new LinkedHashMap<String, Object>();
             report.put("schema", "feishu-delivery-sql/1");
             report.put("scope", "real-pg-production-services-send-boundary-mock");
-            report.put("mode", baseline ? "before" : "after");
+            report.put("phase", "P3a.13");
+            report.put("mode", "after");
             report.put("background_pollers_enabled", false);
             report.put("sql_boundary", "jdbc-execute-only-fixture-and-assertions-excluded");
             report.put("measurements", measurements);
@@ -233,7 +247,7 @@ class FeishuDeliveryQueryIT {
             throws Exception {
         var scenario = scenario(ALICE, state);
         var delivery = delivery();
-        int expected = baseline ? 12 : state.equals("waiting") ? 11 : 10;
+        int expected = state.equals("waiting") ? 10 : 9;
         var first =
                 observe(
                         "scheduled-first-" + state,
@@ -243,9 +257,11 @@ class FeishuDeliveryQueryIT {
                             return null;
                         });
         assertSql(first, expected);
-        assertThat(templateCount(first, bindingTemplate)).isEqualTo(baseline ? 3 : 2);
+        assertThat(templateCount(first, bindingTemplate)).isOne();
+        assertThat(templateCount(first, lockedClaimTemplate)).isOne();
+        assertThat(first.sql().count("notice_claim_locked_read")).isOne();
         assertThat(templateCount(first, interactionTemplate))
-                .isEqualTo(baseline || state.equals("waiting") ? 1 : 0);
+                .isEqualTo(state.equals("waiting") ? 1 : 0);
         assertThat(first.sql().count("notice_projection_scan")).isOne();
         assertThat(first.sql().count("notice_claim_update")).isOne();
         assertThat(first.sql().count("notice_expired_recovery")).isZero();
@@ -271,7 +287,7 @@ class FeishuDeliveryQueryIT {
     void maintenancePollIncludesRecoveryInItsOwnExplicitBudget() throws Exception {
         var scenario = scenario(ALICE, "completed");
         var delivery = delivery();
-        int expected = baseline ? 13 : 11;
+        int expected = 10;
         var poll =
                 observe(
                         "maintenance-first-completed",
@@ -322,7 +338,7 @@ class FeishuDeliveryQueryIT {
                             delivery.poll();
                             return null;
                         });
-        // 所有样本先落盘，再断性能；基线或回归变红仍保留完整观察。
+        // 所有样本先落盘，再断性能；回归变红仍保留完整观察。before 由独立 NoticeClaimQueryIT 记录。
         assertSql(first, 2);
         assertSql(skipped, 0);
         assertSql(recovered, 1);
@@ -335,7 +351,7 @@ class FeishuDeliveryQueryIT {
     void repeatedProjectionAndANewCoordinatorReuseTheSameDurableNotice() throws Exception {
         var scenario = scenario(ALICE, "completed");
         var original = delivery();
-        int projectionCost = baseline ? 4 : 3;
+        int projectionCost = 3;
         var first =
                 observe(
                         "project-first-completed",
@@ -356,7 +372,7 @@ class FeishuDeliveryQueryIT {
         assertSql(repeated, projectionCost);
         assertThat(noticeCount(scenario)).isOne();
         var restarted = delivery();
-        int pendingCost = baseline ? 8 : 7;
+        int pendingCost = 6;
         var pending =
                 observe(
                         "restarted-pending-send",
@@ -388,7 +404,7 @@ class FeishuDeliveryQueryIT {
         var scenario = scenario(ALICE, "completed");
         if (cause.equals("transport-failure")) {
             failSend.set(true);
-            int expected = baseline ? 12 : 10;
+            int expected = 9;
             var failed =
                     observe(
                             "transport-failure-becomes-unknown",
@@ -450,7 +466,7 @@ class FeishuDeliveryQueryIT {
             scenarios.add(scenario(i == 21 ? BOB : ALICE, "completed"));
         }
         var delivery = delivery();
-        int firstCost = baseline ? 88 : 67;
+        int firstCost = 66;
         var first =
                 observe(
                         "twenty-binding-projection-boundary",
@@ -463,7 +479,7 @@ class FeishuDeliveryQueryIT {
         assertThat(first.sql().count("notice_insert")).isEqualTo(20);
         assertThat(integer("SELECT count(*) FROM channel.notices")).isEqualTo(20);
         assertThat(sends).hasSize(1);
-        int secondCost = baseline ? 16 : 13;
+        int secondCost = 12;
         var second =
                 observe(
                         "remaining-two-binding-projection",
@@ -478,7 +494,7 @@ class FeishuDeliveryQueryIT {
         assertThat(delivery.list(BOB)).hasSize(1);
         assertThat(delivery.list(ALICE)).hasSize(21);
         // 全局 created_at 顺序不承诺 owner 轮询交替；验证有限积压最终可处理，且一轮最多发送一条。
-        int tailCost = baseline ? 160 : 140;
+        int tailCost = 120;
         var tail =
                 observe(
                         "finite-two-owner-pending-drain",
@@ -511,7 +527,7 @@ class FeishuDeliveryQueryIT {
         var valid = scenario(BOB, "completed");
         var delivery = delivery();
         delivery.project(valid.binding().id());
-        int firstCost = baseline ? 6 : 82;
+        int firstCost = 62;
         var first =
                 observe(
                         "stale-queue-maintenance-first",
@@ -523,9 +539,9 @@ class FeishuDeliveryQueryIT {
         assertSql(first, firstCost);
         assertThat(sends).isEmpty();
         assertThat(integer("SELECT count(*) FROM channel.notices WHERE status='suppressed'"))
-                .isEqualTo(baseline ? 1 : 20);
-        assertThat(first.sql().count("notice_pending_read")).isEqualTo(baseline ? 1 : 20);
-        int secondCost = baseline ? 6 : 12;
+                .isEqualTo(20);
+        assertThat(first.sql().count("notice_pending_read")).isEqualTo(20);
+        int secondCost = 10;
         var second =
                 observe(
                         "stale-queue-maintenance-second",
@@ -536,17 +552,14 @@ class FeishuDeliveryQueryIT {
                         });
         assertSql(second, secondCost);
         assertThat(integer("SELECT count(*) FROM channel.notices WHERE status='suppressed'"))
-                .isEqualTo(baseline ? 2 : 21);
-        assertThat(sends).hasSize(baseline ? 0 : 1);
-        int remainingCost = baseline ? 123 : 0;
+                .isEqualTo(21);
+        assertThat(sends).hasSize(1);
+        int remainingCost = 0;
         var remaining =
                 observe(
                         "stale-queue-remaining-progress",
                         remainingCost,
                         () -> {
-                            if (baseline) {
-                                for (int i = 0; i < 20; i++) delivery.poll();
-                            }
                             return null;
                         });
         assertSql(remaining, remainingCost);
@@ -571,8 +584,8 @@ class FeishuDeliveryQueryIT {
         var valid = scenario(BOB, "completed");
         var delivery = delivery();
         delivery.project(valid.binding().id());
-        var claimed = observe("public-claim-one-stale", 4, delivery::claim);
-        assertSql(claimed, 4);
+        var claimed = observe("public-claim-one-stale", 3, delivery::claim);
+        assertSql(claimed, 3);
         assertThat(claimed.value()).isNull();
         assertThat(claimed.sql().count("notice_pending_read")).isOne();
         assertNoticeStatus(stale, "suppressed", "binding_changed");
