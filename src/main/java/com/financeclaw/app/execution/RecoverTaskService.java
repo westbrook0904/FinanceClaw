@@ -51,7 +51,9 @@ public class RecoverTaskService {
                                         Turn t = turns.lockTurn(c.turnId());
                                         Receipt r = receipts.receipt(c.attemptId());
                                         if (r != null && r.outcome() != null) {
-                                            completion.finishReceipt(c, t);
+                                            // command 与 Turn 的行锁仍由当前事务持有；
+                                            // 传递本次已读回执，避免收尾服务再次查询同一 attempt。
+                                            completion.finishReceipt(c, t, r);
                                         } else {
                                             transitions.change(
                                                     t, "blocked", null, "unconfirmed_execution");

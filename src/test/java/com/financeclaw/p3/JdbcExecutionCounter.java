@@ -192,6 +192,18 @@ final class JdbcExecutionCounter {
 
     /** 使用精确的语句形状区分类别，不能把 child JOIN 中出现的其他表再次计算成单表读取。 */
     private static String family(String sql) {
+        if (sql.startsWith(
+                "select id,command_id,fence,state_version,outcome,result from business.attempts where id="))
+            return "receipt_read";
+        if (sql.startsWith("select payload::text, version, deleted from agent_runtime.states "))
+            return "sdk_state_read";
+        if (sql.startsWith("select id from business.commands where status='running'")
+                && sql.contains("lease_until<=clock_timestamp()")) return "command_expired_poll";
+        if (sql.startsWith("update business.commands set status='done'"))
+            return "command_done_update";
+        if (sql.startsWith("insert into business.journal")) return "journal_insert";
+        if (sql.startsWith("update business.interactions set status='invalid'"))
+            return "interaction_invalidate";
         // 渠道与领取的观察同样按一次 execute 归类；不能把投影 JOIN 中的 Turn 再记一遍。
         if (sql.startsWith("select b.id from channel.bindings b join business.turns t "))
             return "notice_projection_scan";

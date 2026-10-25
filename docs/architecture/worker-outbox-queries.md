@@ -1,6 +1,6 @@
 # Worker 与渠道 Outbox 查询优化：P3a.10
 
-**状态：2026-10-25 已本地验收，未推送。** 前置生产版本为本地提交 `0c789b8`；本阶段优化领取与通知的重复数据库访问。
+**状态：2026-10-25 已推送 `06ec674`，远程完整 CI 通过。** 前置生产版本为本地提交 `0c789b8`；本阶段优化领取与通知的重复数据库访问。
 原生产 before 的 19 项真实 PostgreSQL 基线通过；最终 after 同次通过 **1,299 单元 + 113 选定集成 = 1,412 项**，零失败、错误、跳过，Maven exit 0。
 原始窗口、SQL 严格比较、报告摘要及输入指纹见[本阶段验收证据](evidence/p3a10-implementation.json)。
 
@@ -71,7 +71,7 @@ Worker 只允许 UPDATE 模板替换成约定的 RETURNING 形式，并删除后
 | SQL 严格比较 | 通过 | Worker 13 个窗口、Outbox 22 个普通窗口及 3 个完整积压窗口；原始 SHA-256 与模板比较保存在证据 |
 | 打包字节校验 | 417 class、22 资源全部匹配 | 459 项构建输入在执行前后不变；3 份许可证按 JAR 根 META-INF/licenses 路径核对 |
 | 静态交付检查 | 文档链接、语法、凭据模式、空白检查通过 | `python3 scripts/check-delivery.py` |
-| 脚本用例、Compose、远程 CI | 本阶段未重跑 | 不沿用前阶段成功结果宣称本阶段全量通过 |
+| 脚本用例、Compose、远程 CI | 提交前本地未重跑；后续远程成功见下文 | 原本地范围与后续远程结果分别记录 |
 
 9 个套件为 WorkerClaimQueryIT 9、FeishuDeliveryQueryIT 10、TaskLifecycleIT 25、ExecutionHeartbeatIT 14、RecoveryIT 13、FeishuIT 12、WorkingContextIT 20、TurnDatabaseBaselineIT 3、ExecutionBudgetQueryIT 7。
 FeishuDeliveryQueryIT 的双 owner 22 绑定验证有限积压最终发送到正确 chat，不证明轮流公平调度。Worker resume 用例验证合法绑定元数据下领取，不代替真实 SDK 的审批恢复验收。
@@ -106,3 +106,7 @@ CI 原有 `target/p3*/` 归档规则已覆盖新的 `target/p3a10/` SQL 报告�
 
 实现入口为 WorkSignals、ExecutionLeaseService、TaskMapper、FeishuService 和 FeishuDelivery；测试入口为 WorkerClaimQueryIT、FeishuDeliveryQueryIT、FeishuIT 及执行生命周期/心跳回归。
 本阶段保持单业务 JVM、现有 41 表和原持久权威，不新增任务队列、子心跳、冗余通知表或轮询来源。
+
+## 远程交付补充
+
+[run 40173421896](https://github.com/westbrook0904/FinanceClaw/actions/runs/40173421896) 针对 `06ec674` 整条 completed/success：**1,299 单元 + 544 集成 = 1,843 项 Java、46 项脚本及 44 项部署检查**通过，覆盖前置发布合并与本阶段 Worker/Outbox 改动。原本地 1,412 项选定范围和中断记录不改写；[远程证据](evidence/p3a10-remote-ci.json)单独保存，后续 P3a.11 不在此远程运行范围内。

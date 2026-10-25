@@ -2,7 +2,7 @@
 
 本文是 FinanceClaw Java 的实施方案与阶段状态记录。面向四类使用方式：通用对话、定制 RAG Workflow、通过提示词与工具等配置组装 Agent，以及直接调用一个独立 Agent。本文中的目标模型不代表当前已经实现的能力。
 
-截至 2026-10-25，P1 发布持久化、P2a Agent 定义、P2b 能力与依赖冻结、P3a.1 固定研究子调用以及 **P3a.2 执行数据隐私清理**均已交付。**P3a.3 同 owner 空工具叶子 Agent 委派**也已由 `d433423` 推送，整条远程流水线成功：1,702 项 Java 测试、46 项脚本和 44 项部署检查通过。P3a.4 完整父子链路验收与取消传播修复也已由 `467ba8f` 推送，远程 1,711 Java／46 脚本／44 部署通过；P3a.5 已推送 `a4a6ef4`，远程 1,716 Java／46 脚本／44 部署通过；P3a.6 已推送 `13f73a7`，远程 1,743 Java／46 脚本／44 部署通过；P3a.7 已推送 `c166da7`，远程 1,750 Java／46 脚本／44 部署通过；P3a.8 整轮数据库基线已由 `f330a17` 推送，远程 1,767 Java／46 脚本／44 部署通过；P3a.9 发布解析查询合并已本地分次验收，尚未推送；P3a.10 Worker 与渠道 Outbox 查询优化也已本地验收，尚未推送。P3a 整体、P3b 和 P4 尚未完成。每阶段分别保留代码、验证记录与交付范围；固定深度的子执行器不等同于完整权限、跨 owner 或递归委派。
+截至 2026-10-25，P1 发布持久化、P2a Agent 定义、P2b 能力与依赖冻结、P3a.1 固定研究子调用以及 **P3a.2 执行数据隐私清理**均已交付。**P3a.3 同 owner 空工具叶子 Agent 委派**也已由 `d433423` 推送，整条远程流水线成功：1,702 项 Java 测试、46 项脚本和 44 项部署检查通过。P3a.4 完整父子链路验收与取消传播修复也已由 `467ba8f` 推送，远程 1,711 Java／46 脚本／44 部署通过；P3a.5 已推送 `a4a6ef4`，远程 1,716 Java／46 脚本／44 部署通过；P3a.6 已推送 `13f73a7`，远程 1,743 Java／46 脚本／44 部署通过；P3a.7 已推送 `c166da7`，远程 1,750 Java／46 脚本／44 部署通过；P3a.8 整轮数据库基线已由 `f330a17` 推送，远程 1,767 Java／46 脚本／44 部署通过；P3a.9 `0c789b8` 与 P3a.10 `06ec674` 已一起推送，远程 1,843 Java／46 脚本／44 部署检查通过。P3a.11 恢复回执复用已本地验收，尚未推送。P3a 整体、P3b 和 P4 尚未完成。每阶段分别保留代码、验证记录与交付范围；固定深度的子执行器不等同于完整权限、跨 owner 或递归委派。
 
 ## 1. 实施前基线与改造目标
 
@@ -268,8 +268,9 @@ P2b 验收：Tool/Skill 白名单与 scope 交集实际控制装配；Schema/内
 | P3a.6 固定行情私有叶子 | 已推送 `13f73a7`，远程流水线通过 | 远程 1,743 Java、46 脚本、44 部署；[原本地证据](evidence/p3a6-implementation.json)保留 | 固定单次行情能力；配置与范围见[说明](private-agent-market-leaf.md) |
 | P3a.7 预算查询优化 | 已推送 `c166da7`，远程流水线通过 | 远程 1,750 Java／46 脚本／44 部署；原 SQL 对比与[本地证据](evidence/p3a7-implementation.json)保留 | 保留实时门禁与原子回滚，无跨事务缓存；[范围](execution-budget-queries.md) |
 | P3a.8 整轮数据库基线 | 已推送 `f330a17`，远程流水线通过 | 普通 134、行情 380、双 owner 四会话整批 508 SQL；1,267 单元 + 64 选定集成通过；[证据](evidence/p3a8-implementation.json) | [实施范围](turn-database-baseline.md)，测试配置下的观察，不认证生产容量 |
-| P3a.9 发布解析合并 | 已本地分次验收，未推送 | 发布读取 4→1；1,806 唯一 Java 用例及 46 脚本分次通过；[证据](evidence/p3a9-implementation.json) | 首次完整构建 1 个启动窗口失败，原断言下整套复跑通过；[范围](release-lookup-queries.md) |
-| P3a.10 Worker 与渠道 Outbox | 已本地验收，未推送 | 成功领取 8→7、完成通知 12→10、完整旧通知积压 135→94 SQL；1,299 单元 + 113 选定集成同次通过；[证据](evidence/p3a10-implementation.json) | [范围](worker-outbox-queries.md)；全项目 verify/Compose/远程 CI 未执行，批量投影与争用仍待优化 |
+| P3a.9 发布解析合并 | 已推送，随 `06ec674` 通过远程 CI | 发布读取 4→1；1,806 唯一 Java 用例及 46 脚本分次通过；[证据](evidence/p3a9-implementation.json) | 首次完整构建 1 个启动窗口失败，原断言下整套复跑通过；[范围](release-lookup-queries.md) |
+| P3a.10 Worker 与渠道 Outbox | 已推送 `06ec674`，远程 CI 通过 | 成功领取 8→7、完成通知 12→10、完整旧通知积压 135→94 SQL；1,299 单元 + 113 选定集成同次通过；[证据](evidence/p3a10-implementation.json) | [范围](worker-outbox-queries.md)；远程 1,843 Java／46 脚本／44 部署；批量投影与争用仍待优化 |
+| P3a.11 恢复回执复用 | 已本地验收，未推送 | completed 恢复 16→15、waiting 14→13 SQL；1,309 单元 + 150 选定集成同次通过；[证据](evidence/p3a11-implementation.json) | [范围](recovery-receipt-queries.md)；新增两项错绑防护单列，完整 CI/Compose 未执行 |
 | P3a 独立 Agent 与子调用 | 部分实现，整体未完成 | P3a.1 固定研究，P3a.2 执行隐私，P3a.3 受限叶子委派已交付，P3a.4 完整入口与取消传播修复已交付，P3a.5 暂停恢复已交付，P3a.6 固定行情叶子已交付 | 完整权限私有 Agent、共享授权和完整调用模型 |
 | P3b 定制 RAG Workflow | 待实施 | 仅有现有记忆与固定 Workflow 基础 | 知识模型、索引发布、端到端引用验收 |
 | P4 Scheduler 与服务化 | 待实施 | 现有 TaskWorker/lease/fence | 触发模型、调度扩展与拆分前置设施 |
@@ -436,14 +437,22 @@ V8 不增表，仍为 41 表；增加冻结目标字段和不可变约束，同�
 
 ## 19. P3a.9 发布解析合并
 
-**已本地分次验收，未推送。** 按[方案](release-lookup-queries.md)将每次 v3 发布解析由 4 条 SQL 合为一条主/基础清单自关联读取。三整轮窗口发布查询分别 36→9、144→36、144→36，其他业务模板多重集一致；14 预算窗口非发布有序模板与事务计数一致。类型化结果保留摘要、manifest/runtime、基础清单和计划验证顺序，实时权限、隐私、租约和预算门禁保持。
+**已推送 `0c789b8`，随 `06ec674` 通过远程 CI。** 按[方案](release-lookup-queries.md)将每次 v3 发布解析由 4 条 SQL 合为一条主/基础清单自关联读取。三整轮窗口发布查询分别 36→9、144→36、144→36，其他业务模板多重集一致；14 预算窗口非发布有序模板与事务计数一致。类型化结果保留摘要、manifest/runtime、基础清单和计划验证顺序，实时权限、隐私、租约和预算门禁保持。
 
 当前 1,281 单元 + 525 集成 = 1,806 个唯一用例分次通过，另有 46 脚本。首次完整 verify 实际退出 1，唯一失败为既有独立 Memory Worker 在 30 秒窗口内尚未完成启动；保留原报告后同源码、同 JAR、原断言整套 MemoryIT 26/26 复跑通过，`single_full_verify_success=false`。456 输入指纹一致，415 生产 class 与 22 资源同 JAR 匹配；当前未重跑本地 Compose。[原始与分次来源证据](evidence/p3a9-implementation.json)不改写首次失败或前置远程成功。
 
 ## 20. P3a.10 Worker 与渠道 Outbox 查询优化
 
-**2026-10-25 已本地验收，未推送。** Worker 在原 command → Turn 锁序和可领取检查之后，用 UPDATE RETURNING 返回真实 Command，移除更新后重复回读，成功领取 8→7 条 SQL。Outbox 仅 waiting 读取交互，发送复用同次领取锁定的 chatId，完成通知首次投影并发送 12→10、waiting 12→11。提交后独立 NOTICE 代次缩短本进程空闲退避，流式 token/tool 不触发数据库扫描，重启与跨实例仍由持久扫描兜底。
+**2026-10-25 已推送 `06ec674`，远程 CI 通过。** Worker 在原 command → Turn 锁序和可领取检查之后，用 UPDATE RETURNING 返回真实 Command，移除更新后重复回读，成功领取 8→7 条 SQL。Outbox 仅 waiting 读取交互，发送复用同次领取锁定的 chatId，完成通知首次投影并发送 12→10、waiting 12→11。提交后独立 NOTICE 代次缩短本进程空闲退避，流式 token/tool 不触发数据库扫描，重启与跨实例仍由持久扫描兜底。
 
 每轮最多检查 20 个候选、发送一次，把抑制旧项视为已处理工作。21 条旧通知加 1 条有效通知的完整积压，维护 poll 从 22 轮降为 2 轮，总 SQL 135→94；22 次候选安全 SQL、顺序与连接分组保持，提交 23→22 仅删除独立路由事务。该结果不证明跨 owner 公平性或生产容量。绑定/owner/revision、fence、sealed 回执、独立恢复及心跳双锁 CTE 均保持。
 
-最终同次 **1,299 单元 + 9 套选定集成 113 项 = 1,412 Java**通过，零失败、错误、跳过，459 输入前后不变，417 class 和 22 资源与 JAR 字节匹配。原生产 19 项基线、两次 Docker API 启动中断和一次 resume fixture 外键修正分别保留；没有删除约束或放宽原断言。未执行本阶段全项目 verify、脚本用例、Compose 或远程 CI。下一步热点为批量投影、队首竞争、Turn/receipt 重复读取、恢复扫描计划及多用户连接池/续租延迟；[实施范围](worker-outbox-queries.md)和[证据](evidence/p3a10-implementation.json)给出验收边界。
+提交前本地同次 **1,299 单元 + 9 套选定集成 113 项 = 1,412 Java**通过，零失败、错误、跳过，459 输入前后不变，417 class 和 22 资源与 JAR 字节匹配。原生产 19 项基线、两次 Docker API 启动中断和一次 resume fixture 外键修正分别保留；没有删除约束或放宽原断言。该提交前本地命令未执行其余集成、脚本用例、Compose 或远程 CI；后续远程结果单列如下。下一步热点为批量投影、队首竞争、Turn/receipt 重复读取、恢复扫描计划及多用户连接池/续租延迟；[实施范围](worker-outbox-queries.md)和[证据](evidence/p3a10-implementation.json)给出验收边界。
+
+随后 [run 40173421896](https://github.com/westbrook0904/FinanceClaw/actions/runs/40173421896) 对 `06ec674` 整体 completed/success：**1,299 单元 + 544 集成 = 1,843 项 Java、46 项脚本及 44 项部署检查**通过，覆盖 P3a.9 与 P3a.10。原本地测试范围、首次失败及复跑记录独立保留；[远程证据](evidence/p3a10-remote-ci.json)不替代后续阶段验收。
+
+## 21. P3a.11 恢复回执复用
+
+**2026-10-25 已本地验收，未推送。** 在原 command → Turn 持锁事务内把首次读取的 sealed Receipt 传给共同收尾入口，移除一次重复查询。completed 恢复 16→15、waiting 14→13 条 SQL；19 个公共窗口合计 159→151，只有 8 次第二回执读取被删除，其余有序 SQL、连接/线程分组、事务结果和安全业务事实一致。正常 finish 仍读取一次，未确认执行仍阻断；检查点、实时 policy、取消优先级和心跳/恢复扫描保持。
+
+三参内部入口显式核对回执 id/commandId/fence；commandId 是新增防混配防护。两个 after-only 真实 PG 负例分别验证正常收尾和过期恢复拒绝错绑、双方状态均不变，不冒称旧实现已有该保证，也不计入查询节省。原生产 11 项基线通过；最终同次 **1,309 单元 + 150 选定集成 = 1,459 项**零失败/错误/跳过，461 输入不变，417 class 与 22 资源匹配本次 JAR。[实施范围](recovery-receipt-queries.md)与[证据](evidence/p3a11-implementation.json)独立记录；未重跑本阶段其余集成、脚本、Compose 或远程 CI。前置 06ec674 的远程 1,843／46／44 保持为独立成功基线。

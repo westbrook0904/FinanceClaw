@@ -1,6 +1,6 @@
 # 发布解析查询合并：P3a.9
 
-**状态：2026-10-25 已本地分次验收，未推送。** 前置提交 `f330a17` 已推送，GitHub [run 40161632168](https://github.com/westbrook0904/FinanceClaw/actions/runs/40161632168) 整体成功：1,267 单元 + 500 集成 = 1,767 项 Java、46 项脚本及 44 项部署检查。本阶段的实现和本地验证另行记录。
+**状态：2026-10-25 已推送 `0c789b8`，随 `06ec674` 通过远程完整 CI。** 前置提交 `f330a17` 已推送，GitHub [run 40161632168](https://github.com/westbrook0904/FinanceClaw/actions/runs/40161632168) 整体成功：1,267 单元 + 500 集成 = 1,767 项 Java、46 项脚本及 44 项部署检查。本阶段的实现和本地验证另行记录。
 
 ## 目标与实施顺序
 
@@ -74,3 +74,7 @@ scripts/mvn.sh -B -ntp -o -Dit.test=MemoryIT \
 456 项输入（449 项 Java/资源及 7 项构建配置）在完整构建和复跑前后逐字一致。JAR SHA-256 为 `7bd4e1128efe8666b5c863df3a8da1c96372f509f93caea2414081dacc3d0420`；415 项生产 class 和 22 项资源与打包内容逐字匹配，其中三份许可证按 JAR 根目录的实际位置核对。原测量、模板对比、报告来源、失败诊断与工件摘要见[持久证据](evidence/p3a9-implementation.json)。P3a.8 原证据没有改写，本阶段没有重新运行优化前的红测试。
 
 当前阶段未重跑本地 Compose，尚未推送；前置 `f330a17` 的远程成功与当前分次本地结果分别记录。Worker 领取、渠道 Outbox 投递和长工具链上下文字节量的独立基线仍是后续工作。
+
+## 远程交付补充
+
+`0c789b8` 和 `06ec674` 已一起推送至 `codex/java-agentscope`，[run 40173421896](https://github.com/westbrook0904/FinanceClaw/actions/runs/40173421896) 整条 completed/success：**1,299 单元 + 544 集成 = 1,843 项 Java、46 项脚本及 44 项部署检查**通过。前述本地首次失败和同源码/JAR复跑记录保持原样，后续远程成功单独见[远程证据](evidence/p3a10-remote-ci.json)。

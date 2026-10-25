@@ -289,9 +289,11 @@ P3a.7 已推送 `c166da7`，[远程流水线](https://github.com/westbrook0904/F
 
 P3a.8 **已推送 `f330a17`，远程流水线通过**：[整轮数据库访问基线](docs/architecture/turn-database-baseline.md)跨线程观察 HTTP、Worker、SDK 异步执行和心跳。本次测试窗口中，普通 Turn 134 条 SQL、行情父子 Turn 380 条、双 owner 四会话整批 508 条，其中发布查询分别为 36／144／144 条。**原提交前本地 1,267 单元 + 64 选定集成 = 1,331 项 Java 测试通过**；测试调度参数与生产默认不同，这些次数不代表生产容量。[远程 run 40161632168](https://github.com/westbrook0904/FinanceClaw/actions/runs/40161632168) 整体成功，1,767 项 Java、46 项脚本、44 项部署检查通过；原本地证据保留。后续发布解析优化与独立验收见 P3a.9。
 
-P3a.9 **已本地分次验收，未推送**：[发布解析合并](docs/architecture/release-lookup-queries.md)将 v3 每次 4 条查询合为 1 条，普通 Turn 发布查询 36→9、行情与双 owner 四会话整批分别 144→36。非发布业务模板保持一致，实时授权、隐私、租约和预算门禁保持。1,806 个唯一 Java 用例分次通过及 46 项脚本通过；首次完整构建有 1 项记忆 Worker 启动窗口失败，同源码、同 JAR、原断言下整套 26 项复跑通过，**不是一次完整 verify 全绿**。
+P3a.9 **已推送 `0c789b8`，随 `06ec674` 通过远程完整 CI**：[发布解析合并](docs/architecture/release-lookup-queries.md)将 v3 每次 4 条查询合为 1 条，普通 Turn 发布查询 36→9、行情与双 owner 四会话整批分别 144→36。非发布业务模板保持一致，实时授权、隐私、租约和预算门禁保持。原提交前本地 1,806 个唯一 Java 用例分次通过及 46 项脚本通过；首次完整构建有 1 项记忆 Worker 启动窗口失败，同源码、同 JAR、原断言下整套 26 项复跑通过，**不是一次完整 verify 全绿**。
 
-P3a.10 **已本地验收，未推送**：[Worker 与渠道 Outbox](docs/architecture/worker-outbox-queries.md)实测成功领取 **8→7 条 SQL**，完成通知首次投影并发送 **12→10 条**，waiting **12→11 条**；21 条旧通知加 1 条有效通知的完整积压 **135→94 条**。通知支持提交后本地唤醒，每轮最多检查 20 个候选、发送一次，空闲退避与独立恢复保留。最终同次 **1,299 单元 + 113 选定集成 = 1,412 项**全部通过；没有执行本阶段全项目 verify、Compose 或远程 CI。心跳仍使用实时双锁 CTE，后续重点为批量投影、队首竞争、恢复重复读取和连接池争用。
+P3a.10 **已推送 `06ec674`，远程完整 CI 通过**：[Worker 与渠道 Outbox](docs/architecture/worker-outbox-queries.md)实测成功领取 **8→7 条 SQL**，完成通知首次投影并发送 **12→10 条**，waiting **12→11 条**；21 条旧通知加 1 条有效通知的完整积压 **135→94 条**。通知支持提交后本地唤醒，每轮最多检查 20 个候选、发送一次，空闲退避与独立恢复保留。原提交前本地同次 **1,299 单元 + 113 选定集成 = 1,412 项**全部通过；后续 [run 40173421896](https://github.com/westbrook0904/FinanceClaw/actions/runs/40173421896) 整条 completed/success，**1,299 单元 + 544 集成 = 1,843 项 Java、46 项脚本及 44 项部署检查**通过。心跳仍使用实时双锁 CTE，后续重点为批量投影、队首竞争、恢复重复读取和连接池争用。
+
+P3a.11 **已本地验收，未推送**：[恢复回执复用](docs/architecture/recovery-receipt-queries.md)只在同一持锁事务内传递已读回执，已封存 completed 恢复 **16→15 条 SQL**、waiting **14→13 条**；19 个公共窗口 **159→151 条**，其余 SQL 与事务事实保持。新增 attempt/command/fence 绑定校验，正常 finish、未确认执行和实时隐私/授权检查保留。最终同次 **1,309 单元 + 150 选定集成 = 1,459 项**通过；本阶段完整 CI 与 Compose 尚未执行。
 
 | 文档 | 内容 |
 | --- | --- |
@@ -310,8 +312,9 @@ P3a.10 **已本地验收，未推送**：[Worker 与渠道 Outbox](docs/architec
 | [固定行情叶子](docs/architecture/private-agent-market-leaf.md) | P3a.6 单次行情能力、冻结数据与权限归档；已推送，远程 CI 通过 |
 | [预算查询优化](docs/architecture/execution-budget-queries.md) | P3a.7 同次扣额减少发布查询；已推送，远程 CI 通过 |
 | [整轮数据库访问基线](docs/architecture/turn-database-baseline.md) | P3a.8 跨线程 SQL、连接借用与多 owner 并发测量；已推送，远程 CI 通过 |
-| [发布解析合并](docs/architecture/release-lookup-queries.md) | P3a.9 一条查询读取主/基础清单；已本地分次验收，未推送 |
-| [Worker 与渠道 Outbox](docs/architecture/worker-outbox-queries.md) | P3a.10 领取/通知减少查询、提交后唤醒与有限积压处理；已本地验收，未推送 |
+| [发布解析合并](docs/architecture/release-lookup-queries.md) | P3a.9 一条查询读取主/基础清单；已推送，远程完整 CI 通过 |
+| [Worker 与渠道 Outbox](docs/architecture/worker-outbox-queries.md) | P3a.10 领取/通知减少查询、提交后唤醒与有限积压处理；已推送，远程完整 CI 通过 |
+| [恢复回执复用](docs/architecture/recovery-receipt-queries.md) | P3a.11 同事务复用 sealed receipt，补齐绑定校验；已本地验收，未推送 |
 | [HTTP 校验](docs/architecture/http-request-validation.md) / [Java 规范](docs/architecture/java-coding-guidelines.md) | 输入边界与关键逻辑注释约定 |
 | [运行维护](docs/operations.md) | 受理排空、配置、备份与隔离隐私恢复 |
 | [历史记录](docs/history/README.md) | 过去设计和验收证据，非当前迁移或兼容承诺 |
