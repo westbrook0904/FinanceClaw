@@ -36,6 +36,7 @@ jobs:
             target/surefire-reports/
             target/failsafe-reports/
             target/m*/
+            target/p3*/
             target/verification/
       - uses: actions/upload-artifact@v4
         with:

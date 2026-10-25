@@ -285,7 +285,9 @@ P3a.5 提交 `a4a6ef4` 已推送，[远程流水线](https://github.com/westbroo
 
 P3a.6 已推送 `13f73a7`，[远程流水线](https://github.com/westbrook0904/FinanceClaw/actions/runs/40105280949)整体 `completed/success`：**1,253 单元 + 490 集成 = 1,743 项 Java、46 项脚本和 44 项部署检查全部通过**。固定 `market_snapshot` 私有叶子最多一次行情读取，使用目标冻结发布的数据，结果归档保留行情权限。配置与范围见[固定行情叶子](docs/architecture/private-agent-market-leaf.md)；[原本地证据](docs/architecture/evidence/p3a6-implementation.json)继续保留分次验收和失败历史，P3a 整体仍未完成。
 
-P3a.7 **已本地验收，未推送**：同次模型／工具扣额复用已校验发布。实测私有行情首次读取 **33→29 条 SQL**、子模型预算预留 **21→17 条**、直接根工具扣额 **15→11 条**；回放仍为 16 条，实时门禁与原子回滚保持。同次本地验证通过 **1,253 项全量单元 + 137 项选定集成 = 1,390 项 Java 测试**；其余集成、脚本与 Compose 未在本阶段重跑。范围与证据见[预算查询优化](docs/architecture/execution-budget-queries.md)。
+P3a.7 已推送 `c166da7`，[远程流水线](https://github.com/westbrook0904/FinanceClaw/actions/runs/40157422639)整体成功：**1,253 单元 + 497 集成 = 1,750 项 Java、46 项脚本和 44 项部署检查通过**。同次模型／工具扣额复用已校验发布，实测私有行情首次读取 **33→29 条 SQL**、子模型预算预留 **21→17 条**、直接根工具扣额 **15→11 条**；回放仍为 16 条，实时门禁与原子回滚保持。范围与原提交前本地证据见[预算查询优化](docs/architecture/execution-budget-queries.md)。
+
+P3a.8 **已本地验收，未推送**：[整轮数据库访问基线](docs/architecture/turn-database-baseline.md)跨线程观察 HTTP、Worker、SDK 异步执行和心跳。本次测试窗口中，普通 Turn 134 条 SQL、行情父子 Turn 380 条、双 owner 四会话整批 508 条，其中发布查询分别为 36／144／144 条。**1,267 单元 + 64 选定集成 = 1,331 项 Java 测试通过**；测试调度参数与生产默认不同，这些次数不代表生产容量。下一步优先合并发布解析。
 
 | 文档 | 内容 |
 | --- | --- |
@@ -302,7 +304,8 @@ P3a.7 **已本地验收，未推送**：同次模型／工具扣额复用已校�
 | [父子运行时验收](docs/architecture/private-agent-runtime-validation.md) | P3a.4 完整父子模型及取消传播修复；已推送，远程 CI 成功 |
 | [暂停恢复验收](docs/architecture/private-agent-resume-validation.md) | P3a.5 根检查点结果保留、画像与预算连续性；已推送，远程 CI 成功 |
 | [固定行情叶子](docs/architecture/private-agent-market-leaf.md) | P3a.6 单次行情能力、冻结数据与权限归档；已推送，远程 CI 通过 |
-| [预算查询优化](docs/architecture/execution-budget-queries.md) | P3a.7 同次扣额减少发布查询；已本地验收，未推送 |
+| [预算查询优化](docs/architecture/execution-budget-queries.md) | P3a.7 同次扣额减少发布查询；已推送，远程 CI 通过 |
+| [整轮数据库访问基线](docs/architecture/turn-database-baseline.md) | P3a.8 跨线程 SQL、连接借用与多 owner 并发测量；已本地验收，未推送 |
 | [HTTP 校验](docs/architecture/http-request-validation.md) / [Java 规范](docs/architecture/java-coding-guidelines.md) | 输入边界与关键逻辑注释约定 |
 | [运行维护](docs/operations.md) | 受理排空、配置、备份与隔离隐私恢复 |
 | [历史记录](docs/history/README.md) | 过去设计和验收证据，非当前迁移或兼容承诺 |
