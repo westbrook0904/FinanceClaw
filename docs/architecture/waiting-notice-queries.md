@@ -55,4 +55,4 @@ scripts/mvn.sh -B -ntp -o validate spotless:check package -Dit.test=WaitingNotic
 
 ## 剩余热点
 
-交互表当前没有本查询的专用 turn/status 索引，扫描、排序和索引写入成本需用规模 EXPLAIN/BUFFERS 单独评估。回答完成判断已由 [P3a.16](interaction-completion-queries.md) 改为同 Turn/attempt 布尔探测并完成本地验收；原生恢复继续保留所需回答。Outbox 批量投影、队首竞争、恢复扫描、多用户连接池等待及心跳续租延迟仍见 [后续清单](worker-outbox-queries.md#后续五类数据库热点)。
+交互表当前没有本查询的专用 turn/status 索引，扫描、排序和索引写入成本需用规模 EXPLAIN/BUFFERS 单独评估。回答完成判断已由 [P3a.16](interaction-completion-queries.md) 改为同 Turn/attempt 布尔探测，已推送 `9d33018` 并通过远程完整 CI；原生恢复继续保留所需回答。Outbox 批量投影、队首竞争、恢复扫描、多用户连接池等待及心跳续租延迟仍见 [后续清单](worker-outbox-queries.md#后续五类数据库热点)。

@@ -13,11 +13,13 @@ import org.apache.ibatis.annotations.*;
  */
 @Mapper
 public interface OperationsMapper {
-    // Match the existing native-channel projection queue, without exposing its payload or binding
-    // identity.
+    // 通知发现只统计当前可渲染的候选，与执行是否完成是两个口径；这里与实际投影发现使用相同的实时资格。
+    // 没有有效 pending 的 waiting 不再占通知队列，但 Turn/pending 积压查询保持，过期未答不能因此视为已排空。
     String UNPROJECTED =
             """
             NOT b.muted AND t.status IN ('waiting','blocked','completed','failed','cancelled')
+            AND (t.status<>'waiting' OR EXISTS(SELECT 1 FROM business.interactions i
+              WHERE i.turn_id=t.id AND i.status='pending' AND i.expires_at>clock_timestamp()))
             AND NOT EXISTS(SELECT 1 FROM channel.notices n
               WHERE n.turn_id=t.id AND n.revision=t.revision AND n.status<>'suppressed')
             """;

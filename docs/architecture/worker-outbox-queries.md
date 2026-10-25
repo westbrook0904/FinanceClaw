@@ -96,7 +96,7 @@ CI 原有 `target/p3*/` 归档规则覆盖 `target/p3a10/` SQL 报告。P3a.12 �
 
 ## 后续五类数据库热点
 
-1. **Outbox 批量投影仍逐条查询。** 目前先列最多 20 个 binding，再逐项锁定/读取/插入。后续先测 1/20/多 owner 批次与重绑、静音、修订并发，再考虑集合读取和 activeTurn 索引；不能把发现结果当授权缓存。
+1. **Outbox 批量投影仍逐条查询。** 目前先列最多 20 个 binding，再逐项锁定/读取/插入。[P3a.17](projection-discovery-queries.md) 已本地验证 1/20/多 owner 批次及扫描后的重绑、静音、修订，跳过无可渲染问题的空 waiting；有效项仍逐条投影，集合读取与 activeTurn 索引需另测，不能把发现结果当授权缓存。
 2. **通知队首竞争。** 多个执行者可能先观察同一 pending；需要多实例、旧通知前缀的 SQL 与锁等待证据，再评估保持 binding → notice 锁序的有界领取和 SKIP LOCKED。
 3. **执行事务的后续改进。** 原阶段发现的恢复 sealed receipt 重读已由 [P3a.11](recovery-receipt-queries.md) 消除；Worker running 后回读由 [P3a.12](worker-turn-returning-queries.md) 使用真实 RETURNING 消除并完成本地验收。事件、完整字段、sealed/fence/checkpoint 和回滚语义保持，历史 8→7 SQL 数据不重写。
 4. **恢复扫描的规模成本。** 命令过期和 sending 失联扫描仍需大表 EXPLAIN/BUFFERS，再决定部分索引与有界扫描；锁后仍要用数据库时间重新检查，unknown 不自动重发。
@@ -104,7 +104,7 @@ CI 原有 `target/p3*/` 归档规则覆盖 `target/p3a10/` SQL 报告。P3a.12 �
 
 [P3a.13](notice-claim-lock-queries.md) 已推送 `dda1d7d` 并通过远程完整 CI，领取时双锁查询合并，完整旧通知积压进一步 94→72 SQL。[P3a.14](notice-candidate-results.md) 已推送 `e115834` 并通过远程完整 CI，候选 8→2 列、去除候选正文 getter 重复读取，SQL 次数保持不变。两者保留逐项投影事务和原队首等待，批量投影与公平性仍未完成。
 
-[P3a.15](waiting-notice-queries.md) 已推送 `36459c4` 并通过远程完整 CI，waiting 通知使用 pending 专用读取，9 个投影窗口映射 34→15 行、旧回答逻辑字节 86,412→0，SQL 次数保持。原生恢复继续按需读取完整交互历史；[P3a.16](interaction-completion-queries.md) 已本地验收回答完成判断的同 Turn/attempt 布尔探测，7 个实际回答窗口 response 逻辑字节 131,892→0，SQL 次数保持，尚未推送。
+[P3a.15](waiting-notice-queries.md) 已推送 `36459c4` 并通过远程完整 CI，waiting 通知使用 pending 专用读取，9 个投影窗口映射 34→15 行、旧回答逻辑字节 86,412→0，SQL 次数保持。原生恢复继续按需读取完整交互历史；[P3a.16](interaction-completion-queries.md) 已推送 `9d33018` 并通过远程完整 CI，回答完成判断采用同 Turn/attempt 布尔探测，7 个实际回答窗口 response 逻辑字节 131,892→0，SQL 次数保持。
 
 长工具链的 SDK/工作上下文写入字节、重复正文和写入放大仍需独立测量；本阶段的 SQL 次数不能替代这些证据。
 
@@ -114,3 +114,5 @@ CI 原有 `target/p3*/` 归档规则覆盖 `target/p3a10/` SQL 报告。P3a.12 �
 ## 远程交付补充
 
 [run 40173421896](https://github.com/westbrook0904/FinanceClaw/actions/runs/40173421896) 针对 `06ec674` 整条 completed/success：**1,299 单元 + 544 集成 = 1,843 项 Java、46 项脚本及 44 项部署检查**通过，覆盖前置发布合并与本阶段 Worker/Outbox 改动。原本地 1,412 项选定范围和中断记录不改写；[远程证据](evidence/p3a10-remote-ci.json)单独保存，后续 P3a.11 不在此远程运行范围内。
+
+[P3a.17](projection-discovery-queries.md) 本地 1,565 项选定验收通过，尚未推送。全过期 20 项首 tick 62→2 SQL，pending 部分索引实测使用；运维通知候选同步缩小，但 waiting/过期 pending 仍未完成。有效尾项由原先阻塞变为正常投影发送，属于预期推进变化，未宣称全局公平性或生产容量。

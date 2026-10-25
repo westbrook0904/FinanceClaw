@@ -70,10 +70,17 @@ public interface FeishuMapper {
             @Param("hash") String hash,
             @Param("receipt") String receipt);
 
+    /**
+     * 无锁发现阶段跳过没有有效 pending 交互的 waiting 项，避免空文案占满有界批次并阻止空闲退避。 该 EXISTS 只减少无效候选，不授予投递资格；选中后仍须在逐
+     * binding 事务内按最新绑定读取 Turn、pending 与 live 并渲染。 非 waiting 状态和既有通知去重/抑制重激活规则保持，不缓存有效期或跨事务复用查询结果。
+     */
     @Select(
             "SELECT b.id FROM channel.bindings b JOIN business.turns t ON t.id=b.active_turn WHERE"
                     + " NOT b.muted AND t.status IN"
-                    + " ('waiting','blocked','completed','failed','cancelled') AND NOT EXISTS(SELECT 1"
+                    + " ('waiting','blocked','completed','failed','cancelled')"
+                    + " AND (t.status<>'waiting' OR EXISTS(SELECT 1 FROM business.interactions i"
+                    + " WHERE i.turn_id=t.id AND i.status='pending'"
+                    + " AND i.expires_at>clock_timestamp())) AND NOT EXISTS(SELECT 1"
                     + " FROM channel.notices n WHERE n.turn_id=t.id AND n.revision=t.revision AND"
                     + " n.status<>'suppressed') ORDER BY t.created_at LIMIT 20")
     List<String> listBindingIdsRequiringProjection();

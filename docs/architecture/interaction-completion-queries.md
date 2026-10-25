@@ -1,6 +1,6 @@
 # 交互回答完成判断：P3a.16
 
-**状态：本地验收通过，尚未推送。** 前置 `36459c4` 已推送，[run 40193745424](https://github.com/westbrook0904/FinanceClaw/actions/runs/40193745424) 整条 completed/success：1,894 Java、46 脚本、44 部署检查通过。[远程记录](evidence/p3a15-remote-ci.json)只对应 P3a.15，本阶段[本地证据](evidence/p3a16-implementation.json)独立保存。
+**状态：已推送 `9d33018`，远程完整 CI 通过。** [run 40207741693](https://github.com/westbrook0904/FinanceClaw/actions/runs/40207741693) 整条 completed/success：**1,320 单元 + 580 集成 = 1,900 Java、46 脚本及 44 部署检查通过**。[远程记录](evidence/p3a16-remote-ci.json)单列，原提交前[本地证据](evidence/p3a16-implementation.json)及过程保持。
 
 ## 当前实现
 
@@ -52,7 +52,7 @@ scripts/mvn.sh -B -ntp -o validate spotless:check package -Dit.test=InteractionC
 
 实际 XML：**1,320 单元 + 17 套选定集成 208 项 = 1,528 项**，失败/错误/跳过均为零；before/after 两次 Maven 验收均首次成功。470 项输入无漂移，419 个生产 class、22 个资源与本次 JAR 字节一致。JAR SHA-256：`8023e559582f6df0e47a4bcebd8849535e484eb28bcf7d5ee0856f607855983b`。严格比较器的合成负例仅校验比较器，不计入业务用例。
 
-本阶段未执行完整项目 verify、脚本测试套件、Compose、远程 CI、独立 CLI 或部署后 JAR 验收；前置远程全绿不替代本阶段验证，远程/本地 JAR 字节未比较。
+原提交前本地命令未执行完整项目 verify、脚本测试套件、Compose、远程 CI、独立 CLI 或部署后 JAR 验收；后续远程结果单列于文首，远程/本地 JAR 字节未比较。
 
 ## 剩余热点
 

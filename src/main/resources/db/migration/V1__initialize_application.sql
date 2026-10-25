@@ -136,6 +136,9 @@ CREATE TABLE business.interactions (
   response_json text,
   UNIQUE(attempt_id,call_id)
 );
+-- 支持按 Turn 定位当前 pending 并读取到期字段；有效期始终使用数据库实时计算。
+CREATE INDEX interaction_pending_turn_expiry
+  ON business.interactions(turn_id,expires_at) WHERE status='pending';
 -- 新库初始化的循环外键绑定：交互引用 Command/Attempt，恢复引用对应交互。
 -- 必须等三个表都存在后添加这两个约束；这两条 ALTER 不是历史数据升级步骤。
 ALTER TABLE business.commands ADD CONSTRAINT commands_resume_id_fkey

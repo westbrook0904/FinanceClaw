@@ -510,6 +510,14 @@ V8 不增表，仍为 41 表；增加冻结目标字段和不可变约束，同�
 
 ## 26. P3a.16 交互回答完成判断
 
-P3a.16 **本地验收通过，尚未推送**：[交互回答完成判断](interaction-completion-queries.md)只查询当前 Turn/attempt 是否仍有非 answered 项，避免每次回答映射完整历史。7 个实际回答窗口的交互实体 **32→0**、response 逻辑字节 **131,892→0**，改为每次一个 boolean，SQL 保持 **102→102**。并发只恢复一次、回放无探测、过期/invalid 阻断、回滚重试与原生 SDK 恢复通过；**1,320 单元 + 208 选定集成 = 1,528 项**同次通过。本阶段未运行完整 verify、脚本套件、Compose 或远程 CI。
+P3a.16 **已推送 `9d33018`，远程完整 CI 通过**：[交互回答完成判断](interaction-completion-queries.md)只查询当前 Turn/attempt 是否仍有非 answered 项，避免每次回答映射完整历史。7 个实际回答窗口的交互实体 **32→0**、response 逻辑字节 **131,892→0**，改为每次一个 boolean，SQL 保持 **102→102**。并发只恢复一次、回放无探测、过期/invalid 阻断、回滚重试与原生 SDK 恢复通过；原提交前本地 **1,320 单元 + 208 选定集成 = 1,528 项**同次通过；随后 [run 40207741693](https://github.com/westbrook0904/FinanceClaw/actions/runs/40207741693) 整条 completed/success：**1,320 单元 + 580 集成 = 1,900 Java、46 脚本及 44 部署检查通过**。
 
 先在 `36459c4` 原生产实现上运行 57 项 PG 基线；优化后 17 套选定集成 208 项及全部 1,320 单元同次成功。21 个窗口总计 137→137 SQL，完成查询 Interaction 映射 58→0、Boolean 标量 0→15、response 逻辑字节 186,468→0；其中 8 个隔离 mapper 矩阵与实际回答分开计量。旧四组窗口、锁序、grant/checkpoint、恢复 CAS 和事务结果保持，470 输入与本次 419 class/22 资源 JAR 字节一致；[本地证据](evidence/p3a16-implementation.json)不替代后续远程验收。
+
+[run 40207741693](https://github.com/westbrook0904/FinanceClaw/actions/runs/40207741693) 整条 completed/success：**1,320 单元 + 580 集成 = 1,900 Java、46 脚本及 44 部署检查通过**。[远程证据](evidence/p3a16-remote-ci.json)只对应 `9d33018`，原本地范围和后续阶段独立保留。
+
+## 27. P3a.17 通知投影候选
+
+P3a.17 **本地验收通过，尚未推送**：[通知投影候选](projection-discovery-queries.md)跳过无 live pending 的 waiting 空项，并同步运维通知队列。20 个全过期项首 tick **62→2 SQL**；20 个空前缀不再挡住另一 owner 的有效通知，三 tick **186→12 SQL、0→1 次发送**（业务推进刻意不同）。部分索引由真实规模计划验证，过期未答仍保留任务/pending 积压。**1,320 单元 + 245 选定集成 = 1,565 项**同次通过，本阶段未执行完整 verify、脚本套件、Compose 或新远程 CI。
+
+原生产 69 项 PG 基线首次通过；21 业务窗口 718→294 SQL、197→57 commit，零 rollback，明确区分空项跳过与有效尾项新增推进。默认 planner 下候选新 SQL 无索引预览对 interactions 扫描 21 loops；采纳 pending(turn_id,expires_at) 部分索引后真实索引访问、结果正确，未宣称 volatile 到期条件可作范围索引。FeishuDelivery 源码及旧五组其他 SQL/事务保持，472 输入和 419 class/22 资源与 JAR 字节匹配；[本地证据](evidence/p3a17-implementation.json)独立于原远程 1,900/46/44。

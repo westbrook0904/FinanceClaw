@@ -20,6 +20,8 @@ curl --fail http://localhost:8080/actuator/health/readiness
 
 `GET /v1/operations/drain` 返回当前主体积压计数；`/drain/items` 按任务、通知、未生成通知的绑定和记忆作业分页。不存在旧 Outbox 或不完整报告字段。独立外部通知的未知/未验证结果仍然是阻塞项。
 
+等待问题全部过期后，不再计入 `notification_bindings` 与 `unprojected_notifications`。原问题仍计入 `pending_interactions`，任务仍为 waiting，因此即使已暂停受理也不会被报告为 drained；通知队列为空不能代替任务排空。范围见[通知候选查询](architecture/projection-discovery-queries.md)。
+
 ```bash
 python3 scripts/inspect-drain.py --help
 ```
