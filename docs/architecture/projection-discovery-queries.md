@@ -1,6 +1,6 @@
 # 通知投影候选与空等待项：P3a.17
 
-**状态：本地验收通过，尚未推送。** 前置 `9d33018` 已推送，[run 40207741693](https://github.com/westbrook0904/FinanceClaw/actions/runs/40207741693) 整条 completed/success：1,900 Java、46 脚本、44 部署检查通过。[远程记录](evidence/p3a16-remote-ci.json)只对应 P3a.16；本阶段[本地证据](evidence/p3a17-implementation.json)独立保存。
+**状态：已推送 `cc90a6d`，远程完整 CI 通过。** [run 40243547522](https://github.com/westbrook0904/FinanceClaw/actions/runs/40243547522) 整条 completed/success：1,320 单元 + 586 集成 = 1,906 Java、46 脚本、44 Compose 检查通过。[P3a.17 远程记录](evidence/p3a17-remote-ci.json)只对应该已交付提交；原提交前[本地证据](evidence/p3a17-implementation.json)独立保存。前置 `9d33018` 的 [run 40207741693](https://github.com/westbrook0904/FinanceClaw/actions/runs/40207741693) 及其 1,900/46/44 记录仍保留为历史基线，不用来替代后来源码的验收。
 
 ## 问题与实现
 
@@ -85,8 +85,12 @@ scripts/mvn.sh -B -ntp -o validate spotless:check package -Dit.test=ProjectionDi
 
 472 项输入无漂移，419 个生产 class、22 个资源（含三份根许可证）与本次 JAR 字节一致；SHA-256 为 `9663e3f7283e17c82ab5e8e1e04c3b6576d1955cfde3bba04ac1308016c2a630`。比较器合成正负例只校验仪器，不计入业务测试数。
 
-本阶段没有运行完整项目 verify、脚本测试套件、Compose、新远程 CI、独立 CLI 或部署后 JAR 验收；前置 9d33018 的远程全绿不替代这些未推送源码的验收，远程与本地 JAR 字节未比较。
+原提交前本地没有运行完整项目 verify、脚本测试套件、Compose、新远程 CI、独立 CLI 或部署后 JAR 验收；前置 9d33018 的远程全绿不替代这些未推送源码的验收，远程与本地 JAR 字节未比较。
 
 ## 后续
 
 有效候选仍逐 binding 投影，集合读取、通知队首竞争、恢复扫描规模、多用户连接池及心跳续租延迟仍待独立测量。suppressed 重激活和未知投递规则保持原实现，本阶段没有重做通知生命周期；[后续五类热点](worker-outbox-queries.md#后续五类数据库热点)继续保留。
+
+## 远程交付补充
+
+原提交前本地命令只覆盖选定范围；随后 `cc90a6d` 的完整远程 CI 已覆盖 1,906 Java、46 脚本和 44 Compose 检查。远程成功不扩大原本地命令范围，也不验证后续 P3a.18；远程与本地 JAR 字节未比较。

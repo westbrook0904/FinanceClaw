@@ -518,6 +518,22 @@ P3a.16 **已推送 `9d33018`，远程完整 CI 通过**：[交互回答完成判
 
 ## 27. P3a.17 通知投影候选
 
-P3a.17 **本地验收通过，尚未推送**：[通知投影候选](projection-discovery-queries.md)跳过无 live pending 的 waiting 空项，并同步运维通知队列。20 个全过期项首 tick **62→2 SQL**；20 个空前缀不再挡住另一 owner 的有效通知，三 tick **186→12 SQL、0→1 次发送**（业务推进刻意不同）。部分索引由真实规模计划验证，过期未答仍保留任务/pending 积压。**1,320 单元 + 245 选定集成 = 1,565 项**同次通过，本阶段未执行完整 verify、脚本套件、Compose 或新远程 CI。
+P3a.17 **已推送 `cc90a6d`，远程完整 CI 通过**：[通知投影候选](projection-discovery-queries.md)跳过无 live pending 的 waiting 空项，并同步运维通知队列。20 个全过期项首 tick **62→2 SQL**；20 个空前缀后的另一 owner 三 tick **186→12 SQL、0→1 次发送**，业务推进刻意不同，不是相同工作量的吞吐比较。过期未答仍保留任务/pending 积压。原提交前本地 **1,320 单元 + 245 选定集成 = 1,565 项**同次通过；随后 [run 40243547522](https://github.com/westbrook0904/FinanceClaw/actions/runs/40243547522) 整条 completed/success：**1,320 单元 + 586 集成 = 1,906 Java、46 脚本及 44 Compose 检查通过**。
 
 原生产 69 项 PG 基线首次通过；21 业务窗口 718→294 SQL、197→57 commit，零 rollback，明确区分空项跳过与有效尾项新增推进。默认 planner 下候选新 SQL 无索引预览对 interactions 扫描 21 loops；采纳 pending(turn_id,expires_at) 部分索引后真实索引访问、结果正确，未宣称 volatile 到期条件可作范围索引。FeishuDelivery 源码及旧五组其他 SQL/事务保持，472 输入和 419 class/22 资源与 JAR 字节匹配；[本地证据](evidence/p3a17-implementation.json)独立于原远程 1,900/46/44。
+
+随后 [run 40243547522](https://github.com/westbrook0904/FinanceClaw/actions/runs/40243547522) 针对 `cc90a6d` 整条 completed/success：**1,320 单元 + 586 集成 = 1,906 Java、46 脚本、44 Compose 检查通过**。[远程证据](evidence/p3a17-remote-ci.json)独立于原本地 1,565 项选定范围和后续 P3a.18。
+
+## 28. P3a.18 失联 sending 通知恢复
+
+P3a.18 **本地验收通过，尚未推送**：[失联 sending 恢复](notice-recovery-queries.md)增加当前 sending 部分索引，保持原 UPDATE、60 秒失联条件和 unknown 不自动重发。20,000 条合成非 sending 历史及 3 条真实 sending 下，全表扫描改为索引扫描，根 shared hit blocks **679→17**，同样仅更新 1 行；每次恢复仍为 1 条 SQL。**1,320 单元 + 250 选定集成 = 1,570 项**同次通过。大 sending 集合、命令恢复规模、连接池等待及心跳延迟仍待独立测量。
+
+前置 `cc90a6d` 的完整远程 CI 通过后，先在原生产定义上运行 7 套 43 项 PostgreSQL 基线，再只在 V1 新库定义增加 `channel_sending_notice(started_at) WHERE status='sending'`。生产 Java、恢复 SQL、调度器与心跳字节保持；不引入迁移兼容、新表或恢复队列。
+
+五项新 PG 用例覆盖双 owner 状态矩阵、未来/NULL 时间保留、idle 下独立恢复、迟到成功/失败不能覆盖 unknown、真实行锁等待后的新状态/时间重检，以及 AFTER STATEMENT 故障的全行回滚与重试。新协调器为同 JVM 新对象，不冒称进程重启。16 个业务窗口保持 32 SQL、2 次显式 commit、0 次显式 rollback；故障语句的隐式回滚另由完整 Notice 快照验证。旧六组窗口、事务与固定业务事实保持；严格比较器自测 3 正例、50 负变异均符合预期。
+
+规模历史为 20,000 条明确合成的 submitted_unverified 非 sending 记录，不是实际送达；另有 1 条真实历史及 3 条真实领取的 sending。默认 planner 使用原 UPDATE，Seq Scan 过滤 20,003 行变为 sending Index Scan 过滤 2 行，扫描节点 shared hit blocks 667→5，根节点 679→17，两边 shared read=0；匹配 1 行保持，EXPLAIN 更新后显式 rollback 并核对完整数据恢复。clock_timestamp 仍为实时 Filter，不是截止时间范围 Index Cond；根 Actual Rows=0 不是更新数，不累加父子 buffer。
+
+实际同次 83 套单元 1,320 项与 21 套选定集成 250 项通过，473 输入无漂移；419 class、22 资源及 3 份根许可证与本次 JAR 字节匹配。两次 Maven 验证均首次成功；此前本机 Perl locale 导致补丁命令退出，after runner 在构建前因范围门禁拒绝，完整记录为编排注记，未执行 Maven。
+
+本轮未运行完整项目 verify、脚本套件、Compose、新远程 CI、独立部署 JAR 或真实 provider/飞书 HTTP；前置远程 1,906/46/44 只对应 cc90a6d。索引增加状态/时间写入维护；大量 sending、索引膨胀、命令恢复大表计划、多实例锁争用及连接池/续租延迟仍需单独验证。[专项与命令](notice-recovery-queries.md)；[本地证据](evidence/p3a18-implementation.json)。

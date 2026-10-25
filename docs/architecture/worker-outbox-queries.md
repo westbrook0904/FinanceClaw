@@ -99,7 +99,7 @@ CI 原有 `target/p3*/` 归档规则覆盖 `target/p3a10/` SQL 报告。P3a.12 �
 1. **Outbox 批量投影仍逐条查询。** 目前先列最多 20 个 binding，再逐项锁定/读取/插入。[P3a.17](projection-discovery-queries.md) 已本地验证 1/20/多 owner 批次及扫描后的重绑、静音、修订，跳过无可渲染问题的空 waiting；有效项仍逐条投影，集合读取与 activeTurn 索引需另测，不能把发现结果当授权缓存。
 2. **通知队首竞争。** 多个执行者可能先观察同一 pending；需要多实例、旧通知前缀的 SQL 与锁等待证据，再评估保持 binding → notice 锁序的有界领取和 SKIP LOCKED。
 3. **执行事务的后续改进。** 原阶段发现的恢复 sealed receipt 重读已由 [P3a.11](recovery-receipt-queries.md) 消除；Worker running 后回读由 [P3a.12](worker-turn-returning-queries.md) 使用真实 RETURNING 消除并完成本地验收。事件、完整字段、sealed/fence/checkpoint 和回滚语义保持，历史 8→7 SQL 数据不重写。
-4. **恢复扫描的规模成本。** 命令过期和 sending 失联扫描仍需大表 EXPLAIN/BUFFERS，再决定部分索引与有界扫描；锁后仍要用数据库时间重新检查，unknown 不自动重发。
+4. **恢复扫描仍需按负载测量。** [P3a.18](notice-recovery-queries.md) 本地 1,570 项选定验收通过，仅增加当前 sending 部分索引；20,000 条合成非 sending 历史、3 条真实 sending 的同 SQL/同匹配样本中，根 shared hit blocks 679→17，每次仍为一条 UPDATE。60 秒条件、数据库实时时钟、行锁和 unknown 不自动重发保持。命令恢复已有 running(lease_until) 部分索引，大表计划仍待测；大量 sending、索引维护/膨胀、多实例锁等待及有界恢复批次也未完成，不能代替连接池与心跳延迟验收。
 5. **多用户连接池与心跳延迟。** 当前心跳已是单条双锁 CTE；重点测 Hikari 等待、锁等待、续租延迟及租约余量，按证据评估资源隔离，不靠降低心跳频率、缓存 live 或批量续活减 SQL。
 
 [P3a.13](notice-claim-lock-queries.md) 已推送 `dda1d7d` 并通过远程完整 CI，领取时双锁查询合并，完整旧通知积压进一步 94→72 SQL。[P3a.14](notice-candidate-results.md) 已推送 `e115834` 并通过远程完整 CI，候选 8→2 列、去除候选正文 getter 重复读取，SQL 次数保持不变。两者保留逐项投影事务和原队首等待，批量投影与公平性仍未完成。
@@ -115,4 +115,4 @@ CI 原有 `target/p3*/` 归档规则覆盖 `target/p3a10/` SQL 报告。P3a.12 �
 
 [run 40173421896](https://github.com/westbrook0904/FinanceClaw/actions/runs/40173421896) 针对 `06ec674` 整条 completed/success：**1,299 单元 + 544 集成 = 1,843 项 Java、46 项脚本及 44 项部署检查**通过，覆盖前置发布合并与本阶段 Worker/Outbox 改动。原本地 1,412 项选定范围和中断记录不改写；[远程证据](evidence/p3a10-remote-ci.json)单独保存，后续 P3a.11 不在此远程运行范围内。
 
-[P3a.17](projection-discovery-queries.md) 本地 1,565 项选定验收通过，尚未推送。全过期 20 项首 tick 62→2 SQL，pending 部分索引实测使用；运维通知候选同步缩小，但 waiting/过期 pending 仍未完成。有效尾项由原先阻塞变为正常投影发送，属于预期推进变化，未宣称全局公平性或生产容量。
+[P3a.17](projection-discovery-queries.md) 已推送 `cc90a6d`，并由 [run 40243547522](https://github.com/westbrook0904/FinanceClaw/actions/runs/40243547522) 通过完整远程 CI：1,906 Java、46 脚本、44 Compose 检查。原本地 1,565 项选定范围保持独立。全过期 20 项首 tick 62→2 SQL；有效尾项由原先阻塞变为正常投影发送，是预期推进变化，不能称相同工作量吞吐提升或全局公平性。waiting/过期 pending 仍未完成。

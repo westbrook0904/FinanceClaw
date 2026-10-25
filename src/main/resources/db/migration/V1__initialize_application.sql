@@ -440,3 +440,5 @@ CREATE TABLE channel.notices (
   UNIQUE(turn_id,revision)
 );
 CREATE INDEX channel_pending_notice ON channel.notices(created_at) WHERE status='pending';
+-- 失联恢复按 sending 集合定位；到期资格仍由原 SQL 使用数据库实时时钟过滤。
+CREATE INDEX channel_sending_notice ON channel.notices(started_at) WHERE status='sending';
