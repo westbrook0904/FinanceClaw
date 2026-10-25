@@ -293,6 +293,16 @@ VALUES(#{id},#{turnId},#{commandId},#{attemptId},#{stateVersion},#{grantRevision
     int updatePendingInteractionAnswer(
             @Param("id") String id, @Param("hash") String hash, @Param("json") String json);
 
+    /**
+     * 在回答 UPDATE 后单独执行，只返回当前暂停批次是否仍未全部回答。 Turn 与 attempt 条件共同保留；不能改成仅查 pending，否则 invalid 会被误判为完成。
+     * 不按 live/到期时间过滤，过期问题仍是未完成；不映射 response 正文。 无匹配行时 EXISTS 返回 false，与原历史过滤后 allMatch 的空集结果对应。
+     */
+    @Select(
+            "SELECT EXISTS(SELECT 1 FROM business.interactions WHERE turn_id=#{turn}"
+                    + " AND attempt_id=#{attempt} AND status<>'answered')")
+    boolean existsUnansweredInteractionsByTurnAndAttempt(
+            @Param("turn") String turn, @Param("attempt") String attempt);
+
     @Update(
             "UPDATE business.interactions SET status='invalid' WHERE turn_id=#{id} AND"
                     + " status='pending'")

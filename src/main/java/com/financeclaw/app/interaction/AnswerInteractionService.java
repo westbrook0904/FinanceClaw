@@ -93,15 +93,11 @@ public class AnswerInteractionService {
                     }
                     // 阶段三：回答和恢复命令同事务提交，避免已回答但永远无法恢复的中间状态。
                     interactions.answer(id, hash, json);
+                    // 写入后仍用独立 SQL 检查同一 Turn/attempt，读取本事务刚保存的回答。
+                    // pending（含过期行）和 invalid 都不能触发恢复；不再映射整个 Turn 的历史回答正文。
                     boolean complete =
-                            interactions.interactions(turn).stream()
-                                    .filter(
-                                            i ->
-                                                    i.attemptId()
-                                                            .equals(
-                                                                    binding.interaction()
-                                                                            .attemptId()))
-                                    .allMatch(i -> i.status().equals("answered"));
+                            !interactions.existsUnansweredInteractions(
+                                    turn, binding.interaction().attemptId());
                     if (complete) {
                         interactions.resume(binding);
                     }

@@ -104,7 +104,7 @@ CI 原有 `target/p3*/` 归档规则覆盖 `target/p3a10/` SQL 报告。P3a.12 �
 
 [P3a.13](notice-claim-lock-queries.md) 已推送 `dda1d7d` 并通过远程完整 CI，领取时双锁查询合并，完整旧通知积压进一步 94→72 SQL。[P3a.14](notice-candidate-results.md) 已推送 `e115834` 并通过远程完整 CI，候选 8→2 列、去除候选正文 getter 重复读取，SQL 次数保持不变。两者保留逐项投影事务和原队首等待，批量投影与公平性仍未完成。
 
-[P3a.15](waiting-notice-queries.md) 已本地验收 waiting 通知的 pending 专用读取，9 个投影窗口映射 34→15 行、旧回答逻辑字节 86,412→0，SQL 次数保持；尚未推送。原生恢复与回答批次仍使用完整交互历史。
+[P3a.15](waiting-notice-queries.md) 已推送 `36459c4` 并通过远程完整 CI，waiting 通知使用 pending 专用读取，9 个投影窗口映射 34→15 行、旧回答逻辑字节 86,412→0，SQL 次数保持。原生恢复继续按需读取完整交互历史；[P3a.16](interaction-completion-queries.md) 已本地验收回答完成判断的同 Turn/attempt 布尔探测，7 个实际回答窗口 response 逻辑字节 131,892→0，SQL 次数保持，尚未推送。
 
 长工具链的 SDK/工作上下文写入字节、重复正文和写入放大仍需独立测量；本阶段的 SQL 次数不能替代这些证据。
 

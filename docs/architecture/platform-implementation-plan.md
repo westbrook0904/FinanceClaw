@@ -498,10 +498,18 @@ V8 不增表，仍为 41 表；增加冻结目标字段和不可变约束，同�
 
 ## 25. P3a.15 等待通知交互查询
 
-**2026-10-25 本地验收通过，尚未推送。** 前置 `e115834` 的完整远程 CI 通过后，先在原生产源码上运行 26 项 PG 基线，再为 waiting 通知增加 pending 专用查询。原通用历史方法、完整交互字段、数据库时钟 live 投影、revision/id 排序及 FeishuText 检查保持；锁后独立 owner/Turn 查询和逐 binding 事务保持。
+**2026-10-25 已推送 `36459c4`，远程 CI 通过。** 前置 `e115834` 的完整远程 CI 通过后，先在原生产源码上运行 26 项 PG 基线，再为 waiting 通知增加 pending 专用查询。原通用历史方法、完整交互字段、数据库时钟 live 投影、revision/id 排序及 FeishuText 检查保持；锁后独立 owner/Turn 查询和逐 binding 事务保持。
 
 4 个新增原生 SDK/PG 用例的 9 个投影窗口中，8 次交互查询的映射记录 **34→15 行**，旧回答逻辑字节 **86,412→0**；SQL **34→34**、8 commit/1 rollback。回滚与重复投影分别计量，不是唯一交互数或整轮 Turn。现有候选、NoticeClaim、FeishuDelivery 窗口分别保持 85/244/345 SQL；仅新窗口 8 处和旧 Feishu 1 处通知交互模板变化，其余顺序、分组、事务、业务标志及候选/锁内正文观察保持。
 
 最终同次 **1,320 单元 + 15 套选定集成中的 177 项 = 1,497 项**通过，468 项输入无漂移，419 个生产 class、22 个资源与本次 JAR 字节一致；本阶段 Maven 构建与测试无失败尝试。三批双审批真实暂停/回答/恢复，部分回答不提前入队，最终生成 6 份报告、4 次 attempt，实际调用计数未超过原发布的 12 模型/32 工具预算。
 
-本阶段未执行完整 verify、脚本测试套件、Compose、远程 CI 或独立部署 JAR 验收。映射后逻辑字节不等于 JDBC getter、网络、TOAST、内存或吞吐；没有新增索引，扫描/排序计划另测。[范围与命令](waiting-notice-queries.md)；[证据](evidence/p3a15-implementation.json)。
+原提交前本地命令未执行完整 verify、脚本测试套件、Compose、远程 CI 或独立部署 JAR 验收。映射后逻辑字节不等于 JDBC getter、网络、TOAST、内存或吞吐；没有新增索引，扫描/排序计划另测。[范围与命令](waiting-notice-queries.md)；[证据](evidence/p3a15-implementation.json)。
+
+随后 [run 40193745424](https://github.com/westbrook0904/FinanceClaw/actions/runs/40193745424) 针对 `36459c4` 整体 completed/success：1,894 Java、46 脚本、44 部署检查通过；[远程证据](evidence/p3a15-remote-ci.json)独立于原本地范围和后续阶段。
+
+## 26. P3a.16 交互回答完成判断
+
+P3a.16 **本地验收通过，尚未推送**：[交互回答完成判断](interaction-completion-queries.md)只查询当前 Turn/attempt 是否仍有非 answered 项，避免每次回答映射完整历史。7 个实际回答窗口的交互实体 **32→0**、response 逻辑字节 **131,892→0**，改为每次一个 boolean，SQL 保持 **102→102**。并发只恢复一次、回放无探测、过期/invalid 阻断、回滚重试与原生 SDK 恢复通过；**1,320 单元 + 208 选定集成 = 1,528 项**同次通过。本阶段未运行完整 verify、脚本套件、Compose 或远程 CI。
+
+先在 `36459c4` 原生产实现上运行 57 项 PG 基线；优化后 17 套选定集成 208 项及全部 1,320 单元同次成功。21 个窗口总计 137→137 SQL，完成查询 Interaction 映射 58→0、Boolean 标量 0→15、response 逻辑字节 186,468→0；其中 8 个隔离 mapper 矩阵与实际回答分开计量。旧四组窗口、锁序、grant/checkpoint、恢复 CAS 和事务结果保持，470 输入与本次 419 class/22 资源 JAR 字节一致；[本地证据](evidence/p3a16-implementation.json)不替代后续远程验收。

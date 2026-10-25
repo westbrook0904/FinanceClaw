@@ -23,5 +23,11 @@ public interface InteractionGateway {
 
     List<Interaction> interactions(String turn);
 
+    /**
+     * 回答写入后，在同一持锁事务中判断指定 Turn/attempt 是否仍有非 answered 交互。 pending（包括过期行）与 invalid 均阻止恢复；空集合返回
+     * false，保留原 allMatch 的空集语义。 此探测不替代问题归属、授权、检查点或有效期校验，也不替代原生恢复所需的完整历史读取。
+     */
+    boolean existsUnansweredInteractions(String turn, String attempt);
+
     void resume(InteractionBinding binding);
 }

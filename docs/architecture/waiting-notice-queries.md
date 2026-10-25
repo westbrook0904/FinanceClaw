@@ -1,12 +1,12 @@
 # 等待通知交互查询：P3a.15
 
-**状态：本地验收通过，尚未推送。** 前置 `e115834` 已推送，[run 40189599778](https://github.com/westbrook0904/FinanceClaw/actions/runs/40189599778) 整条成功：1,890 Java、46 脚本、44 部署检查通过。该远程记录仅对应 P3a.14；本阶段 [1,497 项本地验收](evidence/p3a15-implementation.json)独立保存。
+**状态：已推送 `36459c4`，远程完整 CI 通过。** [run 40193745424](https://github.com/westbrook0904/FinanceClaw/actions/runs/40193745424) 整条 completed/success：1,320 单元 + 574 集成 = 1,894 Java、46 脚本、44 部署检查通过。[远程证据](evidence/p3a15-remote-ci.json)单列，原提交前 [1,497 项本地验收](evidence/p3a15-implementation.json)及过程保持。
 
 ## 当前实现
 
 waiting 通知原先读取整个 Turn 的交互历史，FeishuText 再丢弃非 pending 行，导致每次投影重复映射旧回答。现在 [GovernanceMapper](../../src/main/java/com/financeclaw/infrastructure/governance/GovernanceMapper.java) 新增 `listPendingInteractionsByTurnId`，只增加 `status='pending'` 条件；共享原完整 18 字段、`expires_at>clock_timestamp() AS live` 和 `ORDER BY revision,id`。
 
-[执行上下文端口](../../src/main/java/com/financeclaw/app/execution/port/ExecutionContextGateway.java)及 [MyBatis 实现](../../src/main/java/com/financeclaw/infrastructure/task/MyBatisExecutionContextGateway.java)提供通知专用 pending 读取，[FeishuDelivery](../../src/main/java/com/financeclaw/channel/FeishuDelivery.java) 只在 waiting 分支调用。原 `interactions`、`listInteractionsByTurnId` 仍返回完整历史，供回答批次判断、检查点与原生 SDK 恢复使用；没有兼容 fallback 或默认过滤实现。
+[执行上下文端口](../../src/main/java/com/financeclaw/app/execution/port/ExecutionContextGateway.java)及 [MyBatis 实现](../../src/main/java/com/financeclaw/infrastructure/task/MyBatisExecutionContextGateway.java)提供通知专用 pending 读取，[FeishuDelivery](../../src/main/java/com/financeclaw/channel/FeishuDelivery.java) 只在 waiting 分支调用。原 `interactions`、`listInteractionsByTurnId` 仍返回完整历史，供 API、检查点与原生 SDK 恢复使用；没有兼容 fallback 或默认过滤实现。
 
 过期 pending 仍由 SQL 返回并带 `live=false`，原渲染器继续过滤。binding 锁后的独立 owner/Turn 查询、状态/revision 校验、逐 binding 提交、投影 UPSERT、通知领取和事务外发送保持。没有改变 schema、索引、授权、队列、轮询、恢复或心跳。
 
@@ -51,8 +51,8 @@ scripts/mvn.sh -B -ntp -o validate spotless:check package -Dit.test=WaitingNotic
 
 实际 XML：**1,320 单元 + 15 套选定集成中的 177 项 = 1,497 项**，失败/错误/跳过均为零，本阶段 Maven 构建与测试无失败尝试。468 项输入无漂移，419 个生产 class、22 个资源（包含三份根目录许可证）与本次 JAR 字节一致；JAR SHA-256 为 `a06cdb77cd5e77008087547121302c11b69a5a6099d785051d6a3beed4f2839d`。证据保留前后四份原始报告、严格比较及其合成负例、命令、真实退出、源码和产物指纹。比较器的合成自测不作为业务验收。证据生成器首次因要求 test-compile 基线存在单元报告目录而拒绝生成；仅修正生成器后通过，原始报告和源码未改，过程记录在 evidence_generation_notes。
 
-本阶段未执行完整项目 verify、脚本测试套件、Compose、远程 CI、独立 CLI 或部署后 JAR 验收。前置远程全绿记录不替代本阶段验证。
+原提交前本地命令未执行完整项目 verify、脚本测试套件、Compose、远程 CI、独立 CLI 或部署后 JAR 验收；后续完整远程结果单独记录于文首，不改写原本地范围。
 
 ## 剩余热点
 
-交互表当前没有本查询的专用 turn/status 索引，扫描、排序和索引写入成本需用规模 EXPLAIN/BUFFERS 单独评估。回答完成判断仍读取完整历史，可进一步评估同 attempt 状态查询；原生恢复必须保留所需回答。Outbox 批量投影、队首竞争、恢复扫描、多用户连接池等待及心跳续租延迟仍见 [后续清单](worker-outbox-queries.md#后续五类数据库热点)。
+交互表当前没有本查询的专用 turn/status 索引，扫描、排序和索引写入成本需用规模 EXPLAIN/BUFFERS 单独评估。回答完成判断已由 [P3a.16](interaction-completion-queries.md) 改为同 Turn/attempt 布尔探测并完成本地验收；原生恢复继续保留所需回答。Outbox 批量投影、队首竞争、恢复扫描、多用户连接池等待及心跳续租延迟仍见 [后续清单](worker-outbox-queries.md#后续五类数据库热点)。

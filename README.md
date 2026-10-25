@@ -301,7 +301,9 @@ P3a.13 **已推送 `dda1d7d`，远程完整 CI 通过**：[通知领取双锁查
 
 P3a.14 **已推送 `e115834`，远程完整 CI 通过**：[通知候选结果瘦身](docs/architecture/notice-candidate-results.md)将候选映射由完整 Notice 的 8 列缩为两字段定位对象，移除重复正文读取。7 个新窗口的候选正文 getter UTF-8 逻辑字节 **152,264→0**，SQL 保持 **85→85**；锁内通知正文及后续独立 Turn 读取保留。**1,320 单元 + 173 选定集成 = 1,493 项**同次通过；首次校准测试的 Mockito 配置错误已修正并保留失败记录。原提交前本地命令未执行完整 verify、脚本测试套件、Compose 或远程 CI；后续 [run 40189599778](https://github.com/westbrook0904/FinanceClaw/actions/runs/40189599778) 整条 completed/success：**1,320 单元 + 570 集成 = 1,890 Java、46 脚本及 44 部署检查通过**。
 
-P3a.15 **本地验收通过，尚未推送**：[等待通知交互查询](docs/architecture/waiting-notice-queries.md)只读取 pending 交互，避免重复映射历史回答。9 个投影窗口的映射记录 **34→15 行**，旧回答 UTF-8 逻辑字节 **86,412→0**，SQL 保持 **34→34**；通用完整历史、原生审批恢复、过期检查和逐 binding 事务保持。**1,320 单元 + 177 选定集成 = 1,497 项**同次通过；本阶段未执行完整 verify、脚本测试套件、Compose 或远程 CI。
+P3a.15 **已推送 `36459c4`，远程完整 CI 通过**：[等待通知交互查询](docs/architecture/waiting-notice-queries.md)只读取 pending 交互，避免重复映射历史回答。9 个投影窗口的映射记录 **34→15 行**，旧回答 UTF-8 逻辑字节 **86,412→0**，SQL 保持 **34→34**；通用完整历史、原生审批恢复、过期检查和逐 binding 事务保持。原提交前本地 **1,320 单元 + 177 选定集成 = 1,497 项**同次通过；随后 [run 40193745424](https://github.com/westbrook0904/FinanceClaw/actions/runs/40193745424) 整条 completed/success：**1,320 单元 + 574 集成 = 1,894 Java、46 脚本及 44 部署检查通过**。
+
+P3a.16 **本地验收通过，尚未推送**：[交互回答完成判断](docs/architecture/interaction-completion-queries.md)只查询当前 Turn/attempt 是否仍有非 answered 项，避免每次回答映射完整历史。7 个实际回答窗口的交互实体 **32→0**、response 逻辑字节 **131,892→0**，改为每次一个 boolean，SQL 保持 **102→102**。并发只恢复一次、回放无探测、过期/invalid 阻断、回滚重试与原生 SDK 恢复通过；**1,320 单元 + 208 选定集成 = 1,528 项**同次通过。本阶段未运行完整 verify、脚本套件、Compose 或远程 CI。
 
 | 文档 | 内容 |
 | --- | --- |
@@ -326,7 +328,8 @@ P3a.15 **本地验收通过，尚未推送**：[等待通知交互查询](docs/a
 | [Worker 状态返回](docs/architecture/worker-turn-returning-queries.md) | P3a.12 领取复用真实更新行，成功 7→6 SQL；已推送，远程完整 CI 通过 |
 | [通知领取双锁查询](docs/architecture/notice-claim-lock-queries.md) | P3a.13 保持 binding→notice 锁序并合并读取；已推送，远程完整 CI 通过 |
 | [通知候选结果瘦身](docs/architecture/notice-candidate-results.md) | P3a.14 候选 8→2 列并移除重复正文；已推送，远程完整 CI 通过 |
-| [等待通知交互查询](docs/architecture/waiting-notice-queries.md) | P3a.15 只读取 pending 交互，保留完整恢复历史；本地 1,497 项选定范围通过，尚未推送 |
+| [等待通知交互查询](docs/architecture/waiting-notice-queries.md) | P3a.15 只读取 pending 交互，保留完整恢复历史；已推送，远程完整 CI 通过 |
+| [交互回答完成判断](docs/architecture/interaction-completion-queries.md) | P3a.16 同 attempt 布尔探测，保留完整恢复历史；本地 1,528 项选定范围通过，尚未推送 |
 | [HTTP 校验](docs/architecture/http-request-validation.md) / [Java 规范](docs/architecture/java-coding-guidelines.md) | 输入边界与关键逻辑注释约定 |
 | [运行维护](docs/operations.md) | 受理排空、配置、备份与隔离隐私恢复 |
 | [历史记录](docs/history/README.md) | 过去设计和验收证据，非当前迁移或兼容承诺 |

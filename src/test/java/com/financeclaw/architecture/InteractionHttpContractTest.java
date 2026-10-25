@@ -65,8 +65,8 @@ class InteractionHttpContractTest {
                 .thenReturn(
                         new Checkpoint(
                                 "call", "create_report", "action", true, Map.of("title", "test")));
-        when(gateway.interactions("turn"))
-                .thenReturn(List.of(interaction("approval", "answered", "hash")));
+        // 明确设定完成分支，避免依赖 Mockito 对 boolean 的默认 false。
+        when(gateway.existsUnansweredInteractions("turn", "attempt")).thenReturn(false);
         var manager = mock(PlatformTransactionManager.class);
         when(manager.getTransaction(any())).thenReturn(new SimpleTransactionStatus());
         var tx = new TransactionTemplate(manager);
@@ -97,7 +97,11 @@ class InteractionHttpContractTest {
                                 .json(
                                         "{\"interaction_id\":\"question\",\"turn_id\":\"turn\",\"status\":\"accepted\",\"revision\":1,\"idempotent_replay\":false}",
                                         JsonCompareMode.STRICT));
-        verify(gateway).resume(any());
+        var ordered = inOrder(gateway);
+        ordered.verify(gateway).answer(eq("question"), anyString(), anyString());
+        ordered.verify(gateway).existsUnansweredInteractions("turn", "attempt");
+        ordered.verify(gateway).resume(any());
+        verify(gateway, never()).interactions(anyString());
         verify(checkpoints).pending(any());
     }
 
@@ -111,6 +115,9 @@ class InteractionHttpContractTest {
                 .andExpect(jsonPath("$.idempotent_replay").value(true));
         verifyNoInteractions(checkpoints);
         verify(gateway, never()).checkPolicy(any());
+        verify(gateway, never()).answer(any(), any(), any());
+        verify(gateway, never()).existsUnansweredInteractions(anyString(), anyString());
+        verify(gateway, never()).interactions(anyString());
         verify(gateway, never()).resume(any());
     }
 
@@ -119,15 +126,18 @@ class InteractionHttpContractTest {
         configure(interaction("approval", "answered", "different-hash"));
         error(approved, 409, "idempotency_conflict");
         verify(gateway, never()).answer(any(), any(), any());
+        verify(gateway, never()).existsUnansweredInteractions(anyString(), anyString());
     }
 
     @Test
     void incompleteBatchDoesNotEnqueueResume() throws Exception {
-        when(gateway.interactions("turn"))
-                .thenReturn(List.of(interaction("approval", "pending", null)));
+        when(gateway.existsUnansweredInteractions("turn", "attempt")).thenReturn(true);
         http.perform(request("/v1/interactions/question/responses", approved))
                 .andExpect(status().isAccepted());
-        verify(gateway).answer(any(), any(), any());
+        var ordered = inOrder(gateway);
+        ordered.verify(gateway).answer(eq("question"), anyString(), anyString());
+        ordered.verify(gateway).existsUnansweredInteractions("turn", "attempt");
+        verify(gateway, never()).interactions(anyString());
         verify(gateway, never()).resume(any());
     }
 

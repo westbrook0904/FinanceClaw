@@ -1,0 +1,303 @@
+{
+  "head_sha": "36459c4f6980708e2ff54806d75f8be86e6925e8",
+  "run_attempt": 1,
+  "status": "completed",
+  "conclusion": "success",
+  "created_at": "2026-10-25T12:35:00Z",
+  "updated_at": "2026-10-25T12:52:38Z",
+  "branch": "codex/java-agentscope",
+  "run_id": 40193745424,
+  "url": "https://github.com/westbrook0904/FinanceClaw/actions/runs/40193745424",
+  "observed_at_utc": "2026-10-25T15:06:30.355114+00:00",
+  "jobs": [
+    {
+      "id": 121170044624,
+      "name": "verify",
+      "status": "completed",
+      "conclusion": "success",
+      "run_id": 40193745424,
+      "logs_url": null,
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1
+        },
+        {
+          "name": "Run actions/checkout@v4",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2
+        },
+        {
+          "name": "Run actions/setup-java@v4",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3
+        },
+        {
+          "name": "Static checks, validator contracts and fixed toolchain",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4
+        },
+        {
+          "name": "Unit and native HTTP contract tests (no database or real credentials)",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5
+        },
+        {
+          "name": "Package for independent JVM experiments",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6
+        },
+        {
+          "name": "Real PostgreSQL and recovery integration tests",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7
+        },
+        {
+          "name": "Collect verified test results and source fingerprints",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 8
+        },
+        {
+          "name": "Run actions/upload-artifact@v4",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9
+        },
+        {
+          "name": "Run actions/upload-artifact@v4",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 10
+        },
+        {
+          "name": "Post Run actions/setup-java@v4",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 19
+        },
+        {
+          "name": "Post Run actions/checkout@v4",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 20
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 21
+        }
+      ]
+    },
+    {
+      "id": 121172693695,
+      "name": "delivery",
+      "status": "completed",
+      "conclusion": "success",
+      "run_id": 40193745424,
+      "logs_url": null,
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1
+        },
+        {
+          "name": "Run actions/checkout@v4",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2
+        },
+        {
+          "name": "Run actions/download-artifact@v4",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3
+        },
+        {
+          "name": "Create local-only test credentials",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4
+        },
+        {
+          "name": "Combined runtime, admission drain, stale privacy rejection and backup restore",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5
+        },
+        {
+          "name": "Run actions/upload-artifact@v4",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6
+        },
+        {
+          "name": "Post Run actions/checkout@v4",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 12
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 13
+        }
+      ]
+    }
+  ],
+  "java": {
+    "unit": 1320,
+    "integration": 574,
+    "total": 1894,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "scripts": {
+    "suites": [
+      8,
+      12,
+      16,
+      10
+    ],
+    "total": 46
+  },
+  "delivery_checks": 44,
+  "artifacts": [
+    {
+      "id": 12599088177,
+      "name": "lifecycle-evidence",
+      "size_in_bytes": 1785326,
+      "url": "https://api.github.com/repos/westbrook0904/FinanceClaw/actions/artifacts/12599088177",
+      "archive_download_url": "https://api.github.com/repos/westbrook0904/FinanceClaw/actions/artifacts/12599088177/zip",
+      "expired": false,
+      "created_at": "2026-10-25T12:46:31Z",
+      "expires_at": "2027-01-23T12:35:00Z",
+      "updated_at": "2026-10-25T12:46:31Z",
+      "digest": "sha256:1b9fcc05d8adc337217199312dfc8ede49d2f23706177a13d8daaf235c2648a2",
+      "workflow_run": {
+        "id": 40193745424,
+        "repository_id": 1344857356,
+        "head_repository_id": 1344857356,
+        "head_branch": "codex/java-agentscope",
+        "head_sha": "36459c4f6980708e2ff54806d75f8be86e6925e8"
+      }
+    },
+    {
+      "id": 12599078199,
+      "name": "application-jar",
+      "size_in_bytes": 214742133,
+      "url": "https://api.github.com/repos/westbrook0904/FinanceClaw/actions/artifacts/12599078199",
+      "archive_download_url": "https://api.github.com/repos/westbrook0904/FinanceClaw/actions/artifacts/12599078199/zip",
+      "expired": false,
+      "created_at": "2026-10-25T12:46:38Z",
+      "expires_at": "2027-01-23T12:35:00Z",
+      "updated_at": "2026-10-25T12:46:38Z",
+      "digest": "sha256:5bfc4b1e8653d4056e937643b6ebbf1607d950faa1981d4d90de78a43b16599e",
+      "workflow_run": {
+        "id": 40193745424,
+        "repository_id": 1344857356,
+        "head_repository_id": 1344857356,
+        "head_branch": "codex/java-agentscope",
+        "head_sha": "36459c4f6980708e2ff54806d75f8be86e6925e8"
+      }
+    },
+    {
+      "id": 12598944414,
+      "name": "compose-evidence",
+      "size_in_bytes": 17270,
+      "url": "https://api.github.com/repos/westbrook0904/FinanceClaw/actions/artifacts/12598944414",
+      "archive_download_url": "https://api.github.com/repos/westbrook0904/FinanceClaw/actions/artifacts/12598944414/zip",
+      "expired": false,
+      "created_at": "2026-10-25T12:52:35Z",
+      "expires_at": "2027-01-23T12:35:00Z",
+      "updated_at": "2026-10-25T12:52:35Z",
+      "digest": "sha256:940bae0b13ecb8b699f2f54bde1f3c208436e95d2e59c5bfdce59a5e5cc34238",
+      "workflow_run": {
+        "id": 40193745424,
+        "repository_id": 1344857356,
+        "head_repository_id": 1344857356,
+        "head_branch": "codex/java-agentscope",
+        "head_sha": "36459c4f6980708e2ff54806d75f8be86e6925e8"
+      }
+    }
+  ],
+  "logs": {
+    "verify": {
+      "path": "/tmp/financeclaw-p3a16-remote-verify.log",
+      "bytes": 795860,
+      "sha256": "e7af97dc94d42d5f10e362d2b1a26b560bcb2824754a6750a3516cf5718e3495"
+    },
+    "delivery": {
+      "path": "/tmp/financeclaw-p3a16-remote-delivery.log",
+      "bytes": 19803,
+      "sha256": "5024380e157774d62a7c8e146013fa8e76be8447d20444c92f3314eb794b1db4"
+    }
+  },
+  "validation_scope": "Full remote verification and Compose for delivered P3a.15 commit only; does not validate later P3a.16 sources. Remote and local JAR byte identity was not compared.",
+  "summary_lines": [
+    "2026-10-25T12:35:15.8901426Z Ran 8 tests in 0.083s",
+    "2026-10-25T12:35:20.2648658Z Ran 12 tests in 4.302s",
+    "2026-10-25T12:35:20.7209140Z Ran 16 tests in 0.390s",
+    "2026-10-25T12:35:20.8129642Z Ran 10 tests in 0.017s",
+    "2026-10-25T12:36:42.0371553Z [INFO] Tests run: 1320, Failures: 0, Errors: 0, Skipped: 0",
+    "2026-10-25T12:46:29.1162039Z [INFO] Tests run: 574, Failures: 0, Errors: 0, Skipped: 0",
+    "2026-10-25T12:46:56.1932286Z PASS: single_combined_runtime_and_restricted_memory_topology",
+    "2026-10-25T12:46:56.1932874Z PASS: shared_ziwei_policy_and_role_scoped_secret_mounts",
+    "2026-10-25T12:47:36.9687333Z PASS: empty_database_and_healthy_combined_runtime",
+    "2026-10-25T12:47:37.5973539Z PASS: fresh_schema_has_only_current_application_tables",
+    "2026-10-25T12:47:38.7347032Z PASS: background_http_and_database_privilege_boundaries",
+    "2026-10-25T12:47:53.4269346Z PASS: release_admin_container_prepares_without_overwriting_default_or_history",
+    "2026-10-25T12:48:23.1729134Z PASS: agent_admin_create_owner_isolation_and_targeted_http_execution",
+    "2026-10-25T12:48:57.3126561Z PASS: agent_draft_publish_cas_pins_existing_sessions_and_keeps_builtin_driver_separate",
+    "2026-10-25T12:49:12.8628909Z PASS: composed_agent_catalog_and_explicit_empty_plan_execute_in_packaged_runtime",
+    "2026-10-25T12:49:23.6035500Z PASS: composed_agent_dependencies_are_frozen_and_prior_session_keeps_empty_plan",
+    "2026-10-25T12:49:49.3091493Z PASS: private_leaf_catalog_and_parent_release_freeze_target_identity",
+    "2026-10-25T12:50:00.2216158Z PASS: private_leaf_republish_does_not_change_parent_frozen_target",
+    "2026-10-25T12:50:01.3630328Z PASS: offline_load_and_idempotency",
+    "2026-10-25T12:50:13.4096489Z PASS: preflight_queued_and_memory_backlog",
+    "2026-10-25T12:50:13.5193100Z PASS: preflight_truncated_inventory",
+    "2026-10-25T12:50:30.0391453Z PASS: agent_catalog_and_pinned_conversation_survive_runtime_restart",
+    "2026-10-25T12:50:41.5487259Z PASS: combined_restart_keeps_admission_and_resumes_disabled_execution",
+    "2026-10-25T12:50:41.6620730Z PASS: durable_pause_rejects_new_turns_preserves_replay_and_drains_existing_work",
+    "2026-10-25T12:50:54.4595606Z PASS: sigkill_and_persisted_approval_execute_once",
+    "2026-10-25T12:50:54.5403793Z PASS: paused_admission_allows_persisted_approval_after_runtime_sigkill",
+    "2026-10-25T12:51:01.0873648Z PASS: database_outage_fails_readiness_then_recovers",
+    "2026-10-25T12:51:01.4035664Z PASS: manual_markdown_profile_has_owner_version_and_restricted_worker_permissions",
+    "2026-10-25T12:51:24.2774265Z PASS: current_epoch_superseded_projection_is_not_a_forget_violation",
+    "2026-10-25T12:51:24.7079247Z PASS: pre_forget_backup_captured_with_writers_stopped",
+    "2026-10-25T12:51:42.1017436Z PASS: forget_deletes_profile_resets_revision_and_rejects_pre_forget_import",
+    "2026-10-25T12:51:42.7506099Z PASS: forget_erases_execution_copies_and_preserves_cas_tombstones",
+    "2026-10-25T12:51:42.7506863Z PASS: restricted_memory_worker_and_forgetting",
+    "2026-10-25T12:51:42.8235974Z PASS: owner_drain_requires_pause_and_all_task_channel_memory_counts_zero",
+    "2026-10-25T12:51:42.9549678Z PASS: preflight_paused_and_drained",
+    "2026-10-25T12:51:44.8455185Z PASS: consistent_backup_restore_all_tables_and_privacy_epoch",
+    "2026-10-25T12:51:47.6459844Z PASS: old_backup_missing_later_forget_is_blocked_and_isolated",
+    "2026-10-25T12:51:47.7043112Z PASS: current_backup_matches_all_owner_privacy",
+    "2026-10-25T12:51:48.9615137Z PASS: privacy_snapshot_and_comparison_are_read_only",
+    "2026-10-25T12:51:49.2914149Z PASS: epoch_only_repair_does_not_hide_missing_audit_or_old_content",
+    "2026-10-25T12:51:49.7638356Z PASS: sql_detects_residual_memory_and_orphan_owners",
+    "2026-10-25T12:51:49.7639280Z PASS: restore_v3_rejects_execution_residuals_and_unknown_live_states",
+    "2026-10-25T12:51:49.9266853Z PASS: rejected_synthetic_restore_removed_before_runtime_start",
+    "2026-10-25T12:52:06.5951331Z PASS: preflight_restored_pause",
+    "2026-10-25T12:52:07.1189674Z PASS: restored_pause_and_audit_require_explicit_resume",
+    "2026-10-25T12:52:07.2271640Z PASS: preflight_reopened_admission",
+    "2026-10-25T12:52:18.2660491Z PASS: restored_agent_definitions_history_and_new_execution_keep_release_identity",
+    "2026-10-25T12:52:23.7838316Z PASS: restored_composed_agent_executes_frozen_plan_with_same_runtime_artifact",
+    "2026-10-25T12:52:33.7316458Z PASS: restored_private_leaf_and_parent_keep_frozen_target",
+    "2026-10-25T12:52:33.9765827Z PASS: restored_runtime_keeps_results_privacy_and_accepts_new_turns",
+    "2026-10-25T12:52:34.2262548Z Compose validation passed; /home/runner/work/FinanceClaw/FinanceClaw/target/m5e/deployment/compose-results.json"
+  ]
+}

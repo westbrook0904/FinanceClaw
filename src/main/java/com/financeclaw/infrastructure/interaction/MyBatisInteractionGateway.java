@@ -89,6 +89,11 @@ public class MyBatisInteractionGateway implements InteractionGateway {
     }
 
     @Override
+    public boolean existsUnansweredInteractions(String turn, String attempt) {
+        return db.existsUnansweredInteractionsByTurnAndAttempt(turn, attempt);
+    }
+
+    @Override
     public void resume(InteractionBinding binding) {
         if (db.updateDoneCommandForResume(
                         binding.claim().command().id(), binding.interaction().id())
