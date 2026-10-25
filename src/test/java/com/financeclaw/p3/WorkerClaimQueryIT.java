@@ -43,15 +43,16 @@ import org.testcontainers.containers.PostgreSQLContainer;
  * 真实 PostgreSQL 领取事务的 SQL 与锁竞争基线，不启动模型或自动 Worker。
  *
  * <p>发布、受理、故障 trigger 和最终读回在观察窗口外准备；窗口只包含一次生产 ExecutionLeaseService.claim。
- * 并发线程各自开启原有线程内计数器，不能把其他线程的工作归入同一份单次领取样本。baseline 开关只选择预期 SQL 数量， 不修改生产语义或数据库状态，before/after
- * 使用相同测试源文件。
+ * 并发线程各自开启原有线程内计数器，不能把其他线程的工作归入同一份单次领取样本。本轮专用 baseline 开关只选择 Turn 更新后回读优化前的 7 次或优化后的 6 次
+ * SQL，不修改生产语义或数据库状态，before/after 使用相同测试源文件。 历史 P3a.10 的通用 baseline 开关对应更早的 8 次 SQL，必须拒绝混用。
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 @Execution(ExecutionMode.SAME_THREAD)
 class WorkerClaimQueryIT {
     private static final Owner OWNER = new Owner("worker-claim-query", "alice");
     private static final long LEASE_MILLIS = 120_000;
-    private static final boolean BASELINE = Boolean.getBoolean("financeclaw.test.query-baseline");
+    private static final boolean BASELINE =
+            Boolean.getBoolean("financeclaw.test.worker-turn-returning-baseline");
     private final PostgreSQLContainer<?> postgres =
             new PostgreSQLContainer<>("postgres:16.10-alpine");
     private final List<Map<String, Object>> measurements = new CopyOnWriteArrayList<>();
@@ -88,6 +89,10 @@ class WorkerClaimQueryIT {
 
     @BeforeAll
     void start() {
+        if (Boolean.getBoolean("financeclaw.test.query-baseline")) {
+            throw new IllegalStateException(
+                    "Historical query-baseline mode measures 8 statements; use worker-turn-returning-baseline for the current 7-to-6 baseline");
+        }
         postgres.start();
         try {
             application =
@@ -143,7 +148,7 @@ class WorkerClaimQueryIT {
     @AfterAll
     void writeEvidenceAndClose() throws Exception {
         try {
-            Path output = Path.of("target/p3a10/worker-claim-sql.json");
+            Path output = Path.of("target/p3a12/worker-turn-returning-sql.json");
             Files.createDirectories(output.getParent());
             new ObjectMapper()
                     .writerWithDefaultPrettyPrinter()
@@ -151,7 +156,7 @@ class WorkerClaimQueryIT {
                             output.toFile(),
                             Map.of(
                                     "format",
-                                    "worker-claim-sql/1",
+                                    "worker-turn-returning-sql/1",
                                     "baseline_mode",
                                     BASELINE,
                                     "mode",
@@ -346,19 +351,35 @@ class WorkerClaimQueryIT {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"attempt", "event"})
-    void failedAttemptOrRunningEventInsertionRollsBackTheWholeClaim(String stage) {
+    @ValueSource(strings = {"attempt", "turn", "event"})
+    void failedAttemptTurnUpdateOrRunningEventWriteRollsBackTheWholeClaim(String stage) {
         var admitted = admit();
+        var queued = application.getBean(TaskQueryGateway.class).turn(admitted.turn());
         installFailureTrigger(stage);
         var failed =
                 observe(
                         "claim-rollback-" + stage,
                         () -> leases.claim("fault-worker", LEASE_MILLIS));
-        assertThat(failed.failure()).isNotNull();
+        assertThat(failed.failure())
+                .isNotNull()
+                .hasStackTraceContaining("worker_claim_query_injected_failure");
+        // 三个失败点都在原末尾 Turn SELECT 之前；不能跟随成功路径 7→6 一起减一。
         assertThat(failed.sql().statements())
-                .isEqualTo(expectedSuccessStatements() - (stage.equals("attempt") ? 3 : 1));
+                .isEqualTo(
+                        switch (stage) {
+                            case "attempt" -> 4;
+                            case "turn" -> 5;
+                            case "event" -> 6;
+                            default ->
+                                    throw new IllegalArgumentException(
+                                            "Unknown claim failure stage");
+                        });
+        assertThat(failed.sql().count("command_lock")).isZero();
+        assertThat(failed.sql().count("turn_read")).isOne();
         assertTransaction(failed.sql(), true);
         assertQueuedWithoutAttempt(admitted);
+        assertThat(application.getBean(TaskQueryGateway.class).turn(admitted.turn()))
+                .isEqualTo(queued);
         assertThat(count("business.events")).isOne();
 
         dropFailureTrigger();
@@ -447,6 +468,9 @@ class WorkerClaimQueryIT {
         assertThat(claimed.turn().id()).isEqualTo(admitted.turn());
         assertThat(claimed.turn().status()).isEqualTo("running");
         assertThat(claimed.turn().revision()).isEqualTo(revision);
+        // 在计数窗口关闭后读取数据库完整 record；不按构造器参数个数手工挑选字段，避免漏掉身份或正文映射。
+        var persistedTurn = application.getBean(TaskQueryGateway.class).turn(admitted.turn());
+        assertThat(claimed.turn()).isEqualTo(persistedTurn);
         var command = command(admitted);
         assertThat(command.get("attempt_id")).isEqualTo(claimed.command().attemptId());
         assertThat(command.get("fence")).isEqualTo(fence);
@@ -465,9 +489,17 @@ class WorkerClaimQueryIT {
                                 admitted.turn(),
                                 revision))
                 .isOne();
+        var runningEvent =
+                sql.queryForMap(
+                        "SELECT turn_id,revision,status,reason FROM business.events WHERE turn_id=? AND status='running'",
+                        admitted.turn());
+        assertThat(runningEvent.get("turn_id")).isEqualTo(claimed.turn().id());
+        assertThat(runningEvent.get("revision")).isEqualTo(claimed.turn().revision());
+        assertThat(runningEvent.get("status")).isEqualTo(claimed.turn().status());
+        assertThat(runningEvent.get("reason")).isEqualTo(claimed.turn().reason());
         assertThat(observed.sql().statements()).isEqualTo(expectedSuccessStatements());
-        assertThat(observed.sql().count("command_lock")).isEqualTo(BASELINE ? 1 : 0);
-        assertThat(observed.sql().count("turn_read")).isEqualTo(2);
+        assertThat(observed.sql().count("command_lock")).isZero();
+        assertThat(observed.sql().count("turn_read")).isEqualTo(BASELINE ? 2 : 1);
         for (String family :
                 List.of(
                         "command_claim_poll",
@@ -508,7 +540,7 @@ class WorkerClaimQueryIT {
     }
 
     private static int expectedSuccessStatements() {
-        return BASELINE ? 8 : 7;
+        return BASELINE ? 7 : 6;
     }
 
     private static void assertTransaction(
@@ -547,13 +579,23 @@ class WorkerClaimQueryIT {
     }
 
     private void installFailureTrigger(String stage) {
-        String table = stage.equals("attempt") ? "business.attempts" : "business.events";
-        String predicate = stage.equals("event") ? " WHEN (NEW.status='running')" : "";
+        String table =
+                switch (stage) {
+                    case "attempt" -> "business.attempts";
+                    case "turn" -> "business.turns";
+                    case "event" -> "business.events";
+                    default -> throw new IllegalArgumentException("Unknown claim failure stage");
+                };
+        // Turn 使用 AFTER UPDATE：数据库确实执行过迁移后再报错，验证 command/attempt/Turn 整体回滚。
+        String operation = stage.equals("turn") ? "AFTER UPDATE" : "BEFORE INSERT";
+        String predicate = stage.equals("attempt") ? "" : " WHEN (NEW.status='running')";
         sql.execute(
                 "CREATE FUNCTION business.worker_claim_query_fail() RETURNS trigger LANGUAGE plpgsql AS $$"
                         + " BEGIN RAISE EXCEPTION 'worker_claim_query_injected_failure'; END; $$");
         sql.execute(
-                "CREATE TRIGGER worker_claim_query_fail BEFORE INSERT ON "
+                "CREATE TRIGGER worker_claim_query_fail "
+                        + operation
+                        + " ON "
                         + table
                         + " FOR EACH ROW"
                         + predicate

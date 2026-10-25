@@ -11,7 +11,11 @@ public interface TaskMutationGateway {
 
     void recordCancel(String turn, String key, String status, long revision);
 
+    /** 普通迁移仅写入，不读取或回传完整 Turn 正文。 */
     void transition(String turn, String status, String result, String reason);
+
+    /** 调用方已持有 Turn 锁且处于事务内；返回真实更新行，null 必须在事件写入前阻断并回滚。 */
+    Turn transitionAndReturn(String turn, String status, String result, String reason);
 
     void event(String turn);
 

@@ -119,7 +119,7 @@ public final class LifecycleDatabase {
                             agents);
             var cancellation =
                     new CancelTaskService(queries, reads, mutations, commands, transitions, tx);
-            leases = new ExecutionLeaseService(commands, mutations, reads, transitions, tx);
+            leases = new ExecutionLeaseService(commands, mutations, transitions, tx);
             var policies =
                     new ExecutionPolicyService(reads, events, policy, release, memory, leases);
             completion =

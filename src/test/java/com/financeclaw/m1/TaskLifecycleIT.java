@@ -629,12 +629,11 @@ class TaskLifecycleIT {
                             throw new IllegalStateException("after running event");
                         })
                 .when(transitions)
-                .change(any(), eq("running"), isNull(), isNull());
+                .changeAndReturn(any(), eq("running"), isNull(), isNull());
         var leases =
                 new ExecutionLeaseService(
                         bean(CommandGateway.class),
                         bean(TaskMutationGateway.class),
-                        bean(TaskQueryGateway.class),
                         transitions,
                         transaction());
         assertThatThrownBy(() -> leases.claim("fault", 60000)).hasMessage("after running event");

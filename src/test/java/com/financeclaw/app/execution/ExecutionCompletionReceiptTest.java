@@ -8,7 +8,6 @@ import com.financeclaw.app.execution.port.CommandGateway;
 import com.financeclaw.app.execution.port.ExecutionReceiptGateway;
 import com.financeclaw.app.task.TaskTransitionService;
 import com.financeclaw.app.task.port.TaskMutationGateway;
-import com.financeclaw.app.task.port.TaskQueryGateway;
 import com.financeclaw.domain.Governance.Blocked;
 import com.financeclaw.domain.Task.*;
 import java.util.List;
@@ -38,7 +37,6 @@ class ExecutionCompletionReceiptTest {
             new Receipt("attempt", "command", 7, 3L, "completed", "answer");
     private final CommandGateway commands = mock(CommandGateway.class);
     private final TaskMutationGateway turns = mock(TaskMutationGateway.class);
-    private final TaskQueryGateway reads = mock(TaskQueryGateway.class);
     private final ExecutionReceiptGateway receipts = mock(ExecutionReceiptGateway.class);
     private final ExecutionPolicyService policies = mock(ExecutionPolicyService.class);
     private final TaskTransitionService transitions = mock(TaskTransitionService.class);
@@ -64,7 +62,7 @@ class ExecutionCompletionReceiptTest {
                         nullable(String.class),
                         nullable(String.class));
         doAnswer(call -> inTransaction(null)).when(commands).finishCommand("command");
-        var leases = new ExecutionLeaseService(commands, turns, reads, transitions, tx);
+        var leases = new ExecutionLeaseService(commands, turns, transitions, tx);
         completion =
                 new ExecutionCompletionService(
                         turns, commands, receipts, leases, policies, transitions);
@@ -84,7 +82,6 @@ class ExecutionCompletionReceiptTest {
         order.verify(transitions).change(RUNNING, "completed", "answer", null);
         order.verify(commands).finishCommand("command");
         order.verifyNoMoreInteractions();
-        verifyNoInteractions(reads);
         assertCommitted();
     }
 
@@ -137,7 +134,7 @@ class ExecutionCompletionReceiptTest {
 
         // 主键读取原有的隐含绑定现在显式检查；wrong commandId 是本轮新增防护。
         // 无论哪个字段失败，都不能继续读取检查点、判断策略、改变状态或重新查询回执。
-        verifyNoInteractions(receipts, policies, transitions, commands, turns, reads);
+        verifyNoInteractions(receipts, policies, transitions, commands, turns);
         assertThat(manager.begins).isOne();
         assertThat(manager.commits).isZero();
         assertThat(manager.rollbacks).isOne();

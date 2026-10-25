@@ -4,7 +4,6 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 import com.financeclaw.app.execution.ExecutionLeaseService;
-import com.financeclaw.app.task.port.TaskQueryGateway;
 import com.financeclaw.domain.Task.*;
 import com.financeclaw.infrastructure.task.MyBatisCommandGateway;
 import com.financeclaw.infrastructure.task.TaskMapper;
@@ -34,7 +33,6 @@ class ExecutionHeartbeatTest {
                             null,
                             null));
     private final TaskMapper mapper = mock(TaskMapper.class);
-    private final TaskQueryGateway reads = mock(TaskQueryGateway.class);
     private final PlatformTransactionManager manager = mock(PlatformTransactionManager.class);
     private ExecutionLeaseService leases;
 
@@ -45,7 +43,6 @@ class ExecutionHeartbeatTest {
                 new ExecutionLeaseService(
                         new MyBatisCommandGateway(mapper),
                         null,
-                        reads,
                         null,
                         new TransactionTemplate(manager));
     }
@@ -62,7 +59,6 @@ class ExecutionHeartbeatTest {
         order.verify(mapper).updateCommandLeaseAndGetCancellation(CLAIM, 15000);
         order.verify(manager).commit(any());
         order.verifyNoMoreInteractions();
-        verifyNoInteractions(reads);
     }
 
     @Test
@@ -72,7 +68,6 @@ class ExecutionHeartbeatTest {
 
         verify(mapper).updateCommandLeaseAndGetCancellation(CLAIM, 15000);
         verifyNoMoreInteractions(mapper);
-        verifyNoInteractions(reads);
         verify(manager).rollback(any());
     }
 
@@ -80,6 +75,6 @@ class ExecutionHeartbeatTest {
     @ValueSource(longs = {0, -1})
     void invalidLeaseDoesNotOpenATransaction(long lease) {
         assertThrows(IllegalArgumentException.class, () -> leases.heartbeat(CLAIM, lease));
-        verifyNoInteractions(mapper, reads, manager);
+        verifyNoInteractions(mapper, manager);
     }
 }

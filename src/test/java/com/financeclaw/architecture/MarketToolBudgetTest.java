@@ -82,9 +82,7 @@ class MarketToolBudgetTest {
     void setup() {
         var manager = mock(PlatformTransactionManager.class);
         when(manager.getTransaction(any())).thenAnswer(ignored -> new SimpleTransactionStatus());
-        leases =
-                new ExecutionLeaseService(
-                        commands, null, null, null, new TransactionTemplate(manager));
+        leases = new ExecutionLeaseService(commands, null, null, new TransactionTemplate(manager));
         policies =
                 new ExecutionPolicyService(
                         reads,

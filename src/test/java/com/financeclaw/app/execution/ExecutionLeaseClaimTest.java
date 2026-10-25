@@ -7,7 +7,6 @@ import static org.mockito.Mockito.*;
 import com.financeclaw.app.execution.port.CommandGateway;
 import com.financeclaw.app.task.TaskTransitionService;
 import com.financeclaw.app.task.port.TaskMutationGateway;
-import com.financeclaw.app.task.port.TaskQueryGateway;
 import com.financeclaw.domain.Task.*;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
@@ -24,7 +23,6 @@ class ExecutionLeaseClaimTest {
     private static final Turn RUNNING_TURN = turn("running", 2);
     private final CommandGateway commands = mock(CommandGateway.class);
     private final TaskMutationGateway turns = mock(TaskMutationGateway.class);
-    private final TaskQueryGateway reads = mock(TaskQueryGateway.class);
     private final TaskTransitionService transitions = mock(TaskTransitionService.class);
     private final PlatformTransactionManager manager = mock(PlatformTransactionManager.class);
     private ExecutionLeaseService leases;
@@ -34,14 +32,15 @@ class ExecutionLeaseClaimTest {
         when(manager.getTransaction(any())).thenReturn(new SimpleTransactionStatus());
         leases =
                 new ExecutionLeaseService(
-                        commands, turns, reads, transitions, new TransactionTemplate(manager));
+                        commands, turns, transitions, new TransactionTemplate(manager));
     }
 
     @Test
     void claimUsesTheReturnedCommandAndKeepsTheOriginalCommandThenTurnLockOrder() {
         when(commands.nextCommand()).thenReturn(QUEUED);
         when(turns.lockTurn("turn")).thenReturn(QUEUED_TURN);
-        when(reads.turn("turn")).thenReturn(RUNNING_TURN);
+        when(transitions.changeAndReturn(QUEUED_TURN, "running", null, null))
+                .thenReturn(RUNNING_TURN);
         var returned = new AtomicReference<Command>();
         when(commands.claim(eq("command"), anyString(), eq("worker"), eq(15000L)))
                 .thenAnswer(
@@ -67,13 +66,12 @@ class ExecutionLeaseClaimTest {
         assertThat(result.command().fence()).isEqualTo(8);
         assertThat(result.command().live()).isTrue();
         assertThat(result.command().resumeId()).isEqualTo("resume");
-        var order = inOrder(commands, turns, transitions, reads);
+        var order = inOrder(commands, turns, transitions);
         order.verify(commands).nextCommand();
         order.verify(turns).lockTurn("turn");
         order.verify(commands).claim("command", returned.get().attemptId(), "worker", 15000);
         order.verify(commands).insertAttempt(returned.get());
-        order.verify(transitions).change(QUEUED_TURN, "running", null, null);
-        order.verify(reads).turn("turn");
+        order.verify(transitions).changeAndReturn(QUEUED_TURN, "running", null, null);
         order.verifyNoMoreInteractions();
         verify(commands, never()).lockCommand(anyString());
         verify(manager).commit(any());
@@ -93,7 +91,7 @@ class ExecutionLeaseClaimTest {
         verify(commands).claim(eq("command"), anyString(), eq("worker"), eq(15000L));
         verify(commands, never()).insertAttempt(any());
         verify(commands, never()).lockCommand(anyString());
-        verifyNoInteractions(transitions, reads);
+        verifyNoInteractions(transitions);
         verify(manager).rollback(any());
         verify(manager, never()).commit(any());
     }
@@ -104,7 +102,7 @@ class ExecutionLeaseClaimTest {
 
         verify(commands).nextCommand();
         verifyNoMoreInteractions(commands);
-        verifyNoInteractions(turns, reads, transitions);
+        verifyNoInteractions(turns, transitions);
         verify(manager).commit(any());
         verify(manager, never()).rollback(any());
     }

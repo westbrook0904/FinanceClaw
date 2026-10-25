@@ -44,6 +44,12 @@ public class MyBatisTaskMutationGateway implements TaskMutationGateway {
     }
 
     @Override
+    public Turn transitionAndReturn(String turn, String status, String result, String reason) {
+        // 只供领取消费真实行，不增加查询回退；是否允许迁移及缺行如何回滚由应用用例负责。
+        return db.updateTurnStateAndReturn(turn, status, result, reason);
+    }
+
+    @Override
     public void event(String turn) {
         var event = db.insertTurnEventAndReturn(turn);
         events.committed(event);

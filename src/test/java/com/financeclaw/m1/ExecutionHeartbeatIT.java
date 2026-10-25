@@ -68,7 +68,7 @@ class ExecutionHeartbeatIT {
         factory.setDataSource(source);
         factory.setConfiguration(config);
         var mapper = new SqlSessionTemplate(factory.getObject()).getMapper(TaskMapper.class);
-        leases = new ExecutionLeaseService(new MyBatisCommandGateway(mapper), null, null, null, tx);
+        leases = new ExecutionLeaseService(new MyBatisCommandGateway(mapper), null, null, tx);
     }
 
     @AfterAll

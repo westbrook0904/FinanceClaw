@@ -293,7 +293,9 @@ P3a.9 **已推送 `0c789b8`，随 `06ec674` 通过远程完整 CI**：[发布解
 
 P3a.10 **已推送 `06ec674`，远程完整 CI 通过**：[Worker 与渠道 Outbox](docs/architecture/worker-outbox-queries.md)实测成功领取 **8→7 条 SQL**，完成通知首次投影并发送 **12→10 条**，waiting **12→11 条**；21 条旧通知加 1 条有效通知的完整积压 **135→94 条**。通知支持提交后本地唤醒，每轮最多检查 20 个候选、发送一次，空闲退避与独立恢复保留。原提交前本地同次 **1,299 单元 + 113 选定集成 = 1,412 项**全部通过；后续 [run 40173421896](https://github.com/westbrook0904/FinanceClaw/actions/runs/40173421896) 整条 completed/success，**1,299 单元 + 544 集成 = 1,843 项 Java、46 项脚本及 44 项部署检查**通过。心跳仍使用实时双锁 CTE，后续重点为批量投影、队首竞争、恢复重复读取和连接池争用。
 
-P3a.11 **已本地验收，未推送**：[恢复回执复用](docs/architecture/recovery-receipt-queries.md)只在同一持锁事务内传递已读回执，已封存 completed 恢复 **16→15 条 SQL**、waiting **14→13 条**；19 个公共窗口 **159→151 条**，其余 SQL 与事务事实保持。新增 attempt/command/fence 绑定校验，正常 finish、未确认执行和实时隐私/授权检查保留。最终同次 **1,309 单元 + 150 选定集成 = 1,459 项**通过；本阶段完整 CI 与 Compose 尚未执行。
+P3a.11 **已推送 `2de8537`，远程完整 CI 通过**：[恢复回执复用](docs/architecture/recovery-receipt-queries.md)只在同一持锁事务内传递已读回执，已封存 completed 恢复 **16→15 条 SQL**、waiting **14→13 条**；19 个公共窗口 **159→151 条**，其余 SQL 与事务事实保持。新增 attempt/command/fence 绑定校验，正常 finish、未确认执行和实时隐私/授权检查保留。原提交前本地同次 **1,309 单元 + 150 选定集成 = 1,459 项**通过；后续 [run 40176176072](https://github.com/westbrook0904/FinanceClaw/actions/runs/40176176072) 整条 completed/success，**1,309 单元 + 557 集成 = 1,866 Java、46 脚本及 44 部署检查通过**。
+
+P3a.12 **已完成本地选定范围验收，尚未推送**：[Worker 状态返回](docs/architecture/worker-turn-returning-queries.md)使用同一状态更新返回真实 Turn，成功领取进一步 **7→6 条 SQL**，15 个公共窗口 **77→69 条**。普通迁移仍只写，Command/Turn 锁序、事件、回滚与心跳门禁保持。同次 **1,317 单元 + 161 选定集成 = 1,478 项**通过；首次沙箱 JVM 附加失败与相同输入重跑记录分别保留。本阶段未执行其余集成、脚本、Compose 或远程 CI。
 
 | 文档 | 内容 |
 | --- | --- |
@@ -314,7 +316,8 @@ P3a.11 **已本地验收，未推送**：[恢复回执复用](docs/architecture/
 | [整轮数据库访问基线](docs/architecture/turn-database-baseline.md) | P3a.8 跨线程 SQL、连接借用与多 owner 并发测量；已推送，远程 CI 通过 |
 | [发布解析合并](docs/architecture/release-lookup-queries.md) | P3a.9 一条查询读取主/基础清单；已推送，远程完整 CI 通过 |
 | [Worker 与渠道 Outbox](docs/architecture/worker-outbox-queries.md) | P3a.10 领取/通知减少查询、提交后唤醒与有限积压处理；已推送，远程完整 CI 通过 |
-| [恢复回执复用](docs/architecture/recovery-receipt-queries.md) | P3a.11 同事务复用 sealed receipt，补齐绑定校验；已本地验收，未推送 |
+| [恢复回执复用](docs/architecture/recovery-receipt-queries.md) | P3a.11 同事务复用 sealed receipt，补齐绑定校验；已推送，远程完整 CI 通过 |
+| [Worker 状态返回](docs/architecture/worker-turn-returning-queries.md) | P3a.12 领取复用真实更新行，成功 7→6 SQL；本地选定范围通过，尚未推送 |
 | [HTTP 校验](docs/architecture/http-request-validation.md) / [Java 规范](docs/architecture/java-coding-guidelines.md) | 输入边界与关键逻辑注释约定 |
 | [运行维护](docs/operations.md) | 受理排空、配置、备份与隔离隐私恢复 |
 | [历史记录](docs/history/README.md) | 过去设计和验收证据，非当前迁移或兼容承诺 |

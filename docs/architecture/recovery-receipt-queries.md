@@ -1,6 +1,6 @@
 # 恢复回执查询优化：P3a.11
 
-**状态：2026-10-25 已本地验收，未推送。** 前置 `0c789b8` 与 `06ec674` 已推送，GitHub [run 40173421896](https://github.com/westbrook0904/FinanceClaw/actions/runs/40173421896) 整条 completed/success：1,843 Java、46 脚本及 44 部署检查通过。本阶段另行通过 **1,309 单元 + 150 选定集成 = 1,459 项**，不沿用前置远程结果宣称新实现已通过 CI。
+**状态：2026-10-25 已推送 `2de8537`，远程完整 CI 通过。** 前置 `0c789b8` 与 `06ec674` 已推送，GitHub [run 40173421896](https://github.com/westbrook0904/FinanceClaw/actions/runs/40173421896) 整条 completed/success：1,843 Java、46 脚本及 44 部署检查通过。本阶段另行通过 **1,309 单元 + 150 选定集成 = 1,459 项**，不沿用前置远程结果宣称新实现已通过 CI。
 
 ## 实现与权威边界
 
@@ -60,11 +60,15 @@ scripts/mvn.sh -B -ntp -o validate spotless:check package \
   failsafe:integration-test failsafe:verify
 ```
 
-本阶段没有重跑其余集成、脚本用例、Compose 或远程 CI。提交前的静态交付检查另行执行；前置远程 1,843／46／44 的[原始证据](evidence/p3a10-remote-ci.json)保持独立。夹具按各自编译工件建立有效发布，不证明跨工件版本继续旧执行。
+提交前本地命令没有重跑其余集成、脚本用例、Compose 或远程 CI；后续远程结果见下文。提交前的静态交付检查另行执行；前置远程 1,843／46／44 的[原始证据](evidence/p3a10-remote-ci.json)保持独立。夹具按各自编译工件建立有效发布，不证明跨工件版本继续旧执行。
 
 ## 剩余热点
 
 - Outbox 批量投影仍有逐条读取，需要先补并发、锁等待和规模基线；绑定锁与后续 Turn 新快照读取的先后不能直接合并。
 - 通知队首竞争、候选扫描计划与索引仍待测；本阶段不改变通知事务或不确定投递处理。
-- Worker 领取后 Turn 回读可另行评估真实 RETURNING，需要连同状态迁移和事件原子性单独验证。
+- Worker 领取后 Turn 回读已由 [P3a.12](worker-turn-returning-queries.md) 使用真实 RETURNING 消除，连同状态迁移和事件原子性完成本地选定范围验证。
 - 多用户连接池等待、心跳续租延迟与租约余量，以及长工具链正文写入字节仍需专项测量。
+
+## 远程交付补充
+
+随后 [run 40176176072](https://github.com/westbrook0904/FinanceClaw/actions/runs/40176176072) 针对 `2de8537` 整条 completed/success：**1,309 单元 + 557 集成 = 1,866 Java、46 脚本、44 部署检查通过**。原提交前本地 1,459 项选定范围保持；[远程证据](evidence/p3a11-remote-ci.json)单独保存，不覆盖后续 P3a.12。

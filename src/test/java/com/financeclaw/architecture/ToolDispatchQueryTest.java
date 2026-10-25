@@ -53,8 +53,7 @@ class ToolDispatchQueryTest {
     void setup() {
         when(manager.getTransaction(any())).thenAnswer(ignored -> new SimpleTransactionStatus());
         var leases =
-                new ExecutionLeaseService(
-                        commands, null, null, null, new TransactionTemplate(manager));
+                new ExecutionLeaseService(commands, null, null, new TransactionTemplate(manager));
         service = new ExecutionPolicyService(reads, events, policies, releases, memory, leases);
         when(commands.lockCommand("command")).thenReturn(COMMAND);
         when(reads.turn("turn")).thenReturn(TURN);

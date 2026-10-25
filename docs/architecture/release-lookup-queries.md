@@ -73,7 +73,7 @@ scripts/mvn.sh -B -ntp -o -Dit.test=MemoryIT \
 
 456 项输入（449 项 Java/资源及 7 项构建配置）在完整构建和复跑前后逐字一致。JAR SHA-256 为 `7bd4e1128efe8666b5c863df3a8da1c96372f509f93caea2414081dacc3d0420`；415 项生产 class 和 22 项资源与打包内容逐字匹配，其中三份许可证按 JAR 根目录的实际位置核对。原测量、模板对比、报告来源、失败诊断与工件摘要见[持久证据](evidence/p3a9-implementation.json)。P3a.8 原证据没有改写，本阶段没有重新运行优化前的红测试。
 
-当前阶段未重跑本地 Compose，尚未推送；前置 `f330a17` 的远程成功与当前分次本地结果分别记录。Worker 领取、渠道 Outbox 投递和长工具链上下文字节量的独立基线仍是后续工作。
+原提交前本阶段未重跑本地 Compose，也尚未推送；前置 `f330a17` 的远程成功与该次分次本地结果分别记录。Worker 领取与渠道 Outbox 的后续优化见 [P3a.10](worker-outbox-queries.md)，长工具链上下文字节量仍待独立测量。
 
 ## 远程交付补充
 

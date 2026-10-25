@@ -15,19 +15,16 @@ import org.springframework.transaction.support.TransactionTemplate;
 public class ExecutionLeaseService {
     private final CommandGateway db;
     private final TaskMutationGateway turns;
-    private final TaskQueryGateway reads;
     private final TaskTransitionService transitions;
     private final TransactionTemplate tx;
 
     public ExecutionLeaseService(
             CommandGateway db,
             TaskMutationGateway turns,
-            TaskQueryGateway reads,
             TaskTransitionService transitions,
             TransactionTemplate tx) {
         this.db = db;
         this.turns = turns;
-        this.reads = reads;
         this.transitions = transitions;
         this.tx = tx;
     }
@@ -52,8 +49,9 @@ public class ExecutionLeaseService {
                         throw new Fenced();
                     }
                     db.insertAttempt(c);
-                    transitions.change(t, "running", null, null);
-                    return new Claim(c, reads.turn(t.id()));
+                    // 状态更新返回数据库真实 Turn；事件等副作用成功后再交还 Claim。
+                    Turn running = transitions.changeAndReturn(t, "running", null, null);
+                    return new Claim(c, running);
                 });
     }
 

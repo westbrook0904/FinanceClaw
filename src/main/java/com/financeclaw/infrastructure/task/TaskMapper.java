@@ -230,11 +230,26 @@ RETURNING
                     + " id=#{id}")
     int updateCommandDone(String id);
 
-    @Update(
+    // 两条窄入口共享完全相同的状态 DML，防止更新条件、revision 和清空结果语义发生漂移。
+    String UPDATE_TURN_STATE =
             "UPDATE business.turns SET"
                     + " status=#{status},revision=revision+1,result=#{result},reason=#{reason} WHERE"
-                    + " id=#{id}")
+                    + " id=#{id}";
+
+    @Update(UPDATE_TURN_STATE)
     int updateTurnState(
+            @Param("id") String id,
+            @Param("status") String status,
+            @Param("result") String result,
+            @Param("reason") String reason);
+
+    /**
+     * 调用方已持有 Turn 行锁，仅领取链路需要完整更新行；普通迁移仍走不返回正文的 @Update。 RETURNING 虽使用 Select 映射，实际会修改数据库，必须标记
+     * affectData 并禁用查询缓存。
+     */
+    @Select(value = UPDATE_TURN_STATE + " RETURNING " + TURN_COLUMNS, affectData = true)
+    @Options(flushCache = Options.FlushCachePolicy.TRUE, useCache = false)
+    Turn updateTurnStateAndReturn(
             @Param("id") String id,
             @Param("status") String status,
             @Param("result") String result,

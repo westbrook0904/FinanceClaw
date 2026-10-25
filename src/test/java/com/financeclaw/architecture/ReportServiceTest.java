@@ -53,8 +53,7 @@ class ReportServiceTest {
         when(manager.getTransaction(any())).thenReturn(status);
         when(commands.lockCommand("command")).thenReturn(COMMAND);
         var leases =
-                new ExecutionLeaseService(
-                        commands, null, null, null, new TransactionTemplate(manager));
+                new ExecutionLeaseService(commands, null, null, new TransactionTemplate(manager));
         reports = new ReportService(db, leases, policy);
     }
 
