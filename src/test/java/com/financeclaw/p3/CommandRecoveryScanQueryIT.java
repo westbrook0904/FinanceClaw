@@ -48,8 +48,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.containers.PostgreSQLContainer;
 
 /**
- * 过期候选发现的真实 PG 基线。正常样本通过生产受理、领取及 offline 运行创建，观察边界只包含生产 mapper 或 RecoverTaskService；原 command/Turn
- * 锁后 live、sealed receipt、心跳和未知执行恢复均不改写。
+ * 过期候选发现的真实 PG 回归。正常样本通过生产受理、领取及 offline 运行创建，观察边界只包含生产 mapper 或 RecoverTaskService。 P3a.19
+ * 只读扫描语义保持；P3a.20 恢复使用逐项 SKIP LOCKED，普通 Command 锁改为锁后 live。
  *
  * <p>20,000 条 future running 副本明确属于隔离规模实验，每行有独立 conversation/Turn，保持 FK/unique。 合成行不交给恢复器或
  * SDK；LIMIT 50 的 51 候选负载与少量真实 expired 的扫描成本实验分别标注。
@@ -221,7 +221,10 @@ class CommandRecoveryScanQueryIT {
                 if (measurements.containsKey(phase)) ordered.add(measurements.get(phase));
             var report = new LinkedHashMap<String, Object>();
             report.put("schema", "command-recovery-scan-sql/1");
-            report.put("phase", "P3a.19");
+            report.put("phase", "P3a.20");
+            report.put("read_only_scan_origin", "P3a.19 unchanged scalar-cutoff query");
+            report.put(
+                    "recovery_contract", "per-item-locked-claim-with-terminal-empty-transaction");
             report.put("mode", baseline ? "before" : "after");
             report.put(
                     "scope", "real-pg-owned-spring-production-mapper-recovery-and-offline-runtime");
@@ -239,7 +242,7 @@ class CommandRecoveryScanQueryIT {
             report.put("scan_template_sha256", scanHash);
             report.put("measurements", ordered);
             report.put("scale_experiments", scaleExperiments);
-            Path output = Path.of("target/p3a19/command-recovery-scan-sql.json");
+            Path output = Path.of("target/p3a20/command-recovery-scan-regression.json");
             Files.createDirectories(output.getParent());
             json.writerWithDefaultPrettyPrinter().writeValue(output.toFile(), report);
         } finally {
@@ -297,8 +300,7 @@ class CommandRecoveryScanQueryIT {
     }
 
     @Test
-    void renewedOrFinishedCommandsAreSkippedAfterCandidateDiscoveryWaitsForTheirRowLock()
-            throws Exception {
+    void renewedOrFinishedCommandsAreSkippedWhileTheirCommandRemainsLocked() throws Exception {
         for (String change : List.of("renew", "complete")) {
             if (change.equals("complete")) reset();
             var sample = claim(ALICE);
@@ -316,12 +318,16 @@ class CommandRecoveryScanQueryIT {
                                             .isTrue();
                                     // 续租/完成发生在旧 lease 仍有效时，持有未提交结果；不复活已经过期的执行。
                                     if (change.equals("renew"))
-                                        assertThat(tasks.heartbeat(sample, 60000)).isFalse();
+                                        // 夹具需要未提交的新租约；直接在本持锁事务执行生产续租 SQL。
+                                        // 独立心跳端口拥有另一事务，不能嵌套在这个人为持锁夹具内。
+                                        assertThat(
+                                                        db.updateCommandLeaseAndGetCancellation(
+                                                                sample, 60000))
+                                                .isFalse();
                                     else tasks.finish(sample);
                                     var source = application.getBean(DataSource.class);
                                     Connection connection = DataSourceUtils.getConnection(source);
                                     try {
-                                        int backend = backend(connection);
                                         expected.set(snapshot(connection));
                                         awaitDatabaseClock(oldDeadline);
                                         running.set(
@@ -332,8 +338,17 @@ class CommandRecoveryScanQueryIT {
                                                                                 + change
                                                                                 + "-skip",
                                                                         recovery::recoverExpired)));
-                                        awaitBlockedBy(backend);
-                                    } catch (java.sql.SQLException failure) {
+                                        // 恢复查询跳过本事务持有的 command，不等待提交，也不读取旧快照后继续。
+                                        var skipped = running.get().get(5, TimeUnit.SECONDS);
+                                        assertThat(skipped.failure()).isNull();
+                                        assertThat(skipped.value()).isZero();
+                                        assertThat(skipped.sql().count("command_recovery_claim"))
+                                                .isOne();
+                                        assertThat(skipped.sql().count("turn_read")).isZero();
+                                    } catch (java.sql.SQLException
+                                            | InterruptedException
+                                            | java.util.concurrent.ExecutionException
+                                            | java.util.concurrent.TimeoutException failure) {
                                         throw new IllegalStateException(failure);
                                     } finally {
                                         DataSourceUtils.releaseConnection(connection, source);
@@ -345,9 +360,7 @@ class CommandRecoveryScanQueryIT {
                         .put(
                                 "business_facts",
                                 Map.of(
-                                        "candidate_observed_before_lock",
-                                        true,
-                                        "actual_pg_lock_wait_observed",
+                                        "locked_candidate_skipped_without_wait",
                                         true,
                                         "legitimate_live_lease_change_before_expiry",
                                         true,
@@ -355,10 +368,12 @@ class CommandRecoveryScanQueryIT {
                                         observed.value(),
                                         "locked_new_version_preserved",
                                         unchanged));
-                assertOneScan(observed);
+                assertThat(observed.failure()).isNull();
                 assertThat(observed.value()).isZero();
-                assertThat(observed.sql().statements()).isEqualTo(2);
-                assertThat(observed.sql().count("command_lock")).isOne();
+                assertThat(observed.sql().statements()).isOne();
+                assertThat(observed.sql().count("command_recovery_claim")).isOne();
+                assertThat(observed.sql().count("command_expired_poll")).isZero();
+                assertThat(observed.sql().count("command_lock")).isZero();
                 assertThat(observed.sql().count("turn_read")).isZero();
                 assertThat(observed.sql().commits()).isOne();
                 assertThat(observed.sql().rollbacks()).isZero();
@@ -411,7 +426,9 @@ class CommandRecoveryScanQueryIT {
                                 integer(
                                         "SELECT count(*)::int FROM business.journal WHERE turn_id=? AND role='assistant'",
                                         sample.turn().id())));
-        assertOneScan(observed);
+        assertThat(observed.failure()).isNull();
+        assertThat(observed.sql().count("command_recovery_claim")).isEqualTo(2);
+        assertThat(observed.sql().count("command_expired_poll")).isZero();
         assertThat(observed.value()).isEqualTo(1);
         assertThat(turn.status()).isEqualTo("blocked");
         assertThat(turn.reason()).isEqualTo("unconfirmed_execution");
@@ -436,7 +453,11 @@ class CommandRecoveryScanQueryIT {
                                 repeated.value(),
                                 "full_snapshot_unchanged",
                                 stable));
-        assertScanOnly(repeated);
+        assertThat(repeated.failure()).isNull();
+        assertThat(repeated.sql().statements()).isOne();
+        assertThat(repeated.sql().count("command_recovery_claim")).isOne();
+        assertThat(repeated.sql().commits()).isOne();
+        assertThat(repeated.sql().rollbacks()).isZero();
         assertThat(repeated.value()).isZero();
         assertThat(stable).isTrue();
     }
@@ -833,27 +854,6 @@ class CommandRecoveryScanQueryIT {
             LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(5));
         } while (System.nanoTime() < bounded);
         throw new AssertionError("Database clock did not reach the isolated lease deadline");
-    }
-
-    private void awaitBlockedBy(int holder) {
-        long deadline = System.nanoTime() + Duration.ofSeconds(5).toNanos();
-        do {
-            if (integer(
-                            "SELECT count(*)::int FROM pg_stat_activity a WHERE a.datname=current_database() "
-                                    + "AND a.pid<>pg_backend_pid() AND ?=ANY(pg_blocking_pids(a.pid))",
-                            holder)
-                    > 0) return;
-            LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(5));
-        } while (System.nanoTime() < deadline);
-        throw new AssertionError("Expired command recovery did not reach the held command lock");
-    }
-
-    private static int backend(Connection connection) throws java.sql.SQLException {
-        try (var statement = connection.createStatement();
-                var result = statement.executeQuery("SELECT pg_backend_pid()")) {
-            assertThat(result.next()).isTrue();
-            return result.getInt(1);
-        }
     }
 
     private int integer(String sql, Object... parameters) {

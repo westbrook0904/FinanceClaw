@@ -3,11 +3,10 @@ package com.financeclaw.infrastructure.task;
 import com.financeclaw.app.execution.port.CommandGateway;
 import com.financeclaw.domain.Governance.*;
 import com.financeclaw.domain.Task.*;
-import java.util.List;
 import org.springframework.stereotype.Repository;
 
 /**
- * 实现 CommandGateway，委托命令领取、租约续期、attempt 创建与过期候选查询。 领取与状态迁移的事务、command 到 turn 的锁顺序由执行用例协调。续期保留可空
+ * 实现 CommandGateway，委托命令领取、租约续期、attempt 创建与到期命令锁定。 领取与状态迁移的事务、command 到 turn 的锁顺序由执行用例协调。续期保留可空
  * Boolean：未命中租约与成功续期后的取消状态不能混为一个值。
  */
 @Repository
@@ -54,7 +53,7 @@ public class MyBatisCommandGateway implements CommandGateway {
     }
 
     @Override
-    public List<String> expired() {
-        return db.listExpiredCommandIds();
+    public Command nextExpiredCommand() {
+        return db.getNextExpiredCommandForUpdateSkipLocked();
     }
 }

@@ -22,8 +22,6 @@ import com.financeclaw.m2.ScriptedRuntime;
 import com.financeclaw.support.PayloadDigest;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.sql.Connection;
-import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -192,10 +190,13 @@ class RecoveryReceiptQueryIT {
     @AfterAll
     void writeEvidenceAndClose() throws Exception {
         try {
-            Path output = Path.of("target/p3a11/recovery-receipt-sql.json");
+            Path output = Path.of("target/p3a20/recovery-receipt-regression.json");
             Files.createDirectories(output.getParent());
             var report = new LinkedHashMap<String, Object>();
             report.put("schema", "recovery-receipt-sql/1");
+            report.put("phase", "P3a.20");
+            report.put(
+                    "recovery_contract", "per-item-locked-claim-with-terminal-empty-transaction");
             report.put("scope", "real-pg-owned-spring-production-task-memory-and-runtime");
             report.put("mode", baseline ? "before" : "after");
             report.put("background_pollers_enabled", false);
@@ -375,8 +376,7 @@ class RecoveryReceiptQueryIT {
         expire(scenario);
         Observed<Integer> first;
         Observed<Integer> second;
-        try (var holder = lockCommand(scenario);
-                var workers = Executors.newFixedThreadPool(2)) {
+        try (var workers = Executors.newFixedThreadPool(2)) {
             var start = new CountDownLatch(1);
             var one =
                     workers.submit(
@@ -393,13 +393,8 @@ class RecoveryReceiptQueryIT {
                                         "concurrent-recoverer-two", recovery::recoverExpired);
                             });
             start.countDown();
-            // 两个调用先完成无锁 expired scan，再同时阻塞在目标 command 的行锁上。
-            // 独立 raw 连接只观察 PG 锁等待，不把观察轮询混入两份业务计数。
-            try {
-                awaitTwoCommandWaiters();
-            } finally {
-                holder.rollback();
-            }
+            // 两个真实恢复调用竞争同一项：只有持锁者能消费回执；另一方跳过或观察已完成。
+            // 密集批次的确定重叠与不同项并行由 CommandRecoveryBatchIT 的锁后屏障验证。
             first = one.get(10, TimeUnit.SECONDS);
             second = two.get(10, TimeUnit.SECONDS);
         }
@@ -415,8 +410,9 @@ class RecoveryReceiptQueryIT {
         assertAuthoritativeReads(winner);
         assertRecoveryTransaction(winner, false);
         assertReceiptReads(loser, 0);
-        assertThat(loser.sql().count("command_expired_poll")).isOne();
-        assertThat(loser.sql().count("command_lock")).isOne();
+        assertThat(loser.sql().count("command_recovery_claim")).isOne();
+        assertThat(loser.sql().count("command_expired_poll")).isZero();
+        assertThat(loser.sql().count("command_lock")).isZero();
         assertThat(loser.sql().count("turn_read")).isZero();
         assertRecoveryTransaction(loser, false);
         assertThat(facts.get("turn_status")).isEqualTo("completed");
@@ -709,20 +705,28 @@ class RecoveryReceiptQueryIT {
 
     private static void assertRecoveryTransaction(Observed<?> observation, boolean rolledBack) {
         var sql = observation.sql();
-        assertThat(sql.count("command_expired_poll")).isOne();
-        assertThat(sql.count("command_lock")).isOne();
-        assertThat(sql.commits()).isEqualTo(rolledBack ? 0 : 1);
+        boolean recovered = Integer.valueOf(1).equals(observation.value());
+        int claims = rolledBack || !recovered ? 1 : 2;
+        assertThat(sql.count("command_recovery_claim")).isEqualTo(claims);
+        assertThat(sql.count("command_expired_poll")).isZero();
+        assertThat(sql.count("command_lock")).isZero();
+        assertThat(sql.commits()).isEqualTo(rolledBack ? 0 : claims);
         assertThat(sql.rollbacks()).isEqualTo(rolledBack ? 1 : 0);
         assertThat(sql.executions()).isNotEmpty();
         var first = sql.executions().getFirst();
-        assertThat(first.family()).isEqualTo("command_expired_poll");
-        var transaction = sql.executions().subList(1, sql.executions().size());
+        assertThat(first.family()).isEqualTo("command_recovery_claim");
+        var transaction =
+                sql.executions().subList(0, sql.executions().size() - (claims == 2 ? 1 : 0));
         assertThat(
                         transaction.stream()
                                 .map(JdbcExecutionCounter.SqlExecution::connection)
                                 .distinct())
                 .hasSize(1);
-        assertThat(transaction.getFirst().connection()).isNotEqualTo(first.connection());
+        if (claims == 2) {
+            var empty = sql.executions().getLast();
+            assertThat(empty.family()).isEqualTo("command_recovery_claim");
+            assertThat(empty.connection()).isNotEqualTo(first.connection());
+        }
     }
 
     private void assertEmptyRepeat(String phase, Scenario scenario) {
@@ -731,40 +735,11 @@ class RecoveryReceiptQueryIT {
         assertThat(repeat.failure()).isNull();
         assertThat(repeat.value()).isZero();
         assertThat(repeat.sql().statements()).isOne();
-        assertThat(repeat.sql().count("command_expired_poll")).isOne();
+        assertThat(repeat.sql().count("command_recovery_claim")).isOne();
+        assertThat(repeat.sql().count("command_expired_poll")).isZero();
         assertReceiptReads(repeat, 0);
-        assertThat(repeat.sql().commits()).isZero();
+        assertThat(repeat.sql().commits()).isOne();
         assertThat(repeat.sql().rollbacks()).isZero();
-    }
-
-    private Connection lockCommand(Scenario scenario) throws Exception {
-        var connection = original.getConnection();
-        connection.setAutoCommit(false);
-        try (var statement =
-                connection.prepareStatement(
-                        "SELECT id FROM business.commands WHERE id=? FOR UPDATE")) {
-            statement.setString(1, commandId(scenario));
-            statement.executeQuery().close();
-        } catch (Exception failure) {
-            connection.close();
-            throw failure;
-        }
-        return connection;
-    }
-
-    private void awaitTwoCommandWaiters() throws InterruptedException {
-        long deadline = System.nanoTime() + Duration.ofSeconds(2).toNanos();
-        int waiting;
-        do {
-            waiting =
-                    integer(
-                            "SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() "
-                                    + "AND pid<>pg_backend_pid() AND wait_event_type='Lock'");
-            if (waiting >= 2) return;
-            Thread.sleep(10);
-        } while (System.nanoTime() < deadline);
-        throw new AssertionError(
-                "Both recovery calls must reach the held command lock; observed=" + waiting);
     }
 
     private int integer(String query, Object... parameters) {

@@ -20,9 +20,9 @@ import javax.sql.DataSource;
 import org.springframework.jdbc.datasource.DelegatingDataSource;
 
 /**
- * 仅供测试使用的通知结果观察器。只跟踪两个精确候选模板及现有锁定 CTE；普通 Turn.result 不在测量范围。 不预读 next，不额外取 payload，只对生产 getString
- * 已经返回的字符串计算 UTF-8 重编码长度。 此长度不是 PG wire 字节、TOAST 访问页、内存占用或吞吐指标。边界是当前 mapper 的 forward-only
- * PreparedStatement/getString 路径；不声称观测 unwrap 后直接使用原生驱动句柄的调用。
+ * 仅供测试使用的通知结果观察器。只跟踪两个精确候选模板、维护锁定 CTE 和由生产 BoundSQL 注册的定时领取模板；普通 Turn.result 不在测量范围。 不预读 next，不额外取
+ * payload，只对生产 getString 已经返回的字符串计算 UTF-8 重编码长度。 此长度不是 PG wire 字节、TOAST 访问页、内存占用或吞吐指标。边界是当前 mapper
+ * 的 forward-only PreparedStatement/getString 路径；不声称观测 unwrap 后直接使用原生驱动句柄的调用。
  */
 final class NoticeResultSetRecorder {
     static final String OLD_CANDIDATE =
@@ -85,6 +85,14 @@ final class NoticeResultSetRecorder {
         private Recording(String phase) {
             this.phase = phase;
         }
+    }
+
+    private final Set<String> scheduledTemplates = new HashSet<>();
+
+    /** 由实际 MyBatis BoundSQL 注册有限的 exclude 个数模板，不以宽泛 SQL 模式冒充精确观测。 */
+    void registerScheduledTemplate(String sql) {
+        scheduledTemplates.add(
+                PayloadDigest.sha256(sql.replaceAll("\\s+", " ").trim().toLowerCase(Locale.ROOT)));
     }
 
     private final ThreadLocal<Recording> recording = new ThreadLocal<>();
@@ -151,7 +159,11 @@ final class NoticeResultSetRecorder {
     private PreparedStatement statement(Connection owner, PreparedStatement delegate, String sql) {
         String hash =
                 PayloadDigest.sha256(sql.replaceAll("\\s+", " ").trim().toLowerCase(Locale.ROOT));
-        String kind = TEMPLATES.get(hash);
+        String knownKind = TEMPLATES.get(hash);
+        final String kind =
+                knownKind != null
+                        ? knownKind
+                        : scheduledTemplates.contains(hash) ? "scheduled_locked_notice" : null;
         if (kind == null) return delegate;
         class State {
             private Query query;

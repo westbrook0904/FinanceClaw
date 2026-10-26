@@ -86,3 +86,8 @@ docker compose run --rm --no-deps api release-admin history --after-revision 0 -
 P3a.3 已交付同 owner 空工具叶子委派，`d433423` 远程 CI 成功。operator 先以显式 `composition.capabilities: []` 发布叶子，再在父定义中选择 `agent:<UUID>` 并发布；父自动带上 Artifact reader 支持依赖，子工具集仍为空。父冻结选定目标 release，目标后续发布不自动升级父；采用新目标需要重新发布父并创建新会话。运行工件严格兼容检查保持，不允许换成 current 绕过旧版本阻断。定义示例、输入隔离和预算见[私有叶子 Agent 委派](architecture/private-agent-delegation.md)。本轮 44 项 Compose 检查验证发布冻结与恢复绑定，SDK 委派由运行时测试验证；分次 Java 结果和部署摘要见[本地证据](architecture/evidence/p3a3-implementation.json)。
 
 内置默认发布与 owner 私有 Agent 各有独立发布指针，管理继续通过 CLI。没有多租户自助发布 HTTP API、完整 Deployment 资源或原地会话升级；采用新版本时创建新会话。后续路线见[平台化实施方案](architecture/platform-implementation-plan.md)。
+
+
+## 心跳连接资源
+
+业务进程在原 Hikari 总连接预算内预留续租连接，默认总数 8 分为业务 6、心跳 2。调整总池大小时应同时检查预留配置和数据库连接上限；受限 Memory/管理进程仍使用各自原连接预算。配置、超时与指标见[并发资源运行配置](architecture/concurrent-recovery-resources.md#运行配置)。

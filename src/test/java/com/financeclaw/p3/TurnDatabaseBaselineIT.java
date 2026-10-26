@@ -23,9 +23,11 @@ import com.financeclaw.domain.release.ModelProfile;
 import com.financeclaw.domain.release.ReleaseDefinition;
 import com.financeclaw.infrastructure.agentscope.capability.MarketToolSchemas;
 import com.financeclaw.infrastructure.agentscope.skills.PackagedSkills;
+import com.financeclaw.infrastructure.task.HeartbeatResources;
 import com.financeclaw.support.PayloadDigest;
 import com.financeclaw.support.PayloadJson;
 import com.financeclaw.worker.TaskWorker;
+import com.zaxxer.hikari.HikariDataSource;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -163,6 +165,9 @@ class TurnDatabaseBaselineIT {
                         raw.source = source;
                         return recorder.wrap(source);
                     }
+                    if (bean instanceof HeartbeatResources resources) {
+                        return resources.decorate(recorder::wrap);
+                    }
                     return bean;
                 }
             };
@@ -276,10 +281,24 @@ class TurnDatabaseBaselineIT {
             Path output = Path.of("target/p3a8/turn-sql-baseline.json");
             Files.createDirectories(output.getParent());
             var report = new LinkedHashMap<String, Object>();
-            report.put("schema", "turn-sql-baseline/1");
+            report.put("schema", "turn-sql-baseline/2");
             report.put("scope", "owned-spring-real-http-worker-loopback-sse");
             report.put("worker_parallelism", 4);
-            report.put("application_pool_maximum", 8);
+            int businessMaximum =
+                    application
+                            .getBean(DataSource.class)
+                            .unwrap(HikariDataSource.class)
+                            .getMaximumPoolSize();
+            int heartbeatMaximum =
+                    application
+                            .getBean(HeartbeatResources.class)
+                            .dataSource()
+                            .unwrap(HikariDataSource.class)
+                            .getMaximumPoolSize();
+            report.put("business_pool_maximum", businessMaximum);
+            report.put("heartbeat_pool_maximum", heartbeatMaximum);
+            report.put("database_pool_total_maximum", businessMaximum + heartbeatMaximum);
+            report.put("observed_pools", List.of("business", "heartbeat"));
             report.put(
                     "measurement_boundary",
                     "admission-through-after-commit-terminal-and-connection-drain");

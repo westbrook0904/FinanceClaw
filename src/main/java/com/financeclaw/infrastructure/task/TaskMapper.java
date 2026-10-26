@@ -147,6 +147,8 @@ VALUES(#{id},#{conversationId},#{tenant},#{subject},#{idempotencyKey},#{requestH
             "id,turn_id,status,attempt_id,fence,COALESCE(lease_until>clock_timestamp(),false) AS"
                     + " live,resume_id";
 
+    String LOCKED_COMMAND_COLUMNS = "id,turn_id,status,attempt_id,fence,lease_until,resume_id";
+
     /** 按入队顺序锁定一个可领取命令；跳过其他 Worker 已锁行，不等待它们的模型调用。 领取、写 attempt 和 turn 迁移必须在同一事务完成。 */
     @Select(
             "SELECT "
@@ -155,11 +157,40 @@ VALUES(#{id},#{conversationId},#{tenant},#{subject},#{idempotencyKey},#{requestH
                     + " FOR UPDATE SKIP LOCKED")
     Command getNextQueuedCommandForUpdateSkipLocked();
 
-    @Select("SELECT " + COMMAND_COLUMNS + " FROM business.commands WHERE id=#{id} FOR UPDATE")
+    /** 先取得真实行锁，再投影当前数据库时钟；纯锁等待期间到期也不能沿用等待前的 live。 */
+    @Select(
+            "WITH locked_command AS MATERIALIZED (SELECT "
+                    + LOCKED_COMMAND_COLUMNS
+                    + " FROM business.commands WHERE id=#{id} FOR UPDATE) SELECT "
+                    + COMMAND_COLUMNS
+                    + " FROM locked_command")
+    @Options(useCache = false, flushCache = Options.FlushCachePolicy.TRUE)
     Command getCommandForUpdate(String id);
 
-    @Select("SELECT " + COMMAND_COLUMNS + " FROM business.commands WHERE turn_id=#{id} FOR UPDATE")
+    @Select(
+            "WITH locked_command AS MATERIALIZED (SELECT "
+                    + LOCKED_COMMAND_COLUMNS
+                    + " FROM business.commands WHERE turn_id=#{id} FOR UPDATE) SELECT "
+                    + COMMAND_COLUMNS
+                    + " FROM locked_command")
+    @Options(useCache = false, flushCache = Options.FlushCachePolicy.TRUE)
     Command getCommandByTurnIdForUpdate(String id);
+
+    /**
+     * 恢复器必须在独立短事务内调用：按到期顺序领取并锁住一项候选，跳过其他实例已持有的 command。 锁选择直接遍历符合截止点的集合，不先截取 50 个无锁
+     * ID，避免被锁的旧前缀遮住后续可恢复命令。 标量截止点只用于发现；MATERIALIZED 先锁原始行，再从当前数据库时钟投影 live。 返回真实 Command 后仍保留
+     * live/status 复核，再按 command → Turn 顺序继续。 null 只表示本次查询没有可锁的到期行，不能推断全局积压已清零；下一调度轮仍会检查。
+     */
+    @Select(
+            "WITH locked_command AS MATERIALIZED (SELECT "
+                    + LOCKED_COMMAND_COLUMNS
+                    + " FROM business.commands WHERE status='running' AND"
+                    + " lease_until<=(SELECT clock_timestamp()) ORDER BY lease_until LIMIT 1"
+                    + " FOR UPDATE SKIP LOCKED) SELECT "
+                    + COMMAND_COLUMNS
+                    + " FROM locked_command")
+    @Options(useCache = false, flushCache = Options.FlushCachePolicy.TRUE)
+    Command getNextExpiredCommandForUpdateSkipLocked();
 
     /**
      * 仅发现至本次查询截止点已过期的命令 ID；不持锁，也不把候选当作租约或执行权限快照。 非关联标量子查询在首次求值时取一次数据库时钟，使原 running(lease_until)
@@ -196,17 +227,9 @@ RETURNING
                     + " VALUES(#{attemptId},#{id},#{fence},#{resumeId})")
     int insertAttempt(Command command);
 
-    // Materialized dependencies preserve command-before-Turn lock order. The expiry predicate
-    // reads locked_turn, so clock_timestamp() runs only after both row locks have been acquired.
-    /**
-     * 先锁 command，再锁其 turn；锁后才用数据库时钟校验原租约，禁止复活已过期执行。 同时核对 command/turn/attempt/fence，RETURNING
-     * 用于携带取消状态，不能改成普通 SELECT。
-     *
-     * @return null 表示未续期且应 fence；false 表示续期成功；true 表示续期成功且 turn 正在取消
-     */
-    @Select(
-            value =
-                    """
+    /** 主执行与隔离心跳 mapper 共用原始 CTE，避免双锁顺序、实时租约谓词或 RETURNING 发生漂移。 */
+    String RENEW_COMMAND_LEASE =
+            """
                     WITH locked_command AS MATERIALIZED (
                       SELECT id,turn_id,status,attempt_id,fence,lease_until
                       FROM business.commands WHERE id=#{claim.command.id} FOR UPDATE
@@ -223,8 +246,17 @@ RETURNING
                     FROM locked_turn t
                     WHERE c.id=t.command_id AND t.lease_until>clock_timestamp()
                     RETURNING t.status='cancelling'
-                    """,
-            affectData = true)
+                    """;
+
+    // Materialized dependencies preserve command-before-Turn lock order. The expiry predicate
+    // reads locked_turn, so clock_timestamp() runs only after both row locks have been acquired.
+    /**
+     * 先锁 command，再锁其 turn；锁后才用数据库时钟校验原租约，禁止复活已过期执行。 同时核对 command/turn/attempt/fence，RETURNING
+     * 用于携带取消状态，不能改成普通 SELECT。
+     *
+     * @return null 表示未续期且应 fence；false 表示续期成功；true 表示续期成功且 turn 正在取消
+     */
+    @Select(value = RENEW_COMMAND_LEASE, affectData = true)
     @Options(flushCache = Options.FlushCachePolicy.TRUE, useCache = false)
     Boolean updateCommandLeaseAndGetCancellation(
             @Param("claim") Claim claim, @Param("lease") long lease);

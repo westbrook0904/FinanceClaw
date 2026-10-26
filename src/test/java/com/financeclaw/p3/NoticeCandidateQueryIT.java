@@ -54,8 +54,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.containers.PostgreSQLContainer;
 
 /**
- * 候选定位查询的真实 PG 结果宽度基线。业务 SQL 次数不变；只移除 candidate.payload 的重复映射。 锁内 notice_payload 和后续独立 Turn.result
- * 仍含正文，不能把候选零正文解释成整个领取链路零正文。
+ * 显式维护领取保留双列候选与完整锁定正文，定时领取直接映射跳锁查询的实际通知。锁内 notice_payload 和后续独立 Turn.result
+ * 仍含正文，不能把没有独立候选正文解释成整个领取链路零正文；当前调度次数不作为历史优化前后比较。
  *
  * <p>ResultSet 观察器只对生产实际调用的 getString 返回值按 UTF-8 计长，不额外读行或正文。 该指标不代表 PG 网络字节、TOAST
  * 页、内存或吞吐。正常绑定、受理、执行、投影和失效均走生产服务， 只替换最后 AgentScopeFeishu.send 边界；不声称验证飞书原生 HTTP SDK。
@@ -167,9 +167,9 @@ class NoticeCandidateQueryIT {
 
     @BeforeAll
     void start() {
-        if (Boolean.getBoolean("financeclaw.test.query-baseline"))
+        if (Boolean.getBoolean("financeclaw.test.query-baseline") || baseline)
             throw new IllegalStateException(
-                    "Use notice-candidate-baseline for this result-width baseline");
+                    "Historical candidate baseline flags are not supported by the P3a.20 regression");
         try {
             postgres.start();
             application =
@@ -209,6 +209,14 @@ class NoticeCandidateQueryIT {
             settings = application.getBean(FeishuSettings.class);
             sender = mock(AgentScopeFeishu.class);
             var configuration = application.getBean(SqlSessionFactory.class).getConfiguration();
+            var scheduled =
+                    configuration.getMappedStatement(
+                            FeishuMapper.class.getName() + ".getNextNoticeForUpdateSkipLocked");
+            for (int size = 0; size <= 20; size++) {
+                var excluded = java.util.Collections.nCopies(size, "shape-only");
+                recorder.registerScheduledTemplate(
+                        scheduled.getBoundSql(Map.of("excluded", excluded)).getSql());
+            }
             String pending =
                     configuration
                             .getMappedStatement(
@@ -264,16 +272,19 @@ class NoticeCandidateQueryIT {
     @AfterAll
     void writeAndClose() throws Exception {
         try {
-            Path output = Path.of("target/p3a14/notice-candidate-sql.json");
+            Path output = Path.of("target/p3a20/notice-candidate-sql.json");
             Files.createDirectories(output.getParent());
             var report = new LinkedHashMap<String, Object>();
-            report.put("schema", "notice-candidate-sql/1");
+            report.put("schema", "notice-candidate-sql/2");
+            report.put("phase", "P3a.20");
             report.put("mode", baseline ? "before" : "after");
-            report.put("scope", "real-pg-production-delivery-terminal-send-mock");
+            report.put(
+                    "scope",
+                    "real-pg-public-maintenance-candidate-and-scheduled-locked-aggregate-terminal-send-mock");
             report.put("background_pollers_enabled", false);
             report.put(
                     "measurement_boundary",
-                    "production-scheduled-only-fixture-and-readback-excluded");
+                    "public-maintenance-or-current-scheduled-fixture-and-readback-excluded");
             report.put(
                     "result_metric",
                     "production-getString-returned-payload-utf8-reencoding-deduplicated-by-resultset-row-column");
@@ -284,6 +295,30 @@ class NoticeCandidateQueryIT {
         } finally {
             closeResources();
         }
+    }
+
+    @Test
+    void publicMaintenanceClaimRetainsTwoColumnDiscoveryAndFullLockedNotice() throws Exception {
+        var sample = scenario(ALICE, "/public-maintenance");
+        var claimed = new java.util.concurrent.atomic.AtomicReference<Notice>();
+        var measured =
+                observe("public-maintenance-full-body", () -> claimed.set(delivery().claim()));
+        assertSql(measured, 4, 1);
+        assertResults(
+                measured,
+                List.of(bytes(sample.notice().payload())),
+                List.of(bytes(sample.notice().payload())));
+        assertThat(claimed.get()).isEqualTo(sample.notice());
+        assertThat(notice(sample).status()).isEqualTo("sending");
+        assertThat(sends).isEmpty();
+        measured.evidence()
+                .put(
+                        "business_facts",
+                        Map.of(
+                                "full_notice_equal",
+                                claimed.get().equals(sample.notice()),
+                                "maintenance_does_not_send",
+                                sends.isEmpty()));
     }
 
     @Test
@@ -307,8 +342,8 @@ class NoticeCandidateQueryIT {
                                 notice(scenario).status().equals("submitted_unverified"),
                                 "result_untruncated",
                                 scenario.notice().payload().equals(scenario.turn().result())));
-        assertSql(first, 6, 1);
-        assertResults(first, List.of(body), List.of(body));
+        assertSql(first, 5, 2);
+        assertResults(first, List.of(), List.of(body));
         assertThat(sends).containsExactly(expectedSend(scenario));
         assertThat(notice(scenario).payload()).isEqualTo(scenario.turn().result());
         assertThat(notice(scenario).status()).isEqualTo("submitted_unverified");
@@ -324,8 +359,8 @@ class NoticeCandidateQueryIT {
                                 sends.size() == 1,
                                 "terminal_notice_kept",
                                 notice(scenario).status().equals("submitted_unverified")));
-        assertSql(empty, 2, 0);
-        assertResults(empty, List.of(0L), List.of());
+        assertSql(empty, 2, 2);
+        assertResults(empty, List.of(), List.of(0L));
         assertThat(sends).containsExactly(expectedSend(scenario));
     }
 
@@ -361,12 +396,12 @@ class NoticeCandidateQueryIT {
                                 sends.size(),
                                 "owner_routes_not_crossed",
                                 sends.isEmpty()));
-        assertSql(first, 61, 20);
+        assertSql(first, 41, 21);
         var staleBodies = stale.stream().map(s -> bytes(s.notice().payload())).toList();
-        assertResults(first, staleBodies, staleBodies);
+        assertResults(first, List.of(), staleBodies);
         assertThat(suppressed).isEqualTo(20);
-        assertThat(first.sql().count("notice_pending_read")).isEqualTo(20);
-        assertThat(first.sql().count("notice_claim_locked_read")).isEqualTo(20);
+        assertThat(first.sql().count("notice_pending_read")).isZero();
+        assertThat(first.sql().count("notice_scheduled_claim_locked_read")).isEqualTo(20);
         assertThat(first.sql().count("notice_claim_update")).isZero();
         assertThat(notice(valid).status()).isEqualTo("pending");
         assertThat(sends).isEmpty();
@@ -383,11 +418,8 @@ class NoticeCandidateQueryIT {
                                 integer(
                                                 "SELECT count(*)::int FROM channel.notices WHERE status='suppressed'")
                                         == 20));
-        assertSql(next, 6, 1);
-        assertResults(
-                next,
-                List.of(bytes(valid.notice().payload())),
-                List.of(bytes(valid.notice().payload())));
+        assertSql(next, 5, 2);
+        assertResults(next, List.of(), List.of(bytes(valid.notice().payload())));
         assertThat(sends).containsExactly(expectedSend(valid));
         assertThat(delivery.list(ALICE)).hasSize(20);
         assertThat(delivery.list(BOB)).hasSize(1);
@@ -407,8 +439,8 @@ class NoticeCandidateQueryIT {
                                 sends.size(),
                                 "no_duplicate_send",
                                 sends.size() == 1));
-        assertSql(empty, 2, 0);
-        assertResults(empty, List.of(0L), List.of());
+        assertSql(empty, 2, 2);
+        assertResults(empty, List.of(), List.of(0L));
         assertThat(sends).containsExactly(expectedSend(valid));
     }
 
@@ -430,11 +462,8 @@ class NoticeCandidateQueryIT {
                                 notice(scenario).status().equals("unknown"),
                                 "attempt_payload_match",
                                 sends.equals(List.of(expectedSend(scenario)))));
-        assertSql(failedSend, 6, 1);
-        assertResults(
-                failedSend,
-                List.of(bytes(scenario.notice().payload())),
-                List.of(bytes(scenario.notice().payload())));
+        assertSql(failedSend, 5, 2);
+        assertResults(failedSend, List.of(), List.of(bytes(scenario.notice().payload())));
         assertThat(sends).containsExactly(expectedSend(scenario));
         var unknown = notice(scenario);
         assertThat(unknown.status()).isEqualTo("unknown");
@@ -452,8 +481,8 @@ class NoticeCandidateQueryIT {
                                 notice(scenario).status().equals("unknown"),
                                 "no_duplicate_send",
                                 sends.size() == 1));
-        assertSql(empty, 2, 0);
-        assertResults(empty, List.of(0L), List.of());
+        assertSql(empty, 2, 2);
+        assertResults(empty, List.of(), List.of(0L));
         assertThat(empty.sql().count("notice_claim_locked_read")).isZero();
         assertThat(notice(scenario)).isEqualTo(unknown);
         assertThat(sends).containsExactly(expectedSend(scenario));
@@ -557,7 +586,12 @@ class NoticeCandidateQueryIT {
         var recorded = observed.results().results();
         var candidateResults = recorded.stream().filter(r -> r.kind().equals("candidate")).toList();
         var lockedResults =
-                recorded.stream().filter(r -> r.kind().equals("locked_notice")).toList();
+                recorded.stream()
+                        .filter(
+                                r ->
+                                        List.of("locked_notice", "scheduled_locked_notice")
+                                                .contains(r.kind()))
+                        .toList();
         assertThat(recorded).hasSize(candidates.size() + locked.size());
         assertThat(candidateResults).hasSize(candidates.size());
         assertThat(lockedResults).hasSize(locked.size());
@@ -566,7 +600,10 @@ class NoticeCandidateQueryIT {
                 observed.sql().executions().stream()
                         .filter(
                                 e ->
-                                        List.of("notice_pending_read", "notice_claim_locked_read")
+                                        List.of(
+                                                        "notice_pending_read",
+                                                        "notice_claim_locked_read",
+                                                        "notice_scheduled_claim_locked_read")
                                                 .contains(e.family()))
                         .map(JdbcExecutionCounter.SqlExecution::templateSha256)
                         .toList();
@@ -588,8 +625,8 @@ class NoticeCandidateQueryIT {
             var result = lockedResults.get(i);
             assertThat(result.resultSetObserved()).isTrue();
             assertThat(result.columns()).isEqualTo(LOCKED_COLUMNS);
-            assertThat(result.rows()).isOne();
-            assertThat(result.payloadCellsRead()).isOne();
+            assertThat(result.rows()).isEqualTo(locked.get(i) > 0 ? 1 : 0);
+            assertThat(result.payloadCellsRead()).isEqualTo(locked.get(i) > 0 ? 1 : 0);
             assertThat(result.payloadUtf8Bytes()).isEqualTo(locked.get(i));
         }
     }

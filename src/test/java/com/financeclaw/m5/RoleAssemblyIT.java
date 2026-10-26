@@ -73,7 +73,7 @@ class RoleAssemblyIT {
                         false,
                         Map.of("spring.flyway.enabled", "true"))) {
             assertThat(migration.getBean(Flyway.class).info().current().getVersion().toString())
-                    .isEqualTo("9");
+                    .isEqualTo("10");
         }
         sql.execute("CREATE ROLE financeclaw_memory LOGIN PASSWORD 'test-memory-only'");
         sql.execute(
@@ -382,7 +382,7 @@ class RoleAssemblyIT {
                                 "financeclaw.feishu.enabled",
                                 "true"))) {
             assertThat(context.getBean(Flyway.class).info().current().getVersion().toString())
-                    .isEqualTo("9");
+                    .isEqualTo("10");
             assertThat(mappers(context)).isEmpty();
             absent(
                     context,

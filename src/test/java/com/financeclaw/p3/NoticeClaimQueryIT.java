@@ -148,9 +148,9 @@ class NoticeClaimQueryIT {
 
     @BeforeAll
     void start() {
-        if (Boolean.getBoolean("financeclaw.test.query-baseline")) {
+        if (Boolean.getBoolean("financeclaw.test.query-baseline") || baseline) {
             throw new IllegalStateException(
-                    "Use notice-locks-baseline for the current notice lock comparison");
+                    "Historical query/notice-locks baseline flags are not supported by the P3a.20 regression");
         }
         try {
             postgres.start();
@@ -226,11 +226,14 @@ class NoticeClaimQueryIT {
     @AfterAll
     void writeAndClose() throws Exception {
         try {
-            Path output = Path.of("target/p3a13/notice-claim-sql.json");
+            Path output = Path.of("target/p3a20/notice-claim-sql.json");
             Files.createDirectories(output.getParent());
             var report = new LinkedHashMap<String, Object>();
-            report.put("schema", "notice-claim-sql/1");
-            report.put("scope", "real-pg-production-feishu-delivery-terminal-send-mock");
+            report.put("schema", "notice-claim-sql/2");
+            report.put("phase", "P3a.20");
+            report.put(
+                    "scope",
+                    "public-blocking-maintenance-lock-contract-plus-current-scheduled-batches");
             report.put("mode", baseline ? "before" : "after");
             report.put("background_pollers_enabled", false);
             report.put("measurement_boundary", "production-claim-or-scheduled-only");
@@ -464,11 +467,11 @@ class NoticeClaimQueryIT {
                                 sends.size(),
                                 "first_route_matches",
                                 sends.equals(List.of(expectedSend(scenarios.getFirst())))));
-        assertSql(first, 3 * batch + (baseline ? 7 : 6));
+        assertSql(first, 3 * batch + (batch == 20 ? 4 : 5));
         assertThat(first.sql().count("notice_insert")).isEqualTo(batch);
         assertThat(firstCount).isEqualTo(batch);
         assertThat(sends).containsExactly(expectedSend(scenarios.getFirst()));
-        assertThat(first.sql().commits()).isEqualTo(batch + 1);
+        assertThat(first.sql().commits()).isEqualTo(batch + (batch == 20 ? 1 : 2));
         assertThat(first.sql().rollbacks()).isZero();
         if (batch == 20) {
             assertThat(noticeCount(scenarios.get(20))).isZero();
@@ -489,7 +492,7 @@ class NoticeClaimQueryIT {
                                     sends.size(),
                                     "one_remaining_projection",
                                     next.sql().count("notice_insert") == 1));
-            assertSql(next, baseline ? 10 : 9);
+            assertSql(next, 8);
             assertThat(next.sql().count("notice_insert")).isOne();
             assertThat(integer("SELECT count(*) FROM channel.notices")).isEqualTo(21);
             assertThat(sends).hasSize(2);
@@ -504,7 +507,7 @@ class NoticeClaimQueryIT {
                                 }
                                 return null;
                             });
-            assertSql(tail, 19 * (baseline ? 7 : 6));
+            assertSql(tail, 19 * 5);
             assertThat(delivery.list(ALICE)).hasSize(11);
             assertThat(delivery.list(BOB)).hasSize(10);
             tail.evidence()
@@ -543,7 +546,7 @@ class NoticeClaimQueryIT {
                                 "no_duplicate_send",
                                 sends.size() == total));
         assertSql(empty, 2);
-        assertThat(empty.sql().commits()).isZero();
+        assertThat(empty.sql().commits()).isEqualTo(2);
         assertThat(empty.sql().rollbacks()).isZero();
         assertThat(sends).hasSize(total);
     }
@@ -578,8 +581,9 @@ class NoticeClaimQueryIT {
         assertThat(failed.failure())
                 .isNotNull()
                 .hasStackTraceContaining("notice_claim_query_injected_failure");
-        assertThat(failed.sql().statements()).isEqualTo(7);
-        assertThat(failed.sql().count("notice_projection_scan")).isOne();
+        assertThat(failed.sql().statements()).isEqualTo(6);
+        assertThat(failed.sql().count("notice_projection_scan")).isZero();
+        assertThat(failed.sql().count("notice_projection_try_lock")).isEqualTo(2);
         assertThat(failed.sql().count("notice_insert")).isEqualTo(2);
         assertThat(failed.sql().count("notice_pending_read")).isZero();
         assertThat(failed.sql().commits()).isOne();
@@ -588,7 +592,7 @@ class NoticeClaimQueryIT {
                         failed.sql().executions().stream()
                                 .map(JdbcExecutionCounter.SqlExecution::connection)
                                 .distinct())
-                .hasSize(3);
+                .hasSize(2);
         assertThat(firstCount).isOne();
         assertThat(secondCount).isZero();
         assertThat(notice(firstScenario).status()).isEqualTo("pending");
@@ -625,7 +629,7 @@ class NoticeClaimQueryIT {
                                 sends.equals(List.of(expectedSend(firstScenario))),
                                 "external_sends",
                                 sends.size()));
-        assertSql(retry, baseline ? 10 : 9);
+        assertSql(retry, 8);
         assertThat(retry.sql().count("notice_insert")).isOne();
         assertThat(sends).containsExactly(expectedSend(firstScenario));
         var tail =
@@ -643,7 +647,7 @@ class NoticeClaimQueryIT {
                                 allRoutesMatch(List.of(firstScenario, secondScenario)),
                                 "external_sends",
                                 sends.size()));
-        assertSql(tail, baseline ? 7 : 6);
+        assertSql(tail, 5);
         assertThat(sends)
                 .containsExactly(expectedSend(firstScenario), expectedSend(secondScenario));
         assertThat(notice(firstScenario).status()).isEqualTo("submitted_unverified");

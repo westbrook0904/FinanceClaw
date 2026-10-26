@@ -2,7 +2,6 @@ package com.financeclaw.app.execution.port;
 
 import com.financeclaw.domain.Governance.*;
 import com.financeclaw.domain.Task.*;
-import java.util.List;
 
 /** 持久命令和租约的边界：领取、续租及关闭必须参与调用方事务，执行 fencing 由数据库决定。 */
 public interface CommandGateway {
@@ -22,5 +21,6 @@ public interface CommandGateway {
 
     void finishCommand(String command);
 
-    List<String> expired();
+    /** 在调用方短事务内锁定最早一项到期命令；跳过已锁行，null 不是全局排空证明。 */
+    Command nextExpiredCommand();
 }

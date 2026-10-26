@@ -192,6 +192,31 @@ final class JdbcExecutionCounter {
 
     /** 使用精确的语句形状区分类别，不能把 child JOIN 中出现的其他表再次计算成单表读取。 */
     private static String family(String sql) {
+        // P3a.20：先锁原始租约再计算 live。与心跳 DML 分开，只识别完整固定形状。
+        String lockedCommandStart =
+                "with locked_command as materialized (select "
+                        + "id,turn_id,status,attempt_id,fence,lease_until,resume_id from business.commands where ";
+        String lockedCommandEnd =
+                ") select id,turn_id,status,attempt_id,fence,"
+                        + "coalesce(lease_until>clock_timestamp(),false) as live,resume_id from locked_command";
+        if (sql.equals(lockedCommandStart + "id=? for update" + lockedCommandEnd)
+                || sql.equals(lockedCommandStart + "turn_id=? for update" + lockedCommandEnd))
+            return "command_lock";
+        if (sql.equals(
+                lockedCommandStart
+                        + "status='running' and "
+                        + "lease_until<=(select clock_timestamp()) order by lease_until limit 1 "
+                        + "for update skip locked"
+                        + lockedCommandEnd)) return "command_recovery_claim";
+        if (sql.startsWith("with scheduled_binding as materialized (")
+                && sql.contains("scheduled_notice as materialized (")
+                && sql.contains("for update of b skip locked")
+                && sql.contains("for update of n skip locked")
+                && sql.endsWith("from scheduled_binding b left join scheduled_notice n on true"))
+            return "notice_scheduled_claim_locked_read";
+        if (sql.startsWith("select b.* from channel.bindings b join business.turns t ")
+                && sql.endsWith("limit 1 for update of b skip locked"))
+            return "notice_projection_try_lock";
         if (sql.startsWith(
                 "select id,command_id,fence,state_version,outcome,result from business.attempts where id="))
             return "receipt_read";

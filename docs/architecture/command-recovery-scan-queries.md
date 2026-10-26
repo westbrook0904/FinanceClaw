@@ -1,6 +1,6 @@
 # P3a.19：命令过期候选的单次数据库截止点
 
-**状态：本地验收通过，尚未推送。** 前置 `5fe16cf` 已推送，[run 40248871652](https://github.com/westbrook0904/FinanceClaw/actions/runs/40248871652) 整条通过 1,911 Java、46 脚本、44 Compose 检查。[前置远程记录](evidence/p3a18-remote-ci.json)与本阶段[本地证据](evidence/p3a19-implementation.json)分别保存。
+**状态：已推送 `7b46102`，远程完整 CI 通过。** 前置 `5fe16cf` 已推送，[run 40248871652](https://github.com/westbrook0904/FinanceClaw/actions/runs/40248871652) 整条通过 1,911 Java、46 脚本、44 Compose 检查。[前置远程记录](evidence/p3a18-remote-ci.json)与本阶段[本地证据](evidence/p3a19-implementation.json)分别保存。
 
 ## 已核对的调用链
 
@@ -96,3 +96,8 @@ scripts/mvn.sh -B -ntp -o validate spotless:check package \
 ## 后续
 
 密集过期命令的 50 项批次推进、多实例重复候选与锁等待、sending 集合规模和索引膨胀、Hikari 等待、心跳续租延迟及租约余量仍需独立验证。原普通锁读取的时钟投影等待边界也未在本轮改变；不得把候选 cutoff 复用为授权/提交/续租依据。
+
+
+## 远程交付补充
+
+[run 40252918781](https://github.com/westbrook0904/FinanceClaw/actions/runs/40252918781) 对应 `7b46102` 的 verify 和 delivery 均成功：1,916 Java、46 脚本、44 Compose 检查通过。[远程记录](evidence/p3a19-remote-ci.json)与上方原提交前本地范围独立保存。后续[并发资源改造](concurrent-recovery-resources.md)改变恢复领取方式，原只读扫描的历史测量不代表新恢复事务的 SQL 成本。

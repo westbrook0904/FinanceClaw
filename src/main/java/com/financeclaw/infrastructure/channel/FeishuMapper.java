@@ -85,6 +85,28 @@ public interface FeishuMapper {
                     + " n.status<>'suppressed') ORDER BY t.created_at LIMIT 20")
     List<String> listBindingIdsRequiringProjection();
 
+    /**
+     * 定时投影每次只选中并锁定一个 binding，越过其他协调器已经持有的绑定。Turn JOIN/EXISTS 仅提供候选资格， 不返回可复用的任务快照；调用方仍在同一短事务中独立读取当前
+     * owner Turn、pending/live 后渲染。 excluded 只包含本 tick 已尝试的服务端绑定 ID，最多 20 个，不能提供授权或发送资格。
+     */
+    @Select({
+        "<script>",
+        "SELECT b.* FROM channel.bindings b JOIN business.turns t ON t.id=b.active_turn",
+        "WHERE NOT b.muted AND t.status IN ('waiting','blocked','completed','failed','cancelled')",
+        "AND (t.status&lt;&gt;'waiting' OR EXISTS(SELECT 1 FROM business.interactions i",
+        "WHERE i.turn_id=t.id AND i.status='pending' AND i.expires_at&gt;clock_timestamp()))",
+        "AND NOT EXISTS(SELECT 1 FROM channel.notices n WHERE n.turn_id=t.id",
+        "AND n.revision=t.revision AND n.status&lt;&gt;'suppressed')",
+        "<if test='excluded != null and !excluded.isEmpty()'>",
+        "AND b.id NOT IN <foreach collection='excluded' item='id' open='(' separator=',' close=')'>#{id}</foreach>",
+        "</if>",
+        "ORDER BY t.created_at LIMIT 1 FOR UPDATE OF b SKIP LOCKED",
+        "</script>"
+    })
+    @Options(flushCache = Options.FlushCachePolicy.TRUE, useCache = false)
+    Binding getNextBindingRequiringProjectionForUpdateSkipLocked(
+            @Param("excluded") List<String> excluded);
+
     @Insert(
             "INSERT INTO channel.notices(id,turn_id,binding_id,binding_revision,revision,payload)"
                     + " VALUES(#{id},#{turnId},#{bindingId},#{bindingRevision},#{revision},#{payload})"
@@ -202,6 +224,117 @@ FROM locked_binding b CROSS JOIN locked_notice n
     })
     LockedNoticeRow getBindingAndNoticeForUpdate(
             @Param("bindingId") String bindingId, @Param("noticeId") String noticeId);
+
+    /**
+     * scheduled 的锁定结果。binding 始终来自实际取得的行锁；LEFT JOIN 允许该 binding 的全部 pending notice
+     * 被其他事务持有时只返回绑定。通知的数字列必须用 Long 保留 SQL NULL，不能把缺行映射为版本 0。
+     */
+    record ScheduledNoticeRow(
+            String bindingId,
+            String tenantKey,
+            String openId,
+            String chatId,
+            String tenant,
+            String subject,
+            String conversationId,
+            long bindingRevision,
+            boolean muted,
+            String activeTurn,
+            String noticeId,
+            String noticeTurnId,
+            String noticeBindingId,
+            Long noticeBindingRevision,
+            Long noticeRevision,
+            String noticePayload,
+            String noticeStatus,
+            String noticeReason) {
+        public Binding binding() {
+            return new Binding(
+                    bindingId,
+                    tenantKey,
+                    openId,
+                    chatId,
+                    tenant,
+                    subject,
+                    conversationId,
+                    bindingRevision,
+                    muted,
+                    activeTurn);
+        }
+
+        public Notice notice() {
+            if (noticeId == null) {
+                if (noticeTurnId != null
+                        || noticeBindingId != null
+                        || noticeBindingRevision != null
+                        || noticeRevision != null
+                        || noticePayload != null
+                        || noticeStatus != null
+                        || noticeReason != null)
+                    throw new IllegalStateException("Incomplete locked notice projection");
+                return null;
+            }
+            // 不从候选、binding 或 primitive 默认值补齐缺失通知；任何不完整映射均在副作用前失败。
+            return new Notice(
+                    noticeId,
+                    java.util.Objects.requireNonNull(noticeTurnId),
+                    java.util.Objects.requireNonNull(noticeBindingId),
+                    java.util.Objects.requireNonNull(noticeBindingRevision),
+                    java.util.Objects.requireNonNull(noticeRevision),
+                    java.util.Objects.requireNonNull(noticePayload),
+                    java.util.Objects.requireNonNull(noticeStatus),
+                    noticeReason);
+        }
+    }
+
+    /**
+     * 先沿 pending(created_at) 观察通知位置并只锁 binding，随后才在依赖 CTE 内锁该绑定的一条实际通知。 两级都 SKIP LOCKED，不先锁
+     * notice；只在第二级返回实际行后才允许 Java 重验并 CAS sending。 第二级使用 pending(binding_id,created_at)
+     * 索引，避免全部通知被锁时按绑定重复遍历其他用户的通知。
+     */
+    @Select({
+        "<script>",
+        "WITH scheduled_binding AS MATERIALIZED (",
+        "SELECT b.* FROM channel.notices candidate JOIN channel.bindings b ON b.id=candidate.binding_id",
+        "WHERE candidate.status='pending'",
+        "<if test='excluded != null and !excluded.isEmpty()'>",
+        "AND b.id NOT IN <foreach collection='excluded' item='id' open='(' separator=',' close=')'>#{id}</foreach>",
+        "</if>",
+        "ORDER BY candidate.created_at LIMIT 1 FOR UPDATE OF b SKIP LOCKED",
+        "), scheduled_notice AS MATERIALIZED (",
+        "SELECT n.* FROM scheduled_binding b JOIN channel.notices n ON n.binding_id=b.id",
+        "WHERE n.status='pending' ORDER BY n.created_at LIMIT 1 FOR UPDATE OF n SKIP LOCKED",
+        ")",
+        "SELECT b.id AS binding_id,b.tenant_key,b.open_id,b.chat_id,b.tenant,b.subject,b.conversation_id,",
+        "b.revision AS binding_revision,b.muted,b.active_turn,",
+        "n.id AS notice_id,n.turn_id AS notice_turn_id,n.binding_id AS notice_binding_id,",
+        "n.binding_revision AS notice_binding_revision,n.revision AS notice_revision,",
+        "n.payload AS notice_payload,n.status AS notice_status,n.reason AS notice_reason",
+        "FROM scheduled_binding b LEFT JOIN scheduled_notice n ON TRUE",
+        "</script>"
+    })
+    @Options(flushCache = Options.FlushCachePolicy.TRUE, useCache = false)
+    @ConstructorArgs({
+        @Arg(column = "binding_id", javaType = String.class),
+        @Arg(column = "tenant_key", javaType = String.class),
+        @Arg(column = "open_id", javaType = String.class),
+        @Arg(column = "chat_id", javaType = String.class),
+        @Arg(column = "tenant", javaType = String.class),
+        @Arg(column = "subject", javaType = String.class),
+        @Arg(column = "conversation_id", javaType = String.class),
+        @Arg(column = "binding_revision", javaType = long.class),
+        @Arg(column = "muted", javaType = boolean.class),
+        @Arg(column = "active_turn", javaType = String.class),
+        @Arg(column = "notice_id", javaType = String.class),
+        @Arg(column = "notice_turn_id", javaType = String.class),
+        @Arg(column = "notice_binding_id", javaType = String.class),
+        @Arg(column = "notice_binding_revision", javaType = Long.class),
+        @Arg(column = "notice_revision", javaType = Long.class),
+        @Arg(column = "notice_payload", javaType = String.class),
+        @Arg(column = "notice_status", javaType = String.class),
+        @Arg(column = "notice_reason", javaType = String.class)
+    })
+    ScheduledNoticeRow getNextNoticeForUpdateSkipLocked(@Param("excluded") List<String> excluded);
 
     /** 以 pending 条件原子取得发送资格；返回 1 后才允许在事务外调用 SDK。 */
     @Update(

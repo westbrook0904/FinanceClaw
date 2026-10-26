@@ -23,6 +23,7 @@ spring:
     username: ${FINANCECLAW_DATABASE_USER:financeclaw}
     password: ${FINANCECLAW_DATABASE_PASSWORD:}
     hikari:
+      # GovernedTasks reserves heartbeat connections from this total, not in addition to it.
       maximum-pool-size: 8
       connection-timeout: 5000
       data-source-properties:
@@ -92,6 +93,12 @@ financeclaw:
     recovery-ms: 2000
     lease-ms: 15000
     heartbeat-ms: 2000
+    heartbeat-pool:
+      reserved-connections: 2
+      # 0 derives a bounded value from lease-ms; explicit values are validated at startup.
+      connection-timeout-ms: 0
+      statement-timeout-ms: 0
+      lock-timeout-ms: 0
     model-timeout-ms: 30000
   integrations:
     enabled: ${FINANCECLAW_INTEGRATIONS_ENABLED:true}

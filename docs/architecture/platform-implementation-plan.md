@@ -2,7 +2,7 @@
 
 本文是 FinanceClaw Java 的实施方案与阶段状态记录。面向四类使用方式：通用对话、定制 RAG Workflow、通过提示词与工具等配置组装 Agent，以及直接调用一个独立 Agent。本文中的目标模型不代表当前已经实现的能力。
 
-截至 2026-10-25，P1 发布持久化、P2a Agent 定义、P2b 能力与依赖冻结、P3a.1 固定研究子调用以及 **P3a.2 执行数据隐私清理**均已交付。**P3a.3 同 owner 空工具叶子 Agent 委派**也已由 `d433423` 推送，整条远程流水线成功：1,702 项 Java 测试、46 项脚本和 44 项部署检查通过。P3a.4 完整父子链路验收与取消传播修复也已由 `467ba8f` 推送，远程 1,711 Java／46 脚本／44 部署通过；P3a.5 已推送 `a4a6ef4`，远程 1,716 Java／46 脚本／44 部署通过；P3a.6 已推送 `13f73a7`，远程 1,743 Java／46 脚本／44 部署通过；P3a.7 已推送 `c166da7`，远程 1,750 Java／46 脚本／44 部署通过；P3a.8 整轮数据库基线已由 `f330a17` 推送，远程 1,767 Java／46 脚本／44 部署通过；P3a.9 `0c789b8` 与 P3a.10 `06ec674` 已一起推送，远程 1,843 Java／46 脚本／44 部署检查通过。P3a.11 `2de8537` 已推送，远程 1,866 Java／46 脚本／44 部署检查通过。P3a.12 Worker 状态返回已推送 `24e74e5`，远程 1,875 Java／46 脚本／44 部署检查通过。P3a.13 通知双锁查询已推送 `dda1d7d`，远程 1,885 Java／46 脚本／44 部署检查通过。P3a.14 通知候选结果瘦身已推送 `e115834`，远程 1,890 Java／46 脚本／44 部署检查通过。P3a.15 等待通知交互查询本地 1,497 项选定范围通过，尚未推送。P3a 整体、P3b 和 P4 尚未完成。每阶段分别保留代码、验证记录与交付范围；固定深度的子执行器不等同于完整权限、跨 owner 或递归委派。
+截至 2026-10-26，P1、P2a、P2b 和 P3a.1–P3a.19 的分阶段实现已交付。前置 `7b46102` 已在 `origin/codex/java-agentscope`，完整远程 CI 通过 **1,916 Java、46 脚本、44 Compose 检查**；对应记录见第 29 节。P3a.20 已按[恢复、Outbox 与心跳并发资源方案](concurrent-recovery-resources.md)完成整批开发和集中修复，本地完整验收通过 1,983 Java、46 脚本、44 Compose；本段保留提交前状态。P3a 整体、P3b 和 P4 尚未完成；固定深度子执行器不等于完整权限、跨 owner 或递归委派。
 
 ## 1. 实施前基线与改造目标
 
@@ -274,7 +274,9 @@ P2b 验收：Tool/Skill 白名单与 scope 交集实际控制装配；Schema/内
 | P3a.12 Worker 状态返回 | 已推送 `24e74e5`，远程 CI 通过 | 成功领取 7→6、15 窗口 77→69 SQL；1,317 单元 + 161 选定集成同次通过；[证据](evidence/p3a12-implementation.json) | [范围](worker-turn-returning-queries.md)；普通写入不返回正文，心跳门禁与失败路径保持 |
 | P3a.13 通知双锁查询 | 已推送 `dda1d7d`，远程 CI 通过 | 合法领取 5→4、完整旧通知积压 94→72 SQL；1,318 单元 + 170 选定集成同次通过；[证据](evidence/p3a13-implementation.json) | [范围](notice-claim-lock-queries.md)；真实锁等待/新行可见性与投影部分提交验证，未合并批量事务 |
 | P3a.14 通知候选结果瘦身 | 已推送 `e115834`，远程 CI 通过 | 候选 8→2 列、getter 正文 152,264→0 字节；SQL 85→85；1,320 单元 + 173 选定集成同次通过；[证据](evidence/p3a14-implementation.json) | [范围](notice-candidate-results.md)；锁内正文与独立 Turn 读取保留，不是网络/吞吐测试 |
-| P3a.15 等待通知交互查询 | 本地通过，尚未推送 | 映射 34→15 行、旧回答逻辑字节 86,412→0；SQL 34→34；1,320 单元 + 177 选定集成同次通过；[证据](evidence/p3a15-implementation.json) | [范围](waiting-notice-queries.md)；通用历史、原生审批恢复、过期与投影事务保持 |
+| P3a.15 等待通知交互查询 | 已推送 `36459c4`，已纳入后续完整远程 CI | 映射 34→15 行、旧回答逻辑字节 86,412→0；SQL 34→34；1,320 单元 + 177 选定集成同次通过；[证据](evidence/p3a15-implementation.json) | [范围](waiting-notice-queries.md)；通用历史、原生审批恢复、过期与投影事务保持 |
+| P3a.16–P3a.19 查询与恢复扫描 | 已随最新 `7b46102` 通过完整远程 CI | 最新 1,916 Java／46 脚本／44 Compose；各阶段原本地数字见第 26–29 节 | 新一轮并发资源改造单独记录 |
+| P3a.20 恢复、Outbox 与心跳并发资源 | 提交前本地全量验收通过 | 1,346 单元 + 637 集成 = 1,983 Java、46 脚本、44 Compose；[证据](evidence/p3a20-implementation.json) | [范围与配置](concurrent-recovery-resources.md)；不以旧提交远程 CI 代替本轮验收 |
 | P3a 独立 Agent 与子调用 | 部分实现，整体未完成 | P3a.1 固定研究，P3a.2 执行隐私，P3a.3 受限叶子委派已交付，P3a.4 完整入口与取消传播修复已交付，P3a.5 暂停恢复已交付，P3a.6 固定行情叶子已交付 | 完整权限私有 Agent、共享授权和完整调用模型 |
 | P3b 定制 RAG Workflow | 待实施 | 仅有现有记忆与固定 Workflow 基础 | 知识模型、索引发布、端到端引用验收 |
 | P4 Scheduler 与服务化 | 待实施 | 现有 TaskWorker/lease/fence | 触发模型、调度扩展与拆分前置设施 |
@@ -542,7 +544,7 @@ P3a.18 **已推送 `5fe16cf`，远程完整 CI 通过**：[失联 sending 恢复
 
 ## 29. P3a.19 过期命令候选扫描
 
-P3a.19 **本地验收通过，尚未推送**：[过期命令候选扫描](command-recovery-scan-queries.md)用一次数据库截止时间驱动已有 `command_expiry` 范围。20,000 条合成未来租约与 3 条真实过期命令下，原索引扫描过滤 20,000 行，改后直接返回相同 3 项，根 shared hit blocks **420→3**。每次发现仍为 1 条 SQL，LIMIT 50、实时租约与回执门禁保持。**1,320 单元 + 255 选定集成 = 1,575 项**同次通过；默认 2 秒调度不是恢复 SLA，密集过期积压、跨实例锁争用及连接池/心跳延迟仍待测量。
+P3a.19 **已推送 `7b46102`，远程完整 CI 通过**：[过期命令候选扫描](command-recovery-scan-queries.md)用一次数据库截止时间驱动已有 `command_expiry` 范围。20,000 条合成未来租约与 3 条真实过期命令下，原索引扫描过滤 20,000 行，改后直接返回相同 3 项，根 shared hit blocks **420→3**。每次发现仍为 1 条 SQL，LIMIT 50、实时租约与回执门禁保持。**1,320 单元 + 255 选定集成 = 1,575 项**同次通过；默认 2 秒调度不是恢复 SLA，密集过期积压、跨实例锁争用及连接池/心跳延迟仍待测量。
 
 前置 `5fe16cf` 的完整远程 CI 通过后，先建立 3 套 28 项真实 PG 基线；唯一生产变化是 TaskMapper.listExpiredCommandIds 的 `lease_until<=clock_timestamp()` 改为 `lease_until<=(SELECT clock_timestamp())`。原 running 局部索引、排序及 LIMIT 50 保持，不增加索引/schema。截止时间在 InitPlan 实际求值时从数据库取得，查询中才到期的项可留后续扫描；不复用到锁内 live、attempt/fence、sealed receipt、checkpoint/policy 或心跳判断。普通锁读取的时钟投影边界未在本轮修改。
 
@@ -551,3 +553,10 @@ P3a.19 **本地验收通过，尚未推送**：[过期命令候选扫描](comman
 五项新 PG 用例、10 个窗口保持 19 SQL/3 次显式 commit/0 rollback；候选之后真实等待行锁，合法续租/完成的新版本均跳过；已执行未 sealed 的任务 blocked 且不增加 SDK、预算或 assistant；长事务过期后仍使用当前数据库时间。Worker 15 窗口保持 69 SQL，Receipt 21 窗口保持 159 SQL；仅 29 次候选模板变化，其余有序 SQL/分组、事务、固定业务结果和预期异常保持。严格比较器 3 正例/47 负变异通过。
 
 实际同次 83 套单元 1,320 项与 22 套选定集成 255 项全过，474 输入在各次执行前后不变，前后仅 TaskMapper 生产输入变化；两个记录器和新夹具同 SHA，419 class/22 资源/3 份根许可证匹配本次 JAR。两次 Maven 均首次成功，无编排拒绝。原提交前本地未跑完整 verify、脚本套件、Compose、新远程 CI、独立部署 JAR 或真实 provider/飞书 HTTP；前置远程 1,911/46/44 只对应 5fe16cf。[专项与命令](command-recovery-scan-queries.md)；[本地证据](evidence/p3a19-implementation.json)。
+
+
+P3a.19 后续交付补充：`7b46102` 已推送，[run 40252918781](https://github.com/westbrook0904/FinanceClaw/actions/runs/40252918781) 整条 completed/success，**1,320 单元 + 596 集成 = 1,916 Java、46 脚本、44 Compose 检查通过**。[远程记录](evidence/p3a19-remote-ci.json)独立于原本地选定范围和 P3a.20 新代码。
+
+## 30. P3a.20 恢复、Outbox 与心跳并发资源
+
+提交前本地验收通过：整批完成恢复跳锁、Outbox 定时跳锁、心跳连接预留和普通 Command 锁后租约判断，再集中测试修复。最终同次完整 verify 通过 1,346 单元和 637 集成；46 脚本及后续同 JAR 的 44 Compose 检查通过。保留首次测试编译失败、第二次 Mockito 夹具失败和第三次全量成功的独立记录。[实施方案](concurrent-recovery-resources.md)与[验收证据](evidence/p3a20-implementation.json)说明 518 输入指纹、连接预算、V10 前向迁移及未承诺公平性/生产容量的边界。

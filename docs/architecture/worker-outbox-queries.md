@@ -116,3 +116,8 @@ CI 原有 `target/p3*/` 归档规则覆盖 `target/p3a10/` SQL 报告。P3a.12 �
 [run 40173421896](https://github.com/westbrook0904/FinanceClaw/actions/runs/40173421896) 针对 `06ec674` 整条 completed/success：**1,299 单元 + 544 集成 = 1,843 项 Java、46 项脚本及 44 项部署检查**通过，覆盖前置发布合并与本阶段 Worker/Outbox 改动。原本地 1,412 项选定范围和中断记录不改写；[远程证据](evidence/p3a10-remote-ci.json)单独保存，后续 P3a.11 不在此远程运行范围内。
 
 [P3a.17](projection-discovery-queries.md) 已推送 `cc90a6d`，并由 [run 40243547522](https://github.com/westbrook0904/FinanceClaw/actions/runs/40243547522) 通过完整远程 CI：1,906 Java、46 脚本、44 Compose 检查。原本地 1,565 项选定范围保持独立。全过期 20 项首 tick 62→2 SQL；有效尾项由原先阻塞变为正常投影发送，是预期推进变化，不能称相同工作量吞吐提升或全局公平性。waiting/过期 pending 仍未完成。
+
+
+## P3a.20 后续实现
+
+[并发资源改造](concurrent-recovery-resources.md)已完成本地全量验收：恢复每项独立跳锁、定时 Outbox binding→notice 跳锁、普通 Command 锁后实时 live，以及原总预算内的专用心跳连接。原 8→7、135→94 等历史数字不作为新路径对比；新路径空轮有独立事务成本，也不承诺 FIFO、公平或任意锁均不等待。本次 1,983 Java、46 脚本、44 Compose 的证据独立保存。

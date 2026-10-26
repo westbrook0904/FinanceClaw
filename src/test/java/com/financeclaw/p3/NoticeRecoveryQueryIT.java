@@ -172,8 +172,9 @@ class NoticeRecoveryQueryIT {
     void start() {
         try {
             baseline = Boolean.getBoolean("financeclaw.test.notice-recovery-baseline");
-            if (Boolean.getBoolean("financeclaw.test.query-baseline"))
-                throw new IllegalArgumentException("Use the P3a.18 dedicated baseline flag");
+            if (Boolean.getBoolean("financeclaw.test.query-baseline") || baseline)
+                throw new IllegalArgumentException(
+                        "Historical recovery baseline flags are not supported by the P3a.20 regression");
             postgres.start();
             application =
                     new SpringApplicationBuilder(
@@ -267,8 +268,8 @@ class NoticeRecoveryQueryIT {
             for (String phase : PHASES)
                 if (measurements.containsKey(phase)) ordered.add(measurements.get(phase));
             var report = new LinkedHashMap<String, Object>();
-            report.put("schema", "notice-recovery-sql/1");
-            report.put("phase", "P3a.18");
+            report.put("schema", "notice-recovery-sql/2");
+            report.put("phase", "P3a.20");
             report.put("mode", baseline ? "before" : "after");
             report.put("scope", "real-pg-production-lifecycle-offline-model-terminal-send-mock");
             report.put("background_pollers_enabled", false);
@@ -281,7 +282,7 @@ class NoticeRecoveryQueryIT {
             report.put("no_sql_count_wire_ttl_or_capacity_improvement_claim", true);
             report.put("measurements", ordered);
             report.put("scale_experiments", scaleExperiments);
-            Path output = Path.of("target/p3a18/notice-recovery-sql.json");
+            Path output = Path.of("target/p3a20/notice-recovery-sql.json");
             Files.createDirectories(output.getParent());
             json.writerWithDefaultPrettyPrinter().writeValue(output.toFile(), report);
         } finally {
@@ -455,7 +456,7 @@ class NoticeRecoveryQueryIT {
                                         preserved,
                                         "send_attempts",
                                         sends.size()));
-                assertSql(completed, 7, false);
+                assertSql(completed, 6, false);
                 assertThat(preserved).isTrue();
                 assertThat(sends)
                         .containsExactly(

@@ -161,25 +161,39 @@ public class FeishuDelivery {
     /** 路由来自领取事务中已加锁的 binding；它不是可跨领取复用的授权缓存。 */
     private record ClaimResult(ClaimState state, Notice notice, String chatId) {}
 
+    /** NULL notice 只排除本 tick 的忙绑定，不能把它解释成缺省版本或投递资格。 */
+    private record ScheduledClaim(ClaimResult result, String excludedBindingId) {}
+
     private boolean pollWork() {
-        var dirty = db.listBindingIdsRequiringProjection();
-        for (String binding : dirty) {
-            project(binding);
-        }
-        boolean worked = !dirty.isEmpty();
-        // 有界跳过已失效候选，让后续有效通知能继续前进；每轮仍最多一次外部 SDK 发送。
+        var projected = new ArrayList<String>();
+        boolean worked = false;
+        // 每个投影独立短事务，只持有一个 binding；SKIP LOCKED 可越过其他实例的绑定锁。
         for (int checked = 0; checked < MAX_CLAIM_CANDIDATES; checked++) {
-            var claimed = claimForDelivery();
-            if (claimed.state() == ClaimState.EMPTY) {
-                return worked;
-            }
+            String selected =
+                    tx.execute(
+                            s -> {
+                                var binding =
+                                        db.getNextBindingRequiringProjectionForUpdateSkipLocked(
+                                                List.copyOf(projected));
+                                if (binding == null) return null;
+                                projectLocked(binding);
+                                return binding.id();
+                            });
+            if (selected == null) break;
+            projected.add(selected);
             worked = true;
-            if (claimed.state() == ClaimState.SKIPPED) {
-                continue;
-            }
+        }
+        var busyBindings = new ArrayList<String>();
+        // 相同 binding 的旧通知仍可逐项抑制；只有全部 notice 被锁时才排除该绑定。
+        for (int checked = 0; checked < MAX_CLAIM_CANDIDATES; checked++) {
+            var attempt = claimNextForDelivery(List.copyOf(busyBindings));
+            var claimed = attempt.result();
+            if (claimed.state() == ClaimState.EMPTY) return worked;
+            worked = true;
+            if (attempt.excludedBindingId() != null) busyBindings.add(attempt.excludedBindingId());
+            if (claimed.state() == ClaimState.SKIPPED) continue;
             var job = claimed.notice();
-            // 领取已经提交，网络在事务外调用。此处只复用同次领取时的 chat 身份，
-            // 不增加“发送前撤回”保证；后续绑定修改仍不能追回已经授予的外部发送资格。
+            // 领取已提交，网络仍在事务外。这里只复用同次锁定绑定的 chat，不扩大发送前撤回保证。
             try {
                 channel.send(claimed.chatId(), job.payload());
                 db.updateNoticeOutcome(job.id(), "submitted_unverified", "native_sdk_no_receipt");
@@ -191,47 +205,56 @@ public class FeishuDelivery {
         return worked;
     }
 
+    private ScheduledClaim claimNextForDelivery(List<String> excluded) {
+        return tx.execute(
+                s -> {
+                    var selected = db.getNextNoticeForUpdateSkipLocked(excluded);
+                    if (selected == null)
+                        return new ScheduledClaim(
+                                new ClaimResult(ClaimState.EMPTY, null, null), null);
+                    var notice = selected.notice();
+                    if (notice == null)
+                        return new ScheduledClaim(
+                                new ClaimResult(ClaimState.SKIPPED, null, null),
+                                selected.bindingId());
+                    return new ScheduledClaim(claimLocked(selected.binding(), notice), null);
+                });
+    }
+
     /** 锁定当前绑定并按任务修订号生成通知，抑制旧版本回答被投递到新的任务。 */
     public void project(String id) {
-        tx.executeWithoutResult(
-                s -> {
-                    var b = db.getBindingForUpdate(id);
-                    if (b == null || b.muted() || b.activeTurn() == null) {
-                        return;
-                    }
-                    Owner owner = new Owner(b.tenant(), b.subject());
-                    var turn = tasks.get(owner, b.conversationId(), b.activeTurn());
-                    if (!Set.of("waiting", "blocked", "completed", "failed", "cancelled")
-                            .contains(turn.status())) {
-                        return;
-                    }
-                    // 只有 waiting 文案读取 pending 交互，避免反复映射历史回答正文。
-                    // 完整历史仍供执行与恢复使用；通知渲染器继续核对 pending 状态及 SQL 采样的 live。
-                    List<Interaction> pending =
-                            turn.status().equals("waiting")
-                                    ? interactions.pendingInteractions(turn.id())
-                                    : List.of();
-                    String text = FeishuText.render(b, turn, pending);
-                    if (text.isBlank()) {
-                        return;
-                    }
-                    String operation =
-                            UUID.nameUUIDFromBytes(
-                                            (turn.id() + ":" + turn.revision())
-                                                    .getBytes(StandardCharsets.UTF_8))
-                                    .toString();
-                    db.insertOrReactivateNotice(
-                            new Notice(
-                                    operation,
-                                    turn.id(),
-                                    id,
-                                    b.revision(),
-                                    turn.revision(),
-                                    text,
-                                    "pending",
-                                    null));
-                    signals.afterCommit(WorkSignals.Queue.NOTICE);
-                });
+        tx.executeWithoutResult(s -> projectLocked(db.getBindingForUpdate(id)));
+    }
+
+    /** 只在调用方已取得 binding 行锁的原事务中使用；不接收发现阶段的 Turn/交互快照。 */
+    private void projectLocked(Binding b) {
+        if (b == null || b.muted() || b.activeTurn() == null) return;
+        Owner owner = new Owner(b.tenant(), b.subject());
+        var turn = tasks.get(owner, b.conversationId(), b.activeTurn());
+        if (!Set.of("waiting", "blocked", "completed", "failed", "cancelled")
+                .contains(turn.status())) return;
+        List<Interaction> pending =
+                turn.status().equals("waiting")
+                        ? interactions.pendingInteractions(turn.id())
+                        : List.of();
+        String text = FeishuText.render(b, turn, pending);
+        if (text.isBlank()) return;
+        String operation =
+                UUID.nameUUIDFromBytes(
+                                (turn.id() + ":" + turn.revision())
+                                        .getBytes(StandardCharsets.UTF_8))
+                        .toString();
+        db.insertOrReactivateNotice(
+                new Notice(
+                        operation,
+                        turn.id(),
+                        b.id(),
+                        b.revision(),
+                        turn.revision(),
+                        text,
+                        "pending",
+                        null));
+        signals.afterCommit(WorkSignals.Queue.NOTICE);
     }
 
     /** 单次维护领取入口：保留遇到旧通知时抑制并返回 null 的原语义。 */
@@ -253,31 +276,30 @@ public class FeishuDelivery {
                         // 缺行不能回退到未锁定的 pending 快照，更不能继续写入或发送。
                         return new ClaimResult(ClaimState.SKIPPED, null, null);
                     }
-                    var b = locked.binding();
-                    var notice = locked.notice();
-                    if (!notice.status().equals("pending")) {
-                        return new ClaimResult(ClaimState.SKIPPED, null, null);
-                    }
-                    if (b.muted()
-                            || !Objects.equals(b.activeTurn(), notice.turnId())
-                            || b.revision() != notice.bindingRevision()) {
-                        db.updateNoticeOutcome(notice.id(), "suppressed", "binding_changed");
-                        return new ClaimResult(ClaimState.SKIPPED, null, null);
-                    }
-                    // 独立语句取得锁后的新快照；MATERIALIZED 不是新的 PG statement snapshot。
-                    var turn =
-                            tasks.get(
-                                    new Owner(b.tenant(), b.subject()),
-                                    b.conversationId(),
-                                    notice.turnId());
-                    if (turn.revision() != notice.revision()) {
-                        db.updateNoticeOutcome(notice.id(), "suppressed", "revision_changed");
-                        return new ClaimResult(ClaimState.SKIPPED, null, null);
-                    }
-                    return db.updatePendingNoticeSending(notice.id()) == 1
-                            ? new ClaimResult(ClaimState.CLAIMED, notice, b.chatId())
-                            : new ClaimResult(ClaimState.SKIPPED, null, null);
+                    return claimLocked(locked.binding(), locked.notice());
                 });
+    }
+
+    /** public 维护和 scheduled 路径共用全部门禁；候选不替代实际锁定行或后续独立 Turn 语句。 */
+    private ClaimResult claimLocked(Binding b, Notice notice) {
+        if (!notice.status().equals("pending"))
+            return new ClaimResult(ClaimState.SKIPPED, null, null);
+        if (b.muted()
+                || !Objects.equals(b.activeTurn(), notice.turnId())
+                || b.revision() != notice.bindingRevision()) {
+            db.updateNoticeOutcome(notice.id(), "suppressed", "binding_changed");
+            return new ClaimResult(ClaimState.SKIPPED, null, null);
+        }
+        // CTE 不是新 statement snapshot。owner Turn 必须在取得两个行锁后重新独立读取。
+        var turn =
+                tasks.get(new Owner(b.tenant(), b.subject()), b.conversationId(), notice.turnId());
+        if (turn.revision() != notice.revision()) {
+            db.updateNoticeOutcome(notice.id(), "suppressed", "revision_changed");
+            return new ClaimResult(ClaimState.SKIPPED, null, null);
+        }
+        return db.updatePendingNoticeSending(notice.id()) == 1
+                ? new ClaimResult(ClaimState.CLAIMED, notice, b.chatId())
+                : new ClaimResult(ClaimState.SKIPPED, null, null);
     }
 
     public List<Notice> list(Owner owner) {

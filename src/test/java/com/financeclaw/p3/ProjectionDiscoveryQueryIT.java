@@ -159,8 +159,9 @@ class ProjectionDiscoveryQueryIT {
 
     @BeforeAll
     void start() {
-        if (Boolean.getBoolean("financeclaw.test.query-baseline"))
-            throw new IllegalStateException("Use projection-discovery-baseline");
+        if (Boolean.getBoolean("financeclaw.test.query-baseline") || baseline)
+            throw new IllegalStateException(
+                    "Historical discovery baseline flags are not supported by the P3a.20 regression");
         try {
             postgres.start();
             application =
@@ -202,6 +203,17 @@ class ProjectionDiscoveryQueryIT {
             sender = mock(AgentScopeFeishu.class);
             var configuration = application.getBean(SqlSessionFactory.class).getConfiguration();
             assertThat(configuration.getInterceptors()).contains(recorder);
+            var lockedDiscovery =
+                    configuration.getMappedStatement(ProjectionDiscoveryRecorder.LOCKED_STATEMENT);
+            for (int size = 0; size <= 20; size++) {
+                recorder.registerScheduledTemplate(
+                        lockedDiscovery
+                                .getBoundSql(
+                                        Map.of(
+                                                "excluded",
+                                                java.util.Collections.nCopies(size, "shape-only")))
+                                .getSql());
+            }
             assertThat(ProjectionDiscoveryRecorder.OLD_HASH)
                     .isEqualTo("d8847a0f5b8aa38bde15e6c4b21c55f9ca0c1359373afc0deb5b3d9cd676fb4d");
             assertThat(ProjectionDiscoveryRecorder.NEW_HASH)
@@ -249,19 +261,21 @@ class ProjectionDiscoveryQueryIT {
     @AfterAll
     void writeAndClose() throws Exception {
         try {
-            Path output = Path.of("target/p3a17/projection-discovery-sql.json");
+            Path output = Path.of("target/p3a20/projection-discovery-sql.json");
             Files.createDirectories(output.getParent());
             var report = new LinkedHashMap<String, Object>();
-            report.put("schema", "projection-discovery-sql/1");
-            report.put("phase", "P3a.17");
+            report.put("schema", "projection-discovery-sql/2");
+            report.put("phase", "P3a.20");
             report.put("mode", baseline ? "before" : "after");
-            report.put("scope", "real-pg-native-waiting-production-discovery-terminal-send-mock");
+            report.put(
+                    "scope",
+                    "real-pg-scheduled-skip-locked-and-explicit-maintenance-discovery-barrier-terminal-send-mock");
             report.put("background_pollers_enabled", false);
             report.put(
                     "sql_boundary",
-                    "scheduled-or-maintenance-only-fixture-readback-operations-and-explain-excluded");
+                    "current-scheduled-and-explicit-maintenance-discovery-barrier-fixture-readback-operations-explain-excluded");
             report.put(
-                    "intentional_progress_differences",
+                    "historical_discovery_regressions_retained",
                     List.of("expired-only-idle", "twenty-expired-prefix-other-owner"));
             report.put("no_wire_capacity_or_global_owner_fairness_claim", true);
             report.put("measurements", List.copyOf(measurements));
@@ -288,25 +302,13 @@ class ProjectionDiscoveryQueryIT {
             String prefix = target == 1 ? "single-expired" : "twenty-expired";
             var first = observe(prefix + "-first", delivery::scheduled);
             first.evidence().put("business_facts", emptyFacts(expired));
-            assertSql(
-                    first,
-                    baseline ? 3 * target + 2 : 2,
-                    baseline ? target : 0,
-                    baseline ? target : 0);
+            assertSql(first, 2, 0, 2);
             var repeated = observe(prefix + "-repeat", delivery::scheduled);
             repeated.evidence().put("business_facts", emptyFacts(expired));
-            assertSql(
-                    repeated,
-                    baseline ? 3 * target + 2 : 0,
-                    baseline ? target : null,
-                    baseline ? target : 0);
+            assertSql(repeated, 0, (Integer) null, 0);
             var maintenance = observe(prefix + "-maintenance", delivery::poll);
             maintenance.evidence().put("business_facts", emptyFacts(expired));
-            assertSql(
-                    maintenance,
-                    baseline ? 3 * target + 3 : 3,
-                    baseline ? target : 0,
-                    baseline ? target : 0);
+            assertSql(maintenance, 3, 0, 2);
             assertThat(maintenance.sql().count("notice_expired_recovery")).isOne();
             assertExpiredOperations(prefix, target);
         }
@@ -330,7 +332,7 @@ class ProjectionDiscoveryQueryIT {
                                 notice(fresh).turnId().equals(fresh.turn().id()),
                                 "route_matches",
                                 sends.equals(List.of(expected(fresh)))));
-        assertSql(woke, baseline ? 67 : 10, baseline ? 20 : 1, baseline ? 21 : 2);
+        assertSql(woke, 9, 1, 3);
         assertThat(sends).containsExactly(expected(fresh));
         assertThat(history(old)).allMatch(i -> i.status().equals("invalid"));
         assertThat(history(fresh))
@@ -347,13 +349,13 @@ class ProjectionDiscoveryQueryIT {
         var delivery = delivery();
         var first = observe("expired-prefix-first", delivery::scheduled);
         first.evidence().put("business_facts", prefixFacts(expired, valid));
-        assertSql(first, baseline ? 62 : 10, baseline ? 20 : 1, baseline ? 20 : 2);
+        assertSql(first, 9, 1, 3);
         var second = observe("expired-prefix-second", delivery::scheduled);
         second.evidence().put("business_facts", prefixFacts(expired, valid));
-        assertSql(second, baseline ? 62 : 2, baseline ? 20 : 0, baseline ? 20 : 0);
+        assertSql(second, 2, 0, 2);
         var third = observe("expired-prefix-third", delivery::scheduled);
         third.evidence().put("business_facts", prefixFacts(expired, valid));
-        assertSql(third, baseline ? 62 : 0, baseline ? 20 : null, baseline ? 20 : 0);
+        assertSql(third, 0, (Integer) null, 0);
         assertThat(sends).hasSize(baseline ? 0 : 1);
         if (!baseline) assertThat(sends).containsExactly(expected(valid));
         assertThat(noticeCount(valid)).isEqualTo(baseline ? 0 : 1);
@@ -392,7 +394,7 @@ class ProjectionDiscoveryQueryIT {
                                 noticeCount(scenarios.get(20)) == 0,
                                 "one_external_send",
                                 sends.size() == 1));
-        assertSql(first, 86, 20, 21);
+        assertSql(first, 84, 20, 21);
         assertThat(first.sql().count("notice_insert")).isEqualTo(20);
         assertThat(noticeTotal()).isEqualTo(20);
         assertThat(noticeCount(scenarios.get(20))).isZero();
@@ -408,7 +410,7 @@ class ProjectionDiscoveryQueryIT {
                                 noticeTotal() == 21,
                                 "external_sends",
                                 sends.size()));
-        assertSql(next, 10, 1, 2);
+        assertSql(next, 9, 1, 3);
         assertThat(next.sql().count("notice_insert")).isOne();
         var tail =
                 observe(
@@ -435,7 +437,7 @@ class ProjectionDiscoveryQueryIT {
                                                         notice(s)
                                                                 .status()
                                                                 .equals("submitted_unverified"))));
-        assertSql(tail, 114, java.util.Collections.nCopies(19, 0), 19);
+        assertSql(tail, 95, java.util.Collections.nCopies(19, 0), 38);
         assertThat(allRoutes(scenarios)).isTrue();
         assertThat(sends).hasSize(21);
         assertThat(delivery.list(ALICE)).hasSize(11);
@@ -449,11 +451,12 @@ class ProjectionDiscoveryQueryIT {
                                 sends.size(),
                                 "no_duplicate_send",
                                 sends.size() == 21));
-        assertSql(empty, 2, 0, 0);
+        assertSql(empty, 2, 0, 2);
     }
 
     @Test
-    void partialAnswersAndExpiryAfterDiscoveryStillUseTheLockedLiveProjection() throws Exception {
+    void partialAnswersAndExplicitMaintenanceExpiryBarrierStillUseTheLockedLiveProjection()
+            throws Exception {
         var batch = scenario(ALICE, Mode.BATCH);
         var questions = history(batch);
         assertThat(questions).hasSize(2);
@@ -480,7 +483,7 @@ class ProjectionDiscoveryQueryIT {
                                 !notice(batch).payload().contains(answeredToken),
                                 "current_token_rendered",
                                 notice(batch).payload().contains(currentToken)));
-        assertSql(projected, 10, 1, 2);
+        assertSql(projected, 9, 1, 3);
         assertThat(notice(batch).payload())
                 .isEqualTo(render(batch))
                 .contains(currentToken)
@@ -501,7 +504,7 @@ class ProjectionDiscoveryQueryIT {
                                 noticeCount(expiring) == 0,
                                 "no_external_send",
                                 sends.isEmpty()));
-        assertSql(late, 5, 1, 1);
+        assertSql(late, 6, 1, 3);
         assertThat(noticeCount(expiring)).isZero();
         var question = history(expiring).getFirst();
         assertThat(question.live()).isFalse();
@@ -523,7 +526,7 @@ class ProjectionDiscoveryQueryIT {
     }
 
     @Test
-    void muteRebindAndTurnRevisionChangesAfterScanningRemainIndependentLockedChecks()
+    void explicitMaintenanceDiscoveryMuteRebindAndRevisionRemainIndependentLockedChecks()
             throws Exception {
         for (String change : List.of("mute", "rebind", "turn-revision")) {
             resetData();
@@ -563,7 +566,7 @@ class ProjectionDiscoveryQueryIT {
                                                                 "任务已取消。"))),
                                         "waiting_text_not_sent",
                                         sends.stream().noneMatch(s -> s.text().contains("请输入城市"))));
-                assertSql(changed, 9, 1, 2);
+                assertSql(changed, 9, 1, 3);
                 assertThat(currentTurn.status()).isEqualTo("cancelled");
                 var current =
                         new Scenario(
@@ -582,7 +585,7 @@ class ProjectionDiscoveryQueryIT {
                                     noticeCount(original) == 0,
                                     "no_external_send",
                                     sends.isEmpty()));
-            assertSql(changed, 3, 1, 1);
+            assertSql(changed, 4, 1, 3);
             assertThat(changed.sql().count("interaction_read")).isZero();
             assertThat(noticeCount(original)).isZero();
             assertThat(sends).isEmpty();
@@ -597,7 +600,7 @@ class ProjectionDiscoveryQueryIT {
                                         sends.equals(List.of(expected(original))),
                                         "notice_created_once",
                                         noticeCount(original) == 1));
-                assertSql(woke, 10, 1, 2);
+                assertSql(woke, 9, 1, 3);
                 assertThat(sends).containsExactly(expected(original));
             } else {
                 var rebound = binding(original);
@@ -618,7 +621,7 @@ class ProjectionDiscoveryQueryIT {
                                         noticeCount(original) == 0,
                                         "new_turn_route_matches",
                                         sends.equals(List.of(expected(fresh)))));
-                assertSql(woke, 10, 1, 2);
+                assertSql(woke, 9, 1, 3);
                 assertThat(sends).containsExactly(expected(fresh));
                 assertThat(notice(fresh).payload()).doesNotContain("请输入城市");
             }
@@ -1034,7 +1037,18 @@ class ProjectionDiscoveryQueryIT {
             throws Exception {
         try (var gate = recorder.pauseAfterDiscovery(scenario.binding().id());
                 var executor = Executors.newSingleThreadExecutor()) {
-            var pending = executor.submit(() -> observe(phase, delivery::scheduled));
+            var pending =
+                    executor.submit(
+                            () ->
+                                    observe(
+                                            phase,
+                                            () -> {
+                                                // 旧扫描后并发变更屏障属于显式维护入口；scheduler 已在查询返回时持有 b 锁。
+                                                var discovered =
+                                                        db.listBindingIdsRequiringProjection();
+                                                for (String id : discovered) delivery.project(id);
+                                                delivery.scheduled();
+                                            }));
             try {
                 gate.awaitEntered();
                 mutation.run();
@@ -1086,28 +1100,39 @@ class ProjectionDiscoveryQueryIT {
         assertThat(observed.sql().commits()).isEqualTo(commits);
         assertThat(observed.sql().rollbacks()).isZero();
         assertThat(observed.discovery().phase()).isEqualTo(observed.sql().phase());
+        var queries = observed.discovery().queries();
         assertThat(
-                        observed.discovery().queries().stream()
-                                .map(ProjectionDiscoveryRecorder.QueryObservation::candidates)
-                                .toList())
-                .isEqualTo(candidates);
+                        queries.stream()
+                                .mapToInt(ProjectionDiscoveryRecorder.QueryObservation::candidates)
+                                .sum())
+                .isEqualTo(candidates.stream().mapToInt(Integer::intValue).sum());
         var hashes =
                 observed.sql().executions().stream()
-                        .filter(e -> e.family().equals("notice_projection_scan"))
+                        .filter(
+                                e ->
+                                        List.of(
+                                                        "notice_projection_scan",
+                                                        "notice_projection_try_lock")
+                                                .contains(e.family()))
                         .map(JdbcExecutionCounter.SqlExecution::templateSha256)
                         .toList();
         assertThat(
-                        observed.discovery().queries().stream()
+                        queries.stream()
                                 .map(ProjectionDiscoveryRecorder.QueryObservation::templateSha256)
                                 .toList())
                 .isEqualTo(hashes);
-        assertThat(hashes)
+        // 新 scheduler 一次只锁一个 binding，空查询亦必须观察；维护查询可一次返回 20 项。
+        assertThat(queries)
                 .allMatch(
-                        hash ->
-                                hash.equals(
-                                        baseline
-                                                ? ProjectionDiscoveryRecorder.OLD_HASH
-                                                : ProjectionDiscoveryRecorder.NEW_HASH));
+                        q ->
+                                q.candidates() >= 0
+                                        && q.candidates()
+                                                <= (q.templateSha256()
+                                                                .equals(
+                                                                        ProjectionDiscoveryRecorder
+                                                                                .NEW_HASH)
+                                                        ? 20
+                                                        : 1));
     }
 
     private FeishuDelivery delivery() {

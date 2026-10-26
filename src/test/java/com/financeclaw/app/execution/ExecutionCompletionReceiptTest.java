@@ -10,7 +10,6 @@ import com.financeclaw.app.task.TaskTransitionService;
 import com.financeclaw.app.task.port.TaskMutationGateway;
 import com.financeclaw.domain.Governance.Blocked;
 import com.financeclaw.domain.Task.*;
-import java.util.List;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -88,17 +87,10 @@ class ExecutionCompletionReceiptTest {
     @Test
     void recoveryPassesTheSameSealedReceiptWithoutReloadingItInsideTheTransaction() {
         var expired = new Command("command", "turn", "running", "attempt", 7, false, null);
-        doAnswer(
-                        call -> {
-                            assertThat(
-                                            TransactionSynchronizationManager
-                                                    .isActualTransactionActive())
-                                    .isFalse();
-                            return List.of("command");
-                        })
+        doAnswer(call -> inTransaction(expired))
+                .doAnswer(call -> inTransaction(null))
                 .when(commands)
-                .expired();
-        doAnswer(call -> inTransaction(expired)).when(commands).lockCommand("command");
+                .nextExpiredCommand();
         var finishing = spy(completion);
         var recovery =
                 new RecoverTaskService(commands, turns, receipts, finishing, transitions, tx);
@@ -107,16 +99,18 @@ class ExecutionCompletionReceiptTest {
 
         verify(finishing).finishReceipt(same(expired), same(RUNNING), same(SEALED));
         var order = inOrder(commands, turns, receipts, policies, transitions);
-        order.verify(commands).expired();
-        order.verify(commands).lockCommand("command");
+        order.verify(commands).nextExpiredCommand();
         order.verify(turns).lockTurn("turn");
         order.verify(receipts).receipt("attempt");
         order.verify(receipts).matchesCheckpoint(new Claim(expired, RUNNING), 3);
         order.verify(policies).checkPolicy(new Claim(expired, RUNNING));
         order.verify(transitions).change(RUNNING, "completed", "answer", null);
         order.verify(commands).finishCommand("command");
+        order.verify(commands).nextExpiredCommand();
         order.verifyNoMoreInteractions();
-        assertCommitted();
+        assertThat(manager.begins).isEqualTo(2);
+        assertThat(manager.commits).isEqualTo(2);
+        assertThat(manager.rollbacks).isZero();
     }
 
     @ParameterizedTest(name = "{0}")

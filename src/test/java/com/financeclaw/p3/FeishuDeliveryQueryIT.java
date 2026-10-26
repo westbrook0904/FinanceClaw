@@ -128,7 +128,7 @@ class FeishuDeliveryQueryIT {
         try {
             if (Boolean.getBoolean("financeclaw.test.query-baseline")) {
                 throw new IllegalArgumentException(
-                        "P3a.13 delivery regression is after-only; use NoticeClaimQueryIT for baseline");
+                        "Historical query baseline is not supported by the P3a.20 current scheduler regression");
             }
             postgres.start();
             application =
@@ -225,12 +225,12 @@ class FeishuDeliveryQueryIT {
     @AfterAll
     void stopAndWriteMeasurements() throws Exception {
         try {
-            Path output = Path.of("target/p3a13/feishu-delivery-sql.json");
+            Path output = Path.of("target/p3a20/feishu-delivery-sql.json");
             Files.createDirectories(output.getParent());
             var report = new LinkedHashMap<String, Object>();
-            report.put("schema", "feishu-delivery-sql/1");
+            report.put("schema", "feishu-delivery-sql/2");
             report.put("scope", "real-pg-production-services-send-boundary-mock");
-            report.put("phase", "P3a.13");
+            report.put("phase", "P3a.20");
             report.put("mode", "after");
             report.put("background_pollers_enabled", false);
             report.put("sql_boundary", "jdbc-execute-only-fixture-and-assertions-excluded");
@@ -247,7 +247,7 @@ class FeishuDeliveryQueryIT {
             throws Exception {
         var scenario = scenario(ALICE, state);
         var delivery = delivery();
-        int expected = state.equals("waiting") ? 10 : 9;
+        int expected = state.equals("waiting") ? 9 : 8;
         var first =
                 observe(
                         "scheduled-first-" + state,
@@ -257,12 +257,14 @@ class FeishuDeliveryQueryIT {
                             return null;
                         });
         assertSql(first, expected);
-        assertThat(templateCount(first, bindingTemplate)).isOne();
-        assertThat(templateCount(first, lockedClaimTemplate)).isOne();
-        assertThat(first.sql().count("notice_claim_locked_read")).isOne();
+        assertThat(templateCount(first, bindingTemplate)).isZero();
+        assertThat(templateCount(first, lockedClaimTemplate)).isZero();
+        assertThat(first.sql().count("notice_claim_locked_read")).isZero();
+        assertThat(first.sql().count("notice_scheduled_claim_locked_read")).isOne();
         assertThat(templateCount(first, interactionTemplate))
                 .isEqualTo(state.equals("waiting") ? 1 : 0);
-        assertThat(first.sql().count("notice_projection_scan")).isOne();
+        assertThat(first.sql().count("notice_projection_scan")).isZero();
+        assertThat(first.sql().count("notice_projection_try_lock")).isEqualTo(2);
         assertThat(first.sql().count("notice_claim_update")).isOne();
         assertThat(first.sql().count("notice_expired_recovery")).isZero();
         assertThat(sends).hasSize(1);
@@ -287,7 +289,7 @@ class FeishuDeliveryQueryIT {
     void maintenancePollIncludesRecoveryInItsOwnExplicitBudget() throws Exception {
         var scenario = scenario(ALICE, "completed");
         var delivery = delivery();
-        int expected = 10;
+        int expected = 9;
         var poll =
                 observe(
                         "maintenance-first-completed",
@@ -338,7 +340,7 @@ class FeishuDeliveryQueryIT {
                             delivery.poll();
                             return null;
                         });
-        // 所有样本先落盘，再断性能；回归变红仍保留完整观察。before 由独立 NoticeClaimQueryIT 记录。
+        // 所有样本先落盘，再断次数；当前调度已改为逐项跳锁，不能作为历史 P13 before/after 的同 SQL 比较。
         assertSql(first, 2);
         assertSql(skipped, 0);
         assertSql(recovered, 1);
@@ -372,7 +374,7 @@ class FeishuDeliveryQueryIT {
         assertSql(repeated, projectionCost);
         assertThat(noticeCount(scenario)).isOne();
         var restarted = delivery();
-        int pendingCost = 6;
+        int pendingCost = 5;
         var pending =
                 observe(
                         "restarted-pending-send",
@@ -404,7 +406,7 @@ class FeishuDeliveryQueryIT {
         var scenario = scenario(ALICE, "completed");
         if (cause.equals("transport-failure")) {
             failSend.set(true);
-            int expected = 9;
+            int expected = 8;
             var failed =
                     observe(
                             "transport-failure-becomes-unknown",
@@ -466,7 +468,7 @@ class FeishuDeliveryQueryIT {
             scenarios.add(scenario(i == 21 ? BOB : ALICE, "completed"));
         }
         var delivery = delivery();
-        int firstCost = 66;
+        int firstCost = 64;
         var first =
                 observe(
                         "twenty-binding-projection-boundary",
@@ -479,7 +481,7 @@ class FeishuDeliveryQueryIT {
         assertThat(first.sql().count("notice_insert")).isEqualTo(20);
         assertThat(integer("SELECT count(*) FROM channel.notices")).isEqualTo(20);
         assertThat(sends).hasSize(1);
-        int secondCost = 12;
+        int secondCost = 11;
         var second =
                 observe(
                         "remaining-two-binding-projection",
@@ -494,7 +496,7 @@ class FeishuDeliveryQueryIT {
         assertThat(delivery.list(BOB)).hasSize(1);
         assertThat(delivery.list(ALICE)).hasSize(21);
         // 全局 created_at 顺序不承诺 owner 轮询交替；验证有限积压最终可处理，且一轮最多发送一条。
-        int tailCost = 120;
+        int tailCost = 100;
         var tail =
                 observe(
                         "finite-two-owner-pending-drain",
@@ -527,7 +529,7 @@ class FeishuDeliveryQueryIT {
         var valid = scenario(BOB, "completed");
         var delivery = delivery();
         delivery.project(valid.binding().id());
-        int firstCost = 62;
+        int firstCost = 42;
         var first =
                 observe(
                         "stale-queue-maintenance-first",
@@ -540,8 +542,9 @@ class FeishuDeliveryQueryIT {
         assertThat(sends).isEmpty();
         assertThat(integer("SELECT count(*) FROM channel.notices WHERE status='suppressed'"))
                 .isEqualTo(20);
-        assertThat(first.sql().count("notice_pending_read")).isEqualTo(20);
-        int secondCost = 10;
+        assertThat(first.sql().count("notice_pending_read")).isZero();
+        assertThat(first.sql().count("notice_scheduled_claim_locked_read")).isEqualTo(20);
+        int secondCost = 8;
         var second =
                 observe(
                         "stale-queue-maintenance-second",

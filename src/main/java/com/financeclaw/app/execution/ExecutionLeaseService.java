@@ -17,16 +17,41 @@ public class ExecutionLeaseService {
     private final TaskMutationGateway turns;
     private final TaskTransitionService transitions;
     private final TransactionTemplate tx;
+    private final HeartbeatGateway heartbeats;
 
+    /**
+     * 显式构造的轻量 fixture 可复用其已有事务与命令端口。Spring 生产装配必须使用下方五参入口， 注入独立资源的 HeartbeatGateway；此入口不承担运行时自动降级。
+     */
     public ExecutionLeaseService(
             CommandGateway db,
             TaskMutationGateway turns,
             TaskTransitionService transitions,
             TransactionTemplate tx) {
+        this(
+                db,
+                turns,
+                transitions,
+                tx,
+                (claim, lease) ->
+                        tx.execute(
+                                status -> {
+                                    Boolean cancelling = db.renew(claim, lease);
+                                    if (cancelling == null) throw new Fenced();
+                                    return cancelling;
+                                }));
+    }
+
+    public ExecutionLeaseService(
+            CommandGateway db,
+            TaskMutationGateway turns,
+            TaskTransitionService transitions,
+            TransactionTemplate tx,
+            HeartbeatGateway heartbeats) {
         this.db = db;
         this.turns = turns;
         this.transitions = transitions;
         this.tx = tx;
+        this.heartbeats = Objects.requireNonNull(heartbeats);
     }
 
     private static String id() {
@@ -73,13 +98,8 @@ public class ExecutionLeaseService {
         if (leaseMillis <= 0) {
             throw new IllegalArgumentException("Invalid lease duration");
         }
-        return tx.execute(
-                s -> {
-                    Boolean cancelling = db.renew(claim, leaseMillis);
-                    if (cancelling == null) {
-                        throw new Fenced();
-                    }
-                    return cancelling;
-                });
+        // 不先进入业务 tx：否则借连接本身仍会排在业务池后面，并可能同时占用两个池。
+        // 独立端口负责完整短事务及 null → Fenced 的事务内回滚，异常交由 Worker 中断 attempt。
+        return heartbeats.renew(claim, leaseMillis);
     }
 }

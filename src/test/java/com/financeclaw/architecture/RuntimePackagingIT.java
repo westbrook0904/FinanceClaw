@@ -68,7 +68,8 @@ class RuntimePackagingIT {
                             "BOOT-INF/classes/db/migration/V6__child_invocations.sql",
                             "BOOT-INF/classes/db/migration/V7__execution_privacy.sql",
                             "BOOT-INF/classes/db/migration/V8__private_agent_delegation.sql",
-                            "BOOT-INF/classes/db/migration/V9__private_agent_market_leaf.sql");
+                            "BOOT-INF/classes/db/migration/V9__private_agent_market_leaf.sql",
+                            "BOOT-INF/classes/db/migration/V10__outbox_pending_binding_index.sql");
             for (var entry : entries) {
                 if (!entry.getName().startsWith("BOOT-INF/lib/")
                         || !entry.getName().endsWith(".jar")) continue;

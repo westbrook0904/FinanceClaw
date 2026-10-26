@@ -34,37 +34,45 @@ public class RecoverTaskService {
         this.tx = tx;
     }
 
-    /** 逐个使用独立短事务核验过期命令。有已封存回执时收尾；结果未知时阻断，不能用重新执行猜测结果。 */
+    /**
+     * 每轮最多开启 50 个领取事务，空候选即停止；每项成功提交后才领取下一项。 SKIP LOCKED 只避免 command 行上的实例竞争，不承诺 Turn、策略锁或连接池绝不等待。
+     * 异常继续向上抛出：当前项回滚，已提交的前项保留；不在本方法重试结果未知的外部效果。
+     */
     public int recoverExpired() {
         int count = 0;
-        for (String id : db.expired()) {
-            boolean changed =
-                    Boolean.TRUE.equals(
+        for (int inspected = 0; inspected < 50; inspected++) {
+            RecoveryStep step =
+                    Objects.requireNonNull(
                             tx.execute(
                                     s -> {
-                                        Command c = db.lockCommand(id);
-                                        if (c == null
-                                                || c.live()
-                                                || !c.status().equals("running")) {
-                                            return false;
+                                        Command c = db.nextExpiredCommand();
+                                        if (c == null) return RecoveryStep.EMPTY;
+                                        if (c.live() || !c.status().equals("running")) {
+                                            return RecoveryStep.UNCHANGED;
                                         }
                                         Turn t = turns.lockTurn(c.turnId());
                                         Receipt r = receipts.receipt(c.attemptId());
                                         if (r != null && r.outcome() != null) {
-                                            // command 与 Turn 的行锁仍由当前事务持有；
-                                            // 传递本次已读回执，避免收尾服务再次查询同一 attempt。
+                                            // Command 与 Turn 始终由本次事务持锁；沿用已读回执、
+                                            // checkpoint、实时 policy、取消优先级和身份/fence 校验。
                                             completion.finishReceipt(c, t, r);
                                         } else {
                                             transitions.change(
                                                     t, "blocked", null, "unconfirmed_execution");
-                                            db.finishCommand(id);
+                                            db.finishCommand(c.id());
                                         }
-                                        return true;
-                                    }));
-            if (changed) {
-                count++;
-            }
+                                        return RecoveryStep.RECOVERED;
+                                    }),
+                            "Recovery transaction did not return a step");
+            if (step == RecoveryStep.EMPTY) break;
+            if (step == RecoveryStep.RECOVERED) count++;
         }
         return count;
+    }
+
+    private enum RecoveryStep {
+        EMPTY,
+        UNCHANGED,
+        RECOVERED
     }
 }

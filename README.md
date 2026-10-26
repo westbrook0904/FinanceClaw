@@ -309,7 +309,9 @@ P3a.17 **已推送 `cc90a6d`，远程完整 CI 通过**：[通知投影候选](d
 
 P3a.18 **已推送 `5fe16cf`，远程完整 CI 通过**：[失联 sending 恢复](docs/architecture/notice-recovery-queries.md)仅增加当前 sending 部分索引，保持原 UPDATE、60 秒失联条件和 unknown 不自动重发。20,000 条合成非 sending 历史与 3 条真实 sending 下，根 shared hit blocks **679→17**，同样只更新 1 行；每次恢复仍为 1 条 SQL。原提交前本地 **1,320 单元 + 250 选定集成 = 1,570 项**同次通过；随后 [run 40248871652](https://github.com/westbrook0904/FinanceClaw/actions/runs/40248871652) 整条 completed/success：**1,320 单元 + 591 集成 = 1,911 Java、46 脚本及 44 Compose 检查通过**。高 sending 集合、锁等待及连接池/心跳延迟仍待独立测量。
 
-P3a.19 **本地验收通过，尚未推送**：[过期命令候选扫描](docs/architecture/command-recovery-scan-queries.md)用一次数据库截止时间驱动已有 `command_expiry` 范围。20,000 条合成未来租约与 3 条真实过期命令下，原索引扫描过滤 20,000 行，改后直接返回相同 3 项，根 shared hit blocks **420→3**。每次发现仍为 1 条 SQL，LIMIT 50、实时租约与回执门禁保持。**1,320 单元 + 255 选定集成 = 1,575 项**同次通过；默认 2 秒调度不是恢复 SLA，密集过期积压、跨实例锁争用及连接池/心跳延迟仍待测量。
+P3a.19 **已推送 `7b46102`，远程完整 CI 通过**：[过期命令候选扫描](docs/architecture/command-recovery-scan-queries.md)用一次数据库截止时间驱动已有 `command_expiry` 范围。20,000 条合成未来租约与 3 条真实过期命令下，原索引扫描过滤 20,000 行，改后直接返回相同 3 项，根 shared hit blocks **420→3**。每次发现仍为 1 条 SQL，LIMIT 50、实时租约与回执门禁保持。**1,320 单元 + 255 选定集成 = 1,575 项**同次通过；默认 2 秒调度不是恢复 SLA，密集过期积压、跨实例锁争用及连接池/心跳延迟仍待测量。
+
+P3a.20 **本地整批开发与完整验收通过**：[恢复、Outbox 与心跳并发资源](docs/architecture/concurrent-recovery-resources.md)使恢复和定时通知越过已锁候选，在原连接预算内预留心跳池，并在普通 Command 锁后重新判断租约。V10 只增加通知部分索引，保留现有迁移。统一开发后集中修复，最终 **1,346 单元 + 637 集成 = 1,983 Java、46 脚本、44 Compose 检查通过**；此处记录提交前本地结果，远程交付以对应 commit 的 Actions 为准。
 
 | 文档 | 内容 |
 | --- | --- |
@@ -338,7 +340,8 @@ P3a.19 **本地验收通过，尚未推送**：[过期命令候选扫描](docs/a
 | [交互回答完成判断](docs/architecture/interaction-completion-queries.md) | P3a.16 同 attempt 布尔探测，保留完整恢复历史；已推送，远程完整 CI 通过 |
 | [通知投影候选](docs/architecture/projection-discovery-queries.md) | P3a.17 空 waiting 不占批次，运维口径同步、pending 索引；已推送，远程完整 CI 通过 |
 | [失联 sending 恢复](docs/architecture/notice-recovery-queries.md) | P3a.18 sending 部分索引；已推送，远程完整 CI 通过 |
-| [过期命令候选扫描](docs/architecture/command-recovery-scan-queries.md) | P3a.19 单次数据库截止时间、复用原索引范围；本地 1,575 项选定验收通过，尚未推送 |
+| [过期命令候选扫描](docs/architecture/command-recovery-scan-queries.md) | P3a.19 单次数据库截止时间、复用原索引范围；远程 1,916 Java、46 脚本、44 Compose 通过 |
+| [恢复、Outbox 与心跳并发资源](docs/architecture/concurrent-recovery-resources.md) | P3a.20 恢复/通知跳锁、心跳隔离及锁后租约检查；本地完整 1,983 Java、46 脚本、44 Compose 通过 |
 | [HTTP 校验](docs/architecture/http-request-validation.md) / [Java 规范](docs/architecture/java-coding-guidelines.md) | 输入边界与关键逻辑注释约定 |
 | [运行维护](docs/operations.md) | 受理排空、配置、备份与隔离隐私恢复 |
 | [历史记录](docs/history/README.md) | 过去设计和验收证据，非当前迁移或兼容承诺 |

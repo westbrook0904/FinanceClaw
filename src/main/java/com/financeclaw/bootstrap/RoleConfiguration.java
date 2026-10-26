@@ -6,6 +6,8 @@ import com.financeclaw.app.agent.port.AgentCapabilityResolver;
 import com.financeclaw.app.agent.port.AgentRepository;
 import com.financeclaw.app.artifact.ArtifactService;
 import com.financeclaw.app.execution.*;
+import com.financeclaw.app.execution.port.CommandGateway;
+import com.financeclaw.app.execution.port.HeartbeatGateway;
 import com.financeclaw.app.governance.GrantService;
 import com.financeclaw.app.interaction.AnswerInteractionService;
 import com.financeclaw.app.market.MarketDataService;
@@ -18,6 +20,7 @@ import com.financeclaw.app.release.port.ReleaseSource;
 import com.financeclaw.app.report.ReportService;
 import com.financeclaw.app.research.MarketResearchService;
 import com.financeclaw.app.task.*;
+import com.financeclaw.app.task.port.TaskMutationGateway;
 import com.financeclaw.app.ziwei.*;
 import com.financeclaw.channel.*;
 import com.financeclaw.infrastructure.agent.CatalogAgentCapabilityResolver;
@@ -45,7 +48,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 /**
  * 显式装配统一业务上下文及其职责分组，避免全包扫描把离线或受限入口混入业务进程。
  *
- * <p>HTTP、执行和投递共享事件中心与连接池；分组只表达依赖关系，不再提供旧的分体部署 profile。
+ * <p>HTTP、执行和投递共享事件中心与业务池；续租从同库连接总预算内预留资源。分组只表达依赖关系，不再提供旧的分体部署 profile。
  */
 public final class RoleConfiguration {
     // Keep the holder unannotated: Spring discovers all nested configurations of a component.
@@ -92,7 +95,7 @@ public final class RoleConfiguration {
         SubmitTaskService.class,
         CancelTaskService.class,
         TaskTransitionService.class,
-        ExecutionLeaseService.class,
+        ExecutionHeartbeatConfiguration.class,
         ExecutionPolicyService.class,
         ArtifactService.class,
         MyBatisArtifactGateway.class,
@@ -106,6 +109,17 @@ public final class RoleConfiguration {
         AgentScopeZiweiInputs.class
     })
     static class GovernedTasks {
+        /** Spring 生产入口显式选择五参装配；专用续租资源不可自动降级为业务池。 */
+        @Bean
+        ExecutionLeaseService executionLeaseService(
+                CommandGateway commands,
+                TaskMutationGateway turns,
+                TaskTransitionService transitions,
+                TransactionTemplate tx,
+                HeartbeatGateway heartbeats) {
+            return new ExecutionLeaseService(commands, turns, transitions, tx, heartbeats);
+        }
+
         @Bean
         AgentService agentService(
                 AgentRepository repository,
