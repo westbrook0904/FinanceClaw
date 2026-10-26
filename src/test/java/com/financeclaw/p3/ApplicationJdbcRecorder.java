@@ -645,7 +645,12 @@ final class ApplicationJdbcRecorder {
         if (sql.startsWith("select ") && sql.contains(" from business.commands where ")) {
             if (sql.contains("status='queued'") && sql.contains("skip locked"))
                 return "command_claim_poll";
-            if (sql.contains("lease_until<=clock_timestamp()")) return "command_expired_poll";
+            // 候选 cutoff 两种形状保持同一分类，生产 SQL 的摘要仍逐条原样记录。
+            if (sql.equals(
+                            "select id from business.commands where status='running' and lease_until<=clock_timestamp() order by lease_until limit 50")
+                    || sql.equals(
+                            "select id from business.commands where status='running' and lease_until<=(select clock_timestamp()) order by lease_until limit 50"))
+                return "command_expired_poll";
             if (sql.endsWith("for update")) return "command_lock";
         }
         if (sql.startsWith("select ")

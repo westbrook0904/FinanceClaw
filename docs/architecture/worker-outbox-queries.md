@@ -99,7 +99,7 @@ CI 原有 `target/p3*/` 归档规则覆盖 `target/p3a10/` SQL 报告。P3a.12 �
 1. **Outbox 批量投影仍逐条查询。** 目前先列最多 20 个 binding，再逐项锁定/读取/插入。[P3a.17](projection-discovery-queries.md) 已本地验证 1/20/多 owner 批次及扫描后的重绑、静音、修订，跳过无可渲染问题的空 waiting；有效项仍逐条投影，集合读取与 activeTurn 索引需另测，不能把发现结果当授权缓存。
 2. **通知队首竞争。** 多个执行者可能先观察同一 pending；需要多实例、旧通知前缀的 SQL 与锁等待证据，再评估保持 binding → notice 锁序的有界领取和 SKIP LOCKED。
 3. **执行事务的后续改进。** 原阶段发现的恢复 sealed receipt 重读已由 [P3a.11](recovery-receipt-queries.md) 消除；Worker running 后回读由 [P3a.12](worker-turn-returning-queries.md) 使用真实 RETURNING 消除并完成本地验收。事件、完整字段、sealed/fence/checkpoint 和回滚语义保持，历史 8→7 SQL 数据不重写。
-4. **恢复扫描仍需按负载测量。** [P3a.18](notice-recovery-queries.md) 本地 1,570 项选定验收通过，仅增加当前 sending 部分索引；20,000 条合成非 sending 历史、3 条真实 sending 的同 SQL/同匹配样本中，根 shared hit blocks 679→17，每次仍为一条 UPDATE。60 秒条件、数据库实时时钟、行锁和 unknown 不自动重发保持。命令恢复已有 running(lease_until) 部分索引，大表计划仍待测；大量 sending、索引维护/膨胀、多实例锁等待及有界恢复批次也未完成，不能代替连接池与心跳延迟验收。
+4. **恢复扫描仍需按负载测量。** [P3a.18](notice-recovery-queries.md) sending 局部索引已推送并通过完整远程 CI；[P3a.19](command-recovery-scan-queries.md) 本地 1,575 项选定验收通过，命令候选使用一次数据库 cutoff，使已有 command_expiry 从逐行时钟 Filter 改为参数范围；合成 20,000 条未来租约/3 条真实过期命令下，根 shared hit blocks 420→3，仍是一次 SELECT。原 LIMIT 50、逐项恢复事务、租约/回执和 unknown 不自动重放保持。大量 sending、索引膨胀、密集过期积压下的批次推进、跨实例锁等待及公平性仍待验证；连接池与心跳延迟继续单独测量。
 5. **多用户连接池与心跳延迟。** 当前心跳已是单条双锁 CTE；重点测 Hikari 等待、锁等待、续租延迟及租约余量，按证据评估资源隔离，不靠降低心跳频率、缓存 live 或批量续活减 SQL。
 
 [P3a.13](notice-claim-lock-queries.md) 已推送 `dda1d7d` 并通过远程完整 CI，领取时双锁查询合并，完整旧通知积压进一步 94→72 SQL。[P3a.14](notice-candidate-results.md) 已推送 `e115834` 并通过远程完整 CI，候选 8→2 列、去除候选正文 getter 重复读取，SQL 次数保持不变。两者保留逐项投影事务和原队首等待，批量投影与公平性仍未完成。

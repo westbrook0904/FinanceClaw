@@ -307,7 +307,9 @@ P3a.16 **已推送 `9d33018`，远程完整 CI 通过**：[交互回答完成判
 
 P3a.17 **已推送 `cc90a6d`，远程完整 CI 通过**：[通知投影候选](docs/architecture/projection-discovery-queries.md)跳过无 live pending 的 waiting 空项，并同步运维通知队列。20 个全过期项首 tick **62→2 SQL**；20 个空前缀后的另一 owner 三 tick **186→12 SQL、0→1 次发送**，业务推进刻意不同，不是相同工作量的吞吐比较。过期未答仍保留任务/pending 积压。原提交前本地 **1,320 单元 + 245 选定集成 = 1,565 项**同次通过；随后 [run 40243547522](https://github.com/westbrook0904/FinanceClaw/actions/runs/40243547522) 整条 completed/success：**1,320 单元 + 586 集成 = 1,906 Java、46 脚本及 44 Compose 检查通过**。
 
-P3a.18 **本地验收通过，尚未推送**：[失联 sending 恢复](docs/architecture/notice-recovery-queries.md)增加当前 sending 部分索引，保持原 UPDATE、60 秒失联条件和 unknown 不自动重发。20,000 条合成非 sending 历史及 3 条真实 sending 下，全表扫描改为索引扫描，根 shared hit blocks **679→17**，同样仅更新 1 行；每次恢复仍为 1 条 SQL。**1,320 单元 + 250 选定集成 = 1,570 项**同次通过。大 sending 集合、命令恢复规模、连接池等待及心跳延迟仍待独立测量。
+P3a.18 **已推送 `5fe16cf`，远程完整 CI 通过**：[失联 sending 恢复](docs/architecture/notice-recovery-queries.md)仅增加当前 sending 部分索引，保持原 UPDATE、60 秒失联条件和 unknown 不自动重发。20,000 条合成非 sending 历史与 3 条真实 sending 下，根 shared hit blocks **679→17**，同样只更新 1 行；每次恢复仍为 1 条 SQL。原提交前本地 **1,320 单元 + 250 选定集成 = 1,570 项**同次通过；随后 [run 40248871652](https://github.com/westbrook0904/FinanceClaw/actions/runs/40248871652) 整条 completed/success：**1,320 单元 + 591 集成 = 1,911 Java、46 脚本及 44 Compose 检查通过**。高 sending 集合、锁等待及连接池/心跳延迟仍待独立测量。
+
+P3a.19 **本地验收通过，尚未推送**：[过期命令候选扫描](docs/architecture/command-recovery-scan-queries.md)用一次数据库截止时间驱动已有 `command_expiry` 范围。20,000 条合成未来租约与 3 条真实过期命令下，原索引扫描过滤 20,000 行，改后直接返回相同 3 项，根 shared hit blocks **420→3**。每次发现仍为 1 条 SQL，LIMIT 50、实时租约与回执门禁保持。**1,320 单元 + 255 选定集成 = 1,575 项**同次通过；默认 2 秒调度不是恢复 SLA，密集过期积压、跨实例锁争用及连接池/心跳延迟仍待测量。
 
 | 文档 | 内容 |
 | --- | --- |
@@ -335,7 +337,8 @@ P3a.18 **本地验收通过，尚未推送**：[失联 sending 恢复](docs/arch
 | [等待通知交互查询](docs/architecture/waiting-notice-queries.md) | P3a.15 只读取 pending 交互，保留完整恢复历史；已推送，远程完整 CI 通过 |
 | [交互回答完成判断](docs/architecture/interaction-completion-queries.md) | P3a.16 同 attempt 布尔探测，保留完整恢复历史；已推送，远程完整 CI 通过 |
 | [通知投影候选](docs/architecture/projection-discovery-queries.md) | P3a.17 空 waiting 不占批次，运维口径同步、pending 索引；已推送，远程完整 CI 通过 |
-| [失联 sending 恢复](docs/architecture/notice-recovery-queries.md) | P3a.18 sending 部分索引；本地 1,570 项选定范围通过，尚未推送 |
+| [失联 sending 恢复](docs/architecture/notice-recovery-queries.md) | P3a.18 sending 部分索引；已推送，远程完整 CI 通过 |
+| [过期命令候选扫描](docs/architecture/command-recovery-scan-queries.md) | P3a.19 单次数据库截止时间、复用原索引范围；本地 1,575 项选定验收通过，尚未推送 |
 | [HTTP 校验](docs/architecture/http-request-validation.md) / [Java 规范](docs/architecture/java-coding-guidelines.md) | 输入边界与关键逻辑注释约定 |
 | [运行维护](docs/operations.md) | 受理排空、配置、备份与隔离隐私恢复 |
 | [历史记录](docs/history/README.md) | 过去设计和验收证据，非当前迁移或兼容承诺 |

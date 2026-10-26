@@ -161,9 +161,13 @@ VALUES(#{id},#{conversationId},#{tenant},#{subject},#{idempotencyKey},#{requestH
     @Select("SELECT " + COMMAND_COLUMNS + " FROM business.commands WHERE turn_id=#{id} FOR UPDATE")
     Command getCommandByTurnIdForUpdate(String id);
 
+    /**
+     * 仅发现至本次查询截止点已过期的命令 ID；不持锁，也不把候选当作租约或执行权限快照。 非关联标量子查询在首次求值时取一次数据库时钟，使原 running(lease_until)
+     * 索引可以按截止点定位。 查询执行中才到期的命令可由后续扫描发现；恢复事务仍须按 command → Turn 锁序重新读取实时 live、attempt 与 fence。
+     */
     @Select(
             "SELECT id FROM business.commands WHERE status='running' AND"
-                    + " lease_until<=clock_timestamp() ORDER BY lease_until LIMIT 50")
+                    + " lease_until<=(SELECT clock_timestamp()) ORDER BY lease_until LIMIT 50")
     List<String> listExpiredCommandIds();
 
     /**

@@ -1,6 +1,6 @@
 # P3a.18：失联 sending 通知恢复的部分索引
 
-**状态：本地验收通过，尚未推送。** 前置 `cc90a6d` 已推送，[完整远程 CI](https://github.com/westbrook0904/FinanceClaw/actions/runs/40243547522) 通过 1,906 Java、46 脚本及 44 Compose 检查。[前置远程证据](evidence/p3a17-remote-ci.json)与本阶段[本地证据](evidence/p3a18-implementation.json)分别保存。
+**状态：已推送 `5fe16cf`，远程完整 CI 通过。** [run 40248871652](https://github.com/westbrook0904/FinanceClaw/actions/runs/40248871652) 整条 completed/success：1,320 单元 + 591 集成 = 1,911 Java、46 脚本、44 Compose 检查通过。[P3a.18 远程记录](evidence/p3a18-remote-ci.json)只对应该已交付提交，原提交前[本地证据](evidence/p3a18-implementation.json)及前置 `cc90a6d` 的 1,906/46/44 记录独立保留，不代替后续 P3a.19 验收。
 
 ## 实现范围
 
@@ -43,7 +43,7 @@ EXPLAIN UPDATE 没有 RETURNING，ModifyTable 根节点 Actual Rows=0 不能当�
 - 既有 NoticeClaim 窗口外锁探测次数和 Delivery elapsed_nanos 只按原仪器合同记录，不据此作性能结论；生产 SQL 和结果不放宽。
 - 先以封存 before 验证结构并做合成正负变异自测；正式 after 由 root 宣布 sealed 后才能打开。前后输入身份、原 runtime 字节、JAR/class/resource 及真实 Maven 成功另由 evidence writer 校验。
 
-实际 before 为 7 套 43 IT，after 为 83 套单元 1,320 项及 21 套选定集成 250 项，均由本次 XML 统计，零失败/错误/跳过。模型为 offline，末端发送为替身；本轮未运行完整项目 verify、脚本套件、Compose、新远程 CI、独立部署 JAR、真实 provider 或飞书 HTTP。
+实际 before 为 7 套 43 IT，after 为 83 套单元 1,320 项及 21 套选定集成 250 项，均由本次 XML 统计，零失败/错误/跳过。模型为 offline，末端发送为替身；原提交前本地未运行完整项目 verify、脚本套件、Compose、新远程 CI、独立部署 JAR、真实 provider 或飞书 HTTP。
 
 ## 实测结果
 
@@ -82,4 +82,8 @@ scripts/mvn.sh -B -ntp -o validate spotless:check package \
 
 ## 剩余边界
 
-大量 sending、长事务/多实例锁等待、索引膨胀与状态写入维护、命令过期恢复大表计划及有界批次仍待测量。当前命令恢复已有 running(lease_until) 部分索引，本轮不重复添加。连接池借用等待、心跳续租延迟和租约余量继续作为独立热点；不通过降频、缓存 live 或未知投递自动重发减少成本。
+大量 sending、长事务/多实例锁等待、索引膨胀与状态写入维护、有界恢复批次仍待测量。命令候选的稀疏过期访问路径已由 [P3a.19](command-recovery-scan-queries.md) 本地验证，使用原 running(lease_until) 索引；密集过期积压与跨实例争用仍待测量。连接池借用等待、心跳续租延迟和租约余量继续作为独立热点；不通过降频、缓存 live 或未知投递自动重发减少成本。
+
+## 远程交付补充
+
+原提交前本地命令仅覆盖选定范围；随后 `5fe16cf` 的完整远程 CI 覆盖 1,911 Java、46 脚本和 44 Compose 检查。远程成功不扩大原本地命令的验收范围，也不验证后续 P3a.19；远程与本地 JAR 字节未作比较。

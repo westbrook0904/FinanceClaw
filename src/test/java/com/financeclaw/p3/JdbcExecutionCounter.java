@@ -197,8 +197,12 @@ final class JdbcExecutionCounter {
             return "receipt_read";
         if (sql.startsWith("select payload::text, version, deleted from agent_runtime.states "))
             return "sdk_state_read";
-        if (sql.startsWith("select id from business.commands where status='running'")
-                && sql.contains("lease_until<=clock_timestamp()")) return "command_expired_poll";
+        // 两种候选 SQL 归为同一 execute；精确匹配，不把持锁的实时 live 查询误算为轮询。
+        if (sql.equals(
+                        "select id from business.commands where status='running' and lease_until<=clock_timestamp() order by lease_until limit 50")
+                || sql.equals(
+                        "select id from business.commands where status='running' and lease_until<=(select clock_timestamp()) order by lease_until limit 50"))
+            return "command_expired_poll";
         if (sql.startsWith("update business.commands set status='done'"))
             return "command_done_update";
         if (sql.startsWith("insert into business.journal")) return "journal_insert";

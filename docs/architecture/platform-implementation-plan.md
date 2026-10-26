@@ -526,7 +526,7 @@ P3a.17 **已推送 `cc90a6d`，远程完整 CI 通过**：[通知投影候选](p
 
 ## 28. P3a.18 失联 sending 通知恢复
 
-P3a.18 **本地验收通过，尚未推送**：[失联 sending 恢复](notice-recovery-queries.md)增加当前 sending 部分索引，保持原 UPDATE、60 秒失联条件和 unknown 不自动重发。20,000 条合成非 sending 历史及 3 条真实 sending 下，全表扫描改为索引扫描，根 shared hit blocks **679→17**，同样仅更新 1 行；每次恢复仍为 1 条 SQL。**1,320 单元 + 250 选定集成 = 1,570 项**同次通过。大 sending 集合、命令恢复规模、连接池等待及心跳延迟仍待独立测量。
+P3a.18 **已推送 `5fe16cf`，远程完整 CI 通过**：[失联 sending 恢复](notice-recovery-queries.md)仅增加当前 sending 部分索引，保持原 UPDATE、60 秒失联条件和 unknown 不自动重发。20,000 条合成非 sending 历史与 3 条真实 sending 下，根 shared hit blocks **679→17**，同样只更新 1 行；每次恢复仍为 1 条 SQL。原提交前本地 **1,320 单元 + 250 选定集成 = 1,570 项**同次通过；随后 [run 40248871652](https://github.com/westbrook0904/FinanceClaw/actions/runs/40248871652) 整条 completed/success：**1,320 单元 + 591 集成 = 1,911 Java、46 脚本及 44 Compose 检查通过**。高 sending 集合、锁等待及连接池/心跳延迟仍待独立测量。
 
 前置 `cc90a6d` 的完整远程 CI 通过后，先在原生产定义上运行 7 套 43 项 PostgreSQL 基线，再只在 V1 新库定义增加 `channel_sending_notice(started_at) WHERE status='sending'`。生产 Java、恢复 SQL、调度器与心跳字节保持；不引入迁移兼容、新表或恢复队列。
 
@@ -536,4 +536,18 @@ P3a.18 **本地验收通过，尚未推送**：[失联 sending 恢复](notice-re
 
 实际同次 83 套单元 1,320 项与 21 套选定集成 250 项通过，473 输入无漂移；419 class、22 资源及 3 份根许可证与本次 JAR 字节匹配。两次 Maven 验证均首次成功；此前本机 Perl locale 导致补丁命令退出，after runner 在构建前因范围门禁拒绝，完整记录为编排注记，未执行 Maven。
 
-本轮未运行完整项目 verify、脚本套件、Compose、新远程 CI、独立部署 JAR 或真实 provider/飞书 HTTP；前置远程 1,906/46/44 只对应 cc90a6d。索引增加状态/时间写入维护；大量 sending、索引膨胀、命令恢复大表计划、多实例锁争用及连接池/续租延迟仍需单独验证。[专项与命令](notice-recovery-queries.md)；[本地证据](evidence/p3a18-implementation.json)。
+原提交前本地未运行完整项目 verify、脚本套件、Compose、新远程 CI、独立部署 JAR 或真实 provider/飞书 HTTP；前置远程 1,906/46/44 只对应 cc90a6d。索引增加状态/时间写入维护；大量 sending、索引膨胀、命令恢复大表计划、多实例锁争用及连接池/续租延迟仍需单独验证。[专项与命令](notice-recovery-queries.md)；[本地证据](evidence/p3a18-implementation.json)。
+
+随后 [run 40248871652](https://github.com/westbrook0904/FinanceClaw/actions/runs/40248871652) 针对 `5fe16cf` 整条 completed/success：**1,911 Java、46 脚本、44 Compose 检查通过**。[远程证据](evidence/p3a18-remote-ci.json)独立于原本地 1,570 项选定范围和后续 P3a.19。
+
+## 29. P3a.19 过期命令候选扫描
+
+P3a.19 **本地验收通过，尚未推送**：[过期命令候选扫描](command-recovery-scan-queries.md)用一次数据库截止时间驱动已有 `command_expiry` 范围。20,000 条合成未来租约与 3 条真实过期命令下，原索引扫描过滤 20,000 行，改后直接返回相同 3 项，根 shared hit blocks **420→3**。每次发现仍为 1 条 SQL，LIMIT 50、实时租约与回执门禁保持。**1,320 单元 + 255 选定集成 = 1,575 项**同次通过；默认 2 秒调度不是恢复 SLA，密集过期积压、跨实例锁争用及连接池/心跳延迟仍待测量。
+
+前置 `5fe16cf` 的完整远程 CI 通过后，先建立 3 套 28 项真实 PG 基线；唯一生产变化是 TaskMapper.listExpiredCommandIds 的 `lease_until<=clock_timestamp()` 改为 `lease_until<=(SELECT clock_timestamp())`。原 running 局部索引、排序及 LIMIT 50 保持，不增加索引/schema。截止时间在 InitPlan 实际求值时从数据库取得，查询中才到期的项可留后续扫描；不复用到锁内 live、attempt/fence、sealed receipt、checkpoint/policy 或心跳判断。普通锁读取的时钟投影边界未在本轮修改。
+
+默认计划前后均使用 command_expiry；原计划逐行 Filter 排除 20,000 条未来租约，新计划的 Result InitPlan 实际 1 row/1 loop，参数成为 lease_until 范围条件，返回相同 3 条。根 shared hit/read 为 420/0→3/0；逐节点统计单独保存，不对子树求和，也不推断物理 IO、吞吐或容量。另一个 51 候选的合成查询严格返回最早 50 项，不代表恢复器批次推进或真实 Worker 调度。
+
+五项新 PG 用例、10 个窗口保持 19 SQL/3 次显式 commit/0 rollback；候选之后真实等待行锁，合法续租/完成的新版本均跳过；已执行未 sealed 的任务 blocked 且不增加 SDK、预算或 assistant；长事务过期后仍使用当前数据库时间。Worker 15 窗口保持 69 SQL，Receipt 21 窗口保持 159 SQL；仅 29 次候选模板变化，其余有序 SQL/分组、事务、固定业务结果和预期异常保持。严格比较器 3 正例/47 负变异通过。
+
+实际同次 83 套单元 1,320 项与 22 套选定集成 255 项全过，474 输入在各次执行前后不变，前后仅 TaskMapper 生产输入变化；两个记录器和新夹具同 SHA，419 class/22 资源/3 份根许可证匹配本次 JAR。两次 Maven 均首次成功，无编排拒绝。原提交前本地未跑完整 verify、脚本套件、Compose、新远程 CI、独立部署 JAR 或真实 provider/飞书 HTTP；前置远程 1,911/46/44 只对应 5fe16cf。[专项与命令](command-recovery-scan-queries.md)；[本地证据](evidence/p3a19-implementation.json)。
