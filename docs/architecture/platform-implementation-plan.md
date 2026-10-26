@@ -2,7 +2,7 @@
 
 本文是 FinanceClaw Java 的实施方案与阶段状态记录。面向四类使用方式：通用对话、定制 RAG Workflow、通过提示词与工具等配置组装 Agent，以及直接调用一个独立 Agent。本文中的目标模型不代表当前已经实现的能力。
 
-截至 2026-10-26，P1、P2a、P2b 和 P3a.1–P3a.20 的分阶段实现已交付。`76b8818` 已在 `origin/codex/java-agentscope`，[GitHub Actions 40275671782](https://github.com/westbrook0904/FinanceClaw/actions/runs/40275671782) 的 verify 和 delivery 均 completed/success，覆盖 **1,983 Java、46 脚本、44 Compose 检查**。P3a.20 的[原本地验收](concurrent-recovery-resources.md)继续保留提交前范围。P3a 整体与 P4 的[非 RAG 遗留项集中实施](non-rag-completion-plan.md)开发已完成，提交前 1,402 单元/契约/架构与 46 脚本通过；完整数据库/Compose 验收以本提交 Actions 为准，本地 Docker 阻塞见集中实施记录。历史 CI 不覆盖本批代码。P3b RAG 按用户要求暂缓。固定深度子执行器不等于完整权限或递归委派。
+截至 2026-10-26，P1、P2a、P2b 和 P3a.1–P3a.20 的分阶段实现已交付。`76b8818` 已在 `origin/codex/java-agentscope`，[GitHub Actions 40275671782](https://github.com/westbrook0904/FinanceClaw/actions/runs/40275671782) 的 verify 和 delivery 均 completed/success，覆盖 **1,983 Java、46 脚本、44 Compose 检查**。P3a.20 的[原本地验收](concurrent-recovery-resources.md)继续保留提交前范围。P3a 整体与 P4 的[非 RAG 遗留项集中实施](non-rag-completion-plan.md)开发已完成，提交前 1,419 单元/契约/架构与 53 脚本通过；完整数据库/Compose 验收以本提交 Actions 为准，本地 Docker 阻塞见集中实施记录。历史 CI 不覆盖本批代码。P3b RAG 按用户要求暂缓。固定深度子执行器不等于完整权限或递归委派。
 
 ## 1. 实施前基线与改造目标
 
@@ -292,6 +292,7 @@ python3 scripts/test-live-acceptance.py
 python3 scripts/test-inspect-drain.py
 python3 scripts/test-restore-privacy.py
 python3 scripts/test-user-profile.py
+python3 scripts/test-compose-recovery.py
 python3 scripts/validate-compose.py --ziwei --admission --preflight --restore-privacy
 python3 scripts/collect-evidence.py
 python3 scripts/check-delivery.py

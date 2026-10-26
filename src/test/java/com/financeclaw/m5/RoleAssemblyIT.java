@@ -1,6 +1,7 @@
 package com.financeclaw.m5;
 
 import static org.assertj.core.api.Assertions.*;
+import static org.awaitility.Awaitility.await;
 
 import com.fasterxml.jackson.databind.*;
 import com.financeclaw.api.TaskEvents;
@@ -13,7 +14,10 @@ import com.financeclaw.app.governance.GrantService;
 import com.financeclaw.app.memory.*;
 import com.financeclaw.app.release.ReleaseService;
 import com.financeclaw.app.report.ReportService;
+import com.financeclaw.app.runtime.WorkerRegistry;
 import com.financeclaw.bootstrap.FinanceClawApplication;
+import com.financeclaw.bootstrap.RuntimeHealth;
+import com.financeclaw.bootstrap.WorkerReadinessHealth;
 import com.financeclaw.channel.*;
 import com.financeclaw.infrastructure.agentscope.capability.BusinessCapabilities;
 import com.financeclaw.infrastructure.agentscope.memory.AgentScopeMemoryModels;
@@ -38,6 +42,7 @@ import org.junit.jupiter.api.*;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.boot.WebApplicationType;
+import org.springframework.boot.actuate.health.Status;
 import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.boot.web.servlet.context.ServletWebServerApplicationContext;
 import org.springframework.context.ConfigurableApplicationContext;
@@ -134,7 +139,9 @@ class RoleAssemblyIT {
             String profile, boolean web, Map<String, String> overrides) {
         var properties = new HashMap<String, String>();
         if (profile.equals("standalone")) properties.put("spring.profiles.active", "standalone");
-        properties.put("management.endpoint.health.group.readiness.include", "db,runtimeStore");
+        properties.put(
+                "management.endpoint.health.group.readiness.include",
+                "db,runtimeStore,workerReadiness");
         properties.putAll(overrides);
         return start(FinanceClawApplication.class, web, properties);
     }
@@ -262,10 +269,20 @@ class RoleAssemblyIT {
                             "com.financeclaw.channel.FeishuDelivery.scheduled",
                             "com.financeclaw.channel.FeishuDelivery.scheduledRecovery");
             assertThat(context.containsBean("executionHeartbeatScheduler")).isTrue();
-            assertThat(
-                            request(context, "/actuator/health/readiness", "GET", null, false)
-                                    .statusCode())
-                    .isEqualTo(200);
+            await().atMost(Duration.ofSeconds(10))
+                    .untilAsserted(
+                            () ->
+                                    assertThat(
+                                                    request(
+                                                                    context,
+                                                                    "/actuator/health/readiness",
+                                                                    "GET",
+                                                                    null,
+                                                                    false)
+                                                            .statusCode())
+                                            .isEqualTo(200));
+            assertThat(context.getBean(WorkerReadinessHealth.class).health().getDetails())
+                    .isEmpty();
             assertThat(request(context, "/v1/operations", "GET", null, false).statusCode())
                     .isEqualTo(401);
             assertThat(request(context, "/v1/operations", "GET", null, true).statusCode())
@@ -275,6 +292,31 @@ class RoleAssemblyIT {
             assertThat(request(context, "/v1/memory/profile.md", "GET", null, true).statusCode())
                     .isEqualTo(200);
             inventory(profile, context);
+            // A healthy database must not hide an authoritative loss of this process registration.
+            var registry = context.getBean(WorkerRegistry.class);
+            var live =
+                    registry.list(100).stream()
+                            .filter(worker -> worker.live() && worker.state().equals("active"))
+                            .toList();
+            assertThat(live).hasSize(1);
+            registry.stop(live.getFirst().workerId());
+            context.getBean(TaskWorker.class).checkRuntimeControl();
+            await().atMost(Duration.ofSeconds(10))
+                    .untilAsserted(
+                            () ->
+                                    assertThat(
+                                                    request(
+                                                                    context,
+                                                                    "/actuator/health/readiness",
+                                                                    "GET",
+                                                                    null,
+                                                                    false)
+                                                            .statusCode())
+                                            .isEqualTo(503));
+            assertThat(context.getBean(RuntimeHealth.class).health().getStatus())
+                    .isEqualTo(Status.UP);
+            assertThat(context.getBean(WorkerReadinessHealth.class).health().getStatus())
+                    .isEqualTo(Status.DOWN);
         }
     }
 
@@ -306,6 +348,7 @@ class RoleAssemblyIT {
                     ReportService.class,
                     ReleaseService.class,
                     TaskWorker.class,
+                    WorkerReadinessHealth.class,
                     AgentExecutionPort.class,
                     ChildInvocationService.class,
                     ChildInvocationGateway.class,
@@ -401,6 +444,7 @@ class RoleAssemblyIT {
                     ReportService.class,
                     ReleaseService.class,
                     TaskWorker.class,
+                    WorkerReadinessHealth.class,
                     AgentExecutionPort.class,
                     MemoryProcessingService.class,
                     MemoryMapper.class,
@@ -414,6 +458,10 @@ class RoleAssemblyIT {
     void unifiedHttpKeepsGrantReplayOwnershipAndQueuedCancellation() throws Exception {
         try (var api =
                 application("default", true, Map.of("financeclaw.worker.enabled", "false"))) {
+            assertThat(request(api, "/actuator/health/readiness", "GET", null, false).statusCode())
+                    .isEqualTo(200);
+            assertThat(api.getBean(WorkerReadinessHealth.class).health().getStatus())
+                    .isEqualTo(Status.UP);
             var json = new ObjectMapper();
             var created = request(api, "/v1/conversations", "POST", "{}", true);
             assertThat(created.statusCode()).isEqualTo(201);

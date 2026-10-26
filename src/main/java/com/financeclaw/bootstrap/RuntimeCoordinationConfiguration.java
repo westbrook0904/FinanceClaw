@@ -21,7 +21,11 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 /** 仅在业务运行入口装配；受限Memory/恢复/初始化/管理CLI不导入。 */
 @Configuration(proxyBeanMethods = false)
-@Import({RuntimeOperationsController.class, ObservationConfiguration.class})
+@Import({
+    RuntimeOperationsController.class,
+    ObservationConfiguration.class,
+    WorkerReadinessHealth.class
+})
 public class RuntimeCoordinationConfiguration {
     @Bean
     TaskEventAccess taskEventAccess(

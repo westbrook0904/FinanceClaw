@@ -1,10 +1,16 @@
 # 非 RAG 遗留项集中实施
 
-状态：本批开发已完成，提交前 **1,402 个单元/契约/架构测试、46 个脚本测试及格式化检查与打包通过**。基线为 `76b8818`。全部开发及验收夹具先于首轮编译和测试完成，随后集中验证与修复；各次失败均保留在[提交前验证记录](evidence/non-rag-implementation.json)。
+状态：本批开发与集中修复已完成，最终提交前 **1,419 个单元/契约/架构测试、53 个脚本测试及格式检查与打包通过**。基线为 `76b8818`。全部开发及验收夹具先于首轮编译和测试完成，随后集中验证与修复；各次失败均保留在[验证记录](evidence/non-rag-implementation.json)。
 
 最终源码的本地 PostgreSQL/Compose 验证受 Docker API 持续无响应阻塞，未声称本地完整 verify 成功。完整数据库、原生 SDK、独立 JAR 和 Compose 验收，以本提交在 `codex/java-agentscope` 对应 GitHub Actions 的 `verify` 与 `delivery` 最终结果为准。历史 CI 不覆盖本批代码。
 
 首次远程 [run 40340127681](https://github.com/westbrook0904/FinanceClaw/actions/runs/40340127681) 完成 691 个集成用例，其中 689 通过、1 失败、1 初始化错误，部署作业因而跳过。已修复前导 `..` 工件路径越界，以及活跃应用上下文与清库 DDL 的测试生命周期冲突；新增回归后本地 1,402 单元与 46 脚本通过。该失败记录保留，最终结论须查看修复提交对应的完整 CI。
+
+第二次远程 [run 40345073989](https://github.com/westbrook0904/FinanceClaw/actions/runs/40345073989) 对应提交 `2185eb91506330a06f91ce2db2ebbb452e33b555`：`verify` 通过 **1,402 个单元测试 + 691 个 PostgreSQL 集成测试，共 2,093 个 Java 测试，以及 46 个 Python 测试与证据收集器检查**。`delivery` 在前 20 项 Compose 检查通过后失败。日志记录 PostgreSQL 从 `2026-10-26 15:21:47.826 UTC` 停止，到 `15:22:15.411 UTC` 恢复，实际中断 **27.585 秒**，已超过默认 **15 秒 worker TTL**；旧脚本在数据库恢复后等待旧 worker 自动完成新任务，混淆了数据库恢复与过期进程身份恢复。
+
+本轮已补充临时数据库故障暂停与权威注册过期的区分：暂停不延长原保守截止时间，截止前控制重试成功只恢复新领取，旧 attempt 不恢复；过期、stopped 或刷新返回 false 的 UUID 仍不可续活。readiness 已纳入无 SQL、无身份详情的 worker 本地状态，避免数据库已正常而 worker 不可用时误报 200。部署夹具分为 **默认 15 秒 TTL 下过期后须以新进程身份恢复**，以及 **显式配置 60 秒 TTL 下、故障未超过截止时间时不重启自动恢复** 两个实验；生产默认仍为 15 秒。提交前本机未执行这两项 Compose 实验，最终结果须查看本提交对应 Actions，不能以夹具源码或脚本契约测试替代部署验收。
+
+本地 package-08（归档 `/tmp/financeclaw-non-rag-local-package-08`）通过 **1,416 个单元测试、53 个 Python 测试、格式检查与打包**，其中新增 7 个恢复脚本契约测试。它仅是中间回归记录：随后发现的运行时初始化中断窗口当时仍在修复，不能把 package-08 的源码或 JAR 当作最终版本。package-08 单列为 intermediate，历史 package-07 继续保留。启动窗口已补齐粘性的本地 attempt 门禁，并由 financeclaw-non-rag-local-package-10 对最终冻结输入重新验证：1,419 Java 单元、53 脚本、格式和打包通过；生产及验收输入指纹前后一致。`local_latest` 记录本轮结果，最终 PostgreSQL 与 Compose 结论仍须等待推送提交的完整 Actions。
 
 ## 范围与完成标准
 

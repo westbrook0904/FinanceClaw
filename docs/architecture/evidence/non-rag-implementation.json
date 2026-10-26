@@ -1,7 +1,7 @@
 {
   "schema": "non-rag-implementation/1",
-  "record_boundary": "Pre-push local evidence. Remote PostgreSQL and Compose acceptance belongs to the exact pushed commit Actions run; this file does not predict its result.",
-  "recorded_at_utc": "2026-10-26T14:59:45.008036+00:00",
+  "record_boundary": "Historical local and exact-commit remote evidence. The second remote verify passed but delivery failed; subsequent recovery/readiness repairs and intermediate package-08 do not establish final-source or Compose acceptance.",
+  "recorded_at_utc": "2026-10-26T16:14:14.041143+00:00",
   "base_commit": "76b88187e9cb38567eaa4064fe56ef6ff913a0c3",
   "branch": "codex/java-agentscope",
   "development_order": "All authorized non-RAG production and acceptance source completed before first formatting, compilation and tests. Failures retained; concentrated repairs followed.",
@@ -35,7 +35,7 @@
       "spotless:check",
       "package"
     ],
-    "unit_tests": 1402,
+    "unit_tests": 1419,
     "failures": 0,
     "errors": 0,
     "skipped": 0,
@@ -46,33 +46,39 @@
         "name": "test-live-acceptance",
         "tests": 8,
         "exit_code": 0,
-        "log_sha256": "6ba40bf08869bdda0107784295e7143fb58e2ae56831b7372150a0e22d31da6b"
+        "log_sha256": "97e70f8ec0ade860f08c1e73246c774247b9805a6849797fab7a6c966d20cb44"
       },
       {
         "name": "test-inspect-drain",
         "tests": 12,
         "exit_code": 0,
-        "log_sha256": "a2aa970268707ea55a386ce28dca3e12ef01c4e808ff33f18e7a1ff8be5474eb"
+        "log_sha256": "f7db8d1282ec61dd4d9924237a95404f45e5e05392be477f5882166c8e98204c"
       },
       {
         "name": "test-restore-privacy",
         "tests": 16,
         "exit_code": 0,
-        "log_sha256": "e18d319afa309538a5da0029ad64a665a6eef09519bff615bc5411496ee36449"
+        "log_sha256": "09f7869c4cceb741d89b3f6fc61a65537aca70f553b947cb6c038a4f13df7aea"
       },
       {
         "name": "test-user-profile",
         "tests": 10,
         "exit_code": 0,
-        "log_sha256": "f21cf8f81dbfe5d72a7e0bee6069a3c3fc0e651e4938e2d690e9e9ff41748af0"
+        "log_sha256": "dcfcd65f3f224130e193fca33dd5d28a17d429605463903a9824a4bc7cd6617d"
+      },
+      {
+        "name": "test-compose-recovery",
+        "tests": 7,
+        "exit_code": 0,
+        "log_sha256": "670a39115e7523a8984e4842e16547cb2094b03fad392b037b4b9dc8b2656e62"
       }
     ],
-    "python_total": 46,
-    "application_jar_sha256": "dceb99d97bed4979944bbf8c7794a6c428d4db3183f72f440a231b95e516d700",
-    "source_input_file_count": 601,
-    "source_input_manifest_sha256": "3a1a5dd4fcfb4cc7cb0743a90b5ecb648d0d14691a35a53ba6ef22be05912fd5",
-    "local_archive": "/tmp/financeclaw-non-rag-local-package-07",
-    "result_sha256": "ca03b54ca8202f62a1f7ddc450ee74968401f9acec84af7bae1307a0cb93722f"
+    "python_total": 53,
+    "application_jar_sha256": "3bc5b0f33e8dedddc2cf1f38df91b4062e50ac7332b2b81d645ca37b96e8ee1e",
+    "source_input_file_count": 604,
+    "source_input_manifest_sha256": "9752525499a8bb4262bc83f8b88e2ce35397d59b5f4b265bc4ebb2c1d106c013",
+    "local_archive": "/tmp/financeclaw-non-rag-local-package-10",
+    "result_sha256": "848b54c3a63ad387384112768dac0e1d3655b8caecdd8fd711137f2fb7285ad1"
   },
   "failed_full_validation_attempts": [
     {
@@ -352,7 +358,7 @@
     ],
     "verify_scope": "full unit inventory, all PostgreSQL IT, native SDK, executable JAR experiments and source/JAR evidence collection",
     "delivery_scope": "isolated Compose --ziwei --admission --preflight --restore-privacy",
-    "result": "record separately after push; not asserted here"
+    "result": "Run 40345073989 at 2185eb91506330a06f91ce2db2ebbb452e33b555 passed verify and failed delivery. Current repairs require a new exact-head verify and both isolated Compose experiments; no final-source success is asserted."
   },
   "authority_repairs": [
     "rebuild native ConfirmResult from exact live approval/checkpoint references instead of untyped JSON metadata",
@@ -438,6 +444,31 @@
         "RuntimeCoordinationIT.actualAgentModelAndGovernedToolProduceRootedObservationsAcrossThreads (BeforeEach TRUNCATE deadlock)"
       ],
       "failure_summary_sha256": "9d39bac2b5b129c31fc18f212be2520b0a38755cead506289d5cec0ebf35e3c9"
+    },
+    {
+      "head_sha": "2185eb91506330a06f91ce2db2ebbb452e33b555",
+      "run_id": 40345073989,
+      "url": "https://github.com/westbrook0904/FinanceClaw/actions/runs/40345073989",
+      "status": "completed",
+      "conclusion": "failure",
+      "verify": "success",
+      "delivery": "failure",
+      "unit_tests": 1402,
+      "integration_tests": 691,
+      "java_total": 2093,
+      "python_total": 46,
+      "evidence_collector": "passed",
+      "compose_checks_passed_before_failure": 20,
+      "delivery_failure": "After PostgreSQL restarted and database readiness returned HTTP 200, a newly admitted task never completed because the process worker registration was permanently unavailable.",
+      "database_outage": {
+        "postgres_shutdown_utc": "2026-10-26T15:21:47.826Z",
+        "postgres_ready_utc": "2026-10-26T15:22:15.411Z",
+        "duration_seconds": 27.585,
+        "default_worker_ttl_seconds": 15,
+        "exceeded_default_worker_ttl": true,
+        "contract_mismatch": "The old deployment script treated database recovery as automatic recovery of an expired worker UUID. Expired registrations require a new process identity."
+      },
+      "local_delivery_log": "/tmp/financeclaw-non-rag-compose-40345073989/compose-validation.log"
     }
   ],
   "repairs_after_first_remote_attempt": [
@@ -451,5 +482,105 @@
     "unit_tests_executed": 0,
     "reason": "New outside-root JAR assertion omitted RuntimeArtifacts import; corrected before the latest successful full unit/package run.",
     "result_sha256": "0f9b598e0b6f680d3df48a3626019414ea1384c60a19fc9ba787674ff303dc7e"
-  }
+  },
+  "repairs_after_second_remote_attempt": [
+    "Separate temporary database control hold from authoritative expiry: hold stops new claims and renewals without extending the previous conservative deadline; a successful control retry before that deadline may restore new claims, never old interrupted attempts.",
+    "False registration refresh, stopped/expired identity and deadline expiry remain terminal for that process UUID; late successful responses cannot revive it.",
+    "Add local worker readiness without SQL or identity details. Enabled unregistered, held, expired or closed workers are DOWN even when the database is UP; explicitly disabled worker fixtures remain UP.",
+    "Split Compose source into the explicit default-15s expiry/new-process experiment and the explicit 60s-TTL automatic-recovery experiment. The default TTL remains 15s; both deployment experiments still await execution against the repaired source."
+  ],
+  "local_intermediate_regressions": [
+    {
+      "attempt_id": "local-package-08",
+      "status": "passed_without_docker_intermediate",
+      "started_at_utc": "2026-10-26T15:46:06.867599+00:00",
+      "ended_at_utc": "2026-10-26T15:51:19.880519+00:00",
+      "unit_tests": 1416,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "python_total": 53,
+      "compose_recovery_script_contract_tests": 7,
+      "format_check": "passed",
+      "package": "passed",
+      "inputs_unchanged_during_run": true,
+      "unit_inventory_matches": true,
+      "application_jar_sha256": "81a0183d3b761cff3f8258fe19025b81e716848b144648f865a6a9a79084c572",
+      "local_archive": "/tmp/financeclaw-non-rag-local-package-08",
+      "result_sha256": "0b1eaefa6064528b674478f73fbe96c73474a0872a7887d340c016fa61fb0a40",
+      "covers_final_source": false,
+      "postgresql_or_compose_validation": false,
+      "qualification": "Intermediate regression only. A newly identified runtime-initialization interruption window is under repair after this run; package-08 must not be represented as the final source or artifact."
+    }
+  ],
+  "pending_current_repairs": "Close the runtime-initialization interruption window, then collect a fresh final-source regression and exact-head remote verify/delivery evidence. local_latest intentionally retains historical package-07; package-08 is intermediate only.",
+  "runtime_gate_test_fixture_failure": {
+    "archive": "/tmp/financeclaw-non-rag-local-package-09",
+    "passed": false,
+    "unit_tests": 1419,
+    "unit_failures": 1,
+    "unit_errors": 1,
+    "unit_skipped": 0,
+    "inputs_unchanged": true,
+    "source_inventory_matches": true,
+    "application_jar_rebuilt": false,
+    "reason": "The new parameterized startup-race fixture overwrote an existing Mockito Answer via when(resolve), which executed its nested require call and recursively stubbed require. Preserve the immutable resolved release and use doAnswer(...).when(resolve). Production Error handling and original assertions are unchanged.",
+    "result_sha256": "ebca9abb0446a37da4116d81e377c03c055d7c6259d3b9d119e4f4eb32970c7d"
+  },
+  "latest_local_infrastructure_probe": {
+    "time_utc": "2026-10-26T16:03:11Z",
+    "docker_server_version": "timeout_after_5s",
+    "docker_restart_performed": false,
+    "unrelated_containers_modified": false
+  },
+  "prior_local_package_before_runtime_control_repair": {
+    "status": "passed_without_docker",
+    "command": [
+      "scripts/mvn.sh",
+      "-B",
+      "-ntp",
+      "-o",
+      "spotless:check",
+      "package"
+    ],
+    "unit_tests": 1402,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "source_inventory_matches": true,
+    "inputs_unchanged": true,
+    "python_suites": [
+      {
+        "name": "test-live-acceptance",
+        "tests": 8,
+        "exit_code": 0,
+        "log_sha256": "6ba40bf08869bdda0107784295e7143fb58e2ae56831b7372150a0e22d31da6b"
+      },
+      {
+        "name": "test-inspect-drain",
+        "tests": 12,
+        "exit_code": 0,
+        "log_sha256": "a2aa970268707ea55a386ce28dca3e12ef01c4e808ff33f18e7a1ff8be5474eb"
+      },
+      {
+        "name": "test-restore-privacy",
+        "tests": 16,
+        "exit_code": 0,
+        "log_sha256": "e18d319afa309538a5da0029ad64a665a6eef09519bff615bc5411496ee36449"
+      },
+      {
+        "name": "test-user-profile",
+        "tests": 10,
+        "exit_code": 0,
+        "log_sha256": "f21cf8f81dbfe5d72a7e0bee6069a3c3fc0e651e4938e2d690e9e9ff41748af0"
+      }
+    ],
+    "python_total": 46,
+    "application_jar_sha256": "dceb99d97bed4979944bbf8c7794a6c428d4db3183f72f440a231b95e516d700",
+    "source_input_file_count": 601,
+    "source_input_manifest_sha256": "3a1a5dd4fcfb4cc7cb0743a90b5ecb648d0d14691a35a53ba6ef22be05912fd5",
+    "local_archive": "/tmp/financeclaw-non-rag-local-package-07",
+    "result_sha256": "ca03b54ca8202f62a1f7ddc450ee74968401f9acec84af7bae1307a0cb93722f"
+  },
+  "runtime_initialization_stop_repair": "Worker generation and denied-attempt gate travels through the execution port and observation wrapper. Runtime registers sticky stop state before initialization, rechecks its local lifetime before model/tool dispatch and checkpoint/result operations, and closes the bounded attempt entry. A recovered database cannot reopen an old attempt."
 }

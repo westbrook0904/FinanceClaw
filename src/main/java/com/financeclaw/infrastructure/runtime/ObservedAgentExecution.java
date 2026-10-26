@@ -36,10 +36,19 @@ public final class ObservedAgentExecution implements AgentExecutionPort {
 
     @Override
     public Outcome execute(Claim claim) {
+        return observe(claim, () -> delegate.execute(claim));
+    }
+
+    @Override
+    public Outcome execute(Claim claim, java.util.function.BooleanSupplier allowed) {
+        return observe(claim, () -> delegate.execute(claim, allowed));
+    }
+
+    private Outcome observe(Claim claim, java.util.function.Supplier<Outcome> execution) {
         long started = System.nanoTime();
         String result = "error";
         try {
-            Outcome outcome = observations.attempt(claim, () -> delegate.execute(claim));
+            Outcome outcome = observations.attempt(claim, execution);
             result = "returned";
             return outcome;
         } catch (Blocked blocked) {

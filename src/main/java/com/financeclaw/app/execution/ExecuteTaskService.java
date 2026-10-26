@@ -19,13 +19,21 @@ public class ExecuteTaskService {
     }
 
     public void execute(Claim claim) {
+        executeUsing(claim, () -> runtime.execute(claim));
+    }
+
+    public void execute(Claim claim, java.util.function.BooleanSupplier allowed) {
+        executeUsing(claim, () -> runtime.execute(claim, allowed));
+    }
+
+    private void executeUsing(Claim claim, java.util.function.Supplier<Outcome> invocation) {
         if (org.springframework.transaction.support.TransactionSynchronizationManager
                 .isActualTransactionActive()) {
             throw new IllegalStateException("Native execution must run outside a transaction");
         }
         Outcome result;
         try {
-            result = runtime.execute(claim);
+            result = invocation.get();
         } catch (com.financeclaw.domain.Governance.Blocked blocked) {
             try {
                 completion.block(claim, blocked.getMessage());

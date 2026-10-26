@@ -50,7 +50,7 @@ management:
         enabled: true
       group:
         readiness:
-          include: readinessState,db,runtimeStore
+          include: readinessState,db,runtimeStore,workerReadiness
 server:
   shutdown: graceful
   tomcat:

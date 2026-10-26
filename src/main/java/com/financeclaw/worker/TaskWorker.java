@@ -6,6 +6,7 @@ import com.financeclaw.app.task.WorkSignals;
 import com.financeclaw.app.task.WorkSignals.Queue;
 import com.financeclaw.domain.Task.*;
 import jakarta.annotation.PreDestroy;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -13,8 +14,10 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.DataAccessException;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.CannotCreateTransactionException;
 
 /**
  * 将持久命令领取为有租约的执行尝试，并独立维护恢复与执行心跳。
@@ -55,6 +58,9 @@ public class TaskWorker implements AutoCloseable {
     private final Set<String> denied = ConcurrentHashMap.newKeySet();
     private volatile boolean registered;
     private volatile boolean unavailable;
+    private volatile boolean controlHeld;
+    private volatile long availabilityGeneration;
+    private final Object availabilityLock = new Object();
     private final AtomicBoolean controlling = new AtomicBoolean();
 
     @Autowired
@@ -231,6 +237,14 @@ public class TaskWorker implements AutoCloseable {
             }
             // 槽位覆盖领取到执行结束的全过程；异常和线程池拒绝也必须归还。
             while (!closing && locallyEligible() && slots.tryAcquire()) {
+                long generation;
+                synchronized (availabilityLock) {
+                    if (!isLocallyReady()) {
+                        slots.release();
+                        break;
+                    }
+                    generation = availabilityGeneration;
+                }
                 Claim claim;
                 try {
                     claim = leases.claim(worker, lease);
@@ -239,37 +253,49 @@ public class TaskWorker implements AutoCloseable {
                     idle.empty(ticket);
                     throw failure;
                 }
-                if (claim == null || closing || !locallyEligible()) {
+                if (claim == null || !admit(claim, generation)) {
                     slots.release();
                     idle.empty(ticket);
                     break;
                 }
                 idle.worked();
-                // 在提交执行线程前登记 attempt，让首次心跳也能覆盖尚未开始运行的任务。
-                active.put(claim.command().attemptId(), claim);
                 try {
                     pool.execute(
                             () -> {
                                 try {
                                     if (!closing
                                             && locallyEligible()
+                                            && generation == availabilityGeneration
                                             && !denied.contains(claim.command().attemptId()))
-                                        execute(claim);
+                                        execution.execute(
+                                                claim,
+                                                () ->
+                                                        !closing
+                                                                && isLocallyReady()
+                                                                && generation
+                                                                        == availabilityGeneration
+                                                                && !denied.contains(
+                                                                        claim.command().attemptId())
+                                                                && active.get(
+                                                                                claim.command()
+                                                                                        .attemptId())
+                                                                        == claim);
                                 } finally {
-                                    active.remove(claim.command().attemptId());
-                                    denied.remove(claim.command().attemptId());
+                                    release(claim);
                                     slots.release();
                                     idle.wake();
                                 }
                             });
                 } catch (RejectedExecutionException failure) {
-                    active.remove(claim.command().attemptId());
+                    release(claim);
                     slots.release();
                     idle.wake();
                     // 已领取但未执行的命令交给租约恢复；此处不能伪造失败结果或直接重新入队。
                     break;
                 }
             }
+        } catch (DataAccessException | CannotCreateTransactionException unavailableDatabase) {
+            holdControl();
         } finally {
             polling.set(false);
         }
@@ -291,6 +317,24 @@ public class TaskWorker implements AutoCloseable {
 
     public void execute(Claim claim) {
         execution.execute(claim);
+    }
+
+    private boolean admit(Claim claim, long generation) {
+        if (!locallyEligible()) return false;
+        synchronized (availabilityLock) {
+            if (!isLocallyReady() || generation != availabilityGeneration) return false;
+            // Hold/loss marks the same active set under this lock, before any recovery can admit
+            // new work. A claim cannot slip between that snapshot and its generation check.
+            active.put(claim.command().attemptId(), claim);
+            return true;
+        }
+    }
+
+    private void release(Claim claim) {
+        synchronized (availabilityLock) {
+            active.remove(claim.command().attemptId(), claim);
+            denied.remove(claim.command().attemptId());
+        }
     }
 
     /** 把活跃 attempt 的续期派发到独立线程池。租约丢失或取消时中断执行，不根据本地时间续写结果。 */
@@ -343,22 +387,59 @@ public class TaskWorker implements AutoCloseable {
     /** 控制面检查独立于专池续租，避免业务池占满时先排队借业务连接再续租。 */
     @Scheduled(fixedDelayString = "${financeclaw.runtime.control-poll-ms:1000}")
     public void checkRuntimeControl() {
-        if (closing || !enabled || !locallyEligible() || !controlling.compareAndSet(false, true))
+        // A temporary database hold stops work, but must not stop the control retry that clears it.
+        if (closing || !enabled || !registrationLive() || !controlling.compareAndSet(false, true))
             return;
         try {
             try {
                 ensureRegistered();
-                if (!locallyEligible()) return;
+                if (!registrationLive()) return;
+                boolean releasedHold;
                 if (registry != null) {
-                    long started = monotonic.getAsLong();
+                    long previousDeadline;
+                    long generation;
+                    long started;
+                    synchronized (availabilityLock) {
+                        previousDeadline = registryDeadlineNanos;
+                        generation = availabilityGeneration;
+                        started = monotonic.getAsLong();
+                    }
                     if (!registry.heartbeat(worker, active.size())) {
                         loseRegistration();
                         return;
                     }
-                    // 从请求开始计时，不能把等待业务池/SQL的时间赠送为额外存活期。
-                    registryDeadlineNanos = started + registryTtlNanos;
-                    if (!locallyEligible()) return;
+                    // Compare the old deadline before publishing any refreshed one. Even without
+                    // another scheduler tick, a late database success cannot revive this UUID.
+                    boolean timely;
+                    boolean stale;
+                    synchronized (availabilityLock) {
+                        long now = monotonic.getAsLong();
+                        timely =
+                                !unavailable
+                                        && now - previousDeadline < 0
+                                        && now - (started + registryTtlNanos) < 0;
+                        stale = generation != availabilityGeneration;
+                        releasedHold = controlHeld;
+                        if (timely && !stale) {
+                            registryDeadlineNanos = started + registryTtlNanos;
+                            controlHeld = false;
+                        }
+                    }
+                    if (!timely) {
+                        loseRegistration();
+                        return;
+                    }
+                    // An error observed after this request began needs a fresh control read.
+                    // Neither the hold nor its old deadline can be overwritten by this response.
+                    if (stale) return;
+                } else {
+                    releasedHold = controlHeld;
+                    controlHeld = false;
                 }
+                if (releasedHold) idle.wake();
+            } catch (DataAccessException | CannotCreateTransactionException unavailableDatabase) {
+                holdControl();
+                return;
             } catch (RuntimeException lost) {
                 loseRegistration();
                 return;
@@ -369,6 +450,10 @@ public class TaskWorker implements AutoCloseable {
                     if (denied.contains(claim.command().attemptId())) continue;
                     try {
                         policy.checkDispatch(claim);
+                    } catch (DataAccessException
+                            | CannotCreateTransactionException unavailableDatabase) {
+                        holdControl();
+                        return;
                     } catch (RuntimeException revoked) {
                         denied.add(claim.command().attemptId());
                         execution.interrupt(claim);
@@ -382,7 +467,14 @@ public class TaskWorker implements AutoCloseable {
     private synchronized void ensureRegistered() {
         if (registry != null && !registered && !unavailable) {
             long started = monotonic.getAsLong();
-            registry.register(worker, parallelism);
+            try {
+                registry.register(worker, parallelism);
+            } catch (DataAccessException | CannotCreateTransactionException unavailableDatabase) {
+                throw unavailableDatabase;
+            } catch (RuntimeException lost) {
+                loseRegistration();
+                throw lost;
+            }
             registryDeadlineNanos = started + registryTtlNanos;
             registered = true;
         }
@@ -390,6 +482,10 @@ public class TaskWorker implements AutoCloseable {
 
     /** 专用心跳只读本机单调时间，不借业务池；控制调度饥饿时也会保守停止续租。 */
     private boolean locallyEligible() {
+        return registrationLive() && !controlHeld;
+    }
+
+    private boolean registrationLive() {
         if (unavailable) return false;
         if (registry != null && registered && monotonic.getAsLong() - registryDeadlineNanos >= 0) {
             loseRegistration();
@@ -398,16 +494,47 @@ public class TaskWorker implements AutoCloseable {
         return true;
     }
 
+    /**
+     * Readiness only observes local control state; it does not borrow a connection or interrupt.
+     */
+    public boolean isLocallyReady() {
+        if (closing) return false;
+        if (!enabled) return true;
+        return !unavailable
+                && !controlHeld
+                && (registry == null
+                        || (registered && monotonic.getAsLong() - registryDeadlineNanos < 0));
+    }
+
+    private void holdControl() {
+        if (!registrationLive()) return;
+        List<Claim> interrupted;
+        synchronized (availabilityLock) {
+            if (unavailable) return;
+            controlHeld = true;
+            availabilityGeneration++;
+            interrupted = markActiveDenied();
+        }
+        interrupted.forEach(execution::interrupt);
+    }
+
     private void loseRegistration() {
-        if (unavailable) return;
-        unavailable = true;
-        active.values()
-                .forEach(
-                        claim -> {
-                            denied.add(claim.command().attemptId());
-                            execution.interrupt(claim);
-                        });
+        List<Claim> interrupted;
+        synchronized (availabilityLock) {
+            if (unavailable) return;
+            unavailable = true;
+            availabilityGeneration++;
+            interrupted = markActiveDenied();
+        }
+        interrupted.forEach(execution::interrupt);
         // 不再续租或重新登记这个 UUID；原租约过期后由既有 receipt/checkpoint recovery 收尾。
+    }
+
+    /** Called only while availabilityLock protects admission and control state. */
+    private List<Claim> markActiveDenied() {
+        return active.values().stream()
+                .filter(claim -> denied.add(claim.command().attemptId()))
+                .toList();
     }
 
     /** 先停止新工作和续期，再中断执行并等待线程退出；未封存结果由持久恢复链路接管。 */

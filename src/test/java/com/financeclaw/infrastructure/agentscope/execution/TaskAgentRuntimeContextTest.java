@@ -1446,6 +1446,166 @@ class TaskAgentRuntimeContextTest {
                 .saveTurnWorkContext(any(), anyLong(), anyLong(), anyString(), anyString());
     }
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
+    void workerHoldDuringStartupCannotReviveOldAttemptAfterRecovery(boolean beforeRuntimeEntry)
+            throws Exception {
+        var startupEntered = new java.util.concurrent.CountDownLatch(1);
+        var startupRelease = new java.util.concurrent.CountDownLatch(1);
+        var oldStopped = new java.util.concurrent.CountDownLatch(1);
+        var newCompleted = new java.util.concurrent.CountDownLatch(1);
+        var oldGate =
+                new java.util.concurrent.atomic.AtomicReference<
+                        java.util.function.BooleanSupplier>();
+        var firstResolution = new java.util.concurrent.atomic.AtomicBoolean(true);
+        var toolCalls = new AtomicInteger();
+        registerProbe(
+                input -> {
+                    toolCalls.incrementAndGet();
+                    return "probe";
+                });
+        var nativeRuntime =
+                runtime(
+                        (current, round, messages) ->
+                                current.equals(claim) && round == 0
+                                        ? toolCall(
+                                                "old-tool", "context_probe", Map.of("query", "old"))
+                                        : text("new attempt completed"));
+        var frozenRelease = releases.resolve("release");
+        doAnswer(
+                        i -> {
+                            if (!beforeRuntimeEntry && firstResolution.compareAndSet(true, false)) {
+                                startupEntered.countDown();
+                                assertThat(
+                                                startupRelease.await(
+                                                        5, java.util.concurrent.TimeUnit.SECONDS))
+                                        .isTrue();
+                            }
+                            return frozenRelease;
+                        })
+                .when(releases)
+                .resolve("release");
+        var entry =
+                new com.financeclaw.app.execution.port.AgentExecutionPort() {
+                    @Override
+                    public Outcome execute(Claim current) {
+                        throw new AssertionError("Worker must propagate its local attempt gate");
+                    }
+
+                    @Override
+                    public Outcome execute(
+                            Claim current, java.util.function.BooleanSupplier allowed) {
+                        if (current.equals(claim)) {
+                            oldGate.set(allowed);
+                            if (beforeRuntimeEntry) {
+                                startupEntered.countDown();
+                                try {
+                                    assertThat(
+                                                    startupRelease.await(
+                                                            5,
+                                                            java.util.concurrent.TimeUnit.SECONDS))
+                                            .isTrue();
+                                } catch (InterruptedException error) {
+                                    Thread.currentThread().interrupt();
+                                    throw new Fenced();
+                                }
+                            }
+                        }
+                        return nativeRuntime.execute(current, allowed);
+                    }
+
+                    @Override
+                    public void interrupt(Claim current) {
+                        nativeRuntime.interrupt(current);
+                    }
+                };
+        var completion = mock(com.financeclaw.app.execution.ExecutionCompletionService.class);
+        var registry = mock(com.financeclaw.app.runtime.WorkerRegistry.class);
+        when(registry.ttlMillis()).thenReturn(15000L);
+        when(registry.heartbeat(anyString(), anyInt()))
+                .thenThrow(
+                        new org.springframework.dao.DataAccessResourceFailureException(
+                                "temporary database failure"))
+                .thenReturn(true);
+        var next = claim("new-turn", "new-attempt", null, "new request");
+        when(leases.claim(anyString(), anyLong())).thenReturn(claim, next, null);
+        doAnswer(
+                        i -> {
+                            oldStopped.countDown();
+                            return null;
+                        })
+                .when(completion)
+                .fail(claim);
+        doAnswer(
+                        i -> {
+                            newCompleted.countDown();
+                            return null;
+                        })
+                .when(completion)
+                .finish(next);
+        var metrics = new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
+        var execution =
+                new com.financeclaw.app.execution.ExecuteTaskService(
+                        completion,
+                        new com.financeclaw.infrastructure.runtime.ObservedAgentExecution(
+                                entry, metrics));
+        try (var worker =
+                new com.financeclaw.worker.TaskWorker(
+                        leases,
+                        mock(com.financeclaw.app.execution.RecoverTaskService.class),
+                        execution,
+                        new com.financeclaw.app.task.WorkSignals(),
+                        true,
+                        1,
+                        15000,
+                        2000,
+                        250,
+                        5000,
+                        registry,
+                        policy)) {
+            try {
+                worker.poll();
+                assertThat(startupEntered.await(3, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+                if (!beforeRuntimeEntry) {
+                    assertThatThrownBy(() -> nativeRuntime.execute(claim))
+                            .isInstanceOf(Fenced.class);
+                }
+                worker.checkRuntimeControl();
+                assertThat(worker.isLocallyReady()).isFalse();
+                worker.checkRuntimeControl();
+                assertThat(worker.isLocallyReady()).isTrue();
+                assertThat(oldGate.get().getAsBoolean()).isFalse();
+                startupRelease.countDown();
+                assertThat(oldStopped.await(3, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+                assertThat(modelRequests).isEmpty();
+                assertThat(toolCalls).hasValue(0);
+                assertThat(snapshots).isEmpty();
+                assertThat(work).isEmpty();
+                verify(completion, never()).seal(eq(claim), any());
+                org.awaitility.Awaitility.await()
+                        .atMost(java.time.Duration.ofSeconds(3))
+                        .until(
+                                () -> {
+                                    worker.poll();
+                                    return newCompleted.getCount() == 0;
+                                });
+                assertThat(modelRequests).extracting(Request::claim).containsOnly(next);
+                assertThat(oldGate.get().getAsBoolean()).isFalse();
+                verify(completion)
+                        .seal(eq(next), argThat(outcome -> outcome.status().equals("completed")));
+                assertThat(
+                                (Map<?, ?>)
+                                        org.springframework.test.util.ReflectionTestUtils.getField(
+                                                nativeRuntime, "active"))
+                        .isEmpty();
+            } finally {
+                startupRelease.countDown();
+            }
+        } finally {
+            metrics.close();
+        }
+    }
+
     private void registerProbe(Function<Map<String, Object>, String> result) {
         doAnswer(
                         i -> {

@@ -40,6 +40,12 @@ public final class GovernedTools implements AutoCloseable {
         this.observations = observations;
     }
 
+    private Runnable executionCheck = () -> {};
+
+    public void configureExecutionCheck(Runnable executionCheck) {
+        this.executionCheck = Objects.requireNonNull(executionCheck);
+    }
+
     private final ExecutionPolicyService policy;
     private final ReleaseService releases;
     private final Credentials credentials;
@@ -217,6 +223,7 @@ public final class GovernedTools implements AutoCloseable {
                                             next) {
                         return reactor.core.publisher.Flux.defer(
                                 () -> {
+                                    executionCheck.run();
                                     for (var call : input.toolCalls()) {
                                         if (call.getName().equals("load_skill_through_path")) {
                                             if (plan != null
@@ -227,6 +234,7 @@ public final class GovernedTools implements AutoCloseable {
                                             policy.consumeTool(claim, "skill:use");
                                         }
                                     }
+                                    executionCheck.run();
                                     return next.apply(input);
                                 });
                     }
@@ -291,6 +299,7 @@ public final class GovernedTools implements AutoCloseable {
                         plan,
                         credentialAccess);
         narrowed.configureObservations(observations);
+        narrowed.configureExecutionCheck(executionCheck);
         return narrowed;
     }
 
@@ -369,6 +378,7 @@ public final class GovernedTools implements AutoCloseable {
                     public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
                         return Mono.defer(
                                         () -> {
+                                            executionCheck.run();
                                             // SDK 2.0.3 validates raw content before merging
                                             // input/presets. This is
                                             // the effective-input boundary, also used by direct
@@ -406,7 +416,7 @@ public final class GovernedTools implements AutoCloseable {
                                         })
                                 .onErrorMap(
                                         error ->
-                                                error instanceof Blocked
+                                                error instanceof Blocked || error instanceof Fenced
                                                         ? error
                                                         : new Blocked("tool_execution_failed"))
                                 .subscribeOn(Schedulers.boundedElastic());
@@ -418,6 +428,7 @@ public final class GovernedTools implements AutoCloseable {
     }
 
     public void checkCompatibility() {
+        executionCheck.run();
         var failure = compatibilityFailure.get();
         if (failure != null) throw failure;
     }

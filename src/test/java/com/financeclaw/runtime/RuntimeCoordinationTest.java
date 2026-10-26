@@ -131,6 +131,32 @@ class RuntimeCoordinationTest {
     }
 
     @Test
+    void invocationObservationForwardsTheSameLocalAttemptGate() {
+        var delegate = mock(AgentExecutionPort.class);
+        var metrics = new SimpleMeterRegistry();
+        try {
+            var observed = new ObservedAgentExecution(delegate, metrics);
+            var claim =
+                    new Claim(
+                            new Command("command", "turn", "running", "attempt", 1, true, null),
+                            turn);
+            java.util.function.BooleanSupplier allowed = () -> false;
+            when(delegate.execute(eq(claim), same(allowed))).thenThrow(new Fenced());
+            assertThatThrownBy(() -> observed.execute(claim, allowed)).isInstanceOf(Fenced.class);
+            verify(delegate).execute(eq(claim), same(allowed));
+            verify(delegate, never()).execute(any());
+            assertThat(
+                            metrics.get("financeclaw.runtime.invocation")
+                                    .tag("outcome", "fenced")
+                                    .timer()
+                                    .count())
+                    .isOne();
+        } finally {
+            metrics.close();
+        }
+    }
+
+    @Test
     void invocationMetersUseOnlyFixedOutcomeValuesAndDoNotClaimBusinessCommit() {
         var delegate = mock(AgentExecutionPort.class);
         var metrics = new SimpleMeterRegistry();

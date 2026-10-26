@@ -106,7 +106,7 @@ class TaskWorkerPollingTest {
                             return null;
                         })
                 .when(execution)
-                .execute(claim);
+                .execute(eq(claim), any());
         try (var worker = worker(true, 2)) {
             try {
                 worker.poll(); // Claim one task, then see no additional work and enter backoff.
@@ -140,7 +140,7 @@ class TaskWorkerPollingTest {
                             return null;
                         })
                 .when(execution)
-                .execute(claim);
+                .execute(eq(claim), any());
         try (var worker = worker(true, 1)) {
             try {
                 worker.poll();
@@ -176,7 +176,7 @@ class TaskWorkerPollingTest {
                             return null;
                         })
                 .when(execution)
-                .execute(any());
+                .execute(any(), any());
         when(leases.heartbeat(claim, 15000))
                 .thenAnswer(
                         invocation -> {
@@ -226,7 +226,7 @@ class TaskWorkerPollingTest {
                             return null;
                         })
                 .when(execution)
-                .execute(claim);
+                .execute(eq(claim), any());
         doAnswer(
                         invocation -> {
                             releaseExecution.countDown();

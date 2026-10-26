@@ -84,7 +84,19 @@ public class TaskAgentRuntime implements com.financeclaw.app.execution.port.Agen
     private final ReportService reports;
     private final BusinessCapabilities capabilities;
 
-    private record Active(ReActAgent agent, Sinks.Empty<Void> stop, AtomicBoolean interrupted) {}
+    private record Active(
+            AtomicReference<ReActAgent> agent,
+            Sinks.Empty<Void> stop,
+            AtomicBoolean interrupted,
+            java.util.function.BooleanSupplier allowed) {
+        void requireAllowed() {
+            if (interrupted.get() || !allowed.getAsBoolean()) {
+                interrupted.set(true);
+                stop.tryEmitEmpty();
+                throw new Fenced();
+            }
+        }
+    }
 
     private final Map<String, Active> active = new ConcurrentHashMap<>();
 
@@ -149,13 +161,34 @@ public class TaskAgentRuntime implements com.financeclaw.app.execution.port.Agen
     /** 执行一个已领取 attempt，生命周期内注册进度通道；离开作用域即关闭本次流的生产资格。 */
     @Override
     public Outcome execute(Claim claim) {
-        // 先注册 attempt 的进度通道，再核查策略；启动期间发生撤权也能令该通道失效。
-        try (var progress = policy.beginProgress(claim)) {
-            return executeRegistered(claim);
+        return execute(claim, () -> true);
+    }
+
+    @Override
+    public Outcome execute(Claim claim, java.util.function.BooleanSupplier allowed) {
+        var running =
+                new Active(
+                        new AtomicReference<>(),
+                        Sinks.empty(),
+                        new AtomicBoolean(),
+                        Objects.requireNonNull(allowed));
+        String attempt = claim.command().attemptId();
+        if (active.putIfAbsent(attempt, running) != null) throw new Fenced();
+        try {
+            // Register stop intent before initialization; the local gate covers an interrupt
+            // that happened even before this method was entered. Neither is reset on recovery.
+            running.requireAllowed();
+            try (var progress = policy.beginProgress(claim)) {
+                running.requireAllowed();
+                return executeRegistered(claim, running);
+            }
+        } finally {
+            active.remove(attempt, running);
         }
     }
 
-    private Outcome executeRegistered(Claim claim) {
+    private Outcome executeRegistered(Claim claim, Active running) {
+        running.requireAllowed();
         policy.checkDispatch(claim);
         var resolved = releases.resolve(claim.turn().releaseHash());
         var authorization =
@@ -186,25 +219,29 @@ public class TaskAgentRuntime implements com.financeclaw.app.execution.port.Agen
                     @Override
                     public long saveIfVersion(
                             String user, String session, String key, State state, long expected) {
+                        running.requireAllowed();
                         requireNoRejection(rejected);
                         return leases.fenced(
                                 claim,
                                 () -> {
+                                    running.requireAllowed();
                                     requireNoRejection(rejected);
                                     // 与遗忘/撤权持有相同 owner/grant 锁，禁止删除后旧回调重新写回上下文。
                                     policy.checkPolicy(claim);
+                                    running.requireAllowed();
                                     long version =
                                             super.saveIfVersion(
                                                     user, session, key, state, expected);
                                     if (version != UNVERSIONED) {
+                                        running.requireAllowed();
                                         workContext.persist((AgentState) state, version);
                                     }
                                     return version;
                                 });
                     }
                 };
-        var stop = Sinks.<Void>empty();
-        var interrupted = new AtomicBoolean();
+        running.requireAllowed();
+        var stop = running.stop();
         try (var tools =
                         new GovernedTools(
                                 policy,
@@ -225,12 +262,14 @@ public class TaskAgentRuntime implements com.financeclaw.app.execution.port.Agen
                                 ? null
                                 : ModelFactory.create(
                                         release.fallback(), credentials.modelApiKey())) {
+            running.requireAllowed();
+            tools.configureExecutionCheck(running::requireAllowed);
             tools.configureObservations(observations);
             Model delegate = release.primary().name().equals("offline") ? model(claim) : provider;
             tools.business(
                     release.primary().name().equals("offline")
                             ? null
-                            : observedModel(claim, provider),
+                            : observedModel(claim, provider, running),
                     capabilities);
             boolean workflow =
                     resolved.agentId().equals(AgentDraft.BUILTIN_AGENT)
@@ -238,11 +277,11 @@ public class TaskAgentRuntime implements com.financeclaw.app.execution.port.Agen
             if (workflow) {
                 delegate = capabilities.portfolioDriver(claim);
             }
-            Model primary = guarded(claim, delegate, stop, !workflow, tools, rejected);
+            Model primary = guarded(claim, delegate, running, !workflow, tools, rejected);
             Model fallback =
                     release.fallback() == null || workflow
                             ? null
-                            : guarded(claim, backup, stop, true, tools, rejected);
+                            : guarded(claim, backup, running, true, tools, rejected);
             var contextMiddleware =
                     new WorkingContextMiddleware(
                             claim,
@@ -254,7 +293,8 @@ public class TaskAgentRuntime implements com.financeclaw.app.execution.port.Agen
                             tools::requiredScope,
                             new ModelWorkContextSummarizer(
                                     workflow && provider != null
-                                            ? guarded(claim, provider, stop, true, tools, rejected)
+                                            ? guarded(
+                                                    claim, provider, running, true, tools, rejected)
                                             : primary,
                                     release.primary().outputReserve(),
                                     timeout,
@@ -288,8 +328,10 @@ public class TaskAgentRuntime implements com.financeclaw.app.execution.port.Agen
                                         });
                             },
                             resolved.plan() != null && resolved.plan().capabilities().isEmpty())) {
-                active.put(claim.command().attemptId(), new Active(agent, stop, interrupted));
+                running.agent().set(agent);
+                running.requireAllowed();
                 List<Msg> inputs = inputs(claim, store, tools, workContext);
+                running.requireAllowed();
                 agent.streamEvents(
                                 inputs,
                                 io.agentscope.core.agent.RuntimeContext.builder(
@@ -299,6 +341,7 @@ public class TaskAgentRuntime implements com.financeclaw.app.execution.port.Agen
                         .publishOn(reactor.core.scheduler.Schedulers.boundedElastic(), 1)
                         .doOnNext(
                                 event -> {
+                                    running.requireAllowed();
                                     if (event instanceof TextBlockDeltaEvent text
                                             && text.getDelta() != null
                                             && !text.getDelta().isEmpty()) {
@@ -333,9 +376,7 @@ public class TaskAgentRuntime implements com.financeclaw.app.execution.port.Agen
                         .blockLast(timeout);
                 // 停止订阅会正常结束事件流，但不代表业务执行成功。先退出本次 attempt，
                 // 避免把中断前的部分检查点解释为 waiting/completed；持久取消确认仍走业务层。
-                if (interrupted.get()) {
-                    throw new Fenced();
-                }
+                running.requireAllowed();
                 requireNoRejection(rejected);
                 tools.checkCompatibility();
                 var saved =
@@ -345,9 +386,12 @@ public class TaskAgentRuntime implements com.financeclaw.app.execution.port.Agen
                 leases.fenced(
                         claim,
                         () -> {
+                            running.requireAllowed();
                             policy.checkPolicy(claim);
+                            running.requireAllowed();
                             return null;
                         });
+                running.requireAllowed();
                 var outcome = classify(saved.value(), saved.version());
                 return outcome.status().equals("waiting")
                         ? new Outcome(
@@ -355,16 +399,15 @@ public class TaskAgentRuntime implements com.financeclaw.app.execution.port.Agen
                         : outcome;
             }
         } catch (RuntimeException failure) {
+            running.requireAllowed();
             // SDK 或检查点适配器可能包装原异常；业务终态必须保留实际拒绝原因。
             requireNoRejection(rejected);
             throw failure;
-        } finally {
-            active.remove(claim.command().attemptId());
         }
     }
 
     /** Workflow内有自己的预算门禁，这里只包装其真实供应商调用，不重复扣额。 */
-    private Model observedModel(Claim claim, Model delegate) {
+    private Model observedModel(Claim claim, Model delegate, Active running) {
         return new Model() {
             @Override
             public String getModelName() {
@@ -374,7 +417,12 @@ public class TaskAgentRuntime implements com.financeclaw.app.execution.port.Agen
             @Override
             public Flux<ChatResponse> stream(
                     List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
-                return observations.model(claim, () -> delegate.stream(messages, tools, options));
+                return Flux.defer(
+                        () -> {
+                            running.requireAllowed();
+                            return observations.model(
+                                    claim, () -> delegate.stream(messages, tools, options));
+                        });
             }
         };
     }
@@ -382,7 +430,7 @@ public class TaskAgentRuntime implements com.financeclaw.app.execution.port.Agen
     private Model guarded(
             Claim claim,
             Model delegate,
-            Sinks.Empty<Void> stop,
+            Active running,
             boolean countModel,
             GovernedTools governedTools,
             AtomicReference<RuntimeException> rejected) {
@@ -397,11 +445,13 @@ public class TaskAgentRuntime implements com.financeclaw.app.execution.port.Agen
                     List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
                 return Flux.defer(
                                 () -> {
+                                    running.requireAllowed();
                                     requireNoRejection(rejected);
                                     governedTools.checkCompatibility();
                                     if (countModel) {
                                         policy.consume(claim, true);
                                     }
+                                    running.requireAllowed();
                                     // 供应商/固定Driver可能在多次调用中复用响应ID（例如workflow）。
                                     // 每次模型派发生成服务端消息ID，同一流的所有chunk沿用，防止轨迹覆盖。
                                     String responseId = UUID.randomUUID().toString();
@@ -422,7 +472,7 @@ public class TaskAgentRuntime implements com.financeclaw.app.execution.port.Agen
                                     if (failure instanceof Blocked || failure instanceof Fenced)
                                         rejected.compareAndSet(null, (RuntimeException) failure);
                                 })
-                        .takeUntilOther(stop.asMono());
+                        .takeUntilOther(running.stop().asMono());
             }
         };
     }
@@ -549,7 +599,8 @@ public class TaskAgentRuntime implements com.financeclaw.app.execution.port.Agen
             // 与 Reactor 订阅取消同时执行；即使 SDK 中断异常，也必须释放正在等待的子调用。
             agent.interrupted().set(true);
             try {
-                agent.agent().interrupt(IsolatedAgentFactory.context(claim.scope()));
+                var bound = agent.agent().get();
+                if (bound != null) bound.interrupt(IsolatedAgentFactory.context(claim.scope()));
             } finally {
                 agent.stop().tryEmitEmpty();
             }

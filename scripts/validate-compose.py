@@ -134,24 +134,142 @@ def agent_admin(action, agent_id=None, *options, definition=None, subject='devel
     return response
 
 
-def restart_runtime(*, execute=True):
+def restart_runtime(*, execute=True, force_recreate=False, worker_ttl_ms=None):
     """Exercise queued recovery without adding a second application process."""
     global URL
     override['services']['api']['command'] = ['standalone']
     if not execute:
         override['services']['api']['command'].append('--financeclaw.worker.enabled=false')
+    if worker_ttl_ms is not None:
+        assert worker_ttl_ms == 60000, 'Only the named 60s recovery experiment may override TTL'
+        override['services']['api']['command'].append(f'--financeclaw.runtime.worker-ttl-ms={worker_ttl_ms}')
     (TEMP / 'override.json').write_text(json.dumps(override))
-    compose('up', '-d', '--no-deps', '--wait', 'api')
+    compose('up', '-d', '--no-deps', '--wait', *(['--force-recreate'] if force_recreate else []), 'api')
     URL = 'http://' + compose('port', 'api', '8080').decode().strip()
     wait(lambda: request('/actuator/health/readiness', auth=False)[0] == 200)
 
 
-def sql(statement, database='financeclaw_java'):
+def sql(statement, database='financeclaw_java', *, timeout=240):
     return compose('exec', '-T', 'postgres', 'psql', '-U', 'postgres', '-d', database,
-                   '-v', 'ON_ERROR_STOP=1', '-tA', '-c', statement).decode().strip()
+                   '-v', 'ON_ERROR_STOP=1', '-tA', '-c', statement, timeout=timeout).decode().strip()
 
 
-def request(path, body=None, key=None, method=None, auth=True):
+def worker_snapshots(worker_id=None):
+    """Registration identity and lease facts from one independent database-clock snapshot."""
+    condition = "w.state='active' AND w.expires_at>stamp.now"
+    if worker_id is not None:
+        assert str(uuid.UUID(worker_id)) == worker_id
+        condition = f"w.worker_id='{worker_id}'"
+    data = json.loads(sql(f"""
+        WITH stamp AS MATERIALIZED (SELECT clock_timestamp() AS now)
+        SELECT json_build_object('database_time',stamp.now,
+          'database_epoch_ms',extract(epoch FROM stamp.now)*1000,
+          'workers',(SELECT COALESCE(json_agg(json_build_object(
+            'worker_id',w.worker_id,'state',w.state,
+            'heartbeat_at',w.heartbeat_at,'expires_at',w.expires_at,
+            'heartbeat_epoch_ms',extract(epoch FROM w.heartbeat_at)*1000,
+            'expires_epoch_ms',extract(epoch FROM w.expires_at)*1000,
+            'ttl_ms',round(extract(epoch FROM (w.expires_at-w.heartbeat_at))*1000),
+            'live',w.expires_at>stamp.now)), '[]'::json)
+          FROM business.runtime_workers w WHERE {condition})) FROM stamp
+        """, timeout=5))
+    return [{**worker, 'database_time': data['database_time'],
+             'database_epoch_ms': data['database_epoch_ms']} for worker in data['workers']]
+
+
+def worker_snapshot(worker_id=None):
+    snapshots = worker_snapshots(worker_id)
+    assert len(snapshots) == 1, snapshots
+    return snapshots[0]
+
+
+def fresh_worker(expected_ttl_ms):
+    # SIGKILL leaves a live ghost until its original TTL expires. This wait occurs before
+    # fault timing; never pick the newest row and silently ignore another live registration.
+    started = time.monotonic()
+    container = runtime_identity()
+    process_started_ms = datetime.fromisoformat(container['started_at'].replace('Z', '+00:00')).timestamp()*1000
+    observations = []
+
+    def fresh():
+        snapshots = worker_snapshots()
+        identities = sorted(item['worker_id'] for item in snapshots)
+        if not observations or observations[-1]['live_worker_ids'] != identities:
+            observations.append({'after_seconds': time.monotonic()-started,
+                                 'live_worker_ids': identities})
+        if len(snapshots) != 1:
+            return None
+        snapshot = snapshots[0]
+        if snapshot['heartbeat_epoch_ms'] < process_started_ms:
+            return None
+        assert snapshot['ttl_ms'] == expected_ttl_ms, snapshot
+        if snapshot['expires_epoch_ms']-snapshot['database_epoch_ms'] <= expected_ttl_ms-2000:
+            return None
+        return {**snapshot, 'unique_live_wait_seconds': time.monotonic()-started,
+                'unique_live_observations': observations, 'container': container}
+    return wait(fresh, THRESHOLDS['recovery_seconds'])
+
+
+def database_reachable():
+    """Probe PostgreSQL directly; worker readiness must not gate database recovery evidence."""
+    try:
+        return json.loads(sql("SELECT json_build_object('database_time',clock_timestamp(),"
+                              "'database_epoch_ms',extract(epoch FROM clock_timestamp())*1000)", timeout=5))
+    except (RuntimeError, subprocess.TimeoutExpired):
+        return None
+
+
+def runtime_identity():
+    container = compose('ps', '-q', 'api').decode().strip()
+    assert re.fullmatch(r'[0-9a-f]{12,64}', container), 'Expected one runtime container'
+    started = json.loads(command(['docker', 'inspect', '--format', '{{json .State.StartedAt}}', container]))
+    return {'container_id': container, 'started_at': started}
+
+
+def assert_expired_worker_unchanged(frozen, observed):
+    assert observed['worker_id'] == frozen['worker_id']
+    assert not frozen['live'] and not observed['live']
+    assert observed['expires_epoch_ms'] <= observed['database_epoch_ms']
+    assert observed['heartbeat_epoch_ms'] == frozen['heartbeat_epoch_ms']
+    assert observed['expires_epoch_ms'] == frozen['expires_epoch_ms']
+
+
+def assert_recovered_within_original_ttl(before, after, container_before, container_after):
+    """A renewed expiry cannot be used to prove that the original lease was still valid."""
+    assert before['ttl_ms'] == after['ttl_ms'] == 60000
+    assert before['worker_id'] == after['worker_id']
+    assert before['live'] and after['live'] and after['state'] == 'active'
+    assert container_before == container_after, 'Automatic recovery must not restart the process'
+    assert before['database_epoch_ms'] < after['database_epoch_ms'] < before['expires_epoch_ms']
+    assert after['heartbeat_epoch_ms'] > before['heartbeat_epoch_ms']
+    assert after['expires_epoch_ms'] > before['expires_epoch_ms']
+
+
+def durable_turn_evidence(turn_id):
+    assert str(uuid.UUID(turn_id)) == turn_id
+    data = json.loads(sql(f"""
+        SELECT json_build_object(
+          'turn',(SELECT row_to_json(t) FROM business.turns t WHERE t.id='{turn_id}'),
+          'command',(SELECT row_to_json(c) FROM business.commands c WHERE c.turn_id='{turn_id}'),
+          'attempts',(SELECT COALESCE(json_agg(a ORDER BY a.id),'[]'::json)
+             FROM business.attempts a JOIN business.commands c ON c.id=a.command_id WHERE c.turn_id='{turn_id}'),
+          'reports',(SELECT COALESCE(json_agg(r ORDER BY r.id),'[]'::json) FROM business.reports r WHERE r.turn_id='{turn_id}'),
+          'effects',(SELECT COALESCE(json_agg(s ORDER BY s.namespace,s.step),'[]'::json)
+             FROM business.capability_steps s WHERE s.turn_id='{turn_id}' AND s.step='publish_report'),
+          'artifacts',(SELECT COALESCE(json_agg(a ORDER BY a.id),'[]'::json)
+             FROM business.artifacts a WHERE a.turn_id='{turn_id}' AND a.required_scope='workflow:run'))
+        """))
+    # Hash synthetic results instead of copying report text or request content into evidence.
+    return {'sha256': hashlib.sha256(json.dumps(data, sort_keys=True).encode()).hexdigest(),
+            'turn_id': turn_id, 'command_id': data['command']['id'],
+            'attempt_ids': [item['id'] for item in data['attempts']],
+            'sealed_receipts': sum(item['outcome'] is not None for item in data['attempts']),
+            'report_ids': [item['id'] for item in data['reports']],
+            'publish_effects': len(data['effects']),
+            'artifact_ids': [item['id'] for item in data['artifacts']]}
+
+
+def request(path, body=None, key=None, method=None, auth=True, read_error_body=False):
     headers = {'Content-Type': 'application/json'}
     if auth:
         headers['Authorization'] = 'Bearer ' + TOKEN
@@ -164,6 +282,11 @@ def request(path, body=None, key=None, method=None, auth=True):
             raw = response.read()
             return response.status, json.loads(raw) if raw else None
     except urllib.error.HTTPError as error:
+        if read_error_body:
+            try:
+                return error.code, json.loads(error.read())
+            except (ValueError, OSError):
+                pass
         return error.code, None
     except (urllib.error.URLError, OSError, http.client.HTTPException):
         return 0, None
@@ -547,28 +670,143 @@ try:
         admission(False, 'resume-after-approval')
         mark('paused_admission_allows_persisted_approval_after_runtime_sigkill')
 
+    faults = RESULT['database_failure_experiments'] = {}
+    original_effects = durable_turn_evidence(wr['turn_id'])
+    original_worker = fresh_worker(15000)
+    expired = faults['default_15s_expiry_requires_restart'] = {
+        'configured_worker_ttl_ms': 15000, 'before': original_worker,
+        'container_before': runtime_identity(), 'original_effects': original_effects,
+        'stop_requested_at': datetime.now(timezone.utc).isoformat(),
+        'unavailable_http_statuses': []}
+    stopped = time.monotonic()
     compose('stop', 'postgres')
-    # Existing pooled connections may be invalidated during the first probe. Require an actual
-    # HTTP 503 within the bounded fault window, never treat a timeout/disconnect as success.
-    down_statuses = []
-
-    def unavailable(path, auth=True):
+    stop_completed = time.monotonic()
+    expired['stop_completed_at'] = datetime.now(timezone.utc).isoformat()
+    expired['stop_completed_after_seconds'] = stop_completed-stopped
+    # Pooled connections may fail on the first probe. A timeout/disconnect is not HTTP 503.
+    def unavailable(path, experiment, auth=True):
         status = request(path, auth=auth)[0]
-        down_statuses.append(status)
+        experiment['unavailable_http_statuses'].append({'path': path, 'status': status})
         return status == 503
 
-    wait(lambda: unavailable('/actuator/health/readiness', auth=False), THRESHOLDS['recovery_seconds'])
-    wait(lambda: unavailable(wp), THRESHOLDS['recovery_seconds'])
+    wait(lambda: unavailable('/actuator/health/readiness', expired, auth=False), THRESHOLDS['recovery_seconds'])
+    wait(lambda: unavailable(wp, expired), THRESHOLDS['recovery_seconds'])
+    # A heartbeat can race the pre-stop SQL snapshot. Waiting one actual TTL after stop has
+    # completed covers that last successful heartbeat as well; this is a fault-duration bound,
+    # not an increase to the recovery threshold or the application's default TTL.
+    wait_seconds = max(0, stop_completed+original_worker['ttl_ms']/1000+.25-time.monotonic())
+    assert wait_seconds <= 15.25
+    expired['explicit_expiry_wait_seconds'] = wait_seconds
+    time.sleep(wait_seconds)
     recovery = time.monotonic()
+    expired['start_requested_at'] = datetime.now(timezone.utc).isoformat()
     compose('start', 'postgres')
-    wait(lambda: request('/actuator/health/readiness', auth=False)[0] == 200)
+    expired['database_reachable'] = wait(database_reachable, THRESHOLDS['recovery_seconds'])
+    expired['stop_completed_to_sql_ready_seconds'] = time.monotonic()-stop_completed
+    expired['stop_requested_to_sql_ready_seconds'] = time.monotonic()-stopped
+    expired['before_snapshot_to_sql_ready_db_seconds'] = (expired['database_reachable']['database_epoch_ms']-original_worker['database_epoch_ms'])/1000
+    expired_worker = worker_snapshot(original_worker['worker_id'])
+    expired['after_database_recovery'] = expired_worker
+    assert not expired_worker['live']
+    assert expired_worker['expires_epoch_ms'] <= expired_worker['database_epoch_ms']
+    assert expired_worker['database_epoch_ms'] > original_worker['expires_epoch_ms']
+    assert worker_snapshots() == [], 'Expired runtime must not create another live registration'
     assert api(wp)['status'] == 'completed'
-    after = turn('after database recovery')
-    terminal(after[2])
+    down_status, down_health = request('/actuator/health/readiness', auth=False, read_error_body=True)
+    assert down_status == 503 and down_health['status'] == 'DOWN', (down_status, down_health)
+    expired['readiness_after_database_recovery'] = {'http_status': down_status, 'status': down_health['status']}
+    pending = turn('pending until an expired worker is explicitly restarted')
+    pending_receipt = durable_turn_evidence(pending[1]['turn_id'])
+    expired['pending_before_restart'] = pending_receipt
+    queued_observations = expired['queued_observations'] = []
+    observe_until = time.monotonic()+3
+    while True:
+        value = api(pending[2])
+        attempts = int(sql(f"SELECT count(*) FROM business.attempts a JOIN business.commands c ON c.id=a.command_id WHERE c.turn_id='{pending[1]['turn_id']}'"))
+        observed = worker_snapshot(original_worker['worker_id'])
+        assert value['status'] == 'queued' and attempts == 0, (value['status'], attempts)
+        assert_expired_worker_unchanged(expired_worker, observed)
+        queued_observations.append({'status': value['status'], 'attempts': attempts,
+                                    'worker': observed})
+        if time.monotonic() >= observe_until:
+            break
+        time.sleep(.25)
+    assert runtime_identity() == expired['container_before']
+    expired['live_workers_before_restart'] = worker_snapshots()
+    assert expired['live_workers_before_restart'] == []
+    assert durable_turn_evidence(wr['turn_id']) == original_effects
+    restart_runtime(force_recreate=True)
+    new_worker = fresh_worker(15000)
+    assert new_worker['worker_id'] != original_worker['worker_id']
+    expired['after_restart'] = new_worker
+    expired['container_after_restart'] = runtime_identity()
+    assert expired['container_after_restart'] != expired['container_before']
+    terminal(pending[2])
     elapsed = time.monotonic()-recovery
-    assert elapsed < THRESHOLDS['recovery_seconds']
-    mark('database_outage_fails_readiness_then_recovers', {'recovery_seconds': elapsed,
-                                                         'unavailable_http_statuses': down_statuses})
+    assert elapsed < THRESHOLDS['recovery_seconds'], elapsed
+    replay = api(f'/v1/conversations/{pending[0]}/turns',
+                 {'message': 'pending until an expired worker is explicitly restarted'}, 'admit-once')
+    assert replay['turn_id'] == pending[1]['turn_id']
+    completed_receipt = durable_turn_evidence(pending[1]['turn_id'])
+    assert completed_receipt['command_id'] == pending_receipt['command_id']
+    assert len(completed_receipt['attempt_ids']) == completed_receipt['sealed_receipts'] == 1
+    old_after_restart = worker_snapshot(original_worker['worker_id'])
+    assert not old_after_restart['live']
+    assert old_after_restart['heartbeat_epoch_ms'] == expired_worker['heartbeat_epoch_ms']
+    assert durable_turn_evidence(wr['turn_id']) == original_effects
+    expired.update(recovery_seconds=elapsed, pending_after_restart=completed_receipt,
+                   old_worker_after_restart=old_after_restart)
+    mark('database_outage_expires_default_worker_requires_new_identity', expired)
+
+    # Independent experiment: 60s is an explicit fixture configuration, not a changed default.
+    # The measured original deadline, UUID and container StartedAt must all survive without restart.
+    restart_runtime(force_recreate=True, worker_ttl_ms=60000)
+    short_before = fresh_worker(60000)
+    transient = faults['explicit_60s_ttl_automatic_recovery'] = {
+        'configured_worker_ttl_ms': 60000, 'before': short_before,
+        'container_before': runtime_identity(), 'unavailable_http_statuses': [],
+        'stop_requested_at': datetime.now(timezone.utc).isoformat()}
+    short_stopped = time.monotonic()
+    compose('stop', 'postgres')
+    short_stop_completed = time.monotonic()
+    transient['stop_completed_at'] = datetime.now(timezone.utc).isoformat()
+    transient['stop_completed_after_seconds'] = short_stop_completed-short_stopped
+    # One real readiness 503 proves the outage; do not add a slow business probe to this window.
+    wait(lambda: unavailable('/actuator/health/readiness', transient, auth=False), THRESHOLDS['recovery_seconds'])
+    short_recovery = time.monotonic()
+    transient['start_requested_at'] = datetime.now(timezone.utc).isoformat()
+    compose('start', 'postgres')
+    transient['database_reachable'] = wait(database_reachable, THRESHOLDS['recovery_seconds'])
+    transient['stop_completed_to_sql_ready_seconds'] = time.monotonic()-short_stop_completed
+    transient['stop_requested_to_sql_ready_seconds'] = time.monotonic()-short_stopped
+    transient['before_snapshot_to_sql_ready_db_seconds'] = (transient['database_reachable']['database_epoch_ms']-short_before['database_epoch_ms'])/1000
+    assert transient['database_reachable']['database_epoch_ms'] < short_before['expires_epoch_ms']
+    wait(lambda: request('/actuator/health/readiness', auth=False)[0] == 200, THRESHOLDS['recovery_seconds'])
+    short_after = worker_snapshot(short_before['worker_id'])
+    registration_recovered = time.monotonic()
+    container_after = runtime_identity()
+    assert_recovered_within_original_ttl(short_before, short_after,
+                                        transient['container_before'], container_after)
+    automatic = turn('automatic recovery within the explicitly configured 60s TTL')
+    terminal(automatic[2])
+    short_elapsed = time.monotonic()-short_recovery
+    assert short_elapsed < THRESHOLDS['recovery_seconds'], short_elapsed
+    assert runtime_identity() == transient['container_before']
+    current = worker_snapshot()
+    assert current['worker_id'] == short_before['worker_id'] and current['live']
+    assert durable_turn_evidence(wr['turn_id']) == original_effects
+    transient.update(after_automatic_recovery=short_after, container_after=container_after,
+                     worker_after_completed_turn=current,
+                     recovery_seconds=short_elapsed,
+                     stop_requested_to_registration_recovered_seconds=registration_recovered-short_stopped,
+                     before_snapshot_to_registration_recovered_db_seconds=(short_after['database_epoch_ms']-short_before['database_epoch_ms'])/1000,
+                     completed_turn=durable_turn_evidence(automatic[1]['turn_id']))
+    # Later backup/privacy checks run with the actual default again, under a fresh process identity.
+    restart_runtime(force_recreate=True)
+    restored_default = fresh_worker(15000)
+    assert restored_default['worker_id'] != short_before['worker_id']
+    transient['restored_default_worker'] = restored_default
+    mark('database_outage_with_explicit_60s_ttl_recovers_without_restart', transient)
 
     profile_status, empty_profile, original_version = profile()
     assert profile_status == 200 and empty_profile == '' and original_version
@@ -784,6 +1022,13 @@ try:
     RESULT['finished_at'] = datetime.now(timezone.utc).isoformat()
     (OUT / 'compose-results.json').write_text(json.dumps(RESULT, ensure_ascii=False, indent=2)+'\n')
     print('Compose validation passed;', OUT / 'compose-results.json', flush=True)
+except BaseException as failure:
+    # Keep partial fault-window evidence when an assertion fails. Never copy exception text,
+    # connection settings or credentials into this machine-readable report.
+    RESULT.update(success=False, failure_type=type(failure).__name__,
+                  finished_at=datetime.now(timezone.utc).isoformat())
+    (OUT / 'compose-results.json').write_text(json.dumps(RESULT, ensure_ascii=False, indent=2)+'\n')
+    raise
 finally:
     # Only this script's random, freshly-created project is ever removed, including on failure.
     try:
