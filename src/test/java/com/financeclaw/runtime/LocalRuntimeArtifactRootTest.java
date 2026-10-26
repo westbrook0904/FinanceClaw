@@ -16,6 +16,43 @@ class LocalRuntimeArtifactRootTest {
     @TempDir Path temporary;
 
     @Test
+    void existingValidArchiveOutsideRootCannotBeReadOrRegisteredThroughParentSegments()
+            throws Exception {
+        Path root = Files.createDirectory(temporary.resolve("root"));
+        Path outside = temporary.resolve("outside.jar");
+        try (var jar = new JarOutputStream(Files.newOutputStream(outside))) {
+            jar.putNextEntry(
+                    new JarEntry(
+                            "com/financeclaw/infrastructure/agentscope/RuntimeArtifacts.class"));
+            jar.write(new byte[] {4, 5, 6});
+            jar.closeEntry();
+        }
+        String hash =
+                HexFormat.of()
+                        .formatHex(
+                                MessageDigest.getInstance("SHA-256")
+                                        .digest(Files.readAllBytes(outside)));
+        var source = mock(DataSource.class);
+        var gateway = new LocalRuntimeArtifactGateway(source, root.toString());
+        var catalog = new com.financeclaw.app.runtime.RuntimeArtifactCatalog(gateway);
+        assertThat(com.financeclaw.infrastructure.agentscope.RuntimeArtifacts.hashArchive(outside))
+                .matches("[a-f0-9]{64}");
+        for (String path :
+                List.of("../outside.jar", "../root/../outside.jar", "child/../../outside.jar")) {
+            assertThatThrownBy(() -> catalog.register(path, hash, 1, List.of("agentscope")))
+                    .isInstanceOf(com.financeclaw.domain.Task.Problem.class)
+                    .hasMessage("invalid_artifact_path");
+        }
+        // Invalid syntax is rejected before hashing even if the supplied digest is wrong.
+        assertThatThrownBy(
+                        () ->
+                                gateway.inspect(
+                                        "../outside.jar", "0".repeat(64), 1, List.of("agentscope")))
+                .hasMessage("invalid_artifact_path");
+        verifyNoInteractions(source);
+    }
+
+    @Test
     void operatorAliasIsCanonicalizedButChildSymlinksAndRootReplacementAreRejected()
             throws Exception {
         Path root = Files.createDirectory(temporary.resolve("root"));

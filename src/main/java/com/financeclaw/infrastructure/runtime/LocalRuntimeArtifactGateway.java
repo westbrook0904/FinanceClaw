@@ -64,8 +64,13 @@ public final class LocalRuntimeArtifactGateway implements RuntimeArtifactGateway
             Path path = Path.of(relative);
             if (path.isAbsolute() || !path.normalize().equals(path) || !relative.endsWith(".jar"))
                 throw new Problem(422, "invalid_artifact_path");
+            // leading ../ survives Path.normalize(); reject every parent segment before any IO.
+            for (Path segment : path) {
+                if (segment.toString().equals(".."))
+                    throw new Problem(422, "invalid_artifact_path");
+            }
             requireRoot();
-            Path candidate = root.resolve(path);
+            Path candidate = root.resolve(path).normalize();
             if (!candidate.startsWith(root)) throw new Problem(422, "invalid_artifact_path");
             Path current = root;
             for (Path segment : path) {

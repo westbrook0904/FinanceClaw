@@ -1,7 +1,7 @@
 {
   "schema": "non-rag-implementation/1",
   "record_boundary": "Pre-push local evidence. Remote PostgreSQL and Compose acceptance belongs to the exact pushed commit Actions run; this file does not predict its result.",
-  "recorded_at_utc": "2026-10-26T14:27:50.180303+00:00",
+  "recorded_at_utc": "2026-10-26T14:59:45.008036+00:00",
   "base_commit": "76b88187e9cb38567eaa4064fe56ef6ff913a0c3",
   "branch": "codex/java-agentscope",
   "development_order": "All authorized non-RAG production and acceptance source completed before first formatting, compilation and tests. Failures retained; concentrated repairs followed.",
@@ -35,7 +35,7 @@
       "spotless:check",
       "package"
     ],
-    "unit_tests": 1401,
+    "unit_tests": 1402,
     "failures": 0,
     "errors": 0,
     "skipped": 0,
@@ -46,33 +46,33 @@
         "name": "test-live-acceptance",
         "tests": 8,
         "exit_code": 0,
-        "log_sha256": "983f7b00153a90324feee322a34766342ce69cc3bc31ae231fa5a789fae39278"
+        "log_sha256": "6ba40bf08869bdda0107784295e7143fb58e2ae56831b7372150a0e22d31da6b"
       },
       {
         "name": "test-inspect-drain",
         "tests": 12,
         "exit_code": 0,
-        "log_sha256": "aecca9b85adae71ee0793245dcbcde41cb492b4c054c0c3217b972b34ec33452"
+        "log_sha256": "a2aa970268707ea55a386ce28dca3e12ef01c4e808ff33f18e7a1ff8be5474eb"
       },
       {
         "name": "test-restore-privacy",
         "tests": 16,
         "exit_code": 0,
-        "log_sha256": "09b558998a28bf4a35517d4f84c4566e96197bcf6574a83f4108864a0a58b59b"
+        "log_sha256": "e18d319afa309538a5da0029ad64a665a6eef09519bff615bc5411496ee36449"
       },
       {
         "name": "test-user-profile",
         "tests": 10,
         "exit_code": 0,
-        "log_sha256": "658ee8f6638e043f6c54394b34e4db8d602800e29e7a22d408d54348127930fd"
+        "log_sha256": "f21cf8f81dbfe5d72a7e0bee6069a3c3fc0e651e4938e2d690e9e9ff41748af0"
       }
     ],
     "python_total": 46,
-    "application_jar_sha256": "ec868ac2398a2139c5f5c49305fe15e7946f65bbd2d978dba9a283b89dd24d31",
+    "application_jar_sha256": "dceb99d97bed4979944bbf8c7794a6c428d4db3183f72f440a231b95e516d700",
     "source_input_file_count": 601,
-    "source_input_manifest_sha256": "77a57cf10e788c25fc32e72117cd1596db280745f0618b8581a09f6ab0ea2fc1",
-    "local_archive": "/tmp/financeclaw-non-rag-local-package-05",
-    "result_sha256": "0c744ed7547e4caa8a5a83900dfd0aefd35b134d2e0c60ca5da3923b7ef823ef"
+    "source_input_manifest_sha256": "3a1a5dd4fcfb4cc7cb0743a90b5ecb648d0d14691a35a53ba6ef22be05912fd5",
+    "local_archive": "/tmp/financeclaw-non-rag-local-package-07",
+    "result_sha256": "ca03b54ca8202f62a1f7ddc450ee74968401f9acec84af7bae1307a0cb93722f"
   },
   "failed_full_validation_attempts": [
     {
@@ -368,5 +368,88 @@
     "Live text/tool progress stays on its executing JVM; persistent events replay across standalone instances.",
     "Observation returned means port return, not durable business commit. Estimated per-call costs are not provider billing."
   ],
-  "pre_staging_revalidation": "Cached diff inspection found a trailing blank line in new V15; removed it and repeated all 1401 unit tests, 46 script tests, formatting and package against unchanged final inputs. No historical migration modified."
+  "pre_staging_revalidation": "Cached diff inspection found a trailing blank line in new V15; removed it and repeated all 1401 unit tests, 46 script tests, formatting and package against unchanged final inputs. No historical migration modified.",
+  "prior_local_package": {
+    "status": "passed_without_docker",
+    "command": [
+      "scripts/mvn.sh",
+      "-B",
+      "-ntp",
+      "-o",
+      "spotless:check",
+      "package"
+    ],
+    "unit_tests": 1401,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "source_inventory_matches": true,
+    "inputs_unchanged": true,
+    "python_suites": [
+      {
+        "name": "test-live-acceptance",
+        "tests": 8,
+        "exit_code": 0,
+        "log_sha256": "983f7b00153a90324feee322a34766342ce69cc3bc31ae231fa5a789fae39278"
+      },
+      {
+        "name": "test-inspect-drain",
+        "tests": 12,
+        "exit_code": 0,
+        "log_sha256": "aecca9b85adae71ee0793245dcbcde41cb492b4c054c0c3217b972b34ec33452"
+      },
+      {
+        "name": "test-restore-privacy",
+        "tests": 16,
+        "exit_code": 0,
+        "log_sha256": "09b558998a28bf4a35517d4f84c4566e96197bcf6574a83f4108864a0a58b59b"
+      },
+      {
+        "name": "test-user-profile",
+        "tests": 10,
+        "exit_code": 0,
+        "log_sha256": "658ee8f6638e043f6c54394b34e4db8d602800e29e7a22d408d54348127930fd"
+      }
+    ],
+    "python_total": 46,
+    "application_jar_sha256": "ec868ac2398a2139c5f5c49305fe15e7946f65bbd2d978dba9a283b89dd24d31",
+    "source_input_file_count": 601,
+    "source_input_manifest_sha256": "77a57cf10e788c25fc32e72117cd1596db280745f0618b8581a09f6ab0ea2fc1",
+    "local_archive": "/tmp/financeclaw-non-rag-local-package-05",
+    "result_sha256": "0c744ed7547e4caa8a5a83900dfd0aefd35b134d2e0c60ca5da3923b7ef823ef"
+  },
+  "remote_validation_attempts": [
+    {
+      "head_sha": "cdbc69b64d248647b5ddbae3669b69d15550a9da",
+      "run_id": 40340127681,
+      "url": "https://github.com/westbrook0904/FinanceClaw/actions/runs/40340127681",
+      "status": "completed",
+      "conclusion": "failure",
+      "verify": "failure",
+      "delivery": "skipped",
+      "unit_tests": 1401,
+      "integration_tests": 691,
+      "integration_failures": 1,
+      "integration_errors": 1,
+      "integration_skipped": 0,
+      "integration_passed": 689,
+      "failed_cases": [
+        "RuntimeCoordinationIT.controlledHistoricalArtifactRegistrationVerifiesBytesWithoutExecutingAnything",
+        "RuntimeCoordinationIT.actualAgentModelAndGovernedToolProduceRootedObservationsAcrossThreads (BeforeEach TRUNCATE deadlock)"
+      ],
+      "failure_summary_sha256": "9d39bac2b5b129c31fc18f212be2520b0a38755cead506289d5cec0ebf35e3c9"
+    }
+  ],
+  "repairs_after_first_remote_attempt": [
+    "Reject every parent path segment before any file access and recheck normalized candidate containment; real valid outside-root JAR with matching digest is rejected without reading or registration.",
+    "Each RuntimeCoordinationIT case creates two real application contexts. Close both business/heartbeat pools and confirm tagged database sessions exit before the next case uses an independent administration connection to clear tables. No TRUNCATE overlaps live application contexts.",
+    "Exact backend69 query was not logged; asynchronous SSE is a possible participant, not an asserted root cause. The observed reset-DDL/application lock conflict is removed through deterministic test lifecycle isolation."
+  ],
+  "intermediate_repair_compile_failure": {
+    "archive": "/tmp/financeclaw-non-rag-local-package-06",
+    "passed": false,
+    "unit_tests_executed": 0,
+    "reason": "New outside-root JAR assertion omitted RuntimeArtifacts import; corrected before the latest successful full unit/package run.",
+    "result_sha256": "0f9b598e0b6f680d3df48a3626019414ea1384c60a19fc9ba787674ff303dc7e"
+  }
 }

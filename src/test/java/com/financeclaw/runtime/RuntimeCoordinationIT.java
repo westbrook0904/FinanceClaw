@@ -13,6 +13,7 @@ import com.financeclaw.app.task.*;
 import com.financeclaw.app.task.port.TaskEventAccess;
 import com.financeclaw.bootstrap.FinanceClawApplication;
 import com.financeclaw.domain.Task.*;
+import com.financeclaw.infrastructure.agentscope.RuntimeArtifacts;
 import com.financeclaw.infrastructure.runtime.*;
 import java.math.BigDecimal;
 import java.nio.file.*;
@@ -29,6 +30,7 @@ import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.testcontainers.containers.PostgreSQLContainer;
 
 /** 两个独立Spring上下文/事件总线共享真实PostgreSQL；不运行模型或自动worker。 */
@@ -40,6 +42,7 @@ class RuntimeCoordinationIT {
     @TempDir static Path temporary;
     private Path artifacts;
     private ConfigurableApplicationContext first, second;
+    private String firstApplication, secondApplication;
     private JdbcTemplate sql;
     private SubmitTaskService submission;
     private TaskQueryService reads;
@@ -48,26 +51,43 @@ class RuntimeCoordinationIT {
     void start() throws Exception {
         pg.start();
         artifacts = Files.createDirectories(temporary.resolve("runtime")).toRealPath();
-        first = startInstance();
-        second = startInstance();
+        var administration =
+                new DriverManagerDataSource(pg.getJdbcUrl(), pg.getUsername(), pg.getPassword());
+        sql = new JdbcTemplate(administration);
+        org.flywaydb.core.Flyway.configure().dataSource(administration).load().migrate();
+    }
+
+    @BeforeEach
+    void startIsolatedInstances() {
+        // Future.cancel does not join an already running JDBC gate. Clear only after the previous
+        // contexts and both of their pools have closed, so no asynchronous request can overlap DDL.
+        assertThat(first).isNull();
+        assertThat(second).isNull();
+        sql.execute(
+                "TRUNCATE business.conversations,memory.owners,business.runtime_workers,business.runtime_artifacts CASCADE");
+        firstApplication = "runtime-fixture-" + UUID.randomUUID();
+        secondApplication = "runtime-fixture-" + UUID.randomUUID();
+        first = startInstance(firstApplication);
+        second = startInstance(secondApplication);
         await().atMost(Duration.ofSeconds(10))
                 .until(
                         () ->
                                 first.getBean(PersistentEventSignals.class).isConnected()
                                         && second.getBean(PersistentEventSignals.class)
                                                 .isConnected());
-        sql = new JdbcTemplate(first.getBean(DataSource.class));
         submission = first.getBean(SubmitTaskService.class);
         reads = first.getBean(TaskQueryService.class);
         assertThat(first.getBean(TaskEventHub.class))
                 .isNotSameAs(second.getBean(TaskEventHub.class));
     }
 
-    private ConfigurableApplicationContext startInstance() {
+    private ConfigurableApplicationContext startInstance(String applicationName) {
+        String url = pg.getJdbcUrl();
+        url += (url.contains("?") ? "&" : "?") + "ApplicationName=" + applicationName;
         return new SpringApplicationBuilder(FinanceClawApplication.class)
                 .web(WebApplicationType.NONE)
                 .run(
-                        "--spring.datasource.url=" + pg.getJdbcUrl(),
+                        "--spring.datasource.url=" + url,
                         "--spring.datasource.username=" + pg.getUsername(),
                         "--spring.datasource.password=" + pg.getPassword(),
                         "--spring.config.import=",
@@ -86,22 +106,57 @@ class RuntimeCoordinationIT {
     }
 
     @AfterAll
-    void stop() {
+    void stop() throws Exception {
         try {
-            if (second != null) second.close();
+            closeInstances();
         } finally {
-            try {
-                if (first != null) first.close();
-            } finally {
-                pg.stop();
-            }
+            pg.stop();
         }
     }
 
-    @BeforeEach
-    void clear() {
-        sql.execute(
-                "TRUNCATE business.conversations,memory.owners,business.runtime_workers,business.runtime_artifacts CASCADE");
+    @AfterEach
+    void closeInstances() throws Exception {
+        if (first == null && second == null) return;
+        try {
+            closeInstance(second, secondApplication);
+        } finally {
+            closeInstance(first, firstApplication);
+        }
+        // Both data sources are permanently closed before observing sessions; this is a shutdown
+        // barrier, not a transient idle check while the application can still borrow connections.
+        await().atMost(Duration.ofSeconds(5))
+                .untilAsserted(
+                        () ->
+                                assertThat(
+                                                sql.queryForObject(
+                                                        "SELECT count(*) FROM pg_stat_activity WHERE application_name IN (?,?)",
+                                                        Integer.class,
+                                                        firstApplication,
+                                                        secondApplication))
+                                        .isZero());
+        first = null;
+        second = null;
+    }
+
+    private void closeInstance(ConfigurableApplicationContext context, String applicationName)
+            throws Exception {
+        if (context == null) return;
+        if (!context.isActive()) {
+            context.close();
+            return;
+        }
+        var business =
+                context.getBean(DataSource.class).unwrap(com.zaxxer.hikari.HikariDataSource.class);
+        var heartbeat =
+                context.getBean(com.financeclaw.infrastructure.task.HeartbeatResources.class)
+                        .dataSource()
+                        .unwrap(com.zaxxer.hikari.HikariDataSource.class);
+        context.close();
+        assertThat(context.isActive()).isFalse();
+        assertThat(business.isClosed()).isTrue();
+        assertThat(heartbeat.isClosed()).isTrue();
+        assertThat(business.getJdbcUrl()).contains("ApplicationName=" + applicationName);
+        assertThat(heartbeat.getJdbcUrl()).contains("ApplicationName=" + applicationName);
     }
 
     private Turn admit() {
@@ -348,9 +403,25 @@ class RuntimeCoordinationIT {
         Files.copy(archive, artifacts.resolve("alias.jar"), StandardCopyOption.REPLACE_EXISTING);
         assertThatThrownBy(() -> catalog.register("alias.jar", digest, 1, List.of("agentscope")))
                 .hasMessage("runtime_artifact_registration_conflict");
+        Path outside = artifacts.getParent().resolve("outside.jar");
+        Files.copy(
+                jar("outside-seed.jar", "outside-root-version"),
+                outside,
+                StandardCopyOption.REPLACE_EXISTING);
+        String outsideDigest = digest(outside);
+        assertThat(RuntimeArtifacts.hashArchive(outside)).matches("[a-f0-9]{64}");
         assertThatThrownBy(
-                        () -> catalog.register("../history.jar", digest, 1, List.of("agentscope")))
+                        () ->
+                                catalog.register(
+                                        "../outside.jar", outsideDigest, 1, List.of("agentscope")))
                 .hasMessage("invalid_artifact_path");
+        assertThat(
+                        sql.queryForObject(
+                                "SELECT count(*) FROM business.runtime_artifacts WHERE artifact_hash=?",
+                                Integer.class,
+                                outsideDigest))
+                .isZero();
+        assertThat(catalog.list(50)).containsExactly(registered);
         assertThatThrownBy(
                         () ->
                                 catalog.register(

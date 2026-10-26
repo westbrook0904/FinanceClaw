@@ -20,7 +20,7 @@
 
 HTTP API、AgentScope 执行、SSE、任务恢复和飞书投递运行在**同一个业务 JVM**。业务连接与心跳预留连接共用原数据库连接总预算；进程内事件中心处理本机通知。受限记忆处理、数据库初始化和离线隐私恢复使用独立入口。工程保持单个 Maven 模块。
 
-非 RAG 平台遗留项已完成[本批开发](docs/architecture/non-rag-completion-plan.md)：Agent 受控调用与审批恢复、身份和资源管理、持久触发与配额调度、运行协调和观测。提交前 1,401 个单元/契约/架构测试、46 个脚本测试与打包通过；本机 Docker 阻塞和此前失败记录均保留，完整 PostgreSQL/Compose 结果以本提交对应的 GitHub Actions 为准。RAG 暂缓。
+非 RAG 平台遗留项已完成[本批开发](docs/architecture/non-rag-completion-plan.md)：Agent 受控调用与审批恢复、身份和资源管理、持久触发与配额调度、运行协调和观测。提交前 1,402 个单元/契约/架构测试、46 个脚本测试与打包通过；本机 Docker 阻塞和此前失败记录均保留，完整 PostgreSQL/Compose 结果以本提交对应的 GitHub Actions 为准。RAG 暂缓。
 
 ```mermaid
 flowchart LR
