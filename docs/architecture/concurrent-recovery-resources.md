@@ -2,6 +2,8 @@
 
 状态：本地完整验证与 Compose 均通过。本页记录提交前证据；后续远程交付应按对应 commit 的 GitHub Actions 核验。前置 `7b46102` 已在远程分支，2026-10-26 实时复核 [GitHub Actions 40252918781](https://github.com/westbrook0904/FinanceClaw/actions/runs/40252918781) 的 verify 和 delivery 均成功。前置记录为 1,916 Java、46 脚本、44 Compose；该结果只属于前置提交。
 
+后续交付补充：`76b8818` 已推送到 `origin/codex/java-agentscope`，[GitHub Actions 40275671782](https://github.com/westbrook0904/FinanceClaw/actions/runs/40275671782) 整体 completed/success，verify 1,346 单元 + 637 集成、46 脚本及 delivery 44 Compose 全部通过。本页其余原本地记录不改写为远程运行；后续非 RAG 功能仍须独立验证。
+
 用户要求先完成整块开发，再集中测试和修复。本阶段不为每个小改动先执行一轮 before，也不把源码审查、预期计数或合成数据写成已通过结果。
 
 ## 一次完成的三个开发块

@@ -209,6 +209,18 @@ class TurnDatabaseBaselineIT {
                                     "--financeclaw.auth.token=" + TOKEN,
                                     "--financeclaw.auth.tenant=" + ALICE.tenant(),
                                     "--financeclaw.auth.subject=" + ALICE.subject(),
+                                    "--financeclaw.auth.credential-resources-json="
+                                            + PayloadJson.canonical(
+                                                    List.of(
+                                                            Map.of(
+                                                                    "resourceId",
+                                                                    "baseline-model",
+                                                                    "reference",
+                                                                    "@model",
+                                                                    "tenant",
+                                                                    ALICE.tenant(),
+                                                                    "subject",
+                                                                    ALICE.subject()))),
                                     "--financeclaw.model.name=offline",
                                     "--financeclaw.model.api-key=synthetic-loopback-key",
                                     "--financeclaw.fallback.name=",
@@ -232,6 +244,10 @@ class TurnDatabaseBaselineIT {
             events = application.getBean(TaskEventHub.class);
             agents = application.getBean(AgentService.class);
             releases = application.getBean(ReleaseService.class);
+            // Explicit application-authorized fixture setup, outside measurement windows.
+            application
+                    .getBean(com.financeclaw.app.agent.port.ResourceAdministration.class)
+                    .change(ALICE, "credential", "baseline-model", BOB, null, 0, true);
             api =
                     "http://127.0.0.1:"
                             + ((ServletWebServerApplicationContext) application)
@@ -281,7 +297,8 @@ class TurnDatabaseBaselineIT {
             Path output = Path.of("target/p3a8/turn-sql-baseline.json");
             Files.createDirectories(output.getParent());
             var report = new LinkedHashMap<String, Object>();
-            report.put("schema", "turn-sql-baseline/2");
+            report.put("schema", "turn-sql-baseline/3");
+            report.put("validation_batch", "non-rag-concentrated");
             report.put("scope", "owned-spring-real-http-worker-loopback-sse");
             report.put("worker_parallelism", 4);
             int businessMaximum =

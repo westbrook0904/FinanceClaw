@@ -1,5 +1,6 @@
 package com.financeclaw.app.agent;
 
+import com.financeclaw.app.agent.port.AgentAccessGateway;
 import com.financeclaw.app.agent.port.AgentCapabilityResolver;
 import com.financeclaw.app.agent.port.AgentRepository;
 import com.financeclaw.app.release.ReleaseService;
@@ -19,6 +20,14 @@ import org.springframework.transaction.support.TransactionTemplate;
 /** Agent 管理与调用目标解析：草稿不进入执行，发布在同一 owner 锁事务中登记清单并切换指针。 */
 @Service
 public class AgentService {
+    private AgentAccessGateway agentAccess = AgentAccessGateway.ownedOnly();
+    private boolean sharedAccessConfigured;
+
+    public void configureAgentAccess(AgentAccessGateway access) {
+        this.agentAccess = access;
+        this.sharedAccessConfigured = true;
+    }
+
     private final AgentRepository repository;
     private final ReleaseService releases;
     private final TransactionTemplate tx;
@@ -214,12 +223,22 @@ public class AgentService {
             return new ResolvedTarget(id, hash);
         }
         AgentDraft.requireCustomId(id);
-        requireOwned(repository.owned(owner, id));
+        if (!sharedAccessConfigured) requireOwned(repository.owned(owner, id));
         var deployment = releases.currentForAgent(id);
         if (deployment == null) {
+            if (repository.owned(owner, id) == null) throw new Problem(404, "not_found");
             throw new Problem(409, "agent_not_published");
         }
-        releases.resolve(deployment.releaseHash()).requireIdentity(owner, id);
+        com.financeclaw.app.agent.port.AgentAccessGateway.Authorization authorization;
+        try {
+            authorization = agentAccess.requireInvocation(owner, id, deployment.releaseHash());
+        } catch (Blocked denied) {
+            if ("agent_access_denied".equals(denied.getMessage()))
+                throw new Problem(404, "not_found");
+            throw denied;
+        }
+        releases.resolve(deployment.releaseHash())
+                .requireIdentity(authorization.resourceOwner(), id);
         return new ResolvedTarget(id, deployment.releaseHash());
     }
 

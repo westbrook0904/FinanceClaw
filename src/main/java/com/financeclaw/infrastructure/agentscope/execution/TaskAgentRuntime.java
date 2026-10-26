@@ -1,5 +1,7 @@
 package com.financeclaw.infrastructure.agentscope.execution;
 
+import com.financeclaw.app.agent.port.AgentAccessGateway;
+import com.financeclaw.app.agent.port.CredentialAccessGateway;
 import com.financeclaw.app.artifact.ArtifactService;
 import com.financeclaw.app.execution.ExecutionLeaseService;
 import com.financeclaw.app.execution.ExecutionPolicyService;
@@ -31,6 +33,7 @@ import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.env.Environment;
@@ -46,6 +49,29 @@ import reactor.core.publisher.Sinks;
  */
 @Component
 public class TaskAgentRuntime implements com.financeclaw.app.execution.port.AgentExecutionPort {
+    private com.financeclaw.infrastructure.runtime.RuntimeObservations observations =
+            com.financeclaw.infrastructure.runtime.RuntimeObservations.disabled();
+
+    @Autowired(required = false)
+    public void configureObservations(
+            com.financeclaw.infrastructure.runtime.RuntimeObservations observations) {
+        this.observations = observations;
+    }
+
+    private CredentialAccessGateway credentialAccess = CredentialAccessGateway.trustedFixture();
+
+    @Autowired
+    public void configureCredentialAccess(CredentialAccessGateway access) {
+        this.credentialAccess = access;
+    }
+
+    private AgentAccessGateway agentAccess = AgentAccessGateway.ownedOnly();
+
+    @Autowired
+    public void configureAgentAccess(AgentAccessGateway access) {
+        this.agentAccess = access;
+    }
+
     private ContextBudgets budgets = ContextBudgets.defaults();
     private final ExecutionPolicyService policy;
     private final ExecutionLeaseService leases;
@@ -132,8 +158,12 @@ public class TaskAgentRuntime implements com.financeclaw.app.execution.port.Agen
     private Outcome executeRegistered(Claim claim) {
         policy.checkDispatch(claim);
         var resolved = releases.resolve(claim.turn().releaseHash());
-        resolved.requireIdentity(
-                new Owner(claim.turn().tenant(), claim.turn().subject()), claim.turn().agentId());
+        var authorization =
+                agentAccess.requireInvocation(
+                        new Owner(claim.turn().tenant(), claim.turn().subject()),
+                        claim.turn().agentId(),
+                        claim.turn().releaseHash());
+        resolved.requireIdentity(authorization.resourceOwner(), claim.turn().agentId());
         var release = resolved.definition();
         LocalCapabilityCatalog.requireCompatible(resolved.plan());
         // 本 attempt 只读既有 Turn 快照，不重新召回或替换长期记忆；恢复也使用同一正文。
@@ -148,14 +178,19 @@ public class TaskAgentRuntime implements com.financeclaw.app.execution.port.Agen
         var identity = policy.identity(claim);
         var workContext = new WorkingContextSession(states, claim, identity.grantRevision());
         var scope = claim.scope();
+        // SDK 的最大轮数摘要可把模型门禁异常转换为普通 assistant 文本。
+        // 保留本 attempt 实际发生的拒绝，既不以“额度刚好用满”推测失败，也不影响合法暂停。
+        var rejected = new AtomicReference<RuntimeException>();
         var store =
                 new MyBatisAgentStateStore(states, scope) {
                     @Override
                     public long saveIfVersion(
                             String user, String session, String key, State state, long expected) {
+                        requireNoRejection(rejected);
                         return leases.fenced(
                                 claim,
                                 () -> {
+                                    requireNoRejection(rejected);
                                     // 与遗忘/撤权持有相同 owner/grant 锁，禁止删除后旧回调重新写回上下文。
                                     policy.checkPolicy(claim);
                                     long version =
@@ -178,7 +213,8 @@ public class TaskAgentRuntime implements com.financeclaw.app.execution.port.Agen
                                 artifacts,
                                 reports,
                                 claim,
-                                resolved.plan());
+                                resolved.plan(),
+                                credentialAccess);
                 var provider =
                         release.primary().name().equals("offline")
                                 ? null
@@ -189,20 +225,24 @@ public class TaskAgentRuntime implements com.financeclaw.app.execution.port.Agen
                                 ? null
                                 : ModelFactory.create(
                                         release.fallback(), credentials.modelApiKey())) {
+            tools.configureObservations(observations);
             Model delegate = release.primary().name().equals("offline") ? model(claim) : provider;
             tools.business(
-                    release.primary().name().equals("offline") ? null : provider, capabilities);
+                    release.primary().name().equals("offline")
+                            ? null
+                            : observedModel(claim, provider),
+                    capabilities);
             boolean workflow =
                     resolved.agentId().equals(AgentDraft.BUILTIN_AGENT)
                             && claim.turn().message().startsWith(PortfolioReviewService.COMMAND);
             if (workflow) {
                 delegate = capabilities.portfolioDriver(claim);
             }
-            Model primary = guarded(claim, delegate, stop, !workflow, tools);
+            Model primary = guarded(claim, delegate, stop, !workflow, tools, rejected);
             Model fallback =
                     release.fallback() == null || workflow
                             ? null
-                            : guarded(claim, backup, stop, true, tools);
+                            : guarded(claim, backup, stop, true, tools, rejected);
             var contextMiddleware =
                     new WorkingContextMiddleware(
                             claim,
@@ -214,11 +254,12 @@ public class TaskAgentRuntime implements com.financeclaw.app.execution.port.Agen
                             tools::requiredScope,
                             new ModelWorkContextSummarizer(
                                     workflow && provider != null
-                                            ? guarded(claim, provider, stop, true, tools)
+                                            ? guarded(claim, provider, stop, true, tools, rejected)
                                             : primary,
                                     release.primary().outputReserve(),
                                     timeout,
-                                    provider == null));
+                                    provider == null),
+                            failure -> rejected.compareAndSet(null, failure));
             try (var agent =
                     IsolatedAgentFactory.create(
                             primary,
@@ -227,7 +268,9 @@ public class TaskAgentRuntime implements com.financeclaw.app.execution.port.Agen
                             store,
                             tools.permissions(),
                             builder -> {
-                                builder.name(resolved.agentId()).sysPrompt(resolved.systemPrompt());
+                                builder.name(resolved.agentId())
+                                        .sysPrompt(resolved.systemPrompt())
+                                        .maxIters(release.maxModelCalls());
                                 tools.configure(builder);
                                 builder.middleware(contextMiddleware).hook(contextMiddleware);
                                 builder.middleware(
@@ -293,6 +336,7 @@ public class TaskAgentRuntime implements com.financeclaw.app.execution.port.Agen
                 if (interrupted.get()) {
                     throw new Fenced();
                 }
+                requireNoRejection(rejected);
                 tools.checkCompatibility();
                 var saved =
                         store.getVersioned(
@@ -310,9 +354,29 @@ public class TaskAgentRuntime implements com.financeclaw.app.execution.port.Agen
                                 "waiting", null, saved.version(), tools.pending(saved.value()))
                         : outcome;
             }
+        } catch (RuntimeException failure) {
+            // SDK 或检查点适配器可能包装原异常；业务终态必须保留实际拒绝原因。
+            requireNoRejection(rejected);
+            throw failure;
         } finally {
             active.remove(claim.command().attemptId());
         }
+    }
+
+    /** Workflow内有自己的预算门禁，这里只包装其真实供应商调用，不重复扣额。 */
+    private Model observedModel(Claim claim, Model delegate) {
+        return new Model() {
+            @Override
+            public String getModelName() {
+                return delegate.getModelName();
+            }
+
+            @Override
+            public Flux<ChatResponse> stream(
+                    List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+                return observations.model(claim, () -> delegate.stream(messages, tools, options));
+            }
+        };
     }
 
     private Model guarded(
@@ -320,7 +384,8 @@ public class TaskAgentRuntime implements com.financeclaw.app.execution.port.Agen
             Model delegate,
             Sinks.Empty<Void> stop,
             boolean countModel,
-            GovernedTools governedTools) {
+            GovernedTools governedTools,
+            AtomicReference<RuntimeException> rejected) {
         return new Model() {
             @Override
             public String getModelName() {
@@ -332,6 +397,7 @@ public class TaskAgentRuntime implements com.financeclaw.app.execution.port.Agen
                     List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
                 return Flux.defer(
                                 () -> {
+                                    requireNoRejection(rejected);
                                     governedTools.checkCompatibility();
                                     if (countModel) {
                                         policy.consume(claim, true);
@@ -339,12 +405,31 @@ public class TaskAgentRuntime implements com.financeclaw.app.execution.port.Agen
                                     // 供应商/固定Driver可能在多次调用中复用响应ID（例如workflow）。
                                     // 每次模型派发生成服务端消息ID，同一流的所有chunk沿用，防止轨迹覆盖。
                                     String responseId = UUID.randomUUID().toString();
-                                    return delegate.stream(messages, tools, options)
-                                            .map(response -> response.withId(responseId));
+                                    // 固定workflow Driver不是供应商模型调用；它只负责生成本地工具步骤。
+                                    Flux<ChatResponse> response =
+                                            countModel
+                                                    ? observations.model(
+                                                            claim,
+                                                            () ->
+                                                                    delegate.stream(
+                                                                            messages, tools,
+                                                                            options))
+                                                    : delegate.stream(messages, tools, options);
+                                    return response.map(chunk -> chunk.withId(responseId));
+                                })
+                        .doOnError(
+                                failure -> {
+                                    if (failure instanceof Blocked || failure instanceof Fenced)
+                                        rejected.compareAndSet(null, (RuntimeException) failure);
                                 })
                         .takeUntilOther(stop.asMono());
             }
         };
+    }
+
+    private static void requireNoRejection(AtomicReference<RuntimeException> rejected) {
+        var failure = rejected.get();
+        if (failure != null) throw failure;
     }
 
     /** 为新执行构造受限历史，或从真实检查点生成批准/补充输入。 恢复会重新绑定到新 attempt scope，并通过 CAS 克隆；旧 scope 不继续承担新执行。 */
@@ -380,18 +465,18 @@ public class TaskAgentRuntime implements com.financeclaw.app.execution.port.Agen
             if (anchor == null || !anchor.status().equals("answered") || !anchor.live()) {
                 throw new Blocked("stale_interaction");
             }
-            var source =
+            var sourceClaim =
                     new Claim(
-                                    new Command(
-                                            anchor.commandId(),
-                                            anchor.turnId(),
-                                            "done",
-                                            anchor.attemptId(),
-                                            0,
-                                            false,
-                                            null),
-                                    claim.turn())
-                            .scope();
+                            new Command(
+                                    anchor.commandId(),
+                                    anchor.turnId(),
+                                    "done",
+                                    anchor.attemptId(),
+                                    0,
+                                    false,
+                                    null),
+                            claim.turn());
+            var source = sourceClaim.scope();
             var original = new MyBatisAgentStateStore(states, source);
             var saved =
                     original.getVersioned(
@@ -400,13 +485,19 @@ public class TaskAgentRuntime implements com.financeclaw.app.execution.port.Agen
                 throw new Blocked("checkpoint_mismatch");
             }
             List<Msg> replies = new ArrayList<>();
-            for (var i : context.interactions(claim.turn().id())) {
+            var answered =
+                    context.interactions(claim.turn().id()).stream()
+                            .filter(i -> i.attemptId().equals(anchor.attemptId()))
+                            .toList();
+            tools.prepareDelegatedResume(sourceClaim, answered);
+            for (var i : answered) {
                 if (i.attemptId().equals(anchor.attemptId())) {
                     if (!i.status().equals("answered")
                             || !i.live()
                             || i.grantRevision() != anchor.grantRevision()) {
                         throw new Blocked("stale_interaction");
                     }
+                    if (tools.delegated(i)) continue;
                     var answer = PayloadJson.object(i.response());
                     replies.add(
                             i.kind().equals("approval")
@@ -421,12 +512,22 @@ public class TaskAgentRuntime implements com.financeclaw.app.execution.port.Agen
                 }
             }
             var state = saved.value();
+            // Native ASK handling ignores ordinary tool-result inputs in the same batch.
+            // Persist already-validated clarification results before sending only confirmation
+            // metadata.
+            // Classify inherited history before adding this attempt's newly answered tools.
+            // Otherwise resume() would mistake the new answers for historical projection-only data.
             workContext.resume(state.getContext(), anchor.attemptId(), anchor.stateVersion());
+            var clarificationReplies =
+                    replies.stream().filter(message -> message.getRole() == MsgRole.TOOL).toList();
+            var resumedContext = new ArrayList<>(state.getContext());
+            resumedContext.addAll(clarificationReplies);
+            workContext.record(clarificationReplies);
             var copied =
                     AgentState.builder()
                             .userId(claim.scope().userId())
                             .sessionId(claim.scope().sessionId())
-                            .context(state.getContext())
+                            .context(resumedContext)
                             .summary(state.getSummary())
                             .permissionContext(tools.permissions())
                             .toolContext(state.getToolContext())
@@ -436,7 +537,7 @@ public class TaskAgentRuntime implements com.financeclaw.app.execution.port.Agen
             store.saveIfVersion(
                     claim.scope().userId(), claim.scope().sessionId(), "agent_state", copied, 0);
             policy.checkDispatch(claim);
-            return replies;
+            return replies.stream().filter(message -> message.getRole() != MsgRole.TOOL).toList();
         }
     }
 

@@ -87,7 +87,30 @@ final class PrivateAgentLoopback implements AutoCloseable {
             String tool,
             Map<String, Object> arguments,
             Gate gate,
-            boolean fragmented) {
+            boolean fragmented,
+            List<Reply> batch) {
+        Reply(
+                String text,
+                String callId,
+                String tool,
+                Map<String, Object> arguments,
+                Gate gate,
+                boolean fragmented) {
+            this(text, callId, tool, arguments, gate, fragmented, List.of());
+        }
+
+        static Reply tools(Reply... calls) {
+            if (calls.length < 1) throw new IllegalArgumentException("Empty batch");
+            return new Reply(
+                    null,
+                    calls[0].callId(),
+                    calls[0].tool(),
+                    calls[0].arguments(),
+                    null,
+                    false,
+                    List.of(calls));
+        }
+
         static Reply text(String text) {
             return new Reply(text, null, null, null, null, false);
         }
@@ -102,7 +125,7 @@ final class PrivateAgentLoopback implements AutoCloseable {
         }
 
         Reply held(Gate gate) {
-            return new Reply(text, callId, tool, arguments, gate, fragmented);
+            return new Reply(text, callId, tool, arguments, gate, fragmented, batch);
         }
     }
 
@@ -239,6 +262,27 @@ final class PrivateAgentLoopback implements AutoCloseable {
                                                             "arguments",
                                                             json.writeValueAsString(
                                                                     reply.arguments())))));
+            if (!reply.batch().isEmpty()) {
+                var batch = new ArrayList<Map<String, Object>>();
+                for (int index = 0; index < reply.batch().size(); index++) {
+                    var call = reply.batch().get(index);
+                    batch.add(
+                            Map.of(
+                                    "index",
+                                    index,
+                                    "id",
+                                    call.callId(),
+                                    "type",
+                                    "function",
+                                    "function",
+                                    Map.of(
+                                            "name",
+                                            call.tool(),
+                                            "arguments",
+                                            json.writeValueAsString(call.arguments()))));
+                }
+                delta = Map.of("role", "assistant", "tool_calls", batch);
+            }
             StringBuilder stream = new StringBuilder();
             if (reply.fragmented()) {
                 String arguments = json.writeValueAsString(reply.arguments());

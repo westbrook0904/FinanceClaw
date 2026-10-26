@@ -1,6 +1,7 @@
 package com.financeclaw.worker;
 
 import com.financeclaw.app.execution.*;
+import com.financeclaw.app.runtime.WorkerRegistry;
 import com.financeclaw.app.task.WorkSignals;
 import com.financeclaw.app.task.WorkSignals.Queue;
 import com.financeclaw.domain.Task.*;
@@ -45,6 +46,16 @@ public class TaskWorker implements AutoCloseable {
     private final Set<String> renewing = ConcurrentHashMap.newKeySet();
     private final String worker = UUID.randomUUID().toString();
     private volatile boolean closing;
+    private final WorkerRegistry registry;
+    private final ExecutionPolicyService policy;
+    private final int parallelism;
+    private final java.util.function.LongSupplier monotonic;
+    private final long registryTtlNanos;
+    private volatile long registryDeadlineNanos;
+    private final Set<String> denied = ConcurrentHashMap.newKeySet();
+    private volatile boolean registered;
+    private volatile boolean unavailable;
+    private final AtomicBoolean controlling = new AtomicBoolean();
 
     @Autowired
     public TaskWorker(
@@ -57,7 +68,9 @@ public class TaskWorker implements AutoCloseable {
             @Value("${financeclaw.worker.lease-ms:15000}") long lease,
             @Value("${financeclaw.worker.heartbeat-ms:2000}") long heartbeat,
             @Value("${financeclaw.worker.poll-ms:250}") long pollMillis,
-            @Value("${financeclaw.worker.idle-max-ms:5000}") long idleMaximumMillis) {
+            @Value("${financeclaw.worker.idle-max-ms:5000}") long idleMaximumMillis,
+            WorkerRegistry registry,
+            ExecutionPolicyService policy) {
         this(
                 leases,
                 recovery,
@@ -67,7 +80,9 @@ public class TaskWorker implements AutoCloseable {
                 parallelism,
                 lease,
                 heartbeat,
-                new IdlePoll(pollMillis, idleMaximumMillis));
+                new IdlePoll(pollMillis, idleMaximumMillis),
+                registry,
+                policy);
     }
 
     public TaskWorker(
@@ -101,6 +116,60 @@ public class TaskWorker implements AutoCloseable {
             long lease,
             long heartbeat,
             IdlePoll idle) {
+        this(
+                leases,
+                recovery,
+                execution,
+                signals,
+                enabled,
+                parallelism,
+                lease,
+                heartbeat,
+                idle,
+                null,
+                null);
+    }
+
+    TaskWorker(
+            ExecutionLeaseService leases,
+            RecoverTaskService recovery,
+            ExecuteTaskService execution,
+            WorkSignals signals,
+            boolean enabled,
+            int parallelism,
+            long lease,
+            long heartbeat,
+            IdlePoll idle,
+            WorkerRegistry registry,
+            ExecutionPolicyService policy) {
+        this(
+                leases,
+                recovery,
+                execution,
+                signals,
+                enabled,
+                parallelism,
+                lease,
+                heartbeat,
+                idle,
+                registry,
+                policy,
+                System::nanoTime);
+    }
+
+    TaskWorker(
+            ExecutionLeaseService leases,
+            RecoverTaskService recovery,
+            ExecuteTaskService execution,
+            WorkSignals signals,
+            boolean enabled,
+            int parallelism,
+            long lease,
+            long heartbeat,
+            IdlePoll idle,
+            WorkerRegistry registry,
+            ExecutionPolicyService policy,
+            java.util.function.LongSupplier monotonic) {
         if (parallelism < 1
                 || parallelism > MAX_PARALLELISM
                 || lease < heartbeat * MIN_LEASE_HEARTBEAT_RATIO
@@ -114,6 +183,16 @@ public class TaskWorker implements AutoCloseable {
         this.signals = java.util.Objects.requireNonNull(signals);
         this.idle = java.util.Objects.requireNonNull(idle);
         this.lease = lease;
+        this.registry = registry;
+        this.policy = policy;
+        this.parallelism = parallelism;
+        this.monotonic = java.util.Objects.requireNonNull(monotonic);
+        this.registryTtlNanos =
+                registry == null ? 0 : TimeUnit.MILLISECONDS.toNanos(registry.ttlMillis());
+        if (registry != null
+                && (registryTtlNanos < TimeUnit.SECONDS.toNanos(1)
+                        || registryTtlNanos > TimeUnit.SECONDS.toNanos(300)))
+            throw new IllegalArgumentException("Invalid registry lifetime");
         slots = new Semaphore(parallelism);
         pool = new org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor();
         pool.setCorePoolSize(parallelism);
@@ -137,11 +216,12 @@ public class TaskWorker implements AutoCloseable {
     /** 扫描可领取命令并提交到有界执行池。进程内标记只防止同实例重入，跨实例竞争由 SQL 行锁处理。 */
     @Scheduled(fixedDelayString = "${financeclaw.worker.poll-ms:250}")
     public void poll() {
-        if (closing || !enabled || !polling.compareAndSet(false, true)) {
+        if (closing || !enabled || !locallyEligible() || !polling.compareAndSet(false, true)) {
             return;
         }
         try {
-            if (slots.availablePermits() == 0) {
+            ensureRegistered();
+            if (!locallyEligible() || slots.availablePermits() == 0) {
                 return;
             }
             // 先检查容量，再观察提交代数；没有空槽时连领取 SQL 都不执行。
@@ -150,7 +230,7 @@ public class TaskWorker implements AutoCloseable {
                 return;
             }
             // 槽位覆盖领取到执行结束的全过程；异常和线程池拒绝也必须归还。
-            while (!closing && slots.tryAcquire()) {
+            while (!closing && locallyEligible() && slots.tryAcquire()) {
                 Claim claim;
                 try {
                     claim = leases.claim(worker, lease);
@@ -159,7 +239,7 @@ public class TaskWorker implements AutoCloseable {
                     idle.empty(ticket);
                     throw failure;
                 }
-                if (claim == null) {
+                if (claim == null || closing || !locallyEligible()) {
                     slots.release();
                     idle.empty(ticket);
                     break;
@@ -171,9 +251,13 @@ public class TaskWorker implements AutoCloseable {
                     pool.execute(
                             () -> {
                                 try {
-                                    execute(claim);
+                                    if (!closing
+                                            && locallyEligible()
+                                            && !denied.contains(claim.command().attemptId()))
+                                        execute(claim);
                                 } finally {
                                     active.remove(claim.command().attemptId());
+                                    denied.remove(claim.command().attemptId());
                                     slots.release();
                                     idle.wake();
                                 }
@@ -214,15 +298,16 @@ public class TaskWorker implements AutoCloseable {
             fixedDelayString = "${financeclaw.worker.heartbeat-ms:2000}",
             scheduler = "executionHeartbeatScheduler")
     public void heartbeat() {
-        if (closing || !enabled) {
+        if (closing || !enabled || !locallyEligible()) {
             return;
         }
         // 同一 attempt 同时最多一个续期；线程池不排队，避免旧心跳在任务结束后积压执行。
         for (var claim : active.values()) {
-            if (closing) {
+            if (closing || !locallyEligible()) {
                 return;
             }
             var attempt = claim.command().attemptId();
+            if (denied.contains(attempt)) continue;
             if (!renewing.add(attempt)) {
                 continue;
             }
@@ -230,14 +315,18 @@ public class TaskWorker implements AutoCloseable {
                 heartbeatPool.execute(
                         () -> {
                             try {
-                                if (closing || active.get(attempt) != claim) {
+                                if (closing
+                                        || !locallyEligible()
+                                        || denied.contains(attempt)
+                                        || active.get(attempt) != claim) {
                                     return;
                                 }
                                 try {
-                                    if (leases.heartbeat(claim, lease)) {
-                                        execution.interrupt(claim);
-                                    }
+                                    boolean cancelling = leases.heartbeat(claim, lease);
+                                    if (!locallyEligible()) return;
+                                    if (cancelling) execution.interrupt(claim);
                                 } catch (RuntimeException lost) {
+                                    denied.add(attempt);
                                     execution.interrupt(claim);
                                 }
                             } finally {
@@ -251,11 +340,88 @@ public class TaskWorker implements AutoCloseable {
         }
     }
 
+    /** 控制面检查独立于专池续租，避免业务池占满时先排队借业务连接再续租。 */
+    @Scheduled(fixedDelayString = "${financeclaw.runtime.control-poll-ms:1000}")
+    public void checkRuntimeControl() {
+        if (closing || !enabled || !locallyEligible() || !controlling.compareAndSet(false, true))
+            return;
+        try {
+            try {
+                ensureRegistered();
+                if (!locallyEligible()) return;
+                if (registry != null) {
+                    long started = monotonic.getAsLong();
+                    if (!registry.heartbeat(worker, active.size())) {
+                        loseRegistration();
+                        return;
+                    }
+                    // 从请求开始计时，不能把等待业务池/SQL的时间赠送为额外存活期。
+                    registryDeadlineNanos = started + registryTtlNanos;
+                    if (!locallyEligible()) return;
+                }
+            } catch (RuntimeException lost) {
+                loseRegistration();
+                return;
+            }
+            if (policy != null)
+                for (var claim : active.values()) {
+                    if (closing || !locallyEligible()) return;
+                    if (denied.contains(claim.command().attemptId())) continue;
+                    try {
+                        policy.checkDispatch(claim);
+                    } catch (RuntimeException revoked) {
+                        denied.add(claim.command().attemptId());
+                        execution.interrupt(claim);
+                    }
+                }
+        } finally {
+            controlling.set(false);
+        }
+    }
+
+    private synchronized void ensureRegistered() {
+        if (registry != null && !registered && !unavailable) {
+            long started = monotonic.getAsLong();
+            registry.register(worker, parallelism);
+            registryDeadlineNanos = started + registryTtlNanos;
+            registered = true;
+        }
+    }
+
+    /** 专用心跳只读本机单调时间，不借业务池；控制调度饥饿时也会保守停止续租。 */
+    private boolean locallyEligible() {
+        if (unavailable) return false;
+        if (registry != null && registered && monotonic.getAsLong() - registryDeadlineNanos >= 0) {
+            loseRegistration();
+            return false;
+        }
+        return true;
+    }
+
+    private void loseRegistration() {
+        if (unavailable) return;
+        unavailable = true;
+        active.values()
+                .forEach(
+                        claim -> {
+                            denied.add(claim.command().attemptId());
+                            execution.interrupt(claim);
+                        });
+        // 不再续租或重新登记这个 UUID；原租约过期后由既有 receipt/checkpoint recovery 收尾。
+    }
+
     /** 先停止新工作和续期，再中断执行并等待线程退出；未封存结果由持久恢复链路接管。 */
     @Override
     @PreDestroy
     public void close() throws InterruptedException {
         closing = true;
+        if (registry != null && registered) {
+            try {
+                registry.stop(worker);
+            } catch (RuntimeException ignored) {
+                /* DB expiry fences it. */
+            }
+        }
         heartbeatPool.shutdownNow();
         renewing.clear();
         active.values().forEach(execution::interrupt);

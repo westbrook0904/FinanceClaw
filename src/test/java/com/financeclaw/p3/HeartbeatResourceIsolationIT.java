@@ -194,6 +194,13 @@ class HeartbeatResourceIsolationIT {
         leases = context.getBean(ExecutionLeaseService.class);
         metrics = context.getBean(MeterRegistry.class);
         observed = context.getBean(Observations.class);
+        await().atMost(Duration.ofSeconds(10))
+                .until(
+                        () ->
+                                context.getBean(
+                                                com.financeclaw.app.task.PersistentEventSignals
+                                                        .class)
+                                        .isConnected());
         sql =
                 new JdbcTemplate(
                         new DriverManagerDataSource(
@@ -272,8 +279,8 @@ class HeartbeatResourceIsolationIT {
         assertThat(context.getBeansOfType(PlatformTransactionManager.class)).hasSize(1);
         assertThat(context.getBeansOfType(SqlSessionFactory.class)).hasSize(1);
         var before = expiry();
-        try (var first = business.getConnection();
-                var second = business.getConnection()) {
+        // LISTEN 已常驻占用一条；借出剩余一条即可达到原 business=2 的上限。
+        try (var first = business.getConnection()) {
             assertThat(main.getHikariPoolMXBean().getActiveConnections()).isEqualTo(2);
             assertThat(leases.heartbeat(CLAIM, 120000)).isFalse();
             assertThat(expiry()).isAfter(before);
@@ -327,7 +334,7 @@ class HeartbeatResourceIsolationIT {
             worker.heartbeat();
             assertThat(interrupted.await(3, TimeUnit.SECONDS)).isTrue();
             verify(execution, atLeastOnce()).interrupt(CLAIM);
-            assertThat(main.getHikariPoolMXBean().getActiveConnections()).isZero();
+            assertThat(main.getHikariPoolMXBean().getActiveConnections()).isEqualTo(1);
             assertThat(expiry()).isEqualTo(before);
             assertThat(observed.renewals).hasValue(0);
             assertThat(observed.commits).hasValue(0);

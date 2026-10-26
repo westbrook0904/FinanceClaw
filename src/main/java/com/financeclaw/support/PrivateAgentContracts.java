@@ -6,12 +6,37 @@ import com.financeclaw.domain.agent.PrivateAgentTarget;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /** 私有叶子目标的规范契约编码及摘要校验；JSON 细节不进入纯领域对象，也不引入应用服务循环依赖。 */
 public final class PrivateAgentContracts {
     private static final String READER = "function:read_artifact_range";
 
     private PrivateAgentContracts() {}
+
+    public static void requireReadOnly(com.financeclaw.domain.agent.AgentExecutionPlan plan) {
+        if (!PrivateAgentTarget.readOnlyPlan(plan)) throw new Blocked("agent_leaf_required");
+        for (var binding : plan.capabilities()) {
+            var contract = PayloadJson.object(binding.contractJson());
+            if (binding.kind().equals("mcp") && !Boolean.TRUE.equals(contract.get("readOnly"))
+                    || binding.kind().equals("function")
+                            && !Boolean.FALSE.equals(contract.get("approval")))
+                throw new Blocked("agent_leaf_required");
+        }
+    }
+
+    public static void requireControlled(com.financeclaw.domain.agent.AgentExecutionPlan plan) {
+        if (!PrivateAgentTarget.controlledPlan(plan)) throw new Blocked("agent_leaf_required");
+        for (var binding : plan.capabilities()) {
+            var contract = PayloadJson.object(binding.contractJson());
+            if (binding.kind().equals("mcp") && !Boolean.TRUE.equals(contract.get("readOnly")))
+                throw new Blocked("agent_leaf_required");
+            if (binding.kind().equals("function")
+                    && !Objects.equals(
+                            contract.get("approval"), binding.name().equals("create_report")))
+                throw new Blocked("agent_leaf_required");
+        }
+    }
 
     public static CapabilityBinding binding(String id, String hash) {
         return binding(new PrivateAgentTarget(id, hash));
@@ -51,14 +76,33 @@ public final class PrivateAgentContracts {
             fields.put("toolScopes", List.of(PrivateAgentTarget.MARKET_SCOPE));
             fields.put("resultScope", PrivateAgentTarget.MARKET_SCOPE);
         }
+        if (target.generic()) {
+            fields.put(
+                    "format",
+                    target.profile() == PrivateAgentTarget.Profile.CONTROLLED
+                            ? "agent-leaf/4"
+                            : "agent-leaf/3");
+            fields.put(
+                    "profile",
+                    target.profile() == PrivateAgentTarget.Profile.CONTROLLED
+                            ? "controlled-local-actions"
+                            : "read-only");
+            fields.put("maxToolCalls", 10);
+            fields.put("toolScopes", target.scopes());
+            fields.put("resultScope", target.resultScope());
+        }
         String contract = PayloadJson.canonical(fields);
         return new CapabilityBinding(
                 "agent:" + target.agentId(),
                 "agent",
                 PrivateAgentTarget.toolName(target.agentId()),
-                market
-                        ? List.of(PrivateAgentTarget.TOOL_SCOPE, PrivateAgentTarget.MARKET_SCOPE)
-                        : List.of(PrivateAgentTarget.TOOL_SCOPE),
+                target.generic()
+                        ? target.requiredScopes()
+                        : market
+                                ? List.of(
+                                        PrivateAgentTarget.TOOL_SCOPE,
+                                        PrivateAgentTarget.MARKET_SCOPE)
+                                : List.of(PrivateAgentTarget.TOOL_SCOPE),
                 List.of(READER),
                 contract,
                 PayloadDigest.sha256(contract));
@@ -82,10 +126,26 @@ public final class PrivateAgentContracts {
             } else if ("agent-leaf/2".equals(contract.get("format"))
                     && "market-snapshot-only".equals(contract.get("profile"))) {
                 profile = PrivateAgentTarget.Profile.MARKET_SNAPSHOT;
+            } else if ("agent-leaf/3".equals(contract.get("format"))
+                    && "read-only".equals(contract.get("profile"))) {
+                profile = PrivateAgentTarget.Profile.READ_ONLY;
+            } else if ("agent-leaf/4".equals(contract.get("format"))
+                    && "controlled-local-actions".equals(contract.get("profile"))) {
+                profile = PrivateAgentTarget.Profile.CONTROLLED;
             } else {
                 throw new Blocked("agent_plan_invalid");
             }
-            var target = new PrivateAgentTarget(binding.id().substring(6), (String) hash, profile);
+            var target =
+                    (profile == PrivateAgentTarget.Profile.READ_ONLY
+                                    || profile == PrivateAgentTarget.Profile.CONTROLLED)
+                            ? new PrivateAgentTarget(
+                                    binding.id().substring(6),
+                                    (String) hash,
+                                    profile,
+                                    PayloadJson.scopes(
+                                            PayloadJson.canonical(contract.get("toolScopes"))))
+                            : new PrivateAgentTarget(
+                                    binding.id().substring(6), (String) hash, profile);
             if (!binding(target).equals(binding)) throw new Blocked("agent_plan_invalid");
             return target;
         } catch (RuntimeException invalid) {

@@ -51,7 +51,8 @@ import org.testcontainers.containers.PostgreSQLContainer;
 /**
  * 在真实 PG/JDBC execute 边界比较本地执行预算的 SQL 成本。正常发布、受理、领取及 begin 均在观察窗口之外； 不 mock 生产端口、不运行模型或后台
  * Worker。P3a.7 去掉 consume 内第二次发布解析，P3a.9 将每次解析合并为一次主/基础清单查询； 外层子调用和内层行情读取的全部
- * fence、owner、source、policy、grant 门禁继续独立执行。
+ * fence、owner、source、policy、grant 门禁继续独立执行。资源授权新增的 Agent owner 锁及选中子发布读取单列计数；
+ * 同次授权返回的不可变发布只复用解析结果，不复用当前授权事实。
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 @Execution(ExecutionMode.SAME_THREAD)
@@ -181,13 +182,41 @@ class ExecutionBudgetQueryIT {
                     .writeValue(
                             destination.toFile(),
                             Map.of(
-                                    "format", "execution-budget-sql/1",
+                                    "format", "execution-budget-sql/2",
                                     "measurement_boundary",
                                             "JDBC execute methods; fixture preparation and verification excluded",
                                     "connection_id_semantics",
                                             "unique JDBC connection borrow; nested REQUIRED shares the same id",
                                     "expected_change",
-                                            "one joined root/base SQL per release resolution; P3a.7 consume reuse and every authority gate retained",
+                                            "retain prior business SQL exactly; count current Agent owner locks and root/selected-child release reads separately; reuse only the release resolved in the same authorization call",
+                                    "prior_contract",
+                                            Map.of(
+                                                    "private_first",
+                                                            Map.of(
+                                                                    "statements",
+                                                                    20,
+                                                                    "release_reads",
+                                                                    3),
+                                                    "private_replay",
+                                                            Map.of(
+                                                                    "statements",
+                                                                    10,
+                                                                    "release_reads",
+                                                                    2),
+                                                    "child_model",
+                                                            Map.of(
+                                                                    "statements",
+                                                                    11,
+                                                                    "release_reads",
+                                                                    2),
+                                                    "root_reservation",
+                                                            Map.of(
+                                                                    "statements",
+                                                                    8,
+                                                                    "release_reads",
+                                                                    1),
+                                                    "scope",
+                                                            "same-owner Agents; no resource share grant SQL expected"),
                                     "measurements", List.copyOf(measurements)));
         } finally {
             // 资源归本测试所有，避免 PG 已停止而缓存 Spring/Hikari 上下文继续重连。
@@ -244,12 +273,10 @@ class ExecutionBudgetQueryIT {
         assertThat(replay.sql().count("child_tool_update")).isZero();
         assertSingleTransaction(first.sql(), false);
         assertSingleTransaction(replay.sql(), false);
-        assertThat(first.sql().manifests()).isEqualTo(3);
-        assertThat(first.sql().count("release_lookup")).isEqualTo(3);
-        assertThat(first.sql().statements()).isEqualTo(20);
-        assertThat(replay.sql().manifests()).isEqualTo(2);
-        assertThat(replay.sql().count("release_lookup")).isEqualTo(2);
-        assertThat(replay.sql().statements()).isEqualTo(10);
+        // Three complete root checks include each selected child; child validation and the
+        // frozen market source each perform their own live Agent authorization.
+        assertResourceAuthorityCost(first.sql(), 20, 3, 8, 8);
+        assertResourceAuthorityCost(replay.sql(), 10, 2, 5, 5);
     }
 
     @Test
@@ -280,10 +307,8 @@ class ExecutionBudgetQueryIT {
         assertFamilies(tool.sql(), Map.of("root_tool_update", 1L));
         assertSingleTransaction(model.sql(), false);
         assertSingleTransaction(tool.sql(), false);
-        assertThat(model.sql().manifests()).isEqualTo(2);
-        assertThat(model.sql().statements()).isEqualTo(11);
-        assertThat(tool.sql().manifests()).isOne();
-        assertThat(tool.sql().statements()).isEqualTo(8);
+        assertResourceAuthorityCost(model.sql(), 11, 2, 5, 5);
+        assertResourceAuthorityCost(tool.sql(), 8, 1, 2, 2);
     }
 
     @Test
@@ -308,8 +333,7 @@ class ExecutionBudgetQueryIT {
                         1L));
         assertThat(failed.sql().count("step_insert")).isZero();
         assertSingleTransaction(failed.sql(), true);
-        assertThat(failed.sql().manifests()).isEqualTo(3);
-        assertThat(failed.sql().statements()).isEqualTo(19);
+        assertResourceAuthorityCost(failed.sql(), 19, 3, 8, 8);
     }
 
     @ParameterizedTest
@@ -371,8 +395,7 @@ class ExecutionBudgetQueryIT {
         if (change.equals("lease-and-fence")) {
             assertThat(rejected.sql().statements()).isOne();
         } else {
-            assertThat(rejected.sql().manifests()).isOne();
-            assertThat(rejected.sql().statements()).isEqualTo(change.equals("grant") ? 7 : 5);
+            assertResourceAuthorityCost(rejected.sql(), change.equals("grant") ? 7 : 5, 1, 2, 2);
             assertThat(rejected.sql().count("owner_lock")).isOne();
             assertThat(rejected.sql().count("source_read")).isOne();
             assertThat(rejected.sql().count("grant_lock"))
@@ -422,8 +445,7 @@ class ExecutionBudgetQueryIT {
             assertGates(sample.sql(), 1);
             assertThat(sample.sql().count("root_model_update")).isOne();
             assertSingleTransaction(sample.sql(), sample == aLimited);
-            assertThat(sample.sql().manifests()).isOne();
-            assertThat(sample.sql().statements()).isEqualTo(8);
+            assertResourceAuthorityCost(sample.sql(), 8, 1, 2, 2);
         }
     }
 
@@ -597,6 +619,27 @@ class ExecutionBudgetQueryIT {
                         assertThat(measured.count(family))
                                 .as("%s %s", measured.phase(), family)
                                 .isEqualTo(count));
+    }
+
+    /** Retain the previous business-work budget and account for each new authority read exactly. */
+    private static void assertResourceAuthorityCost(
+            JdbcExecutionCounter.Measurement measured,
+            long previousStatements,
+            long previousReleaseReads,
+            long ownerChecks,
+            long releaseReads) {
+        assertThat(measured.count("agent_owner_lock")).isEqualTo(ownerChecks);
+        assertThat(measured.count("agent_owner_read")).isZero();
+        assertThat(measured.count("resource_grant_lock")).isZero();
+        assertThat(measured.count("resource_grant_read")).isZero();
+        assertThat(measured.count("other")).isZero();
+        assertThat(measured.count("release_lookup")).isEqualTo(releaseReads);
+        assertThat(measured.manifests()).isEqualTo(releaseReads);
+        assertThat(measured.statements() - measured.manifests() - ownerChecks)
+                .as("%s retains every preexisting non-release SQL statement", measured.phase())
+                .isEqualTo(previousStatements - previousReleaseReads);
+        assertThat((long) measured.statements())
+                .isEqualTo(previousStatements + ownerChecks + releaseReads - previousReleaseReads);
     }
 
     private static void assertSingleTransaction(

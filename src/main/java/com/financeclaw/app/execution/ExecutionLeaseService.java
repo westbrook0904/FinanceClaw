@@ -18,6 +18,7 @@ public class ExecutionLeaseService {
     private final TaskTransitionService transitions;
     private final TransactionTemplate tx;
     private final HeartbeatGateway heartbeats;
+    private final CommandDispatch dispatch;
 
     /**
      * 显式构造的轻量 fixture 可复用其已有事务与命令端口。Spring 生产装配必须使用下方五参入口， 注入独立资源的 HeartbeatGateway；此入口不承担运行时自动降级。
@@ -47,11 +48,22 @@ public class ExecutionLeaseService {
             TaskTransitionService transitions,
             TransactionTemplate tx,
             HeartbeatGateway heartbeats) {
+        this(db, turns, transitions, tx, heartbeats, null);
+    }
+
+    public ExecutionLeaseService(
+            CommandGateway db,
+            TaskMutationGateway turns,
+            TaskTransitionService transitions,
+            TransactionTemplate tx,
+            HeartbeatGateway heartbeats,
+            CommandDispatch dispatch) {
         this.db = db;
         this.turns = turns;
         this.transitions = transitions;
         this.tx = tx;
         this.heartbeats = Objects.requireNonNull(heartbeats);
+        this.dispatch = dispatch;
     }
 
     private static String id() {
@@ -61,7 +73,7 @@ public class ExecutionLeaseService {
     public Claim claim(String worker, long leaseMillis) {
         return tx.execute(
                 s -> {
-                    Command c = db.nextCommand();
+                    Command c = dispatch == null ? db.nextCommand() : dispatch.next(worker);
                     if (c == null) {
                         return null;
                     }
@@ -76,6 +88,7 @@ public class ExecutionLeaseService {
                     db.insertAttempt(c);
                     // 状态更新返回数据库真实 Turn；事件等副作用成功后再交还 Claim。
                     Turn running = transitions.changeAndReturn(t, "running", null, null);
+                    if (dispatch != null) dispatch.claimed(c, running, worker);
                     return new Claim(c, running);
                 });
     }

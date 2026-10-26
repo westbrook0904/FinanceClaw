@@ -156,6 +156,19 @@ class PrivateAgentRuntimeIT {
         properties.put("financeclaw.auth.token", TOKEN);
         properties.put("financeclaw.auth.tenant", OWNER.tenant());
         properties.put("financeclaw.auth.subject", OWNER.subject());
+        properties.put(
+                "financeclaw.auth.credential-resources-json",
+                PayloadJson.canonical(
+                        List.of(
+                                Map.of(
+                                        "resourceId",
+                                        "fixture-model",
+                                        "reference",
+                                        "@model",
+                                        "tenant",
+                                        OWNER.tenant(),
+                                        "subject",
+                                        OWNER.subject()))));
         properties.put("financeclaw.model.name", "offline");
         properties.put("financeclaw.model.api-key", "synthetic-loopback-key");
         properties.put("financeclaw.fallback.name", "");
@@ -216,7 +229,11 @@ class PrivateAgentRuntimeIT {
     void finishRequests() throws Exception {
         model.releaseAll();
         for (var turn : admitted) {
-            String status = get(turn.path()).path("status").asText();
+            String status =
+                    sql.queryForObject(
+                            "SELECT status FROM business.turns WHERE id=?",
+                            String.class,
+                            turn.id());
             if (List.of("queued", "resuming", "running", "waiting", "cancelling")
                     .contains(status)) {
                 send("POST", turn.path() + "/cancel", Map.of(), 202);
@@ -365,6 +382,69 @@ class PrivateAgentRuntimeIT {
                                 turn.id()))
                 .isEqualTo(limit == 1 ? "pending" : "completed");
         assertNoAssistant(turn);
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void childBudgetDenialCannotCommitACompletedCheckpointButExactLimitCanFinish(
+            boolean answerAtLimit) throws Exception {
+        var published = publishControlled(List.of("function:search_catalog"), List.of());
+        model.reset(
+                request -> {
+                    if (request.model().equals(PrivateAgentLoopback.PARENT)) {
+                        if (request.round() == 1)
+                            return PrivateAgentLoopback.Reply.tool(
+                                    CALL, published.tool(), Map.of("message", MESSAGE));
+                        return PrivateAgentLoopback.Reply.text(FINAL);
+                    }
+                    if (answerAtLimit && request.round() == 4)
+                        return PrivateAgentLoopback.Reply.text(ANSWER);
+                    return PrivateAgentLoopback.Reply.tool(
+                            "catalog-" + request.round(), "search_catalog", Map.of("city", CITY));
+                });
+        var turn = submit(published.parentId(), "use the child model budget exactly");
+        if (answerAtLimit) assertCompleted(turn, FINAL);
+        else {
+            var snapshot = awaitTerminal(turn);
+            assertThat(snapshot.path("status").asText()).isEqualTo("blocked");
+            assertThat(snapshot.path("reason").asText()).isEqualTo("child_model_budget_exceeded");
+            assertNoAssistant(turn);
+        }
+        assertThat(model.requests(PrivateAgentLoopback.LEAF)).hasSize(4);
+        assertThat(
+                        integer(
+                                "SELECT model_calls FROM business.child_invocations WHERE root_turn_id=?",
+                                turn.id()))
+                .isEqualTo(4);
+        assertThat(
+                        sql.queryForObject(
+                                "SELECT status FROM business.child_invocations WHERE root_turn_id=?",
+                                String.class,
+                                turn.id()))
+                .isEqualTo(answerAtLimit ? "completed" : "pending");
+        var checkpoints =
+                sql.queryForList(
+                        """
+                SELECT payload::text AS payload,version FROM agent_runtime.states
+                WHERE NOT deleted AND namespace=agent_runtime.scope_hash(
+                    ARRAY['financeclaw-state-v1',?,?,?,?])
+                """,
+                        OWNER.tenant(),
+                        OWNER.subject(),
+                        published.leaf().agentId(),
+                        published.leaf().releaseHash());
+        if (answerAtLimit) assertThat(checkpoints).hasSize(1);
+        for (var checkpoint : checkpoints) {
+            var state =
+                    io.agentscope.core.util.JsonUtils.getJsonCodec()
+                            .fromJson(
+                                    (String) checkpoint.get("payload"),
+                                    io.agentscope.core.state.AgentState.class);
+            var outcome =
+                    com.financeclaw.infrastructure.agentscope.AgentStateInspector.classify(
+                            state, ((Number) checkpoint.get("version")).longValue());
+            assertThat(outcome.status().equals("completed")).isEqualTo(answerAtLimit);
+        }
     }
 
     @Test
@@ -1172,6 +1252,517 @@ class PrivateAgentRuntimeIT {
     }
 
     /** 正常模型先完成一次子调用，再主动选择无参数 request_city 形成持久暂停。 */
+    @Test
+    void controlledChildClarificationAndExactReportApprovalResumeAcrossTwoRestarts()
+            throws Exception {
+        var published =
+                publishControlled(
+                        List.of("function:request_city", "function:create_report"), List.of());
+        model.reset(
+                request -> {
+                    if (request.model().equals(PrivateAgentLoopback.PARENT)) {
+                        if (request.round() == 1)
+                            return PrivateAgentLoopback.Reply.tool(
+                                    CALL, published.tool(), Map.of("message", MESSAGE));
+                        assertThat(request.lastToolResult(CALL)).contains(ANSWER);
+                        return PrivateAgentLoopback.Reply.text(FINAL);
+                    }
+                    assertThat(request.toolNames())
+                            .containsExactlyInAnyOrder(
+                                    "request_city", "create_report", "read_artifact_range");
+                    if (request.round() == 1)
+                        return PrivateAgentLoopback.Reply.tool(
+                                "child-city", "request_city", Map.of());
+                    if (request.round() == 2) {
+                        assertThat(request.lastToolResult("child-city")).contains(CITY);
+                        return PrivateAgentLoopback.Reply.tool(
+                                "child-report",
+                                "create_report",
+                                Map.of("title", "CHILD_APPROVED_TITLE"));
+                    }
+                    assertThat(request.lastToolResult("child-report"))
+                            .contains("report_id", "created");
+                    return PrivateAgentLoopback.Reply.text(ANSWER);
+                });
+        var turn = submit(published.parentId(), "controlled child");
+        var first = awaitChildQuestions(turn, 1).getFirst();
+        assertThat(first.path("kind").asText()).isEqualTo("input");
+        assertThat(
+                        sql.queryForObject(
+                                "SELECT call_id FROM business.interactions WHERE id=?",
+                                String.class,
+                                first.path("id").asText()))
+                .startsWith("ci-");
+        assertThat(integer("SELECT count(*) FROM business.reports WHERE turn_id=?", turn.id()))
+                .isZero();
+        restartSpring();
+        answerChild(turn, first, "approve", 202);
+        var second = awaitChildQuestions(turn, 1).getFirst();
+        assertThat(second.path("kind").asText()).isEqualTo("approval");
+        assertThat(second.path("action_hash").asText()).hasSize(64);
+        assertThat(second.path("id").asText()).isNotEqualTo(first.path("id").asText());
+        assertThat(
+                        sql.queryForList(
+                                "SELECT result::jsonb ->> 'childVersion' AS version FROM business.capability_steps WHERE turn_id=? AND step LIKE 'interaction:%'",
+                                String.class, turn.id()))
+                .hasSize(2);
+        // Replaying an already accepted old answer cannot answer the new child checkpoint.
+        answerChild(turn, first, "approve", 202);
+        assertThat(get(turn.path()).path("status").asText()).isEqualTo("waiting");
+        assertThat(integer("SELECT count(*) FROM business.reports WHERE turn_id=?", turn.id()))
+                .isZero();
+        restartSpring();
+        answerChild(turn, second, "approve", 202);
+        assertCompleted(turn, FINAL);
+        assertThat(integer("SELECT count(*) FROM business.reports WHERE turn_id=?", turn.id()))
+                .isOne();
+        assertThat(
+                        sql.queryForObject(
+                                "SELECT call_id FROM business.reports WHERE turn_id=?",
+                                String.class,
+                                turn.id()))
+                .startsWith("child-");
+        assertThat(
+                        integer(
+                                "SELECT model_calls FROM business.child_invocations WHERE root_turn_id=?",
+                                turn.id()))
+                .isEqualTo(3);
+        assertThat(
+                        integer(
+                                "SELECT count(*) FROM business.attempts a JOIN business.commands c ON c.id=a.command_id WHERE c.turn_id=?",
+                                turn.id()))
+                .isEqualTo(3);
+        assertThat(
+                        integer(
+                                "SELECT count(*) FROM agent_runtime.child_invocation_bindings() WHERE root_turn_id=? AND NOT binding_valid",
+                                turn.id()))
+                .isZero();
+        answerChild(turn, second, "approve", 202);
+        assertThat(integer("SELECT count(*) FROM business.reports WHERE turn_id=?", turn.id()))
+                .isOne();
+    }
+
+    @Test
+    void controlledChildBatchesTwoApprovalsAndClarificationWithoutLosingAnyAnswer()
+            throws Exception {
+        var published =
+                publishControlled(
+                        List.of("function:request_city", "function:create_report"),
+                        List.of("function:request_city"));
+        model.reset(
+                request -> {
+                    if (request.model().equals(PrivateAgentLoopback.PARENT)) {
+                        if (request.round() == 1)
+                            return PrivateAgentLoopback.Reply.tools(
+                                    PrivateAgentLoopback.Reply.tool(
+                                            CALL, published.tool(), Map.of("message", MESSAGE)),
+                                    PrivateAgentLoopback.Reply.tool(
+                                            "root-city", "request_city", Map.of()));
+                        assertThat(request.lastToolResult("root-city")).contains(CITY);
+                        assertThat(request.lastToolResult(CALL)).contains(ANSWER);
+                        return PrivateAgentLoopback.Reply.text(FINAL);
+                    }
+                    if (request.round() == 1)
+                        return PrivateAgentLoopback.Reply.tools(
+                                PrivateAgentLoopback.Reply.tool(
+                                        "child-report-a", "create_report", Map.of("title", "A")),
+                                PrivateAgentLoopback.Reply.tool(
+                                        "child-report-b", "create_report", Map.of("title", "B")),
+                                PrivateAgentLoopback.Reply.tool(
+                                        "child-city", "request_city", Map.of()));
+                    assertThat(request.lastToolResult("child-city")).contains(CITY);
+                    assertThat(request.lastToolResult("child-report-a")).contains("created");
+                    assertThat(request.lastToolResult("child-report-b")).contains("created");
+                    return PrivateAgentLoopback.Reply.text(ANSWER);
+                });
+        var turn = submit(published.parentId(), "multiple child actions");
+        var questions = awaitChildQuestions(turn, 4);
+        assertThat(
+                        integer(
+                                "SELECT count(DISTINCT call_id) FROM business.interactions WHERE turn_id=?",
+                                turn.id()))
+                .isEqualTo(4);
+        restartSpring();
+        for (int i = 0; i < questions.size() - 1; i++) {
+            answerChild(turn, questions.get(i), "approve", 202);
+            assertThat(get(turn.path()).path("status").asText()).isEqualTo("waiting");
+            assertThat(integer("SELECT count(*) FROM business.reports WHERE turn_id=?", turn.id()))
+                    .isZero();
+        }
+        answerChild(turn, questions.getLast(), "approve", 202);
+        assertCompleted(turn, FINAL);
+        assertThat(integer("SELECT count(*) FROM business.reports WHERE turn_id=?", turn.id()))
+                .isEqualTo(2);
+        assertThat(model.requests(PrivateAgentLoopback.LEAF)).hasSize(2);
+        assertThat(integer("SELECT count(*) FROM agent_runtime.unsafe_execution_data()")).isZero();
+    }
+
+    @Test
+    void childApprovalRejectAndTamperedActionCannotCreateReport() throws Exception {
+        var published = publishControlled(List.of("function:create_report"), List.of());
+        model.reset(
+                request ->
+                        request.model().equals(PrivateAgentLoopback.LEAF)
+                                ? PrivateAgentLoopback.Reply.tool(
+                                        "effect", "create_report", Map.of("title", "UNAPPROVED"))
+                                : PrivateAgentLoopback.Reply.tool(
+                                        CALL, published.tool(), Map.of("message", MESSAGE)));
+        var turn = submit(published.parentId(), "reject this effect");
+        var question = awaitChildQuestions(turn, 1).getFirst();
+        send(
+                "POST",
+                turn.path() + "/interactions/" + question.path("id").asText() + "/answer",
+                Map.of(
+                        "kind",
+                        "approval",
+                        "revision",
+                        question.path("revision").asLong(),
+                        "decision",
+                        "approve",
+                        "action_hash",
+                        "0".repeat(64)),
+                409);
+        assertThat(integer("SELECT count(*) FROM business.reports WHERE turn_id=?", turn.id()))
+                .isZero();
+        answerChild(turn, question, "reject", 202);
+        assertThat(awaitTerminal(turn).path("status").asText()).isNotEqualTo("completed");
+        assertThat(integer("SELECT count(*) FROM business.reports WHERE turn_id=?", turn.id()))
+                .isZero();
+    }
+
+    @Test
+    void forgettingControlledWaitingChildErasesBridgesAndAllAttemptStates() throws Exception {
+        var published =
+                publishControlled(
+                        List.of("function:request_city", "function:create_report"), List.of());
+        model.reset(
+                request -> {
+                    if (request.model().equals(PrivateAgentLoopback.PARENT))
+                        return PrivateAgentLoopback.Reply.tool(
+                                CALL, published.tool(), Map.of("message", MESSAGE));
+                    return request.round() == 1
+                            ? PrivateAgentLoopback.Reply.tool("city", "request_city", Map.of())
+                            : PrivateAgentLoopback.Reply.tool(
+                                    "effect", "create_report", Map.of("title", "FORGOTTEN_ACTION"));
+                });
+        var turn = submit(published.parentId(), "private controlled input");
+        answerChild(turn, awaitChildQuestions(turn, 1).getFirst(), "approve", 202);
+        var approval = awaitChildQuestions(turn, 1).getFirst();
+        assertThat(childStateVersions(published.leaf())).hasSize(2);
+        assertThat(integer("SELECT count(*) FROM agent_runtime.unsafe_execution_data()")).isZero();
+        long epoch = get("/v1/memory/privacy").path("epoch").asLong();
+        send("POST", "/v1/memory/forget", Map.of("epoch", epoch), 200);
+        assertThat(
+                        integer(
+                                "SELECT count(*) FROM business.child_invocations WHERE root_turn_id=?",
+                                turn.id()))
+                .isZero();
+        assertThat(
+                        integer(
+                                "SELECT count(*) FROM business.capability_steps WHERE turn_id=? AND namespace LIKE 'child:%'",
+                                turn.id()))
+                .isZero();
+        assertThat(integer("SELECT count(*) FROM agent_runtime.states WHERE payload IS NOT NULL"))
+                .isZero();
+        assertThat(integer("SELECT count(*) FROM agent_runtime.unsafe_execution_data()")).isZero();
+        restartSpring();
+        answerChild(turn, approval, "approve", 409);
+        assertThat(integer("SELECT count(*) FROM business.reports WHERE turn_id=?", turn.id()))
+                .isZero();
+        send("POST", turn.path() + "/cancel", Map.of(), 202);
+    }
+
+    @Test
+    void genericFunctionAndNativeSkillLeafArchivesAllSourceScopes() throws Exception {
+        var published =
+                publishControlled(
+                        List.of("function:search_catalog", "skill:cocktail-from-what-i-have"),
+                        List.of());
+        assertThat(published.leaf().profile()).isEqualTo(PrivateAgentTarget.Profile.READ_ONLY);
+        String skillId;
+        try (var selected =
+                PackagedSkills.selected(
+                        releases.resolve(published.leaf().releaseHash()).plan().capabilities())) {
+            skillId = selected.getSkill("cocktail-from-what-i-have").getSkillId();
+        }
+        String large = "MIXED_SOURCE_HEAD" + "x".repeat(14000) + "MIXED_SOURCE_TAIL";
+        var artifact = new AtomicReference<JsonNode>();
+        model.reset(
+                request -> {
+                    if (request.model().equals(PrivateAgentLoopback.PARENT)) {
+                        if (request.round() == 1)
+                            return PrivateAgentLoopback.Reply.tool(
+                                    CALL, published.tool(), Map.of("message", MESSAGE));
+                        var ref = object(request.lastToolResult(CALL));
+                        assertThat(ref.path("archived").asBoolean()).isTrue();
+                        assertThat(request.serialized()).doesNotContain("MIXED_SOURCE_TAIL");
+                        artifact.set(ref);
+                        return PrivateAgentLoopback.Reply.text(FINAL);
+                    }
+                    assertThat(request.toolNames())
+                            .containsExactlyInAnyOrder(
+                                    "search_catalog",
+                                    "read_artifact_range",
+                                    "load_skill_through_path");
+                    if (request.round() == 1)
+                        return PrivateAgentLoopback.Reply.tools(
+                                PrivateAgentLoopback.Reply.tool(
+                                        "catalog", "search_catalog", Map.of("city", CITY)),
+                                PrivateAgentLoopback.Reply.tool(
+                                        "skill",
+                                        "load_skill_through_path",
+                                        Map.of("skillId", skillId, "path", "SKILL.md")));
+                    assertThat(request.lastToolResult("catalog")).contains("artifact_id");
+                    assertThat(request.lastToolResult("skill"))
+                            .contains("Cocktail From What I Have");
+                    return PrivateAgentLoopback.Reply.text(large);
+                });
+        var turn = submit(published.parentId(), "use the selected function and skill");
+        assertCompleted(turn, FINAL);
+        assertThat(
+                        integer(
+                                "SELECT tool_calls FROM business.child_invocations WHERE root_turn_id=?",
+                                turn.id()))
+                .isEqualTo(2);
+        assertThat(
+                        sql.queryForList(
+                                "SELECT required_scope FROM business.artifacts WHERE turn_id=?",
+                                String.class,
+                                turn.id()))
+                .contains(
+                        com.financeclaw.support.ScopeRequirements.encode(
+                                List.of("artifact:read", "catalog:read")));
+        String id = artifact.get().path("artifact_id").asText();
+        assertThat(
+                        sql.queryForObject(
+                                "SELECT required_scope FROM business.artifacts WHERE id=?",
+                                String.class,
+                                id))
+                .isEqualTo(published.leaf().resultScope());
+        raw("GET", artifact.get().path("download_url").asText(), null, Map.of(), 200);
+        String grantPath = "/v1/conversations/" + turn.conversation() + "/grant";
+        var grant = get(grantPath);
+        var narrowed = new ArrayList<String>();
+        for (var scope : grant.path("scopes"))
+            if (!scope.asText().equals("skill:use")) narrowed.add(scope.asText());
+        assertThat(narrowed).contains("catalog:read", "artifact:read");
+        send(
+                "PUT",
+                grantPath,
+                Map.of("revision", grant.path("revision").asLong(), "scopes", narrowed),
+                200);
+        assertThat(
+                        new String(
+                                raw(
+                                                "GET",
+                                                artifact.get().path("download_url").asText(),
+                                                null,
+                                                Map.of(),
+                                                403)
+                                        .body(),
+                                StandardCharsets.UTF_8))
+                .contains("artifact_scope_denied");
+        assertThat(integer("SELECT count(*) FROM agent_runtime.unsafe_execution_data()")).isZero();
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void pendingControlledChildCannotApproveAfterCancelOrParentRevocation(boolean revoke)
+            throws Exception {
+        var published = publishControlled(List.of("function:create_report"), List.of());
+        model.reset(
+                request ->
+                        request.model().equals(PrivateAgentLoopback.LEAF)
+                                ? PrivateAgentLoopback.Reply.tool(
+                                        "effect",
+                                        "create_report",
+                                        Map.of("title", "FORBIDDEN_AFTER_STOP"))
+                                : PrivateAgentLoopback.Reply.tool(
+                                        CALL, published.tool(), Map.of("message", MESSAGE)));
+        var turn = submit(published.parentId(), "wait for approval");
+        var question = awaitChildQuestions(turn, 1).getFirst();
+        if (revoke) {
+            String path = "/v1/conversations/" + turn.conversation() + "/grant";
+            send(
+                    "PUT",
+                    path,
+                    Map.of("revision", get(path).path("revision").asLong(), "scopes", List.of()),
+                    200);
+        } else send("POST", turn.path() + "/cancel", Map.of(), 202);
+        restartSpring();
+        answerChild(turn, question, "approve", 409);
+        assertThat(model.requests(PrivateAgentLoopback.LEAF)).hasSize(1);
+        assertThat(integer("SELECT count(*) FROM business.reports WHERE turn_id=?", turn.id()))
+                .isZero();
+        if (revoke) send("POST", turn.path() + "/cancel", Map.of(), 202);
+    }
+
+    @Test
+    void sharedControlledLeafRevocationRejectsPendingAnswerAndNewDispatch() throws Exception {
+        var publisher = new Owner(OWNER.tenant(), "publisher-" + UUID.randomUUID());
+        var access =
+                application.getBean(com.financeclaw.app.agent.port.ResourceAdministration.class);
+        access.change(OWNER, "credential", "fixture-model", publisher, null, 0, true);
+        publishBase(PrivateAgentLoopback.LEAF, 32);
+        String leaf = UUID.randomUUID().toString();
+        agents.create(
+                publisher,
+                leaf,
+                "Shared controlled leaf",
+                LEAF_PROMPT,
+                new AgentComposition("primary", List.of("function:create_report")));
+        String hash = agents.publish(publisher, leaf, 1, 0).releaseHash();
+        access.change(publisher, "agent", leaf, OWNER, hash, 0, true);
+        publishBase(PrivateAgentLoopback.PARENT, 32);
+        String parent = UUID.randomUUID().toString();
+        agents.create(
+                OWNER,
+                parent,
+                "Shared controlled parent",
+                PARENT_PROMPT,
+                new AgentComposition("primary", List.of("agent:" + leaf)));
+        agents.publish(OWNER, parent, 1, 0);
+        var published =
+                new Published(
+                        parent,
+                        PrivateAgentTarget.fromRelease(publisher, hash, releases.resolve(hash)));
+        var archived = new AtomicReference<JsonNode>();
+        model.reset(
+                request -> {
+                    if (request.model().equals(PrivateAgentLoopback.LEAF))
+                        return PrivateAgentLoopback.Reply.text(
+                                "SHARED_ARCHIVE_" + "x".repeat(14000));
+                    if (request.round() == 1)
+                        return PrivateAgentLoopback.Reply.tool(
+                                CALL, published.tool(), Map.of("message", MESSAGE));
+                    archived.set(object(request.lastToolResult(CALL)));
+                    return PrivateAgentLoopback.Reply.text(FINAL);
+                });
+        var completed = submit(parent, "shared source result");
+        assertCompleted(completed, FINAL);
+        assertThat(integer("SELECT count(*) FROM agent_runtime.unsafe_execution_data()")).isZero();
+        raw("GET", archived.get().path("download_url").asText(), null, Map.of(), 200);
+        model.reset(
+                request ->
+                        request.model().equals(PrivateAgentLoopback.LEAF)
+                                ? PrivateAgentLoopback.Reply.tool(
+                                        "effect",
+                                        "create_report",
+                                        Map.of("title", "REVOKED_SHARED_EFFECT"))
+                                : PrivateAgentLoopback.Reply.tool(
+                                        CALL, published.tool(), Map.of("message", MESSAGE)));
+        var turn = submit(parent, "shared leaf approval");
+        var question = awaitChildQuestions(turn, 1).getFirst();
+        access.change(publisher, "agent", leaf, OWNER, hash, 1, false);
+        assertThat(
+                        new String(
+                                raw(
+                                                "GET",
+                                                archived.get().path("download_url").asText(),
+                                                null,
+                                                Map.of(),
+                                                409)
+                                        .body(),
+                                StandardCharsets.UTF_8))
+                .contains("agent_access_denied");
+        raw("GET", completed.path(), null, Map.of(), 403);
+        raw("GET", turn.path() + "/interactions", null, Map.of(), 403);
+        raw("GET", "/v1/interactions/" + question.path("id").asText(), null, Map.of(), 403);
+        raw(
+                "GET",
+                "/v1/conversations/" + completed.conversation() + "/messages",
+                null,
+                Map.of(),
+                403);
+        var queries = application.getBean(com.financeclaw.app.task.TaskQueryService.class);
+        var gateway = application.getBean(com.financeclaw.app.task.port.TaskQueryGateway.class);
+        var committed = gateway.ownedTurn(OWNER, completed.conversation(), completed.id());
+        assertThatThrownBy(() -> queries.replay(committed, 0)).hasMessage("agent_access_denied");
+        assertThatThrownBy(
+                        () ->
+                                application
+                                        .getBean(
+                                                com.financeclaw.app.task.port.TaskEventAccess.class)
+                                        .check(committed))
+                .hasMessage("agent_access_denied");
+        restartSpring();
+        answerChild(turn, question, "approve", 409);
+        int commands = integer("SELECT count(*) FROM business.commands");
+        String deniedConversation = conversation(parent);
+        assertThat(
+                        send(
+                                        "POST",
+                                        "/v1/conversations/" + deniedConversation + "/turns",
+                                        Map.of("message", "revoked shared target"),
+                                        403)
+                                .path("error")
+                                .asText())
+                .isEqualTo("agent_access_denied");
+        assertThat(
+                        integer(
+                                "SELECT count(*) FROM business.turns WHERE conversation_id=?",
+                                deniedConversation))
+                .isZero();
+        assertThat(integer("SELECT count(*) FROM business.commands")).isEqualTo(commands);
+        assertThat(model.requests(PrivateAgentLoopback.LEAF)).hasSize(1);
+        assertThat(integer("SELECT count(*) FROM business.reports WHERE turn_id=?", turn.id()))
+                .isZero();
+        // Revocation denies reads/execution but does not make known historical provenance unsafe.
+        assertThat(integer("SELECT count(*) FROM agent_runtime.unsafe_execution_data()")).isZero();
+        send("POST", turn.path() + "/cancel", Map.of(), 202);
+    }
+
+    private Published publishControlled(
+            List<String> leafCapabilities, List<String> parentCapabilities) {
+        publishBase(PrivateAgentLoopback.LEAF, 32);
+        String leaf = UUID.randomUUID().toString();
+        agents.create(
+                OWNER,
+                leaf,
+                "Controlled leaf",
+                LEAF_PROMPT,
+                new AgentComposition("primary", leafCapabilities));
+        String hash = agents.publish(OWNER, leaf, 1, 0).releaseHash();
+        var target = PrivateAgentTarget.fromRelease(OWNER, hash, releases.resolve(hash));
+        publishBase(PrivateAgentLoopback.PARENT, 32);
+        String parent = UUID.randomUUID().toString();
+        var requested = new ArrayList<String>(parentCapabilities);
+        requested.add("agent:" + leaf);
+        agents.create(
+                OWNER,
+                parent,
+                "Controlled parent",
+                PARENT_PROMPT,
+                new AgentComposition("primary", requested));
+        agents.publish(OWNER, parent, 1, 0);
+        return new Published(parent, target);
+    }
+
+    private List<JsonNode> awaitChildQuestions(Turn turn, int count) throws Exception {
+        awaitStatus(turn, "waiting");
+        var result = new ArrayList<JsonNode>();
+        for (var question : get(turn.path() + "/interactions"))
+            if (question.path("status").asText().equals("pending")) result.add(question);
+        assertThat(result).hasSize(count);
+        return result;
+    }
+
+    private JsonNode answerChild(Turn turn, JsonNode question, String decision, int status)
+            throws Exception {
+        var body = new LinkedHashMap<String, Object>();
+        body.put("kind", question.path("kind").asText());
+        body.put("revision", question.path("revision").asLong());
+        if (question.path("kind").asText().equals("approval")) {
+            body.put("decision", decision);
+            body.put("action_hash", question.path("action_hash").asText());
+        } else body.put("answer", Map.of("city", CITY));
+        return send(
+                "POST",
+                turn.path() + "/interactions/" + question.path("id").asText() + "/answer",
+                body,
+                status);
+    }
+
     private void waitingScript(
             Published published,
             Function<PrivateAgentLoopback.Request, PrivateAgentLoopback.Reply> continuation) {

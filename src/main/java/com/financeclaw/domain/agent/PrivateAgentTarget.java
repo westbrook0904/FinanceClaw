@@ -6,15 +6,20 @@ import com.financeclaw.domain.Task.Owner;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
+import java.util.TreeSet;
 
 /**
  * 父发布中冻结的私有叶子 Agent 目标。模型只提供显式 message，目标身份与发布摘要只能来自已校验的能力绑定。 目标不继承父记忆或工具；运行工件兼容性由基础设施在装配和发布时另外核验。
  */
-public record PrivateAgentTarget(String agentId, String releaseHash, Profile profile) {
+public record PrivateAgentTarget(
+        String agentId, String releaseHash, Profile profile, List<String> scopes) {
     /** 闭集执行档案，不接受模型指定任意工具集合。EMPTY 是原 v1 零工具契约。 */
     public enum Profile {
         EMPTY,
-        MARKET_SNAPSHOT
+        MARKET_SNAPSHOT,
+        READ_ONLY,
+        CONTROLLED
     }
 
     public static final String TOOL_SCOPE = "artifact:read";
@@ -39,21 +44,75 @@ public record PrivateAgentTarget(String agentId, String releaseHash, Profile pro
         this(agentId, releaseHash, Profile.EMPTY);
     }
 
+    public PrivateAgentTarget(String agentId, String releaseHash, Profile profile) {
+        this(
+                agentId,
+                releaseHash,
+                profile,
+                profile == Profile.MARKET_SNAPSHOT ? List.of(MARKET_SCOPE) : List.of());
+    }
+
     public PrivateAgentTarget {
         if (!AgentDraft.isCustomId(agentId)
                 || !CapabilityBinding.validHash(releaseHash)
                 || profile == null) {
             throw new Blocked("agent_plan_invalid");
         }
+        if (scopes == null
+                || scopes.stream()
+                        .anyMatch(
+                                scope ->
+                                        scope == null
+                                                || !scope.matches(
+                                                        "[a-z][a-z0-9_-]*:[a-z][a-z0-9_-]*")))
+            throw new Blocked("agent_plan_invalid");
+        scopes = List.copyOf(new TreeSet<>(scopes));
+        if (profile == Profile.EMPTY && !scopes.isEmpty()
+                || profile == Profile.MARKET_SNAPSHOT && !scopes.equals(List.of(MARKET_SCOPE)))
+            throw new Blocked("agent_plan_invalid");
     }
 
     /** 父委派结果（包括归档文件）必须保留真正的数据来源权限。 */
     public String resultScope() {
-        return profile == Profile.MARKET_SNAPSHOT ? MARKET_SCOPE : TOOL_SCOPE;
+        return generic()
+                ? "all:[\"" + String.join("\",\"", requiredScopes()) + "\"]"
+                : profile == Profile.MARKET_SNAPSHOT ? MARKET_SCOPE : TOOL_SCOPE;
     }
 
     public int maxToolCalls() {
-        return profile == Profile.MARKET_SNAPSHOT ? 1 : 0;
+        return generic() ? 10 : profile == Profile.MARKET_SNAPSHOT ? 1 : 0;
+    }
+
+    public boolean generic() {
+        return profile == Profile.READ_ONLY || profile == Profile.CONTROLLED;
+    }
+
+    public List<String> requiredScopes() {
+        var result = new TreeSet<>(scopes);
+        result.add(TOOL_SCOPE);
+        return List.copyOf(result);
+    }
+
+    /** Choose the oldest compatible contract to keep existing release hashes stable. */
+    public static PrivateAgentTarget fromRelease(
+            Owner resourceOwner, String hash, ResolvedAgentRelease release) {
+        for (var profile : Profile.values()) {
+            try {
+                requireLeaf(resourceOwner, release, profile);
+                return new PrivateAgentTarget(
+                        release.agentId(),
+                        hash,
+                        profile,
+                        (profile == Profile.READ_ONLY || profile == Profile.CONTROLLED)
+                                ? release.definition().scopes()
+                                : profile == Profile.MARKET_SNAPSHOT
+                                        ? List.of(MARKET_SCOPE)
+                                        : List.of());
+            } catch (Blocked unavailable) {
+                if (!"agent_leaf_required".equals(unavailable.getMessage())) throw unavailable;
+            }
+        }
+        throw new Blocked("agent_leaf_required");
     }
 
     public static String toolName(String id) {
@@ -94,6 +153,8 @@ public record PrivateAgentTarget(String agentId, String releaseHash, Profile pro
                             plan.requestedCapabilities().isEmpty()
                                     && plan.capabilities().isEmpty()
                                     && resolved.definition().scopes().isEmpty();
+                    case READ_ONLY -> readOnlyPlan(plan);
+                    case CONTROLLED -> controlledPlan(plan);
                     case MARKET_SNAPSHOT ->
                             plan.requestedCapabilities().equals(List.of(SNAPSHOT))
                                     && marketClosure(plan.capabilities())
@@ -101,6 +162,49 @@ public record PrivateAgentTarget(String agentId, String releaseHash, Profile pro
                                     && resolved.definition().maxToolCalls() >= 1;
                 };
         if (!matches) throw new Blocked("agent_leaf_required");
+    }
+
+    /** A leaf never installs an interaction, write adapter or another invocation authority. */
+    public static boolean readOnlyPlan(AgentExecutionPlan plan) {
+        if (plan == null
+                || plan.capabilities().isEmpty()
+                || plan.capabilities().stream().anyMatch(binding -> !readOnly(binding)))
+            return false;
+        var scopes = new TreeSet<String>();
+        plan.capabilities().forEach(binding -> scopes.addAll(binding.scopes()));
+        return List.copyOf(scopes).equals(plan.definition().scopes());
+    }
+
+    public static boolean controlledPlan(AgentExecutionPlan plan) {
+        if (plan == null
+                || plan.capabilities().isEmpty()
+                || plan.capabilities().stream()
+                        .anyMatch(
+                                binding ->
+                                        !readOnly(binding)
+                                                && !(binding.kind().equals("function")
+                                                        && Set.of("request_city", "create_report")
+                                                                .contains(binding.name()))))
+            return false;
+        var scopes = new TreeSet<String>();
+        plan.capabilities().forEach(binding -> scopes.addAll(binding.scopes()));
+        return List.copyOf(scopes).equals(plan.definition().scopes());
+    }
+
+    public static boolean readOnly(CapabilityBinding binding) {
+        if (binding == null) return false;
+        return switch (binding.kind()) {
+            case "function" ->
+                    Set.of(
+                                    "market_snapshot",
+                                    "search_catalog",
+                                    "read_artifact",
+                                    "read_artifact_range")
+                            .contains(binding.name());
+            case "mcp" -> true;
+            case "skill" -> true;
+            default -> false;
+        };
     }
 
     private static boolean marketClosure(List<CapabilityBinding> bindings) {

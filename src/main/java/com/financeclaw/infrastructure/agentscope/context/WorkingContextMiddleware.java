@@ -1,7 +1,9 @@
 package com.financeclaw.infrastructure.agentscope.context;
 
+import com.financeclaw.domain.Governance.Blocked;
 import com.financeclaw.domain.Governance.ExecutionIdentity;
 import com.financeclaw.domain.Task.Claim;
+import com.financeclaw.domain.Task.Fenced;
 import com.financeclaw.domain.release.ModelProfile;
 import io.agentscope.core.agent.*;
 import io.agentscope.core.event.AgentEvent;
@@ -10,6 +12,7 @@ import io.agentscope.core.message.*;
 import io.agentscope.core.middleware.*;
 import io.agentscope.core.model.ToolSchema;
 import java.util.*;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -30,6 +33,7 @@ public final class WorkingContextMiddleware implements MiddlewareBase, Hook {
     private final ToolResultOffloader offloader;
     private final Function<String, String> requiredScope;
     private final WorkingContextCompactor.Summarizer summarizer;
+    private final Consumer<RuntimeException> rejection;
 
     public WorkingContextMiddleware(
             Claim claim,
@@ -40,6 +44,28 @@ public final class WorkingContextMiddleware implements MiddlewareBase, Hook {
             ToolResultOffloader offloader,
             Function<String, String> requiredScope,
             WorkingContextCompactor.Summarizer summarizer) {
+        this(
+                claim,
+                profile,
+                budgets,
+                longMemory,
+                session,
+                offloader,
+                requiredScope,
+                summarizer,
+                failure -> {});
+    }
+
+    public WorkingContextMiddleware(
+            Claim claim,
+            ModelProfile profile,
+            ContextBudgets budgets,
+            String longMemory,
+            WorkingContextSession session,
+            ToolResultOffloader offloader,
+            Function<String, String> requiredScope,
+            WorkingContextCompactor.Summarizer summarizer,
+            Consumer<RuntimeException> rejection) {
         this.claim = claim;
         this.profile = profile;
         this.budgets = budgets;
@@ -48,6 +74,7 @@ public final class WorkingContextMiddleware implements MiddlewareBase, Hook {
         this.offloader = offloader;
         this.requiredScope = requiredScope;
         this.summarizer = summarizer;
+        this.rejection = rejection;
     }
 
     @Override
@@ -84,6 +111,7 @@ public final class WorkingContextMiddleware implements MiddlewareBase, Hook {
                             }
                             return event;
                         })
+                .doOnError(this::rememberRejection)
                 .subscribeOn(Schedulers.boundedElastic());
     }
 
@@ -104,6 +132,7 @@ public final class WorkingContextMiddleware implements MiddlewareBase, Hook {
                                                         input.tools()),
                                                 input.tools(),
                                                 input.options())))
+                .doOnError(this::rememberRejection)
                 .subscribeOn(Schedulers.boundedElastic());
     }
 
@@ -125,7 +154,13 @@ public final class WorkingContextMiddleware implements MiddlewareBase, Hook {
                                                                 input.tools()),
                                                         input.tools(),
                                                 input.options(), input.model())))
+                .doOnError(this::rememberRejection)
                 .subscribeOn(Schedulers.boundedElastic());
+    }
+
+    private void rememberRejection(Throwable failure) {
+        if (failure instanceof Blocked || failure instanceof Fenced)
+            rejection.accept((RuntimeException) failure);
     }
 
     private List<Msg> prepare(

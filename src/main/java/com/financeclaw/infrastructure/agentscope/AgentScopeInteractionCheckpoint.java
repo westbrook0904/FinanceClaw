@@ -18,6 +18,13 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class AgentScopeInteractionCheckpoint implements InteractionCheckpoint {
     private final RuntimeMapper states;
+    private com.financeclaw.app.interaction.port.ChildInteractionCheckpoint childInteractions;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public void configureChildInteractions(
+            com.financeclaw.app.interaction.port.ChildInteractionCheckpoint bridge) {
+        this.childInteractions = bridge;
+    }
 
     public AgentScopeInteractionCheckpoint(RuntimeMapper states) {
         this.states = states;
@@ -28,6 +35,11 @@ public class AgentScopeInteractionCheckpoint implements InteractionCheckpoint {
         var scope = binding.claim().scope();
         var interaction = binding.interaction();
         try {
+            if (interaction.tool().startsWith("delegate_")
+                    && interaction.callId().startsWith("ci-")) {
+                if (childInteractions == null) throw new Problem(409, "checkpoint_mismatch");
+                return childInteractions.checkpoint(binding);
+            }
             var call =
                     ResumeInputs.pending(
                             new MyBatisAgentStateStore(states, scope),
@@ -40,7 +52,7 @@ public class AgentScopeInteractionCheckpoint implements InteractionCheckpoint {
                     ResumeInputs.actionHash(call),
                     call.getState() == ToolCallState.ASKING,
                     call.getInput());
-        } catch (IllegalArgumentException error) {
+        } catch (IllegalArgumentException | com.financeclaw.domain.Governance.Blocked error) {
             throw new Problem(409, "checkpoint_mismatch");
         }
     }

@@ -6,6 +6,7 @@ import com.financeclaw.app.market.MarketDataService;
 import com.financeclaw.app.release.port.Credentials;
 import com.financeclaw.domain.Governance.Blocked;
 import com.financeclaw.domain.Task.Claim;
+import com.financeclaw.domain.Task.Fenced;
 import com.financeclaw.domain.agent.*;
 import com.financeclaw.domain.release.ModelProfile;
 import com.financeclaw.infrastructure.agentscope.AgentStateInspector;
@@ -54,6 +55,28 @@ public class PrivateAgentDelegation {
     private final RuntimeMapper states;
     private final Credentials credentials;
     private final MarketDataService market;
+    private com.financeclaw.infrastructure.runtime.RuntimeObservations observations =
+            com.financeclaw.infrastructure.runtime.RuntimeObservations.disabled();
+
+    @Autowired(required = false)
+    public void configureObservations(
+            com.financeclaw.infrastructure.runtime.RuntimeObservations observations) {
+        this.observations = observations;
+    }
+
+    private ReadOnlyLeafTools readOnlyTools;
+    private ChildInteractionBridge interactions;
+
+    @Autowired
+    public void configureInteractions(ChildInteractionBridge interactions) {
+        this.interactions = interactions;
+    }
+
+    @Autowired
+    public void configureReadOnlyTools(ReadOnlyLeafTools tools) {
+        this.readOnlyTools = tools;
+    }
+
     private ContextBudgets budgets = ContextBudgets.defaults();
     private Duration timeout = Duration.ofSeconds(30);
 
@@ -109,8 +132,14 @@ public class PrivateAgentDelegation {
                             var profile = release.definition().primary();
                             budgets.checkAdmission(profile, "", message);
                             var scope = target.scope(parent.scope(), invocation.callId());
+                            var fatal = new AtomicReference<RuntimeException>();
                             var store =
-                                    new PrivateAgentStateStore(states, scope, calls, invocation);
+                                    new PrivateAgentStateStore(
+                                            states,
+                                            scope,
+                                            calls,
+                                            invocation,
+                                            () -> requireHealthy(fatal));
                             var saved =
                                     store.getVersioned(
                                             scope.userId(),
@@ -126,99 +155,263 @@ public class PrivateAgentDelegation {
                                     return Mono.just(result(invocation, completed.result()));
                                 }
                             }
-                            var fatal = new AtomicReference<Blocked>();
-                            var toolkit = toolkit(target, invocation, release, fatal);
                             return Mono.using(
-                                    () -> models(release),
-                                    models ->
-                                            Mono.using(
-                                                    () ->
-                                                            IsolatedAgentFactory.create(
-                                                                    bounded(
-                                                                            models.primary(),
-                                                                            profile,
-                                                                            invocation,
-                                                                            target,
-                                                                            fatal),
-                                                                    models.fallback() == null
-                                                                            ? null
-                                                                            : bounded(
-                                                                                    models
-                                                                                            .fallback(),
-                                                                                    release.definition()
-                                                                                            .fallback(),
-                                                                                    invocation,
-                                                                                    target,
-                                                                                    fatal),
-                                                                    toolkit,
-                                                                    store,
-                                                                    permissions(target),
-                                                                    builder ->
-                                                                            builder.name(
-                                                                                            target
-                                                                                                    .agentId())
-                                                                                    .sysPrompt(
-                                                                                            release
-                                                                                                    .systemPrompt())
-                                                                                    .middleware(
-                                                                                            guard(
-                                                                                                    target,
-                                                                                                    fatal)),
-                                                                    target.profile()
-                                                                            == PrivateAgentTarget
-                                                                                    .Profile.EMPTY),
-                                                    agent -> {
-                                                        var context =
-                                                                IsolatedAgentFactory.context(scope);
-                                                        return agent.call(message, context)
-                                                                .timeout(timeout)
-                                                                .doOnCancel(
-                                                                        () ->
-                                                                                agent.interrupt(
-                                                                                        context))
-                                                                .map(
-                                                                        answer -> {
-                                                                            requireHealthy(fatal);
-                                                                            var state =
-                                                                                    store
-                                                                                            .getVersioned(
-                                                                                                    scope
-                                                                                                            .userId(),
-                                                                                                    scope
-                                                                                                            .sessionId(),
-                                                                                                    "agent_state",
-                                                                                                    AgentState
-                                                                                                            .class);
-                                                                            if (!state.isPresent())
-                                                                                throw new Blocked(
-                                                                                        "child_incomplete");
-                                                                            var completed =
-                                                                                    AgentStateInspector
-                                                                                            .classify(
-                                                                                                    state
-                                                                                                            .value(),
-                                                                                                    state
-                                                                                                            .version());
-                                                                            if (!completed
-                                                                                    .status()
-                                                                                    .equals(
-                                                                                            "completed"))
-                                                                                throw new Blocked(
-                                                                                        "child_incomplete");
-                                                                            return result(
-                                                                                    invocation,
-                                                                                    completed
-                                                                                            .result());
-                                                                        });
-                                                    },
-                                                    agent -> agent.close()),
-                                    Models::close);
+                                            () -> leafTools(target, invocation, release, fatal),
+                                            leaf ->
+                                                    Mono.using(
+                                                            () -> models(release),
+                                                            models ->
+                                                                    Mono.using(
+                                                                            () -> {
+                                                                                var agent =
+                                                                                        IsolatedAgentFactory
+                                                                                                .create(
+                                                                                                        bounded(
+                                                                                                                models
+                                                                                                                        .primary(),
+                                                                                                                profile,
+                                                                                                                invocation,
+                                                                                                                target,
+                                                                                                                leaf
+                                                                                                                        .session(),
+                                                                                                                fatal),
+                                                                                                        models
+                                                                                                                                .fallback()
+                                                                                                                        == null
+                                                                                                                ? null
+                                                                                                                : bounded(
+                                                                                                                        models
+                                                                                                                                .fallback(),
+                                                                                                                        release.definition()
+                                                                                                                                .fallback(),
+                                                                                                                        invocation,
+                                                                                                                        target,
+                                                                                                                        leaf
+                                                                                                                                .session(),
+                                                                                                                        fatal),
+                                                                                                        leaf
+                                                                                                                .toolkit(),
+                                                                                                        store,
+                                                                                                        leaf
+                                                                                                                                .session()
+                                                                                                                        == null
+                                                                                                                ? permissions(
+                                                                                                                        target)
+                                                                                                                : leaf.session()
+                                                                                                                        .permissions(),
+                                                                                                        builder -> {
+                                                                                                            builder.name(
+                                                                                                                            target
+                                                                                                                                    .agentId())
+                                                                                                                    .sysPrompt(
+                                                                                                                            release
+                                                                                                                                    .systemPrompt())
+                                                                                                                    .middleware(
+                                                                                                                            guard(
+                                                                                                                                    target,
+                                                                                                                                    leaf
+                                                                                                                                            .session(),
+                                                                                                                                    fatal));
+                                                                                                            if (leaf
+                                                                                                                            .session()
+                                                                                                                    != null)
+                                                                                                                leaf.session()
+                                                                                                                        .configure(
+                                                                                                                                builder);
+                                                                                                        },
+                                                                                                        target
+                                                                                                                        .profile()
+                                                                                                                == PrivateAgentTarget
+                                                                                                                        .Profile
+                                                                                                                        .EMPTY);
+                                                                                return agent;
+                                                                            },
+                                                                            agent -> {
+                                                                                var context =
+                                                                                        IsolatedAgentFactory
+                                                                                                .context(
+                                                                                                        scope);
+                                                                                var resumes =
+                                                                                        interactions
+                                                                                                        == null
+                                                                                                ? null
+                                                                                                : interactions
+                                                                                                        .resumeInputs(
+                                                                                                                invocation);
+                                                                                if (saved
+                                                                                                .isPresent()
+                                                                                        && AgentStateInspector
+                                                                                                .classify(
+                                                                                                        saved
+                                                                                                                .value(),
+                                                                                                        saved
+                                                                                                                .version())
+                                                                                                .status()
+                                                                                                .equals(
+                                                                                                        "waiting")
+                                                                                        && resumes
+                                                                                                == null)
+                                                                                    throw new Blocked(
+                                                                                            "child_answer_required");
+                                                                                var input =
+                                                                                        resumes
+                                                                                                        == null
+                                                                                                ? List
+                                                                                                        .of(
+                                                                                                                Msg
+                                                                                                                        .builder()
+                                                                                                                        .name(
+                                                                                                                                "user")
+                                                                                                                        .role(
+                                                                                                                                MsgRole
+                                                                                                                                        .USER)
+                                                                                                                        .textContent(
+                                                                                                                                message)
+                                                                                                                        .build())
+                                                                                                : resumes;
+                                                                                return agent.call(
+                                                                                                input,
+                                                                                                context)
+                                                                                        .timeout(
+                                                                                                timeout)
+                                                                                        .doOnCancel(
+                                                                                                () ->
+                                                                                                        agent
+                                                                                                                .interrupt(
+                                                                                                                        context))
+                                                                                        .map(
+                                                                                                answer -> {
+                                                                                                    requireHealthy(
+                                                                                                            fatal);
+                                                                                                    var
+                                                                                                            state =
+                                                                                                                    store
+                                                                                                                            .getVersioned(
+                                                                                                                                    scope
+                                                                                                                                            .userId(),
+                                                                                                                                    scope
+                                                                                                                                            .sessionId(),
+                                                                                                                                    "agent_state",
+                                                                                                                                    AgentState
+                                                                                                                                            .class);
+                                                                                                    if (!state
+                                                                                                            .isPresent())
+                                                                                                        throw new Blocked(
+                                                                                                                "child_incomplete");
+                                                                                                    var
+                                                                                                            completed =
+                                                                                                                    AgentStateInspector
+                                                                                                                            .classify(
+                                                                                                                                    state
+                                                                                                                                            .value(),
+                                                                                                                                    state
+                                                                                                                                            .version());
+                                                                                                    if (completed
+                                                                                                                    .status()
+                                                                                                                    .equals(
+                                                                                                                            "waiting")
+                                                                                                            && target
+                                                                                                                            .profile()
+                                                                                                                    == PrivateAgentTarget
+                                                                                                                            .Profile
+                                                                                                                            .CONTROLLED
+                                                                                                            && interactions
+                                                                                                                    != null
+                                                                                                            && leaf
+                                                                                                                            .session()
+                                                                                                                    != null) {
+                                                                                                        interactions
+                                                                                                                .save(
+                                                                                                                        invocation,
+                                                                                                                        target,
+                                                                                                                        param
+                                                                                                                                .getToolUseBlock(),
+                                                                                                                        state
+                                                                                                                                .version(),
+                                                                                                                        leaf.session()
+                                                                                                                                .pending(
+                                                                                                                                        state
+                                                                                                                                                .value()));
+                                                                                                        return ToolResultBlock
+                                                                                                                .suspended(
+                                                                                                                        param
+                                                                                                                                .getToolUseBlock());
+                                                                                                    }
+                                                                                                    if (!completed
+                                                                                                            .status()
+                                                                                                            .equals(
+                                                                                                                    "completed"))
+                                                                                                        throw new Blocked(
+                                                                                                                "child_incomplete");
+                                                                                                    return result(
+                                                                                                            invocation,
+                                                                                                            completed
+                                                                                                                    .result());
+                                                                                                });
+                                                                            },
+                                                                            agent -> agent.close()),
+                                                            Models::close),
+                                            LeafTools::close)
+                                    // StateStore rejection may be wrapped by the SDK. Preserve the
+                                    // actual dispatch denial after all resource cleanup finishes.
+                                    .onErrorMap(error -> fatal.get() == null ? error : fatal.get());
                         })
                 .onErrorMap(
                         error ->
-                                error instanceof Blocked
+                                error instanceof Blocked || error instanceof Fenced
                                         ? error
                                         : new Blocked("private_agent_failed"));
+    }
+
+    public InteractionHandler interaction(Claim parent, CapabilityBinding binding) {
+        var target = PrivateAgentContracts.from(binding);
+        if (target.profile() != PrivateAgentTarget.Profile.CONTROLLED) return null;
+        if (interactions == null) throw new Blocked("agent_delegation_unavailable");
+        return new InteractionHandler() {
+            public com.financeclaw.domain.Governance.Pending pending(ToolUseBlock call) {
+                throw new Blocked("child_interaction_batch_required");
+            }
+
+            @Override
+            public List<com.financeclaw.domain.Governance.Pending> pendingAll(ToolUseBlock call) {
+                return interactions.pending(parent, target, call);
+            }
+        };
+    }
+
+    public boolean delegated(com.financeclaw.domain.Governance.Interaction interaction) {
+        return interactions != null && interactions.delegated(interaction);
+    }
+
+    public void prepareResume(
+            Claim current,
+            Claim source,
+            AgentExecutionPlan plan,
+            List<com.financeclaw.domain.Governance.Interaction> answers) {
+        if (interactions == null) {
+            if (answers.stream().anyMatch(i -> i.callId().startsWith("ci-")))
+                throw new Blocked("agent_delegation_unavailable");
+            return;
+        }
+        var groups =
+                new LinkedHashMap<String, List<com.financeclaw.domain.Governance.Interaction>>();
+        for (var answer : answers)
+            if (interactions.delegated(answer))
+                groups.computeIfAbsent(
+                                interactions.rootCallId(answer), ignored -> new ArrayList<>())
+                        .add(answer);
+        for (var group : groups.values()) {
+            if (plan == null) throw new Blocked("agent_delegation_denied");
+            var binding =
+                    plan.capabilities().stream()
+                            .filter(
+                                    b ->
+                                            b.kind().equals("agent")
+                                                    && b.name().equals(group.getFirst().tool()))
+                            .findFirst()
+                            .orElseThrow(() -> new Blocked("agent_delegation_denied"));
+            interactions.prepare(current, source, binding, group);
+        }
     }
 
     private ToolResultBlock result(Invocation invocation, String answer) {
@@ -233,7 +426,8 @@ public class PrivateAgentDelegation {
             ModelProfile profile,
             Invocation invocation,
             PrivateAgentTarget target,
-            AtomicReference<Blocked> fatal) {
+            ReadOnlyLeafTools.Session readOnly,
+            AtomicReference<RuntimeException> fatal) {
         return new Model() {
             @Override
             public String getModelName() {
@@ -246,7 +440,9 @@ public class PrivateAgentDelegation {
                 return Flux.defer(
                                 () -> {
                                     requireHealthy(fatal);
-                                    if (!allowedSchemas(target, tools))
+                                    if (!(readOnly == null
+                                            ? allowedSchemas(target, tools)
+                                            : readOnly.allowsSchemas(tools)))
                                         throw remember(fatal, "child_tools_denied");
                                     int available =
                                             budgets.effectiveWorkBytes(
@@ -278,7 +474,10 @@ public class PrivateAgentDelegation {
                                     calls.reserveModel(invocation);
                                     String responseId = UUID.randomUUID().toString();
                                     var marketHeader = new AtomicBoolean();
-                                    return delegate.stream(messages, tools, options)
+                                    return observations
+                                            .model(
+                                                    invocation.parent(),
+                                                    () -> delegate.stream(messages, tools, options))
                                             .map(
                                                     response -> {
                                                         if (response.getContent().stream()
@@ -290,6 +489,7 @@ public class PrivateAgentDelegation {
                                                                         call ->
                                                                                 !allowedChunk(
                                                                                         target,
+                                                                                        readOnly,
                                                                                         call,
                                                                                         marketHeader))) {
                                                             // 即使 SDK 将模型异常转换为观察或尝试
@@ -302,8 +502,8 @@ public class PrivateAgentDelegation {
                                 })
                         .doOnError(
                                 error -> {
-                                    if (error instanceof Blocked blocked)
-                                        fatal.compareAndSet(null, blocked);
+                                    if (error instanceof Blocked || error instanceof Fenced)
+                                        fatal.compareAndSet(null, (RuntimeException) error);
                                 });
             }
         };
@@ -314,7 +514,7 @@ public class PrivateAgentDelegation {
             PrivateAgentTarget target,
             Invocation invocation,
             ResolvedAgentRelease release,
-            AtomicReference<Blocked> fatal) {
+            AtomicReference<RuntimeException> fatal) {
         var toolkit = new Toolkit();
         if (target.profile() == PrivateAgentTarget.Profile.EMPTY) return toolkit;
         if (market == null) throw new Blocked("agent_delegation_unavailable");
@@ -378,13 +578,13 @@ public class PrivateAgentDelegation {
                                         })
                                 .onErrorMap(
                                         error ->
-                                                error instanceof Blocked
+                                                error instanceof Blocked || error instanceof Fenced
                                                         ? error
                                                         : new Blocked("private_agent_failed"))
                                 .doOnError(
                                         error -> {
-                                            if (error instanceof Blocked blocked)
-                                                fatal.compareAndSet(null, blocked);
+                                            if (error instanceof Blocked || error instanceof Fenced)
+                                                fatal.compareAndSet(null, (RuntimeException) error);
                                         })
                                 .subscribeOn(Schedulers.boundedElastic());
                     }
@@ -408,7 +608,19 @@ public class PrivateAgentDelegation {
 
     /** SDK 2.0.3 用 __fragment__ 表示无名称的参数续片；它不是可执行的工具名。 */
     private static boolean allowedChunk(
-            PrivateAgentTarget target, ToolUseBlock call, AtomicBoolean marketHeader) {
+            PrivateAgentTarget target,
+            ReadOnlyLeafTools.Session readOnly,
+            ToolUseBlock call,
+            AtomicBoolean marketHeader) {
+        if (readOnly != null) {
+            if (readOnly.allows(call.getName())) {
+                marketHeader.set(true);
+                return true;
+            }
+            return marketHeader.get()
+                    && "__fragment__".equals(call.getName())
+                    && (call.getId() == null || call.getId().isEmpty());
+        }
         if (target.profile() != PrivateAgentTarget.Profile.MARKET_SNAPSHOT) return false;
         if ("market_snapshot".equals(call.getName())) {
             marketHeader.set(true);
@@ -420,7 +632,10 @@ public class PrivateAgentDelegation {
     }
 
     /** 完成参数合并后再次核验实际派发，既不把续片当工具，也不依赖 SDK 的错误观察阻断执行。 */
-    private static MiddlewareBase guard(PrivateAgentTarget target, AtomicReference<Blocked> fatal) {
+    private static MiddlewareBase guard(
+            PrivateAgentTarget target,
+            ReadOnlyLeafTools.Session readOnly,
+            AtomicReference<RuntimeException> fatal) {
         return new MiddlewareBase() {
             @Override
             public Flux<AgentEvent> onActing(
@@ -432,8 +647,12 @@ public class PrivateAgentDelegation {
                         () -> {
                             requireHealthy(fatal);
                             for (var call : input.toolCalls()) {
-                                if (target.profile() != PrivateAgentTarget.Profile.MARKET_SNAPSHOT
-                                        || !"market_snapshot".equals(call.getName())) {
+                                if (readOnly != null
+                                        ? !readOnly.allows(call.getName())
+                                        : target.profile()
+                                                        != PrivateAgentTarget.Profile
+                                                                .MARKET_SNAPSHOT
+                                                || !"market_snapshot".equals(call.getName())) {
                                     throw remember(fatal, "child_tools_denied");
                                 }
                             }
@@ -451,14 +670,32 @@ public class PrivateAgentDelegation {
                         .equals(PayloadJson.canonical(MarketToolSchemas.SNAPSHOT));
     }
 
-    private static void requireHealthy(AtomicReference<Blocked> fatal) {
+    private static void requireHealthy(AtomicReference<RuntimeException> fatal) {
         if (fatal.get() != null) throw fatal.get();
     }
 
-    private static Blocked remember(AtomicReference<Blocked> fatal, String code) {
+    private static Blocked remember(AtomicReference<RuntimeException> fatal, String code) {
         var blocked = new Blocked(code);
         fatal.compareAndSet(null, blocked);
         return blocked;
+    }
+
+    private record LeafTools(Toolkit toolkit, ReadOnlyLeafTools.Session session) {
+        void close() {
+            if (session != null) session.close();
+        }
+    }
+
+    private LeafTools leafTools(
+            PrivateAgentTarget target,
+            Invocation invocation,
+            ResolvedAgentRelease release,
+            AtomicReference<RuntimeException> fatal) {
+        if (!target.generic())
+            return new LeafTools(toolkit(target, invocation, release, fatal), null);
+        if (readOnlyTools == null) throw new Blocked("agent_delegation_unavailable");
+        var session = readOnlyTools.open(target, invocation, release, fatal);
+        return new LeafTools(session.toolkit, session);
     }
 
     private Models models(ResolvedAgentRelease release) {

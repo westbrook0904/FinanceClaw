@@ -1,10 +1,12 @@
 package com.financeclaw.infrastructure.agentscope.capability;
 
+import com.financeclaw.app.agent.port.CredentialAccessGateway;
 import com.financeclaw.app.artifact.ArtifactService;
 import com.financeclaw.app.execution.ExecutionPolicyService;
 import com.financeclaw.app.release.port.Credentials;
 import com.financeclaw.domain.Governance.*;
 import com.financeclaw.domain.Task.Claim;
+import com.financeclaw.domain.Task.Owner;
 import com.financeclaw.domain.agent.AgentExecutionPlan;
 import com.financeclaw.domain.agent.CapabilityBinding;
 import com.financeclaw.domain.release.ReleaseDefinition;
@@ -15,6 +17,8 @@ import io.agentscope.core.message.*;
 import io.agentscope.core.tool.AgentTool;
 import io.agentscope.core.tool.Toolkit;
 import java.util.*;
+import java.util.function.Function;
+import java.util.function.Supplier;
 import reactor.core.publisher.Mono;
 
 /**
@@ -29,7 +33,21 @@ public final class McpToolContribution implements ToolContribution, AutoCloseabl
     private final List<String> scopes;
     private final Toolkit toolkit;
     private final AgentExecutionPlan plan;
+    private final CredentialAccessGateway credentialAccess;
     private final McpTools mcp = new McpTools();
+    private Runnable executionBoundary = () -> {};
+    private Function<Supplier<ToolResultBlock>, ToolResultBlock> resultBoundary = Supplier::get;
+
+    /**
+     * Child authorization must be checked again after remote discovery and when persisting its
+     * result.
+     */
+    public void boundaries(
+            Runnable executionBoundary,
+            Function<Supplier<ToolResultBlock>, ToolResultBlock> resultBoundary) {
+        this.executionBoundary = Objects.requireNonNull(executionBoundary);
+        this.resultBoundary = Objects.requireNonNull(resultBoundary);
+    }
 
     public McpToolContribution(
             ExecutionPolicyService policy,
@@ -51,6 +69,29 @@ public final class McpToolContribution implements ToolContribution, AutoCloseabl
             List<String> scopes,
             Toolkit toolkit,
             AgentExecutionPlan plan) {
+        this(
+                policy,
+                credentials,
+                artifacts,
+                claim,
+                release,
+                scopes,
+                toolkit,
+                plan,
+                CredentialAccessGateway.trustedFixture());
+    }
+
+    public McpToolContribution(
+            ExecutionPolicyService policy,
+            Credentials credentials,
+            ArtifactService artifacts,
+            Claim claim,
+            ReleaseDefinition release,
+            List<String> scopes,
+            Toolkit toolkit,
+            AgentExecutionPlan plan,
+            CredentialAccessGateway credentialAccess) {
+        this.credentialAccess = credentialAccess;
         this.plan = plan;
         this.policy = policy;
         this.credentials = credentials;
@@ -73,6 +114,7 @@ public final class McpToolContribution implements ToolContribution, AutoCloseabl
                 continue;
             }
             policy.checkDispatch(claim);
+            authorize(service);
             mcp.register(toolkit, service, claim.turn().tenant(), credentials::resolve);
             for (String name : service.tools()) {
                 register(registrar, service, toolkit.getTool(name), null, List.of());
@@ -128,6 +170,7 @@ public final class McpToolContribution implements ToolContribution, AutoCloseabl
                 continue;
             }
             policy.checkDispatch(claim);
+            authorize(service);
             var temporary = new Toolkit();
             McpTools.SelectedSession session;
             try {
@@ -176,6 +219,8 @@ public final class McpToolContribution implements ToolContribution, AutoCloseabl
                 nativeTool.getParameters(),
                 scope,
                 p -> {
+                    executionBoundary.run();
+                    authorize(service);
                     Mono<Void> ready = session == null ? Mono.empty() : session.verify(frozen);
                     return ready.then(
                             Mono.defer(
@@ -185,6 +230,8 @@ public final class McpToolContribution implements ToolContribution, AutoCloseabl
                                         if (session != null) {
                                             policy.checkDispatch(claim);
                                         }
+                                        executionBoundary.run();
+                                        authorize(service);
                                         if (service.service().equals("taibu")) {
                                             TaibuInputs.validate(name, p.getInput());
                                         }
@@ -231,11 +278,21 @@ public final class McpToolContribution implements ToolContribution, AutoCloseabl
                                                                 TaibuInputs.validateResult(
                                                                         name, data, p.getInput());
                                                             }
-                                                            return archived(data, scope);
+                                                            Object validated = data;
+                                                            return resultBoundary.apply(
+                                                                    () ->
+                                                                            archived(
+                                                                                    validated,
+                                                                                    scope));
                                                         });
                                     }));
                 },
                 null);
+    }
+
+    private void authorize(RemoteEndpoint service) {
+        credentialAccess.requireCredential(
+                new Owner(claim.turn().tenant(), claim.turn().subject()), service.credentialRef());
     }
 
     private ToolResultBlock archived(Object result, String scope) {

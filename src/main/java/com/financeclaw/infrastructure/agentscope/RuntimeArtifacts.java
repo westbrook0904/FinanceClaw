@@ -12,10 +12,14 @@ import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.util.HexFormat;
 import java.util.TreeMap;
+import java.util.jar.JarFile;
 
 /** Fingerprints production classes from this class's own exploded directory or executable JAR. */
 public final class RuntimeArtifacts {
     private static final String PACKAGE = "com/financeclaw/";
+    private static final int MAX_CLASS_BYTES = 16 * 1024 * 1024;
+    private static final long MAX_ARCHIVE_CLASS_BYTES = 128L * 1024 * 1024;
+    private static final int MAX_CLASSES = 20000;
 
     private RuntimeArtifacts() {}
 
@@ -27,6 +31,25 @@ public final class RuntimeArtifacts {
         synchronized (RuntimeArtifacts.class) {
             if (cachedHash == null) cachedHash = fingerprint();
             return cachedHash;
+        }
+    }
+
+    /** 只读取受控本地归档的类字节，不创建ClassLoader或执行归档；路径约束由调用边界负责。 */
+    public static String hashArchive(Path archive) {
+        try (var jar = new JarFile(archive.toFile())) {
+            String prefix =
+                    jar.getEntry(
+                                            "BOOT-INF/classes/"
+                                                    + PACKAGE
+                                                    + "infrastructure/agentscope/RuntimeArtifacts.class")
+                                    != null
+                            ? "BOOT-INF/classes/"
+                            : "";
+            if (jar.getEntry(prefix + PACKAGE + "infrastructure/agentscope/RuntimeArtifacts.class")
+                    == null) throw new IOException("Missing runtime anchor");
+            return hashSource("jar:" + archive.toUri() + "!/" + prefix);
+        } catch (Exception failure) {
+            throw new Blocked("runtime_artifact_unavailable");
         }
     }
 
@@ -68,6 +91,7 @@ public final class RuntimeArtifacts {
                     throw new IOException("Unsupported archive source");
                 }
                 try (var jar = archive.getJarFile()) {
+                    long total = 0;
                     var iterator = jar.entries();
                     while (iterator.hasMoreElements()) {
                         var entry = iterator.nextElement();
@@ -76,8 +100,13 @@ public final class RuntimeArtifacts {
                                 || !name.startsWith(prefix + PACKAGE)
                                 || !name.endsWith(".class")) continue;
                         try (var input = jar.getInputStream(entry)) {
-                            if (entries.put(name.substring(prefix.length()), input.readAllBytes())
-                                    != null) {
+                            byte[] bytes = input.readNBytes(MAX_CLASS_BYTES + 1);
+                            total += bytes.length;
+                            if (bytes.length > MAX_CLASS_BYTES
+                                    || total > MAX_ARCHIVE_CLASS_BYTES
+                                    || entries.size() >= MAX_CLASSES)
+                                throw new IOException("Runtime archive exceeds limits");
+                            if (entries.put(name.substring(prefix.length()), bytes) != null) {
                                 throw new IOException("Duplicate production class");
                             }
                         }

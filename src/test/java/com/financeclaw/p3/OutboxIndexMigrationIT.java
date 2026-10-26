@@ -54,7 +54,7 @@ class OutboxIndexMigrationIT {
             }
             var notices = sql.queryForList("SELECT * FROM channel.notices ORDER BY id");
 
-            var current = Flyway.configure().dataSource(source).load();
+            var current = Flyway.configure().dataSource(source).target("10").load();
             assertThat(current.migrate().migrationsExecuted).isOne();
             assertThat(current.info().current().getVersion().toString()).isEqualTo("10");
             assertThat(

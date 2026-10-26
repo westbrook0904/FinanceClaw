@@ -2,7 +2,9 @@
 
 FinanceClaw Java 是独立应用，支持全新数据库初始化，以及当前 Java V1 基线之后的前向升级；不导入 Python 数据或升级过去的实验结构。
 
-本轮保留当前分支的 [V1 初始化 SQL](../../src/main/resources/db/migration/V1__initialize_application.sql) 的内容和校验值；V10 升级用例以本次前置 V9 为基线，不修复更早历史文件漂移。V1 创建 35 张应用表；[V2](../../src/main/resources/db/migration/V2__release_catalog.sql) 增加三张持久发布表；[V3](../../src/main/resources/db/migration/V3__conversation_release_binding.sql) 增加会话发布绑定；[V4](../../src/main/resources/db/migration/V4__agent_definitions.sql) 增加 Agent 身份、不可变草稿修订及会话/Turn 的 Agent 绑定。[V5](../../src/main/resources/db/migration/V5__agent_compositions.sql) 增加可空能力选择和 v3 发布格式标记，不改写旧正文。[V6](../../src/main/resources/db/migration/V6__child_invocations.sql) 增加固定研究子调用的身份与累计预算。[V7](../../src/main/resources/db/migration/V7__execution_privacy.sql) 增加四个执行隐私函数及三个部分索引。[V8](../../src/main/resources/db/migration/V8__private_agent_delegation.sql) 扩充既有调用表的私有叶子绑定和隐私映射，P3a.3 已推送 `d433423`，[远程 CI](https://github.com/westbrook0904/FinanceClaw/actions/runs/40065079071)成功，1,702 项 Java、46 项脚本和 44 项部署检查通过。[V9](../../src/main/resources/db/migration/V9__private_agent_market_leaf.sql) 扩展固定行情私有叶子的约束和集合绑定核验。[V10](../../src/main/resources/db/migration/V10__outbox_pending_binding_index.sql) 为定时通知跳锁增加 pending 按 binding 定位的部分索引；保留现有 V1–V9 文件及其校验。V7/V8/V9/V10 均不增加表，Flyway 按序执行并验证历史校验值，最终仍为 41 张表。独立遗忘账本仍使用自己的两张表和凭据，不混入主库初始化。
+本轮保留当前分支的 [V1 初始化 SQL](../../src/main/resources/db/migration/V1__initialize_application.sql) 的内容和校验值；V10 升级用例以本次前置 V9 为基线，不修复更早历史文件漂移。V1 创建 35 张应用表；[V2](../../src/main/resources/db/migration/V2__release_catalog.sql) 增加三张持久发布表；[V3](../../src/main/resources/db/migration/V3__conversation_release_binding.sql) 增加会话发布绑定；[V4](../../src/main/resources/db/migration/V4__agent_definitions.sql) 增加 Agent 身份、不可变草稿修订及会话/Turn 的 Agent 绑定。[V5](../../src/main/resources/db/migration/V5__agent_compositions.sql) 增加可空能力选择和 v3 发布格式标记，不改写旧正文。[V6](../../src/main/resources/db/migration/V6__child_invocations.sql) 增加固定研究子调用的身份与累计预算。[V7](../../src/main/resources/db/migration/V7__execution_privacy.sql) 增加四个执行隐私函数及三个部分索引。[V8](../../src/main/resources/db/migration/V8__private_agent_delegation.sql) 扩充既有调用表的私有叶子绑定和隐私映射，P3a.3 已推送 `d433423`，[远程 CI](https://github.com/westbrook0904/FinanceClaw/actions/runs/40065079071)成功，1,702 项 Java、46 项脚本和 44 项部署检查通过。[V9](../../src/main/resources/db/migration/V9__private_agent_market_leaf.sql) 扩展固定行情私有叶子的约束和集合绑定核验。[V10](../../src/main/resources/db/migration/V10__outbox_pending_binding_index.sql) 为定时通知跳锁增加 pending 按 binding 定位的部分索引；保留现有 V1–V9 文件及其校验。V7/V8/V9/V10 均不增加表，Flyway 按序执行并验证历史校验值，截至 V10 为 41 张表。独立遗忘账本仍使用自己的两张表和凭据，不混入主库初始化。
+
+下表保留截至 V10 的结构；本批 V15 的表数在下方单独说明。
 
 | 结构 | 表数 | 责任 |
 | --- | ---: | --- |
@@ -28,9 +30,16 @@ docker compose up -d --build --wait --wait-timeout 180
 
 已有实验数据库不在支持范围内，代码不会清空或猜测其中的数据；开发者可为当前应用指定新的数据库或新的 Compose 项目。当前版本的备份、独立遗忘事实和恢复隔离仍然需要保留。
 
-## 从当前 Java V1–V9 升级
 
-先保留数据库备份和旧启动配置，停止旧业务进程，再以新版 `init-db` 执行尚未应用的 V2–V10 和角色授权，最后统一启动新版业务进程。本次升级不支持新旧二进制混跑；旧进程不能提供新版本的私有目标绑定及执行隐私映射。Compose 中应明确重新运行初始化服务，不能仅重启旧的成功退出容器：
+## 非 RAG 集中实施中的前向迁移
+
+本批 V11–V15 已完成开发，完整数据库验收以本提交对应 Actions 为准：[实施状态](non-rag-completion-plan.md)。V11 扩充受控只读叶子和共享目标的隐私绑定核验；V12 增加资源授权/审计和 Agent 归档；V13 增加触发规则/修订/回执及派发配额/优先级；V14 增加 worker 资源与工件目录；V15 补齐子交互桥接的 profile、索引和隐私绑定。V1–V10 保持原字节与校验值，新增批次最终结构为 **52 张应用表、15 个迁移**。其中 business 23、control_plane 10、memory 13、channel 4、agent_runtime 2。独立遗忘账本仍不在本业务库中。
+
+新增控制面表只向业务角色授予所需 SELECT/INSERT/UPDATE，规则修订、触发回执、资源授权审计与工件记录保持不可变；Memory Worker 继续无权访问 business/control_plane。已有角色升级在迁移内条件授权，新角色由 init-db 的 grants.sql 授权。固定触发、旧会话与旧待审批动作仍须按原发布及匹配工件执行，不支持新旧任意二进制混跑。
+
+## 从当前 Java V1–V10 升级
+
+先保留数据库备份和旧启动配置，停止旧业务进程，再以新版 `init-db` 执行尚未应用的 V2–V15 和角色授权，最后统一启动新版业务进程。本次升级不支持新旧二进制混跑；旧进程不能提供新版本的私有目标绑定及执行隐私映射。Compose 中应明确重新运行初始化服务，不能仅重启旧的成功退出容器：
 
 ```bash
 scripts/mvn.sh -B -ntp clean package -DskipTests

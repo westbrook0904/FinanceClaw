@@ -32,7 +32,8 @@ public interface GovernanceMapper {
             long epoch,
             long grantRevision,
             String resultHash,
-            String result) {}
+            String result,
+            String leafProfile) {}
 
     /** 子调用只保存身份和计数；隐私来源必须与根 Turn 的 owner 相同，不能借错误关联派生身份。 */
     @Select(
@@ -40,7 +41,7 @@ public interface GovernanceMapper {
             SELECT c.root_turn_id,c.call_id,c.target,c.target_agent_id,c.target_release_hash,
                    c.input_hash,c.scopes::text AS scopes,c.status,
                    c.model_calls,c.tool_calls,t.tenant,t.subject,t.conversation_id,t.release_hash,
-                   s.epoch,p.grant_revision,r.input_hash AS result_hash,r.result
+                   s.epoch,p.grant_revision,r.input_hash AS result_hash,r.result,c.leaf_profile
             FROM business.child_invocations c
             JOIN business.turns t ON t.id=c.root_turn_id
             JOIN memory.sources s ON s.id=t.id AND s.tenant=t.tenant AND s.subject=t.subject
@@ -102,6 +103,37 @@ public interface GovernanceMapper {
             @Param("hash") String hash,
             @Param("targetAgent") String targetAgent,
             @Param("targetRelease") String targetRelease);
+
+    @Insert(
+            """
+        INSERT INTO business.child_invocations(root_turn_id,call_id,target,target_agent_id,target_release_hash,input_hash,scopes,leaf_profile)
+        SELECT t.id,#{call},'private_agent',#{targetAgent},#{targetRelease},#{hash},CAST(#{scopes} AS jsonb),#{profile}
+        FROM business.turns t
+        JOIN memory.sources s ON s.id=t.id AND s.tenant=t.tenant AND s.subject=t.subject
+        JOIN business.turn_policies p ON p.turn_id=t.id
+        WHERE t.id=#{root} ON CONFLICT(root_turn_id,call_id) DO NOTHING
+        """)
+    int insertPrivateReadOnlyChildInvocationIfAbsent(
+            @Param("root") String root,
+            @Param("call") String call,
+            @Param("hash") String hash,
+            @Param("targetAgent") String targetAgent,
+            @Param("targetRelease") String targetRelease,
+            @Param("scopes") String scopes,
+            @Param("profile") String profile);
+
+    @Update(
+            """
+        UPDATE business.child_invocations SET tool_calls=tool_calls+1
+        WHERE root_turn_id=#{root} AND call_id=#{call} AND input_hash=#{hash}
+          AND target='private_agent' AND leaf_profile IN ('read_only','controlled') AND status='pending'
+          AND #{limit} BETWEEN 1 AND 10 AND tool_calls<#{limit}
+        """)
+    int updatePendingPrivateReadOnlyToolCountWithinLimit(
+            @Param("root") String root,
+            @Param("call") String call,
+            @Param("hash") String hash,
+            @Param("limit") int limit);
 
     @Update(
             """
@@ -364,4 +396,8 @@ VALUES(#{id},#{turnId},#{commandId},#{attemptId},#{stateVersion},#{grantRevision
 
     @Select("SELECT created_at FROM business.turns WHERE id=#{id}")
     java.time.Instant getTurnCreatedAt(String id);
+
+    @Select(
+            "SELECT result FROM business.capability_steps WHERE turn_id=#{root} AND namespace LIKE 'child:%' AND step='interaction:' || #{id}")
+    String getChildInteractionEnvelope(@Param("root") String root, @Param("id") String id);
 }

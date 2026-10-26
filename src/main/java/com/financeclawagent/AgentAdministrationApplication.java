@@ -16,6 +16,8 @@ import com.financeclaw.domain.agent.AgentComposition;
 import com.financeclaw.domain.agent.AgentDraft;
 import com.financeclaw.infrastructure.agent.CatalogAgentCapabilityResolver;
 import com.financeclaw.infrastructure.agent.MyBatisAgentRepository;
+import com.financeclaw.infrastructure.agent.ResourceAccessService;
+import com.financeclaw.infrastructure.agent.ServerCredentialCatalog;
 import com.financeclaw.infrastructure.release.EnvironmentCredentials;
 import com.financeclaw.infrastructure.release.MyBatisReleaseRepository;
 import com.financeclaw.support.PayloadJson;
@@ -56,13 +58,17 @@ import org.springframework.transaction.support.TransactionTemplate;
     MyBatisAgentRepository.class,
     MyBatisReleaseRepository.class,
     EnvironmentCredentials.class,
-    CatalogAgentCapabilityResolver.class
+    CatalogAgentCapabilityResolver.class,
+    ServerCredentialCatalog.class,
+    ResourceAccessService.class
 })
 public class AgentAdministrationApplication {
     static final int MAX_FILE_BYTES = 128 * 1024;
     private static final Set<String> SAFE_ERRORS =
             Set.of(
                     "invalid_agent_id",
+                    "agent_access_denied",
+                    "credential_access_denied",
                     "invalid_agent_draft",
                     "invalid_draft_revision",
                     "agent_read_only",
@@ -108,8 +114,11 @@ public class AgentAdministrationApplication {
             AgentRepository repository,
             ReleaseService releases,
             TransactionTemplate transactions,
-            AgentCapabilityResolver capabilities) {
-        return new AgentService(repository, releases, transactions, capabilities);
+            AgentCapabilityResolver capabilities,
+            com.financeclaw.app.agent.port.AgentAccessGateway access) {
+        var service = new AgentService(repository, releases, transactions, capabilities);
+        service.configureAgentAccess(access);
+        return service;
     }
 
     public static void main(String[] args) {

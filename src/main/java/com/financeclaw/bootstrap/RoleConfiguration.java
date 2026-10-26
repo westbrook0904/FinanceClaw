@@ -6,6 +6,7 @@ import com.financeclaw.app.agent.port.AgentCapabilityResolver;
 import com.financeclaw.app.agent.port.AgentRepository;
 import com.financeclaw.app.artifact.ArtifactService;
 import com.financeclaw.app.execution.*;
+import com.financeclaw.app.execution.port.CommandDispatch;
 import com.financeclaw.app.execution.port.CommandGateway;
 import com.financeclaw.app.execution.port.HeartbeatGateway;
 import com.financeclaw.app.governance.GrantService;
@@ -42,6 +43,7 @@ import com.financeclaw.infrastructure.release.*;
 import com.financeclaw.infrastructure.task.*;
 import com.financeclaw.infrastructure.ziwei.*;
 import com.financeclaw.worker.TaskWorker;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.annotation.*;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -56,7 +58,14 @@ public final class RoleConfiguration {
 
     /** 统一业务上下文，事件发布与 SSE 订阅使用同一个进程内事件中心。 */
     @Configuration(proxyBeanMethods = false)
-    @Import({Http.class, Execution.class, Delivery.class})
+    @Import({
+        Http.class,
+        Execution.class,
+        Delivery.class,
+        TriggerSchedulingConfiguration.class,
+        ResourceAuthorizationConfiguration.class,
+        RuntimeCoordinationConfiguration.class
+    })
     static class Standalone {}
 
     @Configuration(proxyBeanMethods = false)
@@ -116,8 +125,10 @@ public final class RoleConfiguration {
                 TaskMutationGateway turns,
                 TaskTransitionService transitions,
                 TransactionTemplate tx,
-                HeartbeatGateway heartbeats) {
-            return new ExecutionLeaseService(commands, turns, transitions, tx, heartbeats);
+                HeartbeatGateway heartbeats,
+                ObjectProvider<CommandDispatch> dispatch) {
+            return new ExecutionLeaseService(
+                    commands, turns, transitions, tx, heartbeats, dispatch.getIfAvailable());
         }
 
         @Bean
@@ -189,6 +200,8 @@ public final class RoleConfiguration {
         ZiweiService.class,
         GovernedZiweiPublication.class,
         PrivateAgentDelegation.class,
+        ReadOnlyLeafTools.class,
+        ChildInteractionBridge.class,
         BusinessCapabilities.class,
         ExecutionSchedulingConfiguration.class,
         TaskAgentRuntime.class,

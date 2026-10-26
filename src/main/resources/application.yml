@@ -84,6 +84,21 @@ financeclaw:
     token: ${FINANCECLAW_API_TOKEN:}
     tenant: ${FINANCECLAW_TENANT:local}
     subject: ${FINANCECLAW_SUBJECT:developer}
+    # Server-owned identity/credential catalogs; token entries never come from request bodies.
+    identities-json: ${FINANCECLAW_IDENTITIES_JSON:[]}
+    credential-resources-json: ${FINANCECLAW_CREDENTIAL_RESOURCES_JSON:[]}
+  scheduler:
+    enabled: ${FINANCECLAW_SCHEDULER_ENABLED:false}
+    dispatch-enabled: ${FINANCECLAW_FAIR_DISPATCH_ENABLED:false}
+    poll-ms: 1000
+    misfire-grace-seconds: 60
+  runtime:
+    worker-ttl-ms: 15000
+    control-poll-ms: 1000
+    artifact-directory: ${FINANCECLAW_RUNTIME_ARTIFACT_DIRECTORY:}
+    # Optional estimate per committed budget call; not provider token billing.
+    model-call-cost: ${FINANCECLAW_MODEL_CALL_COST:0}
+    tool-call-cost: ${FINANCECLAW_TOOL_CALL_COST:0}
   worker:
     enabled: ${FINANCECLAW_WORKER_ENABLED:true}
     parallelism: 4
@@ -173,4 +188,6 @@ financeclaw:
     max-connections: 32
     timeout-ms: 30000
     heartbeat-ms: 15000
+    notification-receive-timeout-ms: 1000
+    notification-reconnect-ms: 1000
     buffer-capacity: 256

@@ -328,13 +328,21 @@ class GovernanceIT {
         // Admitted targets are immutable; production cannot rewrite a Turn's release.
         String conversation = tasks.createConversation(owner);
         String missingId = UUID.randomUUID().toString();
+        String missingRelease = "0".repeat(64);
+        assertThat(
+                        sql.queryForObject(
+                                "SELECT count(*) FROM control_plane.release_manifests WHERE release_hash=?",
+                                Integer.class,
+                                missingRelease))
+                .isZero();
         sql.update(
-                "INSERT INTO business.turns(id,conversation_id,tenant,subject,idempotency_key,request_hash,message,release_hash,status) VALUES(?,?,?,?,?,'hash','report','missing','queued')",
+                "INSERT INTO business.turns(id,conversation_id,tenant,subject,idempotency_key,request_hash,message,release_hash,status) VALUES(?,?,?,?,?,'hash','report',?,'queued')",
                 missingId,
                 conversation,
                 owner.tenant(),
                 owner.subject(),
-                missingId);
+                missingId,
+                missingRelease);
         sql.update(
                 "INSERT INTO business.commands(id,turn_id,status) VALUES(?,?,'queued')",
                 UUID.randomUUID().toString(),
@@ -408,10 +416,53 @@ class GovernanceIT {
         assertThat(identity.startedAt()).isNotBlank();
         run(c);
         var i = question(t);
-        answer(t, i, approve(i));
-        run(claim());
         assertThat(db.getTurnPolicy(t.turnId()).modelCalls()).isEqualTo(1);
-        assertThat(turn(t).status()).isIn("blocked", "failed");
+        answer(t, i, approve(i));
+        var resumed = claim();
+        assertThat(resumed.command().attemptId()).isNotEqualTo(c.command().attemptId());
+        run(resumed);
+        assertThat(db.getTurnPolicy(t.turnId()).modelCalls()).isEqualTo(1);
+        assertThat(turn(t).status()).isEqualTo("blocked");
+        assertThat(turn(t).reason()).isEqualTo("execution_budget_exhausted");
+        assertThat(reports()).isOne();
+        var saved =
+                new com.financeclaw.infrastructure.state.MyBatisAgentStateStore(
+                                states, resumed.scope())
+                        .getVersioned(
+                                resumed.scope().userId(),
+                                resumed.scope().sessionId(),
+                                "agent_state",
+                                io.agentscope.core.state.AgentState.class);
+        assertThat(saved.isPresent()).isTrue();
+        assertThat(TaskAgentRuntime.classify(saved.value(), saved.version()).status())
+                .as("SDK budget-error fallback must not be persisted as recoverable success")
+                .isNotEqualTo("completed");
+    }
+
+    @Test
+    void exactlyUsedPersistentModelBudgetStillAllowsAValidAnswerAfterResume() throws Exception {
+        releases.publish(
+                new ReleaseDefinition(
+                        "exact-budget",
+                        "finance_agent",
+                        ReleaseDefinition.SCOPES,
+                        ReleaseDefinition.OFFLINE,
+                        null,
+                        2,
+                        2,
+                        BusinessConfigurationLoader.defaults()));
+        var t = submit("report");
+        var first = claim();
+        run(first);
+        var interaction = question(t);
+        assertThat(db.getTurnPolicy(t.turnId()).modelCalls()).isEqualTo(1);
+        answer(t, interaction, approve(interaction));
+        var resumed = claim();
+        assertThat(resumed.command().attemptId()).isNotEqualTo(first.command().attemptId());
+        run(resumed);
+        assertThat(db.getTurnPolicy(t.turnId()).modelCalls()).isEqualTo(2);
+        assertThat(turn(t).status()).isEqualTo("completed");
+        assertThat(turn(t).result()).isEqualTo("done");
         assertThat(reports()).isOne();
     }
 

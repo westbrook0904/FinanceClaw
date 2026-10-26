@@ -1245,6 +1245,53 @@ class TaskAgentRuntimeContextTest {
         verify(policy, never()).consume(any(), anyBoolean());
     }
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource({
+        "false,false",
+        "true,false",
+        "false,true",
+        "true,true"
+    })
+    void nativeSummaryCannotTurnSynchronousOrAsyncGovernanceDenialIntoSavedSuccess(
+            boolean asynchronous, boolean fenced) {
+        when(releases.require("release"))
+                .thenReturn(
+                        new ReleaseDefinition(
+                                "single-round",
+                                "finance_agent",
+                                List.of(),
+                                ReleaseDefinition.OFFLINE,
+                                null,
+                                1,
+                                2,
+                                new BusinessFeatures(List.of(), "", "{}", null)));
+        registerProbe(input -> "bounded result");
+        RuntimeException denied = fenced ? new Fenced() : new Blocked("context_budget_exceeded");
+        var execution =
+                runtime(
+                        (c, round, messages) -> {
+                            if (round == 0)
+                                return toolCall("probe", "context_probe", Map.of("query", "probe"));
+                            throw denied;
+                        },
+                        asynchronous);
+
+        assertThatThrownBy(() -> execution.execute(claim)).isSameAs(denied);
+        assertThat(modelRequests).hasSize(2);
+        assertThat(snapshots.values())
+                .allSatisfy(
+                        row ->
+                                assertThat(row.payload())
+                                        .doesNotContain(
+                                                "Maximum iterations", "Error generating summary"));
+        assertThat(work.values())
+                .allSatisfy(
+                        saved ->
+                                assertThat(saved.row().payload())
+                                        .doesNotContain(
+                                                "Maximum iterations", "Error generating summary"));
+    }
+
     @Test
     void currentInputAndLongMemoryHaveSeparateAdmissionLimits() {
         var oversized = claim("large", "attempt-large", null, "x".repeat(1025));
@@ -1317,9 +1364,31 @@ class TaskAgentRuntimeContextTest {
                 .hasSize(1);
         assertThat(systemText(request)).contains(frozen);
         assertThat(serialized(request)).contains("ask-city", "宁波", "original request");
-        assertThat(work.get("waiting").row().transcript())
-                .contains("ask-city", "宁波", "original request", "resumed answer")
-                .doesNotContain(frozen);
+        var scope = resumed.scope();
+        var sdk =
+                snapshots.get(
+                        new StateKey(
+                                scope.namespace(),
+                                scope.userId(),
+                                scope.sessionId(),
+                                "agent_state"));
+        assertThat(sdk).isNotNull();
+        for (String persisted :
+                List.of(
+                        sdk.payload(),
+                        work.get("waiting").row().payload(),
+                        work.get("waiting").row().transcript())) {
+            assertThat(persisted)
+                    .contains("ask-city", "宁波", "original request", "resumed answer")
+                    .doesNotContain(frozen);
+            assertThat(
+                            WorkingContextSession.decode(persisted).stream()
+                                    .flatMap(message -> message.getContent().stream())
+                                    .filter(ToolResultBlock.class::isInstance)
+                                    .map(ToolResultBlock.class::cast)
+                                    .filter(tool -> tool.getId().equals("ask-city")))
+                    .hasSize(1);
+        }
         assertThat(work.get("waiting").claim().command().attemptId()).isEqualTo("attempt-resume");
         verify(states, times(1)).getLatestCompletedWorkContext(first, 1);
         verify(states, never()).getLatestCompletedWorkContext(resumed, 1);
@@ -1407,6 +1476,10 @@ class TaskAgentRuntimeContextTest {
     }
 
     private TaskAgentRuntime runtime(Script script) {
+        return runtime(script, false);
+    }
+
+    private TaskAgentRuntime runtime(Script script, boolean asynchronous) {
         return new TaskAgentRuntime(
                 policy,
                 leases,
@@ -1431,12 +1504,19 @@ class TaskAgentRuntimeContextTest {
                         modelRequests.add(
                                 new Request(current, List.copyOf(messages), List.copyOf(tools)));
                         int round = rounds.getAndIncrement();
-                        return Flux.just(
-                                ChatResponse.builder()
-                                        // 固定Driver和部分模型可在同一Turn的不同调用间复用ID。
-                                        .id("provider-reused-response-id")
-                                        .content(List.of(script.answer(current, round, messages)))
-                                        .build());
+                        Supplier<Flux<ChatResponse>> response =
+                                () ->
+                                        Flux.just(
+                                                ChatResponse.builder()
+                                                        // 固定Driver和部分模型可在同一Turn的不同调用间复用ID。
+                                                        .id("provider-reused-response-id")
+                                                        .content(
+                                                                List.of(
+                                                                        script.answer(
+                                                                                current, round,
+                                                                                messages)))
+                                                        .build());
+                        return asynchronous ? Flux.defer(response) : response.get();
                     }
                 };
             }

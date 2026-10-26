@@ -192,6 +192,18 @@ final class JdbcExecutionCounter {
 
     /** 使用精确的语句形状区分类别，不能把 child JOIN 中出现的其他表再次计算成单表读取。 */
     private static String family(String sql) {
+        String agentOwner =
+                "select tenant,subject from control_plane.agents where id=? and not archived";
+        if (sql.equals(agentOwner + " for share")) return "agent_owner_lock";
+        if (sql.equals(agentOwner)) return "agent_owner_read";
+        String resourceGrant =
+                "select resource_kind,resource_id,resource_tenant,resource_subject, "
+                        + "grantee_tenant,grantee_subject,release_hash,binding_hash,revision,enabled "
+                        + "from control_plane.resource_grants "
+                        + "where resource_kind=? and resource_id=? "
+                        + "and grantee_tenant=? and grantee_subject=?";
+        if (sql.equals(resourceGrant + " for share")) return "resource_grant_lock";
+        if (sql.equals(resourceGrant)) return "resource_grant_read";
         // P3a.20：先锁原始租约再计算 live。与心跳 DML 分开，只识别完整固定形状。
         String lockedCommandStart =
                 "with locked_command as materialized (select "

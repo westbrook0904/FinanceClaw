@@ -31,7 +31,7 @@ class SchemaInitializationIT {
         // 增量迁移必须给已存在的应用角色授予新表权限，不能依赖旧 GRANT ON ALL TABLES。
         sql.execute("CREATE ROLE financeclaw_app");
         initialization = Flyway.configure().dataSource(source).load();
-        assertThat(initialization.migrate().migrationsExecuted).isEqualTo(10);
+        assertThat(initialization.migrate().migrationsExecuted).isEqualTo(15);
         initialRows = new LinkedHashMap<>();
         for (String table : tables()) {
             initialRows.put(table, sql.queryForObject("SELECT count(*) FROM " + table, Long.class));
@@ -58,12 +58,18 @@ class SchemaInitializationIT {
                         "business.child_invocations",
                         "business.commands",
                         "business.conversations",
+                        "business.dispatch_agent_limits",
+                        "business.dispatch_metadata",
+                        "business.dispatch_policies",
+                        "business.dispatch_tenant_limits",
                         "business.events",
                         "business.grant_changes",
                         "business.grants",
                         "business.interactions",
                         "business.journal",
                         "business.reports",
+                        "business.runtime_artifacts",
+                        "business.runtime_workers",
                         "business.turn_policies",
                         "business.turns",
                         "channel.bindings",
@@ -75,6 +81,11 @@ class SchemaInitializationIT {
                         "control_plane.deployment_changes",
                         "control_plane.deployments",
                         "control_plane.release_manifests",
+                        "control_plane.resource_grant_audit",
+                        "control_plane.resource_grants",
+                        "control_plane.trigger_firings",
+                        "control_plane.trigger_rule_revisions",
+                        "control_plane.trigger_rules",
                         "memory.audit",
                         "memory.embedding_profiles",
                         "memory.facts",
@@ -88,15 +99,15 @@ class SchemaInitializationIT {
                         "memory.sources",
                         "memory.turn_snapshots",
                         "memory.user_profiles");
-        assertThat(initialization.info().applied()).hasSize(10);
-        assertThat(initialization.info().current().getVersion().toString()).isEqualTo("10");
+        assertThat(initialization.info().applied()).hasSize(15);
+        assertThat(initialization.info().current().getVersion().toString()).isEqualTo("15");
         assertThat(initialization.validateWithResult().validationSuccessful).isTrue();
         assertThat(initialization.migrate().migrationsExecuted).isZero();
     }
 
     @Test
     void startsWithoutUserDataAndLeavesTheIndependentLedgerOutsideTheBusinessDatabase() {
-        assertThat(initialRows).hasSize(41);
+        assertThat(initialRows).hasSize(52);
         initialRows.forEach(
                 (table, count) ->
                         assertThat(count)
@@ -166,7 +177,8 @@ class SchemaInitializationIT {
                         "model_calls",
                         "tool_calls",
                         "target_agent_id",
-                        "target_release_hash");
+                        "target_release_hash",
+                        "leaf_profile");
         sql.update(
                 "INSERT INTO business.conversations(id,tenant,subject)"
                         + " VALUES('child-conversation','tenant','owner')");

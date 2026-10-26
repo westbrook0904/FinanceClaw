@@ -2,7 +2,7 @@
 
 本文是 FinanceClaw Java 的实施方案与阶段状态记录。面向四类使用方式：通用对话、定制 RAG Workflow、通过提示词与工具等配置组装 Agent，以及直接调用一个独立 Agent。本文中的目标模型不代表当前已经实现的能力。
 
-截至 2026-10-26，P1、P2a、P2b 和 P3a.1–P3a.19 的分阶段实现已交付。前置 `7b46102` 已在 `origin/codex/java-agentscope`，完整远程 CI 通过 **1,916 Java、46 脚本、44 Compose 检查**；对应记录见第 29 节。P3a.20 已按[恢复、Outbox 与心跳并发资源方案](concurrent-recovery-resources.md)完成整批开发和集中修复，本地完整验收通过 1,983 Java、46 脚本、44 Compose；本段保留提交前状态。P3a 整体、P3b 和 P4 尚未完成；固定深度子执行器不等于完整权限、跨 owner 或递归委派。
+截至 2026-10-26，P1、P2a、P2b 和 P3a.1–P3a.20 的分阶段实现已交付。`76b8818` 已在 `origin/codex/java-agentscope`，[GitHub Actions 40275671782](https://github.com/westbrook0904/FinanceClaw/actions/runs/40275671782) 的 verify 和 delivery 均 completed/success，覆盖 **1,983 Java、46 脚本、44 Compose 检查**。P3a.20 的[原本地验收](concurrent-recovery-resources.md)继续保留提交前范围。P3a 整体与 P4 的[非 RAG 遗留项集中实施](non-rag-completion-plan.md)开发已完成，提交前 1,401 单元/契约/架构与 46 脚本通过；完整数据库/Compose 验收以本提交 Actions 为准，本地 Docker 阻塞见集中实施记录。历史 CI 不覆盖本批代码。P3b RAG 按用户要求暂缓。固定深度子执行器不等于完整权限或递归委派。
 
 ## 1. 实施前基线与改造目标
 
@@ -225,7 +225,7 @@ P2b 验收：Tool/Skill 白名单与 scope 交集实际控制装配；Schema/内
 
 ### P3：独立 Agent 调用与定制 RAG Workflow
 
-状态：**P3a.1–P3a.4 已推送并通过远程 CI；P3a.5 已推送 `a4a6ef4`，远程 1,716 Java／46 脚本／44 部署通过；P3a.6 已推送 `13f73a7`，远程 1,743 Java／46 脚本／44 部署通过；P3a 整体与 P3b 尚未完成**。P3a.1 为固定市场研究子 Agent 加入持久身份、累计额度、结果原子性和父门禁；P3a.2 补齐执行正文的遗忘清理及恢复残留检测；P3a.3 提供同 owner、冻结发布、仅显式输入的空工具叶子委派。见[固定研究子调用](child-invocations.md)、[执行数据隐私清理](execution-privacy.md)、[叶子委派](private-agent-delegation.md)及第 11–25 节。P3a 与 P3b 分别验收。
+状态：P3a.1–P3a.20 已交付，历史结果在下方各阶段独立保留。本批已完成受控通用叶子、共享与凭据授权、Agent HTTP 管理和多主体认证开发，提交前单元验证通过，完整集成结果见本提交 Actions 及[非 RAG 集中实施](non-rag-completion-plan.md)。子调用深度保持一层；递归和多成员 Team 仍为可选后续扩展。P3b RAG 按用户要求暂缓，分别验收。
 
 - P3a：建立统一调用入口及父子调用记录，支持直接调用已发布 Agent、受限同步子调用、父子预算与权限收敛；逐步将现有研究子 Agent 适配到同一契约。
 - P3b：建立知识库、摄取作业、索引发布和 RetrieverProfile；先实现固定 RAG Workflow，再决定是否需要通用流程 DSL。摄取/embedding 属于后台工作，知识查询属于受治理的执行步骤。
@@ -236,7 +236,7 @@ P2b 验收：Tool/Skill 白名单与 scope 交集实际控制装配；Schema/内
 
 ### P4：Scheduler 完善与按需服务化
 
-状态：**待实施**。先在当前进程内完成可靠调度，再根据容量与隔离需求拆分。
+状态：Cron/Webhook、持久幂等回执、公平派发与配额、worker 协议路由及持久事件跨实例唤醒已完成开发，提交前单元验证通过，完整集成与部署结果以本提交 Actions 为准。详见[触发与调度](trigger-scheduling.md)和[运行协调](runtime-coordination.md)。物理拆分根据容量与隔离证据决定，不是本批默认部署动作。
 
 触发调度维护规则与触发实例：Cron 时区、`scheduledAt`、幂等触发键、错过触发策略、重叠策略、启停版本和投递记录。每次触发调用统一受理边界。执行调度扩展持久队列的公平性、优先级、租户/Agent 配额、worker 能力和运行路由；继续使用租约与 fence。
 
@@ -276,10 +276,10 @@ P2b 验收：Tool/Skill 白名单与 scope 交集实际控制装配；Schema/内
 | P3a.14 通知候选结果瘦身 | 已推送 `e115834`，远程 CI 通过 | 候选 8→2 列、getter 正文 152,264→0 字节；SQL 85→85；1,320 单元 + 173 选定集成同次通过；[证据](evidence/p3a14-implementation.json) | [范围](notice-candidate-results.md)；锁内正文与独立 Turn 读取保留，不是网络/吞吐测试 |
 | P3a.15 等待通知交互查询 | 已推送 `36459c4`，已纳入后续完整远程 CI | 映射 34→15 行、旧回答逻辑字节 86,412→0；SQL 34→34；1,320 单元 + 177 选定集成同次通过；[证据](evidence/p3a15-implementation.json) | [范围](waiting-notice-queries.md)；通用历史、原生审批恢复、过期与投影事务保持 |
 | P3a.16–P3a.19 查询与恢复扫描 | 已随最新 `7b46102` 通过完整远程 CI | 最新 1,916 Java／46 脚本／44 Compose；各阶段原本地数字见第 26–29 节 | 新一轮并发资源改造单独记录 |
-| P3a.20 恢复、Outbox 与心跳并发资源 | 提交前本地全量验收通过 | 1,346 单元 + 637 集成 = 1,983 Java、46 脚本、44 Compose；[证据](evidence/p3a20-implementation.json) | [范围与配置](concurrent-recovery-resources.md)；不以旧提交远程 CI 代替本轮验收 |
-| P3a 独立 Agent 与子调用 | 部分实现，整体未完成 | P3a.1 固定研究，P3a.2 执行隐私，P3a.3 受限叶子委派已交付，P3a.4 完整入口与取消传播修复已交付，P3a.5 暂停恢复已交付，P3a.6 固定行情叶子已交付 | 完整权限私有 Agent、共享授权和完整调用模型 |
-| P3b 定制 RAG Workflow | 待实施 | 仅有现有记忆与固定 Workflow 基础 | 知识模型、索引发布、端到端引用验收 |
-| P4 Scheduler 与服务化 | 待实施 | 现有 TaskWorker/lease/fence | 触发模型、调度扩展与拆分前置设施 |
+| P3a.20 恢复、Outbox 与心跳并发资源 | 已推送 `76b8818`，对应远程 CI 成功 | 1,346 单元 + 637 集成 = 1,983 Java、46 脚本、44 Compose；[原本地证据](evidence/p3a20-implementation.json) | [范围与配置](concurrent-recovery-resources.md)；后续非 RAG 集中实施单独验收 |
+| P3a 独立 Agent 与子调用 | 本批开发完成，本地单元通过 | 受控叶子、ASK 恢复、共享/凭据授权及管理认证已接入；历史交付独立保留 | 完整 PostgreSQL/Compose 验收以本提交 Actions 为准；递归与 Team 为后续可选 |
+| P3b 定制 RAG Workflow | 按用户要求暂缓 | 仅有现有记忆与固定 Workflow 基础 | 知识模型、索引发布、端到端引用验收 |
+| P4 Scheduler 与服务化 | 本批开发完成，本地单元通过 | 触发、派发配额/公平性、worker 路由、通知及观测已接入 | 完整 PostgreSQL/Compose 验收以本提交 Actions 为准；物理拆分按容量与隔离证据决定 |
 
 P1 已于 2026-10-23 提交并推送到 `origin/codex/java-agentscope`：[2a811e7](https://github.com/westbrook0904/FinanceClaw/commit/2a811e7026bdf436cb916e820b15457ac6877282)。推送后核对远端 SHA 一致；此记录不代表远程 CI 成功。下方 P1 证据保留验证发生时的工作区状态。
 
@@ -312,7 +312,7 @@ Compose 的 32 项检查包含容器内发布命令、受限角色、强制退�
 | 发布运维入口 | [ReleaseAdministrationApplication](../../src/main/java/com/financeclawrelease/ReleaseAdministrationApplication.java)、[容器入口](../../ops/container-entrypoint.sh) | [CLI 集成测试](../../src/test/java/com/financeclawrelease/ReleaseAdministrationCliIT.java)：真实打包进程、CAS/回滚、坏候选下查询、禁用自动迁移与错误脱敏 |
 | 暂停任务恢复与角色权限 | [角色装配](../../src/main/java/com/financeclaw/bootstrap/RoleConfiguration.java)、[角色授权](../../src/main/resources/deployment/grants.sql) | [ZiweiRecoveryIT](../../src/test/java/com/financeclaw/m6/ZiweiRecoveryIT.java)：配置变化后原版本继续；[RoleAssemblyIT](../../src/test/java/com/financeclaw/m5/RoleAssemblyIT.java)：Memory Worker 拒绝控制面权限 |
 
-P1、P2a、P2b、P3a.1 和 P3a.2 已推送。工程继续保持单业务 JVM；当前实现受限私有叶子委派，用户自助管理、完整权限子调用、RAG 知识库与触发 Scheduler 继续按后续阶段推进。
+以下第 9 节起保留各阶段发生时的范围与验证记录；当前范围以文首、第 7 节及[非 RAG 集中实施](non-rag-completion-plan.md)为准，不用历史限制替代本批状态。
 
 
 ## 9. P2a 实现与验收记录

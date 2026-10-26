@@ -32,4 +32,19 @@ public interface ChildInvocationGateway {
     boolean hasSteps(String root, String namespace);
 
     List<String> snapshots(String root, String namespace);
+
+    default int insertPrivateReadOnlyIfAbsent(
+            String root,
+            String call,
+            String hash,
+            String targetAgent,
+            String targetRelease,
+            List<String> scopes,
+            String profile) {
+        throw new UnsupportedOperationException("Read-only leaf storage unavailable");
+    }
+
+    default int reservePrivateReadOnlyTool(String root, String call, String hash, int limit) {
+        throw new UnsupportedOperationException("Read-only leaf storage unavailable");
+    }
 }

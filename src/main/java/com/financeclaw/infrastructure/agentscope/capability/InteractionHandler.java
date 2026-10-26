@@ -9,6 +9,10 @@ import io.agentscope.core.message.ToolUseBlock;
 public interface InteractionHandler {
     Pending pending(ToolUseBlock call);
 
+    default java.util.List<Pending> pendingAll(ToolUseBlock call) {
+        return java.util.List.of(pending(call));
+    }
+
     default boolean approval() {
         return false;
     }

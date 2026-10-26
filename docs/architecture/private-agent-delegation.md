@@ -2,7 +2,7 @@
 
 **状态：2026-10-24 已推送 `d433423`，远程 CI 成功。** 本模块让父 Agent 同步调用同 owner 的已发布叶子 Agent，最大深度为一。没有新增子队列、租约、心跳或调度生命周期；提交前的[本地验收证据](evidence/p3a3-implementation.json)与后续远程结果分别记录。
 
-本文描述仍保留的 `agent-leaf/1` 空工具契约。固定行情扩展使用独立 v2 契约，见[P3a.6 固定行情叶子](private-agent-market-leaf.md)。
+本文保留 P3a.3 交付时的 `agent-leaf/1` 空工具契约、配置与验证边界。固定行情扩展使用独立 v2 契约，见[P3a.6 固定行情叶子](private-agent-market-leaf.md)。本批只读/受控工具、共享授权和审批桥接扩展见[非 RAG 集中实施](non-rag-completion-plan.md)，完成集中验证前不记为已交付。
 
 ## 配置目标与父 Agent
 

@@ -70,6 +70,8 @@ class ArtifactServiceTest {
         when(gateway.turn("turn")).thenReturn(turn);
         when(gateway.lockGrant("conversation"))
                 .thenReturn(new Grant("conversation", 1, "[\"artifact:read\",\"ziwei:read\"]"));
+        when(releases.resolve("release"))
+                .thenReturn(resolvedRelease(List.of("artifact:read", "ziwei:read")));
         when(leases.fenced(eq(claim), any()))
                 .thenAnswer(invocation -> ((Supplier<?>) invocation.getArgument(1)).get());
     }
@@ -84,7 +86,8 @@ class ArtifactServiceTest {
         order.verify(gateway).turn("turn");
         order.verify(policy).checkArtifactPrivacy(turn);
         order.verify(gateway).lockGrant("conversation");
-        order.verify(releases).require("release");
+        order.verify(gateway).turn("turn");
+        order.verify(releases).resolve("release");
         order.verify(transactions).commit(any());
     }
 
@@ -120,9 +123,15 @@ class ArtifactServiceTest {
         when(gateway.artifactAccess("artifact"))
                 .thenReturn(new ArtifactGateway.Access("artifact:read", false));
         service.read(owner, "artifact", 0, 1);
-        verify(gateway, never()).turn(any());
         verifyNoInteractions(policy);
-        verify(gateway).lockGrant("conversation");
+        var order = inOrder(gateway, releases);
+        order.verify(gateway).artifact("artifact");
+        order.verify(gateway).artifactAccess("artifact");
+        order.verify(gateway).lockGrant("conversation");
+        // Source Turn supplies the Agent identity; it does not acquire an owner privacy lock.
+        order.verify(gateway).turn("turn");
+        order.verify(releases).resolve("release");
+        order.verifyNoMoreInteractions();
     }
 
     @Test
@@ -143,8 +152,9 @@ class ArtifactServiceTest {
         verifyNoInteractions(releases);
     }
 
-    @Test
-    void unavailablePinnedReleaseKeepsConflictAndPrecedesPayloadValidation() {
+    @ParameterizedTest
+    @ValueSource(strings = {"release_disabled", "release_unavailable"})
+    void unavailablePinnedReleaseKeepsConflictAndPrecedesPayloadValidation(String reason) {
         var original = artifact("tenant", "subject");
         when(gateway.artifact("artifact"))
                 .thenReturn(
@@ -158,8 +168,24 @@ class ArtifactServiceTest {
                                 "corrupt",
                                 "{",
                                 1));
-        when(releases.require("release")).thenThrow(new Blocked("release_disabled"));
-        problem(() -> service.read(owner, "artifact", -1, 0, null), 409, "release_disabled");
+        when(releases.resolve("release")).thenThrow(new Blocked(reason));
+        problem(() -> service.read(owner, "artifact", -1, 0, null), 409, reason);
+        verify(transactions).rollback(any());
+    }
+
+    @Test
+    void sourceReleaseIdentityMismatchPrecedesPayloadValidation() {
+        var resolved = resolvedRelease(List.of("artifact:read", "ziwei:read"));
+        when(releases.resolve("release"))
+                .thenReturn(
+                        new ResolvedAgentRelease(
+                                "finance_agent",
+                                "prompt",
+                                resolved.definition(),
+                                "other-tenant",
+                                owner.subject()));
+        problem(() -> service.read(owner, "artifact", -1, 0, null), 409, "agent_identity_mismatch");
+        verify(transactions).rollback(any());
     }
 
     @Test
@@ -303,7 +329,7 @@ class ArtifactServiceTest {
         verifyNoInteractions(releases);
         when(gateway.lockGrant("conversation"))
                 .thenReturn(new Grant("conversation", 2, "[\"artifact:read\",\"ziwei:read\"]"));
-        when(releases.require("release")).thenThrow(new Blocked("release_disabled"));
+        when(releases.resolve("release")).thenThrow(new Blocked("release_disabled"));
         problem(() -> fileRead(operation), 409, "release_disabled");
     }
 
@@ -328,7 +354,7 @@ class ArtifactServiceTest {
                 .thenReturn(new Grant("conversation", 1, "[\"skill:use\"]"));
         fileRead(operation);
         verify(policy).checkArtifactPrivacy(turn);
-        verify(releases).require("release");
+        verify(releases).resolve("release");
 
         when(gateway.artifactAccess("artifact"))
                 .thenReturn(new ArtifactGateway.Access("skill:use", false));
@@ -342,7 +368,9 @@ class ArtifactServiceTest {
                         () -> service.readRangeForExecution(claim, List.of(), "artifact", 0, 512))
                 .isInstanceOf(Blocked.class)
                 .hasMessage("artifact_scope_denied");
-        verify(releases, never()).require(any());
+        // Only the executing plan is resolved; denied scope stops before source-release access.
+        verify(releases).resolve("release");
+        verifyNoMoreInteractions(releases);
         // 既有 HTTP/owner 读取保持原来的来源会话授权语义。
         assertThat(service.readRange(owner, "artifact", 0, 512).text()).isEqualTo("[1,2]");
     }
@@ -357,7 +385,8 @@ class ArtifactServiceTest {
         var effective = missing.equals("narrow") ? List.<String>of() : full;
         assertThatThrownBy(() -> service.readForExecution(claim, effective, "artifact", 0, 1, ""))
                 .hasMessage("artifact_scope_denied");
-        verify(releases, never()).require(any());
+        verify(releases).resolve("release");
+        verifyNoMoreInteractions(releases);
     }
 
     @Test
@@ -409,7 +438,9 @@ class ArtifactServiceTest {
         }
         order.verify(policy).checkPolicy(claim);
         order.verify(releases).resolve("release");
-        order.verify(releases).require("release");
+        order.verify(gateway).turn("turn");
+        order.verify(releases).resolve("release");
+        order.verifyNoMoreInteractions();
         verify(leases).fenced(eq(claim), any());
     }
 
@@ -432,6 +463,18 @@ class ArtifactServiceTest {
     }
 
     private void executionScopes(List<String> fixed, List<String> current) {
+        when(releases.resolve("release")).thenReturn(resolvedRelease(fixed));
+        when(policy.checkPolicy(claim))
+                .thenReturn(
+                        new Policy(
+                                "turn",
+                                1,
+                                com.financeclaw.support.PayloadJson.canonical(current),
+                                0,
+                                0));
+    }
+
+    private ResolvedAgentRelease resolvedRelease(List<String> fixed) {
         var definition =
                 new ReleaseDefinition(
                         "v1",
@@ -442,18 +485,7 @@ class ArtifactServiceTest {
                         12,
                         32,
                         new BusinessFeatures(List.of(), "skills", "{}", null));
-        when(releases.resolve("release"))
-                .thenReturn(
-                        new ResolvedAgentRelease(
-                                "finance_agent", "prompt", definition, null, null));
-        when(policy.checkPolicy(claim))
-                .thenReturn(
-                        new Policy(
-                                "turn",
-                                1,
-                                com.financeclaw.support.PayloadJson.canonical(current),
-                                0,
-                                0));
+        return new ResolvedAgentRelease("finance_agent", "prompt", definition, null, null);
     }
 
     private void fileRead(String operation) {

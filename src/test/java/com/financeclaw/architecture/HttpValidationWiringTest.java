@@ -425,6 +425,41 @@ class HttpValidationWiringTest {
                 .build();
     }
 
+    @Test
+    void currentResourceDenialsAreForbiddenWhileOtherExecutionBlocksRemainUnavailable() {
+        runner.run(
+                context -> {
+                    MockMvc http = http(context);
+                    var service = context.getBean(SubmitTaskService.class);
+                    for (String code :
+                            java.util.List.of(
+                                    "agent_access_denied",
+                                    "credential_access_denied",
+                                    "release_unavailable")) {
+                        doThrow(new com.financeclaw.domain.Governance.Blocked(code))
+                                .when(service)
+                                .submit(
+                                        eq(OWNER),
+                                        eq("conversation-1"),
+                                        eq("wiring-key"),
+                                        eq("hello"));
+                        http.perform(submit("{\"message\":\"hello\"}"))
+                                .andExpect(
+                                        status().is(code.equals("release_unavailable") ? 503 : 403))
+                                .andExpect(
+                                        content()
+                                                .json(
+                                                        "{\"error\":\""
+                                                                + (code.equals(
+                                                                                "release_unavailable")
+                                                                        ? "service_unavailable"
+                                                                        : code)
+                                                                + "\"}",
+                                                        JsonCompareMode.STRICT));
+                    }
+                });
+    }
+
     private static MockHttpServletRequestBuilder submit(String body) {
         return post("/v1/conversations/conversation-1/turns")
                 .header("Authorization", "Bearer " + TOKEN)

@@ -234,7 +234,14 @@ class PrivateAgentDelegationIT {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"inherit", "tools", "foreign-subject", "foreign-tenant", "unpublished"})
+    @ValueSource(
+            strings = {
+                "inherit",
+                "nested-agent",
+                "foreign-subject",
+                "foreign-tenant",
+                "unpublished"
+            })
     void nonLeafOrForeignTargetsCannotBecomeParentCapabilities(String failure) {
         Owner owner =
                 switch (failure) {
@@ -248,8 +255,8 @@ class PrivateAgentDelegationIT {
                         ? null
                         : new AgentComposition(
                                 "primary",
-                                failure.equals("tools")
-                                        ? List.of("function:search_catalog")
+                                failure.equals("nested-agent")
+                                        ? List.of("agent:" + leaf(ALICE, List.of()).agentId())
                                         : List.of());
         agents.create(owner, id, "Candidate", "Candidate prompt.", composition);
         if (!failure.equals("unpublished")) agents.publish(owner, id, 1, 0);
@@ -269,16 +276,34 @@ class PrivateAgentDelegationIT {
                 .isZero();
     }
 
+    @Test
+    void genericReadOnlyTargetCanBecomeAParentCapability() {
+        var published = leaf(ALICE, List.of("function:search_catalog"));
+        var target =
+                PrivateAgentTarget.fromRelease(
+                        ALICE, published.releaseHash(), releases.resolve(published.releaseHash()));
+        assertThat(target.profile()).isEqualTo(PrivateAgentTarget.Profile.READ_ONLY);
+        var parent = parent(ALICE, target);
+        var invocation = children.beginPrivate(parent, CALL, INPUT, target).invocation();
+        assertThat(invocation.profile()).isEqualTo(PrivateAgentTarget.Profile.READ_ONLY);
+        assertThat(invocation.toolScopes()).contains("catalog:read");
+        assertThat(childRows(parent)).isOne();
+    }
+
     @ParameterizedTest
-    @ValueSource(strings = {"wrong-owner", "nonleaf"})
+    @ValueSource(strings = {"manifest-identity", "wrong-profile"})
     void restoredInvalidTargetBindingAndResultAreUnsafeEvenBeforeAnySdkStateExists(
             String corruption) {
         var approved = leaf(ALICE, List.of());
         var parent = parent(ALICE, approved);
-        var invalid =
-                corruption.equals("wrong-owner")
+        var published =
+                corruption.equals("manifest-identity")
                         ? leaf(new Owner(ALICE.tenant(), "foreign-target-owner"), List.of())
                         : leaf(ALICE, List.of("function:search_catalog"));
+        var invalid =
+                corruption.equals("manifest-identity")
+                        ? new PrivateAgentTarget(approved.agentId(), published.releaseHash())
+                        : published;
         String callId = "restored-invalid-target:" + corruption;
         String inputHash = "c".repeat(64);
         // Simulate an inconsistent restore using valid foreign keys, without disabling identity
@@ -931,12 +956,12 @@ class PrivateAgentDelegationIT {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"foreign", "empty", "unrelated", "expanded"})
+    @ValueSource(strings = {"manifest-identity", "empty", "unrelated", "expanded"})
     void restoredMarketBindingIsUnsafeWithoutSdkAndRemainsLocatableForErasure(String failure) {
         var approved = leaf(ALICE, List.of());
         var parent = parent(ALICE, approved);
         var owner =
-                failure.equals("foreign")
+                failure.equals("manifest-identity")
                         ? new Owner(ALICE.tenant(), "foreign-market-owner")
                         : ALICE;
         var capabilities =
@@ -947,7 +972,11 @@ class PrivateAgentDelegationIT {
                             List.of("function:market_snapshot", "function:search_catalog");
                     default -> List.of("function:market_snapshot");
                 };
-        var invalid = leaf(owner, capabilities);
+        var published = leaf(owner, capabilities);
+        var invalid =
+                failure.equals("manifest-identity")
+                        ? new PrivateAgentTarget(approved.agentId(), published.releaseHash())
+                        : published;
         String call = "restored-market:" + failure;
         String hash = "d".repeat(64);
         sql.update(

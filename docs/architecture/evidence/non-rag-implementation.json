@@ -1,0 +1,372 @@
+{
+  "schema": "non-rag-implementation/1",
+  "record_boundary": "Pre-push local evidence. Remote PostgreSQL and Compose acceptance belongs to the exact pushed commit Actions run; this file does not predict its result.",
+  "recorded_at_utc": "2026-10-26T14:27:50.180303+00:00",
+  "base_commit": "76b88187e9cb38567eaa4064fe56ef6ff913a0c3",
+  "branch": "codex/java-agentscope",
+  "development_order": "All authorized non-RAG production and acceptance source completed before first formatting, compilation and tests. Failures retained; concentrated repairs followed.",
+  "implemented": [
+    "controlled one-level Agent Function/MCP/Skill invocation and exact root ASK bridge",
+    "trusted multi-owner identity directory, explicit management roles and Agent HTTP management",
+    "exact-release shared Agent and server credential-resource grants with current authorization",
+    "durable Cron/Webhook revisions and idempotent admission receipts",
+    "fair priority/aging dispatch and owner/owner-Agent/tenant/tenant-Agent concurrency limits",
+    "worker registration, protocol/runtime capability routing and conservative runtime TTL",
+    "PostgreSQL LISTEN/NOTIFY durable SSE replay, cursor deduplication and per-delivery authority",
+    "controlled immutable local artifact catalog and bounded call observations/cost estimates",
+    "forward migrations V11-V15; V1-V10 bytes unchanged",
+    "packaged market child and multi-owner long-chain load acceptance fixtures"
+  ],
+  "excluded": [
+    "RAG knowledge ingestion/index/workflows",
+    "unbounded recursive delegation and optional Team",
+    "automatic physical service split",
+    "automatic historical JAR loading/execution",
+    "real provider/Feishu UI acceptance and production capacity certification",
+    "configured remote tracing exporter/backend"
+  ],
+  "local_latest": {
+    "status": "passed_without_docker",
+    "command": [
+      "scripts/mvn.sh",
+      "-B",
+      "-ntp",
+      "-o",
+      "spotless:check",
+      "package"
+    ],
+    "unit_tests": 1401,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "source_inventory_matches": true,
+    "inputs_unchanged": true,
+    "python_suites": [
+      {
+        "name": "test-live-acceptance",
+        "tests": 8,
+        "exit_code": 0,
+        "log_sha256": "983f7b00153a90324feee322a34766342ce69cc3bc31ae231fa5a789fae39278"
+      },
+      {
+        "name": "test-inspect-drain",
+        "tests": 12,
+        "exit_code": 0,
+        "log_sha256": "aecca9b85adae71ee0793245dcbcde41cb492b4c054c0c3217b972b34ec33452"
+      },
+      {
+        "name": "test-restore-privacy",
+        "tests": 16,
+        "exit_code": 0,
+        "log_sha256": "09b558998a28bf4a35517d4f84c4566e96197bcf6574a83f4108864a0a58b59b"
+      },
+      {
+        "name": "test-user-profile",
+        "tests": 10,
+        "exit_code": 0,
+        "log_sha256": "658ee8f6638e043f6c54394b34e4db8d602800e29e7a22d408d54348127930fd"
+      }
+    ],
+    "python_total": 46,
+    "application_jar_sha256": "ec868ac2398a2139c5f5c49305fe15e7946f65bbd2d978dba9a283b89dd24d31",
+    "source_input_file_count": 601,
+    "source_input_manifest_sha256": "77a57cf10e788c25fc32e72117cd1596db280745f0618b8581a09f6ab0ea2fc1",
+    "local_archive": "/tmp/financeclaw-non-rag-local-package-05",
+    "result_sha256": "0c744ed7547e4caa8a5a83900dfd0aefd35b134d2e0c60ca5da3923b7ef823ef"
+  },
+  "failed_full_validation_attempts": [
+    {
+      "attempt_id": "attempt-01",
+      "status": "failed",
+      "started_at_utc": "2026-10-26T13:17:02.389290+00:00",
+      "ended_at_utc": "2026-10-26T13:18:43.742577+00:00",
+      "actual_maven_exit_code": 1,
+      "inputs_unchanged": true,
+      "xml_totals": {
+        "unit": {
+          "tests": 1388,
+          "failures": 7,
+          "errors": 5,
+          "skipped": 0
+        },
+        "integration": {
+          "tests": 0,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        }
+      },
+      "suite_inventory": {
+        "expected_suites": 165,
+        "observed_suites": 98,
+        "matches_current_source_inventory": false,
+        "missing": [
+          "com.financeclaw.agent.AgentCatalogIT",
+          "com.financeclaw.agent.ResourceAuthorizationIT",
+          "com.financeclaw.architecture.RuntimePackagingIT",
+          "com.financeclaw.bootstrap.HeartbeatInitializationIT",
+          "com.financeclaw.m0.ApplicationIT",
+          "com.financeclaw.m0.RecoveryIT",
+          "com.financeclaw.m0.StateAndIsolationIT",
+          "com.financeclaw.m1.CommandLeaseLockIT",
+          "com.financeclaw.m1.ExecutionHeartbeatIT",
+          "com.financeclaw.m1.TaskLifecycleIT",
+          "com.financeclaw.m2.GovernanceBoundariesIT",
+          "com.financeclaw.m2.GovernanceIT",
+          "com.financeclaw.m2.ReportPublicationIT",
+          "com.financeclaw.m3.BusinessIT",
+          "com.financeclaw.m3.NativeSkillsIT",
+          "com.financeclaw.m4.FeishuIT",
+          "com.financeclaw.m4.MemoryIT",
+          "com.financeclaw.m4.ProfileDirectoryRecoveryIT",
+          "com.financeclaw.m4.ServerProfileDirectoryIT",
+          "com.financeclaw.m4.UserProfileIT",
+          "com.financeclaw.m5.AdmissionIT",
+          "com.financeclaw.m5.BacklogIT",
+          "com.financeclaw.m5.ForgetLedgerIT",
+          "com.financeclaw.m5.ForgetRecoveryIT",
+          "com.financeclaw.m5.ForgetRecoveryRepositoryIT",
+          "com.financeclaw.m5.OperationsIT",
+          "com.financeclaw.m5.PrivacyRecoveryCliIT",
+          "com.financeclaw.m5.ProfilePrivacyRepositoryIT",
+          "com.financeclaw.m5.RoleAssemblyIT",
+          "com.financeclaw.m5.SchemaInitializationIT",
+          "com.financeclaw.m5.WorkingContextIT",
+          "com.financeclaw.m6.ZiweiPackagedIT",
+          "com.financeclaw.m6.ZiweiRecoveryIT",
+          "com.financeclaw.m6.ZiweiToolsIT",
+          "com.financeclaw.p1.ConversationReleaseIT",
+          "com.financeclaw.p1.ConversationReleaseMigrationIT",
+          "com.financeclaw.p2.AgentAdmissionIT",
+          "com.financeclaw.p3.ChildInvocationIT",
+          "com.financeclaw.p3.CommandRecoveryBatchIT",
+          "com.financeclaw.p3.CommandRecoveryScanQueryIT",
+          "com.financeclaw.p3.ExecutionBudgetQueryIT",
+          "com.financeclaw.p3.ExecutionPrivacyIT",
+          "com.financeclaw.p3.FeishuDeliveryQueryIT",
+          "com.financeclaw.p3.HeartbeatResourceIsolationIT",
+          "com.financeclaw.p3.InteractionCompletionQueryIT",
+          "com.financeclaw.p3.LongChainWorkloadIT",
+          "com.financeclaw.p3.NoticeCandidateQueryIT",
+          "com.financeclaw.p3.NoticeClaimQueryIT",
+          "com.financeclaw.p3.NoticeRecoveryQueryIT",
+          "com.financeclaw.p3.OutboxIndexMigrationIT",
+          "com.financeclaw.p3.OutboxSkipLockedIT",
+          "com.financeclaw.p3.PrivateAgentDelegationIT",
+          "com.financeclaw.p3.PrivateAgentPackagedIT",
+          "com.financeclaw.p3.PrivateAgentRuntimeIT",
+          "com.financeclaw.p3.ProjectionDiscoveryQueryIT",
+          "com.financeclaw.p3.RecoveryReceiptQueryIT",
+          "com.financeclaw.p3.ReleaseLookupIT",
+          "com.financeclaw.p3.TaskEventNotificationIT",
+          "com.financeclaw.p3.TurnDatabaseBaselineIT",
+          "com.financeclaw.p3.WaitingNoticeQueryIT",
+          "com.financeclaw.p3.WorkerClaimQueryIT",
+          "com.financeclaw.p4.NonRagMigrationIT",
+          "com.financeclaw.p4.TriggerAndDispatchIT",
+          "com.financeclaw.release.ReleaseCatalogIT",
+          "com.financeclaw.runtime.RuntimeCoordinationIT",
+          "com.financeclawagent.AgentAdministrationCliIT",
+          "com.financeclawrelease.ReleaseAdministrationCliIT"
+        ],
+        "unexpected": []
+      },
+      "build_sha256": "14f07270cc3d5f4feac48dc76161b5e3d63affcfc4c33db55d697761b413aaea",
+      "report_summary_sha256": "b78fc8bcfbbbf112c043e8876de2ccad1520fd530f76de588f02b59fadf412cc",
+      "local_archive": "/tmp/financeclaw-non-rag-attempts/attempt-01"
+    },
+    {
+      "attempt_id": "attempt-02",
+      "status": "failed",
+      "started_at_utc": "2026-10-26T13:29:54.143273+00:00",
+      "ended_at_utc": "2026-10-26T13:31:25.878086+00:00",
+      "actual_maven_exit_code": 1,
+      "inputs_unchanged": true,
+      "xml_totals": {
+        "unit": {
+          "tests": 1390,
+          "failures": 2,
+          "errors": 0,
+          "skipped": 0
+        },
+        "integration": {
+          "tests": 0,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        }
+      },
+      "suite_inventory": {
+        "expected_suites": 165,
+        "observed_suites": 98,
+        "matches_current_source_inventory": false,
+        "missing": [
+          "com.financeclaw.agent.AgentCatalogIT",
+          "com.financeclaw.agent.ResourceAuthorizationIT",
+          "com.financeclaw.architecture.RuntimePackagingIT",
+          "com.financeclaw.bootstrap.HeartbeatInitializationIT",
+          "com.financeclaw.m0.ApplicationIT",
+          "com.financeclaw.m0.RecoveryIT",
+          "com.financeclaw.m0.StateAndIsolationIT",
+          "com.financeclaw.m1.CommandLeaseLockIT",
+          "com.financeclaw.m1.ExecutionHeartbeatIT",
+          "com.financeclaw.m1.TaskLifecycleIT",
+          "com.financeclaw.m2.GovernanceBoundariesIT",
+          "com.financeclaw.m2.GovernanceIT",
+          "com.financeclaw.m2.ReportPublicationIT",
+          "com.financeclaw.m3.BusinessIT",
+          "com.financeclaw.m3.NativeSkillsIT",
+          "com.financeclaw.m4.FeishuIT",
+          "com.financeclaw.m4.MemoryIT",
+          "com.financeclaw.m4.ProfileDirectoryRecoveryIT",
+          "com.financeclaw.m4.ServerProfileDirectoryIT",
+          "com.financeclaw.m4.UserProfileIT",
+          "com.financeclaw.m5.AdmissionIT",
+          "com.financeclaw.m5.BacklogIT",
+          "com.financeclaw.m5.ForgetLedgerIT",
+          "com.financeclaw.m5.ForgetRecoveryIT",
+          "com.financeclaw.m5.ForgetRecoveryRepositoryIT",
+          "com.financeclaw.m5.OperationsIT",
+          "com.financeclaw.m5.PrivacyRecoveryCliIT",
+          "com.financeclaw.m5.ProfilePrivacyRepositoryIT",
+          "com.financeclaw.m5.RoleAssemblyIT",
+          "com.financeclaw.m5.SchemaInitializationIT",
+          "com.financeclaw.m5.WorkingContextIT",
+          "com.financeclaw.m6.ZiweiPackagedIT",
+          "com.financeclaw.m6.ZiweiRecoveryIT",
+          "com.financeclaw.m6.ZiweiToolsIT",
+          "com.financeclaw.p1.ConversationReleaseIT",
+          "com.financeclaw.p1.ConversationReleaseMigrationIT",
+          "com.financeclaw.p2.AgentAdmissionIT",
+          "com.financeclaw.p3.ChildInvocationIT",
+          "com.financeclaw.p3.CommandRecoveryBatchIT",
+          "com.financeclaw.p3.CommandRecoveryScanQueryIT",
+          "com.financeclaw.p3.ExecutionBudgetQueryIT",
+          "com.financeclaw.p3.ExecutionPrivacyIT",
+          "com.financeclaw.p3.FeishuDeliveryQueryIT",
+          "com.financeclaw.p3.HeartbeatResourceIsolationIT",
+          "com.financeclaw.p3.InteractionCompletionQueryIT",
+          "com.financeclaw.p3.LongChainWorkloadIT",
+          "com.financeclaw.p3.NoticeCandidateQueryIT",
+          "com.financeclaw.p3.NoticeClaimQueryIT",
+          "com.financeclaw.p3.NoticeRecoveryQueryIT",
+          "com.financeclaw.p3.OutboxIndexMigrationIT",
+          "com.financeclaw.p3.OutboxSkipLockedIT",
+          "com.financeclaw.p3.PrivateAgentDelegationIT",
+          "com.financeclaw.p3.PrivateAgentPackagedIT",
+          "com.financeclaw.p3.PrivateAgentRuntimeIT",
+          "com.financeclaw.p3.ProjectionDiscoveryQueryIT",
+          "com.financeclaw.p3.RecoveryReceiptQueryIT",
+          "com.financeclaw.p3.ReleaseLookupIT",
+          "com.financeclaw.p3.TaskEventNotificationIT",
+          "com.financeclaw.p3.TurnDatabaseBaselineIT",
+          "com.financeclaw.p3.WaitingNoticeQueryIT",
+          "com.financeclaw.p3.WorkerClaimQueryIT",
+          "com.financeclaw.p4.NonRagMigrationIT",
+          "com.financeclaw.p4.TriggerAndDispatchIT",
+          "com.financeclaw.release.ReleaseCatalogIT",
+          "com.financeclaw.runtime.RuntimeCoordinationIT",
+          "com.financeclawagent.AgentAdministrationCliIT",
+          "com.financeclawrelease.ReleaseAdministrationCliIT"
+        ],
+        "unexpected": []
+      },
+      "build_sha256": "611c4a3266af5227c762fe34b73ce2fa1b11cc035fc38327115764549c0bd8be",
+      "report_summary_sha256": "1e216b2b6be373de66cff55e098ba38c9bd9a2cc5a38e84465f754a39ce3db74",
+      "local_archive": "/tmp/financeclaw-non-rag-attempts/attempt-02"
+    },
+    {
+      "attempt_id": "attempt-03",
+      "status": "failed",
+      "started_at_utc": "2026-10-26T13:39:08.863802+00:00",
+      "ended_at_utc": "2026-10-26T14:00:39.175350+00:00",
+      "actual_maven_exit_code": 1,
+      "inputs_unchanged": true,
+      "xml_totals": {
+        "unit": {
+          "tests": 1390,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "integration": {
+          "tests": 679,
+          "failures": 33,
+          "errors": 1,
+          "skipped": 0
+        }
+      },
+      "suite_inventory": {
+        "expected_suites": 165,
+        "observed_suites": 165,
+        "matches_current_source_inventory": true,
+        "missing": [],
+        "unexpected": []
+      },
+      "build_sha256": "3984f1db2aaf563c70c5330dc2646c6cbebb9264a630053e11922d263510eeff",
+      "report_summary_sha256": "d4d73bdcbf4684aca758a8fbc8ce623e8417e2b1aff6816f5c900e110d0d940a",
+      "local_archive": "/tmp/financeclaw-non-rag-attempts/attempt-03"
+    }
+  ],
+  "latest_selected_diagnostic": {
+    "command": [
+      "scripts/mvn.sh",
+      "-B",
+      "-ntp",
+      "-o",
+      "-Dtest=WorkingContextMiddlewareTest,WorkingContextPreparationTest,AgentResultAccessTest,HttpValidationWiringTest,ArtifactServiceTest,ReadOnlyLeafToolsTest,TaskAgentRuntimeContextTest,TaskEventsReplicationTest,TaskEventsTest",
+      "-Dit.test=PrivateAgentRuntimeIT,PrivateAgentDelegationIT,ExecutionBudgetQueryIT,FeishuDeliveryQueryIT,NoticeCandidateQueryIT,NoticeClaimQueryIT,NoticeRecoveryQueryIT,ConversationReleaseIT,GovernanceIT,AgentAdmissionIT,RuntimeCoordinationIT,TaskEventNotificationIT,ResourceAuthorizationIT",
+      "verify"
+    ],
+    "exit_code": 143,
+    "inputs_unchanged": true,
+    "unit_tests_passed": 101,
+    "integration_suites_completed": 0,
+    "block": {
+      "time_utc": "2026-10-26T14:20:48.508550+00:00",
+      "status": "infrastructure_blocked",
+      "scope": "selected diagnostic only",
+      "docker_version_request": "timeout_after_5s",
+      "direct_socket_ping": "timeout_after_5s",
+      "last_stage": "Testcontainers Ryuk starting; no PostgreSQL IT began",
+      "terminated_own_maven_java_pids": [
+        68995,
+        69153
+      ],
+      "docker_restart_performed": false,
+      "unrelated_containers_modified": false
+    },
+    "local_archive": "/tmp/financeclaw-non-rag-focused-04",
+    "command_record_sha256": "c4cfbbbb538d798710bb661823231b18e36043d9077488317827f1f12ccdcfa6"
+  },
+  "local_full_verify_success_for_final_source": false,
+  "local_compose_executed_for_final_source": false,
+  "required_remote_validation": {
+    "workflow": ".github/workflows/ci.yml",
+    "event": "push",
+    "branch": "codex/java-agentscope",
+    "exact_head_sha_required": true,
+    "required_jobs": [
+      "verify",
+      "delivery"
+    ],
+    "verify_scope": "full unit inventory, all PostgreSQL IT, native SDK, executable JAR experiments and source/JAR evidence collection",
+    "delivery_scope": "isolated Compose --ziwei --admission --preflight --restore-privacy",
+    "result": "record separately after push; not asserted here"
+  },
+  "authority_repairs": [
+    "rebuild native ConfirmResult from exact live approval/checkpoint references instead of untyped JSON metadata",
+    "wrap native Skill loader after lazy installation on actual Agent Toolkit copy",
+    "do not permit SDK summary error fallback to save completed checkpoints after actual Blocked/Fenced refusal; root and child attempt latches preserve original reason",
+    "retain valid completion at exactly-used budgets",
+    "keep builtin notification read costs unchanged; count new custom Agent authority SQL separately and reuse immutable release only inside one current authorization call",
+    "map explicit current Agent/credential denial to HTTP403 before new admission"
+  ],
+  "measurement_boundaries": [
+    "SQL baselines count JDBC execute calls, not throughput. Custom Agent current authority adds separate owner/share/release queries. Same-owner fixtures do not establish cross-owner credential cost.",
+    "Long-chain fixtures measure new-row logical JSON UTF8 bytes and input marker copies, not WAL, disk or network bytes. Prior attempt results are not final-source acceptance.",
+    "Live text/tool progress stays on its executing JVM; persistent events replay across standalone instances.",
+    "Observation returned means port return, not durable business commit. Estimated per-call costs are not provider billing."
+  ],
+  "pre_staging_revalidation": "Cached diff inspection found a trailing blank line in new V15; removed it and repeated all 1401 unit tests, 46 script tests, formatting and package against unchanged final inputs. No historical migration modified."
+}

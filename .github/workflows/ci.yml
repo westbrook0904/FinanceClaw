@@ -5,7 +5,8 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    # Includes native child-resume cases, multiple application contexts and an executable-JAR run.
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -37,6 +38,9 @@ jobs:
             target/failsafe-reports/
             target/m*/
             target/p3*/
+            target/p4/
+            target/non-rag/
+            target/runtime/
             target/verification/
       - uses: actions/upload-artifact@v4
         with:

@@ -137,7 +137,13 @@ class ConversationReleaseIT {
     @Test
     void missingHistoricalReleaseBlocksNewWorkWithoutChangingTheBindingOrAdmissionRows() {
         publish("available-current", ReleaseDefinition.SCOPES);
-        String missing = "missing-historical-release";
+        String missing = "e".repeat(64);
+        assertThat(
+                        sql.queryForObject(
+                                "SELECT count(*) FROM control_plane.release_manifests WHERE release_hash=?",
+                                Long.class,
+                                missing))
+                .isZero();
         String conversation = legacyConversation(missing, true);
         var before = admissionRows();
 
@@ -150,7 +156,13 @@ class ConversationReleaseIT {
     @Test
     void unavailableHistoricalReleaseDoesNotPreventAnExistingIdempotentReceipt() {
         publish("replay-current", ReleaseDefinition.SCOPES);
-        String missing = "missing-replay-release";
+        String missing = "f".repeat(64);
+        assertThat(
+                        sql.queryForObject(
+                                "SELECT count(*) FROM control_plane.release_manifests WHERE release_hash=?",
+                                Long.class,
+                                missing))
+                .isZero();
         String conversation = legacyConversation(missing, true);
         String turn = UUID.randomUUID().toString();
         sql.update(

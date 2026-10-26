@@ -1,5 +1,6 @@
 package com.financeclaw.app.market;
 
+import com.financeclaw.app.agent.port.AgentAccessGateway;
 import com.financeclaw.app.execution.ExecutionPolicyService;
 import com.financeclaw.app.market.port.MarketCatalog;
 import com.financeclaw.domain.Governance.Blocked;
@@ -19,6 +20,12 @@ import org.springframework.stereotype.Service;
  */
 @Service
 public class MarketDataService {
+    private AgentAccessGateway agentAccess = AgentAccessGateway.ownedOnly();
+
+    public void configureAgentAccess(AgentAccessGateway access) {
+        this.agentAccess = access;
+    }
+
     private final ExecutionPolicyService policies;
     private final MarketCatalog catalog;
 
@@ -44,9 +51,34 @@ public class MarketDataService {
             throw new Blocked("agent_leaf_required");
         }
         var owner = new Owner(parent.turn().tenant(), parent.turn().subject());
-        PrivateAgentTarget.requireLeaf(owner, frozen, target.profile());
-        frozen.requireIdentity(owner, target.agentId());
+        var resourceOwner =
+                agentAccess
+                        .requireInvocation(owner, target.agentId(), target.releaseHash())
+                        .resourceOwner();
+        PrivateAgentTarget.requireLeaf(resourceOwner, frozen, target.profile());
+        frozen.requireIdentity(resourceOwner, target.agentId());
         consume(parent);
+        return readSnapshot(
+                frozen.definition().business().marketJson(), symbol, target.releaseHash());
+    }
+
+    /** Read after ChildInvocationService has durably reserved both tool budgets. */
+    public Map<String, Object> readFrozenReserved(
+            Claim parent, PrivateAgentTarget target, ResolvedAgentRelease frozen, String symbol) {
+        if (!target.generic() || !target.scopes().contains("market:read"))
+            throw new Blocked("agent_leaf_required");
+        var owner = new Owner(parent.turn().tenant(), parent.turn().subject());
+        var resourceOwner =
+                agentAccess
+                        .requireInvocation(owner, target.agentId(), target.releaseHash())
+                        .resourceOwner();
+        PrivateAgentTarget.requireLeaf(resourceOwner, frozen, target.profile());
+        frozen.requireIdentity(resourceOwner, target.agentId());
+        if (target.profile() == PrivateAgentTarget.Profile.CONTROLLED)
+            PrivateAgentContracts.requireControlled(frozen.plan());
+        else PrivateAgentContracts.requireReadOnly(frozen.plan());
+        policies.checkDispatch(parent);
+        if (!policies.scopes(parent).contains("market:read")) throw new Blocked("market_denied");
         return readSnapshot(
                 frozen.definition().business().marketJson(), symbol, target.releaseHash());
     }

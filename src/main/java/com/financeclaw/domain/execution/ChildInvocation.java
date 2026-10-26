@@ -26,7 +26,49 @@ public record ChildInvocation(
         long epoch,
         long grantRevision,
         String resultHash,
-        String result) {
+        String result,
+        String leafProfile) {
+    public ChildInvocation(
+            String rootTurnId,
+            String callId,
+            String target,
+            String targetAgentId,
+            String targetReleaseHash,
+            String inputHash,
+            List<String> scopes,
+            String status,
+            int modelCalls,
+            int toolCalls,
+            String tenant,
+            String subject,
+            String conversationId,
+            String releaseHash,
+            long epoch,
+            long grantRevision,
+            String resultHash,
+            String result) {
+        this(
+                rootTurnId,
+                callId,
+                target,
+                targetAgentId,
+                targetReleaseHash,
+                inputHash,
+                scopes,
+                status,
+                modelCalls,
+                toolCalls,
+                tenant,
+                subject,
+                conversationId,
+                releaseHash,
+                epoch,
+                grantRevision,
+                resultHash,
+                result,
+                "legacy");
+    }
+
     public ChildInvocation {
         scopes = List.copyOf(scopes);
     }

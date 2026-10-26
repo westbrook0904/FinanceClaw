@@ -83,8 +83,12 @@ public class BusinessCapabilities {
                     // 行情派生的委派结果必须保留 market 权限，不能降格为 artifact-only 文件。
                     target.resultScope(),
                     param -> privateAgents.run(claim, binding, param),
-                    null);
+                    privateAgents.interaction(claim, binding));
         }
+    }
+
+    public PrivateAgentDelegation privateDelegation() {
+        return privateAgents;
     }
 
     public Model portfolioDriver(Claim claim) {

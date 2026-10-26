@@ -1,6 +1,7 @@
 package com.financeclaw.bootstrap;
 
 import com.financeclaw.infrastructure.agent.AgentMapper;
+import com.financeclaw.infrastructure.agent.ResourceAccessMapper;
 import com.financeclaw.infrastructure.channel.FeishuMapper;
 import com.financeclaw.infrastructure.governance.GovernanceMapper;
 import com.financeclaw.infrastructure.memory.MemoryMapper;
@@ -43,6 +44,11 @@ public final class MapperConfiguration {
 
     @Configuration(proxyBeanMethods = false)
     public static class Agents {
+        @Bean
+        MapperFactoryBean<ResourceAccessMapper> resourceAccessMapper(SqlSessionFactory sessions) {
+            return mapper(ResourceAccessMapper.class, sessions);
+        }
+
         @Bean
         MapperFactoryBean<AgentMapper> agentMapper(SqlSessionFactory sessions) {
             return mapper(AgentMapper.class, sessions);

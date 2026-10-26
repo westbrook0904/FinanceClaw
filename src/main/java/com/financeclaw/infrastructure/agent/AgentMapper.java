@@ -28,14 +28,14 @@ public interface AgentMapper {
     @Select(
             """
             SELECT id,tenant,subject,draft_revision FROM control_plane.agents
-            WHERE id=#{id} AND tenant=#{owner.tenant} AND subject=#{owner.subject}
+            WHERE id=#{id} AND tenant=#{owner.tenant} AND subject=#{owner.subject} AND NOT archived
             """)
     AgentDefinition getOwnedAgent(@Param("owner") Owner owner, @Param("id") String id);
 
     @Select(
             """
             SELECT id,tenant,subject,draft_revision FROM control_plane.agents
-            WHERE id=#{id} AND tenant=#{owner.tenant} AND subject=#{owner.subject} FOR UPDATE
+            WHERE id=#{id} AND tenant=#{owner.tenant} AND subject=#{owner.subject} AND NOT archived FOR UPDATE
             """)
     AgentDefinition getOwnedAgentForUpdate(@Param("owner") Owner owner, @Param("id") String id);
 
@@ -44,7 +44,7 @@ public interface AgentMapper {
             SELECT d.agent_id,d.revision,d.display_name,d.system_prompt,d.base_release_hash,
               d.composition::text AS composition_json
             FROM control_plane.agent_draft_revisions d JOIN control_plane.agents a ON a.id=d.agent_id
-            WHERE a.id=#{id} AND a.tenant=#{owner.tenant} AND a.subject=#{owner.subject}
+            WHERE a.id=#{id} AND a.tenant=#{owner.tenant} AND a.subject=#{owner.subject} AND NOT a.archived
               AND d.revision=#{revision}
             """)
     DraftRow getOwnedDraft(
@@ -61,7 +61,7 @@ public interface AgentMapper {
     @Update(
             """
             UPDATE control_plane.agents SET draft_revision=draft_revision+1
-            WHERE id=#{id} AND tenant=#{owner.tenant} AND subject=#{owner.subject}
+            WHERE id=#{id} AND tenant=#{owner.tenant} AND subject=#{owner.subject} AND NOT archived
               AND draft_revision=#{revision}
             """)
     int updateDraftRevision(
@@ -70,7 +70,7 @@ public interface AgentMapper {
     @Select(
             """
             SELECT id,tenant,subject,draft_revision FROM control_plane.agents
-            WHERE tenant=#{owner.tenant} AND subject=#{owner.subject} ORDER BY created_at,id
+            WHERE tenant=#{owner.tenant} AND subject=#{owner.subject} AND NOT archived ORDER BY created_at,id
             """)
     List<AgentDefinition> listOwnedAgents(@Param("owner") Owner owner);
 
@@ -100,7 +100,7 @@ public interface AgentMapper {
               FROM control_plane.agents a
               JOIN control_plane.deployments d ON d.name='agent:' || a.id
               JOIN control_plane.release_manifests m ON m.release_hash=d.release_hash
-              WHERE a.tenant=#{owner.tenant} AND a.subject=#{owner.subject}
+              WHERE a.tenant=#{owner.tenant} AND a.subject=#{owner.subject} AND NOT a.archived
                 AND m.manifest_format='agent-v3'
                 AND m.manifest->>'format'='agent-release/3'
                 AND m.manifest->>'agentId'=a.id
@@ -113,4 +113,31 @@ public interface AgentMapper {
         @Arg(column = "profile", javaType = PrivateAgentTarget.Profile.class)
     })
     List<ResolvedTarget> listPublishedLeafTargetsByOwner(@Param("owner") Owner owner);
+
+    record ReadOnlyLeafRow(String agentId, String releaseHash, String scopes, String profile) {}
+
+    @Select(
+            """
+        SELECT a.id AS agent_id,d.release_hash,m.manifest#>>'{plan,definition,scopes}' AS scopes,
+          CASE WHEN EXISTS(SELECT 1 FROM jsonb_array_elements(CASE
+            WHEN jsonb_typeof(m.manifest#>'{plan,capabilities}')='array' THEN m.manifest#>'{plan,capabilities}' ELSE '[]'::jsonb END) c
+            WHERE c->>'kind'='function' AND c->>'name' IN ('request_city','create_report'))
+          THEN 'CONTROLLED' ELSE 'READ_ONLY' END AS profile
+        FROM control_plane.agents a
+        JOIN control_plane.deployments d ON d.name='agent:' || a.id
+        JOIN control_plane.release_manifests m ON m.release_hash=d.release_hash
+        WHERE a.tenant=#{owner.tenant} AND a.subject=#{owner.subject} AND NOT a.archived
+          AND m.manifest_format='agent-v3' AND m.manifest->>'format'='agent-release/3'
+          AND m.manifest->>'agentId'=a.id AND m.manifest->>'tenant'=a.tenant AND m.manifest->>'subject'=a.subject
+          AND jsonb_typeof(m.manifest#>'{plan,capabilities}')='array'
+          AND m.manifest#>'{plan,capabilities}' <> '[]'::jsonb
+          AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements(
+            CASE WHEN jsonb_typeof(m.manifest#>'{plan,capabilities}')='array'
+              THEN m.manifest#>'{plan,capabilities}' ELSE '[]'::jsonb END) c
+            WHERE NOT (c->>'kind'='skill'
+              OR (c->>'kind'='function' AND c->>'name' IN ('market_snapshot','search_catalog','read_artifact','read_artifact_range','request_city','create_report'))
+              OR c->>'kind'='mcp'))
+        ORDER BY a.created_at,a.id
+        """)
+    List<ReadOnlyLeafRow> listPublishedReadOnlyTargetsByOwner(@Param("owner") Owner owner);
 }

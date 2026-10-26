@@ -177,7 +177,8 @@ class AgentAdmissionIT {
                         null,
                         agent);
         assertThatThrownBy(() -> executionRelease.requireForTurn(forged))
-                .hasMessage("agent_identity_mismatch");
+                // Caller and publisher may differ only with a current exact-release share grant.
+                .hasMessage("agent_access_denied");
         var wrongAgent =
                 new Turn(
                         turn.id(),

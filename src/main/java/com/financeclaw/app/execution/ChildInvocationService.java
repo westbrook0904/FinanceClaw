@@ -1,5 +1,7 @@
 package com.financeclaw.app.execution;
 
+import com.financeclaw.app.agent.port.AgentAccessGateway;
+import com.financeclaw.app.agent.port.CredentialAccessGateway;
 import com.financeclaw.app.execution.port.ChildInvocationGateway;
 import com.financeclaw.app.release.ReleaseService;
 import com.financeclaw.domain.Governance.*;
@@ -25,6 +27,17 @@ import org.springframework.stereotype.Service;
  */
 @Service
 public final class ChildInvocationService {
+    private AgentAccessGateway agentAccess = AgentAccessGateway.ownedOnly();
+    private CredentialAccessGateway credentialAccess = CredentialAccessGateway.trustedFixture();
+
+    public void configureCredentialAccess(CredentialAccessGateway access) {
+        this.credentialAccess = access;
+    }
+
+    public void configureAgentAccess(AgentAccessGateway access) {
+        this.agentAccess = access;
+    }
+
     private static final List<String> REQUIRED = List.of("market:read", "research:run");
     private final ChildInvocationGateway calls;
     private final CapabilityStepService steps;
@@ -54,7 +67,37 @@ public final class ChildInvocationService {
             String targetReleaseHash,
             int maxModelCalls,
             int maxToolCalls,
-            PrivateAgentTarget.Profile profile) {
+            PrivateAgentTarget.Profile profile,
+            List<String> toolScopes) {
+        public Invocation(
+                Claim parent,
+                String callId,
+                String inputHash,
+                String cachedResult,
+                List<String> snapshotResults,
+                String target,
+                String targetAgentId,
+                String targetReleaseHash,
+                int maxModelCalls,
+                int maxToolCalls,
+                PrivateAgentTarget.Profile profile) {
+            this(
+                    parent,
+                    callId,
+                    inputHash,
+                    cachedResult,
+                    snapshotResults,
+                    target,
+                    targetAgentId,
+                    targetReleaseHash,
+                    maxModelCalls,
+                    maxToolCalls,
+                    profile,
+                    profile == PrivateAgentTarget.Profile.MARKET_SNAPSHOT
+                            ? List.of(PrivateAgentTarget.MARKET_SCOPE)
+                            : List.of());
+        }
+
         /** 旧句柄构造保留研究十次工具、v1 私有零工具的既有含义。新 profile 只能由已校验目标派生。 */
         public Invocation(
                 Claim parent,
@@ -100,6 +143,7 @@ public final class ChildInvocationService {
 
         public Invocation {
             snapshotResults = List.copyOf(snapshotResults);
+            toolScopes = List.copyOf(toolScopes);
         }
 
         public String namespace() {
@@ -122,26 +166,55 @@ public final class ChildInvocationService {
         var owner = new Owner(parent.turn().tenant(), parent.turn().subject());
         var binding = PrivateAgentContracts.binding(target);
         var parentRelease = releases.resolve(parent.turn().releaseHash());
-        parentRelease.requireIdentity(owner, parent.turn().agentId());
+        parentRelease.requireIdentity(
+                agentAccess
+                        .requireInvocation(
+                                owner, parent.turn().agentId(), parent.turn().releaseHash())
+                        .resourceOwner(),
+                parent.turn().agentId());
         if (parentRelease.plan() == null
                 || parentRelease.plan().capabilities().stream().noneMatch(binding::equals)) {
             throw new Blocked("agent_delegation_denied");
         }
         var resolved = releases.resolve(target.releaseHash());
-        resolved.requireIdentity(owner, target.agentId());
-        PrivateAgentTarget.requireLeaf(owner, resolved, target.profile());
+        var resourceOwner =
+                agentAccess
+                        .requireInvocation(owner, target.agentId(), target.releaseHash())
+                        .resourceOwner();
+        resolved.requireIdentity(resourceOwner, target.agentId());
+        PrivateAgentTarget.requireLeaf(resourceOwner, resolved, target.profile());
+        if (target.generic()) {
+            if (target.profile() == PrivateAgentTarget.Profile.CONTROLLED)
+                PrivateAgentContracts.requireControlled(resolved.plan());
+            else PrivateAgentContracts.requireReadOnly(resolved.plan());
+            if (!target.scopes().equals(resolved.definition().scopes()))
+                throw new Blocked("agent_plan_invalid");
+        }
+        requireModelCredentials(owner, resolved.definition());
         int limit = Math.min(4, resolved.definition().maxModelCalls());
         int toolLimit = Math.min(target.maxToolCalls(), resolved.definition().maxToolCalls());
         String hash = hash(input);
         return policies.dispatch(
                 parent,
                 policy -> {
-                    requirePrivateScope(parent, policy, target.profile());
+                    requirePrivateScope(parent, policy, target.requiredScopes());
+                    agentAccess.requireInvocation(owner, target.agentId(), target.releaseHash());
                     var saved = calls.get(parent.turn().id(), callId);
                     if (saved == null) {
                         if (calls.hasSteps(parent.turn().id(), "child:" + callId))
                             throw new Blocked("child_invocation_missing");
-                        if (target.profile() == PrivateAgentTarget.Profile.MARKET_SNAPSHOT) {
+                        if (target.generic()) {
+                            calls.insertPrivateReadOnlyIfAbsent(
+                                    parent.turn().id(),
+                                    callId,
+                                    hash,
+                                    target.agentId(),
+                                    target.releaseHash(),
+                                    target.scopes(),
+                                    target.profile() == PrivateAgentTarget.Profile.CONTROLLED
+                                            ? "controlled"
+                                            : "read_only");
+                        } else if (target.profile() == PrivateAgentTarget.Profile.MARKET_SNAPSHOT) {
                             calls.insertPrivateMarketIfAbsent(
                                     parent.turn().id(),
                                     callId,
@@ -170,7 +243,8 @@ public final class ChildInvocationService {
                                     target.releaseHash(),
                                     limit,
                                     toolLimit,
-                                    target.profile());
+                                    target.profile(),
+                                    target.scopes());
                     validateBinding(invocation, saved, policy);
                     return new PrivateInvocation(
                             new Invocation(
@@ -184,7 +258,8 @@ public final class ChildInvocationService {
                                     target.releaseHash(),
                                     limit,
                                     toolLimit,
-                                    target.profile()),
+                                    target.profile(),
+                                    target.scopes()),
                             resolved);
                 });
     }
@@ -370,7 +445,15 @@ public final class ChildInvocationService {
 
     private void validate(Invocation invocation, ChildInvocation saved, Policy policy) {
         if ("private_agent".equals(invocation.target()))
-            requirePrivateScope(invocation.parent(), policy, invocation.profile());
+            requirePrivateScope(
+                    invocation.parent(),
+                    policy,
+                    new PrivateAgentTarget(
+                                    invocation.targetAgentId(),
+                                    invocation.targetReleaseHash(),
+                                    invocation.profile(),
+                                    invocation.toolScopes())
+                            .requiredScopes());
         else requireScopes(invocation.parent(), policy);
         validateBinding(invocation, saved, policy);
     }
@@ -378,6 +461,17 @@ public final class ChildInvocationService {
     /** 已持有父执行门禁且完成一次权限交集检查；begin 不重复解析父发布或查询权限。 */
     private void validateBinding(Invocation invocation, ChildInvocation saved, Policy policy) {
         var turn = invocation.parent().turn();
+        if ("private_agent".equals(invocation.target())) {
+            var caller = new Owner(turn.tenant(), turn.subject());
+            var authorization =
+                    agentAccess.requireInvocation(
+                            caller, invocation.targetAgentId(), invocation.targetReleaseHash());
+            requireModelCredentials(
+                    caller,
+                    authorization.resolvedRelease() == null
+                            ? releases.require(invocation.targetReleaseHash())
+                            : authorization.resolvedRelease().definition());
+        }
         if (saved == null
                 || !saved.rootTurnId().equals(turn.id())
                 || !saved.callId().equals(invocation.callId())
@@ -420,6 +514,18 @@ public final class ChildInvocationService {
                     saved.scopes().isEmpty()
                             && saved.toolCalls() == 0
                             && invocation.maxToolCalls() == 0;
+            case READ_ONLY, CONTROLLED ->
+                    saved.leafProfile()
+                                    .equals(
+                                            invocation.profile()
+                                                            == PrivateAgentTarget.Profile.CONTROLLED
+                                                    ? "controlled"
+                                                    : "read_only")
+                            && saved.scopes().equals(invocation.toolScopes())
+                            && invocation.maxToolCalls() >= 1
+                            && invocation.maxToolCalls() <= 10
+                            && saved.toolCalls() >= 0
+                            && saved.toolCalls() <= invocation.maxToolCalls();
             case MARKET_SNAPSHOT ->
                     saved.scopes().equals(List.of(PrivateAgentTarget.MARKET_SCOPE))
                             && invocation.maxToolCalls() == 1
@@ -434,15 +540,88 @@ public final class ChildInvocationService {
         }
     }
 
-    private void requirePrivateScope(
-            Claim parent, Policy policy, PrivateAgentTarget.Profile profile) {
-        var required =
-                profile == PrivateAgentTarget.Profile.MARKET_SNAPSHOT
-                        ? List.of(PrivateAgentTarget.TOOL_SCOPE, PrivateAgentTarget.MARKET_SCOPE)
-                        : List.of(PrivateAgentTarget.TOOL_SCOPE);
-        if (profile == null || !policies.effectiveScopes(parent, policy).containsAll(required)) {
+    private void requirePrivateScope(Claim parent, Policy policy, List<String> required) {
+        if (!policies.effectiveScopes(parent, policy).containsAll(required))
             throw new Blocked("agent_delegation_denied");
-        }
+    }
+
+    /**
+     * Reserve each real read attempt before network IO. Same tool ID can never change its input.
+     * Completed read receipts replay without new budget; an interrupted read may be retried with
+     * another budget debit because this profile has no external writes.
+     */
+    public String reservePrivateRead(
+            Invocation invocation, String toolId, String toolName, Map<String, Object> input) {
+        requireKey(toolId);
+        if (invocation.profile() != PrivateAgentTarget.Profile.READ_ONLY
+                && invocation.profile() != PrivateAgentTarget.Profile.CONTROLLED)
+            throw new Blocked("child_tools_denied");
+        return policies.dispatch(
+                invocation.parent(),
+                policy -> {
+                    requirePending(invocation, policy);
+                    String inputHash =
+                            hash(List.of(invocation.targetReleaseHash(), toolName, input));
+                    steps.runHashedWithinDispatch(
+                            invocation.parent(),
+                            invocation.namespace(),
+                            "input:" + toolId,
+                            inputHash,
+                            () -> Map.of("bound", true));
+                    var receipt =
+                            steps.find(
+                                    invocation.parent(), invocation.namespace(), "tool:" + toolId);
+                    if (receipt != null) {
+                        if (!inputHash.equals(receipt.inputHash()))
+                            throw new Blocked("step_input_conflict");
+                        return receipt.result();
+                    }
+                    if (calls.reservePrivateReadOnlyTool(
+                                    invocation.parent().turn().id(),
+                                    invocation.callId(),
+                                    invocation.inputHash(),
+                                    invocation.maxToolCalls())
+                            != 1) throw new Blocked("child_tool_budget_exceeded");
+                    policies.consumeTool(invocation.parent(), null);
+                    return null;
+                });
+    }
+
+    public Object completePrivateRead(
+            Invocation invocation,
+            String toolId,
+            String toolName,
+            Map<String, Object> input,
+            Object result) {
+        requireKey(toolId);
+        return policies.dispatch(
+                invocation.parent(),
+                policy -> {
+                    requirePending(invocation, policy);
+                    if (invocation.profile() != PrivateAgentTarget.Profile.READ_ONLY
+                            && invocation.profile() != PrivateAgentTarget.Profile.CONTROLLED)
+                        throw new Blocked("child_tools_denied");
+                    String inputHash =
+                            hash(List.of(invocation.targetReleaseHash(), toolName, input));
+                    var bound =
+                            steps.find(
+                                    invocation.parent(), invocation.namespace(), "input:" + toolId);
+                    if (bound == null || !bound.inputHash().equals(inputHash))
+                        throw new Blocked("step_input_conflict");
+                    return steps.runHashedWithinDispatch(
+                            invocation.parent(),
+                            invocation.namespace(),
+                            "tool:" + toolId,
+                            inputHash,
+                            () -> result);
+                });
+    }
+
+    private void requireModelCredentials(
+            Owner owner, com.financeclaw.domain.release.ReleaseDefinition definition) {
+        if (!definition.primary().name().equals("offline")
+                || definition.fallback() != null && !definition.fallback().name().equals("offline"))
+            credentialAccess.requireModel(owner);
     }
 
     private static void requireMessage(Map<String, Object> input) {

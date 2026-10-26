@@ -39,7 +39,8 @@ public class MyBatisChildInvocationGateway implements ChildInvocationGateway {
                         row.epoch(),
                         row.grantRevision(),
                         row.resultHash(),
-                        row.result());
+                        row.result(),
+                        row.leafProfile());
     }
 
     @Override
@@ -89,5 +90,29 @@ public class MyBatisChildInvocationGateway implements ChildInvocationGateway {
     @Override
     public List<String> snapshots(String root, String namespace) {
         return db.listChildSnapshotResults(root, namespace);
+    }
+
+    @Override
+    public int insertPrivateReadOnlyIfAbsent(
+            String root,
+            String call,
+            String hash,
+            String targetAgent,
+            String targetRelease,
+            List<String> scopes,
+            String profile) {
+        return db.insertPrivateReadOnlyChildInvocationIfAbsent(
+                root,
+                call,
+                hash,
+                targetAgent,
+                targetRelease,
+                PayloadJson.canonical(scopes),
+                profile);
+    }
+
+    @Override
+    public int reservePrivateReadOnlyTool(String root, String call, String hash, int limit) {
+        return db.updatePendingPrivateReadOnlyToolCountWithinLimit(root, call, hash, limit);
     }
 }

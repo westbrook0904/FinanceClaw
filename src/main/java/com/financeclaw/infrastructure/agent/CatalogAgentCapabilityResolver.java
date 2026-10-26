@@ -1,7 +1,9 @@
 package com.financeclaw.infrastructure.agent;
 
+import com.financeclaw.app.agent.port.AgentAccessGateway;
 import com.financeclaw.app.agent.port.AgentCapabilityResolver;
 import com.financeclaw.app.agent.port.AgentRepository;
+import com.financeclaw.app.agent.port.CredentialAccessGateway;
 import com.financeclaw.app.release.ReleaseService;
 import com.financeclaw.app.release.port.Credentials;
 import com.financeclaw.domain.Governance.Blocked;
@@ -13,11 +15,25 @@ import com.financeclaw.infrastructure.agentscope.capability.LocalCapabilityCatal
 import com.financeclaw.infrastructure.agentscope.capability.McpCapabilityDiscovery;
 import com.financeclaw.support.PrivateAgentContracts;
 import java.util.*;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 /** 将受控引用编译为固定执行计划；目录只读本地发布，发布探测只访问选中的 MCP 服务。 */
 @Component
 public final class CatalogAgentCapabilityResolver implements AgentCapabilityResolver {
+    private AgentAccessGateway agentAccess = AgentAccessGateway.ownedOnly();
+    private CredentialAccessGateway credentialAccess = CredentialAccessGateway.trustedFixture();
+
+    @Autowired
+    public void configureCredentialAccess(CredentialAccessGateway access) {
+        this.credentialAccess = access;
+    }
+
+    @Autowired
+    public void configureAgentAccess(AgentAccessGateway access) {
+        this.agentAccess = access;
+    }
+
     private final ReleaseService releases;
     private final McpCapabilityDiscovery discovery;
     private final AgentRepository agents;
@@ -69,6 +85,10 @@ public final class CatalogAgentCapabilityResolver implements AgentCapabilityReso
         LocalCapabilityCatalog.bindings(base).stream()
                 .filter(binding -> selected.contains(binding.id()))
                 .forEach(binding -> bindings.put(binding.id(), binding));
+        for (var remote : base.business().remotes()) {
+            if (selected.stream().anyMatch(id -> id.startsWith("mcp:" + remote.service() + "/")))
+                credentialAccess.requireCredential(owner, remote.credentialRef());
+        }
         discovery
                 .discover(owner, base, selected.stream().toList())
                 .forEach(binding -> bindings.put(binding.id(), binding));
@@ -77,8 +97,17 @@ public final class CatalogAgentCapabilityResolver implements AgentCapabilityReso
             var target = targets.get(id);
             // 不再次读取 current；目录已选定的不可变版本不会因并发发布而被替换。
             var resolved = releases.resolve(target.releaseHash());
-            PrivateAgentTarget.requireLeaf(owner, resolved, target.profile());
-            resolved.requireIdentity(owner, target.agentId());
+            var authorized =
+                    agentAccess.requireInvocation(owner, target.agentId(), target.releaseHash());
+            PrivateAgentTarget.requireLeaf(authorized.resourceOwner(), resolved, target.profile());
+            resolved.requireIdentity(authorized.resourceOwner(), target.agentId());
+            if (target.generic()) {
+                if (target.profile() == PrivateAgentTarget.Profile.CONTROLLED)
+                    PrivateAgentContracts.requireControlled(resolved.plan());
+                else PrivateAgentContracts.requireReadOnly(resolved.plan());
+                if (!target.scopes().equals(resolved.definition().scopes()))
+                    throw new Blocked("agent_plan_invalid");
+            }
             LocalCapabilityCatalog.requireCompatible(resolved.plan());
             bindings.put(id, PrivateAgentContracts.binding(target));
         }
@@ -111,6 +140,11 @@ public final class CatalogAgentCapabilityResolver implements AgentCapabilityReso
             }
         }
         boolean fallback = selection.modelProfile().equals("fallback");
+        if (!(fallback ? base.fallback() : base.primary()).name().equals("offline")
+                || !fallback
+                        && base.fallback() != null
+                        && !base.fallback().name().equals("offline"))
+            credentialAccess.requireModel(owner);
         var definition =
                 new ReleaseDefinition(
                         base.version(),
@@ -141,6 +175,24 @@ public final class CatalogAgentCapabilityResolver implements AgentCapabilityReso
                             candidate.agentId(), candidate.releaseHash(), candidate.profile());
             if (result.putIfAbsent("agent:" + target.agentId(), target) != null) {
                 throw new Blocked("agent_capability_unavailable");
+            }
+        }
+        for (var target : agents.listPublishedReadOnlyTargets(owner)) {
+            result.putIfAbsent("agent:" + target.agentId(), target);
+        }
+        for (var shared : agentAccess.listSharedTargets(owner)) {
+            var resolved = releases.resolve(shared.releaseHash());
+            try {
+                var target =
+                        PrivateAgentTarget.fromRelease(
+                                shared.resourceOwner(), shared.releaseHash(), resolved);
+                if (target.profile() == PrivateAgentTarget.Profile.CONTROLLED)
+                    PrivateAgentContracts.requireControlled(resolved.plan());
+                else if (target.profile() == PrivateAgentTarget.Profile.READ_ONLY)
+                    PrivateAgentContracts.requireReadOnly(resolved.plan());
+                result.putIfAbsent("agent:" + target.agentId(), target);
+            } catch (Blocked unavailable) {
+                if (!"agent_leaf_required".equals(unavailable.getMessage())) throw unavailable;
             }
         }
         return result;

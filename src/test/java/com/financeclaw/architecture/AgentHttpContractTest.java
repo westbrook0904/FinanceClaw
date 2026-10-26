@@ -119,15 +119,14 @@ class AgentHttpContractTest {
     }
 
     @Test
-    void ordinaryBearerHasNoAgentManagementEndpointAndUnauthorizedCallsCannotList()
-            throws Exception {
+    void ordinaryBearerCannotManageAndUnauthorizedCallsCannotList() throws Exception {
         http.perform(get("/v1/agents")).andExpect(status().isUnauthorized());
         http.perform(
                         post("/v1/agents")
                                 .header("Authorization", "Bearer agent-http-token")
                                 .contentType("application/json")
                                 .content("{}"))
-                .andExpect(status().isMethodNotAllowed());
+                .andExpect(status().isForbidden());
         verifyNoInteractions(agents, tasks);
     }
 

@@ -5,6 +5,7 @@ import com.financeclaw.domain.ExecutionScope;
 import com.financeclaw.domain.Governance.*;
 import com.financeclaw.domain.IdempotencyKey;
 import com.financeclaw.domain.Task.*;
+import com.financeclaw.domain.agent.AgentDraft;
 import com.financeclaw.support.PayloadJson;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -20,6 +21,39 @@ public class AnswerInteractionService {
     private final InteractionCheckpoint checkpoints;
     private final InteractionAnswerRules rules;
     private final TransactionTemplate tx;
+    private com.financeclaw.app.agent.port.AgentAccessGateway agents;
+    private com.financeclaw.app.release.ReleaseService releases;
+    private TransactionTemplate resultTx;
+
+    public void configureResultAccess(
+            com.financeclaw.app.agent.port.AgentAccessGateway agents,
+            com.financeclaw.app.release.ReleaseService releases,
+            TransactionTemplate tx) {
+        this.agents = agents;
+        this.releases = releases;
+        this.resultTx = tx;
+    }
+
+    private void requireRead(Turn turn) {
+        if (agents == null) return;
+        if (turn == null) throw new Problem(404, "not_found");
+        // Builtin format-1 releases cannot contain shared-Agent sources; answer mutation still
+        // performs its complete execution-policy and checkpoint checks below.
+        if (AgentDraft.BUILTIN_AGENT.equals(turn.agentId())) return;
+        resultTx.executeWithoutResult(
+                status -> {
+                    try {
+                        com.financeclaw.app.agent.AgentResultAccess.require(
+                                agents,
+                                releases,
+                                new Owner(turn.tenant(), turn.subject()),
+                                turn.agentId(),
+                                turn.releaseHash());
+                    } catch (Blocked denied) {
+                        throw new Problem(403, denied.getMessage());
+                    }
+                });
+    }
 
     public AnswerInteractionService(
             InteractionGateway interactions,
@@ -39,11 +73,12 @@ public class AnswerInteractionService {
         }
         var turn = interactions.turn(interaction.turnId());
         interactions.ownedTurn(owner, turn.conversationId(), turn.id());
+        requireRead(turn);
         return interaction;
     }
 
     public List<Interaction> interactions(Owner owner, String conversation, String turn) {
-        interactions.ownedTurn(owner, conversation, turn);
+        requireRead(interactions.ownedTurn(owner, conversation, turn));
         return interactions.interactions(turn);
     }
 

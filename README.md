@@ -18,7 +18,9 @@
 
 ## 运行结构
 
-HTTP API、AgentScope 执行、SSE、任务恢复和飞书投递运行在**同一个业务 JVM**，共享连接池与事件中心。受限记忆处理、数据库初始化和离线隐私恢复使用独立入口。工程保持单个 Maven 模块。
+HTTP API、AgentScope 执行、SSE、任务恢复和飞书投递运行在**同一个业务 JVM**。业务连接与心跳预留连接共用原数据库连接总预算；进程内事件中心处理本机通知。受限记忆处理、数据库初始化和离线隐私恢复使用独立入口。工程保持单个 Maven 模块。
+
+非 RAG 平台遗留项已完成[本批开发](docs/architecture/non-rag-completion-plan.md)：Agent 受控调用与审批恢复、身份和资源管理、持久触发与配额调度、运行协调和观测。提交前 1,401 个单元/契约/架构测试、46 个脚本测试与打包通过；本机 Docker 阻塞和此前失败记录均保留，完整 PostgreSQL/Compose 结果以本提交对应的 GitHub Actions 为准。RAG 暂缓。
 
 ```mermaid
 flowchart LR
@@ -311,7 +313,7 @@ P3a.18 **已推送 `5fe16cf`，远程完整 CI 通过**：[失联 sending 恢复
 
 P3a.19 **已推送 `7b46102`，远程完整 CI 通过**：[过期命令候选扫描](docs/architecture/command-recovery-scan-queries.md)用一次数据库截止时间驱动已有 `command_expiry` 范围。20,000 条合成未来租约与 3 条真实过期命令下，原索引扫描过滤 20,000 行，改后直接返回相同 3 项，根 shared hit blocks **420→3**。每次发现仍为 1 条 SQL，LIMIT 50、实时租约与回执门禁保持。**1,320 单元 + 255 选定集成 = 1,575 项**同次通过；默认 2 秒调度不是恢复 SLA，密集过期积压、跨实例锁争用及连接池/心跳延迟仍待测量。
 
-P3a.20 **本地整批开发与完整验收通过**：[恢复、Outbox 与心跳并发资源](docs/architecture/concurrent-recovery-resources.md)使恢复和定时通知越过已锁候选，在原连接预算内预留心跳池，并在普通 Command 锁后重新判断租约。V10 只增加通知部分索引，保留现有迁移。统一开发后集中修复，最终 **1,346 单元 + 637 集成 = 1,983 Java、46 脚本、44 Compose 检查通过**；此处记录提交前本地结果，远程交付以对应 commit 的 Actions 为准。
+P3a.20 **已推送 `76b8818`，远程完整 CI 通过**：[恢复、Outbox 与心跳并发资源](docs/architecture/concurrent-recovery-resources.md)使恢复和定时通知越过已锁候选，在原连接预算内预留心跳池，并在普通 Command 锁后重新判断租约。V10 只增加通知部分索引，保留现有迁移。统一开发后集中修复，最终 **1,346 单元 + 637 集成 = 1,983 Java、46 脚本、44 Compose 检查通过**；[对应 Actions](https://github.com/westbrook0904/FinanceClaw/actions/runs/40275671782) 的 verify 和 delivery 均成功。该记录不覆盖后续非 RAG 批次。
 
 | 文档 | 内容 |
 | --- | --- |
@@ -321,6 +323,10 @@ P3a.20 **本地整批开发与完整验收通过**：[恢复、Outbox 与心跳�
 | [受控能力组装](docs/architecture/agent-composition.md) | P2b 模型 profile、Function/Skill/MCP 选择、固定契约与升级边界 |
 | [固定研究子调用](docs/architecture/child-invocations.md) | P3a.1 调用身份、持久预算、根门禁与步骤回放 |
 | [平台化实施方案](docs/architecture/platform-implementation-plan.md) | 控制面、数据面、Scheduler 边界与分阶段验收 |
+| [非 RAG 集中实施](docs/architecture/non-rag-completion-plan.md) | 本批范围、开发冻结与集中验证顺序 |
+| [身份与资源授权](docs/architecture/resource-authorization.md) | 服务端多主体目录、Agent 管理、共享与凭据资源授权；待本批验收 |
+| [触发与执行调度](docs/architecture/trigger-scheduling.md) | 持久 Cron/Webhook、版本策略、公平与配额、worker 路由；待本批验收 |
+| [运行协调与观测](docs/architecture/runtime-coordination.md) | 跨实例持久事件、资源登记、工件和固定维度 Observation；待本批验收 |
 | [数据结构](docs/architecture/database-schema-review.md) / [数据库访问](docs/architecture/database-access-review.md) | 权威状态边界、锁与查询策略 |
 | [画像与证据记忆](docs/architecture/user-profile-memory.md) | Markdown、来源、确认、版本和隐私 |
 | [执行数据隐私清理](docs/architecture/execution-privacy.md) | 检查点墓碑、步骤与工具文件清理、Snapshot v3 恢复门禁 |

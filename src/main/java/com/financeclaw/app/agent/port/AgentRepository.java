@@ -24,4 +24,9 @@ public interface AgentRepository {
 
     /** 单次集合读取同 owner 的空计划或固定市场计划候选及 profile；选中后仍须核验清单摘要、身份和运行工件。 */
     List<ResolvedTarget> listPublishedLeafTargets(Owner owner);
+
+    default List<com.financeclaw.domain.agent.PrivateAgentTarget> listPublishedReadOnlyTargets(
+            Owner owner) {
+        return List.of();
+    }
 }

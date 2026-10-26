@@ -1,6 +1,7 @@
 package com.financeclaw.api;
 
 import com.fasterxml.jackson.databind.JsonMappingException;
+import com.financeclaw.domain.Governance.Blocked;
 import com.financeclaw.domain.Task.Problem;
 import java.util.Map;
 import org.springframework.http.ResponseEntity;
@@ -16,6 +17,15 @@ public class ApiErrors {
     @ExceptionHandler(Problem.class)
     ResponseEntity<?> problem(Problem p) {
         return ResponseEntity.status(p.status()).body(Map.of("error", p.getMessage()));
+    }
+
+    @ExceptionHandler(Blocked.class)
+    ResponseEntity<?> blocked(Blocked blocked) {
+        String code = blocked.getMessage();
+        if ("agent_access_denied".equals(code) || "credential_access_denied".equals(code)) {
+            return ResponseEntity.status(403).body(Map.of("error", code));
+        }
+        return ResponseEntity.status(503).body(Map.of("error", "service_unavailable"));
     }
 
     @ExceptionHandler({

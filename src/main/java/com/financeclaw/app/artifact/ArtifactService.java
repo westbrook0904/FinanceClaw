@@ -1,5 +1,6 @@
 package com.financeclaw.app.artifact;
 
+import com.financeclaw.app.agent.port.AgentAccessGateway;
 import com.financeclaw.app.artifact.port.ArtifactGateway;
 import com.financeclaw.app.execution.ExecutionLeaseService;
 import com.financeclaw.app.execution.ExecutionPolicyService;
@@ -8,6 +9,7 @@ import com.financeclaw.domain.Governance.*;
 import com.financeclaw.domain.Task.*;
 import com.financeclaw.support.ArtifactPayload;
 import com.financeclaw.support.PayloadJson;
+import com.financeclaw.support.ScopeRequirements;
 import java.util.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -15,6 +17,12 @@ import org.springframework.transaction.support.TransactionTemplate;
 /** 产物归档与读取边界：产物绑定用户、发布版本和读取权限，按完整载荷摘要校验；读取时重新验证权限和遗忘状态。 */
 @Service
 public class ArtifactService {
+    private AgentAccessGateway agentAccess = AgentAccessGateway.ownedOnly();
+
+    public void configureAgentAccess(AgentAccessGateway access) {
+        this.agentAccess = access;
+    }
+
     private final ArtifactGateway db;
     private final ExecutionLeaseService leases;
     private final ExecutionPolicyService policy;
@@ -49,8 +57,9 @@ public class ArtifactService {
                 claim,
                 () -> {
                     policy.checkPolicy(claim);
-                    if (!PayloadJson.scopes(db.policy(claim.turn().id()).scopes())
-                            .contains(requiredScope)) {
+                    if (!ScopeRequirements.allowed(
+                            PayloadJson.scopes(db.policy(claim.turn().id()).scopes()),
+                            requiredScope)) {
                         throw new Blocked("artifact_scope_denied");
                     }
                     // 权限校验和产物插入沿用当前栅栏事务，无需再次调用同一授权及租约检查。
@@ -67,7 +76,7 @@ public class ArtifactService {
                 () -> {
                     var checked = policy.checkPolicy(claim);
                     var scope = requiredScope == null ? "artifact:read" : requiredScope;
-                    if (!PayloadJson.scopes(checked.scopes()).contains(scope)) {
+                    if (!ScopeRequirements.allowed(PayloadJson.scopes(checked.scopes()), scope)) {
                         throw new Blocked("artifact_scope_denied");
                     }
                     var artifact = artifact(claim, ArtifactPayload.encode(payload));
@@ -158,7 +167,12 @@ public class ArtifactService {
         }
         var current = policy.checkPolicy(claim);
         var resolved = releases.resolve(claim.turn().releaseHash());
-        resolved.requireIdentity(owner, claim.turn().agentId());
+        resolved.requireIdentity(
+                agentAccess
+                        .requireInvocation(
+                                owner, claim.turn().agentId(), claim.turn().releaseHash())
+                        .resourceOwner(),
+                claim.turn().agentId());
         var fixedScopes = resolved.definition().scopes();
         var currentScopes = PayloadJson.scopes(current.scopes());
         requireExecutionScope(access.requiredScope(), effectiveScopes, fixedScopes, currentScopes);
@@ -173,9 +187,9 @@ public class ArtifactService {
     private static void requireExecutionScope(
             String scope, List<String> effective, List<String> fixed, List<String> current) {
         if (effective == null
-                || !effective.contains(scope)
-                || !fixed.contains(scope)
-                || !current.contains(scope)) {
+                || !ScopeRequirements.allowed(effective, scope)
+                || !ScopeRequirements.allowed(fixed, scope)
+                || !ScopeRequirements.allowed(current, scope)) {
             throw new Blocked("artifact_scope_denied");
         }
     }
@@ -215,7 +229,8 @@ public class ArtifactService {
     }
 
     private void checkPrivacy(Artifact artifact, ArtifactGateway.Access access) {
-        if (access.privacyBound() || "ziwei:read".equals(access.requiredScope())) {
+        if (access.privacyBound()
+                || ScopeRequirements.decode(access.requiredScope()).contains("ziwei:read")) {
             var turn = db.turn(artifact.turnId());
             if (turn == null
                     || !turn.tenant().equals(artifact.tenant())
@@ -234,14 +249,22 @@ public class ArtifactService {
                         && !PayloadJson.scopes(grant.scopes()).contains("artifact:read"))) {
             throw new Problem(403, "artifact_denied");
         }
-        if (!PayloadJson.scopes(grant.scopes()).contains(access.requiredScope())) {
+        if (!ScopeRequirements.allowed(
+                PayloadJson.scopes(grant.scopes()), access.requiredScope())) {
             throw new Problem(403, "artifact_scope_denied");
         }
     }
 
     private void checkRelease(Artifact artifact) {
         try {
-            releases.require(artifact.releaseHash());
+            var turn = db.turn(artifact.turnId());
+            if (turn == null) throw new Problem(409, "artifact_corrupt");
+            com.financeclaw.app.agent.AgentResultAccess.require(
+                    agentAccess,
+                    releases,
+                    new Owner(artifact.tenant(), artifact.subject()),
+                    turn.agentId(),
+                    artifact.releaseHash());
         } catch (Blocked error) {
             throw new Problem(409, error.getMessage());
         }

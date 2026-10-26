@@ -73,7 +73,7 @@ class RoleAssemblyIT {
                         false,
                         Map.of("spring.flyway.enabled", "true"))) {
             assertThat(migration.getBean(Flyway.class).info().current().getVersion().toString())
-                    .isEqualTo("10");
+                    .isEqualTo("15");
         }
         sql.execute("CREATE ROLE financeclaw_memory LOGIN PASSWORD 'test-memory-only'");
         sql.execute(
@@ -105,7 +105,8 @@ class RoleAssemblyIT {
         properties.put("spring.datasource.url", PG.getJdbcUrl());
         properties.put("spring.datasource.username", PG.getUsername());
         properties.put("spring.datasource.password", PG.getPassword());
-        properties.put("spring.datasource.hikari.maximum-pool-size", "3");
+        // Two private lease connections, one persistent LISTEN connection, one business slot.
+        properties.put("spring.datasource.hikari.maximum-pool-size", "4");
         properties.put("spring.flyway.enabled", "false");
         properties.put("server.port", "0");
         properties.put("spring.main.banner-mode", "off");
@@ -219,6 +220,10 @@ class RoleAssemblyIT {
                             "ArtifactContentController",
                             "TaskController",
                             "AgentController",
+                            "ResourceAccessController",
+                            "ScheduleController",
+                            "DispatchController",
+                            "RuntimeOperationsController",
                             "GovernanceController",
                             "MemoryController",
                             "UserProfileController",
@@ -233,6 +238,7 @@ class RoleAssemblyIT {
                             "OperationsMapper",
                             "FeishuMapper",
                             "ReleaseMapper",
+                            "ResourceAccessMapper",
                             "AgentMapper");
             assertThat(context.getBean(GrantService.class)).isNotNull();
             assertThat(context.getBean(ArtifactService.class)).isNotNull();
@@ -252,6 +258,7 @@ class RoleAssemblyIT {
                             "com.financeclaw.worker.TaskWorker.poll",
                             "com.financeclaw.worker.TaskWorker.recover",
                             "com.financeclaw.worker.TaskWorker.heartbeat",
+                            "com.financeclaw.worker.TaskWorker.checkRuntimeControl",
                             "com.financeclaw.channel.FeishuDelivery.scheduled",
                             "com.financeclaw.channel.FeishuDelivery.scheduledRecovery");
             assertThat(context.containsBean("executionHeartbeatScheduler")).isTrue();
@@ -382,7 +389,7 @@ class RoleAssemblyIT {
                                 "financeclaw.feishu.enabled",
                                 "true"))) {
             assertThat(context.getBean(Flyway.class).info().current().getVersion().toString())
-                    .isEqualTo("10");
+                    .isEqualTo("15");
             assertThat(mappers(context)).isEmpty();
             absent(
                     context,

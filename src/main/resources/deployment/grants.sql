@@ -8,6 +8,8 @@ GRANT SELECT, INSERT ON control_plane.release_manifests, control_plane.deploymen
 GRANT SELECT, INSERT, UPDATE ON control_plane.deployments TO financeclaw_app;
 GRANT SELECT, INSERT, UPDATE ON control_plane.agents TO financeclaw_app;
 GRANT SELECT, INSERT ON control_plane.agent_draft_revisions TO financeclaw_app;
+GRANT SELECT, INSERT, UPDATE ON control_plane.resource_grants, control_plane.trigger_rules TO financeclaw_app;
+GRANT SELECT, INSERT ON control_plane.resource_grant_audit, control_plane.trigger_rule_revisions, control_plane.trigger_firings TO financeclaw_app;
 GRANT USAGE ON SCHEMA memory TO financeclaw_memory;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA memory TO financeclaw_memory;
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA memory TO financeclaw_memory;

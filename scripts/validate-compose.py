@@ -637,9 +637,11 @@ try:
 
     compose('stop', 'api', 'memory-worker')
     original = fingerprints('financeclaw_java')
-    assert len(original) == 41
+    assert len(original) == 52
     assert {'control_plane.agents', 'control_plane.agent_draft_revisions',
-            'business.child_invocations'} <= original.keys()
+            'business.child_invocations', 'control_plane.resource_grants',
+            'control_plane.trigger_rules', 'business.dispatch_policies',
+            'business.runtime_workers', 'business.runtime_artifacts'} <= original.keys()
     # 基础隔离/组合三个 Agent，加上私有叶子与父 Agent；叶子有两版草稿。
     assert original['control_plane.agents'].split(':', 1)[0] == '5'
     assert original['control_plane.agent_draft_revisions'].split(':', 1)[0] == '8'

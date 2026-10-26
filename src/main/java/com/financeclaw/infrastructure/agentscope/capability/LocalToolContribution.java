@@ -221,7 +221,10 @@ public final class LocalToolContribution implements ToolContribution {
     }
 
     private ToolResultBlock archived(Object result) {
-        return archived(result, "artifact:read");
+        return archived(
+                result,
+                com.financeclaw.support.ScopeRequirements.encode(
+                        List.of("artifact:read", "catalog:read")));
     }
 
     private ToolResultBlock archived(Object result, String scope) {

@@ -7,6 +7,7 @@ import com.financeclaw.domain.ExecutionPolicy;
 import com.financeclaw.domain.Governance.*;
 import com.financeclaw.domain.Task.*;
 import com.financeclaw.support.PayloadJson;
+import com.financeclaw.support.ScopeRequirements;
 import java.util.*;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -141,7 +142,8 @@ public class ExecutionPolicyService {
                 claim,
                 checked -> {
                     var p = checked.policy();
-                    if (scope != null && !PayloadJson.scopes(p.scopes()).contains(scope)) {
+                    if (scope != null
+                            && !ScopeRequirements.allowed(PayloadJson.scopes(p.scopes()), scope)) {
                         throw new Blocked("tool_denied");
                     }
                     reserveChild.accept(p);

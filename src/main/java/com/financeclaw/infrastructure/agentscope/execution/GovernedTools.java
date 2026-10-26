@@ -1,5 +1,6 @@
 package com.financeclaw.infrastructure.agentscope.execution;
 
+import com.financeclaw.app.agent.port.CredentialAccessGateway;
 import com.financeclaw.app.artifact.ArtifactService;
 import com.financeclaw.app.execution.ExecutionPolicyService;
 import com.financeclaw.app.release.ReleaseService;
@@ -14,6 +15,7 @@ import com.financeclaw.infrastructure.agentscope.ResumeInputs;
 import com.financeclaw.infrastructure.agentscope.capability.*;
 import com.financeclaw.infrastructure.agentscope.skills.PackagedSkills;
 import com.financeclaw.support.PayloadJson;
+import com.financeclaw.support.ScopeRequirements;
 import com.financeclaw.support.ToolSchemas;
 import com.financeclaw.tools.*;
 import io.agentscope.core.message.*;
@@ -30,6 +32,14 @@ public final class GovernedTools implements AutoCloseable {
     public static final Map<String, Object> TITLE = LocalToolContribution.TITLE;
     public static final Map<String, Object> EMPTY = LocalToolContribution.EMPTY;
     public static final Set<String> NAMES = LocalToolContribution.NAMES;
+    private com.financeclaw.infrastructure.runtime.RuntimeObservations observations =
+            com.financeclaw.infrastructure.runtime.RuntimeObservations.disabled();
+
+    public void configureObservations(
+            com.financeclaw.infrastructure.runtime.RuntimeObservations observations) {
+        this.observations = observations;
+    }
+
     private final ExecutionPolicyService policy;
     private final ReleaseService releases;
     private final Credentials credentials;
@@ -39,12 +49,14 @@ public final class GovernedTools implements AutoCloseable {
     private final ReleaseDefinition release;
     private final List<String> scopes;
     private final AgentExecutionPlan plan;
+    private final CredentialAccessGateway credentialAccess;
     private final Map<String, CapabilityBinding> selectedTools = new HashMap<>();
     private Set<String> selectedSkillIds = Set.of();
     private final java.util.concurrent.atomic.AtomicReference<Blocked> compatibilityFailure =
             new java.util.concurrent.atomic.AtomicReference<>();
     private final McpToolContribution mcp;
     private io.agentscope.core.skill.repository.AgentSkillRepository skills;
+    private PrivateAgentDelegation privateDelegation;
     private final Map<String, InteractionHandler> interactions = new HashMap<>();
     private final Map<String, String> requiredScopes = new HashMap<>();
     public final Toolkit toolkit = new Toolkit();
@@ -56,7 +68,16 @@ public final class GovernedTools implements AutoCloseable {
             ArtifactService artifacts,
             ReportService reports,
             Claim claim) {
-        this(policy, releases, credentials, artifacts, reports, claim, null, null);
+        this(
+                policy,
+                releases,
+                credentials,
+                artifacts,
+                reports,
+                claim,
+                null,
+                null,
+                CredentialAccessGateway.trustedFixture());
     }
 
     public GovernedTools(
@@ -67,7 +88,37 @@ public final class GovernedTools implements AutoCloseable {
             ReportService reports,
             Claim claim,
             AgentExecutionPlan plan) {
-        this(policy, releases, credentials, artifacts, reports, claim, null, plan);
+        this(
+                policy,
+                releases,
+                credentials,
+                artifacts,
+                reports,
+                claim,
+                null,
+                plan,
+                CredentialAccessGateway.trustedFixture());
+    }
+
+    public GovernedTools(
+            ExecutionPolicyService policy,
+            ReleaseService releases,
+            Credentials credentials,
+            ArtifactService artifacts,
+            ReportService reports,
+            Claim claim,
+            AgentExecutionPlan plan,
+            CredentialAccessGateway credentialAccess) {
+        this(
+                policy,
+                releases,
+                credentials,
+                artifacts,
+                reports,
+                claim,
+                null,
+                plan,
+                credentialAccess);
     }
 
     private GovernedTools(
@@ -78,7 +129,9 @@ public final class GovernedTools implements AutoCloseable {
             ReportService reports,
             Claim claim,
             List<String> allowed,
-            AgentExecutionPlan plan) {
+            AgentExecutionPlan plan,
+            CredentialAccessGateway credentialAccess) {
+        this.credentialAccess = credentialAccess;
         this.policy = policy;
         this.releases = releases;
         this.credentials = credentials;
@@ -105,7 +158,15 @@ public final class GovernedTools implements AutoCloseable {
                 .contribute(this::register);
         mcp =
                 new McpToolContribution(
-                        policy, credentials, artifacts, claim, release, scopes, toolkit, plan);
+                        policy,
+                        credentials,
+                        artifacts,
+                        claim,
+                        release,
+                        scopes,
+                        toolkit,
+                        plan,
+                        credentialAccess);
         try {
             mcp.contribute(
                     (name, description, schema, scope, action, interaction) ->
@@ -173,6 +234,7 @@ public final class GovernedTools implements AutoCloseable {
     }
 
     public void business(io.agentscope.core.model.Model model, BusinessCapabilities capabilities) {
+        privateDelegation = capabilities.privateDelegation();
         if (release.business().ziwei() != null && scopes.contains("ziwei:read")) {
             capabilities.ziwei(claim, this::register);
         }
@@ -217,15 +279,19 @@ public final class GovernedTools implements AutoCloseable {
         if (!scopes.containsAll(requested)) {
             throw new Blocked("scope_expansion_denied");
         }
-        return new GovernedTools(
-                policy,
-                releases,
-                credentials,
-                artifacts,
-                reports,
-                claim,
-                List.copyOf(requested),
-                plan);
+        var narrowed =
+                new GovernedTools(
+                        policy,
+                        releases,
+                        credentials,
+                        artifacts,
+                        reports,
+                        claim,
+                        List.copyOf(requested),
+                        plan,
+                        credentialAccess);
+        narrowed.configureObservations(observations);
+        return narrowed;
     }
 
     public static Map<String, Object> schema(String key, Map<String, Object> property) {
@@ -287,7 +353,9 @@ public final class GovernedTools implements AutoCloseable {
                 }
             }
         }
-        if (scope != null && (!scopes.contains(scope) || !release.scopes().contains(scope))) {
+        if (scope != null
+                && (!ScopeRequirements.allowed(scopes, scope)
+                        || !ScopeRequirements.allowed(release.scopes(), scope))) {
             return;
         }
         if (scope != null) requiredScopes.put(name, scope);
@@ -319,7 +387,8 @@ public final class GovernedTools implements AutoCloseable {
                                                 policy.consumeTool(claim, scope);
                                             }
                                             checkCompatibility();
-                                            return action.apply(param);
+                                            return observations.tool(
+                                                    claim, () -> action.apply(param));
                                         })
                                 .doOnError(
                                         error -> {
@@ -361,19 +430,34 @@ public final class GovernedTools implements AutoCloseable {
     }
 
     public List<Pending> pending(io.agentscope.core.state.AgentState state) {
-        return new AgentStateInspector(state)
-                .pending().stream()
-                        .map(
-                                call -> {
-                                    var handler = interactions.get(call.getName());
-                                    if (handler == null
-                                            || (call.getState() == ToolCallState.ASKING
-                                                    && !handler.approval())) {
-                                        throw new Blocked("unsupported_interaction");
-                                    }
-                                    return handler.pending(call);
-                                })
-                        .toList();
+        var result =
+                new AgentStateInspector(state)
+                        .pending().stream()
+                                .flatMap(
+                                        call -> {
+                                            var handler = interactions.get(call.getName());
+                                            if (handler == null
+                                                    && call.getState() != ToolCallState.ASKING)
+                                                return java.util.stream.Stream.<Pending>empty();
+                                            if (handler == null
+                                                    || (call.getState() == ToolCallState.ASKING
+                                                            && !handler.approval())) {
+                                                throw new Blocked("unsupported_interaction");
+                                            }
+                                            return handler.pendingAll(call).stream();
+                                        })
+                                .toList();
+        if (result.isEmpty()) throw new Blocked("unsupported_interaction");
+        return result;
+    }
+
+    public boolean delegated(Interaction interaction) {
+        return privateDelegation != null && privateDelegation.delegated(interaction);
+    }
+
+    public void prepareDelegatedResume(Claim source, List<Interaction> answers) {
+        if (privateDelegation != null)
+            privateDelegation.prepareResume(claim, source, plan, answers);
     }
 
     @Override

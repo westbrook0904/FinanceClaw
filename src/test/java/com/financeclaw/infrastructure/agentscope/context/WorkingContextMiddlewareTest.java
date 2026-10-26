@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -52,6 +53,7 @@ class WorkingContextMiddlewareTest {
                             null));
     private ArtifactService artifacts;
     private WorkingContextMiddleware middleware;
+    private final AtomicReference<RuntimeException> rejection = new AtomicReference<>();
 
     @BeforeEach
     void setup() {
@@ -82,7 +84,8 @@ class WorkingContextMiddlewareTest {
                         session,
                         new ToolResultOffloader(artifacts, 8192),
                         name -> "skill:use",
-                        request -> fail("Small references must not require context compaction"));
+                        request -> fail("Small references must not require context compaction"),
+                        failure -> rejection.compareAndSet(null, failure));
     }
 
     @Test
@@ -217,9 +220,56 @@ class WorkingContextMiddlewareTest {
 
         assertThatThrownBy(() -> middleware.onEvent(acting).block(Duration.ofSeconds(5)))
                 .isSameAs(failure);
+        assertThat(rejection.get()).isSameAs(failure);
         assertThat(acting.getToolResult()).isSameAs(raw);
         assertThat(acting.getToolResultMsg()).isSameAs(message);
         assertThat(JsonUtils.getJsonCodec().toJson(message)).contains(RAW);
+    }
+
+    @Test
+    void summaryPreparationRemembersBudgetRejectionBeforeTheModelIsReached() {
+        var calls = new AtomicInteger();
+        var input =
+                new io.agentscope.core.middleware.ModelCallInput(
+                        List.of(
+                                Msg.builder()
+                                        .role(MsgRole.SYSTEM)
+                                        .textContent("x".repeat(8193))
+                                        .build()),
+                        List.of(),
+                        GenerateOptions.builder().build(),
+                        mock(Model.class));
+        assertThatThrownBy(
+                        () ->
+                                middleware
+                                        .onModelCall(
+                                                mock(Agent.class),
+                                                RuntimeContext.builder()
+                                                        .userId("user")
+                                                        .sessionId("session")
+                                                        .build(),
+                                                input,
+                                                prepared -> {
+                                                    calls.incrementAndGet();
+                                                    return Flux.empty();
+                                                })
+                                        .blockLast(Duration.ofSeconds(5)))
+                .isInstanceOf(Blocked.class)
+                .hasMessage("system_context_budget_exceeded");
+        assertThat(rejection.get())
+                .isInstanceOf(Blocked.class)
+                .hasMessage("system_context_budget_exceeded");
+        assertThat(calls).hasValue(0);
+    }
+
+    @Test
+    void ordinaryArchivingFailureIsNotRecordedAsAGovernanceRejection() {
+        var failure = new IllegalStateException("temporary adapter failure");
+        when(artifacts.archiveToolResult(eq(CLAIM), any(), eq("skill:use"))).thenThrow(failure);
+        var acting = new PostActingEvent(mock(Agent.class), new Toolkit(), call(), raw());
+        assertThatThrownBy(() -> middleware.onEvent(acting).block(Duration.ofSeconds(5)))
+                .isSameAs(failure);
+        assertThat(rejection.get()).isNull();
     }
 
     @Test

@@ -84,4 +84,19 @@ public class MyBatisAgentRepository implements AgentRepository {
     public List<ResolvedTarget> listPublishedLeafTargets(Owner owner) {
         return mapper.listPublishedLeafTargetsByOwner(owner);
     }
+
+    @Override
+    public List<com.financeclaw.domain.agent.PrivateAgentTarget> listPublishedReadOnlyTargets(
+            Owner owner) {
+        return mapper.listPublishedReadOnlyTargetsByOwner(owner).stream()
+                .map(
+                        row ->
+                                new com.financeclaw.domain.agent.PrivateAgentTarget(
+                                        row.agentId(),
+                                        row.releaseHash(),
+                                        com.financeclaw.domain.agent.PrivateAgentTarget.Profile
+                                                .valueOf(row.profile()),
+                                        PayloadJson.scopes(row.scopes())))
+                .toList();
+    }
 }

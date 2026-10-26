@@ -68,6 +68,43 @@ public class SubmitTaskService {
         return id;
     }
 
+    /**
+     * Explicit pinned target for durable triggers; identity and current access are verified before
+     * binding.
+     */
+    public String createPinnedConversation(Owner owner, String agentId, String releaseHash) {
+        if (releaseHash == null || !releaseHash.matches("[0-9a-f]{64}"))
+            throw new Problem(422, "invalid_release_hash");
+        String conversation = id();
+        tx.executeWithoutResult(
+                s -> {
+                    // Validate this exact immutable target against current access; following a
+                    // newer
+                    // deployment here would incorrectly require a grant for a different release.
+                    var candidate =
+                            new Turn(
+                                    id(),
+                                    conversation,
+                                    owner.tenant(),
+                                    owner.subject(),
+                                    "trigger-binding",
+                                    "",
+                                    "",
+                                    releaseHash,
+                                    "queued",
+                                    1,
+                                    null,
+                                    null,
+                                    agentId);
+                    var release = releases.requireForTurn(candidate);
+                    db.createConversation(conversation, owner);
+                    if (db.bindConversationAgent(conversation, agentId, releaseHash) != 1)
+                        throw new Problem(409, "conversation_release_conflict");
+                    governance.ensureGrant(conversation, PayloadJson.canonical(release.scopes()));
+                });
+        return conversation;
+    }
+
     /** 受理任务并冻结执行身份。幂等回放先于暂停检查；只有全套任务、授权和记忆元数据提交后才可被 Worker 领取。 */
     public Accepted submit(Owner owner, String conversation, String key, String message) {
         new IdempotencyKey(key);
