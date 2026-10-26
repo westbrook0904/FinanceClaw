@@ -306,7 +306,7 @@ class HeartbeatResourceIsolationIT {
                             return null;
                         })
                 .when(execution)
-                .execute(CLAIM);
+                .execute(eq(CLAIM), any(java.util.function.BooleanSupplier.class));
         doAnswer(
                         call -> {
                             interrupted.countDown();

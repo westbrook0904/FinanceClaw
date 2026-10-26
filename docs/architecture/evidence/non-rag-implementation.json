@@ -1,7 +1,7 @@
 {
   "schema": "non-rag-implementation/1",
   "record_boundary": "Historical local and exact-commit remote evidence. The second remote verify passed but delivery failed; subsequent recovery/readiness repairs and intermediate package-08 do not establish final-source or Compose acceptance.",
-  "recorded_at_utc": "2026-10-26T16:14:14.041143+00:00",
+  "recorded_at_utc": "2026-10-26T16:37:50.211870+00:00",
   "base_commit": "76b88187e9cb38567eaa4064fe56ef6ff913a0c3",
   "branch": "codex/java-agentscope",
   "development_order": "All authorized non-RAG production and acceptance source completed before first formatting, compilation and tests. Failures retained; concentrated repairs followed.",
@@ -469,6 +469,31 @@
         "contract_mismatch": "The old deployment script treated database recovery as automatic recovery of an expired worker UUID. Expired registrations require a new process identity."
       },
       "local_delivery_log": "/tmp/financeclaw-non-rag-compose-40345073989/compose-validation.log"
+    },
+    {
+      "head_sha": "5c252b13d75133750694da6a30a69ae70c897933",
+      "run_id": 40357389118,
+      "url": "https://github.com/westbrook0904/FinanceClaw/actions/runs/40357389118",
+      "status": "completed",
+      "conclusion": "failure",
+      "verify": "failure",
+      "delivery": "skipped",
+      "unit_tests": 1419,
+      "unit_failures": 0,
+      "unit_errors": 0,
+      "unit_skipped": 0,
+      "integration_tests": 691,
+      "integration_failures": 1,
+      "integration_errors": 0,
+      "integration_skipped": 0,
+      "integration_passed": 690,
+      "python_tests": 53,
+      "collector": "skipped_after_integration_failure",
+      "failed_cases": [
+        "HeartbeatResourceIsolationIT.privatePoolSaturationInterruptsActualWorkerWithoutBorrowingBusinessConnection"
+      ],
+      "reason": "Existing ExecuteTaskService mock still stubbed the single-argument entry, so actual TaskWorker dual-argument execution did not enter the latch. Only that integration fixture stub is adapted; resource isolation, interruption and unchanged-lease assertions are retained.",
+      "failure_summary_sha256": "721e3bbad25013ea53369aecd588ba7797ba1868db6a95c278147f5eecb1c2e1"
     }
   ],
   "repairs_after_first_remote_attempt": [
@@ -582,5 +607,24 @@
     "local_archive": "/tmp/financeclaw-non-rag-local-package-07",
     "result_sha256": "ca03b54ca8202f62a1f7ddc450ee74968401f9acec84af7bae1307a0cb93722f"
   },
-  "runtime_initialization_stop_repair": "Worker generation and denied-attempt gate travels through the execution port and observation wrapper. Runtime registers sticky stop state before initialization, rechecks its local lifetime before model/tool dispatch and checkpoint/result operations, and closes the bounded attempt entry. A recovered database cannot reopen an old attempt."
+  "runtime_initialization_stop_repair": "Worker generation and denied-attempt gate travels through the execution port and observation wrapper. Runtime registers sticky stop state before initialization, rechecks its local lifetime before model/tool dispatch and checkpoint/result operations, and closes the bounded attempt entry. A recovered database cannot reopen an old attempt.",
+  "post_remote_integration_fixture_repair": {
+    "changed_build_inputs_since_package_10": [
+      "src/test/java/com/financeclaw/p3/HeartbeatResourceIsolationIT.java"
+    ],
+    "production_unit_and_script_sources_unchanged": true,
+    "command": [
+      "scripts/mvn.sh",
+      "-B",
+      "-ntp",
+      "-o",
+      "spotless:check",
+      "test-compile"
+    ],
+    "exit_code": 0,
+    "executed_unit_or_integration_tests": false,
+    "log_sha256": "35a4fb76776ef79dc0ad13b06263236993e9156bd4b162bdd2c0149c03621e50",
+    "current_source_manifest_sha256": "937a169896fb10624f2f783903fc899d54867e443936fda857796ebeb1530fdf",
+    "scope": "Compile the only changed integration fixture; package-10 unit and Python evidence is retained for identical production/unit/script source. Exact final commit must rerun all tests and Compose in Actions."
+  }
 }

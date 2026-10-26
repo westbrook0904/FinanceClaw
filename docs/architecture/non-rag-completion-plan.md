@@ -12,6 +12,8 @@
 
 本地 package-08（归档 `/tmp/financeclaw-non-rag-local-package-08`）通过 **1,416 个单元测试、53 个 Python 测试、格式检查与打包**，其中新增 7 个恢复脚本契约测试。它仅是中间回归记录：随后发现的运行时初始化中断窗口当时仍在修复，不能把 package-08 的源码或 JAR 当作最终版本。package-08 单列为 intermediate，历史 package-07 继续保留。启动窗口已补齐粘性的本地 attempt 门禁，并由 financeclaw-non-rag-local-package-10 对最终冻结输入重新验证：1,419 Java 单元、53 脚本、格式和打包通过；生产及验收输入指纹前后一致。`local_latest` 记录本轮结果，最终 PostgreSQL 与 Compose 结论仍须等待推送提交的完整 Actions。
 
+第三次远程 [run 40357389118](https://github.com/westbrook0904/FinanceClaw/actions/runs/40357389118) 的 1,419 单元与 53 脚本通过；691 个集成测试中 690 通过，唯一失败是既有心跳资源隔离夹具仍模拟旧单参执行入口，未进入实际 worker 的双参调用分支。已只适配该替身，保留全部中断、连接占用与租约断言。指纹核对确认生产、单元测试和脚本源码与 package-10 完全一致，修正后的全部测试源码重新编译通过；该本地编译不代替最终提交的 PostgreSQL 与 Compose 验收。
+
 ## 范围与完成标准
 
 | 模块 | 本批开发范围 | 集中验收必须证明 |
