@@ -11,6 +11,7 @@ import java.util.jar.*;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 class LocalRuntimeArtifactRootTest {
     @TempDir Path temporary;
@@ -33,7 +34,7 @@ class LocalRuntimeArtifactRootTest {
                                 MessageDigest.getInstance("SHA-256")
                                         .digest(Files.readAllBytes(outside)));
         var source = mock(DataSource.class);
-        var gateway = new LocalRuntimeArtifactGateway(source, root.toString());
+        var gateway = new LocalRuntimeArtifactGateway(new JdbcTemplate(source), root.toString());
         var catalog = new com.financeclaw.app.runtime.RuntimeArtifactCatalog(gateway);
         assertThat(com.financeclaw.infrastructure.agentscope.RuntimeArtifacts.hashArchive(outside))
                 .matches("[a-f0-9]{64}");
@@ -71,7 +72,9 @@ class LocalRuntimeArtifactRootTest {
                                         .digest(Files.readAllBytes(archive)));
         Path alias = temporary.resolve("operator-alias");
         Files.createSymbolicLink(alias, root.toRealPath());
-        var gateway = new LocalRuntimeArtifactGateway(mock(DataSource.class), alias.toString());
+        var gateway =
+                new LocalRuntimeArtifactGateway(
+                        new JdbcTemplate(mock(DataSource.class)), alias.toString());
         assertThat(gateway.inspect("runtime.jar", hash, 1, List.of("agentscope")).artifactHash())
                 .isEqualTo(hash);
         Files.createSymbolicLink(root.resolve("child.jar"), archive.toRealPath());

@@ -17,6 +17,7 @@ import java.math.BigDecimal;
 import javax.sql.DataSource;
 import org.springframework.context.annotation.*;
 import org.springframework.core.env.Environment;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /** 仅在业务运行入口装配；受限Memory/恢复/初始化/管理CLI不导入。 */
@@ -60,25 +61,27 @@ public class RuntimeCoordinationConfiguration {
     }
 
     @Bean
-    WorkerRegistry workerRegistry(DataSource source, Environment env) {
+    WorkerRegistry workerRegistry(JdbcTemplate sql, Environment env) {
         long ttl = env.getProperty("financeclaw.runtime.worker-ttl-ms", Long.class, 15000L);
         long poll = env.getProperty("financeclaw.runtime.control-poll-ms", Long.class, 1000L);
         if (poll < 100 || poll > 30000 || ttl < poll * 3)
             throw new IllegalArgumentException("invalid_worker_control_intervals");
-        return new WorkerRegistry(new JdbcWorkerRegistry(source), RuntimeArtifacts.hash(), ttl);
+        // 复用 Boot 托管模板，不在适配器中另建忽略 spring.jdbc.template.* 的实例。
+        // 独占 LISTEN 连接与专用心跳资源有各自生命周期，不能并入这个共享模板。
+        return new WorkerRegistry(new JdbcWorkerRegistry(sql), RuntimeArtifacts.hash(), ttl);
     }
 
     @Bean
-    RuntimeArtifactCatalog runtimeArtifactCatalog(DataSource source, Environment env) {
+    RuntimeArtifactCatalog runtimeArtifactCatalog(JdbcTemplate sql, Environment env) {
         return new RuntimeArtifactCatalog(
                 new LocalRuntimeArtifactGateway(
-                        source, env.getProperty("financeclaw.runtime.artifact-directory", "")));
+                        sql, env.getProperty("financeclaw.runtime.artifact-directory", "")));
     }
 
     @Bean
-    RuntimeUsageGateway runtimeUsage(DataSource source, Environment env) {
+    RuntimeUsageGateway runtimeUsage(JdbcTemplate sql, Environment env) {
         return new JdbcRuntimeUsage(
-                source,
+                sql,
                 env.getProperty(
                         "financeclaw.runtime.model-call-cost", BigDecimal.class, BigDecimal.ZERO),
                 env.getProperty(

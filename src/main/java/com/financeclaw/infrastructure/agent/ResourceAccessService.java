@@ -38,6 +38,9 @@ public class ResourceAccessService implements ResourceAdministration, Credential
         this.credentials = credentials;
     }
 
+    /**
+     * 每次调用重新核验资源归属与精确发布授权。返回的 resourceOwner 仅用于校验发布身份，不能替换 Turn、记忆或产物的 caller；解析结果只供本次校验链复用，不缓存授权。
+     */
     @Override
     public Authorization requireInvocation(Owner caller, String agentId, String releaseHash) {
         if (caller == null || releaseHash == null || !releaseHash.matches("[0-9a-f]{64}"))
@@ -56,6 +59,7 @@ public class ResourceAccessService implements ResourceAdministration, Credential
     @Override
     public Owner resourceOwner(String agentId) {
         if (!AgentDraft.isCustomId(agentId)) throw denied();
+        // 本地提交期间持共享锁，归档须等事务完成；事务外的网络调用预检只读当前事实。
         var owner =
                 TransactionSynchronizationManager.isActualTransactionActive()
                         ? mapper.agentOwnerForShare(agentId)
@@ -101,10 +105,7 @@ public class ResourceAccessService implements ResourceAdministration, Credential
             throw new Blocked("credential_access_denied");
     }
 
-    /**
-     * Local checkpoint effects retain authorization until commit; network preflight reads stay
-     * short.
-     */
+    /** 与资源归属使用同一事务边界：本地效果提交前保护 grant，远程调用前不持锁等待网络。 */
     private ResourceGrant invocationGrant(String kind, String id, Owner caller) {
         return TransactionSynchronizationManager.isActualTransactionActive()
                 ? mapper.grantForShare(kind, id, caller)
@@ -115,6 +116,7 @@ public class ResourceAccessService implements ResourceAdministration, Credential
         return credentials.owned(owner);
     }
 
+    /** owner 行锁与草稿修订 CAS 共同防止并发发布、更新和归档覆盖彼此。 */
     public void archive(Owner owner, String agentId, long expectedRevision) {
         AgentDraft.requireCustomId(agentId);
         if (expectedRevision < 1 || expectedRevision == Long.MAX_VALUE)
@@ -127,7 +129,7 @@ public class ResourceAccessService implements ResourceAdministration, Credential
                 });
     }
 
-    /** expectedRevision=0 创建，否则更新精确修订；撤销也追加修订而不删除事实。 */
+    /** expectedRevision=0 创建，否则更新精确修订；撤销也追加修订而不删除事实。 Agent 授权先锁定归属；授权修改与审计追加在同一事务中完成，任一步失败全部回滚。 */
     public ResourceGrant change(
             Owner actor,
             String kind,

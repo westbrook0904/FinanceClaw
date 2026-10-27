@@ -201,6 +201,35 @@ class ModelPolicyTest {
                 .isGreaterThan(request.length());
     }
 
+    @ParameterizedTest
+    @ValueSource(
+            strings = {
+                "",
+                " \t",
+                "null",
+                "[]",
+                "{}",
+                "{\"messages\":{}}",
+                "{",
+                "{\"messages\":[],\"max_tokens\":0}"
+            })
+    void malformedOrMissingWireContentIsRejectedBeforeEitherTransportPath(String body) {
+        var wire = org.mockito.Mockito.mock(HttpTransport.class);
+        var transport = new BudgetedTransport(wire, 1000, 2000, 128, 0);
+        var request =
+                HttpRequest.builder()
+                        .url("http://127.0.0.1/unused")
+                        .method("POST")
+                        .body(body)
+                        .build();
+        assertThatThrownBy(() -> transport.execute(request))
+                .isInstanceOf(IllegalArgumentException.class);
+        var pending = transport.stream(request);
+        org.mockito.Mockito.verifyNoInteractions(wire);
+        assertThatThrownBy(pending::blockLast).isInstanceOf(IllegalArgumentException.class);
+        org.mockito.Mockito.verifyNoInteractions(wire);
+    }
+
     @Test
     void nativeFallbackUsesItsOwnSmallerBudgetBeforeDispatch() {
         var primary = new Capture();

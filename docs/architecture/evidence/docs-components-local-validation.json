@@ -1,0 +1,139 @@
+{
+  "schema": "docs-components-local-validation/1",
+  "baseline_commit": "ad0b3cacc873134acc80e26ba252b44ef954cde5",
+  "scope": [
+    "Current architecture, authorization, operations and delivery documentation",
+    "Transaction, lease, receipt, after-commit and trigger comments",
+    "Boot-managed JdbcTemplate reuse for worker registry, artifact catalog and runtime usage",
+    "Spring bounded Cron compilation cache; reusable private Jackson ObjectReader"
+  ],
+  "development_order": "All production and test implementation completed before consolidated formatting and verification. Documentation-only factual corrections and this result record were finalized afterward.",
+  "local_attempts": [
+    {
+      "attempt": 1,
+      "started_at_utc": "2026-10-27T01:32:32.149782+00:00",
+      "ended_at_utc": "2026-10-27T01:39:30.286953+00:00",
+      "stages": [
+        {
+          "name": "check-delivery",
+          "command": [
+            "/Library/Frameworks/Python.framework/Versions/3.14/bin/python3",
+            "scripts/check-delivery.py"
+          ],
+          "actual_exit_code": 0
+        },
+        {
+          "name": "test-live-acceptance",
+          "command": [
+            "/Library/Frameworks/Python.framework/Versions/3.14/bin/python3",
+            "scripts/test-live-acceptance.py"
+          ],
+          "actual_exit_code": 0
+        },
+        {
+          "name": "test-inspect-drain",
+          "command": [
+            "/Library/Frameworks/Python.framework/Versions/3.14/bin/python3",
+            "scripts/test-inspect-drain.py"
+          ],
+          "actual_exit_code": 0
+        },
+        {
+          "name": "test-restore-privacy",
+          "command": [
+            "/Library/Frameworks/Python.framework/Versions/3.14/bin/python3",
+            "scripts/test-restore-privacy.py"
+          ],
+          "actual_exit_code": 0
+        },
+        {
+          "name": "test-user-profile",
+          "command": [
+            "/Library/Frameworks/Python.framework/Versions/3.14/bin/python3",
+            "scripts/test-user-profile.py"
+          ],
+          "actual_exit_code": 0
+        },
+        {
+          "name": "test-compose-recovery",
+          "command": [
+            "/Library/Frameworks/Python.framework/Versions/3.14/bin/python3",
+            "scripts/test-compose-recovery.py"
+          ],
+          "actual_exit_code": 0
+        },
+        {
+          "name": "maven",
+          "command": [
+            "scripts/mvn.sh",
+            "-B",
+            "-ntp",
+            "-o",
+            "spotless:check",
+            "package"
+          ],
+          "actual_exit_code": 0
+        }
+      ],
+      "inputs_unchanged": true,
+      "input_manifest_sha256": "bc64a9c28b1cfe421321de366905786368e5cd5c38c832e1782a68761588a7db",
+      "input_file_count": 605,
+      "unit_inventory_matches": true,
+      "unit_tests": 1430,
+      "unit_failures": 0,
+      "unit_errors": 0,
+      "unit_skipped": 0,
+      "jar_sha256": "e6e39c665feb73ec463984d82763ac7e05148175c73808abbfef75c62e730f39",
+      "passed": true,
+      "unit_suites": 101,
+      "python_suites": [
+        {
+          "script": "scripts/test-live-acceptance.py",
+          "tests": 8,
+          "conclusion": "passed"
+        },
+        {
+          "script": "scripts/test-inspect-drain.py",
+          "tests": 12,
+          "conclusion": "passed"
+        },
+        {
+          "script": "scripts/test-restore-privacy.py",
+          "tests": 16,
+          "conclusion": "passed"
+        },
+        {
+          "script": "scripts/test-user-profile.py",
+          "tests": 10,
+          "conclusion": "passed"
+        },
+        {
+          "script": "scripts/test-compose-recovery.py",
+          "tests": 7,
+          "conclusion": "passed"
+        }
+      ],
+      "python_tests": 53
+    }
+  ],
+  "local_docker_probe": {
+    "date_utc": "2026-10-27",
+    "command": [
+      "docker",
+      "version",
+      "--format",
+      "{{.Server.Version}}"
+    ],
+    "timeout_seconds": 5,
+    "conclusion": "timeout",
+    "containers_modified": false
+  },
+  "remote_verification": "PostgreSQL integration, source/JAR fingerprint collection and Compose delivery require the push workflow for the exact commit containing these inputs. This pre-push local record does not assert a remote conclusion.",
+  "limits": [
+    "No local PostgreSQL/Compose/full-verify success claim.",
+    "JDBC recording stubs verify configuration and connection binding, not PostgreSQL SQL or locks.",
+    "No new dependency, SQL, migration, transaction propagation or automatic retry behavior.",
+    "No production throughput or capacity claim; real provider/MCP/Feishu UI acceptance remains separate.",
+    "RAG remains excluded."
+  ]
+}

@@ -48,7 +48,10 @@ public class ExecutionCompletionService {
                 });
     }
 
-    /** 封存与当前检查点精确匹配的执行结果；暂停交互与回执一起提交，使恢复器能够继续同一尝试的后续收尾。 */
+    /**
+     * 封存与检查点精确匹配的结果，并将暂停交互与回执一起提交；此时尚未宣布 Turn 完成。 正常执行先提交回执再调用 finish；进程在两步之间退出时，恢复器仍可收尾同一
+     * attempt，无需重跑模型或工具。
+     */
     public void seal(Claim claim, Outcome outcome) {
         if (!Set.of("completed", "waiting", "failed").contains(outcome.status())) {
             throw new IllegalArgumentException("Invalid outcome");
@@ -61,6 +64,7 @@ public class ExecutionCompletionService {
                         throw new Fenced();
                     }
                     if (receipts.seal(claim.command().attemptId(), outcome) != 1) {
+                        // 未命中有效 attempt 时在同一事务内拒绝，不能留下没有封存回执的暂停交互。
                         throw new Fenced();
                     }
                     if (outcome.status().equals("waiting")) {
@@ -91,6 +95,7 @@ public class ExecutionCompletionService {
                 });
     }
 
+    /** 正常执行在封存后另起收尾短事务，重新检查当前授权、checkpoint 和取消状态，再提交业务终态。 */
     public void finish(Claim claim) {
         leases.fenced(
                 claim,
@@ -106,6 +111,8 @@ public class ExecutionCompletionService {
 
     /** 使用调用方在同一事务、command → Turn 持锁范围内读取的封存回执继续收尾。 本方法不建立事务或重新查询回执，参数只能在本次调用栈中传递，不能跨事务缓存。 */
     void finishReceipt(Command c, Turn t, Receipt r) {
+        // 恢复器持有过期 command 的锁，因此这里不再要求活租约；也不创建新 attempt。
+        // 正常完成入口已经过 leases.fenced，恢复入口则只凭当前持锁行与封存回执继续收尾。
         // 恢复只认已封存回执，不根据模型输出、流结束或内存标志推断业务成功。
         // 原先按 attempt 主键查询隐含的 id 绑定必须显式保留；同时核验 commandId，
         // 防止数据库错误关联或错误调用方把其他命令的同 fence 回执用于当前执行。

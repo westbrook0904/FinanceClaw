@@ -20,7 +20,9 @@ public class TaskTransitionService {
         this.memory = memory;
     }
 
-    /** 加入调用方短事务；普通迁移只写入，不额外把问题、结果等 Turn 正文返回应用层。 */
+    /**
+     * 沿用调用方的短事务与 Turn 锁；执行/恢复路径先锁 command，再锁 Turn，本服务不另开事务改变锁序。 普通迁移只写入，不额外把问题、结果等 Turn 正文返回应用层。
+     */
     public void change(Turn t, String status, String result, String reason) {
         var transition = prepare(t, status, result, reason);
         db.transition(t.id(), status, result, reason);
@@ -56,7 +58,9 @@ public class TaskTransitionService {
         return transition;
     }
 
-    /** 保留原迁移参数的副作用含义与先后：事件、最终会话记录、记忆任务同事务提交。 RETURNING 行只用于调用方获取真实更新结果，不替代原输入重新决定 journal 或记忆行为。 */
+    /**
+     * 事件、最终会话记录和记忆任务与状态迁移同事务提交，任一步写入失败都不能提前通知完成。 RETURNING 行仅供调用方获取真实更新结果；journal 和记忆行为仍由原迁移参数决定。
+     */
     private void complete(TaskTransition transition) {
         Turn t = transition.turn();
         db.event(t.id());

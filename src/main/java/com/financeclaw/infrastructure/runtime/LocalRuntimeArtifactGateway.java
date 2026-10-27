@@ -12,7 +12,6 @@ import java.security.MessageDigest;
 import java.util.Arrays;
 import java.util.HexFormat;
 import java.util.List;
-import javax.sql.DataSource;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 
@@ -32,8 +31,8 @@ public final class LocalRuntimeArtifactGateway implements RuntimeArtifactGateway
                             row.getInt("protocol_version"),
                             Arrays.asList((String[]) row.getArray("capabilities").getArray()));
 
-    public LocalRuntimeArtifactGateway(DataSource source, String root) {
-        sql = new JdbcTemplate(source);
+    public LocalRuntimeArtifactGateway(JdbcTemplate sql, String root) {
+        this.sql = java.util.Objects.requireNonNull(sql);
         if (root == null || root.isBlank()) {
             this.root = null;
             this.rootFileKey = null;

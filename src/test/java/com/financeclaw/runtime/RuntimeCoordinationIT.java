@@ -345,7 +345,7 @@ class RuntimeCoordinationIT {
 
     @Test
     void workerRenewalRechecksExpiryAfterWaitingForRowLock() throws Exception {
-        var gateway = new JdbcWorkerRegistry(first.getBean(DataSource.class));
+        var gateway = new JdbcWorkerRegistry(first.getBean(JdbcTemplate.class));
         String id = UUID.randomUUID().toString();
         gateway.register(id, "a".repeat(64), 1, 2000);
         try (var holder = first.getBean(DataSource.class).getConnection();
@@ -447,7 +447,7 @@ class RuntimeCoordinationIT {
                 turn.id());
         var usage =
                 new JdbcRuntimeUsage(
-                                first.getBean(DataSource.class),
+                                first.getBean(JdbcTemplate.class),
                                 new BigDecimal("0.02"),
                                 new BigDecimal("0.05"))
                         .snapshot();
@@ -457,7 +457,7 @@ class RuntimeCoordinationIT {
         assertThat(usage.costBasis()).contains("not-provider-billing");
         assertThat(
                         new JdbcRuntimeUsage(
-                                        first.getBean(DataSource.class),
+                                        first.getBean(JdbcTemplate.class),
                                         BigDecimal.ZERO,
                                         BigDecimal.ZERO)
                                 .snapshot()

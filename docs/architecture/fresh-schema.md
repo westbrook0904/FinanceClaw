@@ -2,9 +2,9 @@
 
 FinanceClaw Java 是独立应用，支持全新数据库初始化，以及当前 Java V1 基线之后的前向升级；不导入 Python 数据或升级过去的实验结构。
 
-本轮保留当前分支的 [V1 初始化 SQL](../../src/main/resources/db/migration/V1__initialize_application.sql) 的内容和校验值；V10 升级用例以本次前置 V9 为基线，不修复更早历史文件漂移。V1 创建 35 张应用表；[V2](../../src/main/resources/db/migration/V2__release_catalog.sql) 增加三张持久发布表；[V3](../../src/main/resources/db/migration/V3__conversation_release_binding.sql) 增加会话发布绑定；[V4](../../src/main/resources/db/migration/V4__agent_definitions.sql) 增加 Agent 身份、不可变草稿修订及会话/Turn 的 Agent 绑定。[V5](../../src/main/resources/db/migration/V5__agent_compositions.sql) 增加可空能力选择和 v3 发布格式标记，不改写旧正文。[V6](../../src/main/resources/db/migration/V6__child_invocations.sql) 增加固定研究子调用的身份与累计预算。[V7](../../src/main/resources/db/migration/V7__execution_privacy.sql) 增加四个执行隐私函数及三个部分索引。[V8](../../src/main/resources/db/migration/V8__private_agent_delegation.sql) 扩充既有调用表的私有叶子绑定和隐私映射，P3a.3 已推送 `d433423`，[远程 CI](https://github.com/westbrook0904/FinanceClaw/actions/runs/40065079071)成功，1,702 项 Java、46 项脚本和 44 项部署检查通过。[V9](../../src/main/resources/db/migration/V9__private_agent_market_leaf.sql) 扩展固定行情私有叶子的约束和集合绑定核验。[V10](../../src/main/resources/db/migration/V10__outbox_pending_binding_index.sql) 为定时通知跳锁增加 pending 按 binding 定位的部分索引；保留现有 V1–V9 文件及其校验。V7/V8/V9/V10 均不增加表，Flyway 按序执行并验证历史校验值，截至 V10 为 41 张表。独立遗忘账本仍使用自己的两张表和凭据，不混入主库初始化。
+P3a.20 阶段保留当前分支的 [V1 初始化 SQL](../../src/main/resources/db/migration/V1__initialize_application.sql) 的内容和校验值；V10 升级用例以该阶段前置 V9 为基线，不修复更早历史文件漂移。V1 创建 35 张应用表；[V2](../../src/main/resources/db/migration/V2__release_catalog.sql) 增加三张持久发布表；[V3](../../src/main/resources/db/migration/V3__conversation_release_binding.sql) 增加会话发布绑定；[V4](../../src/main/resources/db/migration/V4__agent_definitions.sql) 增加 Agent 身份、不可变草稿修订及会话/Turn 的 Agent 绑定。[V5](../../src/main/resources/db/migration/V5__agent_compositions.sql) 增加可空能力选择和 v3 发布格式标记，不改写旧正文。[V6](../../src/main/resources/db/migration/V6__child_invocations.sql) 增加固定研究子调用的身份与累计预算。[V7](../../src/main/resources/db/migration/V7__execution_privacy.sql) 增加四个执行隐私函数及三个部分索引。[V8](../../src/main/resources/db/migration/V8__private_agent_delegation.sql) 扩充既有调用表的私有叶子绑定和隐私映射，P3a.3 已推送 `d433423`，[远程 CI](https://github.com/westbrook0904/FinanceClaw/actions/runs/40065079071)成功，1,702 项 Java、46 项脚本和 44 项部署检查通过。[V9](../../src/main/resources/db/migration/V9__private_agent_market_leaf.sql) 扩展固定行情私有叶子的约束和集合绑定核验。[V10](../../src/main/resources/db/migration/V10__outbox_pending_binding_index.sql) 为定时通知跳锁增加 pending 按 binding 定位的部分索引；保留现有 V1–V9 文件及其校验。V7/V8/V9/V10 均不增加表，Flyway 按序执行并验证历史校验值，截至 V10 为 41 张表。独立遗忘账本仍使用自己的两张表和凭据，不混入主库初始化。
 
-下表保留截至 V10 的结构；本批 V15 的表数在下方单独说明。
+下表保留截至 V10 的历史结构；当前 V15 的表数与验收在下方单独说明。
 
 | 结构 | 表数 | 责任 |
 | --- | ---: | --- |
@@ -33,7 +33,9 @@ docker compose up -d --build --wait --wait-timeout 180
 
 ## 非 RAG 集中实施中的前向迁移
 
-本批 V11–V15 已完成开发，完整数据库验收以本提交对应 Actions 为准：[实施状态](non-rag-completion-plan.md)。V11 扩充受控只读叶子和共享目标的隐私绑定核验；V12 增加资源授权/审计和 Agent 归档；V13 增加触发规则/修订/回执及派发配额/优先级；V14 增加 worker 资源与工件目录；V15 补齐子交互桥接的 profile、索引和隐私绑定。V1–V10 保持原字节与校验值，新增批次最终结构为 **52 张应用表、15 个迁移**。其中 business 23、control_plane 10、memory 13、channel 4、agent_runtime 2。独立遗忘账本仍不在本业务库中。
+V11–V15 已随 `ad0b3cacc873134acc80e26ba252b44ef954cde5` 交付；[Actions 40361051811](https://github.com/westbrook0904/FinanceClaw/actions/runs/40361051811) 的 `verify` 与 `delivery` 均成功，覆盖 2,110 Java、53 脚本和 45 Compose 检查，包括真实 PostgreSQL 初始化、受限角色及容器中新库结构核对。[集中实施记录](non-rag-completion-plan.md)保留此前失败和本地 Docker 阻塞；该基线不覆盖此后进行的文档或代码改动。
+
+V11 扩充受控只读叶子和共享目标的隐私绑定核验；V12 增加资源授权/审计和 Agent 归档；V13 增加触发规则/修订/回执及派发配额/优先级；V14 增加 worker 资源与工件目录；V15 补齐子交互桥接的 profile、索引和隐私绑定。V1–V10 保持原字节与校验值，新增批次最终结构为 **52 张应用表、15 个迁移**。其中 business 23、control_plane 10、memory 13、channel 4、agent_runtime 2。独立遗忘账本仍不在本业务库中。
 
 新增控制面表只向业务角色授予所需 SELECT/INSERT/UPDATE，规则修订、触发回执、资源授权审计与工件记录保持不可变；Memory Worker 继续无权访问 business/control_plane。已有角色升级在迁移内条件授权，新角色由 init-db 的 grants.sql 授权。固定触发、旧会话与旧待审批动作仍须按原发布及匹配工件执行，不支持新旧任意二进制混跑。
 
@@ -55,11 +57,11 @@ docker compose up -d --force-recreate api memory-worker
 
 发布指针初始化后，重启或环境配置变化不会自动切换默认发布；见[发布版本管理](../operations.md#发布版本管理)。P2a 用 `agent-release/2` 清单固定自定义 Agent 的提示词、owner 和基础发布，旧格式继续独立解码且不能作为私有 Agent 的别名。本阶段不迁移旧检查点格式；P2b 新增 `agent-release/3`，冻结受控能力、SDK 有效 MCP 契约和生产运行工件摘要，旧格式不会获得补造快照，见 [能力组装与升级限制](agent-composition.md#冻结的范围与升级行为)。
 
-V6 不回填旧研究步骤的调用绑定或预算。已有 `child:<call_id>` 步骤但缺少调用绑定时拒绝复用，不把未知消耗当成零。父请求的原回执、取消/失租围栏和未知执行阻断规则保持权威；本阶段不提供子检查点向新 attempt 的自动复制。
+V6 不回填旧研究步骤的调用绑定或预算。已有 `child:<call_id>` 步骤但缺少调用绑定时拒绝复用，不把未知消耗当成零。父请求的原回执、取消/失租围栏和未知执行阻断规则保持权威；V6 阶段当时不提供子检查点向新 attempt 的自动复制；后续受控叶子的精确 ASK 恢复见[非 RAG 集中实施](non-rag-completion-plan.md#p3a-受控叶子与结果读取语义)。
 
 V7 的函数在后续遗忘或隔离恢复重放时清理旧执行副本；应用结构变更本身不等于已清理历史正文。SDK 状态先保留递增版本墓碑，再删除旧步骤、子调用及隐私绑定工具文件，不移除普通业务 Turn、Journal、报告或 Artifact。Snapshot v3 必须使用 V7 的全局残留函数，v2 不再作为当前恢复证明；旧快照不能补零后继续使用，应在已升级的隔离库重新导出。具体范围、未知状态阻断与验收状态见[执行数据隐私清理](execution-privacy.md)。
 
-V8 增加 `target_agent_id`、`target_release_hash` 和私有绑定不可变约束；只允许同 owner 显式空工具叶子，原市场研究字段及 scope 不回填或改写。集合恢复函数改用保存的目标和历史 attempt 派生私有 scope，不读取 current。运行仍严格校验生产工件摘要，升级后二进制不匹配的旧组合发布保持阻断；应先用新运行工件发布叶子，再重新发布父 Agent 并创建新会话，不能重写旧会话或旧目标 hash。配置和本地验收范围见[私有叶子 Agent 委派](private-agent-delegation.md)。
+V8 增加 `target_agent_id`、`target_release_hash` 和私有绑定不可变约束；该阶段只允许同 owner 显式空工具叶子，原市场研究字段及 scope 不回填或改写。集合恢复函数改用保存的目标和历史 attempt 派生私有 scope，不读取 current。运行仍严格校验生产工件摘要，升级后二进制不匹配的旧组合发布保持阻断；应先用新运行工件发布叶子，再重新发布父 Agent 并创建新会话，不能重写旧会话或旧目标 hash。配置和本地验收范围见[私有叶子 Agent 委派](private-agent-delegation.md)。
 
 V9 不改变旧空工具契约、调用身份或 scope 派生式；新行情档位最多一次读取，目标计划按冻结元数据严格匹配。升级后仍先发布新工件的目标与父 Agent，再创建新会话。配置与本地验证范围见[固定行情叶子](private-agent-market-leaf.md)。
 

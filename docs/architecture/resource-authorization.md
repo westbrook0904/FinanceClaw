@@ -1,6 +1,6 @@
 # 身份、Agent 管理与资源授权
 
-状态：本批开发已完成，提交前单元/HTTP 契约验证通过，完整数据库和部署结果以本提交对应 GitHub Actions 为准。[本地验证记录](evidence/non-rag-implementation.json)保留 Docker 阻塞与此前失败，本文描述实现契约。
+已交付基线：`ad0b3ca` 的 [Actions 40361051811](https://github.com/westbrook0904/FinanceClaw/actions/runs/40361051811) 已通过完整 Java、脚本与 Compose 验收；其中包括下述认证、HTTP 管理、共享授权和真实 PostgreSQL 竞争测试。[集中实施记录](non-rag-completion-plan.md)保留此前失败及本地 Docker 阻塞。该结果不覆盖此后的文档或代码改动；这里的服务端目录仍不是外部身份提供方或完整组织 RBAC。
 
 ## 可信身份与角色
 
@@ -27,7 +27,7 @@
 
 没有隐式 `admin` 或通配符角色。角色允许进入管理端点，资源 owner 校验仍然独立执行。未知角色、重复 token（包括与旧 token 重复）、重复 JSON 键、多余字段和非法身份会令配置初始化失败。目录实例仅保存 token 的 SHA-256 摘要；错误不会附带含 token 的原始配置。
 
-这是由服务端部署控制的认证目录，不是自助注册、身份提供方或完整组织 RBAC。目录变更需要重新加载服务配置；数据库中的资源授权变更在后续授权检查处生效。
+这是由服务端部署控制的认证目录，不是自助注册、身份提供方或完整组织 RBAC。目录在进程启动时加载，变更后需重新部署/启动使用新配置的进程；没有热更新目录 API。数据库中的资源授权变更在后续授权检查处生效。
 
 ## 服务端凭据资源目录
 
@@ -50,7 +50,7 @@
 
 管理操作只允许访问认证主体自己的 Agent。调用共享 Agent 时，执行 caller 始终是调用者本人：Turn、Conversation、记忆、产物、SDK user/session、Command 和 Attempt 不改成发布者身份。
 
-`AgentAccessGateway.requireInvocation(caller, agentId, releaseHash)` 返回独立的 `resourceOwner` 与当前 `grantRevision`。发布清单用 `resourceOwner` 核对不可变身份；业务数据和执行栅栏继续使用 caller。父 Agent 委派共享子 Agent 时，也使用根 caller 检查子目标，而不借用父发布者或子发布者身份。能力冻结和执行边界由调用链再次校验。
+`AgentAccessGateway.requireInvocation(caller, agentId, releaseHash)` 返回独立的 `resourceOwner`、当前 `grantRevision`，以及该次检查已解析的不可变 `resolvedRelease`（内置目标可为空）。调用链复用该次清单可避免重复解析，但每次使用仍重新检查当前 owner/共享授权，不跨事务缓存授权结论。发布清单用 `resourceOwner` 核对不可变身份；业务数据和执行栅栏继续使用 caller。父 Agent 委派共享子 Agent 时，也使用根 caller 检查子目标，而不借用父发布者或子发布者身份。能力冻结和执行边界由调用链再次校验。
 
 Agent grant 绑定一个具体 `release_hash`。发布者发布新版本，不会自动将旧授权扩大到新版本；已有会话仍固定旧版本，并需要旧版本授权继续有效。当前目标解析使用当前部署指针，因此当前版本没有授权时不能新建普通目标会话。`GET /v1/agents/shared` 返回获授权的精确版本，可用于展示或发布时冻结子目标。
 
@@ -62,7 +62,7 @@ Agent 删除采用归档：CAS 设置 `agents.archived=true`，隐藏管理目�
 
 ## HTTP 与 CAS
 
-正文遵循项目现有 snake_case JSON 规则，拒绝未知属性和类型强制转换。以下 Agent 管理端点均要求 `agent:manage` 且 owner 匹配；`finance_agent` 内置目标保持只读。
+正文遵循项目现有 snake_case JSON 规则，拒绝未知属性和类型强制转换。`GET /v1/agents` 供普通认证调用者读取目录；下表其他管理端点要求 `agent:manage` 且 owner 匹配。`finance_agent` 内置目标保持只读。
 
 | 请求 | 正文或参数 | 作用 |
 | --- | --- | --- |
@@ -108,4 +108,4 @@ V12 增加 `control_plane.resource_grants` 和 `control_plane.resource_grant_aud
 
 ## 验收边界
 
-新增源码测试覆盖认证目录拒绝非法配置、普通 token 管理拒绝、owner 与 CAS、HTTP 不接受凭据值、真实 PostgreSQL 上共享身份分离、精确版本、撤销、竞争 CAS、审计回滚/不可变、凭据引用重绑定及归档。事务锁竞争测试通过 `pg_blocking_pids` 检查 Agent 撤销、归档及凭据撤销确实等待授权事务提交。相关测试为 `TrustedIdentityDirectoryTest`、`AgentManagementHttpTest`、`ResourceAuthorizationIT`。共享子调用、ASK 恢复与跨实例 SSE 的完整验证由对应调用链测试承担。最终源码的完整 PostgreSQL 验收以对应提交的 CI 报告为准，不把源码覆盖描述当作已通过的证明。
+交付基线的测试覆盖认证目录拒绝非法配置、普通 token 管理拒绝、owner 与 CAS、HTTP 不接受凭据值、真实 PostgreSQL 上共享身份分离、精确版本、撤销、竞争 CAS、审计回滚/不可变、凭据引用重绑定及归档。事务锁竞争测试通过 `pg_blocking_pids` 检查 Agent 撤销、归档及凭据撤销确实等待授权事务提交。相关测试为 `TrustedIdentityDirectoryTest`、`AgentManagementHttpTest`、`ResourceAuthorizationIT`。共享子调用、ASK 恢复与跨实例 SSE 的完整验证由对应调用链测试承担。完整 PostgreSQL 结果见文首固定提交的 CI；没有将测试中的占位 token、离线模型或本地 MCP 服务当作真实身份提供方或外部凭据验收。

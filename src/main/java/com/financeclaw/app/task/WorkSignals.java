@@ -31,6 +31,10 @@ public final class WorkSignals {
         }
     }
 
+    /**
+     * 有事务时只在成功提交后推进代次，无事务时立即提示。代次仅用于打断本机退避，既不是工作数量，也不确认消费。
+     * 回调只改内存，不查询数据库或调用网络；实际领取仍由扫描器重新读取持久队列并竞争行锁。
+     */
     public void afterCommit(Queue queue) {
         var counter = counter(queue);
         if (!TransactionSynchronizationManager.isActualTransactionActive()) {

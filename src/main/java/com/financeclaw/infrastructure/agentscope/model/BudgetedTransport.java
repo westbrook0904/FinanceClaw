@@ -2,6 +2,7 @@ package com.financeclaw.infrastructure.agentscope.model;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.ObjectReader;
 import io.agentscope.core.model.transport.HttpRequest;
 import io.agentscope.core.model.transport.HttpResponse;
 import io.agentscope.core.model.transport.HttpTransport;
@@ -16,6 +17,9 @@ import reactor.core.publisher.Flux;
  * 字节上界，未定价的 多模态输入显式拒绝。流式请求在订阅时校验，重试或备用模型同样要经过各自预算。
  */
 public final class BudgetedTransport implements HttpTransport {
+    // reader 的配置固定后可跨线程复用；只复用解析器配置，不缓存请求树或各模型的容量。
+    // 使用私有默认配置，避免 HTTP DTO 的 Jackson 定制改变最终模型请求检查。
+    private static final ObjectReader REQUEST_JSON = new ObjectMapper().reader();
     private final HttpTransport delegate;
     private final int capacity;
     private final int outputReserve;
@@ -42,7 +46,7 @@ public final class BudgetedTransport implements HttpTransport {
             throw new IllegalArgumentException("Missing model request body");
         }
         try {
-            JsonNode request = new ObjectMapper().readTree(body);
+            JsonNode request = REQUEST_JSON.readTree(body);
             if (!request.isObject() || !request.path("messages").isArray()) {
                 throw new IllegalArgumentException("Unsupported model request shape");
             }

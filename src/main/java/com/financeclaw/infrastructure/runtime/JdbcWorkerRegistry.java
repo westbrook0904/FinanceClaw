@@ -4,7 +4,6 @@ import com.financeclaw.app.runtime.port.WorkerRegistryGateway;
 import com.financeclaw.domain.runtime.RuntimeWorker;
 import java.util.Arrays;
 import java.util.List;
-import javax.sql.DataSource;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 
@@ -24,8 +23,9 @@ public final class JdbcWorkerRegistry implements WorkerRegistryGateway {
                             row.getString("state"),
                             row.getBoolean("live"));
 
-    public JdbcWorkerRegistry(DataSource source) {
-        sql = new JdbcTemplate(source);
+    public JdbcWorkerRegistry(JdbcTemplate sql) {
+        // 保留 Boot 为业务模板配置的超时等设置；连接和事务仍由同一 DataSource 管理。
+        this.sql = java.util.Objects.requireNonNull(sql);
     }
 
     @Override

@@ -27,6 +27,7 @@ public class ExecuteTaskService {
     }
 
     private void executeUsing(Claim claim, java.util.function.Supplier<Outcome> invocation) {
+        // SDK/网络调用跨越多个短栅栏事务；外层事务会一直占住连接和行锁，妨碍续租、取消与撤权。
         if (org.springframework.transaction.support.TransactionSynchronizationManager
                 .isActualTransactionActive()) {
             throw new IllegalStateException("Native execution must run outside a transaction");
@@ -62,6 +63,7 @@ public class ExecuteTaskService {
             if (completion.acknowledgeCancel(claim)) {
                 return;
             }
+            // 两个独立短事务保留“已封存、尚未收尾”的恢复点；finish 失败仍可凭回执完成同一 attempt。
             completion.seal(claim, result);
             completion.finish(claim);
         } catch (com.financeclaw.domain.Governance.Blocked blocked) {
@@ -71,7 +73,8 @@ public class ExecuteTaskService {
                 /* recover expired lease */
             }
         } catch (RuntimeException ignored) {
-            /* Preserve a sealed receipt; never turn commit uncertainty into failure. */
+            // 提交应答丢失或 afterCommit 回调异常都不能证明数据库回滚。
+            // 保留可能已封存的回执，交给租约恢复核验；此处补写 failed 会覆盖尚待确认的成功结果。
         }
     }
 

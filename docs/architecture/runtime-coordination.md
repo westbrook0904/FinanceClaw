@@ -1,6 +1,6 @@
 # 运行协调与调用观测
 
-状态：本批开发已完成，提交前单元与契约验证通过。[本地记录与 Docker 阻塞](evidence/non-rag-implementation.json)独立保留；完整 PostgreSQL、独立进程和 Compose 结果以本提交对应 GitHub Actions 为准。不代表真实模型或观测后端验收。
+已交付基线：`ad0b3ca` 的 [Actions 40361051811](https://github.com/westbrook0904/FinanceClaw/actions/runs/40361051811) 已通过 2,110 Java、53 脚本与 45 Compose 检查，包含真实 PostgreSQL 通知、独立上下文、worker 故障恢复与工件目录验证。[集中实施记录](non-rag-completion-plan.md)保留此前失败和本地 Docker 阻塞。该基线不覆盖此后的文档或代码改动，也不代表真实模型、远程观测后端或生产容量已验收。
 
 ## 权威与装配
 
@@ -63,7 +63,7 @@ worker 的 readiness 只读取本机注册、暂挂和截止状态，不查询�
 
 低基数标签仅有 `kind` 和 `outcome`；outcome 是 `returned/blocked/fenced/error/cancelled`。不把 owner、任务/调用 ID、提示词、工具参数、SQL、模型正文或原始异常放进标签及 Observation error。观测 handler 的失败不重试业务调用、不替换业务结果，也不能阻断已完成的外部动作。另保留 `financeclaw.runtime.invocation` 固定 outcome 计时器。
 
-`returned` 表示 SDK/端口返回，并非业务提交成功；后续封存、取消确认和租约 fencing 仍由原业务服务决定。已接入 Observation 接口和本地 handler 验收源码；没有增加 OpenTelemetry exporter、凭据或远程出口。是否导出及导向何处由部署的 ObservationHandler/监控配置决定，不能据此声称真实 tracing 后端已经接通。
+`returned` 表示 SDK/端口返回，并非业务提交成功；后续封存、取消确认和租约 fencing 仍由原业务服务决定。已接入 Micrometer Observation，并通过本地 handler 的真实调用链验证；没有增加 OpenTelemetry exporter、凭据或远程出口。是否导出及导向何处由部署的 ObservationHandler/监控配置决定，不能据此声称真实 tracing 后端已经接通。
 
 ## 调用成本与管理 API
 
@@ -79,7 +79,7 @@ worker 的 readiness 只读取本机注册、暂挂和截止状态，不查询�
 | `POST /v1/runtime/artifacts/{hash}/verify` | 重验登记工件的当前字节和类摘要 |
 | `GET /v1/runtime/usage` | 固定维度的预算调用与配置成本估算 |
 
-## 新配置
+## 运行配置
 
 | 配置 | 默认值与限制 |
 | --- | --- |
@@ -99,7 +99,8 @@ SSE 连接数量、超时、心跳和队列容量继续沿用既有配置。调�
 - `TaskEventNotificationIT`：两套真实 PostgreSQL LISTEN 连接与真实 MyBatis 回放，空闲 keepalive 不查事件表、提交/回滚通知、撤权唤醒、断线间隙恢复、关闭释放业务池连接。
 - `RuntimeCoordinationIT`：两个独立 Spring 上下文共享真实 PostgreSQL；跨实例回放、grant/共享 Agent/隐私门禁、注册过期锁等待、原恢复链路、工件目录与成本读回；真实 AgentScope 模型与工具边界观测。
 - `TaskWorkerRuntimeControlTest`：注册 UUID 与 claim 一致，撤权/注册丢失后中断、停止续租，同时保留恢复；数据库暂挂期间停止工作、控制重试与新任务恢复；旧 attempt 和迟到 claim 不复活；假单调时钟验证没有其他 tick 时晚到成功仍不能延长旧 TTL，readiness 只读无中断。
+- `WorkerReadinessHealthTest`：健康探测只映射 worker 的本地状态，不产生额外调用或身份详情；真实 worker 在首次注册前为 DOWN，显式禁用时为 UP。
 - `RuntimeArchiveSafetyTest`：稳定类摘要、锚点与压缩归档上限。
 - `RuntimeObservationsTest`：跨 Reactor 线程父子关系、失败/取消清理、观测 handler 失败不改变真实调用。
 
-测试入口与最终结果分开记录；对应提交的完整 CI 报告给出数据库和部署结论，提交前记录不预测远程结果。
+上述测试已纳入交付基线的完整 CI。Compose 另验证两种故障：默认 15 秒 TTL 过期后，数据库恢复但旧 worker 保持不可用，启动新进程后新任务完成；显式 60 秒 TTL 下，截止前恢复注册且不重启进程，新任务完成。两项实验还核对停库前已完成任务的原有效果和封存回执未重复；它们没有制造在途未知副作用，未知执行保持阻断的语义另由既有恢复用例验证。通知测试中的两个独立上下文/监听连接不等于跨地域网络或生产规模验收；真实远程 exporter、外部模型和长时间生产负载仍待实际环境验证。

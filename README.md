@@ -11,16 +11,21 @@
 | 上下文管理 | Turn 长期记忆快照、跨轮工作上下文与完整工具轨迹；分区预算、结构化压缩、大结果文件引用 |
 | 记忆系统 | 用户手工维护的 Markdown 画像 + 有来源和确认状态的跨会话证据；可选向量搜索、独立遗忘账本 |
 | ReAct 运行时 | 每个执行尝试独立 Agent / Toolkit / 状态 scope；持久命令、租约、检查点、审批恢复、取消和 SSE |
-| 工具 | 本地 `ToolBase`、原生 MCP、Classpath Skills，以及受限研究子 Agent 和固定组合工作流 |
-| 权限 | 服务端主体、会话授权版本、工具 scopes、原生 ASK 审批、执行围栏、受限数据库身份 |
+| 工具与子 Agent | 本地 `ToolBase`、原生 MCP、Classpath Skills；冻结发布的一层叶子委派、子审批恢复和固定组合工作流 |
+| 身份与管理 | 服务端多主体目录、显式管理角色、Agent HTTP/CLI 管理、精确发布共享与凭据资源授权 |
+| 权限 | 会话授权版本、工具 scopes、原生 ASK 审批、执行围栏、受限数据库身份 |
 | 模型管理 | 离线模型、OpenAI 兼容协议、主备模型、请求与调用次数预算、固定发布身份、凭据分离 |
 | 中间件 | 最终答复过滤、Turn 记忆注入、工作上下文压缩、大结果归档、Skill 派发检查与传输校验 |
+| 调度与运行协调 | 持久 Cron/Webhook、owner/Agent 配额与公平领取、worker 注册和路由、跨实例持久事件补读 |
+| 观测 | Micrometer Observation 调用父子关系、固定维度计时、已提交调用次数与配置单价估算 |
 
 ## 运行结构
 
-HTTP API、AgentScope 执行、SSE、任务恢复和飞书投递运行在**同一个业务 JVM**。业务连接与心跳预留连接共用原数据库连接总预算；进程内事件中心处理本机通知。受限记忆处理、数据库初始化和离线隐私恢复使用独立入口。工程保持单个 Maven 模块。
+HTTP API、AgentScope 执行、SSE、任务恢复和飞书投递运行在**同一个业务 JVM**；多个 standalone 实例通过 PostgreSQL 协调领取和持久事件。业务连接与心跳预留连接共用原数据库连接总预算；进程内事件中心处理本机通知与临时进度。受限记忆处理、数据库初始化和离线隐私恢复使用独立入口。工程保持单个 Maven 模块，尚未物理拆分控制面与数据面。
 
-非 RAG 平台遗留项已完成[本批开发](docs/architecture/non-rag-completion-plan.md)：Agent 受控调用与审批恢复、身份和资源管理、持久触发与配额调度、运行协调和观测。提交前 1,419 个单元/契约/架构测试、53 个脚本测试与打包通过；本机 Docker 阻塞和此前失败记录均保留，完整 PostgreSQL/Compose 结果以本提交对应的 GitHub Actions 为准。RAG 暂缓。
+前轮已交付基线为 `ad0b3cacc873134acc80e26ba252b44ef954cde5`：[GitHub Actions 40361051811](https://github.com/westbrook0904/FinanceClaw/actions/runs/40361051811) 的 `verify` 和 `delivery` 均成功，覆盖 **2,110 项 Java 测试（1,419 单元 + 691 集成）、53 项脚本测试、45 项 Compose 检查**。[非 RAG 集中实施](docs/architecture/non-rag-completion-plan.md)保留此前失败和本地 Docker 阻塞记录。该结果不覆盖本轮文档、注释与组件复用改动；真实外部服务和生产容量尚未验收，RAG 按用户要求暂缓。
+
+本轮文档与组件整理已完成本地 **1,430 项单元测试、53 项 Python 契约测试、静态与格式检查及打包**，均通过；[实际验收记录](docs/architecture/evidence/docs-components-local-validation.json)区分本地结果与远程要求。当前事务边界、Boot JDBC 配置复用、Cron 有界缓存和 JSON reader 复用见[数据库访问策略](docs/architecture/database-access-review.md)。本地 Docker API 仍超时，PostgreSQL 与 Compose 的完整远程结论应核对本次提交对应的 Actions。
 
 ```mermaid
 flowchart LR
@@ -35,6 +40,8 @@ flowchart LR
     Tools --> DB
     Agent --> Events[进程内事件中心]
     Events --> API
+    DB -.提交后 LISTEN/NOTIFY 唤醒.-> Replay[各实例持久事件补读]
+    Replay --> API
     Memory[受限 Memory Worker] --> DB
 ```
 
@@ -111,7 +118,7 @@ python3 scripts/user-profile.py push --file /tmp/financeclaw-profile.md
 
 状态存储使用完整 AgentState、CAS 与墓碑，冲突策略为 `FAIL`。主任务 ReAct 的模型和工具调用自动重试及未知工具自动恢复关闭；取消、租约失效和恢复由持久业务边界决定。有封存回执的过期执行可以安全收尾，无确定回执则进入 `blocked/unconfirmed_execution`，不能自动重放未知操作。
 
-SSE 转发原生文本增量和工具状态，并回放持久任务事件。先订阅再回放、按修订号去重，检测到缺口才补读；空闲心跳不轮询数据库。原生最终答复过滤器会缓冲模型轮文本，文本增量可能在该轮结束后才放出，不承诺逐 token 即时到达。临时进度没有断线重放保证，持久业务事件才带 SSE ID；当前没有跨实例事件总线。
+SSE 转发本机原生文本增量和工具状态，并通过 PostgreSQL `LISTEN/NOTIFY` 唤醒各 standalone 实例补读持久任务事件。先订阅再回放、按 revision 去重；空闲 keepalive 仍核验权限，但不轮询消息表。只有持久事件带 SSE ID，可用 `Last-Event-ID` 重连补回；通知是唤醒提示，数据库事件才是事实。文本增量与临时工具进度只在执行所在 JVM 转发，不能跨实例或断线补回。原生最终答复过滤器可能到模型轮结束才释放文本，不承诺逐 token 即时到达。监听失联会关闭旧订阅，重新就绪后由客户端重连；详见[运行协调](docs/architecture/runtime-coordination.md)。
 
 源码：[IsolatedAgentFactory](src/main/java/com/financeclaw/infrastructure/agentscope/IsolatedAgentFactory.java)、[TaskWorker](src/main/java/com/financeclaw/worker/TaskWorker.java)、[ExecutionCompletionService](src/main/java/com/financeclaw/app/execution/ExecutionCompletionService.java)、[TaskEvents](src/main/java/com/financeclaw/api/TaskEvents.java)。
 
@@ -126,13 +133,13 @@ SSE 转发原生文本增量和工具状态，并回放持久任务事件。先�
 | 基础工具 | 城市补充、示例目录检索、审批后创建本地报告、Artifact 分页读取 |
 | 市场快照 | 发布时固定的数据，携带 provider / as_of；默认数据为空，不是默认接入实时行情 |
 | 市场研究 | 固定目标、深度为一的 ReAct 子 Agent；持久调用身份与 4 次模型 / 10 次实际行情读取上限，额度同时计入根 Turn |
-| 私有叶子 Agent | 同 owner、冻结发布、仅显式消息输入；支持空工具与单次行情两个固定契约；最多 4 次子模型并受根预算约束；P3a.6 已推送，远程 CI 通过 |
+| 受控叶子 Agent | 本人或显式共享的精确发布，仅接收显式消息；支持原空工具/单行情契约及选定 Function、只读 MCP、打包 Skill；`request_city` / `create_report` 可桥接根审批；深度一层、持续受根预算和当前授权约束 |
 | 组合复盘 | `/workflow portfolio_review …` 固定步骤驱动，包含计算、数据新鲜度、敞口检查、人工批准和归档 |
 | 紫微 | 本命、大限、年、月、日五个受治理入口；默认关闭，仍需显式开发配置 |
 
 P3a.1 用一张 `child_invocations` 窄表保存研究调用身份和累计额度，结果继续复用 `capability_steps`，更换 attempt 不重置计数。相同快照回执不重复执行行情读取或扣减该次子/根读取额度；缓存与 SDK 状态读写都先通过父 Turn 的运行状态、fence、隐私与授权门禁。原验收与远程结果见[固定研究子调用](docs/architecture/child-invocations.md)，组合复盘仍是固定工作流。
 
-P3a.2 已完成旧执行正文清理和恢复核对的本地验收并推送。P3a.3 已交付同 owner 空工具叶子 Agent 委派并通过远程 CI：父发布冻结目标版本，子 Agent 使用独立模型／提示词，只接收明确的 `message`；父侧 Artifact reader 依赖支持大结果引用，空工具契约的子侧保持零工具；固定行情扩展见[P3a.6](docs/architecture/private-agent-market-leaf.md)。仍复用父调度、取消和预算，不增加子队列或轮询。配置与验收边界见[私有叶子 Agent 委派](docs/architecture/private-agent-delegation.md)。
+P3a.3 的[同 owner 空工具叶子](docs/architecture/private-agent-delegation.md)与 P3a.6 的[固定行情叶子](docs/architecture/private-agent-market-leaf.md)是早期交付阶段，原摘要和验证记录保留。当前[受控叶子与结果读取](docs/architecture/non-rag-completion-plan.md#p3a-受控叶子与结果读取语义)已扩展共享目标、选定能力及多问题/再次暂停恢复。父发布仍冻结子版本，子运行只接收明确的 `message`，复用根调度、取消和持久预算，不增加子队列；不开放递归和多成员 Team。
 
 #### MCP
 
@@ -148,7 +155,8 @@ P2b 显式组装的 `agent-release/3` 在发布时通过事务外发现，冻结
 
 ### 5. 权限与治理
 
-- **主体与归属**：任务、画像、证据、授权及运维查询按 owner 隔离。当前 Bearer 配置只映射一个服务端主体，尚未接入 JWT/OIDC、多用户身份目录或完整 RBAC 平台。
+- **主体与归属**：任务、画像、证据和业务查询按 owner 隔离。服务端可信目录可将多个 Bearer token 分别固定到 tenant/subject，并显式赋予管理角色；兼容旧单 token，普通调用 token 不自动获得管理权。尚未接入 JWT/OIDC、自助注册或完整组织 RBAC。
+- **管理与资源授权**：Agent 草稿、发布、归档、历史和能力目录提供 owner 范围 HTTP；CLI 保留草稿、发布、历史及目录管理，归档使用 HTTP。更新使用 CAS。共享 Agent 授权绑定精确发布，凭据另行授权；任务 caller 始终是调用者，不能冒充发布者。执行、产物和 SSE 重新检查当前授权，详见[身份与资源授权](docs/architecture/resource-authorization.md)。
 - **权限快照**：Turn 绑定发布 hash、会话授权 revision 和允许 scopes；之后派发模型/工具和提交结果时继续校验。授权修改使用预期 revision 与幂等键，旧请求重放只返回原回执。
 - **工具权限**：发布允许范围与会话授权共同决定工具集；采用原生 `PermissionMode.DEFAULT`，拒绝 BYPASS。审批工具使用 ASK，未授权工具不注册。
 - **动作绑定**：回答绑定 Turn、Command、Attempt、stateVersion、grant revision、release hash、call ID、工具名和动作摘要，不能把一次批准套到另一个动作。
@@ -173,7 +181,7 @@ P2b 显式组装的 `agent-release/3` 在发布时通过事务外发现，冻结
 | 记忆模型 | 提取、embedding 单独配置和凭据；提取使用 SDK 类型化结构输出，不承诺供应商原生 JSON Schema 模式 |
 | 发布身份 | AgentScope 版本、模型配置、预算、scopes、打包 Skill 和业务配置参与摘要；任务绑定受理时版本 |
 
-发布清单、默认发布指针和变更历史保存在 PostgreSQL。启动登记当前配置，但已有指针不会被环境变更覆盖；显式切换使用 revision CAS。新会话创建时固定发布，后续 Turn、重试和审批恢复沿用该版本；升级通过新会话生效。缺失或摘要不匹配的历史清单会阻断执行，不回退到当前版本。P2a 增加 owner 私有的 Agent 身份、提示词草稿和独立发布指针，CLI 管理后可通过 `POST /v1/conversations` 的 `agent_id` 选择已发布目标；会话固定 Agent ID 与版本。P2b 在固定基础上增加模型 profile、Function/Skill/MCP 选择与依赖快照，详见 [受控能力组装](docs/architecture/agent-composition.md)；多资源池与模型网关继续分阶段实施。操作说明见 [Agent 定义与调用](docs/architecture/agent-definitions.md)、[平台化实施方案](docs/architecture/platform-implementation-plan.md)和[发布运维](docs/operations.md#发布版本管理)。
+发布清单、默认发布指针和变更历史保存在 PostgreSQL。启动登记当前配置，但已有指针不会被环境变更覆盖；显式切换使用 revision CAS。新会话创建时固定发布，后续 Turn、重试和审批恢复沿用该版本；升级通过新会话生效。缺失或摘要不匹配的历史清单会阻断执行，不回退到当前版本。自定义 Agent 有独立身份、提示词草稿和发布指针，支持带管理角色的 HTTP 和操作员 CLI。通过 `POST /v1/conversations` 的 `agent_id` 选择本人或当前获授权的已发布目标；会话固定 Agent ID 与版本，后续仍检查共享授权。P2b 在固定基础上增加模型 profile、Function/Skill/MCP 选择与依赖快照，详见 [受控能力组装](docs/architecture/agent-composition.md)；多资源池与模型网关继续分阶段实施。操作说明见 [Agent 定义与调用](docs/architecture/agent-definitions.md)、[平台化实施方案](docs/architecture/platform-implementation-plan.md)和[发布运维](docs/operations.md#发布版本管理)。
 
 源码：[ModelFactory](src/main/java/com/financeclaw/infrastructure/agentscope/model/ModelFactory.java)、[ModelProfile](src/main/java/com/financeclaw/domain/release/ModelProfile.java)、[ReleaseService](src/main/java/com/financeclaw/app/release/ReleaseService.java)、[ReleaseIdentity](src/main/java/com/financeclaw/app/release/ReleaseIdentity.java)、[AgentScopeMemoryModels](src/main/java/com/financeclaw/infrastructure/agentscope/memory/AgentScopeMemoryModels.java)。
 
@@ -194,7 +202,7 @@ P2b 显式组装的 `agent-release/3` 在发布时通过事务外发现，冻结
 | HTTP Transport | `BudgetedTransport` | 发送前检查完整模型请求 |
 | HTTP 服务 | `BearerIdentity` / `HttpRequestConfiguration` / `ApiErrors` | 认证、严格 JSON 绑定和稳定错误码，避免回显敏感细节 |
 
-这些扩展在代码中明确装配，没有面向用户的任意 Middleware 插件安装或配置中心。当前提供 Actuator 健康/就绪、任务运维查询和只读预检；尚未接入统一 OpenTelemetry 调用链或完整成本与性能观测体系。
+这些扩展在代码中明确装配，没有面向用户的任意 Middleware 插件安装或配置中心。当前提供 Actuator 健康/就绪、任务运维查询、Micrometer Observation 的 attempt→model/tool 父子关系和固定维度计时；`/v1/runtime/usage` 按已提交模型/工具次数与配置单价估算成本。尚未配置远程 OpenTelemetry exporter，也不提供供应商 token 账单或生产容量结论。配置和可见性边界见[运行协调与观测](docs/architecture/runtime-coordination.md)。
 
 ## 本地启动与体验
 
@@ -208,7 +216,7 @@ docker compose up -d --build --wait --wait-timeout 180
 curl --fail http://localhost:8080/actuator/health/readiness
 ```
 
-就绪预期返回 `{"status":"UP"}`。Compose 的 `init-db` 完成新库结构与授权后，启动统一业务服务 `api` 和受限 `memory-worker`；API 仅绑定本机 8080。主库由 V1 基线及 V2–V9 演进建立 41 张应用表；V8/V9 扩充既有私有调用绑定与固定行情约束，不增加表。支持当前 Java V1 基线升级，不导入 Python 或历史实验库，详见[数据库初始化与升级](docs/architecture/fresh-schema.md)。
+就绪预期返回 `{"status":"UP"}`。Compose 的 `init-db` 完成新库结构与授权后，启动统一业务服务 `api` 和受限 `memory-worker`；API 仅绑定本机 8080。主库由 V1–V15 共 15 个迁移建立 **52 张应用表**；独立遗忘账本另行初始化，不计入主库。支持当前 Java V1 基线升级，不导入 Python 或历史实验库，详见[数据库初始化与升级](docs/architecture/fresh-schema.md)。
 
 ### 跑通一次请求
 
@@ -241,6 +249,10 @@ curl --fail -H "Authorization: Bearer $FINANCECLAW_API_TOKEN" \
 
 | 能力 | 默认状态 | 配置入口 |
 | --- | --- | --- |
+| 多主体认证 | 目录为空时兼容旧单主体；无隐式管理角色 | configtree 属性 `financeclaw.auth.identities-json`，见[身份配置](docs/architecture/resource-authorization.md#可信身份与角色) |
+| Cron / 公平配额派发 | 关闭 / 关闭 | `FINANCECLAW_SCHEDULER_ENABLED` / `FINANCECLAW_FAIR_DISPATCH_ENABLED` |
+| worker 注册 | 随 worker 启用；默认 TTL 15 秒 | `financeclaw.runtime.worker-ttl-ms`，见[运行协调](docs/architecture/runtime-coordination.md) |
+| 历史工件登记 | 未配置目录时关闭 | `financeclaw.runtime.artifact-directory`；登记不会执行 JAR |
 | 业务模型 | 离线 | `FINANCECLAW_MODEL` / `FINANCECLAW_MODEL_BASE_URL`；凭据挂载自 `.secrets/model-key` |
 | 工作上下文 / 大结果归档 | 开启 | `FINANCECLAW_CONTEXT_*`，默认阈值见上方预算表 |
 | 人工画像 | 开启 | `FINANCECLAW_PROFILE_ENABLED` |
@@ -254,7 +266,7 @@ curl --fail -H "Authorization: Bearer $FINANCECLAW_API_TOKEN" \
 
 非密钥配置见 [.env.example](.env.example)，完整属性见 [application.yml](src/main/resources/application.yml)，凭据经 configtree 挂载，不提交到仓库。真实模型选择、MCP 供应商、飞书租户和生产容量均需在实际环境另行验收。
 
-常见问题：401 检查 token 与服务端配置；就绪 DOWN 检查数据库及角色权限；JDK 被拒绝时检查显式 `JAVA_HOME` 是否覆盖了锁定工具链；默认离线模式不会按自然语言执行真实 MCP 或 Skill。
+常见问题：401 检查 token 与服务端配置；管理端点 403 检查显式角色及资源归属；就绪 DOWN 检查数据库、角色权限和 worker 注册状态（过期 UUID 不会因数据库恢复自动复活，见[运行维护](docs/operations.md#配置与启动)）；JDK 被拒绝时检查显式 `JAVA_HOME` 是否覆盖了锁定工具链；默认离线模式不会按自然语言执行真实 MCP 或 Skill。
 
 ## 验证与运行维护
 
@@ -272,7 +284,12 @@ python3 scripts/validate-compose.py --ziwei --admission --preflight --restore-pr
 
 数据库测试使用 Testcontainers 和独立数据库；模型、MCP、embedding 和飞书使用本地模拟服务。Compose 使用随机项目和新数据卷，覆盖进程故障、审批恢复、受理排空、画像隔离、备份恢复及隐私拦截。真实服务验收入口为 `scripts/validate-live.py`，不属于默认离线测试。
 
-当前平台化阶段的 P1 已完成本地全量验收并推送：1,440 项 Java 测试、44 项脚本测试和 32 项 Compose 检查通过，见[实施与交付记录](docs/architecture/platform-implementation-plan.md#7-实施状态与验证记录)。P2a 也已完成本地验收：**1,516 项 Java 测试、44 项脚本测试、36 项 Compose 检查通过**，覆盖自定义 Agent 发布、目标会话、重启和 40 表恢复，见 [P2a 证据](docs/architecture/evidence/p2a-implementation.json)。P2a 已推送 `851446f`；P2b 与服务器画像目录的联合工作区已通过 **1,208 项单元/契约/架构测试 + 407 项集成测试 = 1,615 项**，另有 44 项脚本测试、39 项 Compose 检查和画像目录专项 4 项容器检查，见 [P2b 当前证据](docs/architecture/evidence/p2b-implementation.json)。两批分别交付，联合回归不等于 P2b 单独构建；本地和历史测试结果不替代远程 CI。
+当前交付基线及完整远程结果见文首。Compose 使用离线模型与合成行情；其中 12 个独立会话、4 并发客户端的测试只说明该夹具下的行为，不能外推为生产吞吐或容量。
+
+<details>
+<summary>历史阶段验证（保留各阶段范围与当时限制）</summary>
+
+P1 曾完成本地全量验收并推送：1,440 项 Java 测试、44 项脚本测试和 32 项 Compose 检查通过，见[实施与交付记录](docs/architecture/platform-implementation-plan.md#7-实施状态与验证记录)。P2a 也已完成本地验收：**1,516 项 Java 测试、44 项脚本测试、36 项 Compose 检查通过**，覆盖自定义 Agent 发布、目标会话、重启和 40 表恢复，见 [P2a 证据](docs/architecture/evidence/p2a-implementation.json)。P2a 已推送 `851446f`；P2b 与服务器画像目录的联合工作区已通过 **1,208 项单元/契约/架构测试 + 407 项集成测试 = 1,615 项**，另有 44 项脚本测试、39 项 Compose 检查和画像目录专项 4 项容器检查，见 [P2b 当前证据](docs/architecture/evidence/p2b-implementation.json)。两批分别交付，联合回归不等于 P2b 单独构建；本地和历史测试结果不替代远程 CI。
 
 历史上下文阶段曾记录 1,032 项 Java 单元/契约/架构测试及 59 项定向回归，并因当时 Docker 超时未完成数据库/Compose 实测。该限制描述的是当时的验证范围；后续 P1 全量验收已覆盖当前数据库集成与容器场景，真实摘要供应商输出仍需单独验收。
 
@@ -316,6 +333,10 @@ P3a.19 **已推送 `7b46102`，远程完整 CI 通过**：[过期命令候选扫
 
 P3a.20 **已推送 `76b8818`，远程完整 CI 通过**：[恢复、Outbox 与心跳并发资源](docs/architecture/concurrent-recovery-resources.md)使恢复和定时通知越过已锁候选，在原连接预算内预留心跳池，并在普通 Command 锁后重新判断租约。V10 只增加通知部分索引，保留现有迁移。统一开发后集中修复，最终 **1,346 单元 + 637 集成 = 1,983 Java、46 脚本、44 Compose 检查通过**；[对应 Actions](https://github.com/westbrook0904/FinanceClaw/actions/runs/40275671782) 的 verify 和 delivery 均成功。该记录不覆盖后续非 RAG 批次。
 
+</details>
+
+## 文档导航
+
 | 文档 | 内容 |
 | --- | --- |
 | [运行结构](docs/architecture/combined-runtime.md) | 统一 JVM、受限入口、SSE 与调度 |
@@ -324,10 +345,10 @@ P3a.20 **已推送 `76b8818`，远程完整 CI 通过**：[恢复、Outbox 与�
 | [受控能力组装](docs/architecture/agent-composition.md) | P2b 模型 profile、Function/Skill/MCP 选择、固定契约与升级边界 |
 | [固定研究子调用](docs/architecture/child-invocations.md) | P3a.1 调用身份、持久预算、根门禁与步骤回放 |
 | [平台化实施方案](docs/architecture/platform-implementation-plan.md) | 控制面、数据面、Scheduler 边界与分阶段验收 |
-| [非 RAG 集中实施](docs/architecture/non-rag-completion-plan.md) | 本批范围、开发冻结与集中验证顺序 |
-| [身份与资源授权](docs/architecture/resource-authorization.md) | 服务端多主体目录、Agent 管理、共享与凭据资源授权；待本批验收 |
-| [触发与执行调度](docs/architecture/trigger-scheduling.md) | 持久 Cron/Webhook、版本策略、公平与配额、worker 路由；待本批验收 |
-| [运行协调与观测](docs/architecture/runtime-coordination.md) | 跨实例持久事件、资源登记、工件和固定维度 Observation；待本批验收 |
+| [非 RAG 集中实施](docs/architecture/non-rag-completion-plan.md) | 已交付范围、失败修复历史、最终 CI 与未验收边界 |
+| [身份与资源授权](docs/architecture/resource-authorization.md) | 服务端多主体目录、Agent 管理、共享与凭据资源授权；普通 token 无隐式管理权 |
+| [触发与执行调度](docs/architecture/trigger-scheduling.md) | 持久 Cron/Webhook、版本策略、公平与配额、worker 路由；默认开关与触发语义 |
+| [运行协调与观测](docs/architecture/runtime-coordination.md) | 跨实例持久事件、资源登记、工件和固定维度 Observation；临时增量仍限本机 |
 | [数据结构](docs/architecture/database-schema-review.md) / [数据库访问](docs/architecture/database-access-review.md) | 权威状态边界、锁与查询策略 |
 | [画像与证据记忆](docs/architecture/user-profile-memory.md) | Markdown、来源、确认、版本和隐私 |
 | [执行数据隐私清理](docs/architecture/execution-privacy.md) | 检查点墓碑、步骤与工具文件清理、Snapshot v3 恢复门禁 |
@@ -353,4 +374,4 @@ P3a.20 **已推送 `76b8818`，远程完整 CI 通过**：[恢复、Outbox 与�
 | [运行维护](docs/operations.md) | 受理排空、配置、备份与隔离隐私恢复 |
 | [历史记录](docs/history/README.md) | 过去设计和验收证据，非当前迁移或兼容承诺 |
 
-后续可强化的 Harness 边界包括：历史运行工件管理、可信多用户认证、跨实例事件转发，以及统一观测和模型成本记录；这些继续按后续阶段推进。P2a 在 P1 基础上加入 Agent 身份、提示词草稿和目标版本绑定，验收状态见[实施方案](docs/architecture/platform-implementation-plan.md#7-实施状态与验证记录)。
+后续边界包括外部身份提供方、远程 tracing/供应商账单、历史工件的显式部署与兼容运维、真实外部服务及生产容量验收。当前工件目录不动态加载代码，跨实例事件不广播临时 token；递归 Team 和物理拆服务按需求与证据决定。RAG 知识库、摄取、索引与 Workflow 暂缓，路线见[实施方案](docs/architecture/platform-implementation-plan.md#7-实施状态与验证记录)。

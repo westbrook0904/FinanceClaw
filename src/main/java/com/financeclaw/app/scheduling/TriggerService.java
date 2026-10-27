@@ -15,7 +15,7 @@ import java.util.List;
 import java.util.UUID;
 import org.springframework.transaction.support.TransactionTemplate;
 
-/** Trigger admission participates in the same short transaction as its normal Turn and receipt. */
+/** 将持久触发转换为正常任务受理；规则、Turn 与触发回执共享短事务，沿用原任务幂等和执行权威。 Cron 编译结果可复用，但到期时间、规则修订、目标发布与权限必须在本次受理中确定。 */
 public final class TriggerService {
     private final TriggerRepository db;
     private final TriggerCadence cadence;
@@ -41,6 +41,7 @@ public final class TriggerService {
         this.graceSeconds = graceSeconds;
     }
 
+    /** 锁定已有规则后检查修订并解析可访问目标；失败不留下新规则或部分版本绑定。 */
     public TriggerRule put(
             Owner owner, String id, long expected, TriggerRule.Definition definition) {
         TriggerRule.requireId(id);
@@ -116,9 +117,7 @@ public final class TriggerService {
         return db.history(id, after, afterKey, limit);
     }
 
-    /**
-     * An identical webhook event replays its original receipt even after disable/revision changes.
-     */
+    /** 先回放相同事件的持久回执，再检查启停状态；禁用规则不能把已经受理的重试变成新工作。 */
     public TriggerFiring webhook(Owner owner, String id, String key) {
         TriggerRule.requireId(id);
         new IdempotencyKey(key);
@@ -137,7 +136,8 @@ public final class TriggerService {
     }
 
     /**
-     * Each call owns one locked rule; multiple schedulers cannot admit the same occurrence twice.
+     * 每次 tick 只锁定一条到期规则，不把整批轮询包进事务；多个调度器不能重复受理同一时点。 受理异常后单独尝试延后原修订、原到期时点，避免坏目标长期占据队首；
+     * 提交结果不确定时不能推断已经回滚，条件更新也不能覆盖已推进的规则。
      */
     public boolean tick() {
         var selected = new java.util.concurrent.atomic.AtomicReference<TriggerRule>();
@@ -211,6 +211,7 @@ public final class TriggerService {
             db.record(receipt);
             return receipt;
         }
+        // 复用外层规则事务：新会话、固定发布的 Turn、优先级和触发回执必须一起提交或回滚。
         String conversation =
                 rule.versionPolicy().equals("fixed")
                         ? submission.createPinnedConversation(

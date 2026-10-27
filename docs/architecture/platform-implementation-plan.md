@@ -2,7 +2,9 @@
 
 本文是 FinanceClaw Java 的实施方案与阶段状态记录。面向四类使用方式：通用对话、定制 RAG Workflow、通过提示词与工具等配置组装 Agent，以及直接调用一个独立 Agent。本文中的目标模型不代表当前已经实现的能力。
 
-截至 2026-10-26，P1、P2a、P2b 和 P3a.1–P3a.20 的分阶段实现已交付。`76b8818` 已在 `origin/codex/java-agentscope`，[GitHub Actions 40275671782](https://github.com/westbrook0904/FinanceClaw/actions/runs/40275671782) 的 verify 和 delivery 均 completed/success，覆盖 **1,983 Java、46 脚本、44 Compose 检查**。P3a.20 的[原本地验收](concurrent-recovery-resources.md)继续保留提交前范围。P3a 整体与 P4 的[非 RAG 遗留项集中实施](non-rag-completion-plan.md)开发已完成，提交前 1,419 单元/契约/架构与 53 脚本通过；完整数据库/Compose 验收以本提交 Actions 为准，本地 Docker 阻塞见集中实施记录。历史 CI 不覆盖本批代码。P3b RAG 按用户要求暂缓。固定深度子执行器不等于完整权限或递归委派。
+截至 2026-10-27，P1、P2a、P2b、P3a.1–P3a.20 以及后续[非 RAG 集中实施](non-rag-completion-plan.md)已完成远程交付。当前基线为 `ad0b3cacc873134acc80e26ba252b44ef954cde5`，位于 `origin/codex/java-agentscope`；[Actions 40361051811](https://github.com/westbrook0904/FinanceClaw/actions/runs/40361051811) 的 `verify` 与 `delivery` 均成功，覆盖 **1,419 单元 + 691 集成 = 2,110 Java、53 脚本、45 Compose 检查**。此前各阶段数字、失败与本地 Docker 阻塞保留为历史，不用旧限制替代当前状态，也不将最终远程通过改写为本地通过。
+
+当前已具备可信多主体目录、owner 范围 Agent 管理 HTTP、精确共享与凭据授权、一层受控子调用及 ASK 恢复、持久触发和配额派发、worker 注册、跨实例持久事件与固定维度观测。临时文本/工具进度仍限执行所在 JVM；工件目录不动态加载代码，观测不等于远程 tracing 或供应商计费。真实外部服务与生产容量未验收；P3b RAG 按用户要求暂缓，递归 Team、完整身份/Deployment 平台与物理拆服务按后续需要决定。上述 CI 仅覆盖已交付 SHA，不覆盖此后进行的文档、注释与组件复用改动。
 
 ## 1. 实施前基线与改造目标
 
@@ -20,13 +22,13 @@
 | 调度 | TaskWorker 槽位、持久命令领取、恢复扫描、心跳 | 可配置触发、持久触发去重、执行准入与路由；最后再考虑拆进程 |
 | 身份 | 服务端 owner、scope 与 grant revision | 后续可信多用户身份目录、资源管理权限、应用与最终用户身份分离 |
 
-P1 开始前，`ReleaseService` 使用内存 Map，重启仅加载启动配置；旧发布不存在时恢复会阻断。`SubmitTaskService` 在创建每个 Turn 时读取当前发布，同一会话的不同 Turn 可能绑定不同发布。已有工作上下文检查发布一致性，但当时没有会话发布绑定。P1 首先补上这两个缺口；下文的实施范围和状态表说明本轮进展。
+P1 开始前，`ReleaseService` 使用内存 Map，重启仅加载启动配置；旧发布不存在时恢复会阻断。`SubmitTaskService` 在创建每个 Turn 时读取当前发布，同一会话的不同 Turn 可能绑定不同发布。已有工作上下文检查发布一致性，但当时没有会话发布绑定。P1 首先补上这两个缺口；下文保留阶段设计，第 7 节列出相应交付证据与当前边界。
 
 源码入口：[ReleaseService](../../src/main/java/com/financeclaw/app/release/ReleaseService.java)、[ReleaseIdentity](../../src/main/java/com/financeclaw/app/release/ReleaseIdentity.java)、[SubmitTaskService](../../src/main/java/com/financeclaw/app/task/SubmitTaskService.java)、[TaskWorker](../../src/main/java/com/financeclaw/worker/TaskWorker.java)。以上描述是本方案启动时的基线，阶段完成后以状态表与对应验证记录为准。
 
 ## 2. 参考 AgentScope Service 的范围
 
-官方参考仓库为 `agentscope-ai/agentscope-java`，本轮研究固定在 commit `07c5f3078d682da30f29e96b6d76f68242cbc2e1`。SDK stable release 为 `v2.0.4`；Service 推荐安装版本为 `v2.1.0-BETA1`，是预发布，发布 commit 为 `5451c73abe47053340683a1cc6d67b290b056648`。本项目不因这次研究自动升级 SDK。
+官方参考仓库为 `agentscope-ai/agentscope-java`，原研究固定在 commit `07c5f3078d682da30f29e96b6d76f68242cbc2e1`。研究时 SDK stable release 为 `v2.0.4`；当时 Service 推荐安装版本为 `v2.1.0-BETA1`，是预发布，发布 commit 为 `5451c73abe47053340683a1cc6d67b290b056648`。本项目不因这次研究自动升级 SDK。
 
 Service 位于 Java monorepo，但其 Control Plane 使用 Go，Dataplane 与独立 Scheduler 服务使用 Java。其职责划分可以借鉴；FinanceClaw 保持 Java 实现，也不复制它的数据库命名或全部公共 API。
 
@@ -39,7 +41,7 @@ Service 位于 Java monorepo，但其 Control Plane 使用 Go，Dataplane 与独
 | Go 控制面 Scheduler 做准入与 runtime placement | 单独定义执行调度职责，不把所有调度归入 Cron |
 | Workflow revision、Workspace revision 与定义快照 | 分阶段引入依赖闭包、内容摘要与不可变发布 |
 
-官方同一 commit 的 README 仍使用 Endpoint/Invocation，部分文档已使用 AgentSession/Turn；Automation 与 Workflow 文档仍存在 preview 标记。因此本文借鉴经过代码核对的边界，不承诺与其当前 HTTP API 兼容。当前 Service 的共享 Memory 是文档工具读取，不等于完整向量 RAG 产品。
+官方同一 commit 的 README 仍使用 Endpoint/Invocation，部分文档已使用 AgentSession/Turn；Automation 与 Workflow 文档仍存在 preview 标记。因此本文借鉴经过代码核对的边界，不承诺与其当前 HTTP API 兼容。该固定版本 Service 的共享 Memory 是文档工具读取，不等于完整向量 RAG 产品。
 
 固定参考链接：
 
@@ -84,7 +86,7 @@ flowchart TB
     Completion --> Journal
 ```
 
-图中的逻辑模块不表示当前部署为多个服务。实时 SSE 仍依赖单进程事件中心；在完成跨实例事件回放与通知设计前，业务服务保持单副本。
+图中的逻辑模块不表示当前部署为多个独立服务。每个 standalone 实例仍在同一 JVM 内运行入口与执行器，持久任务事件已通过 PostgreSQL LISTEN/NOTIFY 唤醒及 SQL 回放跨实例恢复；临时文本和工具进度仍只由本机事件中心转发，不能跨实例补回。跨实例集成测试证明相应协议，不构成生产多副本容量验收。
 
 ## 4. 实体、版本与调用模型
 
@@ -93,17 +95,17 @@ flowchart TB
 | 实体 | 含义 | 首次落地阶段 |
 | --- | --- | --- |
 | `ReleaseDefinition` / 发布记录 | 当前可执行配置的不可变正文、hash 与格式身份 | P1 持久化现有定义 |
-| 当前发布指针 | 后续新会话默认选择的发布；更新有明确并发语义 | P1，仍是当前单 Agent 应用级默认 |
+| 当前发布指针 | 后续新会话选择的发布；更新有明确并发语义 | P1 内置默认指针，P2a 增加每个自定义 Agent 的独立指针 |
 | `AgentDefinition` | Agent 的稳定身份、名称、维护者及生命周期 | P2 |
 | `AgentDraft` / revision | 可编辑提示词、模型、工具、Skill、子调用许可及资源引用 | P2 |
 | `AgentRelease` | 解析并冻结依赖后的可执行版本 | P2，逐步兼容现有发布身份 |
-| `WorkflowRelease` | 固定步骤、依赖、输入输出、节点目标及重试策略 | P3 |
+| `WorkflowRelease` | 固定步骤、依赖、输入输出、节点目标及重试策略 | 目标模型；P3b RAG 暂缓，现有组合复盘仍是固定驱动 |
 | `Deployment` | 发布到环境/渠道/应用入口的绑定及默认版本指针 | 后续平台管理能力，P1 不创建完整部署系统 |
-| `RuntimeProfile` | 可执行器类型、能力、资源限制、工件/镜像身份 | P4 按实际拆分需求引入 |
+| `RuntimeProfile` | 可执行器类型、能力、资源限制、工件/镜像身份 | P4 已落地 worker 协议/能力/运行类摘要和工件目录；尚无完整独立 Profile/部署系统 |
 
 版本号供人阅读和排序，内容 hash 用于校验不可变内容。二者不能替代权限 revision、隐私 epoch、检查点 version 或 Attempt fence。已有 hash 算法需要保持兼容；若引入新格式，应显式记录格式版本，不静默改变旧发布身份。
 
-发布依赖至少应逐步覆盖提示词正文、模型配置、Function 实现/Schema、MCP 配置与已验证 Schema 指纹、Skill 内容与资源摘要、Workflow 图、引用 Agent release、知识检索策略及 runtime 兼容身份。P1 只保存现有 `ReleaseDefinition` 已表达的范围，不将持久化宣称为完整依赖冻结。
+发布依赖至少应逐步覆盖提示词正文、模型配置、Function 实现/Schema、MCP 配置与已验证 Schema 指纹、Skill 内容与资源摘要、Workflow 图、引用 Agent release、知识检索策略及 runtime 兼容身份。P1 当时只保存 `ReleaseDefinition` 已表达的范围；后续 P2b 的 v3 发布已冻结所选 Function、SDK 有效 MCP 契约、Skill 资产及运行类摘要，P3a 补齐子 Agent 目标。Workflow/知识检索版本仍属于暂缓的后续范围。
 
 凭据值不能进入发布正文或 hash。发布记录保存可使用的凭据引用与策略；执行时重新验证访问并解析当前有效凭据。已发布旧版本即使可读取，也不因此绕过后续撤权或遗忘。
 
@@ -158,9 +160,9 @@ P2 的 Agent 装配先支持受控目录中的能力：提示词、模型 profil
 3. P1 的 `prepare` 登记候选单独提交不可变清单，不切换已有指针；相同 hash 重复登记幂等，摘要与正文不一致必须拒绝。首次 bootstrap 在同一事务中登记清单、创建缺失指针并写入 revision 1 历史。后续 `activate` 在另一短事务中校验已登记清单、CAS 更新指针并追加历史；CAS 失败时指针和历史都不改变，之前登记的候选可以保留。回滚到旧 hash 也必须使用预期 revision。P2a 的 `publish` 则在持有 Agent owner 行锁的同一外层事务中完成清单登记、指针 CAS 与历史追加；任一步失败全部回滚。
 4. 任务提交后才唤醒 Worker。网络、模型、MCP 和知识服务调用不占用业务事务；回写前重新验证执行围栏。
 5. 数据面可以缓存不可变发布，但持久库是权威。缓存缺失从持久库读取；发布缺失或摘要校验失败必须阻断，不能退回 current。完整执行器/依赖兼容校验随 P2 逐步补充，不能把清单可读等同于任意历史代码可恢复。
-6. Workflow 和 Scheduler 使用已有任务状态机推进工作。未来拆进程时引入 outbox、消费去重与可重放事件，再移除当前同 JVM 的直接通知依赖。
+6. Workflow 和 Scheduler 使用已有任务状态机推进工作。当前已有渠道 Outbox、触发幂等回执、worker 注册和持久事件跨实例补读。物理拆服务仍需明确服务间投递与去重协议、故障和回收责任，不能仅凭已有通知机制移除执行围栏。
 
-数据库保留现有 V1 文件与 checksum，新增 V2 发布目录、V3 会话绑定及 V4 Agent 定义前向迁移，支持当前 Java V1 基线升级与新库完整初始化。旧实验结构与 Python 数据不在支持范围。V3 仅从已有 Turn 回填会话 hash，不伪造旧发布 manifest。V4 默认历史 Agent 身份为 `finance_agent`，保留旧 hash 与恢复命名空间；自定义 Agent 使用带格式标识的新 manifest，不能混用旧解码器。初始化与升级仍由独立 init-db 入口和结构所有者执行，业务进程不能自动迁移。同步更新角色授权、结构检查和[数据库初始化说明](fresh-schema.md)，不得删除现有库来完成测试。
+数据库保留现有 V1 文件与 checksum，新增 V2 发布目录、V3 会话绑定及 V4 Agent 定义前向迁移，支持当前 Java V1 基线升级与新库完整初始化。旧实验结构与 Python 数据不在支持范围。V3 仅从已有 Turn 回填会话 hash，不伪造旧发布 manifest。V4 默认历史 Agent 身份为 `finance_agent`，保留旧 hash 与恢复命名空间；自定义 Agent 使用带格式标识的新 manifest，不能混用旧解码器。初始化与升级仍由独立 init-db 入口和结构所有者执行，业务进程不能自动迁移。后续前向迁移已扩展至 V15，共 52 张应用表；上述 V2–V4 是早期阶段的迁移范围。同步更新角色授权、结构检查和[数据库初始化说明](fresh-schema.md)，不得删除现有库来完成测试。
 
 ## 6. 分阶段实施与验收
 
@@ -209,7 +211,7 @@ release-admin history --after-revision 0 --limit 20
 
 ### P2：通用 Agent 定义与按发布装配
 
-P2 拆成两个独立模块。P1 发布库与会话绑定已通过验收；P2a **已完成并推送**，P2b 的实现与验证按下述约束推进。
+P2 拆成两个独立模块，P2a 与 P2b 均已交付并通过远程验收。下述范围记录当时的递进边界；后续非 RAG 批次已另补管理 HTTP、多主体目录、共享及凭据授权。
 
 **P2a：Agent 身份、提示词草稿与目标会话。** 内置 `finance_agent` 保留为只读兼容入口；自定义 Agent 使用显式 UUID、owner 和不可变草稿 revision。首次创建固定当时内置默认发布作为基础能力版本，只开放 `displayName` 与 `systemPrompt`，不让客户端选择模型 URL、凭据、Function、MCP 或 Skill。发布固定 Agent 身份、提示词与基础发布，并以独立部署指针 CAS 生效。新会话显式选择已发布且归属当前 owner 的 Agent，后续 Turn 和恢复保持同一 Agent/release。
 
@@ -219,13 +221,13 @@ P2a 验收：两个 Agent 的身份、草稿、发布指针和会话彼此隔离
 
 **P2b：受控能力选择与依赖冻结。** 在 P2a 之上开放模型 profile、Function/MCP 与 Skill 选择。增加能力目录与身份校验，记录内容摘要、Schema 和所需权限，发布生成已解析依赖快照，数据面按该快照装配。MCP 需要在发布/验证阶段获取并规范化远端 Schema，执行与审批恢复时检测不兼容漂移；不能因冻结连接地址就认为契约已固定。外部发现失败时发布应失败或显式标记不可运行，不能保存“已验证”状态。
 
-P2b 验收：Tool/Skill 白名单与 scope 交集实际控制装配；Schema/内容漂移能阻断；非法引用、越权、循环与摘要不一致均拒绝；当前业务 Agent 行为与治理回归通过。用户自助管理 HTTP、真正多用户认证、共享/委派策略与凭据资源授权需要另行落实，不能复用会话执行 scopes 代替。
+P2b 验收：Tool/Skill 白名单与 scope 交集实际控制装配；Schema/内容漂移能阻断；非法引用、越权、循环与摘要不一致均拒绝；当前业务 Agent 行为与治理回归通过。P2b 当时未覆盖管理 HTTP、多主体认证、共享与凭据资源授权；这些已在后续非 RAG 批次落实为显式管理角色和资源授权事实，仍不复用会话执行 scopes 代替。
 
 主要风险：过早建立通用插件系统、任意代码上传、权限默认放宽、草稿内容进入运行时、凭据泄露到发布或日志。第一版只支持平台已安装且明确允许的能力。
 
 ### P3：独立 Agent 调用与定制 RAG Workflow
 
-状态：P3a.1–P3a.20 已交付，历史结果在下方各阶段独立保留。本批已完成受控通用叶子、共享与凭据授权、Agent HTTP 管理和多主体认证开发，提交前单元验证通过，完整集成结果见本提交 Actions 及[非 RAG 集中实施](non-rag-completion-plan.md)。子调用深度保持一层；递归和多成员 Team 仍为可选后续扩展。P3b RAG 按用户要求暂缓，分别验收。
+状态：P3a.1–P3a.20 及后续受控通用叶子、共享与凭据授权、Agent HTTP 管理和多主体认证已交付，完整远程结果见文首及[非 RAG 集中实施](non-rag-completion-plan.md)。子调用深度保持一层；递归和多成员 Team 仍为可选后续扩展。P3b RAG 按用户要求暂缓，下述 RAG 验收目标尚未实施，不能套用 P3a 结果。
 
 - P3a：建立统一调用入口及父子调用记录，支持直接调用已发布 Agent、受限同步子调用、父子预算与权限收敛；逐步将现有研究子 Agent 适配到同一契约。
 - P3b：建立知识库、摄取作业、索引发布和 RetrieverProfile；先实现固定 RAG Workflow，再决定是否需要通用流程 DSL。摄取/embedding 属于后台工作，知识查询属于受治理的执行步骤。
@@ -236,13 +238,13 @@ P2b 验收：Tool/Skill 白名单与 scope 交集实际控制装配；Schema/内
 
 ### P4：Scheduler 完善与按需服务化
 
-状态：Cron/Webhook、持久幂等回执、公平派发与配额、worker 协议路由及持久事件跨实例唤醒已完成开发，提交前单元验证通过，完整集成与部署结果以本提交 Actions 为准。详见[触发与调度](trigger-scheduling.md)和[运行协调](runtime-coordination.md)。物理拆分根据容量与隔离证据决定，不是本批默认部署动作。
+状态：Cron/Webhook、持久幂等回执、公平派发与配额、worker 协议路由及持久事件跨实例唤醒已交付，并通过文首基线的完整集成与部署验收。详见[触发与调度](trigger-scheduling.md)和[运行协调](runtime-coordination.md)。物理拆分根据容量与隔离证据决定，不是本批默认部署动作。
 
 触发调度维护规则与触发实例：Cron 时区、`scheduledAt`、幂等触发键、错过触发策略、重叠策略、启停版本和投递记录。每次触发调用统一受理边界。执行调度扩展持久队列的公平性、优先级、租户/Agent 配额、worker 能力和运行路由；继续使用租约与 fence。
 
 任务版本策略必须显式：规则可固定 release，也可在每次触发受理时解析 Deployment 当前发布；实际 Turn 一经受理就固定版本。禁止执行时才查询最新版本。禁用规则只阻止未来触发，取消已有 Turn 是另一个动作。
 
-服务化前需要具备 outbox、消费者去重、跨实例事件订阅/回放、worker 注册与健康状态、运行协议版本、能力协商、失联取消与结果回收。控制面运行协调仍保持唯一逻辑任务权威；数据面报告执行事实，由围栏校验决定能否推进业务状态。
+当前已具备渠道 outbox、触发幂等、跨实例持久事件订阅/回放、worker 注册/健康、协议与能力路由、失联中断和既有回执恢复；这些是服务化的部分前置条件，不代表任意独立服务间已有可靠投递。物理拆分前仍需按真实边界验证服务间协议与容量。控制面运行协调仍保持唯一逻辑任务权威；数据面报告执行事实，由围栏校验决定能否推进业务状态。
 
 验收：多个触发副本不会生成重复业务工作；网络超时重试不新建 Turn；错过触发、重叠、时区和暂停行为符合规则；不同租户不会长期饥饿；租约丢失后迟到执行不能提交；控制面/数据面重启可依据持久记录恢复；跨实例 SSE 不丢持久事件且可去重。
 
@@ -250,36 +252,36 @@ P2b 验收：Tool/Skill 白名单与 scope 交集实际控制装配；Schema/内
 
 ## 7. 实施状态与验证记录
 
-状态只在对应工作和验证发生后更新。代码存在、构建通过、数据库集成通过与真实外部服务验收分别记录；不得互相替代。
+状态只在对应工作和验证发生后更新。代码存在、构建通过、数据库集成通过与真实外部服务验收分别记录；不得互相替代。历史阶段的查询数和容量条件只适用于当时发布及夹具，后续新增授权查询不能被当作旧基线无变化。
 
-| 项目 | 状态 | 已有证据 | 尚需完成 |
+| 项目 | 状态 | 已有证据 | 阶段边界与后续结果 |
 | --- | --- | --- | --- |
 | 当前实现与 Service 对比 | 已完成只读研究 | 本文基线与固定官方源码链接 | 实施过程中按实际版本补充差异 |
-| P1 发布持久化 | 已完成 | PostgreSQL 目录、并发 CAS、不可变历史、真实 CLI 与跨进程恢复通过 | 完整依赖冻结与工件兼容按 P2+ 推进 |
-| P1 会话发布绑定 | 已完成 | 新旧会话、V1→V3 回填、并发、幂等与缺失清单阻断通过 | 完整 AgentSession 与显式目标按后续阶段推进 |
+| P1 发布持久化 | 已完成 | PostgreSQL 目录、并发 CAS、不可变历史、真实 CLI 与跨进程恢复通过 | P2b 已补受控依赖与工件冻结；历史工件须显式部署 |
+| P1 会话发布绑定 | 已完成 | 新旧会话、V1→V3 回填、并发、幂等与缺失清单阻断通过 | P2a 已补显式目标；完整独立 AgentSession 模型仍未扩展 |
 | P1 治理回归与文档同步 | 已完成 | 1,440 项 Java 测试、44 项脚本测试、32 项 Compose 检查；文档与静态检查通过 | 真实外部服务和生产环境不属于本轮验收 |
-| P2a Agent 定义与目标会话 | 已完成并推送 `851446f` | 1,516 项 Java 测试、44 项脚本测试、36 项 Compose 检查；[证据](evidence/p2a-implementation.json) | 真实外部服务不在本轮验收范围；能力装配按 P2b 推进 |
+| P2a Agent 定义与目标会话 | 已完成并推送 `851446f` | 1,516 项 Java 测试、44 项脚本测试、36 项 Compose 检查；[证据](evidence/p2a-implementation.json) | 真实外部服务不在该阶段验收范围；能力装配已由 P2b 补齐 |
 | P2b 受控能力装配 | 已推送，远程基线已通过 | `8e57404` 远程 verify：1,214 单元 + 409 集成，delivery 成功；提交前[本地证据](evidence/p2b-implementation.json)单独保留 | 远程基线不覆盖后续 P3a.1；真实外部服务和生产容量未认证 |
 | P3a.1 固定研究子调用 | 已推送 `5d82f24`，远程流水线通过 | 远程 1,226 单元 + 423 集成 = 1,649 项；delivery 39 项检查；提交前[本地证据](evidence/p3a1-implementation.json)单独保留 | 真实供应商或生产容量未认证；P3a.2 验证单独记录 |
 | P3a.2 执行数据隐私清理 | 已推送 `c96b4e7`，远程流水线通过 | 远程 1,226 单元 + 437 集成 = 1,663 项，delivery 41 项；原[本地证据](evidence/p3a2-implementation.json)独立保留 | 真实供应商和生产容量未认证 |
-| P3a.3 私有叶子委派 | 已推送 `d433423`，远程流水线通过 | 远程 1,242 单元 + 460 集成 = 1,702 Java，46 脚本、44 部署；提交前[本地证据](evidence/p3a3-implementation.json)独立保留 | 完整父入口链路另由 P3a.4 验收；完整权限委派未完成 |
+| P3a.3 私有叶子委派 | 已推送 `d433423`，远程流水线通过 | 远程 1,242 单元 + 460 集成 = 1,702 Java，46 脚本、44 部署；提交前[本地证据](evidence/p3a3-implementation.json)独立保留 | P3a.4 补齐父入口；后续非 RAG 批次已补精确共享、通用受控叶子与 ASK 桥接 |
 | P3a.4 完整链路验收与取消传播修复 | 已推送 `467ba8f`，远程流水线通过 | 远程 1,242 单元 + 469 集成 = 1,711 Java，46 脚本、44 部署；[提交前本地证据](evidence/p3a4-implementation.json)保留原范围 | 同 JVM 的完整父子入口已验证；真实暂停恢复由 P3a.5 补齐 |
-| P3a.5 私有委派暂停恢复 | 已推送 `a4a6ef4`，远程流水线通过 | 1,242 单元 + 474 集成 = 1,716 Java，46 脚本、44 部署；[原本地证据](evidence/p3a5-implementation.json)保持 | 同 JVM Spring 重启恢复已完成结果；不续跑旧子 SDK |
+| P3a.5 私有委派暂停恢复 | 已推送 `a4a6ef4`，远程流水线通过 | 1,242 单元 + 474 集成 = 1,716 Java，46 脚本、44 部署；[原本地证据](evidence/p3a5-implementation.json)保持 | 当时只恢复已完成子结果；后续非 RAG 批次已补子 ASK 检查点恢复 |
 | P3a.6 固定行情私有叶子 | 已推送 `13f73a7`，远程流水线通过 | 远程 1,743 Java、46 脚本、44 部署；[原本地证据](evidence/p3a6-implementation.json)保留 | 固定单次行情能力；配置与范围见[说明](private-agent-market-leaf.md) |
 | P3a.7 预算查询优化 | 已推送 `c166da7`，远程流水线通过 | 远程 1,750 Java／46 脚本／44 部署；原 SQL 对比与[本地证据](evidence/p3a7-implementation.json)保留 | 保留实时门禁与原子回滚，无跨事务缓存；[范围](execution-budget-queries.md) |
 | P3a.8 整轮数据库基线 | 已推送 `f330a17`，远程流水线通过 | 普通 134、行情 380、双 owner 四会话整批 508 SQL；1,267 单元 + 64 选定集成通过；[证据](evidence/p3a8-implementation.json) | [实施范围](turn-database-baseline.md)，测试配置下的观察，不认证生产容量 |
 | P3a.9 发布解析合并 | 已推送，随 `06ec674` 通过远程 CI | 发布读取 4→1；1,806 唯一 Java 用例及 46 脚本分次通过；[证据](evidence/p3a9-implementation.json) | 首次完整构建 1 个启动窗口失败，原断言下整套复跑通过；[范围](release-lookup-queries.md) |
-| P3a.10 Worker 与渠道 Outbox | 已推送 `06ec674`，远程 CI 通过 | 成功领取 8→7、完成通知 12→10、完整旧通知积压 135→94 SQL；1,299 单元 + 113 选定集成同次通过；[证据](evidence/p3a10-implementation.json) | [范围](worker-outbox-queries.md)；远程 1,843 Java／46 脚本／44 部署；批量投影与争用仍待优化 |
+| P3a.10 Worker 与渠道 Outbox | 已推送 `06ec674`，远程 CI 通过 | 成功领取 8→7、完成通知 12→10、完整旧通知积压 135→94 SQL；1,299 单元 + 113 选定集成同次通过；[证据](evidence/p3a10-implementation.json) | [范围](worker-outbox-queries.md)；远程 1,843 Java／46 脚本／44 部署；P3a.20 已补定时跳锁；仍保持每项独立投影事务，未实现跨项批量事务 |
 | P3a.11 恢复回执复用 | 已推送 `2de8537`，远程 CI 通过 | completed 恢复 16→15、waiting 14→13 SQL；1,309 单元 + 150 选定集成同次通过；[证据](evidence/p3a11-implementation.json) | [范围](recovery-receipt-queries.md)；新增两项错绑防护单列；后续远程 1,866／46／44 通过 |
 | P3a.12 Worker 状态返回 | 已推送 `24e74e5`，远程 CI 通过 | 成功领取 7→6、15 窗口 77→69 SQL；1,317 单元 + 161 选定集成同次通过；[证据](evidence/p3a12-implementation.json) | [范围](worker-turn-returning-queries.md)；普通写入不返回正文，心跳门禁与失败路径保持 |
 | P3a.13 通知双锁查询 | 已推送 `dda1d7d`，远程 CI 通过 | 合法领取 5→4、完整旧通知积压 94→72 SQL；1,318 单元 + 170 选定集成同次通过；[证据](evidence/p3a13-implementation.json) | [范围](notice-claim-lock-queries.md)；真实锁等待/新行可见性与投影部分提交验证，未合并批量事务 |
 | P3a.14 通知候选结果瘦身 | 已推送 `e115834`，远程 CI 通过 | 候选 8→2 列、getter 正文 152,264→0 字节；SQL 85→85；1,320 单元 + 173 选定集成同次通过；[证据](evidence/p3a14-implementation.json) | [范围](notice-candidate-results.md)；锁内正文与独立 Turn 读取保留，不是网络/吞吐测试 |
 | P3a.15 等待通知交互查询 | 已推送 `36459c4`，已纳入后续完整远程 CI | 映射 34→15 行、旧回答逻辑字节 86,412→0；SQL 34→34；1,320 单元 + 177 选定集成同次通过；[证据](evidence/p3a15-implementation.json) | [范围](waiting-notice-queries.md)；通用历史、原生审批恢复、过期与投影事务保持 |
-| P3a.16–P3a.19 查询与恢复扫描 | 已随最新 `7b46102` 通过完整远程 CI | 最新 1,916 Java／46 脚本／44 Compose；各阶段原本地数字见第 26–29 节 | 新一轮并发资源改造单独记录 |
+| P3a.16–P3a.19 查询与恢复扫描 | 已随 `7b46102` 通过完整远程 CI | 该阶段 1,916 Java／46 脚本／44 Compose；各阶段原本地数字见第 26–29 节 | P3a.20 后续补齐并发资源改造 |
 | P3a.20 恢复、Outbox 与心跳并发资源 | 已推送 `76b8818`，对应远程 CI 成功 | 1,346 单元 + 637 集成 = 1,983 Java、46 脚本、44 Compose；[原本地证据](evidence/p3a20-implementation.json) | [范围与配置](concurrent-recovery-resources.md)；后续非 RAG 集中实施单独验收 |
-| P3a 独立 Agent 与子调用 | 本批开发完成，本地单元通过 | 受控叶子、ASK 恢复、共享/凭据授权及管理认证已接入；历史交付独立保留 | 完整 PostgreSQL/Compose 验收以本提交 Actions 为准；递归与 Team 为后续可选 |
+| P3a 独立 Agent 与子调用 | 已交付 `ad0b3ca`，远程 CI 成功 | 受控叶子、ASK 恢复、共享/凭据授权及管理认证；[完整基线](https://github.com/westbrook0904/FinanceClaw/actions/runs/40361051811) 2,110 Java、53 脚本、45 Compose | 真实外部服务/生产容量未验收；递归与 Team 为后续可选 |
 | P3b 定制 RAG Workflow | 按用户要求暂缓 | 仅有现有记忆与固定 Workflow 基础 | 知识模型、索引发布、端到端引用验收 |
-| P4 Scheduler 与服务化 | 本批开发完成，本地单元通过 | 触发、派发配额/公平性、worker 路由、通知及观测已接入 | 完整 PostgreSQL/Compose 验收以本提交 Actions 为准；物理拆分按容量与隔离证据决定 |
+| P4 Scheduler 与运行协调 | 已交付 `ad0b3ca`，远程 CI 成功 | 触发、派发配额/公平性、worker 路由、持久通知及观测；与 P3a 共用上述完整基线，不重复计数 | 临时增量仍本机；无远程观测后端/精确账单；物理拆分按容量与隔离证据决定 |
 
 P1 已于 2026-10-23 提交并推送到 `origin/codex/java-agentscope`：[2a811e7](https://github.com/westbrook0904/FinanceClaw/commit/2a811e7026bdf436cb916e820b15457ac6877282)。推送后核对远端 SHA 一致；此记录不代表远程 CI 成功。下方 P1 证据保留验证发生时的工作区状态。
 
@@ -292,7 +294,6 @@ python3 scripts/test-live-acceptance.py
 python3 scripts/test-inspect-drain.py
 python3 scripts/test-restore-privacy.py
 python3 scripts/test-user-profile.py
-python3 scripts/test-compose-recovery.py
 python3 scripts/validate-compose.py --ziwei --admission --preflight --restore-privacy
 python3 scripts/collect-evidence.py
 python3 scripts/check-delivery.py
@@ -353,7 +354,7 @@ Compose 新增覆盖两个 owner 的目录隔离、未发布目标拒绝、草�
 
 完整运行的 Surefire/Failsafe 报告已冻结，持久证据保存其统计、报告摘要与日志 SHA-256。后续新增的市场工具预算修复、`MarketToolBudgetTest` 和 `ProfileDirectoryRecoveryIT` 未编译进本次构建，必须另行验证；本次结果不覆盖这些后续改动。通用 `target/` 路径可能被后续测试覆盖，不能以其未来内容替代本节记录。
 
-以上是 P2b 提交前的本地验证记录，原证据不随后续运行改写。P2b 后续交付基线 `8e57404` 的远程结果见第 11 节；真实供应商输出、外部 MCP/飞书服务和生产容量仍未认证。当前 P3a.1 已完成本地验收，P3a 整体、P3b 和 P4 尚未完成。
+以上是 P2b 提交前的本地验证记录，原证据不随后续运行改写。P2b 后续交付基线 `8e57404` 的远程结果见第 11 节；真实供应商输出、外部 MCP/飞书服务和生产容量仍未认证。该阶段记录时 P3a.1 已完成本地验收，P3a 整体、P3b 和 P4 尚未完成；当前状态见文首与第 7 节。
 
 
 ## 11. P3a.1 固定研究子调用
@@ -366,7 +367,7 @@ P3a.1 已于 2026-10-24 完成本地验收。范围为固定 `market_research`�
 
 同一 JAR 的 **39 项 Compose 检查**已成功并完成隔离环境清理，覆盖故障恢复、权限、遗忘、41 表备份恢复与恢复后的执行。模型为离线或本机模拟服务，行情为合成数据，不认证真实外部供应商或生产容量。[本轮证据](evidence/p3a1-implementation.json)保存冻结报告、运行日志、Compose 报告及 JAR 摘要。
 
-实现与测试入口、SQL 成本、跨 attempt 及物理删除的边界见[固定研究子调用](child-invocations.md)。P3a 整体、P3b RAG 和 P4 Scheduler 尚未完成，不使用 P2b 历史数字代替本轮验证。
+实现与测试入口、SQL 成本、跨 attempt 及物理删除的边界见[固定研究子调用](child-invocations.md)。该阶段记录时 P3a 整体、P3b RAG 和 P4 Scheduler 尚未完成，不使用 P2b 历史数字代替该轮验证；后续交付见第 7 节。
 
 P3a.1 提交 `5d82f24` 的 [run 40045383841](https://github.com/westbrook0904/FinanceClaw/actions/runs/40045383841) 已确认整体 completed/success：verify 为 **1,226 单元/契约/架构 + 423 集成 = 1,649 项**，delivery 的 **39 项部署检查**通过。此前 [`8e57404`](https://github.com/westbrook0904/FinanceClaw/commit/8e574046eedb5c3ad4487b8fa7cb23759d365076) 的 [run 39975391411](https://github.com/westbrook0904/FinanceClaw/actions/runs/39975391411) 为 1,214 单元 + 409 集成，原记录继续保留。两次运行均不包含后续 P3a.2，也不代表真实外部模型/MCP/飞书或生产容量验收。
 

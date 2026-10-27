@@ -82,7 +82,7 @@ public final class TaskEventHub {
         }
     }
 
-    /** 事件跟随数据库提交；回滚事务绝不向浏览器发布成功状态。 */
+    /** 事务内调用时只在成功提交后发布；事务外调用要求事件已经持久化。本机通知丢失仍可按持久 revision 回放。 */
     public void committed(Event event) {
         afterCommit(() -> publish(event));
     }
@@ -110,7 +110,7 @@ public final class TaskEventHub {
         List<Subscription> affectedObservers;
         synchronized (this) {
             // 在调用方仍持有授权或隐私锁时捕获旧尝试。提交后才启动的新尝试不属于本次撤权，
-            // 即使回调晚于新尝试登记，也不能将它一并失效。
+            // 即使回调晚于新尝试登记，也不能将它一并失效；因此不能把目标筛选移到提交后的异步任务。
             affectedAttempts =
                     attempts.values().stream().filter(p -> match.test(p.claim.turn())).toList();
             affectedObservers =
@@ -166,6 +166,8 @@ public final class TaskEventHub {
     }
 
     private static void afterCommit(Runnable action) {
+        // 提交线程只做本地失效和有界入队，订阅者由 publishOn 隔离；这里不借连接或发起网络请求。
+        // afterCommit 异常仍会传给提交调用方，但数据库已提交，不能把该异常解释为业务回滚。
         if (!TransactionSynchronizationManager.isActualTransactionActive()) {
             action.run();
             return;

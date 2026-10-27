@@ -1,6 +1,6 @@
 # 持久触发与受控执行调度
 
-状态：本批开发已完成，提交前单元/HTTP 契约通过，完整数据库与 Compose 验收以本提交对应 GitHub Actions 为准。以下是实现契约，总体实施顺序见[非 RAG 集中实施](non-rag-completion-plan.md)。
+已交付基线：`ad0b3cacc873134acc80e26ba252b44ef954cde5` 的 [Actions 40361051811](https://github.com/westbrook0904/FinanceClaw/actions/runs/40361051811) 已通过 2,110 Java、53 脚本与 45 Compose 检查，包含下述真实 PostgreSQL 调度、配额与并发用例。该结果不覆盖此后的文档或代码改动，也不是生产容量验收。[非 RAG 集中实施](non-rag-completion-plan.md)保留实施顺序、此前失败及本地 Docker 阻塞。
 
 ## 启用与管理
 
@@ -41,4 +41,4 @@ worker 必须已登记、未过期、active、协议版本为 1、具有 agentsc
 
 ## 验收入口
 
-真实 PG 夹具覆盖并发重复 webhook、禁用后回放、固定/当前版本、重叠及错过回执、暂停受理的整体回滚、并发 Cron、owner/租户/Agent 配额、优先级老化和 worker 兼容性。单元夹具覆盖时区/DST和非法规则。完整结果见对应提交的 CI 报告及[提交前验证边界](evidence/non-rag-implementation.json)。
+交付基线中的 `TriggerAndDispatchIT` 使用真实 PostgreSQL，覆盖并发重复 webhook、禁用后回放、固定/当前版本、重叠及错过回执、暂停受理的整体回滚、并发 Cron、owner/租户/Agent 配额、优先级老化和 worker 兼容性。`TriggerCadenceTest` 覆盖时区/DST 和非法规则；`LongChainWorkloadIT` 另覆盖四 owner 的持续负载。上述用例随文首完整 CI 通过，历史失败仍见[提交前验证记录](evidence/non-rag-implementation.json)。有限并发和离线模型夹具不建立生产吞吐、长期公平性或跨地域故障 SLA；实际外部服务与生产容量需在目标环境另行验收。

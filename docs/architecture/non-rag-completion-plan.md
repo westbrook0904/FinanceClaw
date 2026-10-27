@@ -1,18 +1,26 @@
 # 非 RAG 遗留项集中实施
 
-状态：本批开发与集中修复已完成，最终提交前 **1,419 个单元/契约/架构测试、53 个脚本测试及格式检查与打包通过**。基线为 `76b8818`。全部开发及验收夹具先于首轮编译和测试完成，随后集中验证与修复；各次失败均保留在[验证记录](evidence/non-rag-implementation.json)。
+交付状态：非 RAG 集中实施已完成并推送到 `origin/codex/java-agentscope`。提交 `ad0b3cacc873134acc80e26ba252b44ef954cde5` 的 [GitHub Actions 40361051811](https://github.com/westbrook0904/FinanceClaw/actions/runs/40361051811) 整体成功，`verify` 通过 **1,419 单元 + 691 集成 = 2,110 个 Java 测试、53 个脚本测试**，`delivery` 通过 **45 项 Compose 检查**。这是当前已交付基线，不覆盖随后进行的文档、注释与组件复用改动。
 
-最终源码的本地 PostgreSQL/Compose 验证受 Docker API 持续无响应阻塞，未声称本地完整 verify 成功。完整数据库、原生 SDK、独立 JAR 和 Compose 验收，以本提交在 `codex/java-agentscope` 对应 GitHub Actions 的 `verify` 与 `delivery` 最终结果为准。历史 CI 不覆盖本批代码。
+本批从 `76b8818` 开始，先完成全部开发及验收夹具，再集中验证与修复。真实 PostgreSQL、原生 SDK、本地协议服务、独立 JAR 与隔离容器属于本批验收；真实模型/MCP/飞书服务、真实用户 UI 送达与生产容量不在通过结论内。RAG 暂缓，递归 Team 和物理拆服务仍是可选后续工作。
 
-首次远程 [run 40340127681](https://github.com/westbrook0904/FinanceClaw/actions/runs/40340127681) 完成 691 个集成用例，其中 689 通过、1 失败、1 初始化错误，部署作业因而跳过。已修复前导 `..` 工件路径越界，以及活跃应用上下文与清库 DDL 的测试生命周期冲突；新增回归后本地 1,402 单元与 46 脚本通过。该失败记录保留，最终结论须查看修复提交对应的完整 CI。
+## 验证与修复历史
+
+各次失败和提交前记录保留在[验证记录](evidence/non-rag-implementation.json)；以下按实际发生顺序说明，不以最终成功抹去失败。
+
+提交前的本地 PostgreSQL/Compose 验证受 Docker API 持续无响应阻塞，没有完成本地完整 verify。最终数据库、原生 SDK、独立 JAR 与 Compose 验收在第四次远程运行完成；本地阻塞与远程通过分别记录，不能把远程结果改写为本地成功。
+
+首次远程 [run 40340127681](https://github.com/westbrook0904/FinanceClaw/actions/runs/40340127681) 完成 691 个集成用例，其中 689 通过、1 失败、1 初始化错误，部署作业因而跳过。已修复前导 `..` 工件路径越界，以及活跃应用上下文与清库 DDL 的测试生命周期冲突；新增回归后本地 1,402 单元与 46 脚本通过。该失败记录保留，后续修复的完整结论见第四次远程运行。
 
 第二次远程 [run 40345073989](https://github.com/westbrook0904/FinanceClaw/actions/runs/40345073989) 对应提交 `2185eb91506330a06f91ce2db2ebbb452e33b555`：`verify` 通过 **1,402 个单元测试 + 691 个 PostgreSQL 集成测试，共 2,093 个 Java 测试，以及 46 个 Python 测试与证据收集器检查**。`delivery` 在前 20 项 Compose 检查通过后失败。日志记录 PostgreSQL 从 `2026-10-26 15:21:47.826 UTC` 停止，到 `15:22:15.411 UTC` 恢复，实际中断 **27.585 秒**，已超过默认 **15 秒 worker TTL**；旧脚本在数据库恢复后等待旧 worker 自动完成新任务，混淆了数据库恢复与过期进程身份恢复。
 
-本轮已补充临时数据库故障暂停与权威注册过期的区分：暂停不延长原保守截止时间，截止前控制重试成功只恢复新领取，旧 attempt 不恢复；过期、stopped 或刷新返回 false 的 UUID 仍不可续活。readiness 已纳入无 SQL、无身份详情的 worker 本地状态，避免数据库已正常而 worker 不可用时误报 200。部署夹具分为 **默认 15 秒 TTL 下过期后须以新进程身份恢复**，以及 **显式配置 60 秒 TTL 下、故障未超过截止时间时不重启自动恢复** 两个实验；生产默认仍为 15 秒。提交前本机未执行这两项 Compose 实验，最终结果须查看本提交对应 Actions，不能以夹具源码或脚本契约测试替代部署验收。
+本轮已补充临时数据库故障暂停与权威注册过期的区分：暂停不延长原保守截止时间，截止前控制重试成功只恢复新领取，旧 attempt 不恢复；过期、stopped 或刷新返回 false 的 UUID 仍不可续活。readiness 已纳入无 SQL、无身份详情的 worker 本地状态，避免数据库已正常而 worker 不可用时误报 200。部署夹具分为 **默认 15 秒 TTL 下过期后须以新进程身份恢复**，以及 **显式配置 60 秒 TTL 下、故障未超过截止时间时不重启自动恢复** 两个实验；生产默认仍为 15 秒。提交前本机未执行这两项 Compose 实验；它们随后在第四次远程运行的 45 项检查中通过，证明各自配置下的恢复行为，不把显式 60 秒 TTL 当作生产默认。
 
-本地 package-08（归档 `/tmp/financeclaw-non-rag-local-package-08`）通过 **1,416 个单元测试、53 个 Python 测试、格式检查与打包**，其中新增 7 个恢复脚本契约测试。它仅是中间回归记录：随后发现的运行时初始化中断窗口当时仍在修复，不能把 package-08 的源码或 JAR 当作最终版本。package-08 单列为 intermediate，历史 package-07 继续保留。启动窗口已补齐粘性的本地 attempt 门禁，并由 financeclaw-non-rag-local-package-10 对最终冻结输入重新验证：1,419 Java 单元、53 脚本、格式和打包通过；生产及验收输入指纹前后一致。`local_latest` 记录本轮结果，最终 PostgreSQL 与 Compose 结论仍须等待推送提交的完整 Actions。
+本地 package-08（归档 `/tmp/financeclaw-non-rag-local-package-08`）通过 **1,416 个单元测试、53 个 Python 测试、格式检查与打包**，其中新增 7 个恢复脚本契约测试。它仅是中间回归记录：随后发现的运行时初始化中断窗口当时仍在修复，不能把 package-08 的源码或 JAR 当作最终版本。package-08 单列为 intermediate，历史 package-07 继续保留。启动窗口已补齐粘性的本地 attempt 门禁，并由 financeclaw-non-rag-local-package-10 对最终冻结输入重新验证：1,419 Java 单元、53 脚本、格式和打包通过；生产及验收输入指纹前后一致。`local_latest` 记录该轮本地结果；其后 PostgreSQL 与 Compose 结论由第四次远程运行另行提供。
 
 第三次远程 [run 40357389118](https://github.com/westbrook0904/FinanceClaw/actions/runs/40357389118) 的 1,419 单元与 53 脚本通过；691 个集成测试中 690 通过，唯一失败是既有心跳资源隔离夹具仍模拟旧单参执行入口，未进入实际 worker 的双参调用分支。已只适配该替身，保留全部中断、连接占用与租约断言。指纹核对确认生产、单元测试和脚本源码与 package-10 完全一致，修正后的全部测试源码重新编译通过；该本地编译不代替最终提交的 PostgreSQL 与 Compose 验收。
+
+第四次远程 [run 40361051811](https://github.com/westbrook0904/FinanceClaw/actions/runs/40361051811) 对提交 `ad0b3cacc873134acc80e26ba252b44ef954cde5` 完成 `verify` 与 `delivery`，全部 **2,110 Java、53 脚本、45 Compose** 通过。下载的最终回执位于 `target/verification/non-rag-remote-ci.json` 与 `target/verification/non-rag-remote-compose-results.json`；`target/` 是可重建本地目录，长期审阅使用上面的固定运行链接。Compose 的 12 个独立会话、4 并发客户端是离线负载夹具，不能作为生产容量承诺。
 
 ## 范围与完成标准
 
@@ -35,7 +43,7 @@ RAG 知识库、摄取、索引和 RAG Workflow 暂不实施。递归与多成�
 
 结果归档保存全部来源 scope 的合取，撤销其中任一 scope 后不能读取混合结果。共享撤销还在 Artifact、完成结果、assistant journal、交互问题读取和 SSE 每帧／补读入口重新校验冻结父计划的选中子目标。当前采用保守边界：任一选中子目标失去访问权，将拒绝该父发布的派生结果读取，即使某份结果没有实际使用该子目标；尚未引入逐 artifact／event 的独立来源表。无结果的任务状态仍可查询，取消入口不受结果读取拒绝阻碍。
 
-以上是实现契约；完整集成验收结论以对应提交的 CI 报告为准。新增真实 Spring／PostgreSQL／原生 SDK 夹具覆盖混合多问题、两次重启与再次暂停、拒绝／取消／撤权、所有 attempt 状态遗忘，以及 Function／Skill 和多来源归档；MCP 使用本地协议服务验证原生注册和调用，真实供应商验收另行报告。
+上述实现契约已由交付基线对应的完整 CI 验证。真实 Spring／PostgreSQL／原生 SDK 夹具覆盖混合多问题、两次重启与再次暂停、拒绝／取消／撤权、所有 attempt 状态遗忘，以及 Function／Skill 和多来源归档；MCP 使用本地协议服务验证原生注册和调用，真实供应商验收另行报告。
 
 ## 不变的执行约束
 
@@ -44,7 +52,7 @@ RAG 知识库、摄取、索引和 RAG Workflow 暂不实施。递归与多成�
 - 模型、远端工具和发现调用在数据库事务外；未知副作用、unknown 通知不自动重放。
 - 使用 V11 及以后前向迁移，不改写已交付迁移。只修改本批所需文件。
 
-## 实施与验证顺序
+## 本批采用的实施与验证顺序
 
 1. 四块并行开发，接口和锁序先对齐，同时编写可检验业务行为的夹具；此阶段不运行编译或测试。
 2. 合并装配、角色授权、结构检查、配置、CLI/HTTP 契约与运行文档；审查跨模块调用路径后冻结输入。
@@ -52,4 +60,4 @@ RAG 知识库、摄取、索引和 RAG Workflow 暂不实施。递归与多成�
 4. 使用对应 JAR 验证新链路与隔离 Compose；测量代表性积压/连接/写入成本，给出数据适用边界。
 5. 核对变更范围、凭据与验收证据，按会话授权完成远程交付及对应 SHA 的 CI 闭环。
 
-尚未通过的项目始终保持未验收状态，不能以实现存在或其他阶段结果替代。
+已通过结论只适用于相应提交、夹具与运行环境。真实外部服务和生产容量继续保持未验收；后续改动须重新验证，不能沿用本批结果作为通过证明。
