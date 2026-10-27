@@ -135,5 +135,218 @@
     "No new dependency, SQL, migration, transaction propagation or automatic retry behavior.",
     "No production throughput or capacity claim; real provider/MCP/Feishu UI acceptance remains separate.",
     "RAG remains excluded."
+  ],
+  "remote_attempts": [
+    {
+      "commit": "7ff294b2f6641325aab97485d453a01978b748e9",
+      "run_id": 40434256555,
+      "url": "https://github.com/westbrook0904/FinanceClaw/actions/runs/40434256555",
+      "verify": {
+        "job_id": 121959040125,
+        "conclusion": "success",
+        "unit": {
+          "tests": 1430,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "postgresql_integration": {
+          "tests": 691,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "java_total": 2121,
+        "python_tests": 53,
+        "strict_collector": "passed",
+        "application_jar_sha256": "667c0595284fd51d6a619050027ff00f3a0341f93b2629e2f457d87bf8eac533"
+      },
+      "delivery": {
+        "job_id": 121964421712,
+        "conclusion": "failure",
+        "passed_checks_before_failure": 20,
+        "failure_type": "AssertionError",
+        "location": "scripts/validate-compose.py:714",
+        "observation": "After independent PostgreSQL socket SQL recovered, the first application GET for an already completed workflow returned HTTP 503. API Hikari showed total=0, 5000ms connection acquisition timeout and UnknownHostException: postgres during recovery. This is not evidence that the request or SQL transaction was retried or that the result changed.",
+        "compose_artifact_id": 12704740537,
+        "compose_artifact_sha256": "eb6d5222ccc48104c76531eabfb1da94f5f6b6cd0512c752c23ff10ca973858b",
+        "database_failure_experiments": {
+          "default_15s_expiry_requires_restart": {
+            "configured_worker_ttl_ms": 15000,
+            "before": {
+              "worker_id": "f16301f1-7596-4e7e-8bae-f7ce3c78c125",
+              "state": "active",
+              "heartbeat_at": "2026-10-27T02:04:00.594066+00:00",
+              "expires_at": "2026-10-27T02:04:15.594066+00:00",
+              "heartbeat_epoch_ms": 1793066640594.066,
+              "expires_epoch_ms": 1793066655594.066,
+              "ttl_ms": 15000,
+              "live": true,
+              "database_time": "2026-10-27T02:04:01.038628+00:00",
+              "database_epoch_ms": 1793066641038.628,
+              "unique_live_wait_seconds": 7.433730349000001,
+              "unique_live_observations": [
+                {
+                  "after_seconds": 0.19725034000001074,
+                  "live_worker_ids": [
+                    "0a8e8b15-b5e9-44fd-80b6-bdfa8486db03",
+                    "f16301f1-7596-4e7e-8bae-f7ce3c78c125"
+                  ]
+                },
+                {
+                  "after_seconds": 7.433726483000015,
+                  "live_worker_ids": [
+                    "f16301f1-7596-4e7e-8bae-f7ce3c78c125"
+                  ]
+                }
+              ],
+              "container": {
+                "container_id": "de1870e3c006beee1505e9b156aee0a6bf9e1fe3e0c87cd6153040633116e17d",
+                "started_at": "2026-10-27T02:03:46.975455639Z"
+              }
+            },
+            "container_before": {
+              "container_id": "de1870e3c006beee1505e9b156aee0a6bf9e1fe3e0c87cd6153040633116e17d",
+              "started_at": "2026-10-27T02:03:46.975455639Z"
+            },
+            "original_effects": {
+              "sha256": "d81bce3f4da3618e357eb15dcd3fbd918aaaa348a70ab5892056e69ff5837020",
+              "turn_id": "037abbb0-f5c8-4452-9c8a-a8ab3b95c8a9",
+              "command_id": "33d5fee4-9cb4-453b-a014-366ec1f907bc",
+              "attempt_ids": [
+                "5e8f9d03-b438-4686-8de2-ae9838eb62a2",
+                "def4d6c1-4462-4254-8e79-95634f9dd66d"
+              ],
+              "sealed_receipts": 2,
+              "report_ids": [],
+              "publish_effects": 1,
+              "artifact_ids": [
+                "0d16ca39-46e2-435e-92fe-4276871799a7"
+              ]
+            },
+            "stop_requested_at": "2026-10-27T02:04:01.120578+00:00",
+            "unavailable_http_statuses": [
+              {
+                "path": "/actuator/health/readiness",
+                "status": 0
+              },
+              {
+                "path": "/actuator/health/readiness",
+                "status": 503
+              },
+              {
+                "path": "/v1/conversations/9981b53d-8657-4c03-bd3d-4a7201919b60/turns/037abbb0-f5c8-4452-9c8a-a8ab3b95c8a9",
+                "status": 503
+              }
+            ],
+            "stop_completed_at": "2026-10-27T02:04:01.297646+00:00",
+            "stop_completed_after_seconds": 0.1770431129999963,
+            "explicit_expiry_wait_seconds": 0,
+            "start_requested_at": "2026-10-27T02:04:28.524884+00:00",
+            "database_reachable": {
+              "database_time": "2026-10-27T02:04:29.073457+00:00",
+              "database_epoch_ms": 1793066669073.457
+            },
+            "stop_completed_to_sql_ready_seconds": 27.78110635599998,
+            "stop_requested_to_sql_ready_seconds": 27.958150440999987,
+            "before_snapshot_to_sql_ready_db_seconds": 28.0348291015625,
+            "after_database_recovery": {
+              "worker_id": "f16301f1-7596-4e7e-8bae-f7ce3c78c125",
+              "state": "active",
+              "heartbeat_at": "2026-10-27T02:04:00.594066+00:00",
+              "expires_at": "2026-10-27T02:04:15.594066+00:00",
+              "heartbeat_epoch_ms": 1793066640594.066,
+              "expires_epoch_ms": 1793066655594.066,
+              "ttl_ms": 15000,
+              "live": false,
+              "database_time": "2026-10-27T02:04:29.172501+00:00",
+              "database_epoch_ms": 1793066669172.501
+            }
+          }
+        }
+      }
+    }
+  ],
+  "repair_scope": [
+    "Observe application HTTP query recovery separately from database socket readiness within the original 45-second total recovery budget.",
+    "Only read-only GET probes can repeat on transport failure or HTTP 503; authentication errors, unexpected HTTP responses and incorrect business state remain immediate failures.",
+    "Keep worker identity/expiry, no new live registration, queued task without attempts, unchanged container and unchanged durable effects assertions.",
+    "No Java production, SQL, dependency, TTL or recovery-threshold change."
+  ],
+  "repair_validations": [
+    {
+      "schema": "docs-components-repair-local/1",
+      "completed_at_utc": "2026-10-27T02:12:59.866194+00:00",
+      "stages": [
+        {
+          "name": "check-delivery",
+          "command": [
+            "/Library/Frameworks/Python.framework/Versions/3.14/bin/python3",
+            "scripts/check-delivery.py"
+          ],
+          "actual_exit_code": 0
+        },
+        {
+          "name": "test-live-acceptance",
+          "command": [
+            "/Library/Frameworks/Python.framework/Versions/3.14/bin/python3",
+            "scripts/test-live-acceptance.py"
+          ],
+          "actual_exit_code": 0,
+          "tests": 8,
+          "reported_success": true
+        },
+        {
+          "name": "test-inspect-drain",
+          "command": [
+            "/Library/Frameworks/Python.framework/Versions/3.14/bin/python3",
+            "scripts/test-inspect-drain.py"
+          ],
+          "actual_exit_code": 0,
+          "tests": 12,
+          "reported_success": true
+        },
+        {
+          "name": "test-restore-privacy",
+          "command": [
+            "/Library/Frameworks/Python.framework/Versions/3.14/bin/python3",
+            "scripts/test-restore-privacy.py"
+          ],
+          "actual_exit_code": 0,
+          "tests": 16,
+          "reported_success": true
+        },
+        {
+          "name": "test-user-profile",
+          "command": [
+            "/Library/Frameworks/Python.framework/Versions/3.14/bin/python3",
+            "scripts/test-user-profile.py"
+          ],
+          "actual_exit_code": 0,
+          "tests": 10,
+          "reported_success": true
+        },
+        {
+          "name": "test-compose-recovery",
+          "command": [
+            "/Library/Frameworks/Python.framework/Versions/3.14/bin/python3",
+            "scripts/test-compose-recovery.py"
+          ],
+          "actual_exit_code": 0,
+          "tests": 13,
+          "reported_success": true
+        }
+      ],
+      "inputs_unchanged": true,
+      "input_manifest_sha256": "42b257ac3ebe51b8a6120444ffa124e1278fc1012ccef33b379b338c15db6725",
+      "changed_build_inputs_since_original_package": [
+        "scripts/test-compose-recovery.py",
+        "scripts/validate-compose.py"
+      ],
+      "java_build_and_test_inputs_unchanged": true,
+      "python_tests": 59,
+      "scope": "Static checks and all five Python contract suites after the deployment-only recovery probe repair. Java sources, resources and build configuration are unchanged from the successful 1430-unit package; no new local Java/PostgreSQL/Compose run is asserted.",
+      "passed": true
+    }
   ]
 }

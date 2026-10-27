@@ -48,6 +48,8 @@ spring:
 
 `RuntimeJdbcConfigurationTest` 使用真实 Boot 自动配置与 JDBC 记录桩，检查非默认 timeout/fetch-size/max-rows 确实传到三个适配器的语句，并检查同一事务复用连接；它不证明 PostgreSQL SQL 或锁语义。`TriggerCadenceTest` 检查不同起点、时区、DST 与非法输入；`ModelPolicyTest` 检查同步/流式请求在网络前拒绝非法正文。真实数据库、运行装配与恢复仍由 `RuntimeCoordinationIT`、`RoleAssemblyIT` 及完整 CI 验收。
 
-2026-10-27 本轮统一本地验收：**1,430 项单元测试、53 项 Python 契约测试全部通过**，失败、错误、跳过均为 0；静态检查、Spotless 与打包通过，605 个构建输入在运行前后保持一致。[本地验收记录](evidence/docs-components-local-validation.json)保存实际命令、输入与 JAR 摘要。本机 Docker API 五秒探测仍超时，因此该记录不代表本地 PostgreSQL、Compose 或完整 verify 通过；远程完整结论以包含这些输入的准确提交对应 Actions 为准。
+2026-10-27 本轮首次统一本地验收：**1,430 项单元测试、53 项 Python 契约测试全部通过**，失败、错误、跳过均为 0；静态检查、Spotless 与打包通过，605 个构建输入在运行前后保持一致。[验收记录](evidence/docs-components-local-validation.json)保存实际命令、输入与 JAR 摘要。本机 Docker API 五秒探测仍超时，因此该记录不代表本地 PostgreSQL、Compose 或完整 verify 通过。
+
+首次远程提交 `7ff294b` 的 [Actions 40434256555](https://github.com/westbrook0904/FinanceClaw/actions/runs/40434256555) 通过 2,121 Java（1,430 单元 + 691 集成）及 53 脚本检查；部署在前 20 项通过后，因独立 SQL 已恢复但业务 HTTP 首次读取仍为 503 而失败，不能称为完整 CI 成功。后续修复只收紧[恢复探测边界](runtime-coordination.md#验收入口)，保留原失败与通过的用例，不更改生产事务、TTL 或恢复阈值。修复后本地五组 Python 契约 **59 项与静态检查通过**；Java 源码、资源和构建配置仍与已通过的打包运行一致，未把分次结果声称为新的本地完整 verify。最终完整结论以修复提交对应 Actions 为准。
 
 以上策略来自代码路径分析，不是生产压测结论。[预算查询优化](execution-budget-queries.md)已通过真实 JDBC 对比验证固定 v3 发布场景中同次扣额减少四次发布读取；后续[整轮数据库基线](turn-database-baseline.md)记录普通 Turn、行情父子 Turn 和双 owner 四会话的跨线程 SQL，使用本机模型协议服务及明确的测试调度参数。连接池容量、真实模型耗时、多主体生产负载与实际查询计划仍需按真实环境测量。历史分析及当时的计数保存在[历史记录](../history/architecture/database-access-review.md)。

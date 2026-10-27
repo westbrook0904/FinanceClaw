@@ -25,7 +25,7 @@ HTTP API、AgentScope 执行、SSE、任务恢复和飞书投递运行在**同�
 
 前轮已交付基线为 `ad0b3cacc873134acc80e26ba252b44ef954cde5`：[GitHub Actions 40361051811](https://github.com/westbrook0904/FinanceClaw/actions/runs/40361051811) 的 `verify` 和 `delivery` 均成功，覆盖 **2,110 项 Java 测试（1,419 单元 + 691 集成）、53 项脚本测试、45 项 Compose 检查**。[非 RAG 集中实施](docs/architecture/non-rag-completion-plan.md)保留此前失败和本地 Docker 阻塞记录。该结果不覆盖本轮文档、注释与组件复用改动；真实外部服务和生产容量尚未验收，RAG 按用户要求暂缓。
 
-本轮文档与组件整理已完成本地 **1,430 项单元测试、53 项 Python 契约测试、静态与格式检查及打包**，均通过；[实际验收记录](docs/architecture/evidence/docs-components-local-validation.json)区分本地结果与远程要求。当前事务边界、Boot JDBC 配置复用、Cron 有界缓存和 JSON reader 复用见[数据库访问策略](docs/architecture/database-access-review.md)。本地 Docker API 仍超时，PostgreSQL 与 Compose 的完整远程结论应核对本次提交对应的 Actions。
+本轮文档与组件整理首次本地 **1,430 项单元测试、53 项 Python 契约测试、静态与格式检查及打包**均通过。随后部署探针修复只改验收脚本，另经 **59 项 Python 契约测试与静态检查**通过，Java 构建输入未变。[实际验收记录](docs/architecture/evidence/docs-components-local-validation.json)分别保存原始运行、首次远程部署失败和修复回归。当前事务边界、Boot JDBC 配置复用、Cron 有界缓存和 JSON reader 复用见[数据库访问策略](docs/architecture/database-access-review.md)。本地 Docker API 仍超时，PostgreSQL 与 Compose 的完整远程结论应核对修复提交对应的 Actions。
 
 ```mermaid
 flowchart LR

@@ -245,6 +245,16 @@ def assert_recovered_within_original_ttl(before, after, container_before, contai
     assert after['expires_epoch_ms'] > before['expires_epoch_ms']
 
 
+def completed_recovery_read(status, body, elapsed, limit):
+    """Only unavailable reads may wait; a late or changed durable result is a failure."""
+    assert elapsed < limit, ('Business HTTP recovery exceeded original deadline', elapsed, limit)
+    if status in (0, 503):
+        return False
+    assert status == 200, ('Unexpected business HTTP recovery status', status)
+    assert isinstance(body, dict) and body.get('status') == 'completed', 'Completed task changed during database recovery'
+    return True
+
+
 def durable_turn_evidence(turn_id):
     assert str(uuid.UUID(turn_id)) == turn_id
     data = json.loads(sql(f"""
@@ -269,7 +279,7 @@ def durable_turn_evidence(turn_id):
             'artifact_ids': [item['id'] for item in data['artifacts']]}
 
 
-def request(path, body=None, key=None, method=None, auth=True, read_error_body=False):
+def request(path, body=None, key=None, method=None, auth=True, read_error_body=False, *, timeout=12):
     headers = {'Content-Type': 'application/json'}
     if auth:
         headers['Authorization'] = 'Bearer ' + TOKEN
@@ -278,7 +288,7 @@ def request(path, body=None, key=None, method=None, auth=True, read_error_body=F
     req = urllib.request.Request(URL + path, data=None if body is None else json.dumps(body).encode(),
                                  method=method, headers=headers)
     try:
-        with OPENER.open(req, timeout=12) as response:
+        with OPENER.open(req, timeout=timeout) as response:
             raw = response.read()
             return response.status, json.loads(raw) if raw else None
     except urllib.error.HTTPError as error:
@@ -711,7 +721,21 @@ try:
     assert expired_worker['expires_epoch_ms'] <= expired_worker['database_epoch_ms']
     assert expired_worker['database_epoch_ms'] > original_worker['expires_epoch_ms']
     assert worker_snapshots() == [], 'Expired runtime must not create another live registration'
-    assert api(wp)['status'] == 'completed'
+    # The container-local SQL probe can recover before API DNS/pooled connections. Only this
+    # safe GET may wait, within the recovery clock already started before PostgreSQL restart.
+    http_observations = expired['business_http_recovery_observations'] = []
+
+    def completed_read_recovered():
+        remaining = THRESHOLDS['recovery_seconds']-(time.monotonic()-recovery)
+        assert remaining > 0, 'No time remains for business HTTP recovery'
+        status, body = request(wp, method='GET', timeout=min(12, remaining))
+        after_seconds = time.monotonic()-recovery
+        http_observations.append({'status': status, 'after_seconds': after_seconds})
+        return completed_recovery_read(status, body, after_seconds, THRESHOLDS['recovery_seconds'])
+
+    wait(completed_read_recovered, THRESHOLDS['recovery_seconds']-(time.monotonic()-recovery))
+    expired['business_http_recovery_seconds'] = http_observations[-1]['after_seconds']
+    assert_expired_worker_unchanged(expired_worker, worker_snapshot(original_worker['worker_id']))
     down_status, down_health = request('/actuator/health/readiness', auth=False, read_error_body=True)
     assert down_status == 503 and down_health['status'] == 'DOWN', (down_status, down_health)
     expired['readiness_after_database_recovery'] = {'http_status': down_status, 'status': down_health['status']}

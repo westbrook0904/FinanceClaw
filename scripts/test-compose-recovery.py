@@ -10,13 +10,15 @@ import unittest
 # predicates so these checks cannot parse its CLI, read secrets or start a deployment.
 source = Path(__file__).with_name('validate-compose.py')
 tree = ast.parse(source.read_text(), filename=str(source))
-names = {'assert_expired_worker_unchanged', 'assert_recovered_within_original_ttl'}
+names = {'assert_expired_worker_unchanged', 'assert_recovered_within_original_ttl',
+         'completed_recovery_read'}
 selected = [node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name in names]
 assert len(selected) == len(names)
 predicates = {}
 exec(compile(ast.Module(body=selected, type_ignores=[]), str(source), 'exec'), predicates)
 recovered = predicates['assert_recovered_within_original_ttl']
 expired = predicates['assert_expired_worker_unchanged']
+completed_read = predicates['completed_recovery_read']
 
 
 class RecoveryEvidence(unittest.TestCase):
@@ -61,6 +63,38 @@ class RecoveryEvidence(unittest.TestCase):
         for change in ({'heartbeat_epoch_ms': 101000}, {'expires_epoch_ms': 165000}, {'live': True}):
             with self.subTest(change=change), self.assertRaises(AssertionError):
                 expired(frozen, {**frozen, 'database_epoch_ms': 180000, **change})
+
+
+class BusinessHttpRecoveryEvidence(unittest.TestCase):
+    def test_completed_read_within_original_deadline_succeeds(self):
+        self.assertTrue(completed_read(200, {'status': 'completed'}, 44.9, 45))
+
+    def test_only_transport_failure_and_unavailable_status_may_wait(self):
+        for status in (0, 503):
+            with self.subTest(status=status):
+                self.assertFalse(completed_read(status, None, 3, 45))
+
+    def test_other_http_errors_fail_immediately(self):
+        for status in (400, 401, 403, 404, 409, 422, 429, 500, 502, 504):
+            with self.subTest(status=status), self.assertRaises(AssertionError):
+                completed_read(status, None, 3, 45)
+
+    def test_other_success_statuses_do_not_count_as_a_completed_read(self):
+        for status in (201, 202, 204):
+            with self.subTest(status=status), self.assertRaises(AssertionError):
+                completed_read(status, {'status': 'completed'}, 3, 45)
+
+    def test_wrong_or_missing_durable_terminal_state_fails_immediately(self):
+        for body in (None, [], 'completed', {}, {'status': None}, {'status': 'queued'},
+                     {'status': 'running'}, {'status': 'failed'}, {'status': 'blocked'}):
+            with self.subTest(body=body), self.assertRaises(AssertionError):
+                completed_read(200, body, 3, 45)
+
+    def test_deadline_rejects_both_late_success_and_further_waiting(self):
+        for elapsed in (45, 45.1):
+            for status in (0, 200, 503):
+                with self.subTest(elapsed=elapsed, status=status), self.assertRaises(AssertionError):
+                    completed_read(status, {'status': 'completed'}, elapsed, 45)
 
 
 if __name__ == '__main__':
